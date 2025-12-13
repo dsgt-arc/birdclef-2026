@@ -1,0 +1,42 @@
+[submodule "vendor/BirdSet"]
+	path = vendor/BirdSet
+	url = git@github.com:DBD-research-group/BirdSet.git
+[submodule "vendor/opensoundscape"]
+	path = vendor/opensoundscape
+	url = git@github.com:kitzeslab/opensoundscape.git
+[submodule "vendor/bioacoustics-model-zoo"]
+	path = vendor/bioacoustics-model-zoo
+	url = git@github.com:kitzeslab/bioacoustics-model-zoo.git
+[submodule "vendor/WavTokenizer"]
+	path = vendor/WavTokenizer
+	url = git@github.com:jishengpeng/WavTokenizer.git
+[submodule "vendor/best-rq-pytorch"]
+	path = vendor/best-rq-pytorch
+	url = git@github.com:lucasnewman/best-rq-pytorch.git
+[submodule "vendor/birdclef-2025"]
+	path = vendor/birdclef-2025
+	url = git@github.com:dsgt-arc/birdclef-2025.git
+[submodule "vendor/perch"]
+	path = vendor/perch
+	url = git@github.com:google-research/perch.git
+[submodule "vendor/ProtoCLR"]
+	path = vendor/ProtoCLR
+	url = git@github.com:ilyassmoummad/ProtoCLR.git
+[submodule "vendor/BirdNET-Analyzer"]
+	path = vendor/BirdNET-Analyzer
+	url = git@github.com:birdnet-team/BirdNET-Analyzer.git
+[submodule "vendor/hubert"]
+	path = vendor/hubert
+	url = git@github.com:bshall/hubert.git
+[submodule "vendor/descript-audio-codec"]
+	path = vendor/descript-audio-codec
+	url = git@github.com:descriptinc/descript-audio-codec.git
+[submodule "vendor/dinosr"]
+	path = vendor/dinosr
+	url = git@github.com:Alexander-H-Liu/dinosr.git
+[submodule "vendor/Wav2vec2.0"]
+	path = vendor/Wav2vec2.0
+	url = git@github.com:HarunoriKawano/Wav2vec2.0.git
+[submodule "vendor/model2vec"]
+	path = vendor/model2vec
+	url = git@github.com:MinishLab/model2vec.git
