@@ -43,3 +43,6 @@
 [submodule "vendor/biodenoising"]
 	path = vendor/biodenoising
 	url = git@github.com:earthspecies/biodenoising.git
+[submodule "vendor/biolingual"]
+	path = vendor/biolingual
+	url = git@github.com:david-rx/BioLingual.git
