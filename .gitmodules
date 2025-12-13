@@ -40,3 +40,6 @@
 [submodule "vendor/model2vec"]
 	path = vendor/model2vec
 	url = git@github.com:MinishLab/model2vec.git
+[submodule "vendor/biodenoising"]
+	path = vendor/biodenoising
+	url = git@github.com:earthspecies/biodenoising.git
