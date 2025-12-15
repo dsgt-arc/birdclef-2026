@@ -1,53 +1,72 @@
 ---
-name: "Wav2vec2.0"
-source: "https://github.com/HarunoriKawano/Wav2vec2.0"
+name: "Wav2vec 2.0"
+source: "https://huggingface.co/docs/transformers/model_doc/wav2vec2"
 license: "Apache-2.0"
 category: "self-supervised"
 pipeline_stage:
   - "tokenization"
   - "representation-learning"
-relevance: "Reference implementation of contrastive self-supervised learning with quantized targets"
+relevance: "Foundation model for discrete audio tokens and efficient transformer inference"
 status: "reference"
 ---
 
-# Wav2vec2.0
+# Wav2vec 2.0
 
 ## Overview
 
-This is a PyTorch implementation of wav2vec 2.0, a framework for self-supervised learning of speech representations. The model learns representations by solving a contrastive task over masked latent speech representations, using quantized targets from a learned codebook. This architecture is foundational for understanding modern audio self-supervised learning.
+Wav2vec 2.0 is a framework for self-supervised learning of speech representations. It masks the speech input in the latent space and solves a contrastive task defined over a quantization of the latent representations which are jointly learned. This architecture is crucial for our research into discrete audio tokens and static embeddings.
+
+**Paper**: [wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations](https://arxiv.org/abs/2006.11477)
 
 ## Key Components
 
 | Component | Description | Location |
 |-----------|-------------|----------|
-| Feature encoder | Convolutional network for raw waveform encoding | Implementation files |
-| Quantization module | Gumbel-softmax quantization for discrete targets | Implementation files |
-| Transformer encoder | Contextualized representation learning | Implementation files |
-| Contrastive loss | Self-supervised training objective | Implementation files |
+| `Wav2Vec2FeatureExtractor` | Convolutional feature encoder (raw audio to latent) | `transformers` |
+| `Wav2Vec2Model` | Transformer encoder with quantization module | `transformers` |
+| `Wav2Vec2ForPreTraining` | Model with contrastive loss head | `transformers` |
+| `Wav2Vec2Quantizer` | Gumbel-Softmax vector quantization | `transformers` internal |
 
 ## Relevance to Pipeline
 
-- **Tokenization**: Core reference for learned quantization/tokenization of audio; the quantization module creates discrete token targets
-- **Representation Learning**: Demonstrates masked prediction over discrete tokens, similar to our Phase 2 transformer training
-- **Embedding**: Produces contextual embeddings that can be used for downstream tasks
+- **Discrete Tokens**: The model's vector quantization module is a primary candidate for generating discrete audio tokens (codes) for our efficiency experiments.
+- **Static Embeddings**: We plan to distill the transformer's contextual embeddings into static embeddings (Model2Vec style).
+- **CPU Inference**: A key target for optimization; we will investigate pruning or distilling this model for CPU constraints.
 
 ## Usage
 
 ```python
-# See example.py for usage
-python example.py
+import torch
+from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
+
+# 1. Load Pre-trained Model
+model_name = "facebook/wav2vec2-base"
+feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(model_name)
+model = Wav2Vec2Model.from_pretrained(model_name)
+
+# 2. Process Audio
+# dummy audio: 16kHz, 1 second
+audio_input = torch.randn(1, 16000)
+inputs = feature_extractor(audio_input, return_tensors="pt", sampling_rate=16000)
+
+# 3. Forward Pass
+with torch.no_grad():
+    outputs = model(**inputs)
+    
+# Last hidden key states (contextual embeddings)
+embeddings = outputs.last_hidden_state  # shape: (1, seq_len, 768)
+
+# Accessing quantized tokens (requires ForPreTraining model usually, or hook)
+# This is key for our "Discrete Token" experiments
 ```
 
 ## Dependencies
 
-- Python 3.x
-- PyTorch
-- fairseq (for pre-trained models)
+- `transformers`
+- `torch`
+- `librosa` (for audio loading)
 
 ## Notes
 
-- Key paper: "wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations" (Baevski et al., 2020)
-- Uses Gumbel-softmax for differentiable quantization during training
-- Codebook is learned jointly with the model
-- HuBERT and DinoSR build on these concepts with different target strategies
-- Pre-trained models available via HuggingFace Transformers or fairseq
+- **Efficiency**: Standard wav2vec 2.0 is heavy (95M+ params). We need to explore smaller variants or distillation.
+- **BirdCLEF**: Pre-trained weights on human speech may need domain adaptation (fine-tuning) on bird calls (e.g., BirdAVES starts from similar architectures).
