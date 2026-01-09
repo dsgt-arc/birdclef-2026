@@ -1,0 +1,72 @@
+# Foundation Model Encoder Benchmark configuration
+
+experiment:
+  name: "001-encoder-benchmark"
+  seed: 42
+
+datasets:
+  # Part A: ESC-50 (sanity check)
+  esc50:
+    source: "ashraq/esc50"  # HuggingFace
+    classes: 50
+    clips: 2000
+    sample_rate: 44100  # native, resample to 16kHz
+    clip_duration: 5.0
+    evaluation: "5-fold-cv"
+
+  # Part B: AudioSet bird classes
+  audioset_birds:
+    source: "audioset"
+    split: "eval"
+    class_ids:
+      - "/m/015p6"      # Bird
+      - "/m/020bb7"     # Bird vocalization
+      - "/m/07pggtn"    # Chirp, tweet
+      - "/m/07sx8x_"    # Squawk
+      - "/m/0h0rv"      # Pigeon, dove
+      - "/m/07r_25d"    # Coo
+      - "/m/04s8yn"     # Crow
+      - "/m/07r5c2p"    # Caw
+      - "/m/09d5_"      # Owl
+      - "/m/07r_80w"    # Hoot
+      - "/m/01dwxx"     # Gull, seagull
+      - "/m/05_wcq"     # Bird flight
+    sample_rate: 16000
+    clip_duration: 10.0
+
+common:
+  batch_size: 32
+  num_workers: 4
+
+models:
+  - name: "wav2vec2-base"
+    source: "facebook/wav2vec2-base"
+    type: "huggingface"
+
+  - name: "beats-iter3-as2m"
+    source: "vendor/unilm/beats"
+    checkpoint: "BEATs_iter3_plus_AS2M.pt"
+    type: "local"
+
+  - name: "eat-base"
+    source: "vendor/EAT"
+    type: "local"
+
+probe:
+  type: "linear"  # or "mlp"
+  hidden_dim: null  # Only for MLP
+  epochs: 20
+  learning_rate: 1e-3
+  weight_decay: 1e-4
+
+evaluation:
+  metrics:
+    - "mAP"
+    - "accuracy"
+  inference_device: "cpu"  # For timing comparison
+
+logging:
+  wandb:
+    project: "birdclef-2026"
+    entity: null
+    tags: ["benchmark", "audioset", "encoder-comparison"]

@@ -32,6 +32,10 @@ BirdSet is a large-scale benchmark dataset for audio classification in avian bio
 - **Representation Learning**: Large-scale XCL/XCM datasets ideal for self-supervised pre-training
 - **Inference**: Evaluation datasets (HSN, SSW, PER, etc.) for measuring classification performance
 
+**When to use BirdSet vs AudioSet:**
+- Use [AudioSet](audioset.md) to compare pretrained encoders fairly (zero domain shift)
+- Use BirdSet to evaluate fine-grained species classification and soundscape transfer
+
 ## Usage
 
 ```python
@@ -62,9 +66,27 @@ train_loader = dm.train_dataloader()
 - HuggingFace Datasets
 - torchaudio, librosa
 
+## Evaluation Datasets
+
+Eight soundscape test datasets for benchmarking:
+
+| Dataset | Region | Species | Test Segments | Notes |
+|---------|--------|---------|---------------|-------|
+| **HSN** | High Sierra Nevada | 21 | 12,000 | Easy (few species) |
+| **SSW** | Sapsucker Woods | 81 | 205,200 | Medium, largest |
+| **PER** | Amazon Basin | 132 | 15,120 | Hard (most species) |
+| **NES** | Costa Rica | 89 | 24,480 | Medium |
+| **UHH** | Hawaiian Islands | 25 | 36,637 | Easy |
+| **NBP** | NIPS4BPlus | 51 | 563 | Small test set |
+| **SNE** | Sierra Nevada | 56 | 23,756 | Medium |
+| **POW** | Powdermill Nature | 48 | 4,560 | Medium |
+
+**Recommendation**: Start with HSN (easiest, fast iteration) and PER (hardest, stress test).
+
 ## Notes
 
 - Datasets hosted on HuggingFace at `DBD-research-group/BirdSet`
 - XCL (full Xeno-Canto) is ~480GB; XCM (medium subset) is ~90GB
 - Pre-trained model checkpoints available for ConvNeXT, EfficientNet, EAT, and others
 - Supports multi-label classification with one-hot encoded labels
+- Primary metric: **cmAP** (class-mean average precision)

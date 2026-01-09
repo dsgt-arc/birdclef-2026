@@ -39,13 +39,13 @@ See [concepts/research-leads.md](concepts/research-leads.md) for full list.
 
 ## Experiments
 
-None yet. See [experiments/](experiments/) when we begin.
+Experiments are tracked per-user in `user/<name>/experiments/`. See individual user workspaces.
 
 ## Next Steps
 
-1. Deep dive on EAT architecture
-2. Benchmark OpenBEATs checkpoints on BirdSet
-3. Prototype distillation pipeline
+1. Benchmark foundation models (BEATs, EAT, wav2vec2) on AudioSet bird classes
+2. Deep dive on EAT architecture
+3. Prototype distillation pipeline based on best encoder
 
 ## Quick Links
 
