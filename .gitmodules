@@ -52,3 +52,6 @@
 [submodule "vendor/unilm"]
 	path = vendor/unilm
 	url = https://github.com/microsoft/unilm
+[submodule "vendor/ESC-50"]
+	path = vendor/ESC-50
+	url = https://github.com/karolpiczak/ESC-50
