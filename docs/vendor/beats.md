@@ -30,10 +30,10 @@ BEATs is an audio pre-training framework that iteratively trains an acoustic tok
 
 | Checkpoint | Description | Download |
 |------------|-------------|----------|
-| BEATs_iter1 | First iteration tokenizer | [Link](https://aka.ms/beats-iter1) |
-| BEATs_iter2 | Second iteration (better) | [Link](https://aka.ms/beats-iter2) |
-| BEATs_iter3 | Third iteration (best) | [Link](https://aka.ms/beats-iter3) |
-| BEATs_iter3+ | Fine-tuned on AS-2M | [Link](https://aka.ms/beats-iter3-as2m) |
+| BEATs_iter1 | First iteration | [Model](https://1drv.ms/u/s!AqeByhGUtINrgcpmY7IHhgc9q0pT7Q?e=uQuisJ) |
+| BEATs_iter2 | Second iteration | [Model](https://1drv.ms/u/s!AqeByhGUtINrgcpwwEGgUyiI-jQyQw?e=1rP1RI) / [Tokenizer](https://1drv.ms/u/s!AqeByhGUtINrgcpnFGsfd_buKng5Pw?e=avWBJw) |
+| BEATs_iter3 | Third iteration (best) | [Model](https://1drv.ms/u/s!AqeByhGUtINrgcpxJUNDxg4eU0r-vA?e=qezPJ5) / [Tokenizer](https://1drv.ms/u/s!AqeByhGUtINrgcp1DEzUBtzHapxcqw?e=JZI5Uf) |
+| BEATs_iter3+ (AS2M) | Fine-tuned on AS-2M | [Model](https://1drv.ms/u/s!AqeByhGUtINrgcpke6_lRSZEKD5j2Q?e=A3FpOf) / [Tokenizer](https://1drv.ms/u/s!AqeByhGUtINrgcppJUDx2TmXiIMFyQ?e=pJsOLl) |
 
 ## Usage
 

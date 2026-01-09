@@ -25,6 +25,15 @@ Foundation models like BEATs/AudioMAE learn superior bioacoustic representations
 │   ├── references/         # Literature and deep research
 │   ├── vendor/             # External tool documentation
 │   └── _templates/         # Document templates
+├── user/                   # Per-user workspaces
+│   └── anthony/            # Example workspace
+│       ├── src/            # Python package
+│       └── experiments/    # Experiment configs + sbatch
+├── vendor/                 # Vendored submodules
+│   ├── EAT/                # Efficient Audio Transformer
+│   ├── unilm/beats/        # BEATs (discrete tokenizer)
+│   ├── WavTokenizer/       # Neural audio codec
+│   └── ...                 # See docs/vendor/ for full list
 ├── openspec/               # Change proposals (OpenSpec)
 └── .claude/commands/       # Claude Code slash commands
 ```
