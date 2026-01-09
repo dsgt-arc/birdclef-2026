@@ -49,3 +49,6 @@
 [submodule "vendor/EAT"]
 	path = vendor/EAT
 	url = https://github.com/cwx-worst-one/EAT
+[submodule "vendor/unilm"]
+	path = vendor/unilm
+	url = https://github.com/microsoft/unilm
