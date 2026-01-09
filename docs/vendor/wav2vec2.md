@@ -52,7 +52,7 @@ inputs = feature_extractor(audio_input, return_tensors="pt", sampling_rate=16000
 # 3. Forward Pass
 with torch.no_grad():
     outputs = model(**inputs)
-    
+
 # Last hidden key states (contextual embeddings)
 embeddings = outputs.last_hidden_state  # shape: (1, seq_len, 768)
 
