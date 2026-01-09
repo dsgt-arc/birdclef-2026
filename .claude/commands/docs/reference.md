@@ -42,7 +42,7 @@ Create a reference document to capture external knowledge (papers, articles, dee
 
 **Template Location**
 
-`docs/templates/reference.md`
+`docs/_templates/reference.md`
 
 **Example**
 

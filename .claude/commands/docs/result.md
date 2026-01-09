@@ -44,7 +44,7 @@ Add results to a completed experiment. This documents what happened, whether the
 
 **Template Location**
 
-`docs/templates/experiment-result.md`
+`docs/_templates/experiment-result.md`
 
 **Verdicts**
 

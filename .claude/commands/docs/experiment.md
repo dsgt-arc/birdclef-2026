@@ -52,7 +52,7 @@ Create an experiment to test a hypothesis from a concept. Experiments have two p
 
 **Template Location**
 
-`docs/templates/experiment-proposal.md`
+`docs/_templates/experiment-proposal.md`
 
 **Status Lifecycle**
 

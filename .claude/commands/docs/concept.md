@@ -43,7 +43,7 @@ Create a concept document to explore an idea, hypothesis, or research direction.
 
 **Template Location**
 
-`docs/templates/concept.md`
+`docs/_templates/concept.md`
 
 **Status Lifecycle**
 

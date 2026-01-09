@@ -6,31 +6,12 @@ Shared context and documentation for the BirdCLEF 2026 discrete token pipeline r
 
 ---
 
-## Table of Contents
+## Quick Start
 
-### Research (start here)
-
-| Doc | Description |
-|-----|-------------|
-| [00_references.md](research/00_references.md) | **Key papers with arXiv links** - prioritized reading list |
-| [01_initial_research.md](research/01_initial_research.md) | Post-wav2vec 2.0 landscape: codecs, transformers, Mamba |
-| [02_leads.md](research/02_leads.md) | **Research leads** - models to explore, updated Dec 2025 |
-| [03_soundscape_domain_shift.md](research/03_soundscape_domain_shift.md) | Focal→soundscape domain gap: MixIT, ProtoCLR, augmentation |
-| [04_data_and_compute_scale.md](research/04_data_and_compute_scale.md) | Dataset sizes, model params, Kaggle inference constraints |
-| [05_birdclef.md](research/05_birdclef.md) | BirdCLEF competition history 2014-2025, winning techniques |
-| [06_beats.md](research/06_beats.md) | **Deep dive: BEATs** - iterative tokenization, architecture |
-
-### Architecture
-
-| Doc | Description |
-|-----|-------------|
-| [mlp-mixer-distillation.md](architecture/mlp-mixer-distillation.md) | Alternative path: ViT→MLP-Mixer distillation for efficiency |
-
-### Vendor Documentation
-
-See [vendor/README.md](vendor/README.md) for all 15 vendored repositories with:
-- Pipeline stage mapping (tokenization, representation learning, embedding, inference)
-- Category and status for each repository
+**New here?** Start with:
+1. [STATUS.md](STATUS.md) - What works now, what we're trying
+2. [concepts/](concepts/) - Research ideas we're exploring
+3. [references/literature.md](references/literature.md) - Key papers
 
 ---
 
@@ -38,27 +19,74 @@ See [vendor/README.md](vendor/README.md) for all 15 vendored repositories with:
 
 ```
 docs/
-├── architecture/     # System design, model architectures
-├── experiments/      # Experiment results, ablation studies
-├── research/         # Literature reviews, research notes
-└── vendor/           # Documentation for vendored repositories
+├── STATUS.md           # Current state summary (start here)
+├── concepts/           # Research ideas and hypotheses
+│   ├── README.md       # Concept map and index
+│   └── *.md            # Individual concepts
+├── experiments/        # Experiment proposals and results
+│   └── NNN-name/       # Each experiment gets a directory
+├── references/
+│   ├── literature.md   # Key papers with links
+│   └── deep-research/  # AI research outputs and syntheses
+├── vendor/             # External tool documentation
+│   └── README.md       # Index of vendored repos
+└── _templates/         # Document templates
+    ├── concept.md
+    ├── experiment-proposal.md
+    ├── experiment-result.md
+    └── reference.md
 ```
+
+---
+
+## Concepts (Research Ideas)
+
+| Concept | Description |
+|---------|-------------|
+| [soundscape-domain-shift](concepts/soundscape-domain-shift.md) | Focal→soundscape domain gap: MixIT, ProtoCLR, augmentation |
+| [data-and-compute-scale](concepts/data-and-compute-scale.md) | Dataset sizes, model params, Kaggle inference constraints |
+| [mlp-mixer-distillation](concepts/mlp-mixer-distillation.md) | ViT→MLP-Mixer distillation for CPU efficiency |
+| [research-leads](concepts/research-leads.md) | Active model candidates: EAT, OpenBEATs, BirdMAE |
+
+---
+
+## References
+
+### Literature
+- [references/literature.md](references/literature.md) - Key papers with arXiv links, prioritized reading list
+
+### Deep Research (AI Syntheses)
+| Doc | Description |
+|-----|-------------|
+| [wav2vec2-landscape](references/deep-research/wav2vec2-landscape.md) | Post-wav2vec 2.0 era: codecs, transformers, Mamba |
+| [birdclef-history](references/deep-research/birdclef-history.md) | BirdCLEF competition history 2014-2025 |
+| [beats-architecture](references/deep-research/beats-architecture.md) | Deep dive on BEATs iterative tokenization |
+
+### Vendor Documentation
+See [vendor/README.md](vendor/README.md) for 15+ vendored repositories with:
+- Pipeline stage mapping (tokenization, representation learning, embedding, inference)
+- Category and status for each repository
+
+---
+
+## Current Focus (Jan 2026)
+
+Based on recent literature review:
+
+1. **EAT** - 15x more efficient than BEATs, similar performance
+2. **OpenBEATs** - SOTA on bioacoustics, fully open-source (300M params)
+3. **BirdMAE** - Best on BirdSet benchmark, bird-specific training
+
+Key question: Can these foundation models be distilled to CPU-viable inference while retaining bioacoustics performance?
+
+---
 
 ## Quick Links
 
 | Resource | Link |
 |----------|------|
-| Key References | [research/00_references.md](research/00_references.md) |
-| Research Leads | [research/02_leads.md](research/02_leads.md) |
+| Project Status | [STATUS.md](STATUS.md) |
+| Concept Index | [concepts/README.md](concepts/README.md) |
+| Key Papers | [references/literature.md](references/literature.md) |
 | Vendor Index | [vendor/README.md](vendor/README.md) |
-| Pipeline Proposal | [openspec/changes/add-discrete-token-pipeline/](../openspec/changes/add-discrete-token-pipeline/proposal.md) |
-
-## Current Focus (Dec 2025)
-
-Based on recent literature review:
-
-1. **EAT** - 15× more efficient than BEATs, similar performance
-2. **OpenBEATs** - SOTA on bioacoustics, fully open-source (300M params)
-3. **BirdMAE** - Best on BirdSet benchmark, bird-specific training
-
-Key question: Can these foundation models be distilled to CPU-viable inference while retaining bioacoustics performance?
+| Templates | [_templates/](_templates/) |
