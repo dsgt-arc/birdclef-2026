@@ -1,0 +1,36 @@
+# Experiment configuration
+# Copy and modify for your experiment
+
+experiment:
+  name: "000-template"
+  seed: 42
+
+data:
+  train_path: "/path/to/train"
+  val_path: "/path/to/val"
+  batch_size: 32
+  num_workers: 4
+
+model:
+  name: "baseline"
+  # Add model-specific config here
+
+training:
+  epochs: 10
+  learning_rate: 1e-4
+  weight_decay: 1e-5
+
+  # Scheduler
+  scheduler: "cosine"
+  warmup_epochs: 1
+
+  # Checkpointing
+  save_every: 1
+  checkpoint_dir: "./artifacts/checkpoints"
+
+# Logging
+logging:
+  wandb:
+    project: "birdclef-2026"
+    entity: null  # Set your W&B entity
+    tags: ["experiment", "000-template"]
