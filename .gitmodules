@@ -46,3 +46,6 @@
 [submodule "vendor/biolingual"]
 	path = vendor/biolingual
 	url = git@github.com:david-rx/BioLingual.git
+[submodule "vendor/EAT"]
+	path = vendor/EAT
+	url = https://github.com/cwx-worst-one/EAT
