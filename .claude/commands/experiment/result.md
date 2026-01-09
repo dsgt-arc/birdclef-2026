@@ -1,8 +1,8 @@
 ---
-name: Docs: Result
+name: Experiment Result
 description: Record observations and analysis for a completed experiment.
-category: Research Docs
-tags: [docs, experiment, result]
+category: Research
+tags: [experiment, result]
 ---
 
 **Purpose**
@@ -20,11 +20,12 @@ Add results to a completed experiment. This documents what happened, whether the
 **Steps**
 
 1. Identify the experiment to document:
-   - List experiments: `ls docs/experiments/`
+   - Experiments are in `user/<name>/experiments/`
+   - List experiments: `ls user/<name>/experiments/`
    - Verify the experiment has a `proposal.md`
    - Check that results haven't already been recorded
 
-2. Create `results.md` in the experiment directory using the template from `docs/templates/experiment-result.md`:
+2. Create `results.md` in the experiment directory using `docs/_templates/experiment-result.md`:
    - Add Date Completed
    - Write a one-line Summary answering: what happened?
    - Set Verdict: `confirmed`, `rejected`, or `inconclusive`
@@ -36,11 +37,15 @@ Add results to a completed experiment. This documents what happened, whether the
    - List Artifacts with locations (logs, checkpoints, code)
    - Define Next Steps as actionable items
 
-3. Update the proposal's Status to `completed`.
+3. Mark all tasks in `tasks.md` as complete.
 
-4. If the experiment leads to code changes, consider creating an OpenSpec proposal.
+4. Update the proposal's Status to `completed`.
 
-5. If the experiment leads to new hypotheses, consider creating new concepts or experiments.
+5. Run `/experiment:validate` to verify everything is in order.
+
+6. If the experiment leads to code changes, consider creating an OpenSpec proposal.
+
+7. If the experiment leads to new hypotheses, consider creating new concepts or experiments.
 
 **Template Location**
 
@@ -58,7 +63,7 @@ Add results to a completed experiment. This documents what happened, whether the
 
 ```bash
 # Adding results to an experiment
-docs/experiments/001-cosine-lr-schedule/results.md
+user/<name>/experiments/001-encoder-benchmark/results.md
 ```
 
 **Linking Forward**
