@@ -29,17 +29,21 @@
 - [x] 4.4 Run EAT + linear probe on ESC-50 (77.9% with mean pooling fix)
 - [x] 4.5 Compare results to published (BEATs 98.1%, EAT 95.9%) - see results.md
 
-## 5. Part B: AudioSet Birds (Stretch Goal)
-- [ ] 5.1 Acquire AudioSet bird clips (eval split)
-- [ ] 5.2 Prepare AudioSet bird dataloader
-- [ ] 5.3 Run encoder comparison on AudioSet birds
-- [ ] 5.4 Compute mAP for each encoder
+## 5. Part B: LoRA Finetuning EAT
+- [x] 5.1 Document LoRA approach (docs/concepts/lora-finetuning-audio.md)
+- [x] 5.2 Implement LoRA finetuning script (finetune_lora.py)
+- [ ] 5.3 Run LoRA r=8 on ESC-50
+- [ ] 5.4 Run LoRA r=16 on ESC-50 (if r=8 underfits)
+- [ ] 5.5 Compare to linear probe and published results
 
-## 6. Analysis & Documentation
-- [x] 6.1 Compile results table with accuracy/mAP/inference time
-- [x] 6.2 Analyze which encoder performs best (BEATs)
-- [x] 6.3 Document findings in results.md
-- [ ] 6.4 Update STATUS.md with conclusions
+## ~~6. Part C: AudioSet Birds~~ (Out of Scope)
+*Removed from experiment scope - focus on ESC-50 benchmark*
+
+## 7. Analysis & Documentation
+- [x] 7.1 Compile results table with accuracy/mAP/inference time
+- [x] 7.2 Analyze which encoder performs best (BEATs)
+- [x] 7.3 Document findings in results.md
+- [ ] 7.4 Update STATUS.md with conclusions
 
 ---
 
@@ -60,11 +64,21 @@
 
 ### Running the Benchmark
 ```bash
-# Run all encoders
+# Run all encoders (linear probe)
 sbatch user/anthony/experiments/001-encoder-benchmark/sbatch/run-benchmark.sbatch
 
 # Run specific encoder
 ENCODER=wav2vec2 sbatch user/anthony/experiments/001-encoder-benchmark/sbatch/run-benchmark.sbatch
+```
+
+### Running LoRA Finetuning
+```bash
+# LoRA with rank 8 (default)
+cd user/anthony/experiments/001-encoder-benchmark/sbatch
+sbatch run-lora-finetune.sbatch
+
+# LoRA with rank 16
+LORA_RANK=16 sbatch run-lora-finetune.sbatch
 ```
 
 ### Package Structure
@@ -74,6 +88,7 @@ user/anthony/src/birdclef/
 ├── audio.py           # Audio loading utilities
 ├── train.py           # Linear probe training
 ├── benchmark.py       # Unified benchmark runner
+├── finetune_lora.py   # LoRA finetuning for EAT
 ├── data/
 │   ├── __init__.py
 │   └── esc50.py       # ESC-50 dataset
