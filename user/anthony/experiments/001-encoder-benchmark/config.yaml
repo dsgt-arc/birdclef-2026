@@ -1,22 +1,33 @@
 # Foundation Model Encoder Benchmark configuration
+# See docs/operations.md for scratch disk usage patterns
 
 experiment:
   name: "001-encoder-benchmark"
   seed: 42
 
+# Paths (relative to ~/scratch/birdclef-2026/)
+paths:
+  scratch_dir: "~/scratch/birdclef-2026"
+  checkpoints: "${scratch_dir}/checkpoints"
+  data: "${scratch_dir}/data"
+  outputs: "${scratch_dir}/outputs/001-encoder-benchmark"
+  cache: "${scratch_dir}/.cache"
+
 datasets:
   # Part A: ESC-50 (sanity check)
   esc50:
     source: "ashraq/esc50"  # HuggingFace
+    local_path: "${paths.data}/esc50"  # or use vendor/ESC-50
     classes: 50
     clips: 2000
-    sample_rate: 44100  # native, resample to 16kHz
+    sample_rate: 44100  # native, resample to 16kHz for models
     clip_duration: 5.0
     evaluation: "5-fold-cv"
 
-  # Part B: AudioSet bird classes
+  # Part B: AudioSet bird classes (stretch goal)
   audioset_birds:
     source: "audioset"
+    local_path: "${paths.data}/audioset"
     split: "eval"
     class_ids:
       - "/m/015p6"      # Bird
@@ -37,36 +48,46 @@ datasets:
 common:
   batch_size: 32
   num_workers: 4
+  target_sample_rate: 16000  # All models expect 16kHz
 
 models:
   - name: "wav2vec2-base"
     source: "facebook/wav2vec2-base"
     type: "huggingface"
+    # No checkpoint needed - downloads automatically
 
   - name: "beats-iter3-as2m"
-    source: "vendor/unilm/beats"
-    checkpoint: "BEATs_iter3_plus_AS2M.pt"
     type: "local"
+    checkpoint: "${paths.checkpoints}/beats/BEATs_iter3_plus_AS2M.pt"
+    code_path: "vendor/unilm/beats"
+    # Download from: https://1drv.ms/u/s!AqeByhGUtINrgcpke6_lRSZEKD5j2Q
 
-  - name: "eat-base"
-    source: "vendor/EAT"
-    type: "local"
+  - name: "eat-base-as2m"
+    type: "huggingface"
+    source: "worstchan/EAT-base_epoch30_finetune_AS2M"
+    local_path: "${paths.checkpoints}/eat/EAT-base_epoch30_finetune_AS2M"
+    code_path: "vendor/EAT"
 
 probe:
-  type: "linear"  # or "mlp"
-  hidden_dim: null  # Only for MLP
+  type: "linear"  # Linear probe to isolate encoder quality
+  hidden_dim: null  # Only used if type: "mlp"
   epochs: 20
   learning_rate: 1e-3
   weight_decay: 1e-4
+  optimizer: "adam"
 
 evaluation:
   metrics:
-    - "mAP"
-    - "accuracy"
-  inference_device: "cpu"  # For timing comparison
+    - "accuracy"  # For ESC-50
+    - "mAP"       # For AudioSet
+  inference_device: "cpu"  # For fair timing comparison
+  save_predictions: true
 
 logging:
   wandb:
     project: "birdclef-2026"
     entity: null
-    tags: ["benchmark", "audioset", "encoder-comparison"]
+    tags: ["benchmark", "encoder-comparison", "esc50"]
+
+  # Save to experiment artifacts
+  save_dir: "${paths.outputs}"
