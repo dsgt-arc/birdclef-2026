@@ -38,14 +38,17 @@ uv pip install -e user/anthony
 # Run LoRA finetuning
 # ENCODER: eat (default) or wav2vec2
 # LORA_RANK: 8 (default) or 16
+# LR: model-specific default if not set (eat=1e-4, wav2vec2=1e-5)
+# MAX_GRAD_NORM: 1.0 (default)
 uv run python -m birdclef.finetune_lora \
     --encoder ${ENCODER:-eat} \
     --esc50-root $repo_dir/vendor/ESC-50 \
     --output-dir $scratch_dir/outputs/esc50-lora \
     --lora-rank ${LORA_RANK:-8} \
     --epochs ${EPOCHS:-50} \
-    --lr ${LR:-1e-4} \
-    --batch-size ${BATCH_SIZE:-16}
+    --batch-size ${BATCH_SIZE:-16} \
+    --max-grad-norm ${MAX_GRAD_NORM:-1.0} \
+    ${LR:+--lr $LR}
 
 echo ""
 echo "Done!"

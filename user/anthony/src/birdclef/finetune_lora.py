@@ -19,11 +19,13 @@ MODEL_CONFIGS = {
         "model_name": "worstchan/EAT-base_epoch30_pretrain",
         "target_modules": ["qkv", "proj"],
         "embed_dim": 768,
+        "default_lr": 1e-4,
     },
     "wav2vec2": {
         "model_name": "facebook/wav2vec2-base-960h",
         "target_modules": ["q_proj", "k_proj", "v_proj", "out_proj"],
         "embed_dim": 768,
+        "default_lr": 1e-5,  # Lower LR to prevent gradient explosion
     },
 }
 
@@ -164,6 +166,7 @@ def train_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: str,
+    max_grad_norm: float = 1.0,
 ) -> float:
     """Train for one epoch."""
     model.train()
@@ -177,6 +180,10 @@ def train_epoch(
         logits = model(waveforms)
         loss = criterion(logits, labels)
         loss.backward()
+
+        # Gradient clipping to prevent explosion
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+
         optimizer.step()
 
         total_loss += loss.item()
@@ -236,6 +243,7 @@ def run_fold(
     lr: float,
     batch_size: int,
     device: str,
+    max_grad_norm: float = 1.0,
 ) -> dict:
     """Run one fold of cross-validation."""
     print(f"\n=== Fold {fold}/5 ===")
@@ -275,7 +283,7 @@ def run_fold(
 
     best_acc = 0.0
     for epoch in range(epochs):
-        train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
+        train_loss = train_epoch(model, train_loader, optimizer, criterion, device, max_grad_norm)
         val_acc = evaluate(model, val_loader, device)
         scheduler.step()
 
@@ -303,9 +311,15 @@ def main():
     parser.add_argument("--output-dir", type=str, required=True, help="Output directory")
     parser.add_argument("--lora-rank", type=int, default=8, help="LoRA rank")
     parser.add_argument("--epochs", type=int, default=50, help="Training epochs per fold")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=None, help="Learning rate (default: model-specific)")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
+    parser.add_argument("--max-grad-norm", type=float, default=1.0, help="Max gradient norm for clipping")
     args = parser.parse_args()
+
+    # Use model-specific default LR if not specified
+    if args.lr is None:
+        args.lr = MODEL_CONFIGS[args.encoder]["default_lr"]
+        print(f"Using default learning rate for {args.encoder}: {args.lr}")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
@@ -332,6 +346,7 @@ def main():
             lr=args.lr,
             batch_size=args.batch_size,
             device=device,
+            max_grad_norm=args.max_grad_norm,
         )
         results.append(fold_result)
 
@@ -351,6 +366,7 @@ def main():
         "lora_rank": args.lora_rank,
         "epochs": args.epochs,
         "lr": args.lr,
+        "max_grad_norm": args.max_grad_norm,
         "batch_size": args.batch_size,
         "fold_accuracies": accuracies,
         "mean_accuracy": mean_acc,
