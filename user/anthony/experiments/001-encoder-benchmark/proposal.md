@@ -1,8 +1,17 @@
 # Proposal: Foundation Model Encoder Benchmark
 
-**Status**: proposed
+**Status**: in-progress
 **Created**: 2025-01-09
 **Author**: anthony
+
+## Related Documentation
+
+- **Concepts**:
+  - [LoRA Finetuning for Audio Transformers](../../../docs/concepts/lora-finetuning-audio.md) - Parameter-efficient finetuning approach
+- **References**:
+  - [SSL Pretraining Objectives](../../../docs/references/ssl-pretraining-objectives.md) - Why prediction-based SSL (BEATs) outperforms reconstruction-based (EAT) for linear probes
+  - [BEATs Architecture](../../../docs/references/deep-research/beats-architecture.md) - Deep dive into BEATs model
+  - [Wav2Vec2 Landscape](../../../docs/references/deep-research/wav2vec2-landscape.md) - Speech foundation model context
 
 ## Hypothesis
 

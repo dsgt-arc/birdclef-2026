@@ -1,8 +1,13 @@
 # Concept: LoRA Finetuning for Audio Transformers
 
-**Status**: Proposed
+**Status**: Testing
 **Created**: 2026-01-10
-**Related Experiment**: `user/anthony/experiments/001-encoder-benchmark/`
+
+## Related Documentation
+
+- **Experiment**: [001-encoder-benchmark](../../user/anthony/experiments/001-encoder-benchmark/proposal.md) - Testing LoRA on ESC-50
+- **References**:
+  - [SSL Pretraining Objectives](../references/ssl-pretraining-objectives.md) - Why EAT needs finetuning (reconstruction-based SSL)
 
 ## Motivation
 

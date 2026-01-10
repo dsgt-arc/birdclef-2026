@@ -29,12 +29,13 @@
 - [x] 4.4 Run EAT + linear probe on ESC-50 (77.9% with mean pooling fix)
 - [x] 4.5 Compare results to published (BEATs 98.1%, EAT 95.9%) - see results.md
 
-## 5. Part B: LoRA Finetuning EAT
+## 5. Part B: LoRA Finetuning
 - [x] 5.1 Document LoRA approach (docs/concepts/lora-finetuning-audio.md)
 - [x] 5.2 Implement LoRA finetuning script (finetune_lora.py)
-- [ ] 5.3 Run LoRA r=8 on ESC-50
-- [ ] 5.4 Run LoRA r=16 on ESC-50 (if r=8 underfits)
-- [ ] 5.5 Compare to linear probe and published results
+- [ ] 5.3 Run EAT LoRA r=8 on ESC-50
+- [ ] 5.4 Run wav2vec2 LoRA r=8 on ESC-50
+- [ ] 5.5 Run LoRA r=16 on ESC-50 (if r=8 underfits)
+- [ ] 5.6 Compare to linear probe and published results
 
 ## ~~6. Part C: AudioSet Birds~~ (Out of Scope)
 *Removed from experiment scope - focus on ESC-50 benchmark*
@@ -44,6 +45,21 @@
 - [x] 7.2 Analyze which encoder performs best (BEATs)
 - [x] 7.3 Document findings in results.md
 - [ ] 7.4 Update STATUS.md with conclusions
+
+---
+
+## Running Jobs
+
+| Job ID | Encoder | Config | Submitted | Status | Output |
+|--------|---------|--------|-----------|--------|--------|
+| 3234438 | EAT | LoRA r=8, epochs=50, lr=1e-4 | 2026-01-10 | Running (Fold 1/5) | `logs/lora-finetune-3234438.out` |
+| 3234515 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-4 | 2026-01-10 | Running (Fold 1/5) | `logs/lora-finetune-3234515.out` |
+
+**Expected outputs:**
+- `~/scratch/birdclef-2026/outputs/esc50-lora/eat_lora_r8_results.json`
+- `~/scratch/birdclef-2026/outputs/esc50-lora/wav2vec2_lora_r8_results.json`
+
+**Estimated runtime:** ~2-3 hours per job (5 folds × 50 epochs)
 
 ---
 
