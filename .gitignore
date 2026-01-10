@@ -21,6 +21,7 @@ wheels/
 *.egg
 
 # Virtual environments
+.venv
 .venv/
 venv/
 ENV/
@@ -66,9 +67,14 @@ checkpoints/
 *.log
 slurm-*.out
 slurm-*.err
+logs/
+**/sbatch/logs/
+
+# NFS temp files
+.nfs*
 
 # Data (large files)
-data/
+/data/
 *.wav
 *.mp3
 *.flac
@@ -96,3 +102,4 @@ Thumbs.db
 
 # Keep .gitkeep files
 !.gitkeep
+scratch

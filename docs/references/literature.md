@@ -2,7 +2,7 @@
 
 Essential papers and resources for the BirdCLEF 2026 research. Organized by relevance to current research direction.
 
-> **Last updated**: December 2025
+> **Last updated**: January 2026
 
 ---
 
@@ -10,8 +10,8 @@ Essential papers and resources for the BirdCLEF 2026 research. Organized by rele
 
 | Paper | Year | ArXiv | Why It Matters |
 |-------|------|-------|----------------|
-| **BEATs: Audio Pre-Training with Acoustic Tokenizers** | 2023 | [2212.09058](https://arxiv.org/abs/2212.09058) | Iterative tokenizer training, semantic audio vocabulary. Deep dive in [06_beats.md](06_beats.md) |
-| **EAT: Self-Supervised Pre-Training with Efficient Audio Transformer** | 2024 | [2401.03497](https://arxiv.org/abs/2401.03497) | 15× more efficient than BEATs, Utterance-Frame Objective |
+| **BEATs: Audio Pre-Training with Acoustic Tokenizers** | 2023 | [2212.09058](https://arxiv.org/abs/2212.09058) | Iterative tokenizer training, semantic audio vocabulary. Best for frozen features (95.8% ESC-50 linear probe). See [ssl-pretraining-objectives.md](ssl-pretraining-objectives.md) |
+| **EAT: Self-Supervised Pre-Training with Efficient Audio Transformer** | 2024 | [2401.03497](https://arxiv.org/abs/2401.03497) | 15× more efficient than BEATs, but requires finetuning (77.9% vs 95.9% linear vs finetuned). See [ssl-pretraining-objectives.md](ssl-pretraining-objectives.md) |
 | **OpenBEATs: A Fully Open-Source General-Purpose Audio Encoder** | 2025 | [2507.14129](https://arxiv.org/abs/2507.14129) | Scaled BEATs (300M), SOTA on bioacoustics, fully open |
 | **AudioMAE: Masked Autoencoders that Listen** | 2022 | [2207.06405](https://arxiv.org/abs/2207.06405) | Reconstruction-based SSL, simpler but less semantic |
 | **HuBERT: Self-Supervised Speech Representation Learning by Masked Prediction** | 2021 | [2106.07447](https://arxiv.org/abs/2106.07447) | Iterative clustering targets, foundational for discrete audio SSL |
