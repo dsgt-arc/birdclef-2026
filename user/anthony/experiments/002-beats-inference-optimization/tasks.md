@@ -51,25 +51,53 @@
 - [x] 6.1 Implement quantization: patch → nearest codebook centroid (L2 distance)
 - [x] 6.2 Implement fast inference pipeline: ONNX frontend → quantize → lookup → pool
 - [x] 6.3 Benchmark static pipeline: batch sizes 1, 4, 16, 32
-  - **FINDING**: Static pipeline is ~2.7x SLOWER than full BEATs on CPU
-  - Static 768d: 392 ms (2.5 samples/sec) vs Full BEATs: 147 ms (6.8 samples/sec)
-  - Bottleneck appears to be ONNX frontend, not transformer replacement
-- [ ] 6.4 Run ESC-50 5-fold CV with static embeddings
-- [ ] 6.5 Compare accuracy vs full BEATs
+  - **FIXED**: Replaced naive L2 with scipy cdist (1.8x speedup)
+  - **FIXED**: Replaced cdist with FAISS IndexFlatL2 (32x speedup)
+  - FAISS: 4.6 ms (217 samples/sec) vs Full BEATs: 150 ms (6.7 samples/sec)
+- [x] 6.4 Run ESC-50 5-fold CV with static embeddings
+- [x] 6.5 Compare accuracy vs full BEATs
+  - **RESULT**: 35.9% accuracy vs 84.0% (48% drop - REJECTED)
 
-## 7. Analysis (Part F)
-- [ ] 7.1 Plot throughput vs batch size curves (all configs)
-- [ ] 7.2 Create split time breakdown charts per stage
-- [ ] 7.3 Plot token distribution histogram
-- [ ] 7.4 Plot accuracy vs speedup Pareto frontier
-- [ ] 7.5 Identify optimal operating points
-- [ ] 7.6 Calculate final speedup ratios
+## 7. Contextual Pooling (Part G) - Recovery from Context Collapse
 
-## 8. Deliverables
-- [ ] 8.1 Save all benchmark results as JSON in artifacts/benchmarks/
-- [ ] 8.2 Save ONNX models in artifacts/models/
-- [ ] 8.3 Save codebook + embeddings in artifacts/models/static_embeddings/
-- [ ] 8.4 Save distillation data in artifacts/distillation/
-- [ ] 8.5 Generate visualization plots in artifacts/figures/
-- [ ] 8.6 Document findings in results.md
-- [ ] 8.7 Write recommendations for optimal settings
+### 7.1 Implementation
+- [ ] 7.1.1 Create `ContextualPooler` base class in static_embeddings.py
+- [ ] 7.1.2 Implement `AttentionPooler`: Linear(768→1) → Softmax → Weighted Sum
+- [ ] 7.1.3 Implement `CNN1DPooler`: Conv1d layers with global pooling
+- [ ] 7.1.4 Implement `LightCNN1DPooler`: 768→256→768 bottleneck variant
+- [ ] 7.1.5 Add pooler support to `StaticEmbeddingsPipelineFAISS`
+
+### 7.2 Training
+- [ ] 7.2.1 Create training script for contextual poolers on ESC-50
+- [ ] 7.2.2 Train AttentionPooler with 5-fold CV
+- [ ] 7.2.3 Train CNN1DPooler with 5-fold CV
+- [ ] 7.2.4 Train LightCNN1DPooler with 5-fold CV
+
+### 7.3 Evaluation
+- [ ] 7.3.1 Benchmark inference speed for each pooler variant
+- [ ] 7.3.2 Compare accuracy: mean pool vs attention vs CNN
+- [ ] 7.3.3 Plot accuracy vs speedup Pareto frontier
+- [ ] 7.3.4 Document findings in results.md
+
+### Success Criteria
+- **Minimum**: 70% accuracy (halve the gap from 36% to 84%)
+- **Target**: 80% accuracy with <10ms inference
+- **Stretch**: Match BEATs 84% accuracy
+
+## 8. Analysis (Part H)
+- [ ] 8.1 Plot throughput vs batch size curves (all configs)
+- [ ] 8.2 Create split time breakdown charts per stage
+- [ ] 8.3 Plot token distribution histogram
+- [ ] 8.4 Plot accuracy vs speedup Pareto frontier
+- [ ] 8.5 Identify optimal operating points
+- [ ] 8.6 Calculate final speedup ratios
+
+## 9. Deliverables
+- [ ] 9.1 Save all benchmark results as JSON in artifacts/benchmarks/
+- [ ] 9.2 Save ONNX models in artifacts/models/
+- [ ] 9.3 Save codebook + embeddings in artifacts/models/static_embeddings/
+- [ ] 9.4 Save trained pooler checkpoints in artifacts/models/poolers/
+- [ ] 9.5 Save distillation data in artifacts/distillation/
+- [ ] 9.6 Generate visualization plots in artifacts/figures/
+- [ ] 9.7 Document findings in results.md
+- [ ] 9.8 Write recommendations for optimal settings

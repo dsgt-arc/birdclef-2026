@@ -266,3 +266,200 @@ The key insight: we use the Tokenizer's semantic knowledge to BUILD our codebook
 - Does position information matter for ESC-50? (5s clips, environmental sounds)
 - How much does corpus choice affect codebook quality?
 - Should we filter out rare tokens (< N examples) from codebook?
+
+---
+
+## Part G: Contextual Pooling (Recovery from Context Collapse)
+
+### Problem Statement
+
+The static embeddings approach (Part E-F) achieved 32x speedup but lost 48% accuracy.
+Root cause: **Context collapse** - passing single patches through the transformer destroys cross-patch attention relationships.
+
+Current pipeline:
+```
+patches[248, 768] → lookup static_embeddings → mean pool → 768d output
+```
+
+The mean pooling discards all sequential/contextual information.
+
+### Solution: Learnable Contextual Pooling
+
+Add a lightweight learnable layer AFTER the static embedding lookup to recover contextual information:
+
+```
+patches[248, 768] → lookup static_embeddings[248, 768] → CONTEXTUAL POOLER → 768d output
+```
+
+### Option 1: Attention Pooling
+
+Simple learnable weighted average over patches.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      ATTENTION POOLING                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Static Embeddings: (batch, 248, 768)                               │
+│         │                                                           │
+│         ▼                                                           │
+│  ┌─────────────┐                                                    │
+│  │   Linear    │  Linear(768 → 1)                                   │
+│  │  (768 → 1)  │  Output: (batch, 248, 1) attention logits          │
+│  └─────────────┘                                                    │
+│         │                                                           │
+│         ▼                                                           │
+│  ┌─────────────┐                                                    │
+│  │   Softmax   │  Softmax over sequence dim                         │
+│  │   (dim=1)   │  Output: (batch, 248, 1) attention weights         │
+│  └─────────────┘                                                    │
+│         │                                                           │
+│         ▼                                                           │
+│  ┌─────────────┐                                                    │
+│  │ Weighted Sum│  (embeddings * weights).sum(dim=1)                 │
+│  └─────────────┘  Output: (batch, 768) pooled embedding             │
+│                                                                     │
+│  Parameters: 768 + 1 = 769                                          │
+│  FLOPs per sample: ~248 × 768 × 2 ≈ 380K                            │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Pros:**
+- Minimal parameters (769)
+- Very fast inference
+- Learns which patches are important
+
+**Cons:**
+- No local pattern detection
+- No cross-patch interaction
+
+### Option 2: 1D CNN Pooling
+
+Captures local patterns in the patch sequence.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         1D CNN POOLING                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Static Embeddings: (batch, 248, 768)                               │
+│         │                                                           │
+│         ▼  transpose to (batch, 768, 248) for Conv1d                │
+│  ┌─────────────┐                                                    │
+│  │   Conv1d    │  Conv1d(768, 768, kernel=3, padding=1)             │
+│  │  (layer 1)  │  + BatchNorm1d(768) + ReLU                         │
+│  └─────────────┘  Output: (batch, 768, 248)                         │
+│         │                                                           │
+│         ▼                                                           │
+│  ┌─────────────┐                                                    │
+│  │   Conv1d    │  Conv1d(768, 768, kernel=3, padding=1)             │
+│  │  (layer 2)  │  + BatchNorm1d(768) + ReLU                         │
+│  └─────────────┘  Output: (batch, 768, 248)                         │
+│         │                                                           │
+│         ▼                                                           │
+│  ┌─────────────┐                                                    │
+│  │ Global Pool │  AdaptiveAvgPool1d(1) or Mean                      │
+│  └─────────────┘  Output: (batch, 768)                              │
+│                                                                     │
+│  Parameters: 2 × (768 × 768 × 3 + 768 × 2) ≈ 3.5M                   │
+│  FLOPs per sample: ~2 × 248 × 768 × 768 × 3 ≈ 880M                  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Pros:**
+- Captures local patterns (kernel=3 sees 3 adjacent patches)
+- More expressive than attention pooling
+- Translation invariant
+
+**Cons:**
+- More parameters (3.5M)
+- Slower than attention pooling
+- May overfit on small datasets
+
+### Option 3: Lightweight CNN (Reduced Channels)
+
+Compromise between expressivity and efficiency.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    LIGHTWEIGHT 1D CNN POOLING                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Static Embeddings: (batch, 248, 768)                               │
+│         │                                                           │
+│         ▼  transpose to (batch, 768, 248)                           │
+│  ┌─────────────┐                                                    │
+│  │   Conv1d    │  Conv1d(768, 256, kernel=3, padding=1)             │
+│  │  (project)  │  + ReLU                                            │
+│  └─────────────┘  Output: (batch, 256, 248)                         │
+│         │                                                           │
+│         ▼                                                           │
+│  ┌─────────────┐                                                    │
+│  │   Conv1d    │  Conv1d(256, 256, kernel=3, padding=1)             │
+│  │  (layer 1)  │  + ReLU                                            │
+│  └─────────────┘  Output: (batch, 256, 248)                         │
+│         │                                                           │
+│         ▼                                                           │
+│  ┌─────────────┐                                                    │
+│  │   Conv1d    │  Conv1d(256, 768, kernel=1)                        │
+│  │  (expand)   │  Output: (batch, 768, 248)                         │
+│  └─────────────┘                                                    │
+│         │                                                           │
+│         ▼                                                           │
+│  ┌─────────────┐                                                    │
+│  │ Global Pool │  Mean over sequence                                │
+│  └─────────────┘  Output: (batch, 768)                              │
+│                                                                     │
+│  Parameters: 768×256×3 + 256×256×3 + 256×768×1 ≈ 980K               │
+│  FLOPs per sample: ~248 × (768×256×3 + 256×256×3 + 256×768) ≈ 290M  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Training Protocol
+
+Both poolers are trained end-to-end on ESC-50:
+
+1. **Freeze**: Static embeddings lookup (no gradients)
+2. **Train**: Contextual pooler + linear classifier
+3. **Data**: ESC-50 5-fold CV (same as baseline)
+4. **Optimizer**: Adam, lr=1e-3
+5. **Epochs**: 100 (same as baseline)
+6. **Batch size**: 32
+
+### Expected Outcomes
+
+| Approach | Parameters | Inference (ms) | Expected Accuracy | Notes |
+|----------|------------|----------------|-------------------|-------|
+| Mean pool (baseline) | 0 | 4.6 | 35.9% | Current |
+| Attention pool | 769 | ~5 | 50-60%? | Learns importance |
+| Full CNN (768→768) | 3.5M | ~15 | 70-80%? | May recover context |
+| Light CNN (768→256→768) | 980K | ~8 | 65-75%? | Balance |
+
+### Success Criteria
+
+- **Minimum**: Recover to 70% accuracy (halve the gap to BEATs 84%)
+- **Target**: Reach 80% accuracy with <10ms inference
+- **Stretch**: Match BEATs 84% accuracy
+
+### Comparison to Full BEATs
+
+| Aspect | Full BEATs | Static + Attention | Static + CNN |
+|--------|------------|-------------------|--------------|
+| Accuracy | 84% | 50-60%? | 70-80%? |
+| Inference (ms) | 150 | ~5 | ~15 |
+| Speedup | 1x | 30x | 10x |
+| Parameters | 90M | 769 | 980K-3.5M |
+| Trainable | 0 (frozen) | pooler only | pooler only |
+
+### Implementation Plan
+
+1. Create `ContextualPooler` base class with `forward(embeddings) → pooled`
+2. Implement `AttentionPooler(ContextualPooler)`
+3. Implement `CNN1DPooler(ContextualPooler)`
+4. Modify `StaticEmbeddingsPipelineFAISS` to accept optional pooler
+5. Create training script for ESC-50 with pooler
+6. Run 5-fold CV for each pooler variant
+7. Benchmark inference speed for each variant
