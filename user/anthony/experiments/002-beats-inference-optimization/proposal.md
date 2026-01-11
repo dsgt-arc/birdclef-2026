@@ -1,6 +1,6 @@
 # Proposal: BEATs Inference Profiling and Optimization
 
-**Status**: proposed
+**Status**: in-progress
 **Created**: 2026-01-10
 **Author**: anthony
 

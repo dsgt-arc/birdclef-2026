@@ -8,11 +8,11 @@
 - [x] 1.5 Record CPU specs (model, cores) for benchmarks
 
 ## 2. Instrumentation (Part A)
-- [ ] 2.1 Create profiling wrapper for BEATs with stage-level timing
-- [ ] 2.2 Implement timing for: fbank, patch_embed, layer_norm, proj, transformer, pool
-- [ ] 2.3 Add memory tracking (peak GPU/RAM)
-- [ ] 2.4 Implement warmup + N iterations benchmark protocol
-- [ ] 2.5 Validate profiling overhead is <5%
+- [x] 2.1 Create profiling wrapper for BEATs with stage-level timing
+- [x] 2.2 Implement timing for: fbank, patch_embed, layer_norm, proj, transformer, pool
+- [x] 2.3 Add memory tracking (peak GPU/RAM)
+- [x] 2.4 Implement warmup + N iterations benchmark protocol
+- [ ] 2.5 Validate profiling overhead is <5% (requires GPU job)
 
 ## 3. PyTorch Benchmarks (Part B)
 - [ ] 3.1 GPU benchmarks: batch sizes 1, 4, 16, 32, 64
