@@ -25,6 +25,118 @@ from tqdm import tqdm
 # Lazy import sklearn to avoid slow import times
 PCA = None
 
+
+# =============================================================================
+# Part G: Contextual Poolers (Recovery from Context Collapse)
+# =============================================================================
+
+
+class AttentionPooler(nn.Module):
+    """Attention-based pooling over patch embeddings.
+
+    Learns which patches are most important for classification.
+    Very lightweight: only 769 parameters.
+
+    Architecture:
+        embeddings[batch, seq, dim] → Linear(dim, 1) → Softmax → Weighted Sum → [batch, dim]
+    """
+
+    def __init__(self, embed_dim: int = 768):
+        super().__init__()
+        self.attention = nn.Linear(embed_dim, 1)
+
+    def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            embeddings: (batch, seq_len, embed_dim)
+
+        Returns:
+            pooled: (batch, embed_dim)
+        """
+        # Compute attention weights
+        attn_logits = self.attention(embeddings)  # (batch, seq, 1)
+        attn_weights = torch.softmax(attn_logits, dim=1)  # (batch, seq, 1)
+
+        # Weighted sum
+        pooled = (embeddings * attn_weights).sum(dim=1)  # (batch, embed_dim)
+        return pooled
+
+
+class CNN1DPooler(nn.Module):
+    """1D CNN pooling over patch embeddings.
+
+    Captures local patterns in the patch sequence using convolutional layers.
+    More expressive but heavier: ~3.5M parameters.
+
+    Architecture:
+        embeddings[batch, seq, dim] → Conv1d → Conv1d → GlobalAvgPool → [batch, dim]
+    """
+
+    def __init__(self, embed_dim: int = 768, hidden_dim: int = 768, kernel_size: int = 3):
+        super().__init__()
+        self.conv1 = nn.Conv1d(embed_dim, hidden_dim, kernel_size, padding=kernel_size // 2)
+        self.bn1 = nn.BatchNorm1d(hidden_dim)
+        self.conv2 = nn.Conv1d(hidden_dim, embed_dim, kernel_size, padding=kernel_size // 2)
+        self.bn2 = nn.BatchNorm1d(embed_dim)
+        self.relu = nn.ReLU()
+
+    def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            embeddings: (batch, seq_len, embed_dim)
+
+        Returns:
+            pooled: (batch, embed_dim)
+        """
+        # Transpose for Conv1d: (batch, embed_dim, seq_len)
+        x = embeddings.transpose(1, 2)
+
+        # Conv layers
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.relu(self.bn2(self.conv2(x)))
+
+        # Global average pooling
+        pooled = x.mean(dim=2)  # (batch, embed_dim)
+        return pooled
+
+
+class LightCNN1DPooler(nn.Module):
+    """Lightweight 1D CNN with bottleneck architecture.
+
+    Balances expressivity and efficiency: ~980K parameters.
+
+    Architecture:
+        embeddings[batch, seq, 768] → Conv(768→256) → Conv(256→256) → Conv(256→768) → Pool
+    """
+
+    def __init__(self, embed_dim: int = 768, bottleneck_dim: int = 256, kernel_size: int = 3):
+        super().__init__()
+        self.project = nn.Conv1d(embed_dim, bottleneck_dim, kernel_size, padding=kernel_size // 2)
+        self.conv = nn.Conv1d(bottleneck_dim, bottleneck_dim, kernel_size, padding=kernel_size // 2)
+        self.expand = nn.Conv1d(bottleneck_dim, embed_dim, 1)
+        self.relu = nn.ReLU()
+
+    def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            embeddings: (batch, seq_len, embed_dim)
+
+        Returns:
+            pooled: (batch, embed_dim)
+        """
+        # Transpose for Conv1d: (batch, embed_dim, seq_len)
+        x = embeddings.transpose(1, 2)
+
+        # Bottleneck layers
+        x = self.relu(self.project(x))
+        x = self.relu(self.conv(x))
+        x = self.expand(x)
+
+        # Global average pooling
+        pooled = x.mean(dim=2)  # (batch, embed_dim)
+        return pooled
+
+
 # Add vendor path for BEATs imports
 VENDOR_PATH = Path(__file__).parents[4] / "vendor" / "unilm" / "beats"
 if str(VENDOR_PATH) not in sys.path:
