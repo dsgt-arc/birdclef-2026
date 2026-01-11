@@ -297,4 +297,88 @@ The 100x target was overly optimistic. The 32x speedup comes from:
 
 ## Part F: ESC-50 Accuracy Evaluation
 
-*In progress...*
+**Date**: 2026-01-11
+**Hardware**: Intel Xeon Gold 6226 CPU (4 threads)
+
+### Results
+
+| Method | Mean Accuracy | Time (s) | Speedup | Accuracy Drop |
+|--------|---------------|----------|---------|---------------|
+| Full BEATs | **84.0%** | 1503 | 1x | baseline |
+| Static FAISS 768d | 35.9% | 90 | 17x | **-48.1%** |
+| Static FAISS 768d + SIF | 35.7% | 95 | 16x | -48.3% |
+| Static FAISS 256d + SIF | 43.9% | 90 | 17x | -40.1% |
+
+### Per-Fold Accuracies
+
+| Method | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 | Mean |
+|--------|--------|--------|--------|--------|--------|------|
+| Full BEATs | 82.5% | 83.8% | 84.3% | 87.0% | 82.5% | 84.0% |
+| Static FAISS 768d | 39.8% | 35.3% | 32.0% | 37.3% | 35.3% | 35.9% |
+| Static FAISS 256d + SIF | 47.0% | 46.8% | 38.0% | 45.8% | 42.0% | 43.9% |
+
+### Analysis: Why Static Embeddings Failed
+
+The static embeddings approach lost **48% accuracy** - essentially performing at random chance level (50 classes → 2% random, we got 36%).
+
+**Root Cause: Single-Patch Context Collapse**
+
+The model2vec approach computes static embeddings by passing each codebook centroid through the transformer **one patch at a time**:
+
+```python
+# Each codebook entry treated as single-patch sequence
+batch = codebook[start:end].unsqueeze(1)  # (batch, 1, 768)
+x, _ = encoder.encoder(batch, padding_mask=None)
+```
+
+This destroys the contextual relationships that BEATs relies on:
+1. BEATs transformer uses **self-attention across 248 patches** per audio clip
+2. Each patch's representation depends on relationships with other patches
+3. Single-patch processing removes this cross-patch context entirely
+
+**Why 256d PCA performed slightly better (43.9% vs 35.9%)**:
+- PCA removes noise and keeps principal components
+- May have accidentally preserved some useful signal
+- Still far below acceptable accuracy
+
+### Hypothesis Verdict
+
+**Original hypothesis**: "100x speedup with <5% accuracy drop"
+
+**Result**: **REJECTED**
+- Speedup achieved: 32x ✓
+- Accuracy drop: **48%** ✗ (target was <5%)
+
+The static embeddings approach fundamentally cannot preserve the contextual information that BEATs relies on for classification.
+
+### Alternative Approaches to Consider
+
+1. **Knowledge Distillation**: Train a smaller student model to mimic BEATs outputs
+2. **ONNX GPU**: Use ONNX on GPU for 2-3x speedup without accuracy loss
+3. **Quantization**: INT8 quantization of the full model
+4. **Pruning**: Structured pruning to remove transformer attention heads
+
+### Artifacts
+
+- Results JSON: `~/scratch/birdclef-2026/outputs/exp002-benchmarks/static_accuracy_results.json`
+- Evaluation script: `sbatch/run-accuracy-eval.sbatch`
+
+---
+
+## Conclusions
+
+### What Worked
+1. **FAISS quantization**: 32x speedup over BEATs CPU for inference
+2. **ONNX frontend**: 3.5x speedup for feature extraction
+3. **cdist optimization**: Fixed 776MB memory bottleneck
+
+### What Failed
+1. **Static embeddings accuracy**: 48% accuracy drop is unacceptable
+2. **Model2vec for transformers**: Context collapse when processing single patches
+
+### Recommendations
+
+For BirdCLEF deployment:
+1. **Use GPU if available**: Full BEATs at 367 samples/sec
+2. **If CPU-only**: Consider knowledge distillation or model quantization instead of static embeddings
+3. **This approach is not viable** for accuracy-sensitive applications
