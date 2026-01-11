@@ -44,6 +44,7 @@ from birdclef.static_embeddings import (
     AttentionPooler,
     CNN1DPooler,
     LightCNN1DPooler,
+    CNNAttentionPooler,
 )
 
 # Paths
@@ -265,10 +266,12 @@ print(f"  embed_dim={pipeline.embed_dim}")
 results = {}
 
 # Pooler configurations to test
+# All CNN poolers now have: residual connections, LayerNorm, kernel=5, GELU
 pooler_configs = [
     ("AttentionPooler", AttentionPooler, {"embed_dim": 768}),
     ("LightCNN1DPooler", LightCNN1DPooler, {"embed_dim": 768, "bottleneck_dim": 256}),
     ("CNN1DPooler", CNN1DPooler, {"embed_dim": 768, "hidden_dim": 768}),
+    ("CNNAttentionPooler", CNNAttentionPooler, {"embed_dim": 768, "bottleneck_dim": 256}),
 ]
 
 for name, pooler_class, pooler_kwargs in pooler_configs:

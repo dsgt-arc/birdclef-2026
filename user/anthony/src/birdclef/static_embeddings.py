@@ -63,22 +63,26 @@ class AttentionPooler(nn.Module):
 
 
 class CNN1DPooler(nn.Module):
-    """1D CNN pooling over patch embeddings.
+    """1D CNN pooling over patch embeddings with residual connection.
 
     Captures local patterns in the patch sequence using convolutional layers.
+    Residual connection lets CNN focus on learning temporal context (the delta).
+    LayerNorm stabilizes the residual + CNN feature mix.
+    Kernel size 5 captures ~100-125ms motifs (good for bird trills).
     More expressive but heavier: ~3.5M parameters.
 
     Architecture:
-        embeddings[batch, seq, dim] → Conv1d → Conv1d → GlobalAvgPool → [batch, dim]
+        embeddings[batch, seq, dim] → Conv1d → Conv1d → + embeddings → LayerNorm → GlobalAvgPool
     """
 
-    def __init__(self, embed_dim: int = 768, hidden_dim: int = 768, kernel_size: int = 3):
+    def __init__(self, embed_dim: int = 768, hidden_dim: int = 768, kernel_size: int = 5):
         super().__init__()
         self.conv1 = nn.Conv1d(embed_dim, hidden_dim, kernel_size, padding=kernel_size // 2)
         self.bn1 = nn.BatchNorm1d(hidden_dim)
         self.conv2 = nn.Conv1d(hidden_dim, embed_dim, kernel_size, padding=kernel_size // 2)
         self.bn2 = nn.BatchNorm1d(embed_dim)
-        self.relu = nn.ReLU()
+        self.layer_norm = nn.LayerNorm(embed_dim)
+        self.gelu = nn.GELU()
 
     def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
         """
@@ -91,30 +95,42 @@ class CNN1DPooler(nn.Module):
         # Transpose for Conv1d: (batch, embed_dim, seq_len)
         x = embeddings.transpose(1, 2)
 
-        # Conv layers
-        x = self.relu(self.bn1(self.conv1(x)))
-        x = self.relu(self.bn2(self.conv2(x)))
+        # Conv layers - learn temporal context (the delta)
+        cnn_out = self.gelu(self.bn1(self.conv1(x)))
+        cnn_out = self.gelu(self.bn2(self.conv2(cnn_out)))
+
+        # Residual connection: keep base features, add learned temporal context
+        x = x + cnn_out
+
+        # Transpose back and apply LayerNorm to stabilize
+        x = x.transpose(1, 2)  # (batch, seq_len, embed_dim)
+        x = self.layer_norm(x)
 
         # Global average pooling
-        pooled = x.mean(dim=2)  # (batch, embed_dim)
+        pooled = x.mean(dim=1)  # (batch, embed_dim)
         return pooled
 
 
 class LightCNN1DPooler(nn.Module):
-    """Lightweight 1D CNN with bottleneck architecture.
+    """Lightweight 1D CNN with bottleneck architecture and residual connection.
 
     Balances expressivity and efficiency: ~980K parameters.
+    Residual connection lets CNN focus on learning temporal context (the delta).
+    LayerNorm stabilizes the residual + CNN feature mix.
+    Kernel size 5 captures ~100-125ms motifs (good for bird trills).
 
     Architecture:
-        embeddings[batch, seq, 768] → Conv(768→256) → Conv(256→256) → Conv(256→768) → Pool
+        embeddings[batch, seq, 768] → Conv(768→256) → Conv(256→256) → Conv(256→768)
+        → + embeddings → LayerNorm → Pool
     """
 
-    def __init__(self, embed_dim: int = 768, bottleneck_dim: int = 256, kernel_size: int = 3):
+    def __init__(self, embed_dim: int = 768, bottleneck_dim: int = 256, kernel_size: int = 5):
         super().__init__()
         self.project = nn.Conv1d(embed_dim, bottleneck_dim, kernel_size, padding=kernel_size // 2)
         self.conv = nn.Conv1d(bottleneck_dim, bottleneck_dim, kernel_size, padding=kernel_size // 2)
         self.expand = nn.Conv1d(bottleneck_dim, embed_dim, 1)
-        self.relu = nn.ReLU()
+        self.layer_norm = nn.LayerNorm(embed_dim)
+        self.gelu = nn.GELU()
 
     def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
         """
@@ -127,13 +143,85 @@ class LightCNN1DPooler(nn.Module):
         # Transpose for Conv1d: (batch, embed_dim, seq_len)
         x = embeddings.transpose(1, 2)
 
-        # Bottleneck layers
-        x = self.relu(self.project(x))
-        x = self.relu(self.conv(x))
-        x = self.expand(x)
+        # Bottleneck layers - learn temporal context (the delta)
+        cnn_out = self.gelu(self.project(x))
+        cnn_out = self.gelu(self.conv(cnn_out))
+        cnn_out = self.expand(cnn_out)
+
+        # Residual connection: keep base features, add learned temporal context
+        x = x + cnn_out
+
+        # Transpose back and apply LayerNorm to stabilize
+        x = x.transpose(1, 2)  # (batch, seq_len, embed_dim)
+        x = self.layer_norm(x)
 
         # Global average pooling
-        pooled = x.mean(dim=2)  # (batch, embed_dim)
+        pooled = x.mean(dim=1)  # (batch, embed_dim)
+        return pooled
+
+
+class CNNAttentionPooler(nn.Module):
+    """Hybrid 1D CNN + Attention pooler with residual connection.
+
+    Combines CNN for local pattern learning with attention for weighted aggregation.
+    CNN layers capture local temporal patterns across neighboring patches, then
+    attention learns which processed patches are most important for classification.
+
+    The residual connection lets the CNN focus on learning what's *missing* from
+    the static embeddings (temporal context) rather than relearning base features.
+    LayerNorm stabilizes the residual + CNN feature mix before attention.
+    Kernel size 5 captures ~100-125ms motifs (good for bird trills).
+
+    Architecture:
+        embeddings[batch, seq, 768]
+        → Conv(768→256) → Conv(256→256) → Conv(256→768)  # Local patterns
+        → + embeddings (residual) → LayerNorm             # Keep base features
+        → Linear(768→1) → Softmax → Weighted Sum          # Attention pooling
+
+    Parameters: ~988K (similar to LightCNN1DPooler + 769 for attention)
+    """
+
+    def __init__(self, embed_dim: int = 768, bottleneck_dim: int = 256, kernel_size: int = 5):
+        super().__init__()
+        # CNN layers (same as LightCNN1DPooler)
+        self.project = nn.Conv1d(embed_dim, bottleneck_dim, kernel_size, padding=kernel_size // 2)
+        self.conv = nn.Conv1d(bottleneck_dim, bottleneck_dim, kernel_size, padding=kernel_size // 2)
+        self.expand = nn.Conv1d(bottleneck_dim, embed_dim, 1)
+        self.layer_norm = nn.LayerNorm(embed_dim)
+        self.gelu = nn.GELU()
+
+        # Attention layer
+        self.attention = nn.Linear(embed_dim, 1)
+
+    def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            embeddings: (batch, seq_len, embed_dim)
+
+        Returns:
+            pooled: (batch, embed_dim)
+        """
+        # Transpose for Conv1d: (batch, embed_dim, seq_len)
+        x = embeddings.transpose(1, 2)
+
+        # CNN bottleneck layers - learn temporal context (the delta)
+        cnn_out = self.gelu(self.project(x))
+        cnn_out = self.gelu(self.conv(cnn_out))
+        cnn_out = self.expand(cnn_out)
+
+        # Residual connection: keep base features, add learned temporal context
+        x = x + cnn_out
+
+        # Transpose back and apply LayerNorm to stabilize
+        x = x.transpose(1, 2)  # (batch, seq_len, embed_dim)
+        x = self.layer_norm(x)
+
+        # Attention pooling - learn which patches are important
+        attn_logits = self.attention(x)  # (batch, seq, 1)
+        attn_weights = torch.softmax(attn_logits, dim=1)  # (batch, seq, 1)
+
+        # Weighted sum
+        pooled = (x * attn_weights).sum(dim=1)  # (batch, embed_dim)
         return pooled
 
 

@@ -55,17 +55,24 @@ classifier = StaticModelForClassification.from_pretrained("minishlab/potion-base
 classifier.fit(texts, labels)
 ```
 
+## Bioacoustics Adaptation (BEATs)
+
+In our implementation (`user/anthony/src/birdclef/static_embeddings.py`), we adapted Model2Vec for the BEATs transformer by:
+1. **Vocabulary Generation**: Using the BEATs discrete tokenizer to define a 1,024-token "audio vocabulary."
+2. **Codebook Construction**: Averaging patch embeddings (pre-transformer) from the ESC-50 dataset for each token ID.
+3. **Distillation**: Passing each centroid through the BEATs transformer as a single-patch sequence to create context-independent embeddings.
+
+### Key Findings & Limitations
+
+Our Experiment 002 revealed a significant limitation when applying this to bioacoustics:
+
+- **Performance**: Achieved **32x speedup** on CPU using FAISS for quantization.
+- **Accuracy Collapse**: Accuracy dropped from **84% to 36%** on ESC-50.
+- **Context Collapse**: Unlike natural language, where words carry significant independent meaning, bioacoustic "tokens" are highly context-dependent. Passing single patches through a transformer destroys the self-attention mechanism's ability to model temporal shifts (e.g., pitch modulation).
+
+### Mitigation: Context Recovery
+
+To address this, we are moving beyond the standard Model2Vec "bag-of-features" pooling and employing lightweight sequence models.
+- **Reference**: [Concept: Context Recovery](../concepts/context-recovery.md)
+
 ## Dependencies
-
-- Base: numpy only
-- Distillation: `pip install model2vec[distill]`
-- Training: `pip install model2vec[train]`
-
-## Notes
-
-- Distillation takes ~30 seconds on CPU, no dataset required
-- Key insight: static token embeddings + mean pooling approximate transformer behavior
-- Supports BPE and Unigram tokenizers
-- Quantization to int8 reduces size by 50% without performance loss
-- Integrated with Sentence Transformers and LangChain
-- For audio: would adapt by creating token vocabulary from audio codebook

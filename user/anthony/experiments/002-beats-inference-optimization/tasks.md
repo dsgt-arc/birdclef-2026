@@ -61,17 +61,18 @@
 ## 7. Contextual Pooling (Part G) - Recovery from Context Collapse
 
 ### 7.1 Implementation
-- [ ] 7.1.1 Create `ContextualPooler` base class in static_embeddings.py
-- [ ] 7.1.2 Implement `AttentionPooler`: Linear(768→1) → Softmax → Weighted Sum
-- [ ] 7.1.3 Implement `CNN1DPooler`: Conv1d layers with global pooling
-- [ ] 7.1.4 Implement `LightCNN1DPooler`: 768→256→768 bottleneck variant
-- [ ] 7.1.5 Add pooler support to `StaticEmbeddingsPipelineFAISS`
+- [x] 7.1.1 Implement `AttentionPooler`: Linear(768→1) → Softmax → Weighted Sum
+- [x] 7.1.2 Implement `CNN1DPooler`: Conv1d layers with global pooling
+- [x] 7.1.3 Implement `LightCNN1DPooler`: 768→256→768 bottleneck variant
+- [x] 7.1.4 Implement `CNNAttentionPooler`: CNN + Attention hybrid
+- [x] 7.1.5 Add pooler support to `StaticEmbeddingsPipelineFAISS`
 
 ### 7.2 Training
-- [ ] 7.2.1 Create training script for contextual poolers on ESC-50
-- [ ] 7.2.2 Train AttentionPooler with 5-fold CV
-- [ ] 7.2.3 Train CNN1DPooler with 5-fold CV
-- [ ] 7.2.4 Train LightCNN1DPooler with 5-fold CV
+- [x] 7.2.1 Create training script for contextual poolers on ESC-50
+- [x] 7.2.2 Train AttentionPooler with 5-fold CV (38.9% accuracy)
+- [ ] 7.2.3 Train CNN1DPooler with 5-fold CV (job running)
+- [ ] 7.2.4 Train LightCNN1DPooler with 5-fold CV (job running)
+- [ ] 7.2.5 Train CNNAttentionPooler (hybrid) with 5-fold CV
 
 ### 7.3 Evaluation
 - [ ] 7.3.1 Benchmark inference speed for each pooler variant
