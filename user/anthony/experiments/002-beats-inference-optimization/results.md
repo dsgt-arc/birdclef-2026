@@ -203,71 +203,98 @@ Highly skewed Zipf-like distribution:
 **Date**: 2026-01-11
 **Hardware**: Intel Xeon Gold 6226 CPU (4 threads)
 
-### Benchmark Results
+### Initial Results: Naive Quantization (BROKEN)
 
 | Method | Batch 1 (ms) | Throughput (samples/sec) |
 |--------|--------------|--------------------------|
 | Full BEATs (PyTorch) | 147.14 | 6.8 |
-| Static 768d | 392.43 | 2.5 |
-| Static 768d + SIF | 396.15 | 2.5 |
-| Static 256d + SIF | 392.85 | 2.5 |
+| Static (naive) | 392.43 | 2.5 |
 
-### Unexpected Finding: Static Pipeline is SLOWER
+**Problem**: Static embeddings was 2.7x SLOWER than full BEATs due to naive L2 distance computation creating 776 MB intermediate tensors per sample.
 
-**Static embeddings is 2.7x SLOWER than full BEATs on CPU.**
+### Fix 1: scipy cdist
 
-This contradicts our hypothesis from Part B that replacing the transformer (98% of time) would yield 50-100x speedup.
+Replaced naive broadcasting with `scipy.spatial.distance.cdist`:
 
-### Root Cause Analysis
+| Method | Batch 1 (ms) | Throughput | vs BEATs |
+|--------|--------------|------------|----------|
+| Full BEATs CPU | 149.9 | 6.7/sec | baseline |
+| cdist 768d | 84.1 | 11.9/sec | **1.8x** |
 
-The bottleneck is the **quantize_patches** function, not the transformer replacement:
+**Result**: Fixed the regression, now 1.8x faster than BEATs. But cdist is still the bottleneck (~84ms of 85ms total).
 
-```python
-# Naive L2 distance computation via broadcasting
-patches_expanded = patches[:, :, np.newaxis, :]      # (batch, 248, 1, 768)
-codebook_expanded = codebook[np.newaxis, np.newaxis, :, :]  # (1, 1, 1024, 768)
-distances = np.sum((patches_expanded - codebook_expanded) ** 2, axis=-1)
-```
+### Fix 2: FAISS IndexFlatL2
 
-For each sample, this creates:
-- Intermediate tensor: (248, 1024, 768) = **776 MB**
-- 248 × 1024 = 253,952 pairwise L2 distances to compute
-- Each distance requires 768 element-wise operations
+Replaced cdist with FAISS for SIMD-optimized nearest neighbor search:
 
-**Estimated breakdown for batch=1**:
-| Stage | Time (ms) | Notes |
-|-------|-----------|-------|
-| ONNX frontend | ~0.65 | Fast (from Part C) |
-| Quantization | ~390 | Bottleneck! |
-| Lookup + Pool | <1 | Trivial |
+| Method | Batch 1 (ms) | Throughput | vs BEATs |
+|--------|--------------|------------|----------|
+| Full BEATs CPU | 149.9 | 6.7/sec | baseline |
+| cdist 768d | 84.1 | 11.9/sec | 1.8x |
+| **FAISS 768d** | **4.6** | **217/sec** | **32.5x** |
 
-### Optimization Opportunities
+### Final Benchmark Results
 
-1. **Use efficient nearest neighbor search**:
-   - `scipy.spatial.distance.cdist` with 'sqeuclidean'
-   - `sklearn.neighbors.NearestNeighbors` with ball_tree/kd_tree
-   - FAISS for GPU-accelerated or approximate NN
+**Speedup vs Full BEATs CPU (higher is better):**
 
-2. **Precompute codebook norms**:
-   - ||a-b||² = ||a||² + ||b||² - 2a·b
-   - Codebook norms computed once, patches norms are cheap
-   - Matrix multiply a @ b.T is highly optimized
+| Method | Batch 1 | Batch 4 | Batch 16 | Batch 32 |
+|--------|---------|---------|----------|----------|
+| cdist 768d | 1.8x | 1.5x | 1.5x | 1.6x |
+| cdist 768d + SIF | 1.7x | 1.5x | 1.5x | 1.6x |
+| cdist 256d + SIF | 1.7x | 1.5x | 1.5x | 1.6x |
+| **FAISS 768d** | **32.5x** | **31.2x** | **30.2x** | **30.9x** |
+| **FAISS 768d + SIF** | **33.0x** | **29.7x** | **29.0x** | **29.3x** |
 
-3. **Product quantization (PQ)**:
-   - Split 768-dim into 8 subspaces of 96-dim
-   - Quantize each subspace independently
-   - Much smaller codebooks (256 codes × 8 subspaces = 2048 total)
+**Raw timings (ms):**
 
-### Next Steps
+| Method | Batch 1 | Batch 4 | Batch 16 | Batch 32 |
+|--------|---------|---------|----------|----------|
+| Full BEATs CPU | 149.9 | 514.6 | 2051.6 | 4423.5 |
+| cdist 768d | 84.1 | 335.6 | 1357.0 | 2728.3 |
+| FAISS 768d | 4.6 | 16.5 | 68.0 | 143.2 |
 
-Before proceeding to ESC-50 evaluation, the quantization must be optimized.
-Priority fix: Replace naive broadcasting with efficient matrix operations.
+**Throughput (samples/sec):**
+
+| Method | Batch 1 | Batch 4 | Batch 16 | Batch 32 |
+|--------|---------|---------|----------|----------|
+| Full BEATs CPU | 6.7 | 7.8 | 7.8 | 7.2 |
+| cdist 768d | 11.9 | 11.9 | 11.8 | 11.7 |
+| **FAISS 768d** | **217.0** | **242.6** | **235.4** | **223.5** |
+
+### Why FAISS is 18x Faster than cdist
+
+1. **SIMD vectorization**: Uses AVX2/AVX-512 for parallel distance computation
+2. **Optimized memory access**: Cache-friendly access patterns
+3. **Purpose-built**: Specifically designed for nearest neighbor search
+
+### Key Findings
+
+1. **FAISS achieves 32x speedup** over full BEATs on CPU
+2. **217 samples/sec** on CPU approaches GPU speed (367 samples/sec)
+3. **Practical implications**:
+   - 100k audio files: BEATs CPU ~4 hours → FAISS static ~8 minutes
+   - No GPU required for fast inference
+
+### Hypothesis Validation
+
+Original hypothesis: "100x speedup with <5% accuracy drop"
+
+- **Speedup achieved**: 32x (not 100x, but significant)
+- **Accuracy**: Pending ESC-50 evaluation
+
+The 100x target was overly optimistic. The 32x speedup comes from:
+- Eliminating transformer (98% of CPU time)
+- FAISS SIMD-optimized quantization
 
 ### Artifacts
 
 - Benchmark results: `~/scratch/birdclef-2026/outputs/exp002-benchmarks/static_inference_benchmarks.json`
-- Pipeline implementation: `user/anthony/src/birdclef/static_embeddings.py`
+- Pipeline implementations: `user/anthony/src/birdclef/static_embeddings.py`
+  - `StaticEmbeddingsPipeline` (cdist-based)
+  - `StaticEmbeddingsPipelineFAISS` (FAISS-based)
 
-## Part F: Analysis
+---
 
-*Pending...*
+## Part F: ESC-50 Accuracy Evaluation
+
+*In progress...*
