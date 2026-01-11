@@ -29,18 +29,23 @@
 - [x] 4.6 Record latency and throughput
 
 ## 5. Static Embeddings - Distillation (Part D)
-- [ ] 5.1 Load BEATs Tokenizer (Tokenizers_iter3.pt)
-- [ ] 5.2 For each audio in ESC-50 corpus:
-  - [ ] 5.2a Extract 768-dim patch embeddings (Encoder frontend, before transformer)
-  - [ ] 5.2b Extract discrete token IDs (Tokenizer full pipeline)
-  - [ ] 5.2c Store (patch_embedding, token_id) pairs
-- [ ] 5.3 Analyze token distribution (how many patches per token ID?)
-- [ ] 5.4 Build codebook: average patch embeddings per token ID → (1024 × 768)
-- [ ] 5.5 Compute static embeddings: pass each centroid through Encoder transformer (single-patch)
-- [ ] 5.6 Save artifacts:
-  - [ ] codebook.npy (1024 × 768)
-  - [ ] embeddings.npy (1024 × 768)
-  - [ ] token_counts.json
+- [x] 5.1 Load BEATs Tokenizer (Tokenizers_iter3.pt)
+- [x] 5.2 For each audio in ESC-50 corpus:
+  - [x] 5.2a Extract 768-dim patch embeddings (Encoder frontend, before transformer)
+  - [x] 5.2b Extract discrete token IDs (Tokenizer full pipeline)
+  - [x] 5.2c Store (patch_embedding, token_id) pairs
+- [x] 5.3 Analyze token distribution (932/1024 tokens used, highly skewed)
+- [x] 5.4 Build codebook: average patch embeddings per token ID → (1024 × 768)
+- [x] 5.5 Compute static embeddings: pass each centroid through Encoder transformer (single-patch)
+- [x] 5.6 Apply model2vec enhancements:
+  - [x] PCA dimensionality reduction (768 → 256, 98.5% variance)
+  - [x] SIF weighting (downweight common tokens)
+- [x] 5.7 Save artifacts:
+  - [x] codebook.npy (1024 × 768)
+  - [x] static_embeddings.npy (1024 × 768)
+  - [x] static_embeddings_pca.npy (1024 × 256)
+  - [x] sif_weights.npy (1024,)
+  - [x] token_stats.json
 
 ## 6. Static Embeddings - Inference (Part E)
 - [ ] 6.1 Implement quantization: patch → nearest codebook centroid (L2 distance)

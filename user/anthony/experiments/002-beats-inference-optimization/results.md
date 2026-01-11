@@ -141,7 +141,62 @@ Both models exported with dynamic batch size and sequence length axes using lega
 
 ## Part D: Static Embeddings Distillation
 
-*Pending...*
+**Date**: 2026-01-10
+**Dataset**: ESC-50 (2000 samples, 5 seconds each)
+
+### Extraction Summary
+
+| Metric | Value |
+|--------|-------|
+| Total patches extracted | 496,000 |
+| Patches per sample | 248 |
+| Token vocabulary size | 1,024 |
+| Tokens used in ESC-50 | 932 (91%) |
+| Unused tokens | 92 |
+
+### Token Distribution
+
+Highly skewed Zipf-like distribution:
+
+| Percentile | Patches per Token |
+|------------|-------------------|
+| 10th | 158 |
+| 25th | 247 |
+| 50th (median) | 387 |
+| 75th | 609 |
+| 90th | 862 |
+| 99th | 1,914 |
+| Max (Token 172) | 50,997 |
+
+**Token 172 dominates**: 10.3% of all patches map to a single token. This validates the need for SIF weighting.
+
+### Model2Vec Enhancements
+
+1. **PCA Dimensionality Reduction**
+   - Input: 768 dimensions
+   - Output: 256 dimensions
+   - Explained variance: **98.5%** (excellent retention)
+   - Whitening: enabled
+
+2. **SIF (Smooth Inverse Frequency) Weighting**
+   - Weight range: [0.0096, 0.9802]
+   - Formula: w = a / (a + p) where a=1e-3
+   - Heavily downweights Token 172 (0.0096 weight vs 0.98 for rare tokens)
+
+### Artifacts Saved
+
+| File | Shape | Description |
+|------|-------|-------------|
+| codebook.npy | (1024, 768) | Averaged patch embeddings per token |
+| static_embeddings.npy | (1024, 768) | Transformer-processed centroids |
+| static_embeddings_pca.npy | (1024, 256) | PCA-reduced embeddings |
+| sif_weights.npy | (1024,) | SIF weights per token |
+| pca_model.pkl | - | Fitted sklearn PCA model |
+| token_stats.json | - | Distribution statistics |
+
+**Location**: `~/scratch/birdclef-2026/outputs/exp002-benchmarks/static_embeddings/`
+
+---
 
 ## Part E: Static Embeddings Inference
 
