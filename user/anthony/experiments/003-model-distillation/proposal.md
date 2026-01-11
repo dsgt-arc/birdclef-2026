@@ -53,7 +53,7 @@ We will implement a Teacher-Student distillation pipeline on AudioSet:
     *   **Mamba**: State Space Model (linear complexity), ~1-3M params.
     *   **MLP-Mixer**: All-MLP architecture with token and channel mixing.
     *   **CNN-Pooler**: Scaled-up version of Exp 002's LightCNN (residual 1D CNNs).
-    *   **TinyTransformer**: 2 layers, 256-dim, 4 heads.
+    *   **TinyTransformer / EAT-Student**: 2 layers, 256-dim, 4 heads. Will explore EAT-style sparse training (masking 70% of tokens) to accelerate training and force global context learning.
 4.  **Distillation Training**:
     *   Loss: MSE / Cosine Similarity between Student(TokenEmbeddings) and Teacher(Embeddings).
     *   Optimizer: AdamW.
