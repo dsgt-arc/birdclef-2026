@@ -33,9 +33,9 @@
 - [x] 5.1 Document LoRA approach (docs/concepts/lora-finetuning-audio.md)
 - [x] 5.2 Implement LoRA finetuning script (finetune_lora.py)
 - [x] 5.3 Run EAT LoRA r=8 on ESC-50 (94.6%)
-- [ ] 5.4 Run wav2vec2 LoRA r=8 on ESC-50 (job 3242824 running, fixed lr=1e-5 + grad clip)
+- [x] 5.4 Run wav2vec2 LoRA r=8 on ESC-50 (3.0% - failed, model didn't learn)
 - ~~[ ] 5.5 Run LoRA r=16 on ESC-50 (if r=8 underfits)~~ (skipped - r=8 sufficient)
-- [ ] 5.6 Compare to linear probe and published results
+- [x] 5.6 Compare to linear probe and published results
 
 ## ~~6. Part C: AudioSet Birds~~ (Out of Scope)
 *Removed from experiment scope - focus on ESC-50 benchmark*
@@ -44,7 +44,7 @@
 - [x] 7.1 Compile results table with accuracy/mAP/inference time
 - [x] 7.2 Analyze which encoder performs best (BEATs)
 - [x] 7.3 Document findings in results.md
-- [ ] 7.4 Update STATUS.md with conclusions
+- [x] 7.4 Update STATUS.md with conclusions
 
 ---
 
@@ -54,7 +54,7 @@
 |--------|---------|--------|-----------|--------|--------|
 | 3234438 | EAT | LoRA r=8, epochs=50, lr=1e-4 | 2026-01-10 | ✅ Completed (94.6%) | `logs/lora-finetune-3234438.out` |
 | 3234515 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-4 | 2026-01-10 | ❌ Failed (NaN loss) | `logs/lora-finetune-3234515.out` |
-| 3242824 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-5, grad_clip=1.0 | 2026-01-10 | Running | `logs/lora-finetune-3242824.out` |
+| 3242824 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-5, grad_clip=1.0 | 2026-01-10 | ❌ Failed (3.0% - no learning) | `logs/lora-finetune-3242824.out` |
 
 **Expected outputs:**
 - `~/scratch/birdclef-2026/outputs/esc50-lora/eat_lora_r8_results.json` ✅

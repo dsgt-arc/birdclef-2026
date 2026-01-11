@@ -1,13 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=beats-bench-002
-#SBATCH --account=pace-dsgt_clef2025
+#SBATCH --account=paceship-dsgt_clef2026
 #SBATCH --partition=gpu-l40s
-#SBATCH --gres=gpu:L40s:1
-#SBATCH --cpus-per-task=6
+#SBATCH --gres=gpu:L40s
+#SBATCH --cpus-per-task=4
 #SBATCH --mem-per-gpu=32G
 #SBATCH -t120 -qinferno
 #SBATCH --output=logs/pytorch-benchmarks-%j.out
 set -eu
+
+cd ${SLURM_SUBMIT_DIR:-$(dirname "$0")}
 
 echo "Running BEATs PyTorch benchmarks"
 hostname

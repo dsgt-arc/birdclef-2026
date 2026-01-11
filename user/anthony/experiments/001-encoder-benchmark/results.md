@@ -5,9 +5,9 @@
 
 ## Summary
 
-BEATs significantly outperforms other encoders for environmental sound classification using frozen features with a linear probe. EAT requires mean pooling (not CLS token) for competitive performance.
+BEATs significantly outperforms other encoders for environmental sound classification using frozen features with a linear probe. EAT requires mean pooling (not CLS token) for competitive performance. LoRA finetuning dramatically improves EAT (77.9% → 94.6%) but fails completely for wav2vec2 due to domain mismatch.
 
-**Verdict**: confirmed (BEATs is best for frozen feature extraction)
+**Verdict**: confirmed (BEATs is best for frozen features; EAT+LoRA is best for finetuning)
 
 ## Observations
 
@@ -63,6 +63,26 @@ EAT's larger gap (18%) indicates the pretrained model benefits more from task-sp
 | EAT | Mean pooling (fixed) | CLS token gave 45%, mean pooling gives 78% |
 | wav2vec2 | Mean pooling | Standard for sequence models |
 
+### Part B: LoRA Finetuning Results
+
+| Encoder | Method | Mean Accuracy | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|---------|--------|--------------|--------|--------|--------|--------|--------|
+| EAT | Linear probe | 77.9% | 76.0% | 79.0% | 75.7% | 79.7% | 79.2% |
+| EAT | LoRA r=8 | **94.6%** | 94.0% | 94.0% | 94.3% | 96.8% | 93.8% |
+| wav2vec2 | Linear probe | 48.2% | 51.0% | 45.7% | 49.0% | 50.5% | 44.7% |
+| wav2vec2 | LoRA r=8 | 3.0% | 2.0% | 1.8% | 3.3% | 3.5% | 4.5% |
+
+**Key findings:**
+- EAT LoRA improves from 77.9% → 94.6% (+16.7%), closing the gap with published results (95.9%)
+- wav2vec2 LoRA **failed completely** (3% ≈ random chance for 50 classes)
+
+**Why wav2vec2 LoRA failed (zero learning):**
+1. **Frozen conv layers**: wav2vec2's convolutional feature extractor is frozen (LoRA only adapts transformer attention). These layers encode speech-specific patterns that can't be overcome.
+2. **Domain mismatch**: wav2vec2-base-960h was pretrained on LibriSpeech (English speech) for ASR. Its representations encode phonetic/linguistic features, not environmental sound patterns.
+3. **Training dynamics**: Loss stayed flat at 3.91 (log(50) = random chance) across all 50 epochs. Not slow learning - **zero learning**. The gradients provide no useful signal.
+
+**Conclusion**: LoRA is effective when the pretrained model has relevant domain knowledge (EAT on environmental sounds). It cannot bridge large domain gaps (speech → environmental sounds).
+
 ### Confounders
 
 - **Linear probe vs finetuning**: Published results use finetuning; we use frozen features
@@ -74,9 +94,10 @@ EAT's larger gap (18%) indicates the pretrained model benefits more from task-sp
 
 | Type | Location |
 |------|----------|
-| Results JSON | `~/scratch/birdclef-2026/outputs/esc50-benchmark/*.json` |
-| GPU Stats | `sbatch/logs/gpu_stats-3234084.csv` |
-| Job Logs | `sbatch/logs/benchmark-*.out` |
+| Linear Probe Results | `artifacts/linear-probe-*.json` |
+| LoRA Results | `artifacts/lora-r8-*.json`, `artifacts/wav2vec2_lora_r8_results.json` |
+| GPU Stats | `sbatch/logs/gpu_stats-*.csv` |
+| Job Logs | `sbatch/logs/benchmark-*.out`, `sbatch/logs/lora-finetune-*.out` |
 | Checkpoints | `~/scratch/birdclef-2026/checkpoints/` |
 | Code | `user/anthony/src/birdclef/` |
 

@@ -8,14 +8,17 @@ Foundation models like BEATs/AudioMAE learn superior bioacoustic representations
 
 ## Current State
 
-**Phase**: Research & Literature Review
+**Phase**: Foundation Model Evaluation
 
-We are currently evaluating foundation models and distillation strategies. No experiments have been run yet.
+Experiment 001 (encoder benchmark) is complete. Key result: **BEATs is best for frozen features; EAT+LoRA is best for finetuning.**
 
 ## Key Findings So Far
 
 | Finding | Source | Implication |
 |---------|--------|-------------|
+| BEATs achieves 95.8% on ESC-50 (linear probe) | [Exp 001](../user/anthony/experiments/001-encoder-benchmark/results.md) | Best frozen feature extractor |
+| EAT+LoRA achieves 94.6% on ESC-50 | [Exp 001](../user/anthony/experiments/001-encoder-benchmark/results.md) | LoRA closes gap with published results |
+| wav2vec2 fails on environmental sounds | [Exp 001](../user/anthony/experiments/001-encoder-benchmark/results.md) | Speech models don't transfer to ESC |
 | EAT is 15x more efficient than BEATs | [literature.md](references/literature.md) | May be better distillation target |
 | OpenBEATs (300M) is SOTA on bioacoustics | [literature.md](references/literature.md) | Best available teacher model |
 | BirdMAE wins on BirdSet benchmark | [literature.md](references/literature.md) | Domain-specific training helps |
@@ -39,13 +42,18 @@ See [concepts/research-leads.md](concepts/research-leads.md) for full list.
 
 ## Experiments
 
-Experiments are tracked per-user in `user/<name>/experiments/`. See individual user workspaces.
+| ID | Name | Status | Result |
+|----|------|--------|--------|
+| 001 | [Encoder Benchmark](../user/anthony/experiments/001-encoder-benchmark/) | Complete | BEATs 95.8%, EAT+LoRA 94.6% |
+| 002 | [BEATs Inference Optimization](../user/anthony/experiments/002-inference-optimization/) | Proposed | - |
+
+Experiments are tracked per-user in `user/<name>/experiments/`.
 
 ## Next Steps
 
-1. Benchmark foundation models (BEATs, EAT, wav2vec2) on AudioSet bird classes
-2. Deep dive on EAT architecture
-3. Prototype distillation pipeline based on best encoder
+1. ~~Benchmark foundation models (BEATs, EAT, wav2vec2) on ESC-50~~ Done (Exp 001)
+2. Run experiment 002: Optimize BEATs inference for CPU deployment
+3. Prototype distillation pipeline: BEATs teacher → lightweight student
 
 ## Quick Links
 
