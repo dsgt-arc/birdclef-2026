@@ -12,21 +12,21 @@
 - [x] 2.2 Implement timing for: fbank, patch_embed, layer_norm, proj, transformer, pool
 - [x] 2.3 Add memory tracking (peak GPU/RAM)
 - [x] 2.4 Implement warmup + N iterations benchmark protocol
-- [ ] 2.5 Validate profiling overhead is <5% (requires GPU job)
+- [x] 2.5 Validate profiling overhead is <5% (GPU: 2.15%, CPU: 0.33%)
 
 ## 3. PyTorch Benchmarks (Part B)
-- [ ] 3.1 GPU benchmarks: batch sizes 1, 4, 16, 32, 64
-- [ ] 3.2 CPU benchmarks: batch sizes 1, 4, 16, 32
-- [ ] 3.3 Record split times per stage for each config
-- [ ] 3.4 Record peak memory for each config
+- [x] 3.1 GPU benchmarks: batch sizes 1, 4, 16, 32, 64
+- [x] 3.2 CPU benchmarks: batch sizes 1, 4, 16, 32
+- [x] 3.3 Record split times per stage for each config
+- [x] 3.4 Record peak memory for each config
 
 ## 4. ONNX Export (Part C)
-- [ ] 4.1 Export encoder frontend (fbank + patch_embed + layer_norm + proj) to ONNX
-- [ ] 4.2 Export full BEATs encoder to ONNX
-- [ ] 4.3 Handle dynamic axes (batch size, sequence length)
-- [ ] 4.4 Verify ONNX output matches PyTorch output
-- [ ] 4.5 CPU benchmarks with ONNX Runtime: batch sizes 1, 4, 16, 32
-- [ ] 4.6 Record latency and throughput
+- [x] 4.1 Export encoder frontend (fbank + patch_embed + layer_norm + proj) to ONNX
+- [x] 4.2 Export full BEATs encoder to ONNX
+- [x] 4.3 Handle dynamic axes (batch size, sequence length)
+- [x] 4.4 Verify ONNX output matches PyTorch output (frontend: max_diff=5e-6, encoder: max_diff=3e-6)
+- [x] 4.5 CPU benchmarks with ONNX Runtime: batch sizes 1, 4, 16, 32
+- [x] 4.6 Record latency and throughput
 
 ## 5. Static Embeddings - Distillation (Part D)
 - [ ] 5.1 Load BEATs Tokenizer (Tokenizers_iter3.pt)
