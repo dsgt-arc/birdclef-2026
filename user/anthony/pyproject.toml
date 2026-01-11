@@ -16,12 +16,15 @@ dependencies = [
     "omegaconf>=2.0",
     "tqdm",
     "pandas",
+    "onnxruntime>=1.17",
+    "onnx>=1.15",
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff",
     "pytest",
+    "playwright",
 ]
 
 [build-system]

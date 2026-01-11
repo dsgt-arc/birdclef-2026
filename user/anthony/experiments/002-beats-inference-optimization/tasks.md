@@ -1,11 +1,11 @@
 # Tasks
 
 ## 1. Setup
-- [ ] 1.1 Verify BEATs Encoder checkpoint is accessible (BEATs_iter3.pt)
-- [ ] 1.2 Verify BEATs Tokenizer checkpoint is accessible (Tokenizers_iter3.pt)
-- [ ] 1.3 Set up ESC-50 data loader from experiment 001
-- [ ] 1.4 Install onnxruntime dependency
-- [ ] 1.5 Record CPU specs (model, cores) for benchmarks
+- [x] 1.1 Verify BEATs Encoder checkpoint is accessible (BEATs_iter3.pt)
+- [x] 1.2 Verify BEATs Tokenizer checkpoint is accessible (Tokenizers_iter3.pt)
+- [x] 1.3 Set up ESC-50 data loader from experiment 001
+- [x] 1.4 Install onnxruntime dependency
+- [x] 1.5 Record CPU specs (model, cores) for benchmarks
 
 ## 2. Instrumentation (Part A)
 - [ ] 2.1 Create profiling wrapper for BEATs with stage-level timing
