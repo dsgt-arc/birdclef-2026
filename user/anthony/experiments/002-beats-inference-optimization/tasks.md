@@ -48,9 +48,12 @@
   - [x] token_stats.json
 
 ## 6. Static Embeddings - Inference (Part E)
-- [ ] 6.1 Implement quantization: patch → nearest codebook centroid (L2 distance)
-- [ ] 6.2 Implement fast inference pipeline: ONNX frontend → quantize → lookup → pool
-- [ ] 6.3 Benchmark static pipeline: batch sizes 1, 4, 16, 32
+- [x] 6.1 Implement quantization: patch → nearest codebook centroid (L2 distance)
+- [x] 6.2 Implement fast inference pipeline: ONNX frontend → quantize → lookup → pool
+- [x] 6.3 Benchmark static pipeline: batch sizes 1, 4, 16, 32
+  - **FINDING**: Static pipeline is ~2.7x SLOWER than full BEATs on CPU
+  - Static 768d: 392 ms (2.5 samples/sec) vs Full BEATs: 147 ms (6.8 samples/sec)
+  - Bottleneck appears to be ONNX frontend, not transformer replacement
 - [ ] 6.4 Run ESC-50 5-fold CV with static embeddings
 - [ ] 6.5 Compare accuracy vs full BEATs
 

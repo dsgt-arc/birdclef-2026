@@ -200,7 +200,73 @@ Highly skewed Zipf-like distribution:
 
 ## Part E: Static Embeddings Inference
 
-*Pending...*
+**Date**: 2026-01-11
+**Hardware**: Intel Xeon Gold 6226 CPU (4 threads)
+
+### Benchmark Results
+
+| Method | Batch 1 (ms) | Throughput (samples/sec) |
+|--------|--------------|--------------------------|
+| Full BEATs (PyTorch) | 147.14 | 6.8 |
+| Static 768d | 392.43 | 2.5 |
+| Static 768d + SIF | 396.15 | 2.5 |
+| Static 256d + SIF | 392.85 | 2.5 |
+
+### Unexpected Finding: Static Pipeline is SLOWER
+
+**Static embeddings is 2.7x SLOWER than full BEATs on CPU.**
+
+This contradicts our hypothesis from Part B that replacing the transformer (98% of time) would yield 50-100x speedup.
+
+### Root Cause Analysis
+
+The bottleneck is the **quantize_patches** function, not the transformer replacement:
+
+```python
+# Naive L2 distance computation via broadcasting
+patches_expanded = patches[:, :, np.newaxis, :]      # (batch, 248, 1, 768)
+codebook_expanded = codebook[np.newaxis, np.newaxis, :, :]  # (1, 1, 1024, 768)
+distances = np.sum((patches_expanded - codebook_expanded) ** 2, axis=-1)
+```
+
+For each sample, this creates:
+- Intermediate tensor: (248, 1024, 768) = **776 MB**
+- 248 × 1024 = 253,952 pairwise L2 distances to compute
+- Each distance requires 768 element-wise operations
+
+**Estimated breakdown for batch=1**:
+| Stage | Time (ms) | Notes |
+|-------|-----------|-------|
+| ONNX frontend | ~0.65 | Fast (from Part C) |
+| Quantization | ~390 | Bottleneck! |
+| Lookup + Pool | <1 | Trivial |
+
+### Optimization Opportunities
+
+1. **Use efficient nearest neighbor search**:
+   - `scipy.spatial.distance.cdist` with 'sqeuclidean'
+   - `sklearn.neighbors.NearestNeighbors` with ball_tree/kd_tree
+   - FAISS for GPU-accelerated or approximate NN
+
+2. **Precompute codebook norms**:
+   - ||a-b||² = ||a||² + ||b||² - 2a·b
+   - Codebook norms computed once, patches norms are cheap
+   - Matrix multiply a @ b.T is highly optimized
+
+3. **Product quantization (PQ)**:
+   - Split 768-dim into 8 subspaces of 96-dim
+   - Quantize each subspace independently
+   - Much smaller codebooks (256 codes × 8 subspaces = 2048 total)
+
+### Next Steps
+
+Before proceeding to ESC-50 evaluation, the quantization must be optimized.
+Priority fix: Replace naive broadcasting with efficient matrix operations.
+
+### Artifacts
+
+- Benchmark results: `~/scratch/birdclef-2026/outputs/exp002-benchmarks/static_inference_benchmarks.json`
+- Pipeline implementation: `user/anthony/src/birdclef/static_embeddings.py`
 
 ## Part F: Analysis
 

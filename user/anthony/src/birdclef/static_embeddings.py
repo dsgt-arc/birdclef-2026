@@ -20,8 +20,10 @@ from typing import Optional
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.decomposition import PCA
 from tqdm import tqdm
+
+# Lazy import sklearn to avoid slow import times
+PCA = None
 
 # Add vendor path for BEATs imports
 VENDOR_PATH = Path(__file__).parents[4] / "vendor" / "unilm" / "beats"
@@ -264,7 +266,7 @@ def apply_pca(
     embeddings: np.ndarray,
     n_components: int = 256,
     whiten: bool = True,
-) -> tuple[np.ndarray, PCA]:
+):
     """Apply PCA dimensionality reduction (model2vec key step).
 
     PCA serves two purposes:
@@ -279,6 +281,8 @@ def apply_pca(
     Returns:
         Tuple of (reduced_embeddings, pca_model)
     """
+    from sklearn.decomposition import PCA
+
     # Only fit on used tokens (non-zero embeddings)
     mask = np.any(embeddings != 0, axis=1)
     used_embeddings = embeddings[mask]
@@ -400,3 +404,219 @@ def save_artifacts(
     if static_embeddings_pca is not None:
         np.save(output_dir / "static_embeddings_pca.npy", static_embeddings_pca)
         print(f"  - static_embeddings_pca.npy: {static_embeddings_pca.shape}")
+
+
+# =============================================================================
+# Part E: Inference Pipeline
+# =============================================================================
+
+
+def quantize_patches(
+    patches: np.ndarray,
+    codebook: np.ndarray,
+) -> np.ndarray:
+    """Quantize patches to nearest codebook centroid (L2 distance).
+
+    Args:
+        patches: Patch embeddings (batch, num_patches, embed_dim) or (num_patches, embed_dim)
+        codebook: Codebook centroids (num_tokens, embed_dim)
+
+    Returns:
+        Token IDs (batch, num_patches) or (num_patches,)
+    """
+    # Handle both batched and unbatched inputs
+    input_shape = patches.shape
+    if patches.ndim == 2:
+        patches = patches[np.newaxis, ...]
+
+    batch_size, num_patches, embed_dim = patches.shape
+
+    # Reshape for broadcasting: (batch, num_patches, 1, embed_dim)
+    patches_expanded = patches[:, :, np.newaxis, :]
+    # Codebook: (1, 1, num_tokens, embed_dim)
+    codebook_expanded = codebook[np.newaxis, np.newaxis, :, :]
+
+    # L2 distance: (batch, num_patches, num_tokens)
+    distances = np.sum((patches_expanded - codebook_expanded) ** 2, axis=-1)
+
+    # Nearest token
+    token_ids = np.argmin(distances, axis=-1)
+
+    if len(input_shape) == 2:
+        return token_ids[0]
+    return token_ids
+
+
+class StaticEmbeddingsPipeline:
+    """Fast inference pipeline using static embeddings.
+
+    Pipeline: ONNX frontend → quantize → lookup → weighted pool
+
+    Args:
+        onnx_path: Path to ONNX frontend model
+        codebook_path: Path to codebook.npy
+        embeddings_path: Path to static_embeddings.npy or static_embeddings_pca.npy
+        weights_path: Path to sif_weights.npy (optional)
+        num_threads: Number of CPU threads for ONNX Runtime
+    """
+
+    def __init__(
+        self,
+        onnx_path: str | Path,
+        codebook_path: str | Path,
+        embeddings_path: str | Path,
+        weights_path: Optional[str | Path] = None,
+        num_threads: int = 4,
+    ):
+        import onnxruntime as ort
+
+        # Load ONNX model
+        sess_options = ort.SessionOptions()
+        sess_options.intra_op_num_threads = num_threads
+        sess_options.inter_op_num_threads = num_threads
+
+        self.session = ort.InferenceSession(
+            str(onnx_path),
+            sess_options,
+            providers=["CPUExecutionProvider"],
+        )
+        self.input_name = self.session.get_inputs()[0].name
+
+        # Load codebook and embeddings
+        self.codebook = np.load(codebook_path)
+        self.embeddings = np.load(embeddings_path)
+
+        # Load weights (optional)
+        if weights_path is not None:
+            self.weights = np.load(weights_path)
+        else:
+            self.weights = None
+
+        self.embed_dim = self.embeddings.shape[1]
+
+    def extract_fbank(self, waveform: np.ndarray) -> np.ndarray:
+        """Extract fbank features from waveform.
+
+        This is needed because ONNX frontend expects fbank, not raw audio.
+
+        Args:
+            waveform: Audio waveform (batch, samples) at 16kHz
+
+        Returns:
+            Fbank features (batch, 1, time_frames, 128)
+        """
+        import torchaudio.compliance.kaldi as ta_kaldi
+        import torch
+
+        fbank_mean = 15.41663
+        fbank_std = 6.55582
+
+        fbanks = []
+        for wav in waveform:
+            wav_tensor = torch.from_numpy(wav).unsqueeze(0) * 2**15
+            fbank = ta_kaldi.fbank(
+                wav_tensor, num_mel_bins=128, sample_frequency=16000,
+                frame_length=25, frame_shift=10
+            )
+            fbanks.append(fbank.numpy())
+
+        fbank = np.stack(fbanks, axis=0)
+        fbank = (fbank - fbank_mean) / (2 * fbank_std)
+        fbank = fbank[:, np.newaxis, :, :]  # (batch, 1, time, 128)
+
+        return fbank.astype(np.float32)
+
+    def __call__(self, fbank: np.ndarray) -> np.ndarray:
+        """Run full inference pipeline.
+
+        Args:
+            fbank: Fbank features (batch, 1, time_frames, 128)
+
+        Returns:
+            Audio embeddings (batch, embed_dim)
+        """
+        # ONNX frontend: fbank → patch embeddings
+        patches = self.session.run(None, {self.input_name: fbank})[0]
+
+        # Quantize: patches → token IDs
+        token_ids = quantize_patches(patches, self.codebook)
+
+        # Lookup: token IDs → static embeddings
+        batch_size, num_patches = token_ids.shape
+        embeddings = self.embeddings[token_ids]  # (batch, num_patches, embed_dim)
+
+        # Weighted pooling
+        if self.weights is not None:
+            weights = self.weights[token_ids]  # (batch, num_patches)
+            weights = weights / weights.sum(axis=1, keepdims=True)  # Normalize
+            output = np.sum(embeddings * weights[:, :, np.newaxis], axis=1)
+        else:
+            output = embeddings.mean(axis=1)
+
+        return output
+
+    def embed_waveform(self, waveform: np.ndarray) -> np.ndarray:
+        """Embed raw waveform (includes fbank extraction).
+
+        Args:
+            waveform: Audio waveform (batch, samples) at 16kHz
+
+        Returns:
+            Audio embeddings (batch, embed_dim)
+        """
+        fbank = self.extract_fbank(waveform)
+        return self(fbank)
+
+
+def benchmark_static_pipeline(
+    pipeline: StaticEmbeddingsPipeline,
+    batch_sizes: list[int] = [1, 4, 16, 32],
+    time_frames: int = 499,
+    warmup_iters: int = 5,
+    bench_iters: int = 20,
+) -> dict:
+    """Benchmark static embeddings pipeline.
+
+    Args:
+        pipeline: StaticEmbeddingsPipeline instance
+        batch_sizes: Batch sizes to benchmark
+        time_frames: Number of time frames (499 for 5 seconds)
+        warmup_iters: Warmup iterations
+        bench_iters: Benchmark iterations
+
+    Returns:
+        Dictionary of benchmark results
+    """
+    import time
+
+    results = {}
+
+    for batch_size in batch_sizes:
+        # Create input (fbank features)
+        test_input = np.random.randn(batch_size, 1, time_frames, 128).astype(np.float32)
+
+        # Warmup
+        for _ in range(warmup_iters):
+            _ = pipeline(test_input)
+
+        # Benchmark
+        times = []
+        for _ in range(bench_iters):
+            start = time.perf_counter()
+            _ = pipeline(test_input)
+            times.append((time.perf_counter() - start) * 1000)
+
+        avg_ms = sum(times) / len(times)
+        throughput = (batch_size * 1000) / avg_ms
+
+        results[f"batch_{batch_size}"] = {
+            "batch_size": batch_size,
+            "avg_ms": avg_ms,
+            "throughput_samples_per_sec": throughput,
+            "min_ms": min(times),
+            "max_ms": max(times),
+        }
+
+        print(f"Batch {batch_size}: {avg_ms:.2f} ms, {throughput:.1f} samples/sec")
+
+    return results
