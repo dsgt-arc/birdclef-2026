@@ -417,6 +417,9 @@ def quantize_patches(
 ) -> np.ndarray:
     """Quantize patches to nearest codebook centroid (L2 distance).
 
+    Uses scipy.spatial.distance.cdist for efficient pairwise distance computation.
+    This avoids creating large intermediate tensors (776MB per sample with naive approach).
+
     Args:
         patches: Patch embeddings (batch, num_patches, embed_dim) or (num_patches, embed_dim)
         codebook: Codebook centroids (num_tokens, embed_dim)
@@ -424,26 +427,21 @@ def quantize_patches(
     Returns:
         Token IDs (batch, num_patches) or (num_patches,)
     """
-    # Handle both batched and unbatched inputs
-    input_shape = patches.shape
+    from scipy.spatial.distance import cdist
+
+    # Handle unbatched input
     if patches.ndim == 2:
-        patches = patches[np.newaxis, ...]
+        distances = cdist(patches, codebook, "sqeuclidean")
+        return np.argmin(distances, axis=1)
 
-    batch_size, num_patches, embed_dim = patches.shape
-
-    # Reshape for broadcasting: (batch, num_patches, 1, embed_dim)
-    patches_expanded = patches[:, :, np.newaxis, :]
-    # Codebook: (1, 1, num_tokens, embed_dim)
-    codebook_expanded = codebook[np.newaxis, np.newaxis, :, :]
-
-    # L2 distance: (batch, num_patches, num_tokens)
-    distances = np.sum((patches_expanded - codebook_expanded) ** 2, axis=-1)
-
-    # Nearest token
-    token_ids = np.argmin(distances, axis=-1)
-
-    if len(input_shape) == 2:
-        return token_ids[0]
+    # Batched input
+    batch_size = patches.shape[0]
+    token_ids = np.stack(
+        [
+            np.argmin(cdist(patches[i], codebook, "sqeuclidean"), axis=1)
+            for i in range(batch_size)
+        ]
+    )
     return token_ids
 
 
@@ -566,6 +564,98 @@ class StaticEmbeddingsPipeline:
         """
         fbank = self.extract_fbank(waveform)
         return self(fbank)
+
+
+class StaticEmbeddingsPipelineFAISS:
+    """Fast inference pipeline using static embeddings with FAISS quantization.
+
+    Uses FAISS IndexFlatL2 for faster nearest neighbor search than scipy cdist.
+    FAISS uses SIMD (AVX2/AVX-512) for vectorized distance computation.
+
+    Pipeline: ONNX frontend → FAISS quantize → lookup → weighted pool
+
+    Args:
+        onnx_path: Path to ONNX frontend model
+        codebook_path: Path to codebook.npy
+        embeddings_path: Path to static_embeddings.npy or static_embeddings_pca.npy
+        weights_path: Path to sif_weights.npy (optional)
+        num_threads: Number of CPU threads for ONNX Runtime and FAISS
+    """
+
+    def __init__(
+        self,
+        onnx_path: str | Path,
+        codebook_path: str | Path,
+        embeddings_path: str | Path,
+        weights_path: Optional[str | Path] = None,
+        num_threads: int = 4,
+    ):
+        import faiss
+        import onnxruntime as ort
+
+        # Set FAISS threads
+        faiss.omp_set_num_threads(num_threads)
+
+        # Load ONNX model
+        sess_options = ort.SessionOptions()
+        sess_options.intra_op_num_threads = num_threads
+        sess_options.inter_op_num_threads = num_threads
+
+        self.session = ort.InferenceSession(
+            str(onnx_path),
+            sess_options,
+            providers=["CPUExecutionProvider"],
+        )
+        self.input_name = self.session.get_inputs()[0].name
+
+        # Load codebook and build FAISS index
+        codebook = np.load(codebook_path).astype(np.float32)
+        self.index = faiss.IndexFlatL2(codebook.shape[1])
+        self.index.add(codebook)
+
+        # Load embeddings
+        self.embeddings = np.load(embeddings_path)
+
+        # Load weights (optional)
+        if weights_path is not None:
+            self.weights = np.load(weights_path)
+        else:
+            self.weights = None
+
+        self.embed_dim = self.embeddings.shape[1]
+
+    def __call__(self, fbank: np.ndarray) -> np.ndarray:
+        """Run full inference pipeline.
+
+        Args:
+            fbank: Fbank features (batch, 1, time_frames, 128)
+
+        Returns:
+            Audio embeddings (batch, embed_dim)
+        """
+        # ONNX frontend: fbank → patch embeddings
+        patches = self.session.run(None, {self.input_name: fbank})[0]
+
+        batch_size, num_patches, embed_dim = patches.shape
+
+        # Quantize with FAISS: patches → token IDs
+        # FAISS expects (n, d) so we flatten batch
+        patches_flat = patches.reshape(-1, embed_dim).astype(np.float32)
+        _, token_ids_flat = self.index.search(patches_flat, 1)
+        token_ids = token_ids_flat.reshape(batch_size, num_patches)
+
+        # Lookup: token IDs → static embeddings
+        embeddings = self.embeddings[token_ids]  # (batch, num_patches, embed_dim)
+
+        # Weighted pooling
+        if self.weights is not None:
+            weights = self.weights[token_ids]  # (batch, num_patches)
+            weights = weights / weights.sum(axis=1, keepdims=True)  # Normalize
+            output = np.sum(embeddings * weights[:, :, np.newaxis], axis=1)
+        else:
+            output = embeddings.mean(axis=1)
+
+        return output
 
 
 def benchmark_static_pipeline(

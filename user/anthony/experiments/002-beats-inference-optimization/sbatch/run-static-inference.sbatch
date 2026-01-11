@@ -42,7 +42,12 @@ import torch
 sys.path.insert(0, "vendor/unilm/beats")
 
 print("Loading static embeddings module...", flush=True)
-from birdclef.static_embeddings import StaticEmbeddingsPipeline, benchmark_static_pipeline, load_beats_encoder
+from birdclef.static_embeddings import (
+    StaticEmbeddingsPipeline,
+    StaticEmbeddingsPipelineFAISS,
+    benchmark_static_pipeline,
+    load_beats_encoder,
+)
 
 # Paths
 scratch_dir = Path(os.path.expanduser("~/scratch/birdclef-2026"))
@@ -93,6 +98,25 @@ pipeline_256_sif = StaticEmbeddingsPipeline(
 )
 print(f"  Pipeline 256d (SIF weights): embed_dim={pipeline_256_sif.embed_dim}")
 
+# FAISS pipelines
+pipeline_faiss_768 = StaticEmbeddingsPipelineFAISS(
+    onnx_path=onnx_frontend_path,
+    codebook_path=codebook_path,
+    embeddings_path=embeddings_path,
+    weights_path=None,
+    num_threads=4,
+)
+print(f"  Pipeline FAISS 768d (no weights): embed_dim={pipeline_faiss_768.embed_dim}")
+
+pipeline_faiss_768_sif = StaticEmbeddingsPipelineFAISS(
+    onnx_path=onnx_frontend_path,
+    codebook_path=codebook_path,
+    embeddings_path=embeddings_path,
+    weights_path=weights_path,
+    num_threads=4,
+)
+print(f"  Pipeline FAISS 768d (SIF weights): embed_dim={pipeline_faiss_768_sif.embed_dim}")
+
 results = {}
 
 # Benchmark pipelines
@@ -110,6 +134,16 @@ print("\n" + "=" * 60)
 print("BENCHMARK: Static Pipeline 256d (SIF weights)")
 print("=" * 60)
 results["static_256_sif"] = benchmark_static_pipeline(pipeline_256_sif)
+
+print("\n" + "=" * 60)
+print("BENCHMARK: Static Pipeline FAISS 768d (no weights)")
+print("=" * 60)
+results["static_faiss_768"] = benchmark_static_pipeline(pipeline_faiss_768)
+
+print("\n" + "=" * 60)
+print("BENCHMARK: Static Pipeline FAISS 768d (SIF weights)")
+print("=" * 60)
+results["static_faiss_768_sif"] = benchmark_static_pipeline(pipeline_faiss_768_sif)
 
 # Benchmark full BEATs for comparison
 print("\n" + "=" * 60)
@@ -160,18 +194,57 @@ print("\n" + "=" * 60)
 print("SPEEDUP SUMMARY")
 print("=" * 60)
 
-print("\nSpeedup vs Full BEATs (higher is better):")
-print("-" * 50)
-for batch_key in ["batch_1", "batch_4", "batch_16", "batch_32"]:
-    beats_ms = results["full_beats"][batch_key]["avg_ms"]
-    static_768_ms = results["static_768"][batch_key]["avg_ms"]
-    static_768_sif_ms = results["static_768_sif"][batch_key]["avg_ms"]
-    static_256_sif_ms = results["static_256_sif"][batch_key]["avg_ms"]
+print("\nSpeedup vs Full BEATs CPU (higher is better):")
+print("-" * 70)
+print(f"{'Method':<25} {'Batch 1':>10} {'Batch 4':>10} {'Batch 16':>10} {'Batch 32':>10}")
+print("-" * 70)
 
-    print(f"{batch_key}:")
-    print(f"  Static 768d:         {beats_ms/static_768_ms:.1f}x faster ({static_768_ms:.2f} vs {beats_ms:.2f} ms)")
-    print(f"  Static 768d + SIF:   {beats_ms/static_768_sif_ms:.1f}x faster ({static_768_sif_ms:.2f} vs {beats_ms:.2f} ms)")
-    print(f"  Static 256d + SIF:   {beats_ms/static_256_sif_ms:.1f}x faster ({static_256_sif_ms:.2f} vs {beats_ms:.2f} ms)")
+methods = [
+    ("cdist 768d", "static_768"),
+    ("cdist 768d + SIF", "static_768_sif"),
+    ("cdist 256d + SIF", "static_256_sif"),
+    ("FAISS 768d", "static_faiss_768"),
+    ("FAISS 768d + SIF", "static_faiss_768_sif"),
+]
+
+for name, key in methods:
+    speedups = []
+    for batch_key in ["batch_1", "batch_4", "batch_16", "batch_32"]:
+        beats_ms = results["full_beats"][batch_key]["avg_ms"]
+        static_ms = results[key][batch_key]["avg_ms"]
+        speedups.append(f"{beats_ms/static_ms:.1f}x")
+    print(f"{name:<25} {speedups[0]:>10} {speedups[1]:>10} {speedups[2]:>10} {speedups[3]:>10}")
+
+print("-" * 70)
+
+# Also print raw timings
+print("\nRaw timings (ms):")
+print("-" * 70)
+print(f"{'Method':<25} {'Batch 1':>10} {'Batch 4':>10} {'Batch 16':>10} {'Batch 32':>10}")
+print("-" * 70)
+
+all_methods = [("Full BEATs CPU", "full_beats")] + methods
+for name, key in all_methods:
+    times = []
+    for batch_key in ["batch_1", "batch_4", "batch_16", "batch_32"]:
+        times.append(f"{results[key][batch_key]['avg_ms']:.1f}")
+    print(f"{name:<25} {times[0]:>10} {times[1]:>10} {times[2]:>10} {times[3]:>10}")
+
+print("-" * 70)
+
+# Throughput comparison
+print("\nThroughput (samples/sec):")
+print("-" * 70)
+print(f"{'Method':<25} {'Batch 1':>10} {'Batch 4':>10} {'Batch 16':>10} {'Batch 32':>10}")
+print("-" * 70)
+
+for name, key in all_methods:
+    tputs = []
+    for batch_key in ["batch_1", "batch_4", "batch_16", "batch_32"]:
+        tputs.append(f"{results[key][batch_key]['throughput_samples_per_sec']:.1f}")
+    print(f"{name:<25} {tputs[0]:>10} {tputs[1]:>10} {tputs[2]:>10} {tputs[3]:>10}")
+
+print("-" * 70)
 
 # Save results
 output_path.parent.mkdir(parents=True, exist_ok=True)

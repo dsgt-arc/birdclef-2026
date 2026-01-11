@@ -19,6 +19,7 @@ dependencies = [
     "onnxruntime>=1.17",
     "onnx>=1.15",
     "onnxscript>=0.1",
+    "faiss-cpu>=1.7",
 ]
 
 [project.optional-dependencies]
