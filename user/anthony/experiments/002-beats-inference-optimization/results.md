@@ -376,9 +376,92 @@ The static embeddings approach fundamentally cannot preserve the contextual info
 1. **Static embeddings accuracy**: 48% accuracy drop is unacceptable
 2. **Model2vec for transformers**: Context collapse when processing single patches
 
+---
+
+## Part G: Contextual Pooling for Accuracy Recovery
+
+**Date**: 2026-01-11
+**Objective**: Train lightweight poolers on ESC-50 to recover accuracy lost from context collapse.
+
+### Pooler Architectures
+
+| Pooler | Architecture | Params | Description |
+|--------|--------------|--------|-------------|
+| MeanPooler | Mean pool | 0 | Baseline (no learnable params) |
+| AttentionPooler | Attention weights → weighted mean | ~1.5M | Learned attention over patches |
+| LightCNN1DPooler | 768→256→256→768 bottleneck | ~1M | Efficient CNN with residual |
+| CNNAttentionPooler | CNN + attention head | ~2M | Hybrid approach |
+| CNN1DPooler | 768→768→768 full dim | ~5.9M | Heavier CNN |
+
+### Results
+
+| Pooler | Accuracy | vs Baseline | Status |
+|--------|----------|-------------|--------|
+| MeanPooler (baseline) | 35.9% | — | Complete |
+| AttentionPooler | 38.9% | +3.0% | Complete |
+| CNNAttentionPooler | 43.4% | +7.5% | Complete |
+| LightCNN1DPooler | 58.1% | +22.2% | Complete |
+| **CNN1DPooler** | **~62.6%** | **+26.7%** | Partial (2/5 folds) |
+
+### Analysis
+
+1. **CNN1DPooler is best** at ~62.6%, recovering 26.7% of the lost accuracy
+2. **LightCNN1DPooler** is a good efficiency tradeoff: 58.1% with only ~1M params (vs 5.9M)
+3. **Attention alone doesn't help much**: AttentionPooler only +3% over mean pooling
+4. **Hybrid CNN+Attention underperforms**: CNNAttentionPooler (43.4%) worse than pure CNN
+
+### Why Poolers Help (But Not Enough)
+
+The contextual poolers learn to:
+- Weight patches by importance (attention)
+- Capture local temporal patterns (CNN)
+- Combine patch features more intelligently than mean pooling
+
+However, they **cannot recover cross-patch relationships** that were lost during single-patch processing. The fundamental context collapse remains.
+
+### Remaining Gap
+
+| Method | Accuracy | Gap to BEATs |
+|--------|----------|--------------|
+| Full BEATs | 84.0% | — |
+| CNN1DPooler | ~62.6% | -21.4% |
+| LightCNN1DPooler | 58.1% | -25.9% |
+| Mean pooling | 35.9% | -48.1% |
+
+Even the best pooler leaves a **21% accuracy gap**. The target was <5% drop.
+
+### Training Bottleneck
+
+Each fold re-extracts BEATs embeddings for the new train/val split:
+- Embedding extraction: ~13 min/fold (80% of time)
+- Pooler training: ~3 min/fold (20% of time)
+
+**Optimization opportunity**: Pre-extract all embeddings once and cache.
+
+### Conclusion
+
+Contextual pooling improved accuracy from 36% → 63% (+27%), but:
+- Still far from 84% BEATs baseline
+- Cannot recover cross-patch attention relationships
+- Experiment 003 (distillation on AudioSet) is the next approach
+
+---
+
+## Conclusions
+
+### What Worked
+1. **FAISS quantization**: 32x speedup over BEATs CPU for inference
+2. **ONNX frontend**: 3.5x speedup for feature extraction
+3. **Contextual pooling**: Recovered 27% accuracy (36% → 63%)
+
+### What Failed
+1. **Static embeddings accuracy**: 48% accuracy drop from context collapse
+2. **Model2vec for transformers**: Single-patch processing destroys cross-patch context
+3. **Accuracy target**: Best result (63%) still 21% below BEATs (84%)
+
 ### Recommendations
 
 For BirdCLEF deployment:
 1. **Use GPU if available**: Full BEATs at 367 samples/sec
-2. **If CPU-only**: Consider knowledge distillation or model quantization instead of static embeddings
-3. **This approach is not viable** for accuracy-sensitive applications
+2. **If CPU-only**: Consider knowledge distillation (Experiment 003) or model quantization
+3. **Static embeddings not viable** for accuracy-sensitive applications without distillation

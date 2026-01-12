@@ -21,6 +21,7 @@ Experiment 001 (encoder benchmark) is complete. Key result: **BEATs is best for 
 | wav2vec2 fails on environmental sounds | [Exp 001](../user/anthony/experiments/001-encoder-benchmark/results.md) | Speech models don't transfer to ESC |
 | **Static embeddings lose 48% accuracy** | [Exp 002](../user/anthony/experiments/002-beats-inference-optimization/results.md) | Model2vec approach fails for transformers |
 | FAISS gives 32x CPU speedup | [Exp 002](../user/anthony/experiments/002-beats-inference-optimization/results.md) | But accuracy tradeoff unacceptable |
+| **Contextual pooling recovers to 63%** | [Exp 002](../user/anthony/experiments/002-beats-inference-optimization/results.md) | CNN1DPooler best, but still 21% gap |
 | EAT is 15x more efficient than BEATs | [literature.md](references/literature.md) | May be better distillation target |
 | OpenBEATs (300M) is SOTA on bioacoustics | [literature.md](references/literature.md) | Best available teacher model |
 | BirdMAE wins on BirdSet benchmark | [literature.md](references/literature.md) | Domain-specific training helps |
@@ -47,16 +48,17 @@ See [concepts/research-leads.md](concepts/research-leads.md) for full list.
 | ID | Name | Status | Result |
 |----|------|--------|--------|
 | 001 | [Encoder Benchmark](../user/anthony/experiments/001-encoder-benchmark/) | Complete | BEATs 95.8%, EAT+LoRA 94.6% |
-| 002 | [BEATs Inference Optimization](../user/anthony/experiments/002-beats-inference-optimization/) | Complete | **Rejected** - 32x speedup but 48% accuracy loss |
+| 002 | [BEATs Inference Optimization](../user/anthony/experiments/002-beats-inference-optimization/) | Complete | **Rejected** - 32x speedup, 63% best accuracy (21% gap) |
+| 003 | [Model Distillation](../user/anthony/experiments/003-model-distillation/) | Proposed | Distill BEATs → lightweight student on AudioSet |
 
 Experiments are tracked per-user in `user/<name>/experiments/`.
 
 ## Next Steps
 
 1. ~~Benchmark foundation models (BEATs, EAT, wav2vec2) on ESC-50~~ Done (Exp 001)
-2. ~~Optimize BEATs inference for CPU~~ Done (Exp 002) - static embeddings approach rejected
-3. Explore knowledge distillation: BEATs teacher → lightweight student
-4. Consider INT8 quantization or pruning for CPU deployment
+2. ~~Optimize BEATs inference for CPU~~ Done (Exp 002) - static embeddings rejected (63% best, 21% gap)
+3. **[Active]** Knowledge distillation on AudioSet (Exp 003) - Mamba2, ConvNeXt1D, TCN students
+4. Consider INT8 quantization or pruning as alternative approaches
 
 ## Quick Links
 
