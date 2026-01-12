@@ -173,6 +173,24 @@ train_pattern = str(audioset_dir / "train" / "*.tar")
 dataset = SimpleTarDataset(train_pattern, target_length=160000)  # 10s at 16kHz
 dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=4)
 
+# Verify shapes with first batch
+print("\nVerifying shapes with first batch...")
+test_batch = next(iter(dataloader))
+print(f"  Waveform batch shape: {test_batch.shape}")
+with torch.no_grad():
+    test_batch = test_batch.to(device)
+    test_tokens = tokenizer.extract_labels(test_batch)
+    print(f"  Token IDs raw shape: {test_tokens.shape}")
+    # Reshape if flattened
+    if test_tokens.dim() == 1:
+        seq_len = test_tokens.shape[0] // test_batch.shape[0]
+        test_tokens = test_tokens.view(test_batch.shape[0], seq_len)
+    print(f"  Token IDs reshaped: {test_tokens.shape}")
+    test_embeds = static_embeddings[test_tokens.cpu()]
+    print(f"  Static embeddings shape: {test_embeds.shape}")
+    test_teacher = teacher.extract_features(test_batch, padding_mask=None)[0]
+    print(f"  Teacher output shape: {test_teacher.shape}")
+
 # Training loop
 print("\nStarting training...")
 epochs = 5

@@ -148,11 +148,26 @@ class DistillationTrainer:
         Returns:
             Static embeddings (batch, seq_len, embed_dim)
         """
+        batch_size = waveforms.shape[0]
+
         with torch.no_grad():
             # Get token IDs from tokenizer
-            token_ids = self.tokenizer.extract_labels(waveforms)  # (batch, seq_len)
-            # Lookup static embeddings
-            static_embeds = self.static_embeddings[token_ids]  # (batch, seq_len, embed_dim)
+            # Note: BEATs tokenizer returns flattened (batch * seq_len,) tensor
+            token_ids = self.tokenizer.extract_labels(waveforms)
+
+            # Reshape to (batch, seq_len) if flattened
+            if token_ids.dim() == 1:
+                seq_len = token_ids.shape[0] // batch_size
+                token_ids = token_ids.view(batch_size, seq_len)
+
+            # Move to CPU for embedding lookup, then back to device
+            token_ids_cpu = token_ids.cpu()
+            static_embeds = self.static_embeddings.cpu()[token_ids_cpu]
+            static_embeds = static_embeds.to(self.device)
+
+            # Verify shape
+            assert static_embeds.dim() == 3, f"Expected 3D, got {static_embeds.shape}"
+
         return static_embeds
 
     def train_step(self, waveforms: torch.Tensor) -> dict[str, float]:
