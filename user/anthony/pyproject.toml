@@ -20,6 +20,7 @@ dependencies = [
     "onnx>=1.15",
     "onnxscript>=0.1",
     "faiss-cpu>=1.7",
+    "webdataset>=0.2",
 ]
 
 [project.optional-dependencies]
