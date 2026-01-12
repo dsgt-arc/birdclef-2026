@@ -1,17 +1,19 @@
 # Tasks
 
 ## 1. Setup
-- [ ] 1.1 Verify access to AudioSet dataset (Unbalanced Train & Eval shards)
-- [ ] 1.2 Create WebDataset loader for efficient streaming of AudioSet
-- [ ] 1.3 Verify teacher (BEATs) inference pipeline on AudioSet shards
-- [ ] 1.4 **Regenerate Static Embeddings Codebook**: Run Model2Vec extraction on AudioSet subset (e.g., 50k clips) to build a robust, universal codebook.
+- [ ] 1.1 Download AudioSet-20k (pilot) from HuggingFace: `confit/audioset-16khz-wds`
+- [ ] 1.2 Download AudioSet-500k (main) from HuggingFace: `confit/audioset-16khz-wds`
+- [ ] 1.3 Create WebDataset loader for efficient streaming of AudioSet
+- [ ] 1.4 Verify teacher (BEATs) inference pipeline on AudioSet shards
+- [ ] 1.5 **Regenerate Static Embeddings Codebook**: Run Model2Vec extraction on AudioSet-20k to build a robust, universal codebook
 
 ## 2. Implementation
 - [ ] 2.1 Implement `DistillationStudent` architectures:
-  - [ ] 2.1a `MambaStudent` (using mamba-ssm)
-  - [ ] 2.1b `MLPMixerStudent` (token & channel mixing)
-  - [ ] 2.1c `CNNPoolerStudent` (scaled-up LightCNN)
-  - [ ] 2.1d `TinyTransformerStudent`
+  - [ ] 2.1a `Mamba2Student` (using HuggingFace transformers)
+  - [ ] 2.1b `ConvNeXt1DStudent` (depthwise separable + dilated)
+  - [ ] 2.1c `TCNStudent` (using pytorch-tcn)
+  - [ ] 2.1d `MLPMixerStudent` (token & channel mixing)
+  - [ ] 2.1e `TinyTransformerStudent` (2 layers, 256-dim, 4 heads)
 - [ ] 2.2 Implement `DistillationTrainer` with MSE/Cosine loss
 - [ ] 2.3 Create training script `run-distillation.py` (streaming mode)
 

@@ -11,8 +11,11 @@ Distilling a large, pretrained Audio Transformer (BEATs) into a lightweight stud
 Specifically:
 - **Teacher**: Full BEATs Transformer (12 layers, 768-dim), pretrained on AudioSet.
 - **Student**: Lightweight sequence model operating on discrete tokens/static embeddings.
-- **Distillation Data**: AudioSet (Unbalanced Train, ~2M clips).
+- **Distillation Data**: AudioSet (500k subset, ~1,400 hours).
 - **Hypothesis**: The student model will achieve >45% mAP on AudioSet (Teacher is ~50%) and >75% accuracy on ESC-50, while keeping inference latency <10ms on CPU.
+
+> **Scope**: This experiment focuses on standard audio benchmarks (AudioSet, ESC-50).
+> Bioacoustics evaluation (BirdSet, BirdCLEF) will be a separate follow-up experiment.
 
 ## Background
 
@@ -40,7 +43,7 @@ We will implement a Teacher-Student distillation pipeline on AudioSet:
 |-----------|---------|
 | Data | AudioSet (Unbalanced Train ~2M clips, Eval ~20k clips) |
 | Compute | GPU (L40S) for teacher inference & student training |
-| Dependencies | `torch`, `BEATs`, `transformers`, `mamba-ssm` |
+| Dependencies | `torch`, `BEATs`, `transformers`, `pytorch-tcn` |
 | Code | New `distillation.py` script |
 
 ### Procedure
@@ -92,4 +95,4 @@ We will implement a Teacher-Student distillation pipeline on AudioSet:
 
 - **Distillation Gap**: Student capacity might be too small to capture full teacher complexity.
 - **Storage**: Storing teacher embeddings for 2M clips is huge (~1.5TB). Will prioritize on-the-fly distillation or streaming if storage is tight.
-- **Mamba Support**: `mamba-ssm` kernels usually require GPU; need to verify pure PyTorch CPU performance for inference.
+- **Mamba Support**: Using HuggingFace `transformers` Mamba2 implementation (pure PyTorch, no custom CUDA kernels).
