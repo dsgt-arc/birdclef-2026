@@ -14,8 +14,13 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+
+try:
+    from safetensors.torch import load_file
+except ImportError:
+    load_file = None
 
 # Add vendor path for BEATs imports
 VENDOR_PATH = Path(__file__).parents[4] / "vendor" / "unilm" / "beats"
@@ -236,6 +241,201 @@ class DistillationTrainer:
                 waveforms = waveforms.squeeze(1)
 
             loss_dict = self.train_step(waveforms)
+
+            total_loss += loss_dict["loss"]
+            total_mse += loss_dict["mse"]
+            total_cosine += loss_dict["cosine"]
+            n_steps += 1
+
+            if self.step % log_interval == 0:
+                pbar.set_postfix(
+                    loss=f"{loss_dict['loss']:.4f}",
+                    mse=f"{loss_dict['mse']:.4f}",
+                    cos=f"{loss_dict['cosine_sim']:.4f}",
+                )
+
+            if max_steps and n_steps >= max_steps:
+                break
+
+        self.epoch += 1
+
+        return {
+            "loss": total_loss / n_steps,
+            "mse": total_mse / n_steps,
+            "cosine": total_cosine / n_steps,
+        }
+
+    def save_checkpoint(self, path: str | Path):
+        """Save training checkpoint."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "step": self.step,
+                "epoch": self.epoch,
+                "student_state_dict": self.student.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+            },
+            path,
+        )
+
+    def load_checkpoint(self, path: str | Path):
+        """Load training checkpoint."""
+        checkpoint = torch.load(path, map_location=self.device)
+        self.step = checkpoint["step"]
+        self.epoch = checkpoint["epoch"]
+        self.student.load_state_dict(checkpoint["student_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+
+class CachedDistillationDataset(Dataset):
+    """Dataset for loading pre-cached teacher embeddings from sharded safetensors.
+
+    Loads from a directory of safetensors shards produced by run-cache-teacher.sbatch.
+    Each shard contains:
+        - teacher_embeds: (n_samples, seq_len, 768) FP16
+        - static_embeds: (n_samples, seq_len, 768) FP16
+        - token_ids: (n_samples, seq_len) int16
+
+    Args:
+        cache_dir: Directory containing *.safetensors shard files
+        shuffle_shards: Whether to shuffle shard order (default True)
+    """
+
+    def __init__(self, cache_dir: str | Path, shuffle_shards: bool = True):
+        if load_file is None:
+            raise ImportError("safetensors is required: pip install safetensors")
+
+        self.cache_dir = Path(cache_dir)
+        self.shard_files = sorted(self.cache_dir.glob("*.safetensors"))
+
+        if not self.shard_files:
+            raise ValueError(f"No safetensors files found in {cache_dir}")
+
+        # Build index: list of (shard_idx, sample_idx_within_shard)
+        self.index = []
+        self.shard_lengths = []
+
+        for shard_idx, shard_path in enumerate(self.shard_files):
+            # Peek at shard to get sample count
+            tensors = load_file(shard_path)
+            n_samples = tensors["teacher_embeds"].shape[0]
+            self.shard_lengths.append(n_samples)
+            for i in range(n_samples):
+                self.index.append((shard_idx, i))
+
+        # Cache for current shard (avoid reloading)
+        self._cached_shard_idx = None
+        self._cached_tensors = None
+
+        # Optionally shuffle the index
+        if shuffle_shards:
+            import random
+            random.shuffle(self.index)
+
+    def __len__(self) -> int:
+        return len(self.index)
+
+    def _load_shard(self, shard_idx: int) -> dict[str, torch.Tensor]:
+        """Load shard, using cache if available."""
+        if self._cached_shard_idx != shard_idx:
+            self._cached_tensors = load_file(self.shard_files[shard_idx])
+            self._cached_shard_idx = shard_idx
+        return self._cached_tensors
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return (static_embeds, teacher_embeds) for a single sample."""
+        shard_idx, sample_idx = self.index[idx]
+        tensors = self._load_shard(shard_idx)
+
+        static_embeds = tensors["static_embeds"][sample_idx].float()
+        teacher_embeds = tensors["teacher_embeds"][sample_idx].float()
+
+        return static_embeds, teacher_embeds
+
+    @property
+    def n_shards(self) -> int:
+        return len(self.shard_files)
+
+    @property
+    def total_samples(self) -> int:
+        return len(self.index)
+
+
+class CachedDistillationTrainer:
+    """Trainer for distillation using pre-cached teacher embeddings.
+
+    Much faster than DistillationTrainer since no teacher inference is needed.
+
+    Args:
+        student: Student model to train
+        device: Device to train on
+        lr: Learning rate
+        weight_decay: Weight decay for AdamW
+        mse_weight: MSE loss weight
+        cosine_weight: Cosine loss weight
+    """
+
+    def __init__(
+        self,
+        student: nn.Module,
+        device: str = "cuda",
+        lr: float = 1e-4,
+        weight_decay: float = 0.01,
+        mse_weight: float = 0.5,
+        cosine_weight: float = 0.5,
+    ):
+        self.student = student.to(device)
+        self.device = device
+
+        self.optimizer = torch.optim.AdamW(
+            self.student.parameters(), lr=lr, weight_decay=weight_decay
+        )
+        self.criterion = DistillationLoss(mse_weight, cosine_weight)
+
+        self.step = 0
+        self.epoch = 0
+
+    def train_step(
+        self, static_embeds: torch.Tensor, teacher_embeds: torch.Tensor
+    ) -> dict[str, float]:
+        """Single training step with pre-cached embeddings."""
+        self.student.train()
+
+        static_embeds = static_embeds.to(self.device)
+        teacher_embeds = teacher_embeds.to(self.device)
+
+        # Forward pass
+        student_embeds = self.student(static_embeds)
+
+        # Compute loss
+        loss_dict = self.criterion(student_embeds, teacher_embeds)
+        loss = loss_dict["loss"]
+
+        # Backward
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        self.step += 1
+
+        return {k: v.item() for k, v in loss_dict.items()}
+
+    def train_epoch(
+        self,
+        dataloader: DataLoader,
+        max_steps: Optional[int] = None,
+        log_interval: int = 100,
+    ) -> dict[str, float]:
+        """Train for one epoch using cached data."""
+        total_loss = 0.0
+        total_mse = 0.0
+        total_cosine = 0.0
+        n_steps = 0
+
+        pbar = tqdm(dataloader, desc=f"Epoch {self.epoch}")
+        for static_embeds, teacher_embeds in pbar:
+            loss_dict = self.train_step(static_embeds, teacher_embeds)
 
             total_loss += loss_dict["loss"]
             total_mse += loss_dict["mse"]
