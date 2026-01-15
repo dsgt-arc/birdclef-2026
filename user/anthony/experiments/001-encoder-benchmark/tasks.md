@@ -37,8 +37,40 @@
 - ~~[ ] 5.5 Run LoRA r=16 on ESC-50 (if r=8 underfits)~~ (skipped - r=8 sufficient)
 - [x] 5.6 Compare to linear probe and published results
 
-## ~~6. Part C: AudioSet Birds~~ (Out of Scope)
-*Removed from experiment scope - focus on ESC-50 benchmark*
+## ~~6. Part B.5: AudioSet Birds~~ (Deferred)
+*Deferred - focus on encoder comparison first*
+
+## 6. Part C: AST/SSAST/SSAMBA Benchmark (New)
+
+### 6.1 Checkpoint Downloads
+- [ ] 6.1.1 Verify AST checkpoint auto-downloads from HuggingFace (`MIT/ast-finetuned-audioset-10-10-0.4593`)
+- [ ] 6.1.2 Download SSAST checkpoint (`ssast-base-patch-400`)
+- [ ] 6.1.3 Download SSAMBA checkpoints from Google Drive (tiny, small, base)
+
+### 6.2 Implementation
+- [ ] 6.2.1 Implement `ASTEncoder` in `encoders/ast.py`
+- [ ] 6.2.2 Implement `SSASTEncoder` in `encoders/ssast.py`
+- [ ] 6.2.3 Implement `SSAMBAEncoder` in `encoders/ssamba.py`
+- [ ] 6.2.4 Add mamba-ssm dependency to pyproject.toml
+- [ ] 6.2.5 Verify preprocessing matches original papers (fbank settings)
+
+### 6.3 Benchmark Execution
+- [ ] 6.3.1 Run AST + linear probe on ESC-50
+- [ ] 6.3.2 Run SSAST + linear probe on ESC-50
+- [ ] 6.3.3 Run SSAMBA-tiny + linear probe on ESC-50
+- [ ] 6.3.4 Run SSAMBA-small + linear probe on ESC-50
+- [ ] 6.3.5 Run SSAMBA-base + linear probe on ESC-50
+
+### 6.4 Inference Time Benchmarks
+- [ ] 6.4.1 Benchmark all encoders on GPU (batch=1, 16, 32)
+- [ ] 6.4.2 Benchmark all encoders on CPU (batch=1, 4, 16)
+- [ ] 6.4.3 Compare SSAMBA vs transformer speedup
+
+### 6.5 Analysis
+- [ ] 6.5.1 Create accuracy vs speed comparison table
+- [ ] 6.5.2 Plot Pareto frontier (accuracy vs inference time)
+- [ ] 6.5.3 Determine if SSAMBA meets BirdCLEF inference budget
+- [ ] 6.5.4 Update results.md with Part C findings
 
 ## 7. Analysis & Documentation
 - [x] 7.1 Compile results table with accuracy/mAP/inference time
@@ -114,5 +146,8 @@ user/anthony/src/birdclef/
     ├── base.py        # AudioEncoder base class
     ├── wav2vec2.py    # Wav2Vec2 encoder
     ├── beats.py       # BEATs encoder
-    └── eat.py         # EAT encoder
+    ├── eat.py         # EAT encoder
+    ├── ast.py         # AST encoder (Part C) - TODO
+    ├── ssast.py       # SSAST encoder (Part C) - TODO
+    └── ssamba.py      # SSAMBA encoder (Part C) - TODO
 ```

@@ -55,3 +55,12 @@
 [submodule "vendor/ESC-50"]
 	path = vendor/ESC-50
 	url = https://github.com/karolpiczak/ESC-50
+[submodule "vendor/ssamba"]
+	path = vendor/ssamba
+	url = https://github.com/SiavashShams/ssamba.git
+[submodule "vendor/ssast"]
+	path = vendor/ssast
+	url = https://github.com/YuanGongND/ssast.git
+[submodule "vendor/ast"]
+	path = vendor/ast
+	url = https://github.com/YuanGongND/ast.git
