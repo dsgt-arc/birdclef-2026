@@ -100,11 +100,18 @@ def extract_student_embeddings(waveforms, tokenizer, static_embeds, student, dev
     if waveforms.dim() == 3:
         waveforms = waveforms.squeeze(1)
     waveforms = waveforms.to(device)
+    batch_size = waveforms.shape[0]
 
     with torch.no_grad():
-        # Get token IDs
+        # Get token IDs (BEATs tokenizer returns flattened tensor)
         token_ids = tokenizer.extract_labels(waveforms)
-        # Lookup static embeddings
+
+        # Reshape to (batch, seq_len) if flattened
+        if token_ids.dim() == 1:
+            seq_len = token_ids.shape[0] // batch_size
+            token_ids = token_ids.view(batch_size, seq_len)
+
+        # Lookup static embeddings -> (batch, seq_len, embed_dim)
         inputs = static_embeds[token_ids]
         # Run through student
         outputs = student(inputs)

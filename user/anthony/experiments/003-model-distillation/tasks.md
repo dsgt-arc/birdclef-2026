@@ -6,7 +6,8 @@
 - [ ] 1.2 Download AudioSet-500k (main) from HuggingFace: `confit/audioset-16khz-wds`
 - [x] 1.3 Create WebDataset loader for efficient streaming of AudioSet
   - `birdclef/data/audioset.py` - AudioSetWebDataset, AudioSetDistillationDataset
-- [ ] 1.4 Verify teacher (BEATs) inference pipeline on AudioSet shards
+- [x] 1.4 Verify teacher (BEATs) inference pipeline on AudioSet shards
+  - Teacher caching completed: 7 shards, 20,550 samples cached
 - [ ] 1.5 **Regenerate Static Embeddings Codebook**: Run Model2Vec extraction on AudioSet-20k to build a robust, universal codebook
 
 ## 2. Implementation
@@ -21,16 +22,29 @@
   - `sbatch/run-pilot-distillation.sbatch`
 
 ## 3. Execution
-- [~] 3.1 Run pilot distillation (e.g., 20k samples) to verify convergence
-  - SLURM job 3270315 submitted (convnext-small) - fixed .wav extension
-- [ ] 3.2 Run full-scale distillation (AudioSet-500k)
-- [ ] 3.3 Save student checkpoints for all architectures
+- [x] 3.1 Run pilot distillation (e.g., 20k samples) to verify convergence
+  - SLURM job 3270511 completed (convnext-small)
+  - 5 epochs, loss: 0.386 → 0.141 (MSE: 0.072, Cosine: 0.211)
+  - Model saved: `pilot_convnext-small_epoch5.pt`
+- [x] 3.2 Run extended training with cached teacher embeddings
+  - SLURM job 3278762 completed (convnext-small)
+  - 50 epochs in 27 minutes using local NVMe cache
+  - Val loss: 0.402 → 0.126 (MSE: 0.065)
+  - Model saved: `cached_convnext-small_best.pt`
+- [ ] 3.3 Run full-scale distillation (AudioSet-500k)
+- [ ] 3.4 Save student checkpoints for all architectures
 
 ## 4. Evaluation
 - [ ] 4.1 Create evaluation script `eval-audioset.py` (Freeze backbone -> Train Linear -> Calc mAP)
 - [ ] 4.2 Run AudioSet mAP evaluation
 - [x] 4.3 Create ESC-50 evaluation script - `sbatch/run-esc50-eval.sbatch`
-- [ ] 4.4 Benchmark inference speed of students on CPU (check Mamba CPU viability)
+- [x] 4.4 Run ESC-50 evaluation on pilot model
+  - convnext-small pilot: 51.95% accuracy (5-fold CV)
+- [x] 4.5 Run ESC-50 evaluation on extended training model
+  - **convnext-small extended: 55.90% accuracy** (5-fold CV)
+  - Fold accuracies: 55.50%, 56.25%, 59.25%, 55.25%, 53.25%
+  - Comparison: Static=36%, Pilot=52%, **Extended=56%**, LightCNN=56%, BEATs=84%
+- [ ] 4.6 Benchmark inference speed of students on CPU
 
 ## 5. Analysis
 - [ ] 5.1 Compare Mamba vs CNN vs Transformer (Accuracy vs Speed)
