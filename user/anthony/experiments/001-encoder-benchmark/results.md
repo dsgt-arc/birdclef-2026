@@ -5,9 +5,9 @@
 
 ## Summary
 
-BEATs significantly outperforms other encoders for environmental sound classification using frozen features with a linear probe. EAT requires mean pooling (not CLS token) for competitive performance. LoRA finetuning dramatically improves EAT (77.9% → 94.6%) but fails completely for wav2vec2 due to domain mismatch.
+BEATs and AST both achieve ~95-96% accuracy on ESC-50 using frozen features with a linear probe, significantly outperforming other encoders. EAT requires mean pooling (not CLS token) for competitive performance. LoRA finetuning dramatically improves EAT (77.9% → 94.6%) but fails completely for wav2vec2 due to domain mismatch.
 
-**Verdict**: confirmed (BEATs is best for frozen features; EAT+LoRA is best for finetuning)
+**Verdict**: BEATs is best for frozen features (fastest + highest accuracy); AST is a close second but 5x slower. SSAST/SSAMBA blocked due to environment issues.
 
 ## Observations
 
@@ -16,6 +16,7 @@ BEATs significantly outperforms other encoders for environmental sound classific
 | Encoder | Mean Accuracy | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 | Embed Dim | Eval Time |
 |---------|--------------|--------|--------|--------|--------|--------|-----------|-----------|
 | BEATs | **95.8%** | 94.7% | 95.5% | 95.7% | 98.5% | 94.5% | 768 | 107s |
+| AST | 95.5% | 95.2% | 95.2% | 94.8% | 97.0% | 94.8% | 768 | 586s |
 | EAT | 77.9% | 76.0% | 79.0% | 75.7% | 79.7% | 79.2% | 768 | 162s |
 | wav2vec2 | 48.2% | 51.0% | 45.7% | 49.0% | 50.5% | 44.7% | 768 | 256s |
 
@@ -63,6 +64,24 @@ EAT's larger gap (18%) indicates the pretrained model benefits more from task-sp
 | EAT | Mean pooling (fixed) | CLS token gave 45%, mean pooling gives 78% |
 | wav2vec2 | Mean pooling | Standard for sequence models |
 
+### Part C: AST/SSAST/SSAMBA Benchmark (2025-01-15)
+
+| Encoder | Mean Accuracy | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 | Embed Dim | Eval Time |
+|---------|--------------|--------|--------|--------|--------|--------|-----------|-----------|
+| **AST** | **95.5%** | 95.2% | 95.2% | 94.8% | 97.0% | 94.8% | 768 | 586s |
+| SSAST | BLOCKED | - | - | - | - | - | 768 | - |
+| SSAMBA-tiny | BLOCKED | - | - | - | - | - | 192 | - |
+
+**AST (Audio Spectrogram Transformer):**
+- Uses HuggingFace `MIT/ast-finetuned-audioset-10-10-0.4593`
+- Very competitive with BEATs (95.5% vs 95.8%)
+- Slower feature extraction (~10 min vs ~2 min for BEATs) due to per-sample processing
+
+**SSAST/SSAMBA - Blocked due to environment issues:**
+- SSAST: Requires `timm==0.4.5` which breaks CUDA libraries when downgraded
+- SSAMBA: CUDA version mismatch (cluster has CUDA 13.0, PyTorch compiled with 12.8)
+- Both need separate venvs or code porting to resolve
+
 ### Part B: LoRA Finetuning Results
 
 | Encoder | Method | Mean Accuracy | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
@@ -108,13 +127,16 @@ EAT's larger gap (18%) indicates the pretrained model benefits more from task-sp
 | BEATs | `lpepino/beats_ckpts` (HuggingFace) | Mirror by Leonardo Pepino; official OneDrive not programmatically accessible |
 | EAT | `worstchan/EAT-base_epoch30_pretrain` (HuggingFace) | Official release from EAT authors |
 | wav2vec2 | `facebook/wav2vec2-base-960h` (HuggingFace) | Standard pretrained model |
+| AST | `MIT/ast-finetuned-audioset-10-10-0.4593` (HuggingFace) | Official AudioSet-finetuned model |
+| SSAST | Dropbox (see tasks.md) | Requires `timm==0.4.5`, blocked |
+| SSAMBA | `attentionisallyouneed369/ssamba` (HuggingFace) | Weights only, needs mamba-ssm, blocked |
 
 ## Next Steps
 
-- [ ] Try finetuning EAT to close the gap with published results
+- [ ] Fix SSAST environment (port to newer timm or separate venv)
+- [ ] Fix SSAMBA environment (port model code, resolve CUDA mismatch)
 - [ ] Add BirdNET encoder for comparison (bird-specific pretraining)
 - [ ] Run on AudioSet bird subset (stretch goal)
-- [ ] Investigate EAT-large model
-- [ ] Add data augmentation to linear probe training
+- [ ] Inference time benchmarks (GPU/CPU at various batch sizes)
 
-**Leads to**: BEATs recommended as primary encoder for BirdCLEF 2026 feature extraction pipeline
+**Leads to**: BEATs recommended as primary encoder for BirdCLEF 2026 feature extraction pipeline (fastest + highest accuracy)

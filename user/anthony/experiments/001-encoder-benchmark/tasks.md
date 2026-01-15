@@ -43,21 +43,22 @@
 ## 6. Part C: AST/SSAST/SSAMBA Benchmark (New)
 
 ### 6.1 Checkpoint Downloads
-- [ ] 6.1.1 Verify AST checkpoint auto-downloads from HuggingFace (`MIT/ast-finetuned-audioset-10-10-0.4593`)
-- [ ] 6.1.2 Download SSAST checkpoint (`ssast-base-patch-400`)
-- [ ] 6.1.3 Download SSAMBA checkpoints from Google Drive (tiny, small, base)
+- [x] 6.1.1 Verify AST checkpoint auto-downloads from HuggingFace (`MIT/ast-finetuned-audioset-10-10-0.4593`)
+- [x] 6.1.2 Download SSAST checkpoint (`SSAST-Base-Patch-400.pth`) from Dropbox
+- [x] 6.1.3 Download SSAMBA checkpoints from HuggingFace (tiny, small, base)
+- [x] 6.1.4 Clone Vim (Vision Mamba) repo into vendor/ssamba/
 
 ### 6.2 Implementation
-- [ ] 6.2.1 Implement `ASTEncoder` in `encoders/ast.py`
-- [ ] 6.2.2 Implement `SSASTEncoder` in `encoders/ssast.py`
-- [ ] 6.2.3 Implement `SSAMBAEncoder` in `encoders/ssamba.py`
-- [ ] 6.2.4 Add mamba-ssm dependency to pyproject.toml
-- [ ] 6.2.5 Verify preprocessing matches original papers (fbank settings)
+- [x] 6.2.1 Implement `ASTEncoder` in `encoders/ast.py`
+- [x] 6.2.2 Implement `SSASTEncoder` in `encoders/ssast.py`
+- [x] 6.2.3 Implement `SSAMBAEncoder` in `encoders/ssamba.py`
+- [x] 6.2.4 Add mamba-ssm dependency (installed via sbatch script, not pyproject.toml)
+- [x] 6.2.5 Verify preprocessing matches original papers (fbank settings)
 
 ### 6.3 Benchmark Execution
-- [ ] 6.3.1 Run AST + linear probe on ESC-50
-- [ ] 6.3.2 Run SSAST + linear probe on ESC-50
-- [ ] 6.3.3 Run SSAMBA-tiny + linear probe on ESC-50
+- [x] 6.3.1 Run AST + linear probe on ESC-50 → **95.50% accuracy**
+- [ ] 6.3.2 Run SSAST + linear probe on ESC-50 → **BLOCKED** (see issues below)
+- [ ] 6.3.3 Run SSAMBA-tiny + linear probe on ESC-50 → **BLOCKED** (see issues below)
 - [ ] 6.3.4 Run SSAMBA-small + linear probe on ESC-50
 - [ ] 6.3.5 Run SSAMBA-base + linear probe on ESC-50
 
@@ -71,6 +72,27 @@
 - [ ] 6.5.2 Plot Pareto frontier (accuracy vs inference time)
 - [ ] 6.5.3 Determine if SSAMBA meets BirdCLEF inference budget
 - [ ] 6.5.4 Update results.md with Part C findings
+
+### 6.6 Known Issues (2025-01-15)
+
+**SSAST - Environment Conflict:**
+- Vendor code requires `timm==0.4.5` (strict assertion in code)
+- Downgrading timm breaks CUDA libraries: `ImportError: libcublasLt.so.12`
+- **Fix needed:** Either port SSAST to work with newer timm, or run in separate venv
+
+**SSAMBA - CUDA Version Mismatch:**
+- `mamba-ssm` and `causal-conv1d` need to compile CUDA kernels
+- Cluster CUDA (13.0) mismatches PyTorch CUDA (12.8)
+- HuggingFace only hosts weights, no model implementation
+- **Fix needed:**
+  1. Port SSAMBA model code to standalone (remove Vim dependency)
+  2. Use pre-built mamba-ssm wheel matching cluster CUDA
+  3. Run in separate venv with matching CUDA/PyTorch versions
+
+**Recommended approach:**
+- Create separate conda/venv environments for SSAST and SSAMBA
+- Port minimal model code to avoid vendor dependency pollution
+- For SSAMBA: implement standalone model class that loads HuggingFace weights
 
 ## 7. Analysis & Documentation
 - [x] 7.1 Compile results table with accuracy/mAP/inference time
@@ -130,6 +152,30 @@ sbatch run-lora-finetune.sbatch
 LORA_RANK=16 sbatch run-lora-finetune.sbatch
 ```
 
+### Running Part C Benchmarks (AST/SSAST/SSAMBA)
+
+All scripts are idempotent - they skip downloads/benchmarks if outputs already exist.
+Use `--force` flag with benchmark.py to re-run.
+
+```bash
+cd user/anthony/experiments/001-encoder-benchmark/sbatch
+
+# Step 1: Download checkpoints (run first, wait for completion)
+sbatch download-part-c-checkpoints.sbatch
+
+# Step 2: Run benchmarks (can run in parallel after step 1)
+sbatch run-ast-benchmark.sbatch           # AST (no checkpoint needed - HuggingFace)
+sbatch run-ssast-benchmark.sbatch         # SSAST (needs checkpoint from step 1)
+MODEL_SIZE=tiny sbatch run-ssamba-benchmark.sbatch   # SSAMBA variants (need step 1)
+MODEL_SIZE=small sbatch run-ssamba-benchmark.sbatch
+MODEL_SIZE=base sbatch run-ssamba-benchmark.sbatch
+```
+
+**Part C Dependencies:**
+- AST: Uses HuggingFace, auto-downloads (can run immediately)
+- SSAST: Requires `timm==0.4.5` and checkpoint from Dropbox
+- SSAMBA: Requires `mamba-ssm`, `causal-conv1d`, Vim repo, and checkpoints from HuggingFace
+
 ### Package Structure
 ```
 user/anthony/src/birdclef/
@@ -147,7 +193,7 @@ user/anthony/src/birdclef/
     ├── wav2vec2.py    # Wav2Vec2 encoder
     ├── beats.py       # BEATs encoder
     ├── eat.py         # EAT encoder
-    ├── ast.py         # AST encoder (Part C) - TODO
-    ├── ssast.py       # SSAST encoder (Part C) - TODO
-    └── ssamba.py      # SSAMBA encoder (Part C) - TODO
+    ├── ast.py         # AST encoder (Part C) ✅
+    ├── ssast.py       # SSAST encoder (Part C) ✅
+    └── ssamba.py      # SSAMBA encoder (Part C) ✅
 ```

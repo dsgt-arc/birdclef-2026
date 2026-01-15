@@ -8,15 +8,34 @@ from pathlib import Path
 import torch
 
 from .data import ESC50Dataset
-from .encoders import Wav2Vec2Encoder, BEATsEncoder, EATEncoder
+from .encoders import (
+    Wav2Vec2Encoder,
+    BEATsEncoder,
+    EATEncoder,
+    ASTEncoder,
+    SSASTEncoder,
+    SSAMBAEncoder,
+)
 from .train import evaluate_5fold_cv
+
+# All supported encoders
+ENCODER_NAMES = [
+    "wav2vec2",
+    "beats",
+    "eat",
+    "ast",
+    "ssast",
+    "ssamba-tiny",
+    "ssamba-small",
+    "ssamba-base",
+]
 
 
 def get_encoder(encoder_name: str, checkpoint_dir: Path, device: str):
     """Load encoder by name.
 
     Args:
-        encoder_name: One of 'wav2vec2', 'beats', 'eat'
+        encoder_name: One of the supported encoder names
         checkpoint_dir: Directory containing model checkpoints
         device: Device to use
 
@@ -40,12 +59,55 @@ def get_encoder(encoder_name: str, checkpoint_dir: Path, device: str):
             target_length=512,  # 5 seconds for ESC-50
             device=device,
         )
+    elif encoder_name == "ast":
+        # Use HuggingFace model - will download if needed
+        return ASTEncoder(
+            model_name="MIT/ast-finetuned-audioset-10-10-0.4593",
+            device=device,
+        )
+    elif encoder_name == "ssast":
+        if SSASTEncoder is None:
+            raise ImportError(
+                "SSASTEncoder not available. Please ensure timm==0.4.5 is installed."
+            )
+        ckpt_path = checkpoint_dir / "ssast" / "SSAST-Base-Patch-400.pth"
+        if not ckpt_path.exists():
+            raise FileNotFoundError(
+                f"SSAST checkpoint not found at {ckpt_path}. "
+                "Please download from Dropbox (see tasks.md)."
+            )
+        return SSASTEncoder(
+            checkpoint_path=str(ckpt_path),
+            model_size="base",
+            input_tdim=512,
+            device=device,
+        )
+    elif encoder_name.startswith("ssamba-"):
+        if SSAMBAEncoder is None:
+            raise ImportError(
+                "SSAMBAEncoder not available. Please ensure mamba-ssm is installed "
+                "and the Vim repo is cloned in vendor/ssamba/."
+            )
+        size = encoder_name.split("-")[1]  # tiny, small, or base
+        ckpt_path = checkpoint_dir / "ssamba" / f"ssamba_{size}_400.pth"
+        if not ckpt_path.exists():
+            raise FileNotFoundError(
+                f"SSAMBA checkpoint not found at {ckpt_path}. "
+                "Please download from Google Drive (see tasks.md)."
+            )
+        return SSAMBAEncoder(
+            checkpoint_path=str(ckpt_path),
+            model_size=size,
+            input_tdim=512,
+            device=device,
+        )
     else:
-        raise ValueError(f"Unknown encoder: {encoder_name}")
+        raise ValueError(f"Unknown encoder: {encoder_name}. Available: {ENCODER_NAMES}")
 
 
 def benchmark_encoder(
     encoder_name: str,
+    *,
     esc50_root: Path,
     checkpoint_dir: Path,
     output_dir: Path,
@@ -53,7 +115,8 @@ def benchmark_encoder(
     batch_size: int = 32,
     epochs: int = 100,
     lr: float = 1e-3,
-) -> dict:
+    skip_existing: bool = True,
+) -> dict | None:
     """Run benchmark for a single encoder.
 
     Args:
@@ -65,10 +128,20 @@ def benchmark_encoder(
         batch_size: Batch size for feature extraction
         epochs: Training epochs
         lr: Learning rate
+        skip_existing: Skip if results file already exists
 
     Returns:
-        Results dictionary
+        Results dictionary, or None if skipped
     """
+    # Check for existing results
+    output_path = output_dir / f"{encoder_name}_results.json"
+    if skip_existing and output_path.exists():
+        print(f"\n{'='*60}")
+        print(f"Skipping {encoder_name}: results already exist at {output_path}")
+        print(f"{'='*60}")
+        with open(output_path) as f:
+            return json.load(f)
+
     print(f"\n{'='*60}")
     print(f"Benchmarking: {encoder_name}")
     print(f"{'='*60}")
@@ -120,9 +193,9 @@ def main():
     parser.add_argument(
         "--encoder",
         type=str,
-        choices=["wav2vec2", "beats", "eat", "all"],
+        choices=ENCODER_NAMES + ["all", "all-part-c"],
         default="all",
-        help="Encoder to benchmark",
+        help="Encoder to benchmark. 'all' runs original 3, 'all-part-c' runs new encoders",
     )
     parser.add_argument(
         "--esc50-root",
@@ -146,11 +219,18 @@ def main():
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-run even if results exist",
+    )
     args = parser.parse_args()
 
     # Determine which encoders to run
     if args.encoder == "all":
         encoders = ["wav2vec2", "beats", "eat"]
+    elif args.encoder == "all-part-c":
+        encoders = ["ast", "ssast", "ssamba-tiny", "ssamba-small", "ssamba-base"]
     else:
         encoders = [args.encoder]
 
@@ -167,6 +247,7 @@ def main():
                 batch_size=args.batch_size,
                 epochs=args.epochs,
                 lr=args.lr,
+                skip_existing=not args.force,
             )
             all_results[encoder_name] = results
         except Exception as e:
@@ -174,17 +255,17 @@ def main():
             all_results[encoder_name] = {"error": str(e)}
 
     # Print summary
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print("SUMMARY")
-    print("=" * 60)
-    print(f"{'Encoder':<12} {'Mean Acc':<12} {'Embed Dim':<12} {'Time (s)':<12}")
-    print("-" * 48)
+    print("=" * 70)
+    print(f"{'Encoder':<16} {'Mean Acc':<12} {'Embed Dim':<12} {'Time (s)':<12}")
+    print("-" * 52)
     for name, res in all_results.items():
         if "error" in res:
-            print(f"{name:<12} {'ERROR':<12}")
+            print(f"{name:<16} {'ERROR':<12}")
         else:
             print(
-                f"{name:<12} {res['mean_accuracy']:.4f}       "
+                f"{name:<16} {res['mean_accuracy']:.4f}       "
                 f"{res['embed_dim']:<12} {res['eval_time_s']:.1f}"
             )
 
