@@ -52,9 +52,9 @@ echo "  Dest: $local_cache_dir"
 echo "  TMPDIR: ${TMPDIR}"
 mkdir -p $local_cache_dir
 
-# Use parallel cp for faster NVMe throughput (4 concurrent copies)
+# Use parallel cp for faster NVMe throughput (8 concurrent copies to match 8 CPUs)
 echo "Starting parallel copy..."
-time (ls $cache_dir/*.safetensors | xargs -P 4 -I {} cp {} $local_cache_dir/)
+time (ls $cache_dir/*.safetensors | xargs -P 8 -I {} cp {} $local_cache_dir/)
 
 echo "Copy complete. Local cache:"
 ls $local_cache_dir/*.safetensors 2>/dev/null | wc -l
