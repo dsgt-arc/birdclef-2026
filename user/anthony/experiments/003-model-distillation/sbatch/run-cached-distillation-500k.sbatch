@@ -43,20 +43,22 @@ cd $repo_dir
 
 # Copy cached data to local NVMe for faster I/O
 cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_500k
-local_cache_dir=${TMPDIR:-/tmp}/teacher_cache_500k
+local_cache_dir=${TMPDIR}/teacher_cache_500k
 
 echo ""
-echo "Copying cached data to local NVMe..."
-echo "  Source: $cache_dir ($(du -sh $cache_dir | cut -f1))"
+echo "Copying cached data to local NVMe (using parallel cp)..."
+echo "  Source: $cache_dir ($(du -sh $cache_dir 2>/dev/null | cut -f1))"
 echo "  Dest: $local_cache_dir"
+echo "  TMPDIR: ${TMPDIR}"
 mkdir -p $local_cache_dir
 
-# Use rsync with progress
-time rsync -a --info=progress2 $cache_dir/*.safetensors $local_cache_dir/
+# Use parallel cp for faster NVMe throughput (4 concurrent copies)
+echo "Starting parallel copy..."
+time (ls $cache_dir/*.safetensors | xargs -P 4 -I {} cp {} $local_cache_dir/)
 
 echo "Copy complete. Local cache:"
-ls $local_cache_dir/*.safetensors | wc -l
-du -sh $local_cache_dir
+ls $local_cache_dir/*.safetensors 2>/dev/null | wc -l
+du -sh $local_cache_dir 2>/dev/null
 
 uv run python - "$STUDENT" "$MAX_EPOCHS" "$PATIENCE" "$BATCH_SIZE" "$LR" "$local_cache_dir" << 'EOF'
 """Full-scale distillation on AudioSet-500k cached embeddings."""
