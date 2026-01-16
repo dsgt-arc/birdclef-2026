@@ -1,0 +1,31 @@
+# Experiment 001: Inference Benchmark
+
+experiment:
+  name: "001-inference-benchmark"
+  description: "Benchmark inference timing for OpenSoundscape and BEATs models"
+
+audio:
+  duration_seconds: 60.0
+  sample_rate: 16000
+  type: "noise"  # white noise for benchmarking
+
+benchmark:
+  num_runs: 10
+  warmup_runs: 2
+
+models:
+  opensoundscape:
+    - name: "BirdNET"
+      type: "prebuilt"
+    - name: "Perch"
+      type: "prebuilt"
+
+  beats:
+    name: "BEATs"
+    checkpoint: "${scratch_dir}/checkpoints/beats/BEATs_iter3_plus_AS2M.pt"
+    code_path: "vendor/unilm/beats"
+
+paths:
+  scratch_dir: "~/scratch/birdclef-2026"
+  checkpoints: "${scratch_dir}/checkpoints"
+  outputs: "${scratch_dir}/outputs/001-inference-benchmark"

@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "BirdCLEF 2026 - Audio encoder benchmarking and bird sound classification"
 readme = "README.md"
 authors = [
-    { name = "Anthony Miyaguchi", email = "acmiyaguchi@gatech.edu" }
+    { name = "Anthony Miyaguchi", email = "acmiyaguchi@gatech.edu" },
+    { name = "Adrian Cheung", email = "acheung@gatech.edu" },
 ]
 requires-python = ">=3.10"
 dependencies = []
@@ -13,5 +14,6 @@ dependencies = []
 [tool.uv.workspace]
 members = [
     "user/anthony",
+    "user/adrian",
 ]
 
