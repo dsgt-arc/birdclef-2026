@@ -43,6 +43,21 @@ export HF_HOME=$scratch_dir/.cache/huggingface
 
 cd $repo_dir
 
+# Start GPU monitoring in background
+$repo_dir/scripts/monitor-gpu.sh 5 logs/gpu-${SLURM_JOB_ID}.csv &
+GPU_MONITOR_PID=$!
+
+# Cleanup function for background processes
+cleanup() {
+    echo ""
+    echo "Cleaning up..."
+    if [ ! -z "${GPU_MONITOR_PID:-}" ]; then
+        echo "  Stopping GPU monitor (PID: $GPU_MONITOR_PID)"
+        kill $GPU_MONITOR_PID 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
 # Setup cache directories
 source_cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_500k
 local_cache_dir=${TMPDIR}/teacher_cache_500k
@@ -595,7 +610,7 @@ train_loader = DataLoader(
     train_dataset,
     batch_size=batch_size,
     shuffle=True,
-    num_workers=4,
+    num_workers=8,
     pin_memory=True,
     prefetch_factor=2,
     collate_fn=collate_fn_skip_none,
@@ -604,7 +619,7 @@ val_loader = DataLoader(
     val_dataset,
     batch_size=batch_size,
     shuffle=False,
-    num_workers=2,
+    num_workers=4,
     pin_memory=True,
     prefetch_factor=2,
     collate_fn=collate_fn_skip_none,
@@ -749,4 +764,5 @@ EOF
 
 echo ""
 echo "Full-scale distillation complete for ${STUDENT}!"
+echo "GPU utilization log: logs/gpu-${SLURM_JOB_ID}.csv"
 date
