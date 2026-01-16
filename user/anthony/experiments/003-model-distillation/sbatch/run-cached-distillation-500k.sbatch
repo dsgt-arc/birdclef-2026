@@ -20,7 +20,7 @@ MAX_EPOCHS=${MAX_EPOCHS:-20}
 PATIENCE=${PATIENCE:-3}
 BATCH_SIZE=${BATCH_SIZE:-64}
 LR=${LR:-1e-4}
-COPY_TO_LOCAL=${COPY_TO_LOCAL:-true}
+COPY_TO_LOCAL=${COPY_TO_LOCAL:-false}
 
 echo "=============================================="
 echo "Full-Scale Distillation - AudioSet-500k"
