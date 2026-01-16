@@ -4,6 +4,7 @@
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH --gres=gpu:1
 #SBATCH -t360 -qembers
+#SBATCH -p gpu-rtx6000
 #SBATCH --output=logs/distill-500k-%j.out
 set -eu
 
@@ -121,6 +122,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from safetensors.torch import load_file
 from safetensors import safe_open
+from concurrent.futures import ThreadPoolExecutor
+from collections import OrderedDict
+import threading
+import random
 
 from birdclef.students import get_student_model, count_parameters
 from birdclef.distillation import DistillationLoss
@@ -158,11 +163,6 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
     - Use with DataLoader(shuffle=False) - shuffling is handled internally
     - Call reset_epoch() at start of each epoch to reshuffle within shards
     """
-
-    from concurrent.futures import ThreadPoolExecutor
-    from collections import OrderedDict
-    import threading
-    import random
 
     def __init__(
         self,

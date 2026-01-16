@@ -1,103 +1,45 @@
 # PACE Cluster Reference
 
-Reference for Georgia Tech PACE cluster resources. This is the canonical source for PACE-specific facts used by other documentation.
+Quick reference for Georgia Tech PACE cluster resources.
 
-## Configuration
+> **For writing/reviewing sbatch scripts**: See `.claude/commands/SKILLS.md` for comprehensive patterns and checklists.
 
-Before using PACE, set your account in your environment:
+## Storage
 
-```bash
-# Add to ~/.bashrc
-export PACE_ACCOUNT="pace-your_allocation_here"  # e.g., pace-dsgt_clef2025
-```
+| Location | Quota | Use For |
+|----------|-------|---------|
+| `~/` | 20 GB | Code, configs |
+| `~/scratch/` | 15 TB | Datasets, venvs, outputs (60-day purge policy) |
+| `/storage/coda1/p-<alloc>/0/shared/` | Varies | Team-shared data |
+| `${TMPDIR}` | ~1 TB | Job-local temp (auto-cleaned) |
 
-All examples below use `${PACE_ACCOUNT}` - substitute your allocation.
+## GPU Partitions
 
-## Disk Usage
+| Partition | GPU | VRAM | Availability |
+|-----------|-----|------|--------------|
+| `gpu-rtx6000` | RTX 6000 | 24GB | **Best** (default) |
+| `gpu-v100` | V100 | 16/32GB | Good |
+| `gpu-l40s` | L40S | 48GB | Moderate |
+| `gpu-a100` | A100 | 40/80GB | Limited |
+| `gpu-h100` | H100 | 80GB | Very limited |
 
-### Home Directory (~/)
-- **Quota**: 20 GB
-- **Use for**: Code, configs, small files
-- **Avoid**: Datasets, checkpoints, virtual environments, pip/uv caches
-
-### Scratch Directory (~/scratch/)
-- **Quota**: 15 TB
-- **Use for**: Datasets, model checkpoints, virtual environments, experiment outputs
-- **Path**: `~/scratch/birdclef-2026/`
-- **Note**: Files may be purged after 60 days of inactivity
-
-### Project Directory (shared storage)
-- **Path**: `/storage/coda1/p-<allocation>/0/shared/` (e.g., `p-dsgt_clef2025`)
-- **Use for**: Shared datasets, final model artifacts
-- **Note**: Persistent storage for team collaboration
-
-## SLURM Patterns
-
-### Queue Options
-
-| Queue | Time Limit | Use Case |
-|-------|------------|----------|
-| `embers` | 2 hours | Quick jobs, downloads, data prep |
-| `inferno` | 12+ hours | Training runs |
-
-### Resource Requests
+## Quick Commands
 
 ```bash
-# CPU job (data download, preprocessing)
-#SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=4G
+# Check quotas
+pace-quota
 
-# Single GPU job (training, inference)
-#SBATCH --nodes=1 --gres=gpu:1 --cpus-per-task=6 --mem-per-gpu=32G
+# Check queue status
+pace-check-queue
 
-# Specific GPU type
-#SBATCH --constraint=RTX6000
-#SBATCH --partition=gpu-l40s --gres=gpu:L40s
-```
-
-### Standard sbatch Header
-
-```bash
-#!/bin/bash
-#SBATCH --job-name=my-job
-#SBATCH --account=${PACE_ACCOUNT}
-#SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=4G
-#SBATCH -t60 -qembers
-#SBATCH --output=logs/%j.out
-#SBATCH --mail-type=END,FAIL --mail-user=your@email.edu
-set -eu
-
-cd ${SLURM_SUBMIT_DIR:-$(dirname "$0")}
-
-# Environment setup
-export UV_PROJECT_ENVIRONMENT=~/scratch/birdclef-2026/.venv
-export HF_HOME=~/scratch/birdclef-2026/.cache/huggingface
-
-hostname
-date
-
-# Your commands here
-uv run python script.py
+# Check account balance
+pace-mybalance
 ```
 
 ## Troubleshooting
 
-### "Disk quota exceeded"
-- Check quotas: `pace-quota`
-- Move large files to scratch
-- Clear caches: `rm -rf ~/.cache/huggingface ~/.cache/torch`
-- Ensure `UV_PROJECT_ENVIRONMENT` points to scratch
-
-### "No module named X" in sbatch
-- Ensure virtual environment is activated or use `uv run`
-- Check `UV_PROJECT_ENVIRONMENT` is set correctly
-- Verify package is installed: `uv pip list | grep X`
-
-### Dynamic library loading errors
-- PyTorch/TensorFlow load `.so` files from venv at runtime
-- Solution: Install venv to scratch (not home) where there's space
-- Set `LD_LIBRARY_PATH` if needed
-
-### Jobs stuck in queue
-- Check cluster status: `pace-check-queue`
-- Try different queue or reduce resource request
-- Check account allocation: `pace-mybalance`
+| Problem | Solution |
+|---------|----------|
+| Disk quota exceeded | Move files to scratch, clear `~/.cache/torch` |
+| No module found | Use `uv run`, check `UV_PROJECT_ENVIRONMENT` |
+| Jobs stuck | Try different partition, reduce resources |
