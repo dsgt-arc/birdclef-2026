@@ -39,17 +39,38 @@
   - 50 epochs in 27 minutes using local NVMe cache
   - Val loss: 0.402 → 0.126 (MSE: 0.065)
   - Model saved: `cached_convnext-small_best.pt`
-- [x] 3.3 Implement StreamingCacheDataset for intelligent prefetching
-  - Replaces basic CachedDistillationDataset
-  - Background threading with predictive shard prefetching
-  - LRU cache eviction for bounded memory
-  - Expected: 10-30% training speedup, 80-95% cache hit rates
-  - See: `docs/references/streaming-cache-implementation.md` for full documentation
-- [~] 3.4 Run full-scale distillation (AudioSet-500k) with StreamingCacheDataset
-  - SLURM job 3280182 submitted (convnext-small)
-  - 20 epochs max, patience 3, batch_size 64
-  - ~500k samples, 90/10 train/val split
-- [ ] 3.5 Save student checkpoints for all architectures
+- [x] 3.3 Redesign for StreamingCacheDataset with smart prefetching
+  - **Problem discovered**: Initial jobs 3280182, 3280685 failed
+    - 687GB upfront copy took 30+ minutes before training started
+    - FileNotFoundError during training (missing shard files)
+    - /tmp space constraints on compute nodes
+  - **Solution v1**: Best-effort caching with dual-path fallback
+    - Local NVMe cache (fast) with source cache (reliable) fallback
+    - Optional upfront copy (COPY_TO_LOCAL flag)
+    - Graceful degradation when files missing
+  - **Problem discovered v2**: Dataset initialization still too slow
+    - Loading all 143 shards (687GB) just to count samples
+    - Random shuffling defeated prefetching (forced all shards in memory)
+  - **Solution v2**: Fast metadata + sequential processing
+    - Use safetensors metadata API to read shapes without loading data
+    - Cache metadata to `shard_metadata.json` (seconds instead of minutes)
+    - Sequential shard processing (0→143) with within-shard shuffling
+    - Background prefetching of next N shards (always predictable)
+    - `reset_epoch()` method reshuffles within shards each epoch
+  - Documentation: `docs/references/streaming-cache-implementation.md`
+- [x] 3.4 Add GPU monitoring and SLURM best practices
+  - Created `scripts/monitor-gpu.sh` for real-time GPU utilization tracking
+  - Integrated into sbatch scripts with background monitoring + cleanup trap
+  - Created `/slurm:sbatch-review` skill for idiomatic sbatch patterns
+  - Added venv sync to TMPDIR for faster package loading
+- [~] 3.5 Run full-scale distillation (AudioSet-500k) with optimized streaming cache
+  - SLURM job 3284233 submitted (convnext-small) - **Currently running**
+  - 5 epochs, patience 3, batch_size 64, num_workers 8
+  - ~500k samples (436k train, 47k val), 90/10 train/val split
+  - Streaming-only mode (COPY_TO_LOCAL=false, no upfront copy)
+  - Fast metadata initialization + sequential shard processing
+  - GPU monitoring active: `logs/gpu-3284233.csv`
+- [ ] 3.6 Save student checkpoints for all architectures
 
 ## 4. Evaluation
 - [ ] 4.1 Create evaluation script `eval-audioset.py` (Freeze backbone -> Train Linear -> Calc mAP)
