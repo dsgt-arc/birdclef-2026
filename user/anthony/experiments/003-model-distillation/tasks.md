@@ -3,12 +3,20 @@
 ## 1. Setup
 - [x] 1.1 Download AudioSet-20k (pilot) from HuggingFace: `confit/audioset-16khz-wds`
   - SLURM job 3269541 submitted
-- [ ] 1.2 Download AudioSet-500k (main) from HuggingFace: `confit/audioset-16khz-wds`
+- [x] 1.2 Download AudioSet-500k (main) from HuggingFace: `confit/audioset-16khz-wds`
+  - 145 shards, 147 GB, ~500k samples
+  - SLURM job 3279383 completed in 2.7 minutes
 - [x] 1.3 Create WebDataset loader for efficient streaming of AudioSet
   - `birdclef/data/audioset.py` - AudioSetWebDataset, AudioSetDistillationDataset
 - [x] 1.4 Verify teacher (BEATs) inference pipeline on AudioSet shards
   - Teacher caching completed: 7 shards, 20,550 samples cached
-- [ ] 1.5 **Regenerate Static Embeddings Codebook**: Run Model2Vec extraction on AudioSet-20k to build a robust, universal codebook
+- [x] 1.5 Cache teacher embeddings for AudioSet-500k
+  - SLURM array job 3279629 completed in ~25 minutes
+  - 15 parallel V100 tasks, 10 shards each
+  - **143 shards cached, 687 GB** (2 shards missing from source dataset)
+  - Uses NVMe local storage for faster IO (~28ms/sample)
+  - Idempotent: `sbatch --array=0-14 cache-teacher-array.sbatch`
+- [ ] 1.6 **Regenerate Static Embeddings Codebook**: Run Model2Vec extraction on AudioSet-20k to build a robust, universal codebook
 
 ## 2. Implementation
 - [x] 2.1 Implement `DistillationStudent` architectures:
