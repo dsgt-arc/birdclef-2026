@@ -39,11 +39,17 @@
   - 50 epochs in 27 minutes using local NVMe cache
   - Val loss: 0.402 → 0.126 (MSE: 0.065)
   - Model saved: `cached_convnext-small_best.pt`
-- [~] 3.3 Run full-scale distillation (AudioSet-500k)
+- [x] 3.3 Implement StreamingCacheDataset for intelligent prefetching
+  - Replaces basic CachedDistillationDataset
+  - Background threading with predictive shard prefetching
+  - LRU cache eviction for bounded memory
+  - Expected: 10-30% training speedup, 80-95% cache hit rates
+  - See: `docs/references/streaming-cache-implementation.md` for full documentation
+- [~] 3.4 Run full-scale distillation (AudioSet-500k) with StreamingCacheDataset
   - SLURM job 3280182 submitted (convnext-small)
   - 20 epochs max, patience 3, batch_size 64
   - ~500k samples, 90/10 train/val split
-- [ ] 3.4 Save student checkpoints for all architectures
+- [ ] 3.5 Save student checkpoints for all architectures
 
 ## 4. Evaluation
 - [ ] 4.1 Create evaluation script `eval-audioset.py` (Freeze backbone -> Train Linear -> Calc mAP)
