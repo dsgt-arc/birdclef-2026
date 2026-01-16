@@ -39,7 +39,10 @@
   - 50 epochs in 27 minutes using local NVMe cache
   - Val loss: 0.402 → 0.126 (MSE: 0.065)
   - Model saved: `cached_convnext-small_best.pt`
-- [ ] 3.3 Run full-scale distillation (AudioSet-500k)
+- [~] 3.3 Run full-scale distillation (AudioSet-500k)
+  - SLURM job 3280182 submitted (convnext-small)
+  - 20 epochs max, patience 3, batch_size 64
+  - ~500k samples, 90/10 train/val split
 - [ ] 3.4 Save student checkpoints for all architectures
 
 ## 4. Evaluation
