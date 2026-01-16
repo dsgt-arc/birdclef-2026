@@ -38,7 +38,12 @@ nvidia-smi
 scratch_dir=$(realpath ~/scratch/birdclef-2026)
 repo_dir=$(realpath ~/arc/birdclef-2026)
 
-export UV_PROJECT_ENVIRONMENT=$scratch_dir/.venv
+# Sync venv to local NVMe for faster package loading
+local_venv=${TMPDIR}/venv
+echo "Syncing venv to local NVMe..."
+time rsync -a --info=progress2 $scratch_dir/.venv/ $local_venv/
+
+export UV_PROJECT_ENVIRONMENT=$local_venv
 export HF_HOME=$scratch_dir/.cache/huggingface
 
 cd $repo_dir
@@ -115,6 +120,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from safetensors.torch import load_file
+from safetensors import safe_open
 
 from birdclef.students import get_student_model, count_parameters
 from birdclef.distillation import DistillationLoss
@@ -135,20 +141,28 @@ print("=" * 60)
 
 
 class StreamingCacheDataset(torch.utils.data.Dataset):
-    """Dataset with smart prefetching strategy for efficient streaming from cache.
+    """Dataset with fast metadata caching and sequential shard processing.
 
-    Features:
-    - Background ThreadPoolExecutor copies shards predictively
-    - Maintains warming set of next N shards (e.g., 5-10 shards ahead)
-    - LRU eviction if local cache space gets full
-    - Tracks shard status: warm (copied), warming (copying), cold (not started)
-    - Falls back to source if copy hasn't finished yet
-    - No blocking waits - GPU never starves
+    Key improvements over previous version:
+    1. Fast initialization: Uses safetensors metadata API to read tensor shapes
+       without loading data. Caches metadata to JSON for instant subsequent runs.
+    2. Sequential shard processing with within-shard shuffling: Processes shards
+       0 -> N in order, but shuffles samples within each shard. This enables
+       efficient prefetching (always next N shards) while maintaining training
+       diversity.
+    3. Background prefetching: Copies next N shards to local NVMe in background.
+    4. LRU eviction: Automatically manages local cache space.
+    5. Dual-path fallback: Local -> Source with no blocking waits.
+
+    Usage:
+    - Use with DataLoader(shuffle=False) - shuffling is handled internally
+    - Call reset_epoch() at start of each epoch to reshuffle within shards
     """
 
     from concurrent.futures import ThreadPoolExecutor
     from collections import OrderedDict
     import threading
+    import random
 
     def __init__(
         self,
@@ -158,21 +172,25 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
         max_local_shards: int = 20,
         prefetch_shards: int = 5,
         num_copy_workers: int = 4,
+        shuffle_within_shards: bool = True,
+        seed: int = 42,
     ):
         self.shard_files = shard_files
         self.source_cache_dir = source_cache_dir
         self.local_cache_dir = local_cache_dir
         self.max_local_shards = max_local_shards
         self.prefetch_shards = prefetch_shards
+        self.shuffle_within_shards = shuffle_within_shards
+        self.rng = random.Random(seed)
 
         # Background copying infrastructure
         self.executor = ThreadPoolExecutor(max_workers=num_copy_workers)
         self.lock = threading.Lock()
 
-        # Track shard states: warm (in local cache), warming (currently copying), cold (not started)
+        # Track shard states
         self.warm_shards = set()  # Successfully copied to local
         self.warming_futures = {}  # shard_idx -> Future
-        self.access_order = OrderedDict()  # For LRU: shard_idx -> timestamp
+        self.access_order = OrderedDict()  # For LRU
 
         # Statistics
         self.stats = {
@@ -182,45 +200,151 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
             "lru_evictions": 0,
         }
 
-        # Build index: list of (shard_idx, sample_idx_within_shard)
+        # Load or build shard metadata (fast path using safetensors metadata API)
+        self.shard_metadata = self._load_or_build_metadata()
+
+        # Build sequential index with within-shard shuffling
+        # index[i] = (shard_idx, sample_idx_within_shard)
         self.index = []
-        self.shard_lengths = []
-        self.skipped_shards = []
-        self.skipped_samples = 0
+        self._build_shuffled_index()
 
-        print(f"  Loading {len(shard_files)} shards...")
-        for shard_idx, shard_path in enumerate(tqdm(shard_files, desc="Indexing")):
-            try:
-                tensors = load_file(shard_path)
-                n_samples = tensors["teacher_embeds"].shape[0]
-                self.shard_lengths.append(n_samples)
-                for i in range(n_samples):
-                    self.index.append((shard_idx, i))
-            except FileNotFoundError:
-                self.skipped_shards.append(shard_path.name)
-                self.skipped_samples += 1
+        # Discover pre-existing warm shards in local cache
+        self._discover_warm_shards()
 
-        print(f"  Total samples: {len(self.index)}")
-        if self.skipped_shards:
-            print(f"  WARNING: {len(self.skipped_shards)} shards not found and will be skipped")
-
-        # Discover which shards already exist in local cache
-        if self.local_cache_dir.exists():
-            for shard_path in self.local_cache_dir.glob("*.safetensors"):
-                shard_name = shard_path.name
-                # Find corresponding shard_idx
-                for idx, shard_file in enumerate(self.shard_files):
-                    if shard_file.name == shard_name:
-                        with self.lock:
-                            self.warm_shards.add(idx)
-                        break
-
-        print(f"  Pre-existing warm shards in local cache: {len(self.warm_shards)}")
-
-        # Cache for current shard
+        # Shard loading cache (only one shard in memory at a time)
         self._cached_shard_idx = None
         self._cached_tensors = None
         self.last_accessed_shard = -1
+
+    def _load_or_build_metadata(self) -> dict[str, dict]:
+        """Load cached metadata or build it using safetensors metadata API.
+
+        Uses safe_open with get_slice().get_shape() to read tensor shapes
+        without loading the actual tensor data into memory.
+
+        Caches to {source_cache_dir}/shard_metadata.json for fast subsequent runs.
+        """
+        metadata_path = self.source_cache_dir / "shard_metadata.json"
+
+        # Try loading cached metadata
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, "r") as f:
+                    cached_metadata = json.load(f)
+
+                # Validate: check if all shard files are in metadata
+                shard_names = {p.name for p in self.shard_files}
+                cached_names = set(cached_metadata.keys())
+
+                if shard_names <= cached_names:
+                    # Filter to only our shards
+                    metadata = {k: v for k, v in cached_metadata.items() if k in shard_names}
+                    total_samples = sum(m["n_samples"] for m in metadata.values())
+                    print(f"  Loaded cached metadata: {len(metadata)} shards, {total_samples:,} samples")
+                    return metadata
+                else:
+                    print(f"  Metadata cache incomplete, rebuilding...")
+            except Exception as e:
+                print(f"  Failed to load metadata cache: {e}, rebuilding...")
+
+        # Build metadata using safetensors API (fast - only reads headers)
+        print(f"  Building metadata for {len(self.shard_files)} shards (reading headers only)...")
+        metadata = {}
+        skipped = []
+
+        for shard_path in tqdm(self.shard_files, desc="Reading metadata"):
+            try:
+                # Use safe_open to get tensor shape without loading data
+                with safe_open(str(shard_path), framework="pt") as f:
+                    # Get shape of teacher_embeds tensor
+                    tensor_slice = f.get_slice("teacher_embeds")
+                    shape = tensor_slice.get_shape()
+                    n_samples = shape[0]
+
+                metadata[shard_path.name] = {"n_samples": n_samples}
+            except FileNotFoundError:
+                skipped.append(shard_path.name)
+            except Exception as e:
+                print(f"  WARNING: Error reading {shard_path.name}: {e}")
+                skipped.append(shard_path.name)
+
+        if skipped:
+            print(f"  WARNING: {len(skipped)} shards not found/readable")
+
+        total_samples = sum(m["n_samples"] for m in metadata.values())
+        print(f"  Indexed {len(metadata)} shards, {total_samples:,} total samples")
+
+        # Cache metadata to JSON for future runs
+        try:
+            # Load existing metadata and merge (other processes might be writing)
+            existing = {}
+            if metadata_path.exists():
+                with open(metadata_path, "r") as f:
+                    existing = json.load(f)
+
+            existing.update(metadata)
+            with open(metadata_path, "w") as f:
+                json.dump(existing, f, indent=2)
+            print(f"  Saved metadata cache to {metadata_path}")
+        except Exception as e:
+            print(f"  WARNING: Could not save metadata cache: {e}")
+
+        return metadata
+
+    def _build_shuffled_index(self):
+        """Build index with sequential shard order but shuffled samples within shards.
+
+        This allows prefetching to work efficiently (always next N shards)
+        while maintaining training diversity through within-shard shuffling.
+        """
+        self.index = []
+
+        # Process shards in sequential order (0 -> N)
+        for shard_idx, shard_path in enumerate(self.shard_files):
+            shard_name = shard_path.name
+            if shard_name not in self.shard_metadata:
+                continue
+
+            n_samples = self.shard_metadata[shard_name]["n_samples"]
+
+            # Generate sample indices for this shard
+            sample_indices = list(range(n_samples))
+
+            # Shuffle within shard if enabled
+            if self.shuffle_within_shards:
+                self.rng.shuffle(sample_indices)
+
+            # Add to index
+            for sample_idx in sample_indices:
+                self.index.append((shard_idx, sample_idx))
+
+        print(f"  Built index: {len(self.index):,} samples in sequential shard order")
+
+    def reset_epoch(self, epoch: int = 0):
+        """Reshuffle within-shard samples for a new epoch.
+
+        Call this at the start of each epoch to get different within-shard ordering.
+        Shard order remains sequential for efficient prefetching.
+        """
+        self.rng = random.Random(42 + epoch)
+        self._build_shuffled_index()
+
+        # Reset shard tracking for new epoch
+        self.last_accessed_shard = -1
+
+    def _discover_warm_shards(self):
+        """Find which shards already exist in local cache."""
+        if not self.local_cache_dir.exists():
+            print(f"  Pre-existing warm shards: 0")
+            return
+
+        shard_name_to_idx = {p.name: i for i, p in enumerate(self.shard_files)}
+
+        for shard_path in self.local_cache_dir.glob("*.safetensors"):
+            if shard_path.name in shard_name_to_idx:
+                self.warm_shards.add(shard_name_to_idx[shard_path.name])
+
+        print(f"  Pre-existing warm shards: {len(self.warm_shards)}")
 
     def _get_shard_path(self, shard_idx: int) -> Path | None:
         """Try local first, then source. Returns path or None if not found."""
@@ -236,7 +360,6 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
         if source_path.exists():
             return source_path
 
-        # Neither exists
         return None
 
     def _copy_shard_worker(self, shard_idx: int) -> bool:
@@ -249,7 +372,6 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
             if not source_path.exists():
                 return False
 
-            # Copy file
             import shutil
             shutil.copy2(source_path, local_path)
 
@@ -263,11 +385,10 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
             return False
 
     def _evict_lru_shard(self):
-        """Remove the least recently used shard from local cache to make space."""
+        """Remove the least recently used shard from local cache."""
         if not self.access_order:
             return
 
-        # Get oldest shard (first in OrderedDict)
         oldest_shard_idx = next(iter(self.access_order))
         shard_name = self.shard_files[oldest_shard_idx].name
         local_path = self.local_cache_dir / shard_name
@@ -288,20 +409,17 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
 
         for shard_idx in range(current_shard_idx, prefetch_end):
             with self.lock:
-                # Skip if already warm or warming
                 if shard_idx in self.warm_shards or shard_idx in self.warming_futures:
                     continue
 
-                # Skip if exceeding local cache limit and would need eviction
                 if len(self.warm_shards) >= self.max_local_shards:
                     self._evict_lru_shard()
 
-                # Submit copy task
                 future = self.executor.submit(self._copy_shard_worker, shard_idx)
                 self.warming_futures[shard_idx] = future
 
     def _load_shard(self, shard_idx: int) -> dict[str, torch.Tensor] | None:
-        """Load shard from best available location. Returns None if not found."""
+        """Load shard from best available location."""
         if self._cached_shard_idx == shard_idx and self._cached_tensors is not None:
             return self._cached_tensors
 
@@ -313,7 +431,6 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
             self._cached_tensors = load_file(shard_path)
             self._cached_shard_idx = shard_idx
 
-            # Track access for LRU
             with self.lock:
                 self.access_order[shard_idx] = True
                 self.access_order.move_to_end(shard_idx)
@@ -341,18 +458,17 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
             }
 
     def validate_cache(self) -> dict[str, any]:
-        """Check which shards exist in each location before training starts."""
+        """Check which shards exist in each location."""
         source_shards = set()
         local_shards = set()
         missing_shards = set()
 
         if self.source_cache_dir.exists():
-            source_shards = set(f.name for f in self.source_cache_dir.glob("*.safetensors"))
+            source_shards = {f.name for f in self.source_cache_dir.glob("*.safetensors")}
 
         if self.local_cache_dir.exists():
-            local_shards = set(f.name for f in self.local_cache_dir.glob("*.safetensors"))
+            local_shards = {f.name for f in self.local_cache_dir.glob("*.safetensors")}
 
-        # Check all shard files
         for shard_path in self.shard_files:
             if shard_path.name not in source_shards and shard_path.name not in local_shards:
                 missing_shards.add(shard_path.name)
@@ -373,7 +489,7 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
         try:
             shard_idx, sample_idx = self.index[idx]
 
-            # Schedule prefetch of next shards on first access to new shard
+            # Schedule prefetch when we enter a new shard
             if shard_idx != self.last_accessed_shard:
                 self._schedule_prefetch(shard_idx)
                 self.last_accessed_shard = shard_idx
@@ -381,7 +497,6 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
             tensors = self._load_shard(shard_idx)
 
             if tensors is None:
-                # Shard not available, skip this sample
                 print(f"WARNING: Skipping sample {idx} - shard {shard_idx} not found")
                 return None
 
@@ -394,11 +509,11 @@ class StreamingCacheDataset(torch.utils.data.Dataset):
             return None
 
     def __del__(self):
-        """Cleanup: shutdown executor on deletion."""
+        """Cleanup executor on deletion."""
         try:
-            self.executor.shutdown(wait=True, timeout=30)
-        except Exception as e:
-            print(f"WARNING: Error shutting down executor: {e}")
+            self.executor.shutdown(wait=False)
+        except Exception:
+            pass
 
 
 class EarlyStoppingTrainer:
@@ -559,7 +674,7 @@ n_val_shards = max(1, len(shard_files) // 10)
 train_shards = shard_files[:-n_val_shards]
 val_shards = shard_files[-n_val_shards:]
 
-print(f"\nCreating datasets with smart prefetching...")
+print(f"\nCreating datasets with fast metadata loading and sequential prefetching...")
 print(f"  Train shards: {len(train_shards)}")
 print(f"  Val shards: {len(val_shards)}")
 
@@ -570,6 +685,8 @@ train_dataset = StreamingCacheDataset(
     max_local_shards=20,
     prefetch_shards=5,
     num_copy_workers=4,
+    shuffle_within_shards=True,  # Shuffle samples within each shard
+    seed=42,
 )
 val_dataset = StreamingCacheDataset(
     val_shards,
@@ -578,6 +695,8 @@ val_dataset = StreamingCacheDataset(
     max_local_shards=20,
     prefetch_shards=5,
     num_copy_workers=2,
+    shuffle_within_shards=False,  # No shuffling for validation
+    seed=42,
 )
 
 # Validate cache availability before training
@@ -606,10 +725,12 @@ def collate_fn_skip_none(batch):
     teacher_embeds = torch.stack([item[1] for item in batch])
     return static_embeds, teacher_embeds
 
+# NOTE: shuffle=False because StreamingCacheDataset handles shuffling internally
+# (within-shard shuffling with sequential shard order for efficient prefetching)
 train_loader = DataLoader(
     train_dataset,
     batch_size=batch_size,
-    shuffle=True,
+    shuffle=False,  # Shuffling handled by dataset.reset_epoch()
     num_workers=8,
     pin_memory=True,
     prefetch_factor=2,
@@ -679,6 +800,10 @@ start_time = time.time()
 
 for epoch in range(start_epoch, max_epochs):
     epoch_start = time.time()
+
+    # Reshuffle within-shard samples for this epoch
+    # (shard order stays sequential for efficient prefetching)
+    train_dataset.reset_epoch(epoch)
 
     # Train
     train_metrics = trainer.train_epoch(train_loader)
