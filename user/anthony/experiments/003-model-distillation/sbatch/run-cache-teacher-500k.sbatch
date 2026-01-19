@@ -3,16 +3,37 @@
 #SBATCH --account=paceship-dsgt_clef2026
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH --gres=gpu:1
-#SBATCH -t360 -qembers
-#SBATCH --output=logs/cache-teacher-500k-%j.out
-set -eu
+#SBATCH -t120 -qembers
+#SBATCH --output=logs/cache-teacher-500k-%A_%a.out
+#SBATCH --array=0-14
 
-# Usage: sbatch cache-teacher-500k.sbatch
-# Can be rerun - skips already cached shards
+# Usage: sbatch run-cache-teacher-500k.sbatch
+#
+# Processes AudioSet-500k shards in parallel using SLURM array jobs.
+# Each array task handles ~10 shards (145 total / 15 tasks = ~10 shards each).
+# Idempotent: skips already cached shards.
+#
+# To process all 145 shards with 15 parallel jobs:
+#   sbatch --array=0-14 run-cache-teacher-500k.sbatch
+#
+# To rerun failed tasks (e.g., tasks 3 and 7):
+#   sbatch --array=3,7 run-cache-teacher-500k.sbatch
+
+set -eu
 
 cd ${SLURM_SUBMIT_DIR:-$(dirname "$0")}
 
-echo "Caching Teacher Outputs for AudioSet-500k"
+# Configuration
+SHARDS_PER_TASK=10
+TOTAL_SHARDS=145
+DATASET_VERSION=${DATASET_VERSION:-500k}
+
+echo "=============================================="
+echo "Teacher Caching Array Job"
+echo "=============================================="
+echo "Array Task ID: ${SLURM_ARRAY_TASK_ID}"
+echo "Shards per task: ${SHARDS_PER_TASK}"
+echo "Dataset: ${DATASET_VERSION}"
 hostname
 date
 nvidia-smi
@@ -23,29 +44,51 @@ repo_dir=$(realpath ~/arc/birdclef-2026)
 export UV_PROJECT_ENVIRONMENT=$scratch_dir/.venv
 export HF_HOME=$scratch_dir/.cache/huggingface
 
-# Start GPU monitoring in background
-(
-    while true; do
-        echo ""
-        echo "=== GPU Status $(date '+%H:%M:%S') ==="
-        nvidia-smi --query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits | \
-            awk -F', ' '{printf "GPU: %s%% | Mem: %s%% (%sMiB/%sMiB) | Temp: %s°C\n", $1, $2, $3, $4, $5}'
-        sleep 60
-    done
-) &
-GPU_MONITOR_PID=$!
-trap "kill $GPU_MONITOR_PID 2>/dev/null" EXIT
+# Copy tar files for this task to local NVMe for faster IO
+audioset_dir=$scratch_dir/data/audioset-wds/${DATASET_VERSION}/train
+cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_${DATASET_VERSION}
+local_tar_dir=${TMPDIR:-/tmp}/audioset_shards_${SLURM_ARRAY_TASK_ID}
+
+# Calculate shard range for this task
+START_SHARD=$((SLURM_ARRAY_TASK_ID * SHARDS_PER_TASK))
+END_SHARD=$((START_SHARD + SHARDS_PER_TASK - 1))
+if [ $END_SHARD -ge $TOTAL_SHARDS ]; then
+    END_SHARD=$((TOTAL_SHARDS - 1))
+fi
+
+echo ""
+echo "This task processes shards ${START_SHARD} to ${END_SHARD}"
+
+# Copy relevant shards to local NVMe
+echo ""
+echo "Copying shards to local NVMe..."
+mkdir -p $local_tar_dir
+
+for i in $(seq $START_SHARD $END_SHARD); do
+    shard_name=$(printf "shard-%05d.tar" $i)
+    if [ -f "$audioset_dir/$shard_name" ]; then
+        # Check if already cached
+        cache_file="$cache_dir/$(printf "shard-%05d.safetensors" $i)"
+        if [ -f "$cache_file" ]; then
+            echo "  Skipping $shard_name (already cached)"
+        else
+            echo "  Copying $shard_name"
+            cp "$audioset_dir/$shard_name" "$local_tar_dir/"
+        fi
+    fi
+done
+
+echo ""
+echo "Local tar directory:"
+ls -lh $local_tar_dir/ 2>/dev/null | head -5 || echo "  (empty - all shards already cached)"
 
 cd $repo_dir
 
-uv run python << 'EOF'
-"""Cache teacher outputs for AudioSet-500k.
-
-Produces one safetensors file per input tar shard.
-Idempotent - skips already cached shards.
-"""
+uv run python - "$local_tar_dir" "$cache_dir" "$START_SHARD" "$END_SHARD" << 'EOF'
+"""Cache teacher outputs for a range of shards."""
 
 import io
+import sys
 import tarfile
 import time
 from pathlib import Path
@@ -56,9 +99,14 @@ import torch
 from safetensors.torch import save_file
 from tqdm import tqdm
 
-import sys
-sys.path.insert(0, "vendor/unilm/beats")
+local_tar_dir = Path(sys.argv[1])
+cache_dir = Path(sys.argv[2])
+start_shard = int(sys.argv[3])
+end_shard = int(sys.argv[4])
 
+cache_dir.mkdir(parents=True, exist_ok=True)
+
+sys.path.insert(0, "vendor/unilm/beats")
 from birdclef.distillation import load_teacher_and_tokenizer
 
 # Paths
@@ -66,16 +114,13 @@ scratch_dir = Path.home() / "scratch" / "birdclef-2026"
 encoder_path = scratch_dir / "checkpoints/beats/BEATs_iter3.pt"
 tokenizer_path = scratch_dir / "checkpoints/beats/Tokenizers_iter3.pt"
 static_embeddings_path = scratch_dir / "outputs/exp002-benchmarks/static_embeddings/static_embeddings.npy"
-audioset_dir = scratch_dir / "data/audioset-wds/500k"
-cache_dir = scratch_dir / "outputs/exp003-distillation/teacher_cache_500k"
-cache_dir.mkdir(parents=True, exist_ok=True)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-target_length = 160000  # 10s at 16kHz
+target_length = 160000
 batch_size = 32
 
 print("=" * 60)
-print("CACHING TEACHER OUTPUTS FOR AUDIOSET-500K")
+print(f"CACHING SHARDS {start_shard} to {end_shard}")
 print("=" * 60)
 
 # Load models
@@ -90,41 +135,29 @@ print("\nLoading static embeddings...")
 static_embeddings = torch.from_numpy(np.load(static_embeddings_path)).float()
 print(f"  Shape: {static_embeddings.shape}")
 
-# Find all tar shards
-tar_files = sorted(audioset_dir.glob("train/*.tar"))
-print(f"\nFound {len(tar_files)} tar shards")
+# Find tar files to process (from local NVMe)
+tar_files = sorted(local_tar_dir.glob("shard-*.tar"))
+print(f"\nFound {len(tar_files)} tar files to process")
 
-# Check existing cache
-existing = set(f.stem for f in cache_dir.glob("*.safetensors"))
-to_process = [f for f in tar_files if f.stem not in existing]
-print(f"Already cached: {len(existing)} shards")
-print(f"To process: {len(to_process)} shards")
-
-if not to_process:
-    print("\nAll shards already cached!")
+if len(tar_files) == 0:
+    print("All shards already cached - nothing to do!")
     sys.exit(0)
 
 
 def load_audio_from_tar(tar: tarfile.TarFile, member_name: str) -> torch.Tensor:
-    """Load and preprocess audio from open tar file."""
     f = tar.extractfile(member_name)
     audio_data, sr = sf.read(io.BytesIO(f.read()))
-
     waveform = torch.from_numpy(audio_data.astype(np.float32))
     if waveform.dim() == 2:
         waveform = waveform.mean(dim=-1)
-
-    # Pad or trim to target length
     if len(waveform) < target_length:
         waveform = torch.nn.functional.pad(waveform, (0, target_length - len(waveform)))
     else:
         waveform = waveform[:target_length]
-
     return waveform
 
 
 def process_shard(tar_path: Path) -> dict[str, torch.Tensor]:
-    """Process all samples in a tar shard, return tensors."""
     shard_teacher_embeds = []
     shard_token_ids = []
     shard_static_embeds = []
@@ -135,7 +168,6 @@ def process_shard(tar_path: Path) -> dict[str, torch.Tensor]:
 
         for i in range(0, len(audio_members), batch_size):
             batch_members = audio_members[i:i + batch_size]
-
             waveforms = torch.stack([
                 load_audio_from_tar(tar, m.name) for m in batch_members
             ])
@@ -166,12 +198,16 @@ start_time = time.time()
 total_samples = 0
 processed = 0
 
-for tar_path in tqdm(to_process, desc="Shards"):
+for tar_path in tqdm(tar_files, desc="Shards"):
     shard_name = tar_path.stem
     output_path = cache_dir / f"{shard_name}.safetensors"
     temp_path = cache_dir / f"{shard_name}.safetensors.tmp"
 
-    # Clean up any leftover temp file
+    # Skip if already cached (double-check)
+    if output_path.exists():
+        tqdm.write(f"  {shard_name}: already cached, skipping")
+        continue
+
     if temp_path.exists():
         temp_path.unlink()
 
@@ -184,30 +220,24 @@ for tar_path in tqdm(to_process, desc="Shards"):
         temp_path.rename(output_path)
         processed += 1
 
-        tqdm.write(f"  {shard_name}: {n_samples} samples")
+        tqdm.write(f"  {shard_name}: {n_samples} samples cached")
     except Exception as e:
         tqdm.write(f"  ERROR {shard_name}: {e}")
         if temp_path.exists():
             temp_path.unlink()
-        continue
 
 elapsed = time.time() - start_time
 
 print("\n" + "=" * 60)
-print("CACHING PROGRESS")
+print("TASK COMPLETE")
 print("=" * 60)
-print(f"  Processed this run: {processed} shards ({total_samples} samples)")
+print(f"  Processed: {processed} shards ({total_samples} samples)")
 print(f"  Time: {elapsed:.1f}s ({elapsed/60:.1f}min)")
 if total_samples > 0:
     print(f"  Speed: {elapsed/total_samples*1000:.1f}ms per sample")
-
-# Report total cache
-all_cached = list(cache_dir.glob("*.safetensors"))
-total_size = sum(f.stat().st_size for f in all_cached)
-print(f"\nTotal cache: {len(all_cached)} shards, {total_size / (1024**3):.2f} GB")
-print(f"Remaining: {len(tar_files) - len(all_cached)} shards")
+    print(f"  Throughput: {total_samples/elapsed:.1f} samples/sec")
 EOF
 
 echo ""
-echo "Teacher caching progress saved!"
+echo "Array task ${SLURM_ARRAY_TASK_ID} complete!"
 date

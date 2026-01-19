@@ -4,10 +4,10 @@
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH --gres=gpu:1
 #SBATCH -t360 -qembers
-#SBATCH --output=logs/pilot-distillation-%j.out
+#SBATCH --output=logs/distillation-pilot-%j.out
 set -eu
 
-# Usage: sbatch --export=STUDENT=convnext-small run-pilot-distillation.sbatch
+# Usage: sbatch --export=STUDENT=convnext-small run-distillation-pilot.sbatch
 
 cd ${SLURM_SUBMIT_DIR:-$(dirname "$0")}
 
