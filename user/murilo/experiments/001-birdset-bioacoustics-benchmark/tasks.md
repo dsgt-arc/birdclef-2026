@@ -1,11 +1,49 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
+**Status**: Phase 0 complete (Planning & Documentation) ✅
+**Current Phase**: Phase 1 (Environment Setup) 🔄
+**Last Updated**: 2026-01-24
+
+---
+
+## Phase 0: Planning and Documentation ✅ COMPLETED
+
+- [x] 0.1 Create experiment proposal
+  - [x] Write proposal.md with hypothesis, methodology, evaluation criteria
+  - [x] Define success metrics (cmAP, F1 micro/macro, Top-1/5)
+  - [x] Identify all 7 models to benchmark
+  - [x] Document limitations and future work
+
+- [x] 0.2 Create technical design document
+  - [x] Write design.md with technical decisions
+  - [x] Define two-stage pipeline architecture
+  - [x] Decide on max-pooling strategy for variable-length audio
+  - [x] Choose linear probe implementation (scikit-learn)
+  - [x] Document data flow and code structure
+
+- [x] 0.3 Create implementation task list
+  - [x] Break down work into 7 phases
+  - [x] Define ~40 detailed subtasks
+  - [x] Estimate timeline (16-24 hours)
+
+- [x] 0.4 Create configuration and documentation
+  - [x] Write config.yaml with all model specs and SLURM settings
+  - [x] Create pyproject.toml with all dependencies
+  - [x] Write README.md with quick start guide
+  - [x] Create test_setup.sh for interactive environment testing
+
+- [x] 0.5 Commit and push to repository
+  - [x] Add all files to git
+  - [x] Commit with descriptive message
+  - [x] Push to origin/mg-birdset branch
+
 ## Phase 1: Environment Setup
 
 - [ ] 1.1 Create Python package structure
+  - [x] `user/murilo/pyproject.toml` with all dependencies
   - [ ] `user/murilo/src/birdset_benchmark/__init__.py`
-  - [ ] Add to project `pyproject.toml` as optional dependency
-  - [ ] Set up `uv` environment with dependencies
+  - [ ] Add to main project `pyproject.toml` as optional dependency (if needed)
+  - [ ] Test `uv` environment setup via `test_setup.sh`
 
 - [ ] 1.2 Install and test bioacoustics-model-zoo
   - [ ] `uv pip install git+https://github.com/kitzeslab/bioacoustics-model-zoo.git`
@@ -19,9 +57,11 @@
   - [ ] Document dataset statistics (num samples, species, duration)
 
 - [ ] 1.4 Create experiment directory structure
-  - [ ] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/sbatch/`
-  - [ ] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/artifacts/`
-  - [ ] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/config.yaml`
+  - [x] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/` (base directory)
+  - [x] `config.yaml` with all model specs and SLURM settings
+  - [x] `test_setup.sh` for interactive environment testing
+  - [ ] `sbatch/` directory for SLURM job scripts
+  - [ ] `artifacts/` directory for results and outputs
 
 ## Phase 2: Data Pipeline Implementation
 
@@ -118,16 +158,16 @@
   - [ ] Compute all metrics (cmAP, F1 micro/macro, Top-1/5)
 
 - [ ] 5.4 Create SLURM batch script (`sbatch/train_probe.sbatch`)
-  - [ ] Request: CPU only, 4 cores, 16GB RAM
-  - [ ] Time limit: 30 minutes
-  - [ ] Train probes for both BirdNET and Perch
+  - [ ] Request: 1 GPU (gpu-rtx6000), 4 cores, 32GB RAM
+  - [ ] Time limit: 2 hours
+  - [ ] Train probes for all 7 models
   - [ ] Run evaluation and save results
 
 - [ ] 5.5 Dry run and validation
   - [ ] Train on subset of embeddings (1000 samples)
   - [ ] Verify classifier trains without errors
   - [ ] Check convergence (should be <1000 iterations)
-  - [ ] Submit full CPU job to SLURM
+  - [ ] Submit full GPU job to SLURM
 
 ## Phase 6: Results Analysis
 
@@ -179,8 +219,9 @@
   - [ ] Add type hints to public functions
   - [ ] Add docstrings to modules and classes
 
-- [ ] 7.2 Create README for experiment
-  - [ ] Document how to reproduce (commands, dependencies)
+- [ ] 7.2 Update README with final results
+  - [x] Initial README created with quick start guide
+  - [ ] Update with final reproduction commands
   - [ ] Link to artifacts and results
   - [ ] Note any deviations from proposal
 
@@ -205,11 +246,12 @@
 ---
 
 **Estimated Timeline**:
-- Phase 1-2: 4-6 hours (setup, data pipeline)
+- Phase 0: ✅ Complete (2-3 hours - planning and documentation)
+- Phase 1-2: 4-6 hours (environment setup, data pipeline)
 - Phase 3-4: 6-8 hours (model wrappers, embedding extraction)
 - Phase 5: 2-4 hours (linear probe training)
 - Phase 6-7: 4-6 hours (analysis, documentation)
-- **Total**: 16-24 hours of development + GPU/CPU job time
+- **Remaining**: 16-24 hours of development + GPU job time (~14 hours)
 
 **Dependencies**:
 - BirdSet dataset availability on HuggingFace
