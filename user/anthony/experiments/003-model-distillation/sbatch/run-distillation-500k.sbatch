@@ -22,7 +22,6 @@ MAX_EPOCHS=${MAX_EPOCHS:-20}
 PATIENCE=${PATIENCE:-3}
 BATCH_SIZE=${BATCH_SIZE:-64}
 LR=${LR:-1e-4}
-COPY_TO_LOCAL=${COPY_TO_LOCAL:-false}
 
 echo "=============================================="
 echo "ShardAffinityDataset - AudioSet-500k"
@@ -32,21 +31,18 @@ echo "Max epochs: ${MAX_EPOCHS}"
 echo "Early stopping patience: ${PATIENCE}"
 echo "Batch size: ${BATCH_SIZE}"
 echo "Learning rate: ${LR}"
-echo "Copy to local: ${COPY_TO_LOCAL}"
 hostname
 date
 nvidia-smi
 
 scratch_dir=$(realpath ~/scratch/birdclef-2026)
 repo_dir=$(realpath ~/arc/birdclef-2026)
+user_dir=$repo_dir/user/anthony
 
 # Sync venv to local NVMe for faster package loading
-local_venv=${TMPDIR}/venv
-echo "Syncing venv to local NVMe..."
-time rsync -a --info=progress2 $scratch_dir/.venv/ $local_venv/
-
-export UV_PROJECT_ENVIRONMENT=$local_venv
-export HF_HOME=$scratch_dir/.cache/huggingface
+export UV_PROJECT_ENVIRONMENT=${TMPDIR}/${SLURM_JOB_ID}/.venv
+cd $user_dir
+uv sync
 
 cd $repo_dir
 
@@ -67,32 +63,14 @@ trap cleanup EXIT
 
 # Setup cache directories
 source_cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_500k
-local_cache_dir=${TMPDIR}/teacher_cache_500k
 
 echo ""
 echo "Cache setup:"
 echo "  Source cache: $source_cache_dir ($(du -sh $source_cache_dir 2>/dev/null | cut -f1))"
-echo "  Local cache: $local_cache_dir"
 echo "  TMPDIR: ${TMPDIR}"
 
-# Optionally copy cached data to local NVMe for faster I/O
-if [ "$COPY_TO_LOCAL" = "true" ]; then
-    echo ""
-    echo "Copying cached data to local NVMe (using parallel cp)..."
-    mkdir -p $local_cache_dir
-    echo "Starting parallel copy..."
-    time (ls $source_cache_dir/*.safetensors | xargs -P 8 -I {} cp {} $local_cache_dir/ 2>/dev/null || true)
 
-    echo "Copy complete. Local cache:"
-    ls $local_cache_dir/*.safetensors 2>/dev/null | wc -l || echo "0"
-    du -sh $local_cache_dir 2>/dev/null || echo "0B"
-else
-    echo ""
-    echo "Skipping copy to local (COPY_TO_LOCAL=false)"
-    echo "Will use source cache directly with fallback support"
-fi
-
-uv run python - "$STUDENT" "$MAX_EPOCHS" "$PATIENCE" "$BATCH_SIZE" "$LR" "$source_cache_dir" "$local_cache_dir" << 'EOF'
+${UV_PROJECT_ENVIRONMENT}/bin/python - "$STUDENT" "$MAX_EPOCHS" "$PATIENCE" "$BATCH_SIZE" "$LR" "$source_cache_dir" << 'EOF'
 """Distillation on AudioSet-500k using ShardAffinityDataset."""
 
 import json
@@ -107,7 +85,6 @@ patience = int(sys.argv[3])
 batch_size = int(sys.argv[4])
 lr = float(sys.argv[5])
 source_cache_dir = sys.argv[6]
-local_cache_dir = sys.argv[7]
 
 print(f"Student model: {student_name}", flush=True)
 print(f"Max epochs: {max_epochs}", flush=True)
@@ -115,7 +92,6 @@ print(f"Early stopping patience: {patience}", flush=True)
 print(f"Batch size: {batch_size}", flush=True)
 print(f"Learning rate: {lr}", flush=True)
 print(f"Source cache dir: {source_cache_dir}", flush=True)
-print(f"Local cache dir: {local_cache_dir}", flush=True)
 
 print("\nLoading dependencies...", flush=True)
 import torch
@@ -136,7 +112,8 @@ from birdclef.data.shard_affinity_dataset import ShardAffinityDataset, create_da
 # Paths
 scratch_dir = Path.home() / "scratch" / "birdclef-2026"
 source_cache = Path(source_cache_dir)
-local_cache = Path(local_cache_dir)
+local_cache = Path(os.environ.get("TMPDIR", "/tmp")) / "teacher_cache_500k"
+print(f"Local cache dir: {local_cache}", flush=True)
 output_dir = scratch_dir / "outputs/exp003-distillation"
 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -313,19 +290,19 @@ print(f"  Val shards: {len(val_shard_files)}")
 # Create datasets with ShardAffinityDataset
 train_dataset = ShardAffinityDataset(
     source_cache_dir=source_cache,
-    local_cache_dir=local_cache if local_cache.exists() or local_cache.parent.exists() else None,
+    local_cache_dir=local_cache,
     shards_per_worker=3,
     prefetch_ahead=2,
-    copy_to_local=COPY_TO_LOCAL == "true" if isinstance(COPY_TO_LOCAL, str) else COPY_TO_LOCAL,
+    copy_to_local=True,
     seed=42,
 )
 
 val_dataset = ShardAffinityDataset(
     source_cache_dir=source_cache,
-    local_cache_dir=local_cache if local_cache.exists() or local_cache.parent.exists() else None,
+    local_cache_dir=local_cache,
     shards_per_worker=3,
     prefetch_ahead=2,
-    copy_to_local=COPY_TO_LOCAL == "true" if isinstance(COPY_TO_LOCAL, str) else COPY_TO_LOCAL,
+    copy_to_local=True,
     seed=42,
 )
 

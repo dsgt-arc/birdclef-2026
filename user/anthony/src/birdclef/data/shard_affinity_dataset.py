@@ -58,6 +58,24 @@ from safetensors.torch import load_file
 from torch.utils.data import DataLoader, Dataset
 
 
+# Wrapper to make safetensors errors picklable
+def safe_load_file(path: str) -> dict[str, torch.Tensor]:
+    """Load safetensors file with picklable exceptions."""
+    try:
+        return load_file(path)
+    except Exception as e:
+        # Re-raise as standard exception to avoid pickling issues
+        raise RuntimeError(f"Failed to load safetensors from {path}: {str(e)}") from None
+
+
+def safe_open_file(path: str, framework: str = "pt"):
+    """Open safetensors file with picklable exceptions."""
+    try:
+        return safe_open(path, framework=framework)
+    except Exception as e:
+        raise RuntimeError(f"Failed to open safetensors {path}: {str(e)}") from None
+
+
 @dataclass
 class ShardInfo:
     """Metadata for a single shard file."""
@@ -159,7 +177,7 @@ class ShardAffinityDataset(Dataset):
         shards = []
         for idx, path in enumerate(shard_files):
             try:
-                with safe_open(str(path), framework="pt") as f:
+                with safe_open_file(str(path), framework="pt") as f:
                     shape = f.get_slice("teacher_embeds").get_shape()
                     n_samples = shape[0]
                 shards.append(
@@ -331,7 +349,7 @@ class ShardAffinityDataset(Dataset):
             path = self._copy_shard_to_local(shard)
 
         try:
-            tensors = load_file(str(path))
+            tensors = safe_load_file(str(path))
             if path.parent == self.local_cache_dir:
                 state.stats["local_hits"] += 1
             else:
@@ -370,7 +388,7 @@ class ShardAffinityDataset(Dataset):
             path = self._get_shard_path(shard)
 
         try:
-            return load_file(str(path))
+            return safe_load_file(str(path))
         except Exception as e:
             print(f"WARNING: Prefetch load failed for {shard.name}: {e}")
             return None
@@ -440,7 +458,7 @@ class ShardAffinityDataset(Dataset):
         shard_idx, sample_idx = self._single_process_index[idx]
         shard = self.shards[shard_idx]
         path = self._get_shard_path(shard)
-        tensors = load_file(str(path))
+        tensors = safe_load_file(str(path))
 
         static_embeds = tensors["static_embeds"][sample_idx].float()
         teacher_embeds = tensors["teacher_embeds"][sample_idx].float()
