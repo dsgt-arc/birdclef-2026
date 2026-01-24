@@ -1,0 +1,158 @@
+# Experiment 001: BirdSet Bioacoustics Model Benchmark Configuration
+
+experiment:
+  name: "birdset-bioacoustics-benchmark"
+  id: "001"
+  author: "murilo"
+  created: "2026-01-24"
+  status: "proposed"
+
+dataset:
+  name: "BirdSet"
+  source: "DBD-research-group/BirdSet"
+  subset: "HSN"  # High Sierra Nevada (pilot dataset)
+  splits:
+    train: "train"
+    test: "test_5s"
+
+birdset:
+  sample_rate: 32000  # Resample target for compatibility
+  target_duration: 5.0  # seconds
+  preprocessing:
+    strategy: "max_pool"  # max_pool | random_crop | center_crop
+    padding: "zeros"  # zeros | repeat
+    normalization: false  # L2-normalize embeddings before probe
+
+models:
+  birdnet:
+    name: "BirdNET"
+    source: "bioacoustics-model-zoo"
+    window_size: 3.0  # seconds
+    embedding_dim: 1024
+    checkpoint: null  # Uses default from bmz
+
+  yamnet:
+    name: "YAMNet"
+    source: "bioacoustics-model-zoo"
+    window_size: 0.96  # seconds
+    embedding_dim: 1024
+    checkpoint: null
+
+  perch:
+    name: "Perch"
+    source: "bioacoustics-model-zoo"
+    window_size: 5.0  # seconds
+    embedding_dim: 1280
+    checkpoint: null
+
+  hawkears:
+    name: "HawkEars"
+    source: "bioacoustics-model-zoo"
+    window_size: 3.0  # seconds
+    embedding_dim: 2048
+    checkpoint: null
+
+  birdset_convnext:
+    name: "BirdSetConvNeXT"
+    source: "bioacoustics-model-zoo"
+    window_size: 5.0  # seconds
+    embedding_dim: 1024
+    checkpoint: null
+
+  birdset_efficientnet:
+    name: "BirdSetEfficientNetB1"
+    source: "bioacoustics-model-zoo"
+    window_size: 5.0  # seconds
+    embedding_dim: 1280
+    checkpoint: null
+
+  ranasierrae:
+    name: "RanaSierraeCNN"
+    source: "bioacoustics-model-zoo"
+    window_size: 2.0  # seconds
+    embedding_dim: 512
+    checkpoint: null
+
+extraction:
+  batch_size: 16
+  num_workers: 4
+  device: "cuda"
+  dtype: "float32"
+
+  output:
+    dir: "artifacts/"
+    format: "npz"  # NumPy compressed
+    naming: "embeddings_{split}_{model}.npz"
+
+linear_probe:
+  classifier: "logistic_regression"
+  multi_label: true
+
+  logistic_regression:
+    penalty: "l2"
+    C: 1.0  # Inverse regularization strength
+    max_iter: 1000
+    solver: "lbfgs"
+    random_state: 42
+    n_jobs: -1  # Use all CPU cores
+    class_weight: null  # null | "balanced"
+
+  preprocessing:
+    normalize_embeddings: false  # Try both true/false
+    standardize: false
+
+evaluation:
+  metrics:
+    - "cmap"  # Class-mean Average Precision (primary)
+    - "f1_micro"  # Micro-averaged F1 (overall classification quality)
+    - "f1_macro"  # Macro-averaged F1 (per-class average, handles imbalance)
+    - "top1_accuracy"
+    - "top5_accuracy"
+    - "per_class_ap"
+
+  visualizations:
+    - "cmap_comparison_bar"
+    - "per_class_ap_scatter"
+    - "ap_distribution_histogram"
+    - "top10_bottom10_species"
+
+  output:
+    results_json: "artifacts/results_summary.json"
+    per_class_csv: "artifacts/per_class_ap.csv"
+    plots_dir: "artifacts/plots/"
+
+compute:
+  slurm:
+    extraction:
+      partition: "gpu-rtx6000"  # or gpu-l40s
+      gres: "gpu:1"
+      cpus_per_task: 4
+      mem: "32G"
+      time: "12:00:00"
+      job_name: "extract-birdset"
+
+    training:
+      partition: "gpu-rtx6000"
+      gres: "gpu:1"
+      cpus_per_task: 4
+      mem: "32G"
+      time: "02:00:00"
+      job_name: "train-probe"
+
+paths:
+  scratch: "~/scratch/birdclef-2026"
+  cache: "${scratch}/cache/birdset"
+  embeddings: "${scratch}/embeddings/001-birdset"
+  outputs: "${scratch}/outputs/001-birdset"
+  logs: "logs/"
+
+reproducibility:
+  random_seed: 42
+  deterministic: true
+  benchmark: false  # CUDNN benchmark mode (faster but non-deterministic)
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/experiment_001.log"
+  console: true
