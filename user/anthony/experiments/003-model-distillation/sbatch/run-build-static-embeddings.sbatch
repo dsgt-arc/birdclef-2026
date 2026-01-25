@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=build-static-emb
 #SBATCH --account=paceship-dsgt_clef2026
-#SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=16G
+#SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=24G
 #SBATCH -t60 -qembers
 #SBATCH --output=logs/build-static-embeddings-%j.out
 
@@ -46,6 +46,7 @@ CACHE_DIR=${CACHE_DIR:-$scratch_dir/outputs/exp003-distillation/teacher_cache_50
 OUTPUT_DIR=${OUTPUT_DIR:-$scratch_dir/outputs/exp003-distillation/static_embeddings_500k}
 PCA_DIM=${PCA_DIM:-256}
 MAX_SHARDS=${MAX_SHARDS:-}  # Empty = all shards
+NUM_WORKERS=${NUM_WORKERS:-4}  # Parallel workers for data loading (each loads ~2.5GB shard)
 
 echo ""
 echo "Configuration:"
@@ -53,6 +54,7 @@ echo "  Cache dir: $CACHE_DIR"
 echo "  Output dir: $OUTPUT_DIR"
 echo "  PCA dim: $PCA_DIM"
 echo "  Max shards: ${MAX_SHARDS:-all}"
+echo "  Num workers: $NUM_WORKERS"
 echo ""
 
 # Count shards
@@ -72,6 +74,7 @@ ${UV_PROJECT_ENVIRONMENT}/bin/python -m birdclef.static_embeddings_from_cache \
     --cache-dir "$CACHE_DIR" \
     --output-dir "$OUTPUT_DIR" \
     --pca-dim "$PCA_DIM" \
+    --num-workers "$NUM_WORKERS" \
     $MAX_SHARDS_ARG
 
 echo ""
