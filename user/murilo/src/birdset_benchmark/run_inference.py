@@ -28,11 +28,35 @@ Outputs:
     - predictions.npz: y_pred and y_true arrays for further analysis
 """
 
+import contextlib
 import json
 import logging
+import os
+import sys
 import time
+import warnings
 from pathlib import Path
 
+# Suppress TensorFlow warnings (must be set before importing TensorFlow)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # ERROR level only
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN custom ops messages
+os.environ["PYTHONWARNINGS"] = "ignore"  # Suppress all Python warnings
+
+# Additional warning suppression for runtime
+warnings.simplefilter("ignore")
+warnings.filterwarnings("ignore")
+
+# Monkey-patch warnings.warn to suppress all warnings (last resort for clean output)
+_original_warn = warnings.warn
+
+
+def _suppress_warn(*args, **kwargs):
+    pass
+
+
+warnings.warn = _suppress_warn
+
+# ruff: noqa: E402 - Imports after warning suppression is intentional
 import bioacoustics_model_zoo as bmz
 import numpy as np
 import torch
@@ -42,12 +66,21 @@ from sklearn.metrics import average_precision_score, f1_score
 
 from birdset_benchmark.data import BIRDSET_DATASETS, get_num_classes, load_birdset_dataset
 
+# Restore warnings.warn after import (optional - keep suppressed for cleaner output)
+# warnings.warn = _original_warn
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Suppress TensorFlow and other module logging
+logging.getLogger("tensorflow").setLevel(logging.ERROR)
+logging.getLogger("absl").setLevel(logging.ERROR)
+logging.getLogger("birdset_benchmark.data").setLevel(logging.WARNING)
+
 console = Console()
 
 app = typer.Typer()
@@ -58,6 +91,19 @@ MODELS = {
     "birdset_convnext": bmz.BirdSetConvNeXT,
     "birdset_efficientnet_b1": bmz.BirdSetEfficientNetB1,
 }
+
+
+@contextlib.contextmanager
+def suppress_stderr():
+    """Context manager to suppress stderr output (for C++ warnings)."""
+    devnull = open(os.devnull, "w")
+    old_stderr = sys.stderr
+    sys.stderr = devnull
+    try:
+        yield
+    finally:
+        sys.stderr = old_stderr
+        devnull.close()
 
 
 def compute_metrics(
@@ -197,8 +243,9 @@ def main(
     console.print(f"[bold]Running inference on {len(audio_paths)} files...[/bold]")
     start_time = time.time()
 
-    # Call .predict() with list of paths and batch_size
-    pred_df = model_instance.predict(audio_paths, batch_size=batch_size)
+    # Call .predict() with list of paths and batch_size (suppress C++ warnings from stderr)
+    with suppress_stderr():
+        pred_df = model_instance.predict(audio_paths, batch_size=batch_size)
 
     inference_time = time.time() - start_time
     console.print(f"✓ Inference complete in {inference_time:.2f}s")
