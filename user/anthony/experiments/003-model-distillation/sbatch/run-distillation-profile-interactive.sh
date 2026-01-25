@@ -64,21 +64,12 @@ echo "  Source cache: $source_cache_dir ($(du -sh $source_cache_dir 2>/dev/null 
 echo "  Local cache: $local_cache_dir"
 echo "  Output dir: $output_dir"
 
-# Run training with py-spy (wall-clock profiling) and PyTorch profiler
-# py-spy flags:
-#   -s: profile subprocesses (DataLoader workers)
-#   -t: show thread IDs
-#   --idle: include idle threads (shows I/O waits)
-# Note: --native (-n) omitted - too expensive with many subprocesses
+# Run training with PyTorch profiler only
+# (py-spy removed - too slow with subprocesses, PyTorch profiler is sufficient)
 echo ""
-echo "Starting py-spy + PyTorch profiler..."
+echo "Starting training with PyTorch profiler..."
 
-${UV_PROJECT_ENVIRONMENT}/bin/py-spy record \
-    -o "$output_dir/profile.svg" \
-    -f speedscope \
-    -s -t --idle \
-    --rate 50 \
-    -- ${UV_PROJECT_ENVIRONMENT}/bin/python \
+${UV_PROJECT_ENVIRONMENT}/bin/python \
     $user_dir/experiments/003-model-distillation/sbatch/train_lightning.py \
     --student "$STUDENT" \
     --source-cache "$source_cache_dir" \
@@ -103,11 +94,10 @@ echo "=============================================="
 echo "Profiling complete!"
 echo "=============================================="
 echo "Profile ID: ${PROFILE_ID}"
-echo "py-spy flamegraph: $output_dir/profile.svg"
 echo "PyTorch Profiler: $output_dir/profiler"
 echo "TensorBoard logs: $output_dir"
 echo ""
 echo "To view traces:"
-echo "  speedscope $output_dir/profile.svg"
 echo "  tensorboard --logdir $output_dir"
+echo "  # Or open profiler/*.json in chrome://tracing"
 date
