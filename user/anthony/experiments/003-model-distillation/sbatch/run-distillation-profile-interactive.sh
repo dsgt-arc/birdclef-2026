@@ -55,14 +55,29 @@ source_cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_500k
 local_cache_dir=${TMPDIR}/teacher_cache_profile
 output_dir=$scratch_dir/outputs/exp003-profile-${PROFILE_ID}
 
+mkdir -p "$output_dir"
+
 echo ""
 echo "Cache setup:"
 echo "  Source cache: $source_cache_dir ($(du -sh $source_cache_dir 2>/dev/null | cut -f1))"
 echo "  Local cache: $local_cache_dir"
 echo "  Output dir: $output_dir"
 
-# Run training with profiling enabled and limited batches
-${UV_PROJECT_ENVIRONMENT}/bin/python \
+# Run training with py-spy (wall-clock profiling) and PyTorch profiler
+# py-spy flags:
+#   -s: profile subprocesses (DataLoader workers)
+#   -n: profile native extensions (C/Cython)
+#   -t: show thread IDs
+#   --idle: include idle threads (shows I/O waits)
+echo ""
+echo "Starting py-spy + PyTorch profiler..."
+
+${UV_PROJECT_ENVIRONMENT}/bin/py-spy record \
+    -o "$output_dir/profile.svg" \
+    -f speedscope \
+    -s -n -t --idle \
+    --rate 100 \
+    -- ${UV_PROJECT_ENVIRONMENT}/bin/python \
     $user_dir/experiments/003-model-distillation/sbatch/train_lightning.py \
     --student "$STUDENT" \
     --source-cache "$source_cache_dir" \
@@ -87,9 +102,11 @@ echo "=============================================="
 echo "Profiling complete!"
 echo "=============================================="
 echo "Profile ID: ${PROFILE_ID}"
+echo "py-spy flamegraph: $output_dir/profile.svg"
 echo "PyTorch Profiler: $output_dir/profiler"
 echo "TensorBoard logs: $output_dir"
 echo ""
 echo "To view traces:"
+echo "  speedscope $output_dir/profile.svg"
 echo "  tensorboard --logdir $output_dir"
 date
