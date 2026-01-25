@@ -62,7 +62,7 @@ import numpy as np
 import torch
 import typer
 from rich.console import Console
-from sklearn.metrics import average_precision_score, f1_score
+from sklearn.metrics import average_precision_score, f1_score, roc_auc_score
 
 from birdset_benchmark.datasets import BIRDSET_DATASETS, load_birdset_dataset
 
@@ -132,6 +132,18 @@ def compute_metrics(
 
     metrics["cmap"] = float(np.mean(aps)) if aps else 0.0
     metrics["num_classes_with_positives"] = len(aps)
+
+    # AUROC - per-class macro average (like cmAP)
+    # ROC AUC requires both positive and negative samples for each class
+    aurocs = []
+    for i in range(num_classes):
+        # Need both positive and negative samples for ROC AUC to be defined
+        if y_true[:, i].sum() > 0 and y_true[:, i].sum() < len(y_true):
+            auroc = roc_auc_score(y_true[:, i], y_pred[:, i])
+            aurocs.append(auroc)
+
+    metrics["auroc"] = float(np.mean(aurocs)) if aurocs else 0.0
+    metrics["num_classes_auroc"] = len(aurocs)
 
     # F1 scores (using threshold of 0.5)
     y_pred_binary = (y_pred > 0.5).astype(int)
@@ -322,9 +334,10 @@ def main(
     # Display results
     console.print("\n[bold cyan]Results:[/bold cyan]")
     console.print(f"cmAP:          [green]{metrics['cmap']:.4f}[/green]")
+    console.print(f"AUROC:         [green]{metrics['auroc']:.4f}[/green]")
+    console.print(f"Top-1 Acc:     [green]{metrics['top1_accuracy']:.4f}[/green]")
     console.print(f"F1 Micro:      {metrics['f1_micro']:.4f}")
     console.print(f"F1 Macro:      {metrics['f1_macro']:.4f}")
-    console.print(f"Top-1 Acc:     {metrics['top1_accuracy']:.4f}")
     console.print(f"Top-5 Acc:     {metrics['top5_accuracy']:.4f}")
 
     # Save results

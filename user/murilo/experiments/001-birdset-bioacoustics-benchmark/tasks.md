@@ -1,8 +1,8 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 1 complete, Phase 2A.1-2A.3 complete, Phase 2A.4-2A.5 ready to run
-**Current Phase**: Phase 2A.4-2A.5 (Validation and production runs)
-**Last Updated**: 2026-01-25
+**Status**: Phase 1 complete, Phase 2A.1-2A.3 complete, Phase 2A.4-2A.5 in progress (7/8 datasets complete)
+**Current Phase**: Phase 2A.5 (Production runs) - birdset_convnext 7/8 complete, SSW running
+**Last Updated**: 2026-01-25 (evening)
 
 ---
 
@@ -100,7 +100,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [x] Support models: `birdset_convnext`, `birdset_efficientnet_b1`
   - [x] Load BirdSet test split
   - [x] Run model.predict() to get class predictions
-  - [x] Compute metrics: cmAP, F1 micro/macro, Top-1/5
+  - [x] Compute metrics: cmAP, AUROC, F1 micro/macro, Top-1/5
   - [x] Save results to `metrics.json`
   - [x] Save predictions to `predictions.npz`
   - [x] Simplified implementation using BMZ API correctly
@@ -147,17 +147,32 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [x] `--force` flag to override skip behavior
   - [x] `--help` with usage examples
 
-### 2A.4 Validate Single Model + Single Dataset
-- [ ] Test inference locally on small subset
-- [ ] Run `bash sbatch/inference/run.sh --model birdset_convnext --dataset HSN`
-- [ ] Verify metrics.json contains: cmAP, F1, Top-1/5
-- [ ] Compare to expected BirdSet paper results
+### 2A.4 Validate Single Model + Single Dataset ✅ COMPLETED
+- [x] Test inference locally on small subset
+- [x] Run `bash sbatch/inference/run.sh --model birdset_convnext --dataset HSN`
+- [x] Verify metrics.json contains: cmAP, F1, Top-1/5
+- [⚠️] Compare to expected BirdSet paper results (pending AUROC addition)
 
-### 2A.5 Scale to All Datasets
-- [ ] Run `bash sbatch/inference/run.sh --model birdset_convnext`
+### 2A.5 Scale to All Datasets 🔄 IN PROGRESS
+- [x] Run `bash sbatch/inference/run.sh --model birdset_convnext` (7/8 complete)
+  - [x] HSN: 11,982 samples, cmAP=0.480
+  - [x] NBP: 342 samples, cmAP=0.628
+  - [x] NES: 24,472 samples, cmAP=0.341
+  - [x] PER: 15,120 samples, cmAP=0.173
+  - [x] POW: 4,560 samples, cmAP=0.342
+  - [x] SNE: 23,755 samples, cmAP=0.300
+  - [x] UHH: 36,388 samples, cmAP=0.250
+  - [🔄] SSW: 205,200 samples (RUNNING - Job 3425859)
+- [ ] **Re-run all datasets with AUROC fix**: `bash sbatch/inference/run.sh --model birdset_convnext --force`
 - [ ] Run `bash sbatch/inference/run.sh --model birdset_efficientnet_b1`
-- [ ] Monitor jobs and verify completion
 - [ ] Total: 2 models × 8 datasets = 16 inference runs
+
+**⚠️ AUROC Metric Fix (2026-01-25)**:
+- Fixed AUROC implementation to properly handle multi-label classification
+- Changed from incorrect `multi_class="ovr"` approach to per-class macro averaging
+- Now matches cmAP computation pattern: excludes classes with undefined ROC AUC
+- Adds `num_classes_auroc` tracking metric
+- **Action Required**: Re-run all datasets with `--force` flag to regenerate metrics with AUROC included
 
 ---
 

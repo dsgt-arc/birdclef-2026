@@ -93,19 +93,27 @@ The evaluation is split into two parts based on the model's origin.
 
 ## Status
 
-**Current Phase**: Phase 2A (Direct Inference) - In Progress
+**Current Phase**: Phase 2A.5 (Production Runs) - 7/8 datasets complete for birdset_convnext
 
 - [x] **Phase 0: Planning**: Proposal, Design, and Tasks are complete.
 - [x] **Phase 1: Environment Setup**: All dependencies installed and validated via `test_setup.sh` and a comprehensive `pytest` suite.
-- [ ] **Phase 2A: Direct Inference**: Implement and run direct inference for BirdSet-native models.
+- [x] **Phase 2A.1-2A.3**: Data pipeline, inference script, and SLURM scripts implemented and tested.
+- [🔄] **Phase 2A.4-2A.5**: Production inference runs in progress (7/8 datasets complete, SSW running).
 - [ ] **Phase 2B: Transfer Learning**: Implement embedding extraction and linear probe training for external models.
 - [ ] **Phase 3: Results Aggregation**: Collect all results and generate final analysis.
+
+**Latest Update (2026-01-25)**:
+- ✅ Completed 7/8 datasets for `birdset_convnext`: HSN, NBP, NES, PER, POW, SNE, UHH
+- 🔄 SSW dataset running (205,200 samples - largest test set)
+- ⚠️ **AUROC metric fix implemented** - requires re-running all datasets to include AUROC in results
+- Current results show cmAP range: 0.17 (PER) to 0.63 (NBP)
 
 See [tasks.md](tasks.md) for a detailed checklist.
 
 ## Next Steps
 
-1.  **Implement Data Pipeline**: Finalize `src/birdset_benchmark/data.py` for loading and preprocessing all 8 BirdSet datasets.
-2.  **Implement Phase 2A**: Complete the `run_inference.py` script and execute it for BirdSet-native models using the `sbatch/inference/run.sh` controller.
-3.  **Implement Phase 2B**: Complete the `extract_embeddings.py` and `train_classifier.py` scripts and execute them for external models.
-4.  **Implement Phase 3**: Write the `aggregate_results.py` script to produce the final results matrix and visualizations.
+1.  **Wait for SSW completion** and verify all 8 datasets complete for `birdset_convnext`
+2.  **Re-run Phase 2A with AUROC fix**: Re-run all datasets with `--force` to include AUROC metric
+3.  **Run second model**: Execute `birdset_efficientnet_b1` on all 8 datasets
+4.  **Implement Phase 2B**: Complete the `extract_embeddings.py` and `train_classifier.py` scripts and execute them for external models.
+5.  **Implement Phase 3**: Write the `aggregate_results.py` script to produce the final results matrix and visualizations.
