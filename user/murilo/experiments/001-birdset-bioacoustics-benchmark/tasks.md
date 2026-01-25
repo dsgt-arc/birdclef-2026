@@ -84,11 +84,13 @@
   - [x] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/` (base directory)
   - [x] `config.yaml` with all model specs and SLURM settings
   - [x] `test_setup.sh` for interactive environment testing (replaced by pytest)
-  - [x] `tests/` directory with comprehensive test suite:
+  - [x] `user/murilo/tests/001-birdset-bioacoustics-benchmark/` - Comprehensive test suite:
     - `test_environment.py` - GPU, CUDA, PyTorch validation (5 tests)
     - `test_models.py` - BirdNET loading and embeddings (4 tests)
     - `test_classifiers.py` - PyTorch Lightning models (9 tests)
-    - `test_datasets.py` - HuggingFace datasets (1 test)
+    - `test_datasets.py` - BirdSet dataset loading (6 tests)
+    - Tests organized by experiment number for better modularity
+    - Shared pytest.ini at `user/murilo/tests/` level
   - [ ] `sbatch/` directory for SLURM job scripts
   - [ ] `artifacts/` directory for results and outputs
 

@@ -1,1 +1,1 @@
-"""Tests for birdset-benchmark package."""
+"""Tests for murilo's experiments."""
