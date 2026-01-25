@@ -1,7 +1,7 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 1 complete, Phase 2 in progress
-**Current Phase**: Phase 2A (Direct inference with BirdSet-native models)
+**Status**: Phase 1 complete, Phase 2A partially complete (2A.1-2A.2 done, 2A.3-2A.5 pending)
+**Current Phase**: Phase 2A.3-2A.5 (SLURM scripts and production runs)
 **Last Updated**: 2026-01-25
 
 ---
@@ -71,24 +71,47 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 
 **Goal**: Run inference with BirdSetConvNeXT and BirdSetEfficientNetB1 directly on BirdSet test data. No training required since these models were trained on BirdSet.
 
-### 2A.1 Implement Data Pipeline
-- [ ] Create `src/birdset_benchmark/data.py`
-  - [ ] Function: `load_birdset_dataset(dataset_code)` - Load any of 8 datasets
-  - [ ] Function: `resample_audio(audio, source_sr, target_sr)`
-  - [ ] Function: `pad_or_crop(audio, target_duration_sec, sr)`
-  - [ ] Class: `BirdSetDataset` (PyTorch Dataset wrapper)
-  - [ ] Function: `collate_fn()` for batching
-  - [ ] Unit tests for edge cases
+### 2A.1 Implement Data Pipeline ✅ COMPLETED
+- [x] Create `src/birdset_benchmark/data.py`
+  - [x] Function: `load_birdset_dataset(dataset_code)` - Load any of 8 datasets
+  - [x] Function: `resample_audio(audio, source_sr, target_sr)`
+  - [x] Function: `pad_or_crop(audio, target_duration_sec, sr)` - supports pad/repeat modes
+  - [x] Class: `BirdSetDataset` (PyTorch Dataset wrapper)
+  - [x] Function: `collate_fn()` for batching
+  - [x] Dataset-agnostic design with `BIRDSET_NUM_CLASSES` constant mapping
+  - [x] Function: `get_num_classes(dataset_code)` for proper multi-hot encoding
+  - [x] Multi-hot label encoding from `ebird_code_multilabel` indices
+  - [x] Audio loading from file paths (BirdSet provides paths, not arrays)
+  - [x] Unit tests for edge cases (16 tests passing in `test_data_pipeline.py`)
 
-### 2A.2 Implement Inference Script
-- [ ] Create `src/birdset_benchmark/run_inference.py`
-  - [ ] CLI with typer: `--model`, `--dataset`, `--batch-size`, `--output-dir`
-  - [ ] Support models: `birdset_convnext`, `birdset_efficientnet_b1`
-  - [ ] Load BirdSet test split
-  - [ ] Run model.predict() to get class predictions
-  - [ ] Compute metrics: cmAP, F1 micro/macro, Top-1/5
-  - [ ] Save results to `metrics.json`
-  - [ ] Save predictions to `predictions.npz`
+**Implementation Notes**:
+- BirdSet provides audio as file paths in `sample["audio"]["path"]`, not arrays
+- Uses `soundfile.read()` to load audio, then resamples and pads/crops
+- Dataset-agnostic: constant class counts ensure correct multi-hot vector size even with subsets
+- Comprehensive test coverage: resampling, padding, cropping, batching, metadata handling
+
+### 2A.2 Implement Inference Script ✅ COMPLETED
+- [x] Create `src/birdset_benchmark/run_inference.py`
+  - [x] CLI with typer: `--model`, `--dataset`, `--batch-size`, `--output-dir`
+  - [x] Support models: `birdset_convnext`, `birdset_efficientnet_b1`
+  - [x] Load BirdSet test split
+  - [x] Run model.predict() to get class predictions
+  - [x] Compute metrics: cmAP, F1 micro/macro, Top-1/5
+  - [x] Save results to `metrics.json`
+  - [x] Save predictions to `predictions.npz`
+  - [x] Simplified implementation using BMZ API correctly (model handles batching internally)
+  - [x] Sigmoid activation to convert logits to probabilities
+  - [x] Default output to `experiments/001-birdset-bioacoustics-benchmark/artifacts/`
+  - [x] Unit tests for workflow (6 tests passing in `test_inference.py`)
+
+**Implementation Notes**:
+- Simplified design: single call to `model.predict(audio_paths, batch_size=batch_size)`
+- Model handles all batching internally (no manual batching required)
+- Predictions are logits, apply sigmoid: `y_pred = 1.0 / (1.0 + np.exp(-y_pred))`
+- Species mapping from dataset features to align predictions with ground truth
+- Test suite validates full workflow end-to-end on small subsets
+
+**⚠️ Important**: Code is implemented and tested on small subsets (5-50 samples). Full dataset inference runs (Phase 2A.4-2A.5) have NOT been executed yet.
 
 ### 2A.3 Create SLURM Job Scripts
 - [ ] Create `sbatch/common.sh`
@@ -241,10 +264,10 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 ### Source Files to Create
 ```
 src/birdset_benchmark/
-├── __init__.py              (exists)
-├── models.py                (exists - LinearProbe, metrics)
-├── data.py                  (new - dataset loading, preprocessing)
-├── run_inference.py         (new - direct inference for BirdSet models)
+├── __init__.py              ✅ exists
+├── models.py                ✅ exists - LinearProbe, metrics
+├── data.py                  ✅ exists - dataset loading, preprocessing (356 lines)
+├── run_inference.py         ✅ exists - direct inference for BirdSet models (239 lines)
 ├── encoders.py              (new - embedding extractors for BirdNET/Perch)
 ├── extract_embeddings.py    (new - CLI for embedding extraction)
 ├── train_classifier.py      (new - CLI for linear probe training)
@@ -322,11 +345,12 @@ bash sbatch/inference/run.sh --dry-run
 |-------|-------------|---------------|
 | Phase 0 | Planning | ✅ Complete |
 | Phase 1 | Environment Setup | ✅ Complete |
-| Phase 2A | Direct Inference (BirdSet models) | ~4-6 hours |
+| Phase 2A.1-2A.2 | Data Pipeline & Inference Script | ✅ Complete |
+| Phase 2A.3-2A.5 | SLURM Scripts & Production Runs | ~2-3 hours + GPU queue |
 | Phase 2B | Transfer Learning (BirdNET/Perch) | ~8-12 hours |
 | Phase 3 | Results Aggregation | ~2-3 hours |
 | Phase 4 | Cleanup & Documentation | ~2-3 hours |
-| **Total Remaining** | | ~16-24 hours + GPU queue |
+| **Total Remaining** | | ~14-20 hours + GPU queue |
 
 **Dependencies**:
 - BirdSet dataset availability on HuggingFace (verified)
