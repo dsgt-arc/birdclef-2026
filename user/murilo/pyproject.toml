@@ -26,6 +26,7 @@ dependencies = [
 
     # Audio processing
     "librosa>=0.10.0",
+    "resampy>=0.4.0",    # Required by librosa for resampling
     "soundfile>=0.12.0",
     "audioread>=3.0.0",
 
