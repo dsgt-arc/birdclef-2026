@@ -255,15 +255,48 @@ def main(
     console.print(f"✓ Inference complete in {inference_time:.2f}s")
     console.print(f"  Throughput: {len(audio_paths) / inference_time:.2f} samples/sec\n")
 
+    # Handle cases where model skips some files (e.g., corrupted audio, too short, etc.)
+    num_predicted = len(pred_df)
+    num_requested = len(audio_paths)
+
+    if num_predicted < num_requested:
+        console.print(
+            f"[yellow]⚠ Model processed {num_predicted}/{num_requested} files "
+            f"({num_requested - num_predicted} skipped)[/yellow]"
+        )
+
+        # Get files that were successfully processed
+        pred_files = set(pred_df.index.get_level_values("file"))
+
+        # Filter to only successfully processed samples
+        successful_indices = [i for i, path in enumerate(audio_paths) if path in pred_files]
+        skipped_indices = [i for i, path in enumerate(audio_paths) if path not in pred_files]
+
+        console.print(f"[yellow]  Skipped files: {len(skipped_indices)}[/yellow]")
+
+        # Update arrays to only include successful samples
+        audio_paths = [audio_paths[i] for i in successful_indices]
+        y_true = y_true[successful_indices]
+
+        console.print(
+            f"[yellow]  Evaluating on {len(audio_paths)} successfully processed samples[/yellow]\n"
+        )
+
     # Convert predictions DataFrame to numpy array
     console.print("[bold]Converting predictions to numpy array...[/bold]")
     y_pred = np.zeros((len(audio_paths), num_classes))
 
-    for species_code in pred_df.columns:
-        if species_code in species_to_idx:
-            class_idx = species_to_idx[species_code]
-            # pred_df has shape [n_samples, n_species]
-            y_pred[:, class_idx] = pred_df[species_code].values
+    # Map predictions using file path index
+    for i, audio_path in enumerate(audio_paths):
+        # Find row in pred_df that matches this audio path
+        matching_rows = pred_df.loc[pred_df.index.get_level_values("file") == audio_path]
+        if len(matching_rows) > 0:
+            # Take first match (should only be one for 5s clips)
+            pred_row = matching_rows.iloc[0]
+            for species_code in pred_df.columns:
+                if species_code in species_to_idx:
+                    class_idx = species_to_idx[species_code]
+                    y_pred[i, class_idx] = pred_row[species_code]
 
     # Apply sigmoid to convert logits to probabilities
     y_pred = 1.0 / (1.0 + np.exp(-y_pred))
@@ -277,7 +310,9 @@ def main(
     metrics["model"] = model
     metrics["dataset"] = dataset
     metrics["split"] = split
-    metrics["num_samples"] = len(audio_paths)
+    metrics["num_samples"] = len(audio_paths)  # Successfully processed samples
+    metrics["num_samples_requested"] = num_requested  # Total requested
+    metrics["num_samples_skipped"] = num_requested - len(audio_paths)
     metrics["num_classes"] = num_classes
     metrics["inference_time_sec"] = inference_time
     metrics["throughput_samples_per_sec"] = len(audio_paths) / inference_time
