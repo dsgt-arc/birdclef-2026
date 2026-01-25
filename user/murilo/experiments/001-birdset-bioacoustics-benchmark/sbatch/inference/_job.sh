@@ -25,9 +25,16 @@
 #   - metrics.json: cmAP, F1, Top-K accuracy, throughput
 #   - predictions.npz: y_pred and y_true arrays
 
-# Source common functions (sets up paths, environment)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../common.sh"
+# Determine project root (SLURM copies script to temp location, so use SLURM_SUBMIT_DIR if available)
+if [ -n "$SLURM_SUBMIT_DIR" ]; then
+    PROJECT_ROOT="$SLURM_SUBMIT_DIR"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+fi
+
+# Source common functions
+source "${PROJECT_ROOT}/sbatch/common.sh"
 
 # Validate required environment variables
 if [[ -z "${MODEL:-}" ]]; then
