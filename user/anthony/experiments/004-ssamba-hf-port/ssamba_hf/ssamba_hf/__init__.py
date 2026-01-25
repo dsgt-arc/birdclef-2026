@@ -17,9 +17,9 @@ Usage:
 
 from .config import SSAMBAConfig
 from .layers import RMSNorm, AudioPatchEmbed, DropPath
-from .mamba import BidirectionalMambaStack, MambaBlock, create_mamba_config
+from .mamba import BidirectionalMambaStack, MambaBlock, BidirectionalMamba
 from .model import SSAMBAModel
-from .convert import convert_ssamba_weights, load_from_ssamba_checkpoint
+from .convert import convert_ssamba_weights, load_from_ssamba_checkpoint, analyze_checkpoint
 
 __all__ = [
     # Config
@@ -31,12 +31,13 @@ __all__ = [
     # Mamba
     "BidirectionalMambaStack",
     "MambaBlock",
-    "create_mamba_config",
+    "BidirectionalMamba",
     # Model
     "SSAMBAModel",
     # Conversion
     "convert_ssamba_weights",
     "load_from_ssamba_checkpoint",
+    "analyze_checkpoint",
 ]
 
 __version__ = "0.1.0"

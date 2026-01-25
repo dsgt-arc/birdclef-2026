@@ -77,6 +77,7 @@ class SSAMBAConfig:
     @classmethod
     def from_checkpoint(cls, checkpoint_path: str, device: str = "cpu") -> "SSAMBAConfig":
         """Infer config from checkpoint."""
+        import re
         import torch
 
         sd = torch.load(checkpoint_path, map_location=device)
@@ -104,9 +105,20 @@ class SSAMBAConfig:
             input_fdim = int(input_fdim)
             input_tdim = int(input_tdim)
 
+        # Infer depth from layer indices in checkpoint
+        layer_indices = set()
+        for key in sd.keys():
+            match = re.search(r"layers\.(\d+)\.", key)
+            if match:
+                layer_indices.add(int(match.group(1)))
+
+        # The number of layers is max_index + 1
+        depth = max(layer_indices) + 1 if layer_indices else 24
+        print(f"Inferred depth={depth} from checkpoint (found layer indices: {sorted(layer_indices)[:5]}...)")
+
         return cls(
             embed_dim=embed_dim,
-            depth=24,
+            depth=depth,
             img_size=(input_fdim, input_tdim),
             patch_size=patch_size,
         )

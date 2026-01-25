@@ -32,21 +32,24 @@
 - [x] 2.6 Add `get_embeddings()` method for feature extraction
 - [x] 2.7 Export public API in `ssamba_hf/__init__.py`
 
-## 2B. Bidirectional Mamba Support (NEW - BLOCKED)
+## 2B. Bidirectional Mamba Support (IN PROGRESS)
 The original SSAMBA uses a custom bidirectional Mamba from Vision Mamba (Vim), not standard Mamba:
 - Each layer has separate forward and backward parameters (`_b` suffix)
 - HuggingFace's MambaMixer only supports unidirectional Mamba
 
-**Options:**
-1. **Pure PyTorch reimplementation**: Implement bidirectional Mamba from scratch
-2. **Use existing weights partially**: Current approach (works but not numerically equivalent)
-3. **Wait for HF support**: Monitor transformers library for bidirectional support
+**Solution: Pure PyTorch BidirectionalMamba**
+
+Implemented a custom `BidirectionalMamba` class that:
+- Has both forward (A_log, D, conv1d, x_proj, dt_proj) and backward (_b suffix) weights
+- Uses pure PyTorch SSM (no CUDA kernels required)
+- Processes both directions within each layer call
 
 Tasks:
-- [ ] 2B.1 Analyze SSAMBA bidirectional Mamba architecture from Vim/vim/models_mamba.py
-- [ ] 2B.2 Implement custom BidirectionalMamba class (not using HF MambaMixer)
-- [ ] 2B.3 Update weight conversion to map all checkpoint keys correctly
+- [x] 2B.1 Analyze SSAMBA bidirectional Mamba architecture from Vim/vim/models_mamba.py
+- [x] 2B.2 Implement custom BidirectionalMamba class (not using HF MambaMixer)
+- [x] 2B.3 Update weight conversion with detailed analysis and diagnostics
 - [ ] 2B.4 Verify forward pass produces same shape outputs
+- [ ] 2B.5 Run verification to confirm cosine similarity > 0.999
 
 ## 3. Verification
 - [ ] 3.1 Set up original SSAMBA environment
@@ -72,22 +75,22 @@ Tasks:
 
 ## Current Status (2026-01-25)
 
-**Working:**
-- HF port runs and produces embeddings
-- Checkpoint loading works (partial - 245/413 weights)
-- Forward pass produces correct shape: `(batch, 384)`
+**Completed:**
+- Verification infrastructure (sbatch scripts, extraction scripts)
+- Initial HF port with HuggingFace MambaMixer (90.3% cosine similarity)
+- Custom `BidirectionalMamba` implementation with both forward and backward weights
+- Enhanced weight conversion with checkpoint analysis
 
-**Blocked:**
-- Original SSAMBA environment setup (dependency conflicts)
-- Full weight loading (bidirectional weights not supported)
-- Numerical verification (depends on above)
+**Next Steps:**
+1. Run verification with new bidirectional implementation
+2. Debug any remaining weight mapping issues
+3. Confirm cosine similarity > 0.999
 
-**Test Results:**
+**Previous Test Results (with HF MambaMixer):**
 ```
-Model created: 23.5M params
-Input shape: torch.Size([2, 1024, 128])
-Output shape: torch.Size([2, 384])
-Output mean: 0.0038, std: 1.1448
+Cosine Similarity: 0.903 (FAIL - needed >0.999)
+Only 245/413 weights loaded
+Missing: all _b suffix weights
 ```
 
 ## Verification Workflow
