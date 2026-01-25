@@ -25,6 +25,7 @@ class DistillationDataModule(pl.LightningDataModule):
 
     Args:
         source_cache_dir: Directory containing safetensors shard files
+        static_embeddings_path: Path to static_embeddings.npy lookup table
         local_cache_dir: Optional local NVMe cache directory
         batch_size: Batch size per iteration
         num_workers: Number of DataLoader workers
@@ -41,6 +42,7 @@ class DistillationDataModule(pl.LightningDataModule):
     def __init__(
         self,
         source_cache_dir: str | Path,
+        static_embeddings_path: str | Path,
         local_cache_dir: str | Path | None = None,
         batch_size: int = 64,
         num_workers: int = 8,
@@ -57,6 +59,7 @@ class DistillationDataModule(pl.LightningDataModule):
         self.save_hyperparameters()
 
         self.source_cache_dir = Path(source_cache_dir)
+        self.static_embeddings_path = Path(static_embeddings_path)
         self.local_cache_dir = Path(local_cache_dir) if local_cache_dir else None
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -100,6 +103,7 @@ class DistillationDataModule(pl.LightningDataModule):
             # shards for training and create a separate dataset for validation.
             self.train_dataset = ShardAffinityDataset(
                 source_cache_dir=self.source_cache_dir,
+                static_embeddings_path=self.static_embeddings_path,
                 local_cache_dir=self.local_cache_dir,
                 shards_per_worker=self.shards_per_worker,
                 prefetch_ahead=self.prefetch_ahead,
@@ -111,6 +115,7 @@ class DistillationDataModule(pl.LightningDataModule):
             # In practice, the shard assignment handles the split
             self.val_dataset = ShardAffinityDataset(
                 source_cache_dir=self.source_cache_dir,
+                static_embeddings_path=self.static_embeddings_path,
                 local_cache_dir=self.local_cache_dir,
                 shards_per_worker=self.shards_per_worker,
                 prefetch_ahead=self.prefetch_ahead,

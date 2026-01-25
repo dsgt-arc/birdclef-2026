@@ -58,6 +58,12 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing safetensors teacher cache files",
     )
     parser.add_argument(
+        "--static-embeddings",
+        type=str,
+        required=True,
+        help="Path to static_embeddings.npy lookup table",
+    )
+    parser.add_argument(
         "--local-cache",
         type=str,
         default=None,
@@ -219,6 +225,10 @@ def main() -> None:
     if not source_cache.exists():
         raise ValueError(f"Source cache directory does not exist: {source_cache}")
 
+    static_embeddings = Path(args.static_embeddings)
+    if not static_embeddings.exists():
+        raise ValueError(f"Static embeddings file does not exist: {static_embeddings}")
+
     local_cache = args.local_cache
     if local_cache is None:
         tmpdir = os.environ.get("TMPDIR", "/tmp")
@@ -239,6 +249,7 @@ def main() -> None:
     print("=" * 60)
     print(f"Student model: {args.student}")
     print(f"Source cache: {source_cache}")
+    print(f"Static embeddings: {static_embeddings}")
     print(f"Local cache: {local_cache}")
     print(f"Output dir: {output_dir}")
     print(f"Batch size: {args.batch_size}")
@@ -258,6 +269,7 @@ def main() -> None:
     print("\nSetting up data module...")
     datamodule = DistillationDataModule(
         source_cache_dir=source_cache,
+        static_embeddings_path=static_embeddings,
         local_cache_dir=local_cache,
         batch_size=args.batch_size,
         num_workers=args.num_workers,

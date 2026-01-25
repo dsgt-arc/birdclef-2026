@@ -65,13 +65,15 @@ cleanup() {
 trap cleanup EXIT
 
 # Setup cache directories
-source_cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_500k
+source_cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_500k_v2
+static_embeddings=$scratch_dir/outputs/exp002-benchmarks/static_embeddings/static_embeddings.npy
 local_cache_dir=${TMPDIR}/teacher_cache_500k
 output_dir=$scratch_dir/outputs/exp003-distillation-lightning
 
 echo ""
 echo "Cache setup:"
 echo "  Source cache: $source_cache_dir ($(du -sh $source_cache_dir 2>/dev/null | cut -f1))"
+echo "  Static embeddings: $static_embeddings"
 echo "  Local cache: $local_cache_dir"
 echo "  Output dir: $output_dir"
 
@@ -86,6 +88,7 @@ ${UV_PROJECT_ENVIRONMENT}/bin/python \
     $user_dir/experiments/003-model-distillation/sbatch/train_lightning.py \
     --student "$STUDENT" \
     --source-cache "$source_cache_dir" \
+    --static-embeddings "$static_embeddings" \
     --local-cache "$local_cache_dir" \
     --output-dir "$output_dir" \
     --batch-size "$BATCH_SIZE" \

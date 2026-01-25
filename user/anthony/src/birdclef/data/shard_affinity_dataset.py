@@ -24,12 +24,18 @@ Key Design Principles:
    - Local NVMe cache (~3 GB/s) with limited space
    - On-demand copy with LRU eviction
 
+5. Static Embedding Reconstruction (v2 cache format):
+   - Cache stores only teacher_embeds and token_ids (50% space savings)
+   - Static embeddings reconstructed at load time via lookup table
+   - Lookup table is ~24MB (8192 tokens x 768 dims x 4 bytes)
+
 Usage:
     from shard_affinity_dataset import ShardAffinityDataset, create_dataloader
 
     dataset = ShardAffinityDataset(
         source_cache_dir="/path/to/network/cache",
         local_cache_dir="/tmp/local_cache",
+        static_embeddings_path="/path/to/static_embeddings.npy",  # For v2 cache
         shards_per_worker=3,
         prefetch_ahead=2,
     )
@@ -54,6 +60,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 from safetensors import safe_open
 from safetensors.torch import load_file
@@ -135,8 +142,16 @@ class ShardAffinityDataset(Dataset):
     1. Main process initialization: Loads shard metadata (fast, header-only)
     2. Worker initialization: Each worker builds its local index and starts prefetching
 
+    Cache format:
+    - teacher_embeds: (N, seq_len, 768) fp16 - contextualized embeddings from teacher
+    - token_ids: (N, seq_len) int16 - discrete token IDs
+
+    Static embeddings are reconstructed at load time from token_ids using the
+    static_embeddings lookup table (~24MB). This reduces cache size by 50%.
+
     Args:
         source_cache_dir: Directory containing safetensors shard files (network storage)
+        static_embeddings_path: Path to static_embeddings.npy lookup table
         local_cache_dir: Optional local NVMe cache directory for faster access
         shards_per_worker: Maximum shards to keep in memory per worker (default: 3)
         prefetch_ahead: Number of shards to prefetch ahead (default: 2)
@@ -147,6 +162,7 @@ class ShardAffinityDataset(Dataset):
     def __init__(
         self,
         source_cache_dir: str | Path,
+        static_embeddings_path: str | Path,
         local_cache_dir: str | Path | None = None,
         shards_per_worker: int = 3,
         prefetch_ahead: int = 2,
@@ -154,6 +170,7 @@ class ShardAffinityDataset(Dataset):
         seed: int = 42,
     ):
         self.source_cache_dir = Path(source_cache_dir)
+        self.static_embeddings_path = Path(static_embeddings_path)
         self.local_cache_dir = Path(local_cache_dir) if local_cache_dir else None
         self.shards_per_worker = shards_per_worker
         self.prefetch_ahead = prefetch_ahead
@@ -163,6 +180,13 @@ class ShardAffinityDataset(Dataset):
         # Load shard metadata (fast - uses safetensors header API)
         self.shards = self._load_shard_metadata()
         self.total_samples = sum(s.n_samples for s in self.shards)
+
+        # Load static embeddings lookup table for reconstructing static_embeds
+        print(f"Loading static embeddings lookup table from {self.static_embeddings_path}...")
+        self._static_embeddings_lut = torch.from_numpy(
+            np.load(self.static_embeddings_path)
+        ).float()
+        print(f"  Shape: {self._static_embeddings_lut.shape}")
 
         # Worker state - initialized in worker_init_fn
         self._worker_state: WorkerState | None = None
@@ -603,7 +627,9 @@ class ShardAffinityDataset(Dataset):
         # Load shard and extract sample
         tensors = self._load_shard_tensors(local_shard_idx)
 
-        static_embeds = tensors["static_embeds"][sample_idx].float()
+        # Reconstruct static_embeds from token_ids via lookup table
+        token_ids = tensors["token_ids"][sample_idx].long()
+        static_embeds = self._static_embeddings_lut[token_ids]
         teacher_embeds = tensors["teacher_embeds"][sample_idx].float()
 
         return static_embeds, teacher_embeds
@@ -622,7 +648,9 @@ class ShardAffinityDataset(Dataset):
         path = self._get_shard_path(shard)
         tensors = safe_load_file(str(path))
 
-        static_embeds = tensors["static_embeds"][sample_idx].float()
+        # Reconstruct static_embeds from token_ids via lookup table
+        token_ids = tensors["token_ids"][sample_idx].long()
+        static_embeds = self._static_embeddings_lut[token_ids]
         teacher_embeds = tensors["teacher_embeds"][sample_idx].float()
 
         return static_embeds, teacher_embeds
