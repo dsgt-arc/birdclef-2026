@@ -54,7 +54,7 @@ htmlcov/
 .ruff_cache/
 
 # Artifacts and outputs
-artifacts/
+# Block large artifacts but allow small result files (JSON, text)
 outputs/
 checkpoints/
 *.ckpt
@@ -62,6 +62,13 @@ checkpoints/
 *.pth
 *.safetensors
 *.bin
+**/artifacts/**/*.npz
+**/artifacts/**/*.pkl
+**/artifacts/**/*.pickle
+**/artifacts/**/*.h5
+**/artifacts/**/*.hdf5
+**/artifacts/**/*.arrow
+**/artifacts/**/*.parquet
 
 # Logs
 *.log
