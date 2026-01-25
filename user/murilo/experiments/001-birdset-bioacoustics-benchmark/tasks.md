@@ -1,7 +1,7 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 1 mostly complete (1.1, 1.2, 1.2b done) ✅
-**Current Phase**: Phase 1.3 (BirdSet Dataset Loading) 🔄
+**Status**: Phase 1 almost complete (1.1, 1.2, 1.2b, 1.3 done) ✅
+**Current Phase**: Phase 1.4 (Create experiment directories) 🔄
 **Last Updated**: 2026-01-24
 
 ---
@@ -67,11 +67,18 @@
   - [x] Created pytest tests: `tests/test_classifiers.py` (9 tests passing)
   - [x] Based on birdclef-2025 architecture, adapted for multi-label
 
-- [ ] 1.3 Test BirdSet dataset loading
-  - [ ] Load HSN subset from `DBD-research-group/BirdSet`
-  - [ ] Verify train and test_5s splits exist
-  - [ ] Inspect sample: check audio format, labels, metadata
-  - [ ] Document dataset statistics (num samples, species, duration)
+- [x] 1.3 Test BirdSet dataset loading
+  - [x] Load HSN subset from `DBD-research-group/BirdSet`
+  - [x] Verify train and test_5s splits exist (5,460 train / 10,296 test / 12,000 test_5s)
+  - [x] Inspect sample: check audio format, labels, metadata
+  - [x] Document dataset statistics:
+    - Train: 5,460 samples, 21 unique species
+    - Test: 10,296 samples
+    - Test_5s: 12,000 samples (5-second clips, multi-label)
+    - Audio: 32kHz mono .ogg files
+  - [x] Created 6 comprehensive pytest tests (all passing)
+  - [x] Used HuggingFace datasets with trust_remote_code=True
+  - [x] Dataset cached locally for future use
 
 - [ ] 1.4 Create experiment directory structure
   - [x] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/` (base directory)
