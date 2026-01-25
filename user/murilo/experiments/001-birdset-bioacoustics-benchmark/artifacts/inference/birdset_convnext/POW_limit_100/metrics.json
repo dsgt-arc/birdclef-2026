@@ -1,0 +1,17 @@
+{
+  "cmap": 0.4635922464830589,
+  "num_classes_with_positives": 29,
+  "f1_micro": 0.19701492537313434,
+  "f1_macro": 0.08221984224126207,
+  "top1_accuracy": 0.72,
+  "top5_accuracy": 0.92,
+  "model": "birdset_convnext",
+  "dataset": "POW",
+  "split": "test_5s",
+  "num_samples": 100,
+  "num_classes": 48,
+  "inference_time_sec": 9.28212308883667,
+  "throughput_samples_per_sec": 10.773397319010668,
+  "batch_size": 16,
+  "num_workers": 4
+}
