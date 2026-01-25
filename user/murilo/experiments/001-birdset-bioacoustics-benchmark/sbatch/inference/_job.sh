@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH -p gpu-rtx6000
 #SBATCH -t240 -qembers
-#SBATCH --output=logs/inference-%j.out
+#SBATCH --output=logs/inference-%j.log
 #
 # BirdSet Direct Inference Job
 #
@@ -136,8 +136,10 @@ export PYTHONWARNINGS=ignore
 # GPU Monitoring
 # ============================================================================
 
-GPU_STATS_FILE="${EXPERIMENT_DIR}/logs/gpu_stats-${SLURM_JOB_ID:-local}.csv"
-mkdir -p "$(dirname "$GPU_STATS_FILE")"
+# Store GPU stats in same directory structure as logs
+GPU_LOG_DIR="${EXPERIMENT_DIR}/logs/inference/${MODEL}/${DATASET_PATH}"
+mkdir -p "${GPU_LOG_DIR}"
+GPU_STATS_FILE="${GPU_LOG_DIR}/gpu_stats_${SLURM_JOB_ID:-local}.csv"
 
 nvidia-smi --query-gpu=timestamp,index,name,utilization.gpu,utilization.memory,memory.used,memory.total,power.draw,temperature.gpu \
     --format=csv -l 5 > "$GPU_STATS_FILE" &

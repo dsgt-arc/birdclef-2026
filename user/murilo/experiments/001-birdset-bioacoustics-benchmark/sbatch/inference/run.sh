@@ -135,9 +135,6 @@ fi
 echo "Total combinations: $((${#MODELS_TO_RUN[@]} * ${#DATASETS_TO_RUN[@]}))"
 echo ""
 
-# Ensure logs directory exists
-mkdir -p "${EXPERIMENT_DIR}/logs"
-
 for model in "${MODELS_TO_RUN[@]}"; do
     for dataset in "${DATASETS_TO_RUN[@]}"; do
         # Get the dataset path (with limit suffix if applicable)
@@ -156,15 +153,21 @@ for model in "${MODELS_TO_RUN[@]}"; do
             EXPORT_VARS="${EXPORT_VARS},LIMIT=${LIMIT}"
         fi
 
-        # Build sbatch command
-        CMD="sbatch --export=${EXPORT_VARS} ${JOB_SCRIPT}"
+        # Create log directory for this model/dataset
+        LOG_DIR="${EXPERIMENT_DIR}/logs/inference/${model}/${dataset_path}"
+        mkdir -p "${LOG_DIR}"
+
+        # Build sbatch command with organized log output
+        CMD="sbatch \
+            --export=${EXPORT_VARS} \
+            --output=${LOG_DIR}/slurm_%j.log \
+            ${JOB_SCRIPT}"
 
         if [[ "${DRY_RUN}" == "true" ]]; then
             echo "[DRY-RUN] ${CMD}"
         else
             echo "[SUBMIT] ${model} on ${dataset_path}"
-            # Change to experiment directory so logs go to the right place
-            (cd "${EXPERIMENT_DIR}" && ${CMD})
+            ${CMD}
             SUBMITTED=$((SUBMITTED + 1))
         fi
     done
@@ -180,4 +183,4 @@ else
 fi
 echo ""
 echo "Monitor jobs with: squeue -u \$USER"
-echo "View logs in: ${EXPERIMENT_DIR}/logs/"
+echo "View logs in: ${EXPERIMENT_DIR}/logs/inference/{model}/{dataset}/"
