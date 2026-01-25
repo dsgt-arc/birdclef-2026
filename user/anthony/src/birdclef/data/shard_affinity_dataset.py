@@ -421,16 +421,17 @@ class ShardAffinityDataset(Dataset):
             return state.shard_cache[local_shard_idx]
 
         # Check if prefetch completed
+        # Timeout of 120s to accommodate slow network copies (~5GB at 100MB/s = 50s)
         if local_shard_idx in state.prefetch_futures:
             future = state.prefetch_futures.pop(local_shard_idx)
             try:
-                tensors = future.result(timeout=30)
+                tensors = future.result(timeout=120)
                 if tensors is not None:
                     state.stats["prefetch_hits"] += 1
                     self._cache_shard(local_shard_idx, tensors)
                     return tensors
             except Exception as e:
-                print(f"WARNING: Prefetch failed for shard {local_shard_idx}: {e}")
+                print(f"WARNING: Prefetch failed for shard {local_shard_idx}: {type(e).__name__}: {e}")
 
         # Load from disk
         shard = state.assigned_shards[local_shard_idx]
