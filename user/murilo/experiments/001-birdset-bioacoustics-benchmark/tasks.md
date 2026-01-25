@@ -1,41 +1,26 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 1 complete ✅
-**Current Phase**: Phase 2 (Data Pipeline Implementation) 🔄
+**Status**: Phase 1 complete, Phase 2 in progress
+**Current Phase**: Phase 2.1 (Implement embedding extraction)
 **Last Updated**: 2026-01-24
 
 ---
 
+## Overview
+
+This experiment evaluates 4 pre-trained bioacoustics models across 8 BirdSet datasets using linear probing.
+
+**Models**: BirdNET, Perch, BirdSetConvNeXT, BirdSetEfficientNetB1
+**Datasets**: HSN, PER, NES, UHH, POW, SSW, SNE, NBP
+**Total Combinations**: 4 models × 8 datasets = 32
+
 ## Phase 0: Planning and Documentation ✅ COMPLETED
 
 - [x] 0.1 Create experiment proposal
-  - [x] Write proposal.md with hypothesis, methodology, evaluation criteria
-  - [x] Define success metrics (cmAP, F1 micro/macro, Top-1/5)
-  - [x] Identify all 7 models to benchmark
-  - [x] Document limitations and future work
-
 - [x] 0.2 Create technical design document
-  - [x] Write design.md with technical decisions
-  - [x] Define two-stage pipeline architecture
-  - [x] Decide on max-pooling strategy for variable-length audio
-  - [x] Choose linear probe implementation (scikit-learn)
-  - [x] Document data flow and code structure
-
 - [x] 0.3 Create implementation task list
-  - [x] Break down work into 7 phases
-  - [x] Define ~40 detailed subtasks
-  - [x] Estimate timeline (16-24 hours)
-
 - [x] 0.4 Create configuration and documentation
-  - [x] Write config.yaml with all model specs and SLURM settings
-  - [x] Create pyproject.toml with all dependencies
-  - [x] Write README.md with quick start guide
-  - [x] Create test_setup.sh for interactive environment testing
-
 - [x] 0.5 Commit and push to repository
-  - [x] Add all files to git
-  - [x] Commit with descriptive message
-  - [x] Push to origin/mg-birdset branch
 
 ## Phase 1: Environment Setup ✅ COMPLETED
 
@@ -48,272 +33,274 @@
   - [x] Made `pytorch-lightning` and `torchmetrics` explicit dependencies
   - [x] Added `pytest` to dependencies
   - [x] Created comprehensive pytest test suite (28 tests total)
-  - [ ] Add to main project `pyproject.toml` as optional dependency (if needed)
 
 - [x] 1.2 Install and test bioacoustics-model-zoo
-  - [x] `uv pip install git+https://github.com/kitzeslab/bioacoustics-model-zoo.git`
   - [x] Test `import bmz; bmz.list_models()` works (13 models available)
-  - [x] Verify BirdNET can be instantiated
-  - [x] Test BirdNET embedding extraction (1024-dim embeddings working)
+  - [x] Verify BirdNET can be instantiated and extract embeddings
   - [x] Verify Perch model loading (requires TensorFlow)
   - [x] Test Perch embedding extraction (1280-dim embeddings)
-  - [x] Created pytest tests: `tests/test_models.py` (6 tests: environment, list, BirdNET x2, Perch x2)
-
-- [x] 1.2b Create PyTorch Lightning classifiers (NEW)
-  - [x] Created `src/birdset_benchmark/models.py`
-  - [x] Implemented `MultiLabelLinearProbe` (2-layer MLP: input → 512 → num_classes)
-  - [x] Implemented `LinearProbe` (pure linear: input → num_classes)
-  - [x] Implemented `MultiLabelTopKAccuracy` metric for Top-1/Top-5 accuracy
-  - [x] Aligned all metrics with proposal.md:
-    - cmAP (Class-mean Average Precision) - primary metric
-    - F1 Micro and F1 Macro
-    - Top-1 and Top-5 Accuracy
-  - [x] Created pytest tests: `tests/test_classifiers.py` (9 tests passing)
-  - [x] Based on birdclef-2025 architecture, adapted for multi-label
+  - [x] Created pytest tests: `tests/test_models.py`
 
 - [x] 1.3 Test BirdSet dataset loading
   - [x] Load HSN subset from `DBD-research-group/BirdSet`
-  - [x] Verify train and test_5s splits exist (5,460 train / 10,296 test / 12,000 test_5s)
-  - [x] Inspect sample: check audio format, labels, metadata
-  - [x] Document dataset statistics:
-    - Train: 5,460 samples, 21 unique species
-    - Test: 10,296 samples
-    - Test_5s: 12,000 samples (5-second clips, multi-label)
-    - Audio: 32kHz mono .ogg files
-  - [x] Created 6 comprehensive pytest tests (all passing)
-  - [x] Used HuggingFace datasets with trust_remote_code=True
-  - [x] Dataset cached locally for future use
+  - [x] Verify train and test_5s splits exist
+  - [x] Document dataset statistics
+  - [x] Created 6 comprehensive pytest tests
 
 - [x] 1.4 Create experiment directory structure
-  - [x] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/` (base directory)
-  - [x] `config.yaml` with all model specs and SLURM settings
-  - [x] `test_setup.sh` for interactive environment setup and validation
-    - Steps 1-7: Environment setup (GPU, uv, venv, dependencies, PyTorch+CUDA)
-    - Step 8: Run pytest test suite for comprehensive validation
-    - Single script provides complete setup + verification
-  - [x] `user/murilo/tests/001-birdset-bioacoustics-benchmark/` - Comprehensive test suite:
-    - `test_environment.py` - GPU, CUDA, PyTorch validation (5 tests)
-    - `test_models.py` - BirdNET and Perch loading/embeddings (6 tests)
-    - `test_classifiers.py` - PyTorch Lightning models (10 tests)
-    - `test_datasets.py` - BirdSet dataset loading (7 tests)
-    - **Total: 28 tests** organized by experiment number for modularity
-    - Shared pytest.ini and common fixtures at `user/murilo/tests/` level
-  - [x] `sbatch/` directory for SLURM job scripts
-  - [x] `artifacts/` directory for results and outputs
+  - [x] Base directory and config files
+  - [x] `test_setup.sh` for environment setup and pytest validation
+  - [x] Test suite organized by experiment number
+  - [x] `sbatch/` and `artifacts/` directories
 
-## Phase 2: Data Pipeline Implementation
+## Phase 2: Embedding Extraction Pipeline 🔄 IN PROGRESS
 
-- [ ] 2.1 Implement audio preprocessing (`data.py`)
+### 2.1 Implement Data Pipeline
+- [ ] Create `src/birdset_benchmark/data.py`
+  - [ ] Function: `load_birdset_dataset(dataset_code)` - Load any of 8 datasets
   - [ ] Function: `resample_audio(audio, source_sr, target_sr)`
   - [ ] Function: `pad_or_crop(audio, target_duration_sec, sr)`
   - [ ] Function: `max_pool_embeddings(embeddings_sequence)` for long clips
-  - [ ] Unit tests for edge cases (very short, very long, exact 5s)
+  - [ ] Class: `BirdSetDataset` (PyTorch Dataset wrapper)
+  - [ ] Function: `collate_fn()` for batching variable-length audio
+  - [ ] Unit tests for edge cases
 
-- [ ] 2.2 Create BirdSet dataset wrapper
-  - [ ] Class: `BirdSetDataset` (PyTorch Dataset)
-  - [ ] Lazy loading (don't load all audio into memory)
-  - [ ] Resample on-the-fly to target sample rate
-  - [ ] Return: `{'audio': tensor, 'labels': multi_hot, 'id': str}`
-  - [ ] Handle FLAC/OGG decoding correctly
+### 2.2 Implement Model Encoders
+- [ ] Create `src/birdset_benchmark/encoders.py`
+  - [ ] Class: `BioacousticsEncoder` (abstract base class)
+  - [ ] Class: `BirdNETEncoder` (wrapper for bmz.BirdNET)
+  - [ ] Class: `PerchEncoder` (wrapper for bmz.Perch)
+  - [ ] Class: `BirdSetConvNeXTEncoder` (wrapper for bmz.BirdSetConvNeXT)
+  - [ ] Class: `BirdSetEfficientNetEncoder` (wrapper for bmz.BirdSetEfficientNetB1)
+  - [ ] Each encoder: `.embed(audio_batch)` → `[batch, embedding_dim]`
+  - [ ] Handle sample rate differences (48kHz for BirdNET, 32kHz for others)
+  - [ ] Unit tests for each encoder
 
-- [ ] 2.3 Implement batching with collate function
-  - [ ] `collate_fn()` to pad batch to max length
-  - [ ] Test DataLoader with batch_size=16
-  - [ ] Profile: samples/sec on CPU vs GPU
-
-- [ ] 2.4 Create multi-label encoding utilities
-  - [ ] Function: `encode_multilabel(ebird_codes, all_classes)` → one-hot
-  - [ ] Function: `decode_predictions(logits, threshold=0.5)` → species list
-  - [ ] Save label mapping to JSON for reproducibility
-
-## Phase 3: Model Wrappers
-
-- [ ] 3.1 Create unified model interface (`models.py`)
-  - [ ] Abstract class: `BioacousticsEncoder` with `.extract_embeddings(audio_batch)`
-  - [ ] Wrapper: `BirdNETEncoder` (handles 48kHz resampling)
-  - [ ] Wrapper: `PerchEncoder` (handles 32kHz resampling)
-  - [ ] Each wrapper returns numpy array [batch, embedding_dim]
-
-- [ ] 3.2 Test model wrappers
-  - [ ] Load BirdNET, extract embeddings for 1 sample → verify shape (1024,)
-  - [ ] Load Perch, extract embeddings for 1 sample → verify shape (1280,)
-  - [ ] Test batched extraction (batch_size=16) → verify no errors
-  - [ ] Measure throughput: samples/sec on GPU
-
-- [ ] 3.3 Handle edge cases
-  - [ ] Empty audio (all zeros) → return zero embeddings
-  - [ ] Corrupted audio → catch exceptions, log warning
-  - [ ] Very long audio (>60s) → chunk and max-pool
-
-## Phase 4: Embedding Extraction (Stage 1 - GPU)
-
-- [ ] 4.1 Implement extraction script (`extract_embeddings.py`)
-  - [ ] CLI arguments: `--model {birdnet,perch}`, `--split {train,test}`, `--output-dir`
+### 2.3 Implement Embedding Extraction Script
+- [ ] Create `src/birdset_benchmark/extract_embeddings.py`
+  - [ ] CLI with typer: `--model`, `--dataset`, `--batch-size`, `--output-dir`
   - [ ] Load BirdSet dataset for specified split
-  - [ ] Initialize model wrapper
+  - [ ] Initialize model encoder
   - [ ] Loop over DataLoader with tqdm progress bar
-  - [ ] Accumulate embeddings + labels in lists
-  - [ ] Save to `.npz` with keys: `embeddings`, `labels`, `ids`
+  - [ ] Save embeddings to `.npz` format
+  - [ ] Save metadata to `metadata.json`
+  - [ ] Logging: model name, sample rate, embedding dim, throughput
 
-- [ ] 4.2 Add metadata logging
-  - [ ] Log: model name, sample rate, embedding dim, num samples
-  - [ ] Log: extraction start/end time, throughput (samples/sec)
-  - [ ] Save metadata to `artifacts/metadata.json`
+### 2.4 Create SLURM Job Scripts
+- [ ] Create `sbatch/common.sh`
+  - [ ] Function: `setup_environment()` - venv in TMPDIR
+  - [ ] Function: `get_artifact_dir()` - path construction
+  - [ ] Environment variables: PROJECT_ROOT, etc.
 
-- [ ] 4.3 Create SLURM batch script (`sbatch/extract_embeddings.sbatch`)
-  - [ ] Request: 1 GPU (L40S preferred), 4 CPU cores, 32GB RAM
-  - [ ] Time limit: 12 hours
-  - [ ] Load environment: `module load anaconda3; source activate birdclef-env`
-  - [ ] Run extraction for all combinations: {birdnet, perch} × {train, test}
-  - [ ] Redirect output to logs directory
+- [ ] Create `sbatch/extract_embeddings/_job.sh`
+  - [ ] SLURM configuration: 1 GPU, 4 CPUs, 32GB RAM, 4 hours
+  - [ ] Source common.sh
+  - [ ] Run `python -m birdset_benchmark.extract_embeddings`
+  - [ ] Use MODEL and DATASET environment variables
 
-- [ ] 4.4 Dry run and validation
-  - [ ] Run extraction on 10 samples (subset) to test pipeline
-  - [ ] Verify `.npz` files created with correct shapes
-  - [ ] Check GPU utilization (should be >50%)
-  - [ ] Submit full GPU job to SLURM
+- [ ] Create `sbatch/extract_embeddings/run.sh`
+  - [ ] Parse `--model`, `--dataset`, `--dry-run`, `--force` flags
+  - [ ] Loop over models and datasets
+  - [ ] Check for existing `metadata.json` to skip completed jobs
+  - [ ] Submit jobs with sbatch
 
-## Phase 5: Linear Probe Training (Stage 2 - GPU with PyTorch Lightning)
+### 2.5 Validate Single Model + Single Dataset
+- [ ] Test extraction locally on small subset (10 samples)
+- [ ] Run `bash sbatch/extract_embeddings/run.sh --model birdnet --dataset HSN`
+- [ ] Verify `.npz` files created with correct shapes
+- [ ] Verify `metadata.json` has correct statistics
+- [ ] Check GPU utilization and throughput
 
-- [x] 5.0 PyTorch Lightning model implementation
-  - [x] Created `MultiLabelLinearProbe` (2-layer MLP)
-  - [x] Created `LinearProbe` (pure linear)
-  - [x] Implemented all required metrics (cmAP, F1 micro/macro, Top-1/5)
-  - [x] Created comprehensive tests
+### 2.6 Scale to All Datasets (One Model)
+- [ ] Run `bash sbatch/extract_embeddings/run.sh --model birdnet`
+- [ ] Monitor jobs: `squeue -u $USER`
+- [ ] Verify all 8 datasets completed
+- [ ] Document any failures or issues
 
-- [ ] 5.1 Implement training script (`train_probe.py`)
-  - [ ] CLI arguments: `--model {birdnet,perch}`, `--embeddings-dir`, `--output-dir`
-  - [ ] Load embeddings: `embeddings_train_*.npz`, `embeddings_test_*.npz`
+### 2.7 Scale to All Models
+- [ ] Run for Perch: `run.sh --model perch`
+- [ ] Run for BirdSetConvNeXT: `run.sh --model birdset_convnext`
+- [ ] Run for BirdSetEfficientNetB1: `run.sh --model birdset_efficientnet_b1`
+- [ ] Verify all 32 embedding jobs completed
+- [ ] Total embeddings: 4 models × 8 datasets × 2 splits = 64 .npz files
+
+## Phase 3: Classification Pipeline
+
+### 3.1 Implement Training Script
+- [ ] Create `src/birdset_benchmark/train_classifier.py`
+  - [ ] CLI with typer: `--model`, `--dataset`, `--epochs`, `--lr`
+  - [ ] Load embeddings from `artifacts/embeddings/{model}/{dataset}/`
   - [ ] Create PyTorch DataLoader from embeddings
-  - [ ] Initialize: `MultiLabelLinearProbe(input_dim, num_classes)` or `LinearProbe(...)`
+  - [ ] Initialize `MultiLabelLinearProbe` from `models.py`
   - [ ] Initialize PyTorch Lightning Trainer with:
     - GPU accelerator
-    - Early stopping callback
-    - Model checkpointing
-    - WandB or TensorBoard logger (optional)
-  - [ ] Train on train embeddings with validation split
-  - [ ] Save best checkpoint to `artifacts/classifiers/{model}_probe.ckpt`
+    - Early stopping callback (monitor val_loss)
+    - Model checkpointing (save best)
+    - TensorBoard logger
+  - [ ] Train and save checkpoint to `artifacts/classifiers/`
+  - [ ] Evaluate on test embeddings
+  - [ ] Save metrics to `metrics.json`
+  - [ ] Save predictions to `predictions.npz`
 
-- [ ] 5.2 Add optional preprocessing and configuration
-  - [ ] Optional: L2-normalize embeddings before training
-  - [ ] Configurable: learning rate, batch size, max epochs
-  - [ ] Configurable: hidden layer size (512 default)
-  - [ ] Configurable: threshold for binary predictions (0.5 default)
-  - [ ] Log all hyperparameters
+### 3.2 Create SLURM Job Scripts
+- [ ] Create `sbatch/train_classifier/_job.sh`
+  - [ ] SLURM configuration: 1 GPU, 4 CPUs, 32GB RAM, 2 hours
+  - [ ] Run `python -m birdset_benchmark.train_classifier`
 
-- [ ] 5.3 Implement evaluation (`evaluate.py`)
-  - [ ] Load trained model from checkpoint
-  - [ ] Run model.predict_step() on test embeddings
-  - [ ] Extract probabilities for metric computation
-  - [ ] All metrics automatically logged by PyTorch Lightning:
-    - cmAP (Class-mean Average Precision) - primary
-    - F1 Micro and F1 Macro
-    - Top-1 and Top-5 Accuracy
-  - [ ] Generate per-class AP for analysis
-  - [ ] Save predictions to `artifacts/predictions/{model}_test_predictions.npz`
+- [ ] Create `sbatch/train_classifier/run.sh`
+  - [ ] Similar structure to extract_embeddings/run.sh
+  - [ ] Check for existing `metrics.json` to skip completed jobs
 
-- [ ] 5.4 Create SLURM batch script (`sbatch/train_probe.sbatch`)
-  - [ ] Request: 1 GPU (gpu-rtx6000), 4 cores, 32GB RAM
-  - [ ] Time limit: 2 hours (faster with GPU + PyTorch)
-  - [ ] Train probes for BirdNET and Perch
-  - [ ] Run evaluation and save results
-  - [ ] Save training logs and checkpoints
+### 3.3 Validate Single Model + Single Dataset
+- [ ] Train classifier on BirdNET + HSN embeddings
+- [ ] Verify checkpoint saved
+- [ ] Verify metrics.json contains: cmAP, F1 micro/macro, Top-1/5
+- [ ] Verify predictions.npz has correct shape
 
-- [ ] 5.5 Dry run and validation
-  - [ ] Train on subset of embeddings (1000 samples, 10 epochs)
-  - [ ] Verify PyTorch Lightning Trainer works on GPU
-  - [ ] Check convergence (monitor val_loss)
-  - [ ] Verify all metrics are logged correctly
-  - [ ] Submit full GPU job to SLURM
+### 3.4 Scale to All Combinations
+- [ ] Run `bash sbatch/train_classifier/run.sh`
+- [ ] Monitor jobs and handle failures
+- [ ] Verify all 32 classifier jobs completed
+- [ ] Document training times and convergence
 
-## Phase 6: Results Analysis
+## Phase 4: Results Aggregation
 
-- [ ] 6.1 Generate results summary
-  - [ ] Create `results_summary.json`:
-    ```json
-    {
-      "birdnet": {
-        "cmap": 0.XX,
-        "f1_micro": 0.XX,
-        "f1_macro": 0.XX,
-        "top1": 0.XX,
-        "top5": 0.XX
-      },
-      "perch": {
-        "cmap": 0.XX,
-        "f1_micro": 0.XX,
-        "f1_macro": 0.XX,
-        "top1": 0.XX,
-        "top5": 0.XX
-      }
-    }
-    ```
-  - [ ] Create `per_class_ap.csv` with columns: `[species, birdnet_ap, perch_ap]`
-  - [ ] Log extraction and training times
+### 4.1 Implement Aggregation Script
+- [ ] Create `src/birdset_benchmark/aggregate_results.py`
+  - [ ] Collect all `metrics.json` files
+  - [ ] Generate `results/summary.json`
+  - [ ] Generate `results/results_matrix.csv` (cmAP by model × dataset)
+  - [ ] Calculate mean cmAP per model
 
-- [ ] 6.2 Generate visualizations (`plots/`)
-  - [ ] Bar chart: cmAP comparison (BirdNET vs Perch)
-  - [ ] Scatter plot: per-class AP (BirdNET vs Perch) - identify which species benefit from which model
-  - [ ] Histogram: distribution of per-class APs
-  - [ ] Top-10 and Bottom-10 species by AP (identify failure cases)
+### 4.2 Generate Visualizations
+- [ ] Heatmap: cmAP by model × dataset
+- [ ] Bar chart: Mean cmAP per model
+- [ ] Bar chart: Per-dataset comparison (all models)
+- [ ] Per-class AP analysis for best/worst classes
+- [ ] Save to `artifacts/results/plots/`
 
-- [ ] 6.3 Confusion analysis (optional, if time permits)
-  - [ ] For top-5 misclassified species, create confusion matrix
-  - [ ] Identify common confusions (e.g., similar vocalizations)
+### 4.3 Compare to Baselines
+- [ ] Look up BirdSet paper results for EfficientNet, ConvNeXt
+- [ ] Add baseline comparison to summary
+- [ ] Note differences in methodology (linear probe vs full training)
 
-- [ ] 6.4 Write results.md
-  - [ ] Summary table with all metrics
-  - [ ] Comparison to baseline expectations
-  - [ ] Key observations (qualitative)
-  - [ ] Failure analysis
-  - [ ] Recommendations for next steps
+### 4.4 Write Results Summary
+- [ ] Create `results.md` with:
+  - Summary table (all 32 combinations)
+  - Key findings
+  - Comparison to baselines
+  - Per-model analysis
+  - Per-dataset analysis
+  - Limitations and caveats
 
-## Phase 7: Cleanup and Documentation
+## Phase 5: Cleanup and Documentation
 
-- [ ] 7.1 Code quality
-  - [ ] Run `ruff format` on all Python files
-  - [ ] Run `ruff check` and fix issues
-  - [ ] Add type hints to public functions
-  - [ ] Add docstrings to modules and classes
+### 5.1 Code Quality
+- [ ] Run `ruff format` on all Python files
+- [ ] Run `ruff check` and fix issues
+- [ ] Add type hints to public functions
+- [ ] Add docstrings to modules and classes
 
-- [ ] 7.2 Update README with final results
-  - [x] Initial README created with quick start guide
-  - [ ] Update with final reproduction commands
-  - [ ] Link to artifacts and results
-  - [ ] Note any deviations from proposal
+### 5.2 Update Documentation
+- [ ] Update README with final results
+- [ ] Update proposal.md with actual results
+- [ ] Archive large artifacts (embeddings) to scratch
+- [ ] Document artifact locations
 
-- [ ] 7.3 Archive artifacts
-  - [ ] Move large files to scratch if needed
-  - [ ] Keep only essential files in git (metadata, configs)
-  - [ ] Document artifact locations in README
+### 5.3 Final Commit
+- [ ] Commit results and documentation
+- [ ] Tag release: `exp-001-v1.0`
+- [ ] Push to repository
 
-- [ ] 7.4 Update proposal status
-  - [ ] Change status from "proposed" to "completed"
-  - [ ] Update dates in proposal.md
+---
 
-## Optional Extensions (Out of Scope for v1)
+## Appendix: File Inventory
 
-- [ ] 8.1 Expand to all BirdSet datasets (PER, NES, UHH, POW, SSW, SNE, NBP)
-- [ ] 8.2 Test different audio preprocessing strategies (random crop vs max-pool)
-- [ ] 8.3 Hyperparameter tuning for LogisticRegression (C parameter grid search)
-- [ ] 8.4 Compare with other models from bioacoustics-model-zoo (if available)
-- [ ] 8.5 Ensemble predictions from BirdNET + Perch
-- [ ] 8.6 Fine-tune models end-to-end (not just linear probe)
+### Source Files to Create
+```
+src/birdset_benchmark/
+├── __init__.py          (exists)
+├── models.py            (exists - LinearProbe, metrics)
+├── data.py              (new - dataset loading, preprocessing)
+├── encoders.py          (new - model wrappers)
+├── extract_embeddings.py (new - CLI script)
+├── train_classifier.py   (new - CLI script)
+├── aggregate_results.py  (new - results collection)
+└── utils.py              (new - utilities)
+```
+
+### SLURM Scripts to Create
+```
+sbatch/
+├── common.sh
+├── extract_embeddings/
+│   ├── run.sh
+│   └── _job.sh
+└── train_classifier/
+    ├── run.sh
+    └── _job.sh
+```
+
+### Artifact Structure
+```
+artifacts/
+├── embeddings/{model}/{dataset}/
+│   ├── train.npz
+│   ├── test.npz
+│   └── metadata.json
+├── classifiers/{model}/{dataset}/
+│   ├── model.ckpt
+│   ├── metrics.json
+│   └── predictions.npz
+├── results/
+│   ├── summary.json
+│   ├── results_matrix.csv
+│   └── plots/
+└── logs/
+```
+
+---
+
+## Quick Reference
+
+**Run embedding extraction (single)**:
+```bash
+cd experiments/001-birdset-bioacoustics-benchmark
+bash sbatch/extract_embeddings/run.sh --model birdnet --dataset HSN
+```
+
+**Run embedding extraction (all datasets, one model)**:
+```bash
+bash sbatch/extract_embeddings/run.sh --model birdnet
+```
+
+**Run classification (single)**:
+```bash
+bash sbatch/train_classifier/run.sh --model birdnet --dataset HSN
+```
+
+**Check job status**:
+```bash
+squeue -u $USER
+```
+
+**Dry run (preview jobs without submitting)**:
+```bash
+bash sbatch/extract_embeddings/run.sh --dry-run
+```
 
 ---
 
 **Estimated Timeline**:
-- Phase 0: ✅ Complete (2-3 hours - planning and documentation)
-- Phase 1: ✅ Complete (4-5 hours - package setup, TensorFlow/PyTorch, testing, classifiers)
-  - All tasks 1.1, 1.2, 1.2b, 1.3, 1.4: Done
-  - 28 pytest tests passing
-- Phase 2: TODO (3-5 hours - data pipeline)
-- Phase 3-4: TODO (6-8 hours - model wrappers, embedding extraction)
-- Phase 5: TODO (2-4 hours - linear probe training with PyTorch Lightning)
-- Phase 6-7: TODO (4-6 hours - analysis, documentation)
-- **Remaining**: 15-23 hours of development + GPU job time (~14 hours)
+- Phase 0: ✅ Complete
+- Phase 1: ✅ Complete
+- Phase 2: ~8-12 hours (implementation + GPU time)
+- Phase 3: ~4-6 hours (implementation + GPU time)
+- Phase 4: ~2-3 hours (aggregation + visualization)
+- Phase 5: ~2-3 hours (cleanup + documentation)
+- **Total Remaining**: ~16-24 hours + GPU queue time
 
 **Dependencies**:
-- BirdSet dataset availability on HuggingFace
+- BirdSet dataset availability on HuggingFace (verified)
 - SLURM access with GPU allocation
-- bioacoustics-model-zoo installation working correctly
+- bioacoustics-model-zoo installation (verified)

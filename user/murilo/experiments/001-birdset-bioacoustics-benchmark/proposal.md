@@ -1,7 +1,8 @@
 # Proposal: BirdSet Bioacoustics Model Benchmark
 
-**Status**: proposed
+**Status**: in-progress
 **Created**: 2026-01-24
+**Updated**: 2026-01-24
 **Author**: murilo
 
 ## Related Documentation
@@ -12,116 +13,131 @@
   - [BirdNET](../../../docs/vendor/birdnet-analyzer.md) - Species-specific neural network
   - [Perch](../../../docs/vendor/perch.md) - Google's bioacoustics model
 - **References**:
-  - BirdSet Paper: Standardized evaluation for bioacoustics models
+  - [BirdSet Paper Summary](../../../docs/references/birdset-benchmark-paper.md) - arXiv:2403.10380
 - **Related Experiments**:
   - [anthony/001-encoder-benchmark](../../anthony/experiments/001-encoder-benchmark/) - Similar methodology on ESC-50/AudioSet
 
 ## Hypothesis
 
-Pre-trained bioacoustics models (BirdNET and Perch) will perform well as feature extractors on the BirdSet benchmark when using linear probing, despite taxonomic misalignment between their training data and BirdSet's eBird codes. We expect:
+Pre-trained bioacoustics models from the bioacoustics-model-zoo will perform well as feature extractors on the full BirdSet benchmark when using linear probing. This provides a **complementary evaluation** to the original BirdSet paper, which trained models directly on BirdSet data.
 
-1. **BirdNET** (trained on ~6,500 bird species) will achieve >0.60 cmAP on HSN test set
-2. **Perch** (trained on diverse soundscapes) will achieve >0.50 cmAP on HSN test set
-3. Both models will outperform random embeddings by >20x
-4. Domain-specific pretraining (bioacoustics) will outperform general audio models (BEATs) on fine-grained bird classification
+We expect:
 
-**Rationale**: These models were trained on bird vocalizations, so their learned representations should transfer well to BirdSet despite not sharing the exact same taxonomy. This establishes a baseline for comparison with custom distillation approaches.
+1. **BirdNET** (trained on ~6,500 bird species) will achieve >0.50 cmAP averaged across all 8 test datasets
+2. **Perch** (trained on diverse soundscapes) will achieve >0.45 cmAP averaged across all 8 test datasets
+3. **BirdSet-native models** (BirdSetConvNeXT, BirdSetEfficientNetB1) will achieve highest cmAP since they were trained on BirdSet
+4. All models will significantly outperform random embeddings (>10x)
+5. Performance will vary across datasets due to geographic/acoustic diversity
+
+**Rationale**: Domain-specific pre-trained models should transfer well to BirdSet. BirdSet-native models provide an upper bound, while external models (BirdNET, Perch) show transferability of representations learned on different data distributions.
 
 ## Background
 
-The BirdSet benchmark provides standardized evaluation for bioacoustics models across 8 test datasets with varying difficulty. Before developing custom models (discrete tokens, distillation), we need baseline performance from state-of-the-art pre-trained models.
+The BirdSet benchmark (arXiv:2403.10380) provides standardized evaluation for bioacoustics models across **8 test datasets** representing diverse geographic regions and acoustic environments:
 
-**Key Challenges**:
-- **Taxonomic Mismatch**: BirdNET uses its own taxonomy; BirdSet uses eBird codes → Zero-shot won't work
-- **Audio Length Variation**: BirdSet train samples vary (1-60s); test is standardized to 5s soundscape clips
-- **Multi-label Classification**: Test soundscapes contain multiple species simultaneously
-- **Class Imbalance**: Some species have few training examples
+| Code | Name | Region |
+|------|------|--------|
+| HSN | High Sierra Nevada | California, USA |
+| PER | Amazon Basin | Peru |
+| NES | Colombia & Costa Rica | Central/South America |
+| UHH | Hawaiian Islands | Hawaii, USA |
+| POW | Powdermill Nature Reserve | Pennsylvania, USA |
+| SSW | Sapsucker Woods | New York, USA |
+| SNE | Sierra Nevada | Spain |
+| NBP | NIPS4BPlus | Various |
 
-**Why Linear Probing**: Isolates the quality of learned representations from classifier capacity, providing a fair comparison across models.
+**Key Challenge - Covariate Shift**: Models are trained on high-quality focal recordings but tested on noisy real-world soundscapes. This tests generalization to deployment conditions.
+
+**Why This Experiment**: The original paper benchmarks architectures trained directly on BirdSet (EfficientNet, ConvNeXt, Wav2Vec2, AST, EAT, Bird-MAE). We complement this by evaluating **external pre-trained models** via linear probing to measure embedding quality transfer.
 
 ## Method
 
 ### Approach
 
-Two-stage pipeline:
-1. **Feature Extraction**: Extract embeddings from pre-trained models for all BirdSet samples
-2. **Linear Probing**: Train lightweight classifier on embeddings, evaluate with cmAP metric
+Two-stage pipeline with modular SLURM job scripts:
 
-Start with **HSN (High Sierra Nevada)** as pilot dataset, then expand to all 8 test sets if successful.
+1. **Embedding Extraction** (GPU): Extract embeddings from pre-trained models for all BirdSet samples
+2. **Linear Probing** (GPU): Train PyTorch Lightning classifier on embeddings, evaluate with cmAP
 
 ### Models
 
-| Model | Source | Sample Rate | Embedding Dim | Pretraining |
-|-------|--------|-------------|---------------|-------------|
-| BirdNET | bioacoustics-model-zoo | 48kHz | 1024 | ~6,500 bird species (proprietary dataset) |
-| Perch | bioacoustics-model-zoo | 32kHz | 1280 | Diverse soundscapes (YouTube, Xeno-Canto) |
+| Model | Source | Sample Rate | Embedding Dim | Pretraining | Notes |
+|-------|--------|-------------|---------------|-------------|-------|
+| BirdNET | bioacoustics-model-zoo | 48kHz | 1024 | ~6,500 bird species | External pre-trained |
+| Perch | bioacoustics-model-zoo | 32kHz | 1280 | YouTube, Xeno-Canto | External pre-trained |
+| BirdSetConvNeXT | bioacoustics-model-zoo | 32kHz | TBD | BirdSet XCL | BirdSet-native baseline |
+| BirdSetEfficientNetB1 | bioacoustics-model-zoo | 32kHz | TBD | BirdSet XCL | BirdSet-native baseline |
+
+### Datasets
+
+All 8 BirdSet evaluation datasets:
+
+| Dataset | Train Split | Test Split | Species Count |
+|---------|-------------|------------|---------------|
+| HSN | train | test_5s | 21 |
+| PER | train | test_5s | TBD |
+| NES | train | test_5s | TBD |
+| UHH | train | test_5s | TBD |
+| POW | train | test_5s | TBD |
+| SSW | train | test_5s | TBD |
+| SNE | train | test_5s | TBD |
+| NBP | train | test_5s | TBD |
 
 ### Setup
 
 | Component | Details |
 |-----------|---------|
-| **Dataset** | BirdSet HSN (DBD-research-group/BirdSet on HuggingFace) |
+| **Dataset** | BirdSet (DBD-research-group/BirdSet on HuggingFace) |
 | **Train Split** | Focal recordings (variable length, single-label) |
 | **Test Split** | test_5s (5-second soundscapes, multi-label) |
-| **Compute** | GPU for embedding extraction, CPU for linear probe |
-| **Dependencies** | `datasets`, `bioacoustics-model-zoo`, `opensoundscape`, `torch`, `scikit-learn`, `polars` |
+| **Compute** | PACE cluster with GPU (RTX 6000) |
+| **Dependencies** | `datasets`, `bioacoustics-model-zoo`, `opensoundscape`, `torch`, `pytorch-lightning`, `tensorflow` |
 | **Code** | `user/murilo/src/birdset_benchmark/` |
 
 ### Procedure
 
-**Part A: Environment Setup**
-1. Install dependencies (prefer GitHub version of bioacoustics-model-zoo)
-2. Verify BirdSet HSN loads correctly from HuggingFace
-3. Test audio resampling pipeline (FLAC/OGG → model sample rate)
+**Phase 1: Environment Setup** (Complete)
+- Install dependencies including TensorFlow for Perch
+- Verify all 8 BirdSet datasets load correctly
+- Test model instantiation for all 4 models
+- Create pytest test suite
 
-**Part B: Feature Extraction** (Run 1 - GPU job)
-1. Load BirdSet HSN train and test_5s splits
-2. For each model (BirdNET, Perch):
-   - Instantiate model with `bmz.BirdNET()` / `bmz.load_model("perch")`
-   - Create DataLoader with batching (batch_size=16)
-   - Handle variable-length audio:
-     - **Train**: Max-pool embeddings across time if >5s, pad if <5s
-     - **Test**: Use full 5s clip (already standardized)
-   - Extract embeddings and save to disk:
-     - `embeddings_train_birdnet.npz` (shape: [N_train, 1024])
-     - `embeddings_test_birdnet.npz` (shape: [N_test, 1024])
-     - Save corresponding labels as `labels_train.npz`, `labels_test.npz`
-3. Log extraction time per model (throughput: samples/sec)
+**Phase 2: Embedding Extraction Pipeline**
+1. Implement `extract_embeddings.py` script with CLI flags:
+   - `--model`: Model name from bioacoustics-model-zoo
+   - `--dataset`: BirdSet dataset code (HSN, PER, etc.)
+2. Create SLURM job scripts (`sbatch/_job.sh`, `sbatch/run.sh`)
+3. Validate on single model + single dataset (BirdNET + HSN)
+4. Scale to all models × all datasets (32 embedding jobs)
 
-**Part C: Linear Probe Training** (Run 2 - CPU job)
-1. Load saved embeddings from Part B
-2. Prepare multi-label targets:
-   - One-hot encode `ebird_code_multilabel` column
-   - Handle class imbalance with class weights (optional)
-3. Train classifier options:
-   - **Option 1**: `sklearn.linear_model.LogisticRegression` with `OneVsRestClassifier`
-   - **Option 2**: Single-layer PyTorch MLP (768 → num_classes) with BCE loss
-4. Train on train embeddings, validate on subset if needed
-5. Evaluate on test embeddings
+**Phase 3: Classification Pipeline**
+1. Implement `train_classifier.py` script with CLI flags:
+   - `--model`: Model name (to locate embeddings)
+   - `--dataset`: Dataset code (to locate embeddings)
+2. Train PyTorch Lightning linear probe on extracted embeddings
+3. Evaluate and save metrics (cmAP, F1, Top-K)
+4. Validate on single model + single dataset
+5. Scale to all embeddings (32 classification jobs)
 
-**Part D: Evaluation**
-1. Compute predictions on test set
-2. Calculate **cmAP (Class-mean Average Precision)** using BirdSet's metric
-3. Additional metrics:
-   - Per-class AP (identify which species are well-represented)
-   - Top-1/Top-5 accuracy
-   - Confusion analysis (which species are confused)
-4. Compare to BirdSet published baselines (if available)
+**Phase 4: Results Aggregation**
+1. Collect results from all 32 model × dataset combinations
+2. Generate summary tables and visualizations
+3. Compare to BirdSet paper baselines
 
 ### Variables
 
 - **Independent**:
-  - Pre-trained model (BirdNET vs Perch)
-  - Audio preprocessing strategy (max-pool vs random-crop for long samples)
-  - Classifier type (Logistic Regression vs MLP)
+  - Pre-trained model (BirdNET, Perch, BirdSetConvNeXT, BirdSetEfficientNetB1)
+  - Dataset (HSN, PER, NES, UHH, POW, SSW, SNE, NBP)
 - **Dependent**:
-  - cmAP on HSN test set
-  - Embedding extraction time (samples/sec)
-  - Training time for linear probe
+  - cmAP on each test set
+  - F1 Micro/Macro
+  - Top-1/Top-5 accuracy
+  - Extraction throughput (samples/sec)
 - **Controlled**:
-  - Dataset (HSN)
-  - Embedding dimension (fixed per model)
+  - Linear probe architecture (2-layer MLP)
   - Test protocol (5-second soundscapes, multi-label)
+  - Training hyperparameters
 
 ## Evaluation
 
@@ -134,68 +150,58 @@ Start with **HSN (High Sierra Nevada)** as pilot dataset, then expand to all 8 t
 | **F1 Macro** | Macro-averaged F1 score (per-class average, handles imbalance) |
 | **Top-1 Accuracy** | Percentage where true label is top prediction |
 | **Top-5 Accuracy** | Percentage where true label is in top 5 |
-| **Extraction Throughput** | Samples processed per second during embedding extraction |
-| **Per-class AP** | Identify which species benefit from transfer learning |
+| **Mean cmAP** | Average cmAP across all 8 datasets |
 
-### Baseline
+### Baseline Comparisons
 
-| Comparison | Expected Performance |
+| Model Type | Expected Performance |
 |------------|----------------------|
 | Random embeddings | ~0.05 cmAP |
-| BirdSet published baseline | TBD (check leaderboard) |
-| General audio models (BEATs from anthony/001) | Unknown on bird-specific task |
+| BirdSet-native (ConvNeXT, EfficientNet) | Highest (trained on BirdSet) |
+| External pre-trained (BirdNET, Perch) | Mid-range (transfer learning) |
+| BirdSet paper baselines | Reference for comparison |
 
 ### Success Criteria
 
 - **Confirm if**:
-  1. BirdNET achieves cmAP >0.60 on HSN test set
-  2. Perch achieves cmAP >0.50 on HSN test set
-  3. Both models significantly outperform random embeddings (>10x)
-  4. Embedding extraction completes in <1 hour for full HSN dataset
+  1. BirdSet-native models achieve highest mean cmAP
+  2. BirdNET and Perch achieve >0.40 mean cmAP across all datasets
+  3. All models significantly outperform random embeddings
+  4. Pipeline scales to all 32 model × dataset combinations
   5. Results are reproducible with fixed random seed
 
 - **Reject if**:
-  1. cmAP <0.30 for both models (worse than expected random performance with some signal)
-  2. Embedding extraction takes >4 hours (pipeline too slow)
+  1. Mean cmAP <0.25 for all models
+  2. Pipeline fails on >25% of combinations
   3. Large variance in results across runs (>0.05 cmAP stdev)
 
 ## Deliverables
 
-1. **Extracted Embeddings**: Saved `.npz` files for both models (train + test)
-2. **Trained Classifiers**: Serialized sklearn/PyTorch models
-3. **Results Table**: cmAP, Top-1/5 accuracy, timing for both models
-4. **Visualization**: Per-class AP bar charts, confusion matrices for top species
-5. **Artifacts**: `user/murilo/experiments/001-birdset-bioacoustics-benchmark/artifacts/`
-   - `results_summary.json`
-   - `per_class_ap.csv`
-   - `confusion_matrix.png`
-6. **Reusable Code**: Modular embedding extraction and linear probe training scripts
+1. **Extracted Embeddings**: `.npz` files for all 4 models × 8 datasets (32 files)
+2. **Trained Classifiers**: PyTorch Lightning checkpoints
+3. **Results Matrix**: cmAP for all model × dataset combinations
+4. **Visualizations**:
+   - Heatmap: cmAP by model × dataset
+   - Bar charts: Per-dataset comparison
+   - Per-class AP analysis for top/bottom species
+5. **SLURM Scripts**: Reusable `run.sh` and `_job.sh` for embedding/classification
+6. **Artifacts**: `experiments/001-birdset-bioacoustics-benchmark/artifacts/`
 
 ## Limitations
 
-- **Taxonomic Mismatch**: Zero-shot not possible; we're measuring embedding quality, not end-to-end model performance
-- **Single Dataset**: HSN only for pilot; generalization to other BirdSet tasks unknown
-- **Simple Classifier**: Linear probe may underestimate benefit of fine-tuning
-- **Audio Preprocessing**: Max-pooling strategy for long clips may lose temporal information
+- **Linear Probe Only**: May underestimate benefit of fine-tuning
 - **No Data Augmentation**: Training on embeddings precludes audio-level augmentation
-- **Class Imbalance**: Some species have <10 training samples in BirdSet
+- **Class Imbalance**: Some species have few training samples
+- **Taxonomic Mismatch**: External models use different taxonomies than BirdSet
 
 ## Future Work (Out of Scope)
 
-- Expand to all 8 BirdSet test datasets
-- Fine-tuning models end-to-end (not just linear probe)
+- Fine-tuning models end-to-end
+- Ensemble of multiple models
 - Data augmentation at audio level
-- Ensemble of BirdNET + Perch
-- Compare with custom distilled models from anthony/003
-- Benchmark inference time on CPU for Kaggle submission feasibility
-
-## Open Questions
-
-1. Should we use class weights to handle imbalance during linear probe training?
-2. For variable-length audio: max-pool vs random 5s crop vs center crop?
-3. Should we normalize embeddings before training classifier?
-4. What's the optimal batch size for embedding extraction given GPU memory?
+- Compare with custom distilled models
+- Benchmark inference time on CPU for Kaggle
 
 ---
 
-**Next Steps**: Review this proposal, clarify open questions, then proceed to `design.md` and `tasks.md` before implementation.
+**Next Steps**: Implement embedding extraction pipeline (Phase 2), starting with single model + single dataset validation.
