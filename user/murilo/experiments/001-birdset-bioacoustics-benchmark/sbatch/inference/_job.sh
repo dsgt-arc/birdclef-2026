@@ -13,8 +13,8 @@
 # These models were trained on BirdSet and can directly predict species without additional training.
 #
 # Usage:
-#   sbatch --export=MODEL=birdset_convnext,DATASET=HSN sbatch/inference/_job.sbatch
-#   sbatch --export=MODEL=birdset_convnext,DATASET=HSN,LIMIT=100 sbatch/inference/_job.sbatch
+#   sbatch --export=MODEL=birdset_convnext,DATASET=HSN sbatch/inference/_job.sh
+#   sbatch --export=MODEL=birdset_convnext,DATASET=HSN,LIMIT=100 sbatch/inference/_job.sh
 #
 # Environment variables:
 #   MODEL    - Model name: birdset_convnext, birdset_efficientnet_b1
@@ -25,27 +25,37 @@
 #   - metrics.json: cmAP, F1, Top-K accuracy, throughput
 #   - predictions.npz: y_pred and y_true arrays
 
-# Determine project root (SLURM copies script to temp location, so use SLURM_SUBMIT_DIR if available)
+set -eu
+
+# ============================================================================
+# Determine paths
+# ============================================================================
+
+# SLURM copies script to temp location, so use SLURM_SUBMIT_DIR if available
 if [ -n "$SLURM_SUBMIT_DIR" ]; then
-    PROJECT_ROOT="$SLURM_SUBMIT_DIR"
+    EXPERIMENT_DIR="$SLURM_SUBMIT_DIR"
 else
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+    EXPERIMENT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 fi
 
-# Source common functions
-source "${PROJECT_ROOT}/sbatch/common.sh"
+USER_DIR="$(dirname "$(dirname "$EXPERIMENT_DIR")")"
+REPO_DIR="$(dirname "$(dirname "$USER_DIR")")"
+ARTIFACTS_DIR="${EXPERIMENT_DIR}/artifacts"
 
+# ============================================================================
 # Validate required environment variables
+# ============================================================================
+
 if [[ -z "${MODEL:-}" ]]; then
     echo "ERROR: MODEL environment variable not set"
-    echo "Usage: sbatch --export=MODEL=birdset_convnext,DATASET=HSN _job.sbatch"
+    echo "Usage: sbatch --export=MODEL=birdset_convnext,DATASET=HSN _job.sh"
     exit 1
 fi
 
 if [[ -z "${DATASET:-}" ]]; then
     echo "ERROR: DATASET environment variable not set"
-    echo "Usage: sbatch --export=MODEL=birdset_convnext,DATASET=HSN _job.sbatch"
+    echo "Usage: sbatch --export=MODEL=birdset_convnext,DATASET=HSN _job.sh"
     exit 1
 fi
 
@@ -56,8 +66,21 @@ else
     DATASET_PATH="${DATASET}"
 fi
 
+# ============================================================================
 # Print job info
-print_job_info "BirdSet Inference: ${MODEL} on ${DATASET_PATH}"
+# ============================================================================
+
+echo "=============================================="
+echo "Job: BirdSet Inference: ${MODEL} on ${DATASET_PATH}"
+echo "=============================================="
+echo "Job ID: ${SLURM_JOB_ID:-local}"
+echo "Node: $(hostname)"
+echo "Date: $(date)"
+echo "Repo: ${REPO_DIR}"
+echo "Experiment: ${EXPERIMENT_DIR}"
+echo ""
+nvidia-smi
+echo ""
 
 echo "Configuration:"
 echo "  Model: ${MODEL}"
@@ -70,20 +93,70 @@ echo "  Batch size: ${BATCH_SIZE:-16}"
 echo "  Num workers: ${NUM_WORKERS:-4}"
 echo ""
 
-# Setup environment (UV, caches, cd to repo)
-echo "Setting up environment..."
-setup_environment
+# ============================================================================
+# Setup per-job virtual environment in TMPDIR (fast local NVMe)
+# ============================================================================
 
-# Start GPU monitoring
-start_gpu_monitoring
+echo "Setting up per-job virtual environment..."
 
-# Get output directory (use DATASET_PATH which includes limit suffix)
-OUTPUT_DIR=$(get_inference_output_dir "${MODEL}" "${DATASET_PATH}")
+# Create job-specific venv in TMPDIR for fast local I/O
+JOB_VENV_DIR="$TMPDIR/birdset-benchmark-$SLURM_JOB_ID"
+JOB_VENV="$JOB_VENV_DIR/.venv"
+
+echo "  TMPDIR: $TMPDIR"
+echo "  Venv: $JOB_VENV"
+
+mkdir -p "$JOB_VENV_DIR"
+uv venv "$JOB_VENV"
+
+# Activate the virtual environment
+source "$JOB_VENV/bin/activate"
+
+# Install the user package (includes all dependencies from pyproject.toml)
+echo "  Installing dependencies..."
+uv pip install -e "$USER_DIR"
+
+# Install PyTorch with CUDA support
+echo "  Installing PyTorch with CUDA..."
+uv pip install torch --index-url https://download.pytorch.org/whl/cu121
+
+echo "  Virtual environment ready!"
+echo ""
+
+# ============================================================================
+# Environment variables
+# ============================================================================
+
+# Suppress TensorFlow warnings
+export TF_CPP_MIN_LOG_LEVEL=3
+export TF_ENABLE_ONEDNN_OPTS=0
+export PYTHONWARNINGS=ignore
+
+# ============================================================================
+# GPU Monitoring
+# ============================================================================
+
+GPU_STATS_FILE="${EXPERIMENT_DIR}/logs/gpu_stats-${SLURM_JOB_ID:-local}.csv"
+mkdir -p "$(dirname "$GPU_STATS_FILE")"
+
+nvidia-smi --query-gpu=timestamp,index,name,utilization.gpu,utilization.memory,memory.used,memory.total,power.draw,temperature.gpu \
+    --format=csv -l 5 > "$GPU_STATS_FILE" &
+GPU_MONITOR_PID=$!
+trap "kill $GPU_MONITOR_PID 2>/dev/null || true" EXIT
+
+echo "GPU monitoring started (log: $GPU_STATS_FILE)"
+echo ""
+
+# ============================================================================
+# Run inference
+# ============================================================================
+
+OUTPUT_DIR="${ARTIFACTS_DIR}/inference/${MODEL}/${DATASET_PATH}"
 echo "Output directory: ${OUTPUT_DIR}"
 echo ""
 
 # Build inference command
-INFERENCE_CMD="uv run python -m birdset_benchmark.run_inference \
+INFERENCE_CMD="python -m birdset_benchmark.run_inference \
     --model ${MODEL} \
     --dataset ${DATASET} \
     --batch-size ${BATCH_SIZE:-16} \
@@ -95,7 +168,6 @@ if [[ -n "${LIMIT:-}" ]]; then
     INFERENCE_CMD="${INFERENCE_CMD} --subset-size ${LIMIT}"
 fi
 
-# Run inference
 echo "Starting inference..."
 eval "${INFERENCE_CMD}"
 
