@@ -118,7 +118,7 @@ echo ""
 
 # Step 7: Verify PyTorch and CUDA
 echo "Step 7: Verifying PyTorch CUDA support..."
-python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda if torch.cuda.is_available() else \"N/A\"}'); print(f'GPU count: {torch.cuda.device_count()}'); print(f'GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"
+python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda if torch.cuda.is_available() else None}'); print(f'GPU count: {torch.cuda.device_count()}'); print(f'GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else None}')"
 print_status "PyTorch CUDA verified"
 echo ""
 
@@ -132,7 +132,7 @@ echo ""
 echo "Summary:"
 echo "  - GPU: Available ($(nvidia-smi --query-gpu=name --format=csv,noheader))"
 echo "  - PyTorch: $(python -c 'import torch; print(torch.__version__)')"
-echo "  - CUDA: $(python -c 'import torch; print(torch.version.cuda if torch.cuda.is_available() else \"N/A\")')"
+echo "  - CUDA: $(python -c "import torch; print(torch.version.cuda if torch.cuda.is_available() else 'N/A')")"
 echo ""
 echo "Python location: $(which python)"
 echo "Virtual environment: $JOB_VENV"
