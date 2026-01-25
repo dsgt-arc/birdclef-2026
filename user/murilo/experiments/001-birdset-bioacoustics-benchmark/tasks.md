@@ -1,7 +1,7 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 1 almost complete (1.1, 1.2, 1.2b, 1.3 done) ✅
-**Current Phase**: Phase 1.4 (Create experiment directories) 🔄
+**Status**: Phase 1 complete ✅
+**Current Phase**: Phase 2 (Data Pipeline Implementation) 🔄
 **Last Updated**: 2026-01-24
 
 ---
@@ -37,7 +37,7 @@
   - [x] Commit with descriptive message
   - [x] Push to origin/mg-birdset branch
 
-## Phase 1: Environment Setup
+## Phase 1: Environment Setup ✅ COMPLETED
 
 - [x] 1.1 Create Python package structure
   - [x] `user/murilo/pyproject.toml` with all dependencies
@@ -80,7 +80,7 @@
   - [x] Used HuggingFace datasets with trust_remote_code=True
   - [x] Dataset cached locally for future use
 
-- [ ] 1.4 Create experiment directory structure
+- [x] 1.4 Create experiment directory structure
   - [x] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/` (base directory)
   - [x] `config.yaml` with all model specs and SLURM settings
   - [x] `test_setup.sh` for interactive environment testing (replaced by pytest)
@@ -91,8 +91,8 @@
     - `test_datasets.py` - BirdSet dataset loading (6 tests)
     - Tests organized by experiment number for better modularity
     - Shared pytest.ini at `user/murilo/tests/` level
-  - [ ] `sbatch/` directory for SLURM job scripts
-  - [ ] `artifacts/` directory for results and outputs
+  - [x] `sbatch/` directory for SLURM job scripts
+  - [x] `artifacts/` directory for results and outputs
 
 ## Phase 2: Data Pipeline Implementation
 
