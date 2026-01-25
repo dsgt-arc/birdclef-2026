@@ -66,7 +66,7 @@ trap cleanup EXIT
 
 # Setup cache directories
 source_cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_500k_v2
-static_embeddings=$scratch_dir/outputs/exp002-benchmarks/static_embeddings/static_embeddings.npy
+static_embeddings=$scratch_dir/outputs/exp003-distillation/static_embeddings_500k_v2/static_embeddings.npy
 local_cache_dir=${TMPDIR}/teacher_cache_500k
 output_dir=$scratch_dir/outputs/exp003-distillation-lightning
 

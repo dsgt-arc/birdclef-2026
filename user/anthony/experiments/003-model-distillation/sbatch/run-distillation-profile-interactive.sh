@@ -3,7 +3,7 @@
 #SBATCH --account=paceship-dsgt_clef2026
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=12G
 #SBATCH --gres=gpu:1
-#SBATCH -t60 -qembers
+#SBATCH -t60 -qinferno
 #SBATCH -p gpu-rtx6000
 #SBATCH --output=logs/distill-profile-%j.out
 set -eu
@@ -12,6 +12,7 @@ set -eu
 #        sbatch --export=LIMIT_BATCHES=200,BATCH_SIZE=64 run-distillation-profile-interactive.sh
 #
 # Quick profiling run for distillation training performance analysis.
+# Uses v2 tensor format with static embeddings (symmetric with run-distillation-500k.sbatch).
 # Runs limited batches with PyTorch profiler enabled to identify bottlenecks.
 
 cd ${SLURM_SUBMIT_DIR:-$(dirname "$0")}
@@ -51,8 +52,9 @@ uv sync --extra dev
 
 cd $repo_dir
 
-# Setup cache directories
-source_cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_500k
+# Setup cache directories (v2 tensor format with static embeddings)
+source_cache_dir=$scratch_dir/outputs/exp003-distillation/teacher_cache_500k_v2
+static_embeddings=$scratch_dir/outputs/exp003-distillation/static_embeddings_500k_v2/static_embeddings.npy
 local_cache_dir=${TMPDIR}/teacher_cache_profile
 output_dir=$scratch_dir/outputs/exp003-profile-${PROFILE_ID}
 
@@ -61,6 +63,7 @@ mkdir -p "$output_dir"
 echo ""
 echo "Cache setup:"
 echo "  Source cache: $source_cache_dir ($(du -sh $source_cache_dir 2>/dev/null | cut -f1))"
+echo "  Static embeddings: $static_embeddings"
 echo "  Local cache: $local_cache_dir"
 echo "  Output dir: $output_dir"
 
@@ -73,6 +76,7 @@ ${UV_PROJECT_ENVIRONMENT}/bin/python \
     $user_dir/experiments/003-model-distillation/sbatch/train_lightning.py \
     --student "$STUDENT" \
     --source-cache "$source_cache_dir" \
+    --static-embeddings "$static_embeddings" \
     --local-cache "$local_cache_dir" \
     --output-dir "$output_dir" \
     --batch-size "$BATCH_SIZE" \
