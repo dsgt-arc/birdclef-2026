@@ -41,3 +41,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/birdclef"]
+
+[tool.uv.workspace]
+members = [
+    "experiments/004-ssamba-hf-port/ssamba_hf",
+]
