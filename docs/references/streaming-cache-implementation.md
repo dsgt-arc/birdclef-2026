@@ -1,305 +1,331 @@
-# StreamingCacheDataset: Intelligent Audio Cache Implementation
+# Shard Affinity Dataset: Efficient Multi-Worker Data Loading
 
 ## Overview
 
-`StreamingCacheDataset` is a PyTorch Dataset implementation that enables efficient training on large shard-based audio datasets through intelligent prefetching and bounded LRU caching. It replaces the basic `CachedDistillationDataset` in the AudioSet-500k distillation pipeline, achieving **80-95% cache hit rates** after the first epoch and delivering **10-30% training speedup**.
+`ShardAffinityDataset` is a PyTorch Dataset implementation that eliminates I/O bottlenecks in multi-worker DataLoaders through worker-shard affinity and two-level prefetching. It replaces the earlier `StreamingCacheDataset` with a more scalable architecture.
 
-The key insight: predictive background copying of upcoming shards from slow storage (network/remote) to fast local NVMe while the GPU continues training, ensuring the GPU is never starved for data while maintaining bounded local storage.
+Key insight: By assigning each worker a **disjoint** subset of shards, we eliminate cross-worker contention and redundant I/O entirely.
 
-## Architecture Overview
+## Architecture
 
-The system implements a three-part strategy:
+### Module Structure
 
-1. **Predictive Prefetching**: When accessing a shard, automatically schedule copying of the next N shards ahead in background threads
-2. **LRU Cache Management**: Maintain a bounded local cache (default 20 shards) with automatic eviction of least recently used items
-3. **Non-Blocking Fallback**: If a prefetch copy is still in progress when needed, transparently load from source storage without blocking training
+```
+birdclef/
+├── caching.py                    # TeacherCacher - generates cache from audio
+├── data/
+│   └── shard_affinity_dataset.py # ShardAffinityDataset - loads cache for training
+└── lightning/
+    └── distillation_datamodule.py # PyTorch Lightning integration
+```
+
+### Cache Format (v2)
+
+Each shard is a `.safetensors` file containing:
+
+| Tensor | Shape | Dtype | Description |
+|--------|-------|-------|-------------|
+| `teacher_embeds` | (N, 248, 768) | fp16 | Contextualized embeddings from BEATs |
+| `token_ids` | (N, 248) | int16 | Discrete token IDs for embedding lookup |
+
+**Static embeddings are NOT stored** - they're reconstructed at load time from `token_ids` using a lookup table (~24MB). This reduces cache size by 50%.
+
+```python
+# At load time:
+token_ids = tensors["token_ids"][sample_idx].long()  # (248,)
+static_embeds = static_embeddings_lut[token_ids]     # (248, 768)
+```
+
+### Worker Affinity Design
+
+```
+8 workers, 143 shards:
+
+Worker 0: shards [0, 8, 16, 24, 32, ...]  (18 shards)
+Worker 1: shards [1, 9, 17, 25, 33, ...]  (18 shards)
+Worker 2: shards [2, 10, 18, 26, 34, ...] (18 shards)
+...
+Worker 7: shards [7, 15, 23, 31, 39, ...] (18 shards)
+```
+
+Benefits:
+- **No contention**: Workers never access the same shard
+- **No redundant I/O**: Each shard loaded exactly once per epoch
+- **Predictable access**: Enables effective prefetching
+
+### Two-Level Prefetching
+
+```
+                    ┌─────────────────────────────────────────────┐
+                    │          Worker Process                      │
+                    ├─────────────────────────────────────────────┤
+                    │                                              │
+                    │  ┌────────────────┐   ┌──────────────────┐  │
+                    │  │ copy_executor  │   │ prefetch_executor│  │
+                    │  │ (1 thread)     │   │ (2 threads)      │  │
+                    │  └───────┬────────┘   └────────┬─────────┘  │
+                    │          │                     │             │
+                    │          ▼                     ▼             │
+                    │  ┌────────────────┐   ┌──────────────────┐  │
+Network Storage ───►│  │  Local NVMe    │──►│  Memory Cache    │  │
+(~100 MB/s)         │  │  (~3 GB/s)     │   │  (3 shards)      │  │
+                    │  └────────────────┘   └────────┬─────────┘  │
+                    │                                │             │
+                    │                                ▼             │
+                    │                        Return to GPU         │
+                    └─────────────────────────────────────────────┘
+```
+
+1. **copy_executor**: Background thread copies upcoming shards from network to local NVMe
+2. **prefetch_executor**: Background threads load shards from disk into memory
 
 ### Data Flow
 
 ```
-Training Loop (GPU Active)
-    ↓
-    ├─ StreamingCacheDataset.__getitem__()
-    ├─ Check: New shard? → Schedule prefetch
+__getitem__(idx)
+    │
+    ├─ Map idx to (local_shard_idx, sample_idx) via worker's local_index
+    │
+    ├─ New shard? Schedule prefetch for next N shards
+    │
+    ├─ 50% through shard? Early prefetch trigger for shard N+1
+    │
     ├─ Load shard:
-    │   ├─ Local cache hit? → Return fast (~20-50ms)
-    │   └─ Fallback to source → Return slower (~100-300ms)
-    └─ Return to GPU for training
-        ↑
-        │ (GPU trains while background threads copy...)
-        │
-    Background ThreadPoolExecutor (4 workers)
-    ├─ Thread 1: Copy shard N → N+50ms
-    ├─ Thread 2: Copy shard N+1 → N+50ms
-    ├─ Thread 3: Copy shard N+2 → N+50ms
-    └─ Thread 4: Copy shard N+3 → N+50ms
+    │   ├─ Check memory cache → hit: return immediately
+    │   ├─ Check prefetch futures → hit: wait & cache result
+    │   └─ Load from disk (local NVMe preferred, network fallback)
+    │
+    ├─ Reconstruct static_embeds from token_ids via LUT
+    │
+    └─ Return (static_embeds, teacher_embeds)
 ```
 
-## Implementation Details
+## Usage
 
-### Class State
-
-The dataset maintains four key data structures protected by a single threading lock:
-
-- **warm_shards**: Set of shard indices successfully copied to local cache
-- **warming_futures**: Dictionary of pending copy tasks (shard_idx → Future)
-- **access_order**: OrderedDict tracking LRU access order for eviction
-- **stats**: Dictionary tracking cache performance metrics
-
-### Configuration Parameters
+### Generating Cache (TeacherCacher)
 
 ```python
-StreamingCacheDataset(
-    shard_files,              # List of shard paths
-    source_cache_dir,         # Slow storage location
-    local_cache_dir,          # Fast NVMe location
-    max_local_shards=20,      # Max shards to keep locally (tunable)
-    prefetch_shards=5,        # How many shards ahead to copy (tunable)
-    num_copy_workers=4,       # Background thread count (tunable)
+from birdclef.caching import TeacherCacher
+
+cacher = TeacherCacher(
+    encoder_path="path/to/BEATs_iter3.pt",
+    tokenizer_path="path/to/Tokenizers_iter3.pt",
+)
+
+# Process single shard
+tensors = cacher.process_shard(tar_path)
+
+# Process multiple shards with progress
+stats = cacher.cache_shards(tar_files, output_dir)
+```
+
+### Loading Cache (ShardAffinityDataset)
+
+```python
+from birdclef.data.shard_affinity_dataset import (
+    ShardAffinityDataset,
+    create_dataloader,
+)
+
+dataset = ShardAffinityDataset(
+    source_cache_dir="/path/to/network/cache",
+    static_embeddings_path="/path/to/static_embeddings.npy",
+    local_cache_dir="/tmp/local_cache",
+    shards_per_worker=3,
+    prefetch_ahead=2,
+)
+
+dataloader = create_dataloader(
+    dataset,
+    batch_size=64,
+    num_workers=8,
 )
 ```
 
-### Core Methods
-
-| Method | Purpose |
-|--------|---------|
-| `__init__()` | Initialize with parameters and discover pre-existing warm shards |
-| `__getitem__(idx)` | PyTorch interface; triggers prefetch on new shard access |
-| `_schedule_prefetch()` | Submit copy tasks for next N shards to executor |
-| `_copy_shard_worker()` | Background thread function; copies file and updates state |
-| `_evict_lru_shard()` | Remove oldest shard from local cache when at capacity |
-| `_load_shard()` | Load from best available location (local or source) |
-| `get_cache_stats()` | Return thread-safe cache statistics |
-| `validate_cache()` | Check which shards exist before training |
-
-## Usage Guide
-
-### Basic Usage
-
-No changes needed to training code—just run the sbatch script normally:
-
-```bash
-sbatch --export=STUDENT=convnext-small,MAX_EPOCHS=20,PATIENCE=3 \
-  run-cached-distillation-500k.sbatch
-```
-
-### Monitoring Performance
-
-Each epoch prints cache statistics:
-
-```
-Cache Hit Rate: 87.2% (4567 local hits, 671 source fallback)
-Cache State: 18 warm, 2 warming, 3 evictions
-```
-
-Results JSON includes detailed cache metrics per epoch:
-
-```json
-{
-  "epoch": 1,
-  "cache_hit_rate": 45.2,
-  "cache_stats": {
-    "warm_shards": 12,
-    "warming_shards": 4,
-    "local_hits": 2156,
-    "source_fallback": 2623,
-    "total_copies": 34,
-    "lru_evictions": 2
-  }
-}
-```
-
-## Configuration Options
-
-### Default Configuration (Balanced)
-
-Best for typical scenarios with 143 shards and moderate NVMe availability:
+### PyTorch Lightning Integration
 
 ```python
-max_local_shards=20, prefetch_shards=5, num_copy_workers=4
+from birdclef.lightning.distillation_datamodule import DistillationDataModule
+
+datamodule = DistillationDataModule(
+    source_cache_dir="/path/to/cache",
+    static_embeddings_path="/path/to/static_embeddings.npy",
+    local_cache_dir="/tmp/cache",
+    batch_size=64,
+    num_workers=8,
+    shards_per_worker=3,
+)
 ```
 
-### Aggressive Configuration (Maximize Speed)
+## Configuration
 
-When local NVMe space is plentiful:
+### Default Configuration
 
 ```python
-max_local_shards=40, prefetch_shards=10, num_copy_workers=8
+ShardAffinityDataset(
+    source_cache_dir=...,
+    static_embeddings_path=...,
+    local_cache_dir=None,       # No local caching
+    shards_per_worker=3,        # Keep 3 shards in memory per worker
+    prefetch_ahead=2,           # Prefetch 2 shards ahead
+    copy_to_local=True,         # Copy to local NVMe if local_cache_dir set
+    seed=42,                    # Deterministic shuffling
+)
 ```
 
-Trade-offs: Higher memory consumption, fewer LRU evictions, more background activity.
+### Configuration Tuning
 
-### Conservative Configuration (Minimize Memory)
+| Scenario | shards_per_worker | prefetch_ahead | local_cache_dir |
+|----------|-------------------|----------------|-----------------|
+| Fast NVMe, plenty RAM | 5 | 3 | Set to TMPDIR |
+| Limited RAM | 2 | 2 | Set to TMPDIR |
+| No local storage | 3 | 2 | None |
+| Very slow network | 4 | 4 | Set to TMPDIR |
 
-When local storage is limited:
+### Memory Requirements
 
-```python
-max_local_shards=10, prefetch_shards=2, num_copy_workers=2
+Per-worker memory for shard cache:
+
+```
+shards_per_worker × samples_per_shard × (teacher_embeds + token_ids)
+= 3 × 3500 × (248×768×2 + 248×2) bytes
+≈ 3 × 3500 × 381KB
+≈ 4 GB per worker
 ```
 
-Trade-offs: Slower average shard access, more LRU evictions, lower memory footprint.
-
-### High-Latency Network Scenario
-
-For slow network storage:
-
-```python
-max_local_shards=50, prefetch_shards=15, num_copy_workers=8
-```
-
-Rationale: Aggressive caching and prefetch prevent expensive network fallbacks.
+With 8 workers: ~32 GB total for shard cache (shared via memory mapping).
 
 ## Performance Characteristics
 
-### Cache Hit Rate Evolution
+### I/O Efficiency
 
-Expected cache hit rate by epoch (with 143 shards, default config):
+| Approach | Redundant I/O | Contention |
+|----------|---------------|------------|
+| Naive (no affinity) | 8x (each worker loads all shards) | High |
+| StreamingCacheDataset (old) | 1x but with LRU thrashing | Medium |
+| **ShardAffinityDataset** | **1x, no thrashing** | **None** |
+
+### Access Latency
+
+| Source | Latency |
+|--------|---------|
+| Memory cache (current shard) | ~1ms |
+| Local NVMe (warm shard) | ~20-50ms |
+| Network storage (cold shard) | ~100-300ms |
+
+### Cache Behavior by Epoch
 
 ```
-Epoch 1: 45-60% (shards being discovered and copied)
-Epoch 2: 75-85% (most shards now cached)
-Epoch 3+: 85-95% (stable warm cache)
+Epoch 1: Warming phase
+  - Workers copy assigned shards to local NVMe in background
+  - First access to each shard loads from network
+  - Subsequent accesses use local NVMe
+
+Epoch 2+: Warm phase
+  - All shards already on local NVMe
+  - 95%+ local hits
+  - GPU never starved for data
 ```
 
-### Training Speed Improvement
+## Monitoring
 
+### Worker Statistics
+
+```python
+stats = dataset.get_worker_stats()
+# Returns:
+{
+    "worker_id": 0,
+    "assigned_shards": 18,
+    "local_samples": 63000,
+    "cached_shards": 3,
+    "pending_prefetches": 2,
+    "local_hits": 4567,
+    "source_loads": 123,
+    "prefetch_hits": 890,
+    "cache_evictions": 15,
+    "background_copies": 18,
+}
 ```
-First Epoch:  Similar to baseline (cache warming in progress)
-Later Epochs: 10-30% faster than source-only loading
-Cumulative:   2-6 hours saved on 20-epoch training (~40 hours baseline)
-```
 
-### Shard Access Latency
-
-- In-memory cache (current shard): ~10ms
-- Local NVMe cache (warm shard): ~20-50ms
-- Source storage fallback: ~100-300ms
-
-With prefetching: 80-90% of shards use fast path, achieving 2.5-3.75x average speedup.
-
-## Monitoring and Debugging
-
-### Key Metrics to Watch
+### Key Metrics
 
 **Good signs:**
-- Hit rate increasing each epoch (70%+ after epoch 2)
-- Few or no evictions (< 10% of warm shards)
-- Warming count stays 2-3 (background copies active)
+- `local_hits >> source_loads` after epoch 1
+- `prefetch_hits` increasing (prefetch working)
+- `cache_evictions` low and stable
 
 **Bad signs:**
-- Hit rate < 60% or declining
-- Frequent evictions (> 20% of warm shards)
-- Many source fallbacks slowing training
-
-### Troubleshooting
-
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| Low hit rate (< 60%) | Too few warm shards | Increase `max_local_shards` or `prefetch_shards` |
-| High LRU evictions | Cache too small for access pattern | Increase `max_local_shards` |
-| Slow background copies | Insufficient parallelism | Increase `num_copy_workers` |
-| /tmp fills up | Cache too large | Decrease `max_local_shards` or clean up before running |
+- High `source_loads` in later epochs (local copy failing)
+- Zero `prefetch_hits` (prefetch not triggering)
+- `cache_evictions` equals `access_count` (cache thrashing)
 
 ## Storage Requirements
 
-For AudioSet-500k with 143 shards (~4.8GB each):
+For AudioSet-500k with 143 shards:
 
-```
-Total cache: 687GB
-With max_local_shards=20: ~96GB local cache needed
-Recommended free space in /tmp: 120GB (includes safety margin)
-```
+| Component | Size |
+|-----------|------|
+| Cache (v2 format) | ~350 GB |
+| Static embeddings LUT | ~24 MB |
+| Per-shard | ~2.5 GB |
+| Local NVMe (recommended) | 100+ GB |
 
-Check before running:
+## Thread Safety
 
-```bash
-df -h $TMPDIR          # Need 120GB free
-du -sh /path/to/source_cache  # Should show ~687GB
-```
+All shared state protected by locks:
 
-## Thread Safety and Error Handling
+- `_copy_locks`: Per-shard locks for atomic file copies
+- `threading.Lock` within each worker for shard cache
 
-### Thread Safety
+Workers are fully independent - no cross-process coordination required.
 
-All shared state is protected by a single `threading.Lock`:
-- State updates are guarded by lock
-- Lock is released during I/O operations (no blocking)
-- Minimal critical sections (microseconds)
-- No deadlocks possible (single lock, no nested acquisitions)
+### Atomic File Operations
 
-### Graceful Degradation
-
-The dataset handles failures transparently:
-- Missing source shards → skipped samples
-- Copy failures → transparent fallback to source
-- Full local cache → LRU eviction
-- Executor shutdown → graceful cleanup with timeout
-
-## Files Modified
-
-Main implementation in:
-`/storage/home/hcoda1/8/amiyaguchi3/arc/birdclef-2026/user/anthony/experiments/003-model-distillation/sbatch/run-cached-distillation-500k.sbatch`
-
-Changes:
-- **Lines 122-386**: `StreamingCacheDataset` class (replaces `CachedDistillationDataset`)
-- **Lines 551-566**: Dataset instantiation with tunable parameters
-- **Lines 594-611**: DataLoader with `prefetch_factor=2`
-- **Lines 677-704**: Cache statistics reporting each epoch
-
-## Deployment Guide
-
-### Pre-Deployment
-
-1. Verify `/tmp` has 120GB free: `df -h $TMPDIR`
-2. Verify source cache accessible: `du -sh ~/scratch/birdclef-2026/outputs/exp003-distillation/teacher_cache_500k`
-3. Check GPU node has 8 vCPU available
-
-### Phase 1: Test Single Epoch
-
-```bash
-sbatch --export=STUDENT=convnext-small,MAX_EPOCHS=1,PATIENCE=3 \
-  run-cached-distillation-500k.sbatch
+```python
+# Write to temp file, then atomic rename
+fd, tmp_path = tempfile.mkstemp(dir=local_cache_dir)
+shutil.copy2(source, tmp_path)
+tmp_path.rename(final_path)  # Atomic on POSIX
 ```
 
-Check for:
-- No crashes or exceptions
-- Cache statistics printed correctly
-- Hit rate makes sense (starts ~45%, increases)
-- `/tmp` usage stable (~96GB)
+This prevents reading incomplete files during concurrent access.
 
-### Phase 2: Full-Scale Deployment
+## Epoch Reshuffling
 
-```bash
-sbatch --export=STUDENT=convnext-small,MAX_EPOCHS=20,PATIENCE=3 \
-  run-cached-distillation-500k.sbatch
+```python
+# Called at epoch start
+dataset.reset_epoch(epoch)
 ```
 
-Monitor cache hit rate progression—should reach 80%+ by epoch 2-3.
-
-### Rollback Plan
-
-If issues occur:
-
-```bash
-# Restore original CachedDistillationDataset from git
-git checkout HEAD -- run-cached-distillation-500k.sbatch
-
-# Clean /tmp cache
-rm -rf $TMPDIR/teacher_cache_500k
-
-# Restart training
+Reshuffles the local index within each worker using deterministic seed:
+```python
+seed = base_seed + epoch * 1000 + worker_id
 ```
 
-## Key Insights
+Maintains shard affinity while varying sample order.
 
-1. **Prefetching > Caching**: Predictive copying is more important than just having a local cache
-2. **Non-blocking > Perfect**: Fallback to source is better than waiting for perfect cache
-3. **Two-level Prefetch**: Both dataset-level and DataLoader-level prefetch work together
-4. **Hit Rate Improves**: Cache effectiveness increases over epochs as patterns stabilize
-5. **Tunable for Hardware**: Parameters adjust for different storage/compute constraints
+## Files
 
-## Summary
+| File | Purpose |
+|------|---------|
+| `birdclef/caching.py` | TeacherCacher for generating v2 cache |
+| `birdclef/data/shard_affinity_dataset.py` | ShardAffinityDataset and helpers |
+| `birdclef/lightning/distillation_datamodule.py` | Lightning DataModule wrapper |
 
-`StreamingCacheDataset` provides a production-ready implementation of intelligent caching for large shard-based datasets. It combines predictive prefetching, bounded LRU caching, and transparent fallback to deliver consistent 10-30% training speedups with automatic monitoring and comprehensive error handling.
+## Comparison with Old Implementation
 
-The implementation is thread-safe, well-tested, thoroughly documented, and ready for deployment on the AudioSet-500k distillation pipeline.
+| Feature | StreamingCacheDataset (old) | ShardAffinityDataset (new) |
+|---------|----------------------------|---------------------------|
+| Worker assignment | Any worker, any shard | Disjoint shard assignment |
+| Cache strategy | Global LRU with eviction | Per-worker memory cache |
+| Prefetch | Single background thread | Two-level (copy + load) |
+| Cache format | v1 (with static_embeds) | v2 (reconstructed at runtime) |
+| Contention | Lock-based coordination | Lock-free (disjoint shards) |
+| I/O efficiency | LRU thrashing possible | Optimal (1x per shard) |
+
+## References
+
+- [WebDataset](https://github.com/webdataset/webdataset) - Shard-based dataset format
+- [safetensors](https://github.com/huggingface/safetensors) - Fast tensor serialization
+- PyTorch DataLoader worker architecture
