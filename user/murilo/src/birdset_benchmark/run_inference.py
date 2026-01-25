@@ -64,7 +64,7 @@ import typer
 from rich.console import Console
 from sklearn.metrics import average_precision_score, f1_score
 
-from birdset_benchmark.datasets import BIRDSET_DATASETS, get_num_classes, load_birdset_dataset
+from birdset_benchmark.datasets import BIRDSET_DATASETS, load_birdset_dataset
 
 # Restore warnings.warn after import (optional - keep suppressed for cleaner output)
 # warnings.warn = _original_warn
@@ -208,7 +208,12 @@ def main(
         split=split,
         subset_size=subset_size,
     )
-    num_classes = get_num_classes(dataset)
+
+    # Get species mapping from dataset features (more robust than hardcoded constants)
+    multilabel_feature = hf_dataset.features["ebird_code_multilabel"]
+    species_names = multilabel_feature.feature.names
+    species_to_idx = {species: idx for idx, species in enumerate(species_names)}
+    num_classes = len(species_names)
     console.print(f"✓ Loaded {len(hf_dataset)} samples with {num_classes} classes\n")
 
     # Get all audio paths and labels
@@ -227,13 +232,6 @@ def main(
                     y_true[i, idx] = 1.0
 
     console.print(f"✓ Extracted {len(audio_paths)} audio paths\n")
-
-    # Get species mapping from dataset
-    console.print("[bold]Building species mapping...[/bold]")
-    multilabel_feature = hf_dataset.features["ebird_code_multilabel"]
-    species_names = multilabel_feature.feature.names
-    species_to_idx = {species: idx for idx, species in enumerate(species_names)}
-    console.print(f"✓ Mapped {len(species_to_idx)} species\n")
 
     # Load model
     console.print(f"[bold]Loading {model}...[/bold]")
