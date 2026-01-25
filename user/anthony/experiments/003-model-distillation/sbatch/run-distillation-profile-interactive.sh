@@ -77,7 +77,7 @@ ${UV_PROJECT_ENVIRONMENT}/bin/py-spy record \
     -o "$output_dir/profile.svg" \
     -f speedscope \
     -s -n -t --idle \
-    --rate 100 \
+    --rate 50 \
     -- ${UV_PROJECT_ENVIRONMENT}/bin/python \
     $user_dir/experiments/003-model-distillation/sbatch/train_lightning.py \
     --student "$STUDENT" \
