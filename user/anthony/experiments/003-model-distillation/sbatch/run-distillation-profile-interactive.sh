@@ -44,9 +44,10 @@ repo_dir=$(realpath ~/arc/birdclef-2026)
 user_dir=$repo_dir/user/anthony
 
 # Sync venv to local NVMe for faster package loading
+# Use --extra dev to get py-spy for profiling
 export UV_PROJECT_ENVIRONMENT=${TMPDIR}/${SLURM_JOB_ID}/.venv
 cd $user_dir
-uv sync
+uv sync --extra dev
 
 cd $repo_dir
 
