@@ -134,7 +134,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [x] Function: `check_inference_complete()` - check for existing metrics.json
   - [x] Arrays: `BIRDSET_MODELS`, `BIRDSET_DATASETS`
 
-- [x] Create `sbatch/inference/_job.sbatch`
+- [x] Create `sbatch/inference/_job.sh`
   - [x] SLURM configuration: 1 GPU (RTX 6000), 8 CPUs, 32GB RAM, 4 hours, embers queue
   - [x] Run `python -m birdset_benchmark.run_inference`
   - [x] Use MODEL and DATASET environment variables
@@ -301,14 +301,14 @@ src/birdset_benchmark/
 sbatch/
 ├── common.sh                ✅ exists - shared functions and variables
 ├── inference/               # Phase 2A: Direct inference
-│   ├── run.sh               ✅ exists - launcher with --model, --dataset, --dry-run, --force
-│   └── _job.sbatch          ✅ exists - SLURM job script
+│   ├── run.sh               ✅ exists - launcher with --model, --dataset, --limit, --dry-run, --force
+│   └── _job.sh              ✅ exists - SLURM job script
 ├── extract_embeddings/      # Phase 2B: Embedding extraction (pending)
 │   ├── run.sh
-│   └── _job.sbatch
+│   └── _job.sh
 └── train_classifier/        # Phase 2B: Linear probe training (pending)
     ├── run.sh
-    └── _job.sbatch
+    └── _job.sh
 ```
 
 ### Artifact Structure

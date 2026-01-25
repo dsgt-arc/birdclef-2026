@@ -121,7 +121,7 @@ get_dataset_path() {
 # Submit Jobs
 # ============================================================================
 
-JOB_SCRIPT="${SCRIPT_DIR}/_job.sbatch"
+JOB_SCRIPT="${SCRIPT_DIR}/_job.sh"
 SUBMITTED=0
 SKIPPED=0
 
