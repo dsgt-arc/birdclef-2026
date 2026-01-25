@@ -1,7 +1,7 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 0 complete (Planning & Documentation) ✅
-**Current Phase**: Phase 1 (Environment Setup) 🔄
+**Status**: Phase 1 mostly complete (1.1, 1.2, 1.2b done) ✅
+**Current Phase**: Phase 1.3 (BirdSet Dataset Loading) 🔄
 **Last Updated**: 2026-01-24
 
 ---
@@ -39,16 +39,33 @@
 
 ## Phase 1: Environment Setup
 
-- [ ] 1.1 Create Python package structure
+- [x] 1.1 Create Python package structure
   - [x] `user/murilo/pyproject.toml` with all dependencies
-  - [ ] `user/murilo/src/birdset_benchmark/__init__.py`
+  - [x] `user/murilo/src/birdset_benchmark/__init__.py`
+  - [x] Fixed git URL dependency (moved to `[tool.uv.sources]`)
+  - [x] Added `ai-edge-litert` for TensorFlow Lite (BirdNET requirement)
+  - [x] Added `pytest` to dependencies
+  - [x] Created comprehensive pytest test suite (19 tests passing)
   - [ ] Add to main project `pyproject.toml` as optional dependency (if needed)
-  - [ ] Test `uv` environment setup via `test_setup.sh`
 
-- [ ] 1.2 Install and test bioacoustics-model-zoo
-  - [ ] `uv pip install git+https://github.com/kitzeslab/bioacoustics-model-zoo.git`
-  - [ ] Test `import bmz; bmz.list_models()` works
-  - [ ] Verify BirdNET and Perch can be instantiated
+- [x] 1.2 Install and test bioacoustics-model-zoo
+  - [x] `uv pip install git+https://github.com/kitzeslab/bioacoustics-model-zoo.git`
+  - [x] Test `import bmz; bmz.list_models()` works (13 models available)
+  - [x] Verify BirdNET can be instantiated
+  - [x] Test BirdNET embedding extraction (1024-dim embeddings working)
+  - [x] Created pytest tests: `tests/test_models.py`
+
+- [x] 1.2b Create PyTorch Lightning classifiers (NEW)
+  - [x] Created `src/birdset_benchmark/models.py`
+  - [x] Implemented `MultiLabelLinearProbe` (2-layer MLP: input → 512 → num_classes)
+  - [x] Implemented `LinearProbe` (pure linear: input → num_classes)
+  - [x] Implemented `MultiLabelTopKAccuracy` metric for Top-1/Top-5 accuracy
+  - [x] Aligned all metrics with proposal.md:
+    - cmAP (Class-mean Average Precision) - primary metric
+    - F1 Micro and F1 Macro
+    - Top-1 and Top-5 Accuracy
+  - [x] Created pytest tests: `tests/test_classifiers.py` (9 tests passing)
+  - [x] Based on birdclef-2025 architecture, adapted for multi-label
 
 - [ ] 1.3 Test BirdSet dataset loading
   - [ ] Load HSN subset from `DBD-research-group/BirdSet`
@@ -59,7 +76,12 @@
 - [ ] 1.4 Create experiment directory structure
   - [x] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/` (base directory)
   - [x] `config.yaml` with all model specs and SLURM settings
-  - [x] `test_setup.sh` for interactive environment testing
+  - [x] `test_setup.sh` for interactive environment testing (replaced by pytest)
+  - [x] `tests/` directory with comprehensive test suite:
+    - `test_environment.py` - GPU, CUDA, PyTorch validation (5 tests)
+    - `test_models.py` - BirdNET loading and embeddings (4 tests)
+    - `test_classifiers.py` - PyTorch Lightning models (9 tests)
+    - `test_datasets.py` - HuggingFace datasets (1 test)
   - [ ] `sbatch/` directory for SLURM job scripts
   - [ ] `artifacts/` directory for results and outputs
 
@@ -135,38 +157,57 @@
   - [ ] Check GPU utilization (should be >50%)
   - [ ] Submit full GPU job to SLURM
 
-## Phase 5: Linear Probe Training (Stage 2 - CPU)
+## Phase 5: Linear Probe Training (Stage 2 - GPU with PyTorch Lightning)
+
+- [x] 5.0 PyTorch Lightning model implementation
+  - [x] Created `MultiLabelLinearProbe` (2-layer MLP)
+  - [x] Created `LinearProbe` (pure linear)
+  - [x] Implemented all required metrics (cmAP, F1 micro/macro, Top-1/5)
+  - [x] Created comprehensive tests
 
 - [ ] 5.1 Implement training script (`train_probe.py`)
   - [ ] CLI arguments: `--model {birdnet,perch}`, `--embeddings-dir`, `--output-dir`
   - [ ] Load embeddings: `embeddings_train_*.npz`, `embeddings_test_*.npz`
-  - [ ] Initialize: `OneVsRestClassifier(LogisticRegression(...))`
-  - [ ] Train on train embeddings
-  - [ ] Save trained classifier to `artifacts/classifiers/{model}_probe.pkl`
+  - [ ] Create PyTorch DataLoader from embeddings
+  - [ ] Initialize: `MultiLabelLinearProbe(input_dim, num_classes)` or `LinearProbe(...)`
+  - [ ] Initialize PyTorch Lightning Trainer with:
+    - GPU accelerator
+    - Early stopping callback
+    - Model checkpointing
+    - WandB or TensorBoard logger (optional)
+  - [ ] Train on train embeddings with validation split
+  - [ ] Save best checkpoint to `artifacts/classifiers/{model}_probe.ckpt`
 
-- [ ] 5.2 Add optional preprocessing
-  - [ ] Optional: L2-normalize embeddings (`normalize(X, norm='l2')`)
-  - [ ] Log: whether normalization was used
-  - [ ] Compare results with/without normalization
+- [ ] 5.2 Add optional preprocessing and configuration
+  - [ ] Optional: L2-normalize embeddings before training
+  - [ ] Configurable: learning rate, batch size, max epochs
+  - [ ] Configurable: hidden layer size (512 default)
+  - [ ] Configurable: threshold for binary predictions (0.5 default)
+  - [ ] Log all hyperparameters
 
 - [ ] 5.3 Implement evaluation (`evaluate.py`)
-  - [ ] Function: `compute_cmap(y_true, y_pred_proba)`
-  - [ ] Function: `compute_f1_scores(y_true, y_pred_binary)` → (f1_micro, f1_macro)
-  - [ ] Function: `compute_top_k_accuracy(y_true, y_pred_proba, k=5)`
-  - [ ] Function: `per_class_average_precision(y_true, y_pred_proba, class_names)`
-  - [ ] Generate predictions on test set
-  - [ ] Compute all metrics (cmAP, F1 micro/macro, Top-1/5)
+  - [ ] Load trained model from checkpoint
+  - [ ] Run model.predict_step() on test embeddings
+  - [ ] Extract probabilities for metric computation
+  - [ ] All metrics automatically logged by PyTorch Lightning:
+    - cmAP (Class-mean Average Precision) - primary
+    - F1 Micro and F1 Macro
+    - Top-1 and Top-5 Accuracy
+  - [ ] Generate per-class AP for analysis
+  - [ ] Save predictions to `artifacts/predictions/{model}_test_predictions.npz`
 
 - [ ] 5.4 Create SLURM batch script (`sbatch/train_probe.sbatch`)
   - [ ] Request: 1 GPU (gpu-rtx6000), 4 cores, 32GB RAM
-  - [ ] Time limit: 2 hours
-  - [ ] Train probes for all 7 models
+  - [ ] Time limit: 2 hours (faster with GPU + PyTorch)
+  - [ ] Train probes for BirdNET and Perch
   - [ ] Run evaluation and save results
+  - [ ] Save training logs and checkpoints
 
 - [ ] 5.5 Dry run and validation
-  - [ ] Train on subset of embeddings (1000 samples)
-  - [ ] Verify classifier trains without errors
-  - [ ] Check convergence (should be <1000 iterations)
+  - [ ] Train on subset of embeddings (1000 samples, 10 epochs)
+  - [ ] Verify PyTorch Lightning Trainer works on GPU
+  - [ ] Check convergence (monitor val_loss)
+  - [ ] Verify all metrics are logged correctly
   - [ ] Submit full GPU job to SLURM
 
 ## Phase 6: Results Analysis
@@ -247,11 +288,14 @@
 
 **Estimated Timeline**:
 - Phase 0: ✅ Complete (2-3 hours - planning and documentation)
-- Phase 1-2: 4-6 hours (environment setup, data pipeline)
-- Phase 3-4: 6-8 hours (model wrappers, embedding extraction)
-- Phase 5: 2-4 hours (linear probe training)
-- Phase 6-7: 4-6 hours (analysis, documentation)
-- **Remaining**: 16-24 hours of development + GPU job time (~14 hours)
+- Phase 1: ✅ Mostly complete (3-4 hours - package setup, testing, PyTorch models)
+  - 1.1, 1.2, 1.2b: Done
+  - 1.3, 1.4: Remaining (~1 hour)
+- Phase 2: TODO (3-5 hours - data pipeline)
+- Phase 3-4: TODO (6-8 hours - model wrappers, embedding extraction)
+- Phase 5: TODO (2-4 hours - linear probe training with PyTorch Lightning)
+- Phase 6-7: TODO (4-6 hours - analysis, documentation)
+- **Remaining**: 13-20 hours of development + GPU job time (~14 hours)
 
 **Dependencies**:
 - BirdSet dataset availability on HuggingFace
