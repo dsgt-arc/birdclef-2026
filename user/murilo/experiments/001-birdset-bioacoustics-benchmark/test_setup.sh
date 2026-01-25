@@ -1,7 +1,17 @@
 #!/bin/bash
 #
-# Interactive test script for environment setup
-# Run this in an interactive GPU session to verify installation
+# Interactive test script for environment setup and validation
+# Run this in an interactive GPU session to set up and verify installation
+#
+# This script:
+#   1. Checks GPU availability
+#   2. Sets up environment variables
+#   3. Installs uv package manager
+#   4. Creates virtual environment
+#   5. Installs dependencies from pyproject.toml
+#   6. Installs PyTorch with CUDA support
+#   7. Verifies PyTorch CUDA support
+#   8. Runs comprehensive pytest test suite
 #
 # Usage:
 #   salloc -p gpu-rtx6000 --gres=gpu:1 -c 4 --mem=32G -t 2:00:00
@@ -12,7 +22,7 @@ set -e  # Exit on error
 set -u  # Exit on undefined variable
 
 echo "=========================================="
-echo "BirdSet Benchmark - Environment Test"
+echo "BirdSet Benchmark - Setup & Validation"
 echo "=========================================="
 echo ""
 
@@ -113,120 +123,36 @@ python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f
 print_status "PyTorch CUDA verified"
 echo ""
 
-# Step 8: Test bioacoustics-model-zoo
-echo "Step 8: Testing bioacoustics-model-zoo installation..."
-python << 'EOF'
-try:
-    import bioacoustics_model_zoo as bmz
-    print(f"  bioacoustics-model-zoo version: {bmz.__version__ if hasattr(bmz, '__version__') else 'unknown'}")
-
-    # List available models
-    print("\n  Available models:")
-    models = bmz.list_models()
-    for model_name in models:
-        print(f"    - {model_name}")
-
-    print(f"\n  Total models: {len(models)}")
-except Exception as e:
-    print(f"  Error: {e}")
-    exit(1)
-EOF
-print_status "bioacoustics-model-zoo functional"
+# Step 8: Run pytest test suite
+echo "Step 8: Running pytest test suite..."
+cd "$PROJECT_ROOT/user/murilo"
+pytest tests/001-birdset-bioacoustics-benchmark/ -v --tb=short
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ All tests passed${NC}"
+else
+    echo -e "${RED}✗ Some tests failed${NC}"
+    echo "  Check output above for details"
+    exit 1
+fi
 echo ""
 
-# Step 9: Test HuggingFace datasets
-echo "Step 9: Testing HuggingFace datasets..."
-python << 'EOF'
-from datasets import load_dataset_builder
-
-try:
-    # Check if BirdSet is accessible (don't download yet)
-    builder = load_dataset_builder("DBD-research-group/BirdSet", "HSN")
-    print(f"  BirdSet HSN dataset accessible")
-    print(f"  Description: {builder.info.description[:100]}...")
-except Exception as e:
-    print(f"  Warning: Could not access BirdSet. Error: {e}")
-    print("  You may need to authenticate with HuggingFace or check network access.")
-EOF
-print_status "HuggingFace datasets accessible"
-echo ""
-
-# Step 10: Test model loading (quick test)
-echo "Step 10: Testing model instantiation (BirdNET)..."
-python << 'EOF'
-import bioacoustics_model_zoo as bmz
-import torch
-import numpy as np
-
-try:
-    print("  Loading BirdNET model...")
-    model = bmz.BirdNET()
-    print(f"  Model type: {type(model)}")
-
-    # Test with dummy audio (3 seconds at default sample rate)
-    sample_rate = 48000  # BirdNET uses 48kHz
-    duration = 3.0
-    dummy_audio = np.random.randn(int(sample_rate * duration)).astype(np.float32)
-
-    print(f"  Testing embedding extraction with dummy audio ({dummy_audio.shape})...")
-    with torch.no_grad():
-        embedding = model.embed(dummy_audio)
-
-    print(f"  Embedding shape: {embedding.shape}")
-    print(f"  Embedding dtype: {embedding.dtype}")
-
-    # Verify embedding dimension
-    expected_dim = 1024
-    if embedding.shape[-1] == expected_dim:
-        print(f"  ✓ Embedding dimension matches expected ({expected_dim})")
-    else:
-        print(f"  ✗ Embedding dimension mismatch: got {embedding.shape[-1]}, expected {expected_dim}")
-        exit(1)
-
-except Exception as e:
-    print(f"  Error during model test: {e}")
-    import traceback
-    traceback.print_exc()
-    exit(1)
-EOF
-print_status "Model loading and embedding extraction successful"
-echo ""
-
-# Step 11: Test scikit-learn
-echo "Step 11: Testing scikit-learn..."
-python << 'EOF'
-from sklearn.linear_model import LogisticRegression
-from sklearn.multiclass import OneVsRestClassifier
-import numpy as np
-
-# Test with dummy data
-X_train = np.random.randn(100, 1024)
-y_train = np.random.randint(0, 2, (100, 10))  # Multi-label
-
-clf = OneVsRestClassifier(LogisticRegression(max_iter=100))
-clf.fit(X_train, y_train)
-
-X_test = np.random.randn(10, 1024)
-y_pred = clf.predict_proba(X_test)
-
-print(f"  Trained classifier on {X_train.shape[0]} samples")
-print(f"  Prediction shape: {y_pred.shape}")
-print(f"  ✓ Multi-label classification working")
-EOF
-print_status "scikit-learn functional"
-echo ""
-
-# Step 12: Summary
+# Step 9: Summary
 echo "=========================================="
-echo -e "${GREEN}✓ ALL TESTS PASSED${NC}"
+echo -e "${GREEN}✓ ENVIRONMENT SETUP AND VALIDATION COMPLETE${NC}"
 echo "=========================================="
 echo ""
 echo "Environment is ready for experiments!"
 echo ""
+echo "Test Results:"
+echo "  - GPU: Available ($(nvidia-smi --query-gpu=name --format=csv,noheader))"
+echo "  - PyTorch: $(python -c 'import torch; print(torch.__version__)')"
+echo "  - CUDA: $(python -c 'import torch; print(torch.version.cuda if torch.cuda.is_available() else \"N/A\")')"
+echo "  - All pytest tests: Passed"
+echo ""
 echo "Next steps:"
-echo "  1. Download BirdSet HSN dataset (may be large)"
-echo "  2. Run embedding extraction script"
-echo "  3. Train linear probe"
+echo "  1. Implement data pipeline (Phase 2)"
+echo "  2. Create embedding extraction script (Phase 4)"
+echo "  3. Train linear probes (Phase 5)"
 echo ""
 echo "Python location: $(which python)"
 echo "Virtual environment: $JOB_VENV"
