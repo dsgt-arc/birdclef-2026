@@ -395,6 +395,75 @@ dependencies = [
 ]
 ```
 
+## Implementation Findings (Phase 2A)
+
+### Decision 8: Data Module Organization
+
+**Choice**: Split data module into separate files by purpose.
+
+**Structure**:
+```
+src/birdset_benchmark/
+├── datasets.py      # HuggingFace loading, constants (Phase 2A & 2B)
+├── torch_data.py    # PyTorch Dataset/DataLoader (Phase 2B only)
+└── data.py          # Backwards compatibility re-exports
+```
+
+**Rationale**:
+- Phase 2A (Direct Inference) only needs HuggingFace dataset loading
+- Phase 2B (Transfer Learning) needs PyTorch DataLoader for embedding extraction and linear probe training
+- Clear separation makes it obvious which components are used when
+
+### Decision 9: BMZ API Constraints and GPU Utilization
+
+**Finding**: The bioacoustics-model-zoo `.predict()` API is **I/O bound**, not GPU bound.
+
+**Technical Analysis**:
+```
+BMZ Model.predict(file_paths) Internal Flow:
+┌─────────────────────────────────────────────────────────────┐
+│  1. SafeAudioDataloader validates file paths exist          │
+│  2. AudioFileDataset loads audio from disk (I/O bottleneck) │
+│  3. BirdsetPreprocessor creates spectrograms (CPU)          │
+│  4. Batch transferred to GPU                                │
+│  5. Forward pass (GPU - fast)                               │
+│  6. Results detached back to CPU                            │
+│  7. Repeat for each batch                                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Constraints**:
+| Constraint | Implication |
+|------------|-------------|
+| File paths only | Cannot pass pre-loaded tensors to `.predict()` |
+| CPU preprocessing | Spectrogram computation happens before GPU |
+| Sequential I/O | Audio loaded during DataLoader iteration |
+| No bypass possible | OpenSoundscape's SafeAudioDataloader enforces this |
+
+**Mitigation**:
+- Use `num_workers` parameter (default 4) to parallelize CPU preprocessing
+- Increase `batch_size` to amortize CPU-GPU transfer overhead
+- Accept that this is expected behavior for production audio ML pipelines
+
+**Why BirdSetDataset is NOT used for Phase 2A**:
+- BMZ models have their own internal DataLoader that only accepts file paths
+- We cannot inject our own PyTorch Dataset into the BMZ prediction pipeline
+- BirdSetDataset will be used for Phase 2B (embedding extraction, linear probe training)
+
+### Decision 10: Warning Suppression Strategy
+
+**Choice**: Comprehensive warning suppression for clean production output.
+
+**Warnings Suppressed**:
+| Source | Warning Type | Method |
+|--------|--------------|--------|
+| TensorFlow | cuFFT/cuDNN/cuBLAS registration | `TF_CPP_MIN_LOG_LEVEL=3` |
+| TensorFlow | oneDNN messages | `TF_ENABLE_ONEDNN_OPTS=0` |
+| OpenSoundscape | Architecture not in ARCH_DICT | Monkey-patch `warnings.warn` |
+| PyTorch | pin_memory deprecation (C++) | `suppress_stderr()` context manager |
+
+**Rationale**: These warnings are informational, not errors. Clean output is essential for production runs and log analysis.
+
 ## Risks / Trade-offs
 
 | Risk | Likelihood | Impact | Mitigation |
@@ -405,6 +474,7 @@ dependencies = [
 | **SLURM queue delays** | High | Low | Submit jobs in parallel; use inferno queue |
 | **Embedding dimension mismatch** | Low | Medium | Validate dimensions in tests |
 | **Model loading failures** | Medium | Medium | Graceful error handling; skip failed models |
+| **I/O bottleneck during inference** | High | Low | Use num_workers; expected behavior |
 
 ## Open Questions (Resolved)
 
@@ -412,6 +482,8 @@ dependencies = [
 2. ~~For variable-length audio: max-pool vs random-crop?~~ → Use max-pool
 3. ~~Should we normalize embeddings?~~ → Test both; document choice
 4. ~~Optimal batch size?~~ → Start with 16; adjust based on GPU memory
+5. ~~Why is GPU utilization low during inference?~~ → I/O bound by design; use num_workers to parallelize CPU preprocessing
+6. ~~Why isn't BirdSetDataset used for Phase 2A?~~ → BMZ API only accepts file paths; BirdSetDataset is for Phase 2B
 
 ---
 

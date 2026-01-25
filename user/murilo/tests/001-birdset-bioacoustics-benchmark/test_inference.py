@@ -1,16 +1,21 @@
-"""Test inference workflow for BirdSet models."""
+"""Test inference workflow for BirdSet models.
 
-import pytest
-import numpy as np
+Phase 2A tests: Direct inference with BirdSet-native models (BirdSetConvNeXT, BirdSetEfficientNetB1).
+These models use the BMZ .predict(file_paths) API directly - no PyTorch DataLoader needed.
+"""
+
 import json
 import tempfile
 from pathlib import Path
 
+import numpy as np
+import pytest
+
+from birdset_benchmark.datasets import get_num_classes, load_birdset_dataset
 from birdset_benchmark.run_inference import (
-    compute_metrics,
     MODELS,
+    compute_metrics,
 )
-from birdset_benchmark.data import load_birdset_dataset, get_num_classes
 
 
 class TestMetrics:
@@ -105,7 +110,7 @@ class TestInferenceBatch:
         assert pred_df.shape[0] == 3  # 3 samples
 
         # Get species mapping
-        multilabel_feature = hf_dataset.features['ebird_code_multilabel']
+        multilabel_feature = hf_dataset.features["ebird_code_multilabel"]
         species_names = multilabel_feature.feature.names
         species_to_idx = {species: idx for idx, species in enumerate(species_names)}
 
@@ -145,11 +150,16 @@ class TestInferenceWorkflow:
                 sys.executable,
                 "-m",
                 "birdset_benchmark.run_inference",
-                "--model", "birdset_convnext",
-                "--dataset", "HSN",
-                "--subset-size", "5",
-                "--batch-size", "2",
-                "--output-dir", str(output_dir),
+                "--model",
+                "birdset_convnext",
+                "--dataset",
+                "HSN",
+                "--subset-size",
+                "5",
+                "--batch-size",
+                "2",
+                "--output-dir",
+                str(output_dir),
             ]
 
             result = subprocess.run(
@@ -192,7 +202,7 @@ class TestInferenceWorkflow:
             assert metrics["dataset"] == "HSN"
             assert metrics["num_samples"] == 5
 
-            print(f"\nInference completed successfully!")
+            print("\nInference completed successfully!")
             print(f"cmAP: {metrics['cmap']:.4f}")
             print(f"F1 Micro: {metrics['f1_micro']:.4f}")
             print(f"Throughput: {metrics['throughput_samples_per_sec']:.2f} samples/sec")

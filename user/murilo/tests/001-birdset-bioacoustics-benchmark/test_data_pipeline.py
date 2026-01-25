@@ -1,16 +1,32 @@
-"""Test data pipeline for BirdSet benchmark."""
+"""Test data pipeline for BirdSet benchmark.
 
-import pytest
+This module tests both Phase 2A and Phase 2B data loading:
+- Phase 2A (Direct Inference): Uses datasets.py for HuggingFace loading and constants
+- Phase 2B (Transfer Learning): Uses torch_data.py for PyTorch Dataset/DataLoader
+
+Module structure:
+- birdset_benchmark.datasets: HuggingFace loading, constants (Phase 2A & 2B)
+- birdset_benchmark.torch_data: PyTorch Dataset/DataLoader (Phase 2B)
+- birdset_benchmark.data: Backwards compatibility re-exports
+"""
+
 import numpy as np
+import pytest
 import torch
-from birdset_benchmark.data import (
-    load_birdset_dataset,
+
+# Phase 2A imports (dataset loading and constants)
+from birdset_benchmark.datasets import (
+    BIRDSET_DATASETS,
     get_num_classes,
-    resample_audio,
-    pad_or_crop,
+    load_birdset_dataset,
+)
+
+# Phase 2B imports (PyTorch data loading)
+from birdset_benchmark.torch_data import (
     BirdSetDataset,
     create_dataloader,
-    BIRDSET_DATASETS,
+    pad_or_crop,
+    resample_audio,
 )
 
 

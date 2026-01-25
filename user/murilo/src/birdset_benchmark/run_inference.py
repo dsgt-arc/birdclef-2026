@@ -64,7 +64,7 @@ import typer
 from rich.console import Console
 from sklearn.metrics import average_precision_score, f1_score
 
-from birdset_benchmark.data import BIRDSET_DATASETS, get_num_classes, load_birdset_dataset
+from birdset_benchmark.datasets import BIRDSET_DATASETS, get_num_classes, load_birdset_dataset
 
 # Restore warnings.warn after import (optional - keep suppressed for cleaner output)
 # warnings.warn = _original_warn
@@ -158,6 +158,7 @@ def main(
     dataset: str = typer.Option(..., help="Dataset code (HSN, PER, NES, UHH, POW, SSW, SNE, NBP)"),
     split: str = typer.Option("test_5s", help="Dataset split"),
     batch_size: int = typer.Option(16, help="Batch size for inference"),
+    num_workers: int = typer.Option(4, help="Number of CPU workers for parallel preprocessing"),
     subset_size: int | None = typer.Option(None, help="Use subset for testing (e.g., 100)"),
     output_dir: Path | None = typer.Option(None, help="Output directory for results"),
 ):
@@ -243,9 +244,14 @@ def main(
     console.print(f"[bold]Running inference on {len(audio_paths)} files...[/bold]")
     start_time = time.time()
 
-    # Call .predict() with list of paths and batch_size (suppress C++ warnings from stderr)
+    # Call .predict() with list of paths, batch_size, and num_workers for parallel preprocessing
+    # (suppress C++ warnings from stderr)
     with suppress_stderr():
-        pred_df = model_instance.predict(audio_paths, batch_size=batch_size)
+        pred_df = model_instance.predict(
+            audio_paths,
+            batch_size=batch_size,
+            num_workers=num_workers,
+        )
 
     inference_time = time.time() - start_time
     console.print(f"✓ Inference complete in {inference_time:.2f}s")
@@ -278,6 +284,7 @@ def main(
     metrics["inference_time_sec"] = inference_time
     metrics["throughput_samples_per_sec"] = len(audio_paths) / inference_time
     metrics["batch_size"] = batch_size
+    metrics["num_workers"] = num_workers
 
     # Display results
     console.print("\n[bold cyan]Results:[/bold cyan]")

@@ -72,44 +72,55 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 **Goal**: Run inference with BirdSetConvNeXT and BirdSetEfficientNetB1 directly on BirdSet test data. No training required since these models were trained on BirdSet.
 
 ### 2A.1 Implement Data Pipeline ✅ COMPLETED
-- [x] Create `src/birdset_benchmark/data.py`
+- [x] Create data module (split into separate files for clarity):
+  - [x] `datasets.py` - HuggingFace loading, constants (Phase 2A & 2B)
+  - [x] `torch_data.py` - PyTorch Dataset/DataLoader (Phase 2B only)
+  - [x] `data.py` - Backwards compatibility re-exports
   - [x] Function: `load_birdset_dataset(dataset_code)` - Load any of 8 datasets
+  - [x] Function: `get_num_classes(dataset_code)` - Constant class counts per dataset
   - [x] Function: `resample_audio(audio, source_sr, target_sr)`
   - [x] Function: `pad_or_crop(audio, target_duration_sec, sr)` - supports pad/repeat modes
-  - [x] Class: `BirdSetDataset` (PyTorch Dataset wrapper)
-  - [x] Function: `collate_fn()` for batching
-  - [x] Dataset-agnostic design with `BIRDSET_NUM_CLASSES` constant mapping
-  - [x] Function: `get_num_classes(dataset_code)` for proper multi-hot encoding
-  - [x] Multi-hot label encoding from `ebird_code_multilabel` indices
-  - [x] Audio loading from file paths (BirdSet provides paths, not arrays)
+  - [x] Class: `BirdSetDataset` (PyTorch Dataset wrapper for Phase 2B)
+  - [x] Function: `collate_fn()` and `create_dataloader()` for batching
   - [x] Unit tests for edge cases (16 tests passing in `test_data_pipeline.py`)
+
+**Design Clarification**:
+- **Phase 2A (Direct Inference)**: Uses `datasets.py` only - BMZ models have their own .predict(file_paths) API
+- **Phase 2B (Transfer Learning)**: Uses `torch_data.py` - PyTorch DataLoader for embedding extraction and linear probe training
+- The `BirdSetDataset` class is NOT used for Phase 2A because BMZ models cannot accept pre-loaded tensors
 
 **Implementation Notes**:
 - BirdSet provides audio as file paths in `sample["audio"]["path"]`, not arrays
-- Uses `soundfile.read()` to load audio, then resamples and pads/crops
+- BMZ `.predict()` API only accepts file paths, handles preprocessing internally
 - Dataset-agnostic: constant class counts ensure correct multi-hot vector size even with subsets
-- Comprehensive test coverage: resampling, padding, cropping, batching, metadata handling
 
 ### 2A.2 Implement Inference Script ✅ COMPLETED
 - [x] Create `src/birdset_benchmark/run_inference.py`
-  - [x] CLI with typer: `--model`, `--dataset`, `--batch-size`, `--output-dir`
+  - [x] CLI with typer: `--model`, `--dataset`, `--batch-size`, `--num-workers`, `--output-dir`
   - [x] Support models: `birdset_convnext`, `birdset_efficientnet_b1`
   - [x] Load BirdSet test split
   - [x] Run model.predict() to get class predictions
   - [x] Compute metrics: cmAP, F1 micro/macro, Top-1/5
   - [x] Save results to `metrics.json`
   - [x] Save predictions to `predictions.npz`
-  - [x] Simplified implementation using BMZ API correctly (model handles batching internally)
+  - [x] Simplified implementation using BMZ API correctly
   - [x] Sigmoid activation to convert logits to probabilities
   - [x] Default output to `experiments/001-birdset-bioacoustics-benchmark/artifacts/`
+  - [x] Warning suppression for clean output (TensorFlow, OpenSoundscape, PyTorch)
   - [x] Unit tests for workflow (6 tests passing in `test_inference.py`)
 
 **Implementation Notes**:
-- Simplified design: single call to `model.predict(audio_paths, batch_size=batch_size)`
-- Model handles all batching internally (no manual batching required)
+- Simplified design: `model.predict(audio_paths, batch_size=batch_size, num_workers=num_workers)`
+- Model handles batching internally - no custom DataLoader needed
 - Predictions are logits, apply sigmoid: `y_pred = 1.0 / (1.0 + np.exp(-y_pred))`
-- Species mapping from dataset features to align predictions with ground truth
-- Test suite validates full workflow end-to-end on small subsets
+- Added `--num-workers` CLI flag (default 4) for parallel CPU preprocessing
+
+**GPU Utilization Understanding**:
+- BMZ models are **I/O bound**, not GPU bound - audio is loaded from disk during iteration
+- The `.predict()` API only accepts file paths, cannot use pre-loaded tensors
+- CPU preprocessing (spectrogram computation) happens per-batch before GPU inference
+- Increasing `num_workers` helps parallelize preprocessing, reducing I/O bottleneck
+- This is expected behavior for production audio ML pipelines
 
 **⚠️ Important**: Code is implemented and tested on small subsets (5-50 samples). Full dataset inference runs (Phase 2A.4-2A.5) have NOT been executed yet.
 
@@ -266,8 +277,10 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 src/birdset_benchmark/
 ├── __init__.py              ✅ exists
 ├── models.py                ✅ exists - LinearProbe, metrics
-├── data.py                  ✅ exists - dataset loading, preprocessing (356 lines)
-├── run_inference.py         ✅ exists - direct inference for BirdSet models (239 lines)
+├── datasets.py              ✅ exists - HuggingFace loading, constants (Phase 2A & 2B)
+├── torch_data.py            ✅ exists - PyTorch Dataset/DataLoader (Phase 2B only)
+├── data.py                  ✅ exists - backwards compatibility re-exports
+├── run_inference.py         ✅ exists - direct inference for BirdSet models
 ├── encoders.py              (new - embedding extractors for BirdNET/Perch)
 ├── extract_embeddings.py    (new - CLI for embedding extraction)
 ├── train_classifier.py      (new - CLI for linear probe training)
