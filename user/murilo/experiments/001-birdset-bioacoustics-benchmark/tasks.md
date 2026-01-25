@@ -1,7 +1,7 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 1 complete, Phase 2A partially complete (2A.1-2A.2 done, 2A.3-2A.5 pending)
-**Current Phase**: Phase 2A.3-2A.5 (SLURM scripts and production runs)
+**Status**: Phase 1 complete, Phase 2A.1-2A.3 complete, Phase 2A.4-2A.5 ready to run
+**Current Phase**: Phase 2A.4-2A.5 (Validation and production runs)
 **Last Updated**: 2026-01-25
 
 ---
@@ -124,21 +124,28 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 
 **⚠️ Important**: Code is implemented and tested on small subsets (5-50 samples). Full dataset inference runs (Phase 2A.4-2A.5) have NOT been executed yet.
 
-### 2A.3 Create SLURM Job Scripts
-- [ ] Create `sbatch/common.sh`
-  - [ ] Function: `setup_environment()` - venv in TMPDIR
-  - [ ] Function: `get_artifact_dir()` - path construction
-  - [ ] Environment variables: PROJECT_ROOT, etc.
+### 2A.3 Create SLURM Job Scripts ✅ COMPLETED
+- [x] Create `sbatch/common.sh`
+  - [x] Directory paths derived from script location (portable)
+  - [x] Function: `setup_environment()` - UV venv in scratch, TF warning suppression
+  - [x] Function: `start_gpu_monitoring()` - nvidia-smi logging
+  - [x] Function: `print_job_info()` - job metadata
+  - [x] Function: `get_inference_output_dir()` - artifact path construction
+  - [x] Function: `check_inference_complete()` - check for existing metrics.json
+  - [x] Arrays: `BIRDSET_MODELS`, `BIRDSET_DATASETS`
 
-- [ ] Create `sbatch/inference/_job.sh`
-  - [ ] SLURM configuration: 1 GPU, 4 CPUs, 32GB RAM, 2 hours
-  - [ ] Run `python -m birdset_benchmark.run_inference`
-  - [ ] Use MODEL and DATASET environment variables
+- [x] Create `sbatch/inference/_job.sbatch`
+  - [x] SLURM configuration: 1 GPU (RTX 6000), 8 CPUs, 32GB RAM, 4 hours, embers queue
+  - [x] Run `python -m birdset_benchmark.run_inference`
+  - [x] Use MODEL and DATASET environment variables
+  - [x] Optional BATCH_SIZE and NUM_WORKERS overrides
 
-- [ ] Create `sbatch/inference/run.sh`
-  - [ ] Parse `--model`, `--dataset`, `--dry-run` flags
-  - [ ] Default: run both BirdSet-native models on all datasets
-  - [ ] Check for existing `metrics.json` to skip completed jobs
+- [x] Create `sbatch/inference/run.sh`
+  - [x] Parse `--model`, `--dataset`, `--dry-run`, `--force` flags
+  - [x] Default: run both BirdSet-native models on all datasets (16 jobs)
+  - [x] Check for existing `metrics.json` to skip completed jobs
+  - [x] `--force` flag to override skip behavior
+  - [x] `--help` with usage examples
 
 ### 2A.4 Validate Single Model + Single Dataset
 - [ ] Test inference locally on small subset
@@ -289,19 +296,19 @@ src/birdset_benchmark/
 └── utils.py                 (new - utilities)
 ```
 
-### SLURM Scripts to Create
+### SLURM Scripts
 ```
 sbatch/
-├── common.sh
+├── common.sh                ✅ exists - shared functions and variables
 ├── inference/               # Phase 2A: Direct inference
+│   ├── run.sh               ✅ exists - launcher with --model, --dataset, --dry-run, --force
+│   └── _job.sbatch          ✅ exists - SLURM job script
+├── extract_embeddings/      # Phase 2B: Embedding extraction (pending)
 │   ├── run.sh
-│   └── _job.sh
-├── extract_embeddings/      # Phase 2B: Embedding extraction
-│   ├── run.sh
-│   └── _job.sh
-└── train_classifier/        # Phase 2B: Linear probe training
+│   └── _job.sbatch
+└── train_classifier/        # Phase 2B: Linear probe training (pending)
     ├── run.sh
-    └── _job.sh
+    └── _job.sbatch
 ```
 
 ### Artifact Structure
