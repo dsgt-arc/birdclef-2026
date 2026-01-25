@@ -21,6 +21,10 @@ dependencies = [
     "onnxscript>=0.1",
     "faiss-cpu>=1.7",
     "webdataset>=0.2",
+    "pytorch-lightning>=2.0",
+    "psutil>=5.9",
+    "tensorboard>=2.14",
+    "safetensors>=0.4",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +32,7 @@ dev = [
     "ruff",
     "pytest",
     "playwright",
+    "py-spy",
 ]
 
 [build-system]

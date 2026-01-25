@@ -44,7 +44,9 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import tempfile
 import threading
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -56,6 +58,11 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import load_file
 from torch.utils.data import DataLoader, Dataset
+
+
+# Global lock for coordinating file copies across threads/workers
+_copy_locks: dict[str, threading.Lock] = {}
+_copy_locks_lock = threading.Lock()
 
 
 # Wrapper to make safetensors errors picklable
@@ -98,12 +105,20 @@ class WorkerState:
     max_cached_shards: int
     prefetch_executor: ThreadPoolExecutor | None = None
     prefetch_futures: dict[int, Future] = field(default_factory=dict)
+    # Background copier for network->local transfers (separate from memory loading)
+    copy_executor: ThreadPoolExecutor | None = None
+    copy_futures: dict[int, Future] = field(default_factory=dict)
     current_shard_idx: int = -1
+    samples_in_current_shard: int = 0  # Track progress within shard
+    total_samples_in_shard: int = 0  # Total samples in current shard
+    access_count: int = 0  # Total __getitem__ calls for this worker
     stats: dict[str, int] = field(
         default_factory=lambda: {
             "local_hits": 0,
             "source_loads": 0,
             "prefetch_hits": 0,
+            "prefetch_early_triggers": 0,
+            "background_copies": 0,
             "cache_evictions": 0,
         }
     )
@@ -270,6 +285,8 @@ class ShardAffinityDataset(Dataset):
         rng.shuffle(local_index)
 
         # Initialize worker state
+        # - prefetch_executor: 2 threads for copy+load into memory (for immediate use)
+        # - copy_executor: 1 thread for background copy-to-local (ahead of time)
         self._worker_state = WorkerState(
             worker_id=worker_id,
             num_workers=num_workers,
@@ -277,16 +294,33 @@ class ShardAffinityDataset(Dataset):
             local_index=local_index,
             shard_cache=OrderedDict(),
             max_cached_shards=self.shards_per_worker,
-            prefetch_executor=ThreadPoolExecutor(max_workers=1),
+            prefetch_executor=ThreadPoolExecutor(max_workers=2),
             prefetch_futures={},
+            copy_executor=ThreadPoolExecutor(max_workers=1) if self.copy_to_local else None,
+            copy_futures={},
         )
 
         # Ensure local cache directory exists
         if self.local_cache_dir and self.copy_to_local:
             self.local_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # Start prefetching first few shards
-        for i in range(min(self.prefetch_ahead, len(assigned_shards))):
+        # Start background copy of UPCOMING shards to local storage
+        # Only copy a limited number ahead to avoid disk space exhaustion
+        # (local NVMe is typically ~400GB, full cache may be larger)
+        # Copy shards_per_worker * 3 shards ahead - enough for smooth operation
+        copy_ahead_count = min(self.shards_per_worker * 3, len(assigned_shards))
+        if self.copy_to_local and self.local_cache_dir:
+            for i in range(copy_ahead_count):
+                self._schedule_background_copy(i)
+
+        # Aggressive initial prefetching: prefetch up to max_cached_shards + prefetch_ahead
+        # This ensures we have shards ready to go when training starts
+        # The first shard will load synchronously, but subsequent ones will be ready
+        initial_prefetch_count = min(
+            self.shards_per_worker + self.prefetch_ahead,
+            len(assigned_shards),
+        )
+        for i in range(initial_prefetch_count):
             self._schedule_prefetch(i)
 
     def _get_shard_path(self, shard: ShardInfo) -> Path:
@@ -299,20 +333,78 @@ class ShardAffinityDataset(Dataset):
         return shard.path
 
     def _copy_shard_to_local(self, shard: ShardInfo) -> Path:
-        """Copy a shard from source to local cache."""
+        """Copy a shard from source to local cache atomically.
+
+        Uses write-to-temp-then-rename pattern to prevent reading incomplete files.
+        Thread-safe across multiple workers/threads trying to copy the same shard.
+        """
         if not self.local_cache_dir or not self.copy_to_local:
             return shard.path
 
         local_path = self.local_cache_dir / shard.name
-        if local_path.exists():
-            return local_path
 
-        try:
-            shutil.copy2(shard.path, local_path)
-            return local_path
-        except Exception as e:
-            print(f"WARNING: Failed to copy {shard.name} to local: {e}")
-            return shard.path
+        # Fast path: if file exists and is valid, use it
+        if local_path.exists():
+            # Verify file is complete by checking size matches source
+            try:
+                if local_path.stat().st_size == shard.path.stat().st_size:
+                    return local_path
+                else:
+                    # Incomplete file from previous failed copy - remove it
+                    local_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        # Get or create a lock for this specific shard
+        with _copy_locks_lock:
+            if shard.name not in _copy_locks:
+                _copy_locks[shard.name] = threading.Lock()
+            lock = _copy_locks[shard.name]
+
+        # Only one thread copies at a time; others wait then use the result
+        with lock:
+            # Double-check after acquiring lock (another thread may have copied)
+            if local_path.exists():
+                try:
+                    if local_path.stat().st_size == shard.path.stat().st_size:
+                        return local_path
+                    else:
+                        local_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+            # Atomic copy: write to temp file, then rename
+            try:
+                # Create temp file in same directory (same filesystem for atomic rename)
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=self.local_cache_dir,
+                    prefix=f".{shard.name}.",
+                    suffix=".tmp",
+                )
+                os.close(fd)
+                tmp_path = Path(tmp_path)
+
+                try:
+                    shutil.copy2(shard.path, tmp_path)
+
+                    # Verify copy is complete
+                    if tmp_path.stat().st_size != shard.path.stat().st_size:
+                        tmp_path.unlink(missing_ok=True)
+                        print(f"WARNING: Incomplete copy of {shard.name}, using source")
+                        return shard.path
+
+                    # Atomic rename (on POSIX systems)
+                    tmp_path.rename(local_path)
+                    return local_path
+
+                except Exception:
+                    # Clean up temp file on any failure
+                    tmp_path.unlink(missing_ok=True)
+                    raise
+
+            except Exception as e:
+                print(f"WARNING: Failed to copy {shard.name} to local: {e}")
+                return shard.path
 
     def _load_shard_tensors(self, local_shard_idx: int) -> dict[str, torch.Tensor]:
         """Load tensors from a shard file.
@@ -410,6 +502,39 @@ class ShardAffinityDataset(Dataset):
         future = state.prefetch_executor.submit(self._prefetch_shard, local_shard_idx)
         state.prefetch_futures[local_shard_idx] = future
 
+    def _schedule_background_copy(self, local_shard_idx: int):
+        """Schedule background copy of shard to local storage (without loading to memory).
+
+        This is separate from prefetch - it only copies the file to local NVMe,
+        making subsequent loads much faster. This runs for ALL shards ahead of time.
+        """
+        state = self._worker_state
+        if state is None or state.copy_executor is None:
+            return
+        if local_shard_idx >= len(state.assigned_shards):
+            return
+        if local_shard_idx in state.copy_futures:
+            return
+
+        shard = state.assigned_shards[local_shard_idx]
+
+        # Skip if already local
+        if self.local_cache_dir:
+            local_path = self.local_cache_dir / shard.name
+            if local_path.exists():
+                try:
+                    if local_path.stat().st_size == shard.path.stat().st_size:
+                        return  # Already copied and valid
+                except OSError:
+                    pass
+
+        def do_copy():
+            self._copy_shard_to_local(shard)
+            state.stats["background_copies"] += 1
+
+        future = state.copy_executor.submit(do_copy)
+        state.copy_futures[local_shard_idx] = future
+
     def __len__(self) -> int:
         """Return total number of samples across all shards."""
         return self.total_samples
@@ -420,6 +545,11 @@ class ShardAffinityDataset(Dataset):
         In multi-worker mode, idx is mapped to this worker's local index.
         The DataLoader's sampler distributes indices across workers, but we
         remap them to our local shard assignment.
+
+        Smart prefetching strategy:
+        - When entering a new shard: prefetch next N shards immediately
+        - When 50% through current shard: trigger early prefetch for shard N+1
+        - This ensures prefetch completes before we need the data
         """
         state = self._worker_state
 
@@ -427,16 +557,47 @@ class ShardAffinityDataset(Dataset):
         if state is None:
             return self._getitem_single_process(idx)
 
+        state.access_count += 1
+
         # Map global idx to local index
         local_idx = idx % len(state.local_index)
         local_shard_idx, sample_idx = state.local_index[local_idx]
 
-        # Trigger prefetch when entering a new shard region
+        # Track shard transitions and progress
         if local_shard_idx != state.current_shard_idx:
+            # Entering a new shard
             state.current_shard_idx = local_shard_idx
-            # Prefetch next few shards
+            state.samples_in_current_shard = 0
+
+            # Count total samples in this shard for progress tracking
+            state.total_samples_in_shard = sum(
+                1
+                for s_idx, _ in state.local_index
+                if s_idx == local_shard_idx
+            )
+
+            # Immediately prefetch next few shards
             for offset in range(1, self.prefetch_ahead + 1):
                 self._schedule_prefetch(local_shard_idx + offset)
+
+        state.samples_in_current_shard += 1
+
+        # Early prefetch trigger: when 50% through current shard,
+        # start prefetching one more shard ahead
+        # This gives more time for the copy+load to complete
+        if state.total_samples_in_shard > 0:
+            progress = state.samples_in_current_shard / state.total_samples_in_shard
+            if progress >= 0.5 and progress < 0.55:  # Trigger once around 50%
+                # Prefetch shard that's prefetch_ahead+1 away
+                extra_shard = local_shard_idx + self.prefetch_ahead + 1
+                if extra_shard not in state.prefetch_futures:
+                    self._schedule_prefetch(extra_shard)
+                    state.stats["prefetch_early_triggers"] += 1
+
+                # Also schedule background copy for shards further ahead
+                # This keeps the copy pipeline running ahead of prefetch
+                copy_ahead_shard = local_shard_idx + self.shards_per_worker * 2
+                self._schedule_background_copy(copy_ahead_shard)
 
         # Load shard and extract sample
         tensors = self._load_shard_tensors(local_shard_idx)
@@ -471,6 +632,12 @@ class ShardAffinityDataset(Dataset):
             return {"mode": "single_process"}
 
         state = self._worker_state
+
+        # Count completed background copies
+        completed_copies = sum(
+            1 for f in state.copy_futures.values() if f.done()
+        )
+
         return {
             "worker_id": state.worker_id,
             "num_workers": state.num_workers,
@@ -478,6 +645,13 @@ class ShardAffinityDataset(Dataset):
             "local_samples": len(state.local_index),
             "cached_shards": len(state.shard_cache),
             "pending_prefetches": len(state.prefetch_futures),
+            "pending_copies": len(state.copy_futures) - completed_copies,
+            "access_count": state.access_count,
+            "current_shard_progress": (
+                f"{state.samples_in_current_shard}/{state.total_samples_in_shard}"
+                if state.total_samples_in_shard > 0
+                else "N/A"
+            ),
             **state.stats,
         }
 
@@ -494,11 +668,16 @@ class ShardAffinityDataset(Dataset):
             rng = random.Random(self.seed + epoch * 1000 + state.worker_id)
             rng.shuffle(state.local_index)
             state.current_shard_idx = -1
+            state.samples_in_current_shard = 0
+            state.total_samples_in_shard = 0
 
     def cleanup(self):
         """Clean up resources (call at end of training)."""
-        if self._worker_state is not None and self._worker_state.prefetch_executor:
-            self._worker_state.prefetch_executor.shutdown(wait=False)
+        if self._worker_state is not None:
+            if self._worker_state.prefetch_executor:
+                self._worker_state.prefetch_executor.shutdown(wait=False)
+            if self._worker_state.copy_executor:
+                self._worker_state.copy_executor.shutdown(wait=False)
 
 
 def worker_init_fn(worker_id: int):
@@ -588,17 +767,21 @@ def prewarm_local_cache(
     local_cache_dir: str | Path,
     num_workers: int = 8,
     max_shards: int | None = None,
+    verify: bool = True,
 ) -> int:
     """Copy shards to local NVMe cache before training starts.
 
     This can be run as a separate process before training to ensure
     the local cache is warm when training begins.
 
+    Uses atomic copy (write-to-temp-then-rename) to prevent corrupt files.
+
     Args:
         source_cache_dir: Source directory containing safetensors files
         local_cache_dir: Local cache directory (typically on NVMe)
         num_workers: Number of parallel copy workers
         max_shards: Maximum shards to copy (None for all)
+        verify: Verify file sizes match after copy
 
     Returns:
         Number of shards copied
@@ -609,12 +792,26 @@ def prewarm_local_cache(
     local = Path(local_cache_dir)
     local.mkdir(parents=True, exist_ok=True)
 
+    # Clean up any incomplete temp files from previous runs
+    for tmp_file in local.glob(".*.tmp"):
+        print(f"Removing incomplete temp file: {tmp_file.name}")
+        tmp_file.unlink(missing_ok=True)
+
     shard_files = sorted(source.glob("*.safetensors"))
     if max_shards is not None:
         shard_files = shard_files[:max_shards]
 
-    # Filter out already-copied shards
-    to_copy = [f for f in shard_files if not (local / f.name).exists()]
+    # Filter out already-copied shards (with size verification)
+    to_copy = []
+    for f in shard_files:
+        local_path = local / f.name
+        if local_path.exists():
+            if verify and local_path.stat().st_size != f.stat().st_size:
+                print(f"Removing incomplete file: {f.name}")
+                local_path.unlink()
+                to_copy.append(f)
+        else:
+            to_copy.append(f)
 
     if not to_copy:
         print(f"All {len(shard_files)} shards already in local cache")
@@ -622,17 +819,43 @@ def prewarm_local_cache(
 
     print(f"Pre-warming local cache: {len(to_copy)} shards to copy...")
 
-    def copy_shard(src: Path) -> bool:
+    def copy_shard_atomic(src: Path) -> bool:
+        """Copy shard atomically using temp file + rename."""
+        dst = local / src.name
         try:
-            shutil.copy2(src, local / src.name)
-            return True
+            # Create temp file in same directory for atomic rename
+            fd, tmp_path = tempfile.mkstemp(
+                dir=local,
+                prefix=f".{src.name}.",
+                suffix=".tmp",
+            )
+            os.close(fd)
+            tmp_path = Path(tmp_path)
+
+            try:
+                shutil.copy2(src, tmp_path)
+
+                # Verify copy
+                if verify and tmp_path.stat().st_size != src.stat().st_size:
+                    tmp_path.unlink(missing_ok=True)
+                    print(f"WARNING: Incomplete copy of {src.name}")
+                    return False
+
+                # Atomic rename
+                tmp_path.rename(dst)
+                return True
+
+            except Exception:
+                tmp_path.unlink(missing_ok=True)
+                raise
+
         except Exception as e:
             print(f"WARNING: Failed to copy {src.name}: {e}")
             return False
 
     copied = 0
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = {executor.submit(copy_shard, f): f for f in to_copy}
+        futures = {executor.submit(copy_shard_atomic, f): f for f in to_copy}
         for future in as_completed(futures):
             if future.result():
                 copied += 1
