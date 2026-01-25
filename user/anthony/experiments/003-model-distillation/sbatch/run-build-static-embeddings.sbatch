@@ -35,8 +35,11 @@ scratch_dir=$(realpath ~/scratch/birdclef-2026)
 repo_dir=$(realpath ~/arc/birdclef-2026)
 user_dir=$repo_dir/user/anthony
 
-export UV_PROJECT_ENVIRONMENT=$scratch_dir/.venv
+# Sync venv to local storage for faster package loading
+export UV_PROJECT_ENVIRONMENT=${TMPDIR:-/tmp}/${SLURM_JOB_ID}/.venv
 export HF_HOME=$scratch_dir/.cache/huggingface
+cd $user_dir
+uv sync
 
 # Configuration
 CACHE_DIR=${CACHE_DIR:-$scratch_dir/outputs/exp003-distillation/teacher_cache_500k}
@@ -65,7 +68,7 @@ if [ -n "$MAX_SHARDS" ]; then
     MAX_SHARDS_ARG="--max-shards $MAX_SHARDS"
 fi
 
-uv run python -m birdclef.static_embeddings_from_cache \
+${UV_PROJECT_ENVIRONMENT}/bin/python -m birdclef.static_embeddings_from_cache \
     --cache-dir "$CACHE_DIR" \
     --output-dir "$OUTPUT_DIR" \
     --pca-dim "$PCA_DIM" \
