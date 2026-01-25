@@ -37,28 +37,41 @@ The challenge is creating a scalable pipeline that can handle 4 models × 8 data
 **Implementation**:
 ```
 sbatch/
-├── extract_embeddings/
-│   ├── run.sh           # Controller: submit jobs for model × dataset
-│   └── _job.sh          # Worker: extract embeddings for one combination
-├── train_classifier/
-│   ├── run.sh           # Controller: submit jobs for model × dataset
-│   └── _job.sh          # Worker: train classifier for one combination
-└── common.sh            # Shared functions (venv setup, paths)
+├── common.sh                    # Shared functions (venv setup, paths)
+├── inference/                   # Phase 2A: Direct inference (BirdSet-native)
+│   ├── run.sh                   # Controller: submit jobs for model × dataset
+│   └── _job.sh                  # Worker: run inference for one combination
+├── extract_embeddings/          # Phase 2B: Embedding extraction (external)
+│   ├── run.sh                   # Controller: submit jobs for model × dataset
+│   └── _job.sh                  # Worker: extract embeddings for one combination
+└── train_classifier/            # Phase 2B: Linear probe training (external)
+    ├── run.sh                   # Controller: submit jobs for model × dataset
+    └── _job.sh                  # Worker: train classifier for one combination
 ```
 
-### Decision 2: Two-Stage Pipeline (Extract → Train)
+### Decision 2: Two-Part Evaluation Strategy
 
-**Choice**: Separate embedding extraction (GPU job) from classifier training (GPU job).
+**Choice**: Split evaluation into Part A (direct inference) and Part B (transfer learning).
+
+**Part A - Direct Inference (BirdSet-Native Models)**:
+- BirdSetConvNeXT and BirdSetEfficientNetB1 output BirdSet class predictions directly
+- No training required - just run inference and compute metrics
+- Reproduces BirdSet paper methodology
+
+**Part B - Transfer Learning (External Models)**:
+- BirdNET and Perch use different taxonomies than BirdSet
+- Two options:
+  1. **Taxonomy mapping**: Map model predictions to eBird codes (if mapping exists)
+  2. **Linear probe**: Extract embeddings, train classifier on BirdSet labels
 
 **Rationale**:
-- Embeddings are expensive to compute but reusable
-- Classifier training benefits from GPU acceleration with PyTorch Lightning
-- Enables caching embeddings to disk for reproducibility
-- Allows independent re-running of either stage
+- Avoids unnecessary training for models that already output BirdSet classes
+- Provides flexibility for external models with taxonomy mismatch
+- Allows direct comparison of different evaluation approaches
 
 **Alternatives Considered**:
-- **End-to-end pipeline**: Simpler but recomputes embeddings every time
-- **CPU classifier training**: Slower; GPU with PyTorch Lightning is faster
+- **Linear probe for all models**: Would work but wastes effort for BirdSet-native models
+- **Only direct inference**: Wouldn't work for BirdNET/Perch due to taxonomy mismatch
 
 ### Decision 3: CLI Interface with Flags
 
@@ -191,40 +204,45 @@ class MultiLabelLinearProbe(pl.LightningModule):
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    PHASE 2: EMBEDDING EXTRACTION                │
+│            PHASE 2A: DIRECT INFERENCE (BirdSet-Native)          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  run.sh --model birdnet                                        │
+│  Models: BirdSetConvNeXT, BirdSetEfficientNetB1                │
+│  (These models were trained on BirdSet - no training needed)   │
+│                                                                 │
+│  run.sh --model birdset_convnext                               │
 │      │                                                          │
-│      ├── sbatch _job.sh (MODEL=birdnet, DATASET=HSN)           │
-│      ├── sbatch _job.sh (MODEL=birdnet, DATASET=PER)           │
-│      ├── sbatch _job.sh (MODEL=birdnet, DATASET=NES)           │
+│      ├── sbatch _job.sh (MODEL=birdset_convnext, DATASET=HSN)  │
+│      ├── sbatch _job.sh (MODEL=birdset_convnext, DATASET=PER)  │
 │      └── ... (8 parallel GPU jobs)                             │
 │                                                                 │
 │  Each _job.sh:                                                  │
-│      BirdSet(dataset) → Resample → Model.embed() → .npz        │
+│      BirdSet(test) → Model.predict() → metrics.json            │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   PHASE 3: CLASSIFICATION                       │
+│            PHASE 2B: TRANSFER LEARNING (External Models)        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  run.sh --model birdnet                                        │
-│      │                                                          │
-│      ├── sbatch _job.sh (MODEL=birdnet, DATASET=HSN)           │
-│      ├── sbatch _job.sh (MODEL=birdnet, DATASET=PER)           │
-│      └── ... (8 parallel GPU jobs)                             │
+│  Models: BirdNET, Perch                                        │
+│  (Different taxonomy - need mapping or linear probe)           │
 │                                                                 │
-│  Each _job.sh:                                                  │
-│      Load .npz → Train LinearProbe → Evaluate → metrics.json   │
+│  Option 1: Taxonomy Mapping (if BirdNET→eBird mapping exists)  │
+│      BirdSet(test) → Model.predict() → Map → metrics.json      │
+│                                                                 │
+│  Option 2: Linear Probe (if mapping not viable)                │
+│      Step 1: Extract embeddings                                │
+│          BirdSet(train+test) → Model.embed() → .npz            │
+│      Step 2: Train classifier                                  │
+│          Load .npz → Train LinearProbe → metrics.json          │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   PHASE 4: AGGREGATION                          │
+│                   PHASE 3: AGGREGATION                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  python aggregate_results.py                                    │
@@ -232,7 +250,8 @@ class MultiLabelLinearProbe(pl.LightningModule):
 │      ├── Collect all metrics.json files                        │
 │      ├── Generate results_matrix.csv                           │
 │      ├── Create visualizations                                 │
-│      └── Compare to baselines                                  │
+│      ├── Compare direct inference vs linear probe              │
+│      └── Compare to BirdSet paper baselines                    │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -245,9 +264,11 @@ user/murilo/
 │   ├── __init__.py
 │   ├── data.py                    # BirdSet loading, preprocessing
 │   ├── models.py                  # LinearProbe, metrics (existing)
-│   ├── encoders.py                # Wrapper for bioacoustics-model-zoo
-│   ├── extract_embeddings.py      # CLI: --model --dataset
-│   ├── train_classifier.py        # CLI: --model --dataset
+│   ├── run_inference.py           # CLI: Direct inference for BirdSet-native models
+│   ├── encoders.py                # Embedding extractors for BirdNET/Perch
+│   ├── extract_embeddings.py      # CLI: Embedding extraction for external models
+│   ├── train_classifier.py        # CLI: Linear probe training
+│   ├── taxonomy_mapping.py        # BirdNET → eBird code mapping (if viable)
 │   ├── aggregate_results.py       # Collect and visualize results
 │   └── utils.py                   # Audio resampling, batching
 │
@@ -258,12 +279,15 @@ user/murilo/
 │   ├── config.yaml                # Model configs, paths
 │   ├── sbatch/
 │   │   ├── common.sh              # Shared setup (venv, modules)
-│   │   ├── extract_embeddings/
-│   │   │   ├── run.sh             # Submit extraction jobs
-│   │   │   └── _job.sh            # Single extraction job
-│   │   └── train_classifier/
-│   │       ├── run.sh             # Submit training jobs
-│   │       └── _job.sh            # Single training job
+│   │   ├── inference/             # Phase 2A: Direct inference
+│   │   │   ├── run.sh
+│   │   │   └── _job.sh
+│   │   ├── extract_embeddings/    # Phase 2B: Embedding extraction
+│   │   │   ├── run.sh
+│   │   │   └── _job.sh
+│   │   └── train_classifier/      # Phase 2B: Linear probe training
+│   │       ├── run.sh
+│   │       └── _job.sh
 │   └── artifacts/                 # Output directory (gitignored)
 │
 └── tests/001-birdset-bioacoustics-benchmark/
@@ -299,12 +323,12 @@ get_artifact_dir() {
 }
 ```
 
-### `sbatch/extract_embeddings/run.sh`
+### `sbatch/inference/run.sh` (Phase 2A)
 ```bash
 #!/bin/bash
-# Submit embedding extraction jobs
+# Submit direct inference jobs for BirdSet-native models
 
-MODELS=(birdnet perch birdset_convnext birdset_efficientnet_b1)
+MODELS=(birdset_convnext birdset_efficientnet_b1)
 DATASETS=(HSN PER NES UHH POW SSW SNE NBP)
 
 # Parse flags
@@ -329,8 +353,8 @@ for model in "${MODELS[@]}"; do
         [[ -n "$DATASET_FILTER" && "$dataset" != "$DATASET_FILTER" ]] && continue
 
         # Check if already completed
-        artifact_dir="artifacts/embeddings/$model/$dataset"
-        if [[ -f "$artifact_dir/metadata.json" ]]; then
+        artifact_dir="artifacts/inference/$model/$dataset"
+        if [[ -f "$artifact_dir/metrics.json" ]]; then
             echo "SKIP: $model/$dataset (already completed)"
             continue
         fi
@@ -338,8 +362,8 @@ for model in "${MODELS[@]}"; do
         echo "SUBMIT: $model/$dataset"
         if [[ "$DRY_RUN" == "false" ]]; then
             sbatch \
-                --job-name="embed-$model-$dataset" \
-                --output="artifacts/logs/embed-$model-$dataset-%j.log" \
+                --job-name="infer-$model-$dataset" \
+                --output="artifacts/logs/infer-$model-$dataset-%j.log" \
                 --export=ALL,MODEL="$model",DATASET="$dataset" \
                 _job.sh
         fi

@@ -54,10 +54,17 @@ The BirdSet benchmark (arXiv:2403.10380) provides standardized evaluation for bi
 
 ### Approach
 
-Two-stage pipeline with modular SLURM job scripts:
+Two-part evaluation with modular SLURM job scripts:
 
-1. **Embedding Extraction** (GPU): Extract embeddings from pre-trained models for all BirdSet samples
-2. **Linear Probing** (GPU): Train PyTorch Lightning classifier on embeddings, evaluate with cmAP
+**Part A - Direct Inference (No Training)**:
+- BirdSetConvNeXT and BirdSetEfficientNetB1 were trained directly on BirdSet
+- Run inference to get class predictions, compute cmAP
+- Reproduces/validates BirdSet paper results
+
+**Part B - Transfer Learning (External Models)**:
+- BirdNET and Perch are external pre-trained models with different taxonomies
+- Option 1: **Linear probe** - Extract embeddings, train classifier on BirdSet labels
+- Option 2: **Taxonomy mapping** - Map BirdNET predictions to eBird codes (if mapping exists)
 
 ### Models
 
@@ -102,27 +109,30 @@ All 8 BirdSet evaluation datasets:
 - Test model instantiation for all 4 models
 - Create pytest test suite
 
-**Phase 2: Embedding Extraction Pipeline**
-1. Implement `extract_embeddings.py` script with CLI flags:
-   - `--model`: Model name from bioacoustics-model-zoo
+**Phase 2A: Direct Inference (BirdSet-Native Models)**
+1. Implement `run_inference.py` script with CLI flags:
+   - `--model`: `birdset_convnext` or `birdset_efficientnet_b1`
    - `--dataset`: BirdSet dataset code (HSN, PER, etc.)
-2. Create SLURM job scripts (`sbatch/_job.sh`, `sbatch/run.sh`)
-3. Validate on single model + single dataset (BirdNET + HSN)
-4. Scale to all models × all datasets (32 embedding jobs)
+2. Create SLURM job scripts (`sbatch/inference/run.sh`, `_job.sh`)
+3. Run inference directly on test data (no training needed)
+4. Compute cmAP, F1, Top-K metrics
+5. Scale to all datasets (2 models × 8 datasets = 16 runs)
 
-**Phase 3: Classification Pipeline**
-1. Implement `train_classifier.py` script with CLI flags:
-   - `--model`: Model name (to locate embeddings)
-   - `--dataset`: Dataset code (to locate embeddings)
-2. Train PyTorch Lightning linear probe on extracted embeddings
-3. Evaluate and save metrics (cmAP, F1, Top-K)
-4. Validate on single model + single dataset
-5. Scale to all embeddings (32 classification jobs)
+**Phase 2B: Transfer Learning (External Models)**
+1. Research taxonomy mapping (BirdNET → eBird codes)
+   - If viable: implement direct inference with prediction mapping
+   - If not viable: fall back to linear probe approach
+2. If using linear probe:
+   - Implement `extract_embeddings.py` for BirdNET/Perch
+   - Implement `train_classifier.py` for linear probe training
+   - Extract embeddings, train classifiers, evaluate
+3. Scale to all datasets (2 models × 8 datasets = 16 runs)
 
-**Phase 4: Results Aggregation**
+**Phase 3: Results Aggregation**
 1. Collect results from all 32 model × dataset combinations
 2. Generate summary tables and visualizations
 3. Compare to BirdSet paper baselines
+4. Analyze: direct inference vs linear probe approaches
 
 ### Variables
 
