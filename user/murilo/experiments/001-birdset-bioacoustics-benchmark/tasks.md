@@ -44,8 +44,10 @@
   - [x] `user/murilo/src/birdset_benchmark/__init__.py`
   - [x] Fixed git URL dependency (moved to `[tool.uv.sources]`)
   - [x] Added `ai-edge-litert` for TensorFlow Lite (BirdNET requirement)
+  - [x] Added `tensorflow==2.17` and `tensorflow-hub` for Perch model support
+  - [x] Made `pytorch-lightning` and `torchmetrics` explicit dependencies
   - [x] Added `pytest` to dependencies
-  - [x] Created comprehensive pytest test suite (19 tests passing)
+  - [x] Created comprehensive pytest test suite (28 tests total)
   - [ ] Add to main project `pyproject.toml` as optional dependency (if needed)
 
 - [x] 1.2 Install and test bioacoustics-model-zoo
@@ -53,7 +55,9 @@
   - [x] Test `import bmz; bmz.list_models()` works (13 models available)
   - [x] Verify BirdNET can be instantiated
   - [x] Test BirdNET embedding extraction (1024-dim embeddings working)
-  - [x] Created pytest tests: `tests/test_models.py`
+  - [x] Verify Perch model loading (requires TensorFlow)
+  - [x] Test Perch embedding extraction (1280-dim embeddings)
+  - [x] Created pytest tests: `tests/test_models.py` (6 tests: environment, list, BirdNET x2, Perch x2)
 
 - [x] 1.2b Create PyTorch Lightning classifiers (NEW)
   - [x] Created `src/birdset_benchmark/models.py`
@@ -83,14 +87,17 @@
 - [x] 1.4 Create experiment directory structure
   - [x] `user/murilo/experiments/001-birdset-bioacoustics-benchmark/` (base directory)
   - [x] `config.yaml` with all model specs and SLURM settings
-  - [x] `test_setup.sh` for interactive environment testing (replaced by pytest)
+  - [x] `test_setup.sh` for interactive environment setup and validation
+    - Steps 1-7: Environment setup (GPU, uv, venv, dependencies, PyTorch+CUDA)
+    - Step 8: Run pytest test suite for comprehensive validation
+    - Single script provides complete setup + verification
   - [x] `user/murilo/tests/001-birdset-bioacoustics-benchmark/` - Comprehensive test suite:
     - `test_environment.py` - GPU, CUDA, PyTorch validation (5 tests)
-    - `test_models.py` - BirdNET loading and embeddings (4 tests)
-    - `test_classifiers.py` - PyTorch Lightning models (9 tests)
-    - `test_datasets.py` - BirdSet dataset loading (6 tests)
-    - Tests organized by experiment number for better modularity
-    - Shared pytest.ini at `user/murilo/tests/` level
+    - `test_models.py` - BirdNET and Perch loading/embeddings (6 tests)
+    - `test_classifiers.py` - PyTorch Lightning models (10 tests)
+    - `test_datasets.py` - BirdSet dataset loading (7 tests)
+    - **Total: 28 tests** organized by experiment number for modularity
+    - Shared pytest.ini and common fixtures at `user/murilo/tests/` level
   - [x] `sbatch/` directory for SLURM job scripts
   - [x] `artifacts/` directory for results and outputs
 
@@ -297,14 +304,14 @@
 
 **Estimated Timeline**:
 - Phase 0: ✅ Complete (2-3 hours - planning and documentation)
-- Phase 1: ✅ Mostly complete (3-4 hours - package setup, testing, PyTorch models)
-  - 1.1, 1.2, 1.2b: Done
-  - 1.3, 1.4: Remaining (~1 hour)
+- Phase 1: ✅ Complete (4-5 hours - package setup, TensorFlow/PyTorch, testing, classifiers)
+  - All tasks 1.1, 1.2, 1.2b, 1.3, 1.4: Done
+  - 28 pytest tests passing
 - Phase 2: TODO (3-5 hours - data pipeline)
 - Phase 3-4: TODO (6-8 hours - model wrappers, embedding extraction)
 - Phase 5: TODO (2-4 hours - linear probe training with PyTorch Lightning)
 - Phase 6-7: TODO (4-6 hours - analysis, documentation)
-- **Remaining**: 13-20 hours of development + GPU job time (~14 hours)
+- **Remaining**: 15-23 hours of development + GPU job time (~14 hours)
 
 **Dependencies**:
 - BirdSet dataset availability on HuggingFace
