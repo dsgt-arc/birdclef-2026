@@ -9,6 +9,10 @@ requires-python = ">=3.11"
 dependencies = [
     # Core ML/DL
     "torch>=2.0.0",
+    "pytorch-lightning>=2.0.0",
+    "torchmetrics>=1.0.0",
+    "tensorflow==2.17",      # For Perch and other TF-based models
+    "tensorflow-hub",        # TensorFlow Hub for pretrained models
     "numpy>=1.24.0",
 
     # Data handling
