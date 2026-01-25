@@ -160,6 +160,13 @@ def parse_args() -> argparse.Namespace:
         help="Directory for profiler output (default: output_dir/profiler)",
     )
     parser.add_argument(
+        "--profiler",
+        type=str,
+        choices=["simple", "advanced", "pytorch"],
+        default="simple",
+        help="Profiler type: simple (timing), advanced (cProfile), pytorch (CUDA traces)",
+    )
+    parser.add_argument(
         "--fast-dev-run",
         action="store_true",
         help="Run quick sanity check (1 batch train + val)",
@@ -308,8 +315,6 @@ def main() -> None:
     # Set up profiler if requested
     profiler = None
     if args.profile:
-        from pytorch_lightning.profilers import PyTorchProfiler
-
         profile_dir = args.profile_dir
         if profile_dir is None:
             profile_dir = output_dir / "profiler"
@@ -317,25 +322,46 @@ def main() -> None:
             profile_dir = Path(profile_dir)
         profile_dir.mkdir(parents=True, exist_ok=True)
 
-        profiler = PyTorchProfiler(
-            dirpath=profile_dir,
-            filename=f"{args.student}_profile",
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ],
-            schedule=torch.profiler.schedule(
-                wait=1,
-                warmup=1,
-                active=3,
-                repeat=2,
-            ),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(str(profile_dir)),
-            record_shapes=True,
-            profile_memory=True,
-            with_stack=True,
-        )
-        print(f"\nProfiler enabled - output: {profile_dir}")
+        if args.profiler == "simple":
+            from pytorch_lightning.profilers import SimpleProfiler
+
+            profiler = SimpleProfiler(
+                dirpath=profile_dir,
+                filename=f"fit-{args.student}_profile",
+            )
+            print(f"\nSimpleProfiler enabled - output: {profile_dir}")
+
+        elif args.profiler == "advanced":
+            from pytorch_lightning.profilers import AdvancedProfiler
+
+            profiler = AdvancedProfiler(
+                dirpath=profile_dir,
+                filename=f"fit-{args.student}_profile",
+            )
+            print(f"\nAdvancedProfiler enabled - output: {profile_dir}")
+
+        else:  # pytorch
+            from pytorch_lightning.profilers import PyTorchProfiler
+
+            profiler = PyTorchProfiler(
+                dirpath=profile_dir,
+                filename=f"{args.student}_profile",
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                    torch.profiler.ProfilerActivity.CUDA,
+                ],
+                schedule=torch.profiler.schedule(
+                    wait=1,
+                    warmup=1,
+                    active=3,
+                    repeat=2,
+                ),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(str(profile_dir)),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+            )
+            print(f"\nPyTorchProfiler enabled - output: {profile_dir}")
 
     # Create trainer
     trainer = pl.Trainer(
