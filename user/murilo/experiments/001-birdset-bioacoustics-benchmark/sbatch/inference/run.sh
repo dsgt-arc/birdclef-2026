@@ -11,6 +11,9 @@
 #   # Run all models on all datasets (16 jobs)
 #   bash sbatch/inference/run.sh
 #
+#   # Test mode: run on subset of each dataset (results saved to HSN_limit_100, etc.)
+#   bash sbatch/inference/run.sh --limit 100
+#
 #   # Dry run (preview commands without submitting)
 #   bash sbatch/inference/run.sh --dry-run
 #
@@ -29,6 +32,7 @@ source "${SCRIPT_DIR}/../common.sh"
 
 MODEL=""
 DATASET=""
+LIMIT=""
 DRY_RUN=false
 FORCE=false
 
@@ -40,6 +44,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dataset)
             DATASET="$2"
+            shift 2
+            ;;
+        --limit)
+            LIMIT="$2"
             shift 2
             ;;
         --dry-run)
@@ -56,6 +64,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --model MODEL      Model name (birdset_convnext, birdset_efficientnet_b1)"
             echo "  --dataset DATASET  Dataset code (HSN, PER, NES, UHH, POW, SSW, SNE, NBP)"
+            echo "  --limit N          Run on subset of N samples (for testing end-to-end)"
             echo "  --dry-run          Preview commands without submitting jobs"
             echo "  --force            Re-run even if results already exist"
             echo "  -h, --help         Show this help message"
@@ -64,6 +73,7 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --model birdset_convnext --dataset HSN"
             echo "  $0 --model birdset_convnext  # All datasets"
             echo "  $0                            # All models and datasets"
+            echo "  $0 --limit 100                # Test mode on all (saves to HSN_limit_100, etc.)"
             echo "  $0 --dry-run                  # Preview all jobs"
             exit 0
             ;;
@@ -93,6 +103,21 @@ else
 fi
 
 # ============================================================================
+# Helper: Get dataset path (with optional limit suffix)
+# ============================================================================
+
+get_dataset_path() {
+    local dataset="$1"
+    local limit="${2:-}"
+
+    if [[ -n "${limit}" ]]; then
+        echo "${dataset}_limit_${limit}"
+    else
+        echo "${dataset}"
+    fi
+}
+
+# ============================================================================
 # Submit Jobs
 # ============================================================================
 
@@ -104,6 +129,9 @@ echo "BirdSet Inference Job Launcher"
 echo "=============================="
 echo "Models: ${MODELS_TO_RUN[*]}"
 echo "Datasets: ${DATASETS_TO_RUN[*]}"
+if [[ -n "${LIMIT}" ]]; then
+    echo "Limit: ${LIMIT} samples (test mode)"
+fi
 echo "Total combinations: $((${#MODELS_TO_RUN[@]} * ${#DATASETS_TO_RUN[@]}))"
 echo ""
 
@@ -112,23 +140,32 @@ mkdir -p "${EXPERIMENT_DIR}/logs"
 
 for model in "${MODELS_TO_RUN[@]}"; do
     for dataset in "${DATASETS_TO_RUN[@]}"; do
+        # Get the dataset path (with limit suffix if applicable)
+        dataset_path=$(get_dataset_path "${dataset}" "${LIMIT}")
+
         # Check if already complete (skip unless --force)
-        if [[ "${FORCE}" == "false" ]] && check_inference_complete "${model}" "${dataset}"; then
-            echo "[SKIP] ${model} on ${dataset} - results already exist"
-            ((SKIPPED++))
+        if [[ "${FORCE}" == "false" ]] && check_inference_complete "${model}" "${dataset_path}"; then
+            echo "[SKIP] ${model} on ${dataset_path} - results already exist"
+            SKIPPED=$((SKIPPED + 1))
             continue
         fi
 
+        # Build export variables
+        EXPORT_VARS="MODEL=${model},DATASET=${dataset}"
+        if [[ -n "${LIMIT}" ]]; then
+            EXPORT_VARS="${EXPORT_VARS},LIMIT=${LIMIT}"
+        fi
+
         # Build sbatch command
-        CMD="sbatch --export=MODEL=${model},DATASET=${dataset} ${JOB_SCRIPT}"
+        CMD="sbatch --export=${EXPORT_VARS} ${JOB_SCRIPT}"
 
         if [[ "${DRY_RUN}" == "true" ]]; then
             echo "[DRY-RUN] ${CMD}"
         else
-            echo "[SUBMIT] ${model} on ${dataset}"
+            echo "[SUBMIT] ${model} on ${dataset_path}"
             # Change to experiment directory so logs go to the right place
             (cd "${EXPERIMENT_DIR}" && ${CMD})
-            ((SUBMITTED++))
+            SUBMITTED=$((SUBMITTED + 1))
         fi
     done
 done

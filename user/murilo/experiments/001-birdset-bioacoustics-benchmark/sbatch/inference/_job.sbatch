@@ -14,12 +14,14 @@
 #
 # Usage:
 #   sbatch --export=MODEL=birdset_convnext,DATASET=HSN sbatch/inference/_job.sbatch
+#   sbatch --export=MODEL=birdset_convnext,DATASET=HSN,LIMIT=100 sbatch/inference/_job.sbatch
 #
 # Environment variables:
 #   MODEL    - Model name: birdset_convnext, birdset_efficientnet_b1
 #   DATASET  - Dataset code: HSN, PER, NES, UHH, POW, SSW, SNE, NBP
+#   LIMIT    - (Optional) Number of samples to use (for testing)
 #
-# Outputs saved to: artifacts/inference/{model}/{dataset}/
+# Outputs saved to: artifacts/inference/{model}/{dataset}/ (or {dataset}_limit_{N}/ if LIMIT is set)
 #   - metrics.json: cmAP, F1, Top-K accuracy, throughput
 #   - predictions.npz: y_pred and y_true arrays
 
@@ -40,12 +42,23 @@ if [[ -z "${DATASET:-}" ]]; then
     exit 1
 fi
 
+# Construct dataset path (with optional limit suffix)
+if [[ -n "${LIMIT:-}" ]]; then
+    DATASET_PATH="${DATASET}_limit_${LIMIT}"
+else
+    DATASET_PATH="${DATASET}"
+fi
+
 # Print job info
-print_job_info "BirdSet Inference: ${MODEL} on ${DATASET}"
+print_job_info "BirdSet Inference: ${MODEL} on ${DATASET_PATH}"
 
 echo "Configuration:"
 echo "  Model: ${MODEL}"
 echo "  Dataset: ${DATASET}"
+if [[ -n "${LIMIT:-}" ]]; then
+    echo "  Limit: ${LIMIT} samples"
+fi
+echo "  Output path: ${DATASET_PATH}"
 echo "  Batch size: ${BATCH_SIZE:-16}"
 echo "  Num workers: ${NUM_WORKERS:-4}"
 echo ""
@@ -57,19 +70,27 @@ setup_environment
 # Start GPU monitoring
 start_gpu_monitoring
 
-# Get output directory
-OUTPUT_DIR=$(get_inference_output_dir "${MODEL}" "${DATASET}")
+# Get output directory (use DATASET_PATH which includes limit suffix)
+OUTPUT_DIR=$(get_inference_output_dir "${MODEL}" "${DATASET_PATH}")
 echo "Output directory: ${OUTPUT_DIR}"
 echo ""
 
+# Build inference command
+INFERENCE_CMD="uv run python -m birdset_benchmark.run_inference \
+    --model ${MODEL} \
+    --dataset ${DATASET} \
+    --batch-size ${BATCH_SIZE:-16} \
+    --num-workers ${NUM_WORKERS:-4} \
+    --output-dir ${OUTPUT_DIR}"
+
+# Add subset-size flag if LIMIT is set
+if [[ -n "${LIMIT:-}" ]]; then
+    INFERENCE_CMD="${INFERENCE_CMD} --subset-size ${LIMIT}"
+fi
+
 # Run inference
 echo "Starting inference..."
-uv run python -m birdset_benchmark.run_inference \
-    --model "${MODEL}" \
-    --dataset "${DATASET}" \
-    --batch-size "${BATCH_SIZE:-16}" \
-    --num-workers "${NUM_WORKERS:-4}" \
-    --output-dir "${OUTPUT_DIR}"
+eval "${INFERENCE_CMD}"
 
 echo ""
 echo "=============================================="
