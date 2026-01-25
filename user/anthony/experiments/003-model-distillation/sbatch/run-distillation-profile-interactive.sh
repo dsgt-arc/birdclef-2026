@@ -67,16 +67,16 @@ echo "  Output dir: $output_dir"
 # Run training with py-spy (wall-clock profiling) and PyTorch profiler
 # py-spy flags:
 #   -s: profile subprocesses (DataLoader workers)
-#   -n: profile native extensions (C/Cython)
 #   -t: show thread IDs
 #   --idle: include idle threads (shows I/O waits)
+# Note: --native (-n) omitted - too expensive with many subprocesses
 echo ""
 echo "Starting py-spy + PyTorch profiler..."
 
 ${UV_PROJECT_ENVIRONMENT}/bin/py-spy record \
     -o "$output_dir/profile.svg" \
     -f speedscope \
-    -s -n -t --idle \
+    -s -t --idle \
     --rate 50 \
     -- ${UV_PROJECT_ENVIRONMENT}/bin/python \
     $user_dir/experiments/003-model-distillation/sbatch/train_lightning.py \
