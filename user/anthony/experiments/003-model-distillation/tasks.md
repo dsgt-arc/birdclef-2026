@@ -84,7 +84,18 @@
   - Comparison: Static=36%, Pilot=52%, **Extended=56%**, LightCNN=56%, BEATs=84%
 - [ ] 4.6 Benchmark inference speed of students on CPU
 
-## 5. Analysis
-- [ ] 5.1 Compare Mamba vs CNN vs Transformer (Accuracy vs Speed)
-- [ ] 5.2 Analyze impact of distillation vs direct training (Exp 002 comparison)
-- [ ] 5.3 Document findings in `results.md`
+## 5. V2 Student Methodology (Static Embeddings + Teacher Cache)
+- [~] 5.1 Profile v2 distillation pipeline performance
+  - SLURM job 3423012 submitted (gpu-rtx6000, inferno QoS) - **Pending**
+  - Uses `teacher_cache_500k_v2` + `static_embeddings_500k_v2`
+  - Script: `run-distillation-profile-interactive.sh`
+- [ ] 5.2 Run full v2 distillation training (convnext-small)
+  - Script: `run-distillation-500k.sbatch` (updated for v2)
+- [ ] 5.3 Evaluate v2 student on ESC-50
+  - Compare against v1 extended model (55.90% accuracy)
+- [ ] 5.4 Benchmark v2 inference speed on CPU
+
+## 6. Analysis
+- [ ] 6.1 Compare Mamba vs CNN vs Transformer (Accuracy vs Speed)
+- [ ] 6.2 Analyze impact of distillation vs direct training (Exp 002 comparison)
+- [ ] 6.3 Document findings in `results.md`
