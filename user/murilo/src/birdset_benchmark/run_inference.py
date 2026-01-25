@@ -5,24 +5,42 @@ This script runs inference with models that were trained on BirdSet data
 (BirdSetConvNeXT, BirdSetEfficientNetB1) and can directly predict BirdSet species.
 
 Usage:
+    # Basic inference on a single dataset
     python -m birdset_benchmark.run_inference --model birdset_convnext --dataset HSN
+
+    # Custom batch size for better GPU utilization
     python -m birdset_benchmark.run_inference --model birdset_efficientnet_b1 --dataset PER --batch-size 32
+
+    # Test on small subset before full run
+    python -m birdset_benchmark.run_inference --model birdset_convnext --dataset HSN --subset-size 100
+
+    # Custom output directory
+    python -m birdset_benchmark.run_inference --model birdset_convnext --dataset HSN --output-dir ./my_results
+
+    # Use different split (default is test_5s)
+    python -m birdset_benchmark.run_inference --model birdset_convnext --dataset HSN --split test_10s
+
+Available models: birdset_convnext, birdset_efficientnet_b1
+Available datasets: HSN, PER, NES, UHH, POW, SSW, SNE, NBP
+
+Outputs:
+    - metrics.json: cmAP, F1 scores, Top-K accuracy, throughput
+    - predictions.npz: y_pred and y_true arrays for further analysis
 """
 
 import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional, Dict
 
+import bioacoustics_model_zoo as bmz
 import numpy as np
 import torch
 import typer
 from rich.console import Console
-from sklearn.metrics import f1_score, average_precision_score
+from sklearn.metrics import average_precision_score, f1_score
 
-import bioacoustics_model_zoo as bmz
-from birdset_benchmark.data import load_birdset_dataset, get_num_classes, BIRDSET_DATASETS
+from birdset_benchmark.data import BIRDSET_DATASETS, get_num_classes, load_birdset_dataset
 
 # Setup logging
 logging.basicConfig(
@@ -46,7 +64,7 @@ def compute_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     num_classes: int,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Compute evaluation metrics.
 
     Args:
@@ -94,8 +112,8 @@ def main(
     dataset: str = typer.Option(..., help="Dataset code (HSN, PER, NES, UHH, POW, SSW, SNE, NBP)"),
     split: str = typer.Option("test_5s", help="Dataset split"),
     batch_size: int = typer.Option(16, help="Batch size for inference"),
-    subset_size: Optional[int] = typer.Option(None, help="Use subset for testing (e.g., 100)"),
-    output_dir: Optional[Path] = typer.Option(None, help="Output directory for results"),
+    subset_size: int | None = typer.Option(None, help="Use subset for testing (e.g., 100)"),
+    output_dir: Path | None = typer.Option(None, help="Output directory for results"),
 ):
     """Run inference with BirdSet-native models."""
 
@@ -130,7 +148,9 @@ def main(
     # Check GPU
     if torch.cuda.is_available():
         console.print(f"GPU: {torch.cuda.get_device_name(0)}")
-        console.print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB\n")
+        console.print(
+            f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB\n"
+        )
     else:
         console.print("[yellow]No GPU available, using CPU[/yellow]\n")
 
@@ -163,7 +183,7 @@ def main(
 
     # Get species mapping from dataset
     console.print("[bold]Building species mapping...[/bold]")
-    multilabel_feature = hf_dataset.features['ebird_code_multilabel']
+    multilabel_feature = hf_dataset.features["ebird_code_multilabel"]
     species_names = multilabel_feature.feature.names
     species_to_idx = {species: idx for idx, species in enumerate(species_names)}
     console.print(f"✓ Mapped {len(species_to_idx)} species\n")
