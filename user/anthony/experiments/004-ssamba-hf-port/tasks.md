@@ -1,26 +1,63 @@
 # Tasks
 
+## 0. Infrastructure
+- [x] 0.1 Create sbatch/logs/ directory structure
+- [x] 0.2 Create sbatch/download-weights.sbatch
+- [x] 0.3 Create sbatch/setup-original-ssamba.sbatch
+- [x] 0.4 Create sbatch/run-verification.sbatch
+- [x] 0.5 Create scripts/extract_original_embeddings.py
+- [x] 0.6 Create scripts/extract_hf_embeddings.py
+- [x] 0.7 Create scripts/verify_numerical_equivalence.py
+
 ## 1. Setup
 - [x] 1.1 Initialize `ssamba_hf` subpackage with `uv init`
-- [ ] 1.2 Download SSAMBA pretrained checkpoint (amba_small_400.pth)
-- [ ] 1.3 Inspect checkpoint structure and document all weight keys
-- [ ] 1.4 Verify HuggingFace transformers version has MambaMixer
+- [x] 1.2 Download SSAMBA pretrained checkpoint (ssamba_small_400.pth)
+  - Checkpoint at: `~/scratch/birdclef-2026/checkpoints/ssamba/ssamba_small_400.pth`
+- [x] 1.3 Inspect checkpoint structure and document all weight keys
+  - **Finding**: Uses bidirectional Mamba with `_b` suffix weights (see section 2B)
+- [x] 1.4 Verify HuggingFace transformers version has MambaMixer
 - [ ] 1.5 Create test audio file for verification
 
 ## 2. Implementation
-- [ ] 2.1 Create `ssamba_hf/config.py` with `SSAMBAConfig`
-- [ ] 2.2 Create `ssamba_hf/layers.py` with `RMSNorm`, `AudioPatchEmbed`
-- [ ] 2.3 Create `ssamba_hf/mamba.py` with `BidirectionalMambaBlock`
-- [ ] 2.4 Create `ssamba_hf/model.py` with `SSAMBAModel`
-- [ ] 2.5 Implement `convert_ssamba_weights()` in `ssamba_hf/convert.py`
-- [ ] 2.6 Add `get_embeddings()` method for feature extraction
-- [ ] 2.7 Export public API in `ssamba_hf/__init__.py`
+- [x] 2.1 Create `ssamba_hf/config.py` with `SSAMBAConfig`
+- [x] 2.2 Create `ssamba_hf/layers.py` with `RMSNorm`, `AudioPatchEmbed`
+- [ ] ~~2.3 Create `ssamba_hf/mamba.py` with `BidirectionalMambaBlock`~~ **NEEDS UPDATE**
+  - HF MambaMixer is unidirectional only
+  - Original SSAMBA has bidirectional weights: `A_b_log`, `D_b`, `conv1d_b`, `x_proj_b`, `dt_proj_b`
+- [x] 2.4 Create `ssamba_hf/model.py` with `SSAMBAModel`
+- [ ] ~~2.5 Implement `convert_ssamba_weights()` in `ssamba_hf/convert.py`~~ **NEEDS UPDATE**
+  - Current: 245 weights loaded
+  - Missing: `in_proj.bias`, `out_proj.bias` (48 weights)
+  - Unexpected: `_b` weights (bidirectional), `norm.bias` (168+ weights)
+- [x] 2.6 Add `get_embeddings()` method for feature extraction
+- [x] 2.7 Export public API in `ssamba_hf/__init__.py`
+
+## 2B. Bidirectional Mamba Support (NEW - BLOCKED)
+The original SSAMBA uses a custom bidirectional Mamba from Vision Mamba (Vim), not standard Mamba:
+- Each layer has separate forward and backward parameters (`_b` suffix)
+- HuggingFace's MambaMixer only supports unidirectional Mamba
+
+**Options:**
+1. **Pure PyTorch reimplementation**: Implement bidirectional Mamba from scratch
+2. **Use existing weights partially**: Current approach (works but not numerically equivalent)
+3. **Wait for HF support**: Monitor transformers library for bidirectional support
+
+Tasks:
+- [ ] 2B.1 Analyze SSAMBA bidirectional Mamba architecture from Vim/vim/models_mamba.py
+- [ ] 2B.2 Implement custom BidirectionalMamba class (not using HF MambaMixer)
+- [ ] 2B.3 Update weight conversion to map all checkpoint keys correctly
+- [ ] 2B.4 Verify forward pass produces same shape outputs
 
 ## 3. Verification
-- [ ] 3.1 Load original SSAMBA on GPU and extract embeddings for test audio
-- [ ] 3.2 Load ported SSAMBA on CPU and extract embeddings for same audio
-- [ ] 3.3 Compare outputs: cosine similarity, max diff, mean diff
-- [ ] 3.4 Debug any discrepancies in layer-by-layer comparison
+- [ ] 3.1 Set up original SSAMBA environment
+  - **BLOCKED**: numpy/scipy/triton compatibility issues with mamba_ssm
+  - Challenges: mamba_ssm triton ops require specific setup
+  - Run: `cd sbatch && sbatch setup-original-ssamba.sbatch`
+- [ ] 3.2 Load original SSAMBA on GPU and extract embeddings for test audio
+- [ ] 3.3 Load ported SSAMBA on CPU and extract embeddings for same audio
+- [ ] 3.4 Compare outputs: cosine similarity, max diff, mean diff
+  - Run: `cd sbatch && sbatch run-verification.sbatch`
+- [ ] 3.5 Debug any discrepancies in layer-by-layer comparison
 
 ## 4. Benchmarking
 - [ ] 4.1 Measure CPU inference time (single sample)
@@ -32,3 +69,46 @@
 - [ ] 5.2 Document performance characteristics
 - [ ] 5.3 Write results.md with findings
 - [ ] 5.4 Decide if ready for integration into main codebase
+
+## Current Status (2026-01-25)
+
+**Working:**
+- HF port runs and produces embeddings
+- Checkpoint loading works (partial - 245/413 weights)
+- Forward pass produces correct shape: `(batch, 384)`
+
+**Blocked:**
+- Original SSAMBA environment setup (dependency conflicts)
+- Full weight loading (bidirectional weights not supported)
+- Numerical verification (depends on above)
+
+**Test Results:**
+```
+Model created: 23.5M params
+Input shape: torch.Size([2, 1024, 128])
+Output shape: torch.Size([2, 384])
+Output mean: 0.0038, std: 1.1448
+```
+
+## Verification Workflow
+
+1. Download weights:
+   ```bash
+   cd user/anthony/experiments/004-ssamba-hf-port/sbatch
+   sbatch download-weights.sbatch
+   ```
+
+2. Set up original SSAMBA environment:
+   ```bash
+   sbatch setup-original-ssamba.sbatch
+   ```
+
+3. Run verification:
+   ```bash
+   sbatch run-verification.sbatch
+   ```
+
+4. Check results:
+   ```bash
+   cat ~/scratch/birdclef-2026/exp004-ssamba-hf/verification/comparison_report.json
+   ```

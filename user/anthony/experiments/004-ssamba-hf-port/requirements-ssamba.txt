@@ -1,0 +1,29 @@
+# SSAMBA dependencies with CUDA 12.1 (GCC 12 compatible)
+# Using PyTorch 2.2.2 which supports GCC 12+
+
+# Core dependencies - CUDA 12.1 (compatible with cluster's GCC 12)
+torch==2.2.2
+torchaudio==2.2.2
+torchvision==0.17.2
+
+# DO NOT include mamba_ssm or causal_conv1d here
+# They will be installed from Vim's source to ensure bidirectional support
+
+# Model dependencies
+timm==0.4.12  # Older timm for compatibility
+einops==0.7.0
+
+# Numerical
+numpy>=1.22,<1.27  # Compatible range
+scipy>=1.10
+scikit-learn>=1.0
+
+# Visualization
+matplotlib>=3.6
+
+# Utilities
+pyyaml
+pillow
+huggingface-hub>=0.19
+safetensors
+transformers>=4.35,<4.50  # Avoid incompatible newer versions
