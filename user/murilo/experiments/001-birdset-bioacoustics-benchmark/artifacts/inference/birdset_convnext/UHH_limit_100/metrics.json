@@ -1,0 +1,21 @@
+{
+  "cmap": 0.52016871768933,
+  "num_classes_with_positives": 14,
+  "auroc": 0.7916361873855297,
+  "num_classes_auroc": 14,
+  "f1_micro": 0.06837606837606838,
+  "f1_macro": 0.024915824915824916,
+  "top1_accuracy": 0.29,
+  "top5_accuracy": 0.52,
+  "model": "birdset_convnext",
+  "dataset": "UHH",
+  "split": "test_5s",
+  "num_samples": 100,
+  "num_samples_requested": 100,
+  "num_samples_skipped": 0,
+  "num_classes": 27,
+  "inference_time_sec": 17.053890228271484,
+  "throughput_samples_per_sec": 5.86376472825084,
+  "batch_size": 16,
+  "num_workers": 4
+}

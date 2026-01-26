@@ -1,0 +1,21 @@
+{
+  "cmap": 0.3876828193174097,
+  "num_classes_with_positives": 60,
+  "auroc": 0.7436022080414126,
+  "num_classes_auroc": 60,
+  "f1_micro": 0.08870967741935484,
+  "f1_macro": 0.03288478377487665,
+  "top1_accuracy": 0.37,
+  "top5_accuracy": 0.59,
+  "model": "birdset_efficientnet_b1",
+  "dataset": "PER",
+  "split": "test_5s",
+  "num_samples": 100,
+  "num_samples_requested": 100,
+  "num_samples_skipped": 0,
+  "num_classes": 132,
+  "inference_time_sec": 1.785811424255371,
+  "throughput_samples_per_sec": 55.99695390105198,
+  "batch_size": 16,
+  "num_workers": 4
+}

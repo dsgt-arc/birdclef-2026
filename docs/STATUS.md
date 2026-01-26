@@ -47,9 +47,10 @@ See [concepts/research-leads.md](concepts/research-leads.md) for full list.
 
 | ID | Name | Status | Result |
 |----|------|--------|--------|
-| 001 | [Encoder Benchmark](../user/anthony/experiments/001-encoder-benchmark/) | Complete | BEATs 95.8%, EAT+LoRA 94.6% |
-| 002 | [BEATs Inference Optimization](../user/anthony/experiments/002-beats-inference-optimization/) | Complete | **Rejected** - 32x speedup, 63% best accuracy (21% gap) |
-| 003 | [Model Distillation](../user/anthony/experiments/003-model-distillation/) | Proposed | Distill BEATs → lightweight student on AudioSet |
+| anthony/001 | [Encoder Benchmark](../user/anthony/experiments/001-encoder-benchmark/) | Complete | BEATs 95.8%, EAT+LoRA 94.6% |
+| anthony/002 | [BEATs Inference Optimization](../user/anthony/experiments/002-beats-inference-optimization/) | Complete | **Rejected** - 32x speedup, 63% best accuracy (21% gap) |
+| anthony/003 | [Model Distillation](../user/anthony/experiments/003-model-distillation/) | Proposed | Distill BEATs → lightweight student on AudioSet |
+| murilo/001 | [BirdSet Bioacoustics Benchmark](../user/murilo/experiments/001-birdset-bioacoustics-benchmark/) | Phase 2A Complete | ConvNeXT/EfficientNetB1 on 8 datasets, mean cmAP 0.36/0.35 |
 
 Experiments are tracked per-user in `user/<name>/experiments/`.
 

@@ -1,0 +1,21 @@
+{
+  "cmap": 0.548322833865415,
+  "num_classes_with_positives": 30,
+  "auroc": 0.828822661706394,
+  "num_classes_auroc": 30,
+  "f1_micro": 0.1791044776119403,
+  "f1_macro": 0.033707865168539325,
+  "top1_accuracy": 0.23,
+  "top5_accuracy": 0.29,
+  "model": "birdset_efficientnet_b1",
+  "dataset": "NES",
+  "split": "test_5s",
+  "num_samples": 100,
+  "num_samples_requested": 100,
+  "num_samples_skipped": 0,
+  "num_classes": 89,
+  "inference_time_sec": 1.8693089485168457,
+  "throughput_samples_per_sec": 53.495704965913944,
+  "batch_size": 16,
+  "num_workers": 4
+}
