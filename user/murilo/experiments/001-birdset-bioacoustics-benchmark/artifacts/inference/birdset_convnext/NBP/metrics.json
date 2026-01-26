@@ -1,0 +1,21 @@
+{
+  "cmap": 0.6280334181970072,
+  "num_classes_with_positives": 51,
+  "auroc": 0.9044656197111237,
+  "num_classes_auroc": 51,
+  "f1_micro": 0.24728260869565216,
+  "f1_macro": 0.2263724206392578,
+  "top1_accuracy": 0.6608187134502924,
+  "top5_accuracy": 0.8391812865497076,
+  "model": "birdset_convnext",
+  "dataset": "NBP",
+  "split": "test_5s",
+  "num_samples": 342,
+  "num_samples_requested": 539,
+  "num_samples_skipped": 197,
+  "num_classes": 51,
+  "inference_time_sec": 20.386308193206787,
+  "throughput_samples_per_sec": 16.775965356687912,
+  "batch_size": 16,
+  "num_workers": 4
+}
