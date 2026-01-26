@@ -4,7 +4,8 @@
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=4G
 #SBATCH --gres=gpu:1
 #SBATCH -p gpu-rtx6000
-#SBATCH -t240 -qembers
+#SBATCH --time=8:00:00
+#SBATCH -qinferno
 #SBATCH --output=logs/inference-%j.log
 #
 # BirdSet Direct Inference Job

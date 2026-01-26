@@ -1,6 +1,8 @@
 {
   "cmap": 0.35910669677134816,
   "num_classes_with_positives": 60,
+  "auroc": 0.7369049323396737,
+  "num_classes_auroc": 60,
   "f1_micro": 0.08906882591093117,
   "f1_macro": 0.03270944741532977,
   "top1_accuracy": 0.28,
@@ -9,9 +11,11 @@
   "dataset": "PER",
   "split": "test_5s",
   "num_samples": 100,
+  "num_samples_requested": 100,
+  "num_samples_skipped": 0,
   "num_classes": 132,
-  "inference_time_sec": 9.769118785858154,
-  "throughput_samples_per_sec": 10.23633781019847,
+  "inference_time_sec": 9.99195408821106,
+  "throughput_samples_per_sec": 10.008052390671443,
   "batch_size": 16,
   "num_workers": 4
 }
