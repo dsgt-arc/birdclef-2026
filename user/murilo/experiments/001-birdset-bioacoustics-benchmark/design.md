@@ -6,7 +6,7 @@ We are evaluating pre-trained bioacoustics models (BirdNET, Perch, BirdSetConvNe
 
 The challenge is creating a scalable pipeline that can handle 4 models × 8 datasets = 32 combinations efficiently on the PACE cluster.
 
-**Update (2026-01-25)**: Phase 2A (direct inference for BirdSet-native models) is nearly complete with significant technical improvements addressing performance bottlenecks and SLURM preemption issues.
+**Update (2026-01-26)**: Phase 2A (direct inference for BirdSet-native models) is complete. All 16 inference runs finished with cmAP, AUROC, and T1-Acc metrics. Results documented in RESULTS_SUMMARY.md. Ready for Phase 2B (transfer learning with external models).
 
 ## Goals / Non-Goals
 
