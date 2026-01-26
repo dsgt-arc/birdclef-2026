@@ -294,21 +294,31 @@ def main(
             f"[yellow]  Evaluating on {len(audio_paths)} successfully processed samples[/yellow]\n"
         )
 
-    # Convert predictions DataFrame to numpy array
+    # Convert predictions DataFrame to numpy array (vectorized for performance)
     console.print("[bold]Converting predictions to numpy array...[/bold]")
+
+    # Step 1: Reset MultiIndex to make 'file' a regular index
+    # If pred_df has MultiIndex, get the 'file' level; otherwise use the index directly
+    if hasattr(pred_df.index, "get_level_values"):
+        pred_df_indexed = pred_df.copy()
+        pred_df_indexed.index = pred_df.index.get_level_values("file")
+    else:
+        pred_df_indexed = pred_df
+
+    # Step 2: Reindex to match audio_paths order (fills missing with 0)
+    pred_df_aligned = pred_df_indexed.reindex(audio_paths, fill_value=0.0)
+
+    # Step 3: Create column mapping from species codes to class indices
+    # Initialize output array with zeros
     y_pred = np.zeros((len(audio_paths), num_classes))
 
-    # Map predictions using file path index
-    for i, audio_path in enumerate(audio_paths):
-        # Find row in pred_df that matches this audio path
-        matching_rows = pred_df.loc[pred_df.index.get_level_values("file") == audio_path]
-        if len(matching_rows) > 0:
-            # Take first match (should only be one for 5s clips)
-            pred_row = matching_rows.iloc[0]
-            for species_code in pred_df.columns:
-                if species_code in species_to_idx:
-                    class_idx = species_to_idx[species_code]
-                    y_pred[i, class_idx] = pred_row[species_code]
+    # Step 4: Map each species code column to the correct class index
+    for species_code in pred_df_aligned.columns:
+        if species_code in species_to_idx:
+            class_idx = species_to_idx[species_code]
+            y_pred[:, class_idx] = pred_df_aligned[species_code].values
+
+    console.print(f"✓ Mapped {len(pred_df_aligned.columns)} species codes to {num_classes} classes")
 
     # Apply sigmoid to convert logits to probabilities
     y_pred = 1.0 / (1.0 + np.exp(-y_pred))
