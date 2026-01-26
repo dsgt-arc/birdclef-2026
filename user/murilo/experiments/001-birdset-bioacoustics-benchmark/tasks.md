@@ -1,8 +1,8 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 1 complete, Phase 2A.1-2A.3 complete, Phase 2A.4-2A.5 nearly complete (SSW running for both models)
-**Current Phase**: Phase 2A.5 (Production runs) - 7/8 complete for both models, SSW running with vectorized approach
-**Last Updated**: 2026-01-25 (late evening)
+**Status**: Phase 1 complete, Phase 2A complete (all 16 inference runs finished with AUROC metrics)
+**Current Phase**: Phase 2B preparation (Transfer Learning for external models)
+**Last Updated**: 2026-01-26
 
 ---
 
@@ -67,7 +67,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 
 ---
 
-## Phase 2A: Direct Inference (BirdSet-Native Models) 🔄 IN PROGRESS
+## Phase 2A: Direct Inference (BirdSet-Native Models) ✅ COMPLETED
 
 **Goal**: Run inference with BirdSetConvNeXT and BirdSetEfficientNetB1 directly on BirdSet test data. No training required since these models were trained on BirdSet.
 
@@ -153,39 +153,50 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 - [x] Verify metrics.json contains: cmAP, F1, Top-1/5
 - [⚠️] Compare to expected BirdSet paper results (pending AUROC addition)
 
-### 2A.5 Scale to All Datasets 🔄 IN PROGRESS
-- [x] Run `bash sbatch/inference/run.sh --model birdset_convnext` (7/8 complete, SSW running)
-  - [x] HSN: 11,982 samples, cmAP=0.480
-  - [x] NBP: 342 samples, cmAP=0.628
-  - [x] NES: 24,472 samples, cmAP=0.341
-  - [x] PER: 15,120 samples, cmAP=0.173
-  - [x] POW: 4,560 samples, cmAP=0.342
-  - [x] SNE: 23,755 samples, cmAP=0.300
-  - [x] UHH: 36,388 samples, cmAP=0.250
-  - [🔄] SSW: 205,200 samples (RUNNING with vectorized approach)
-- [x] Run `bash sbatch/inference/run.sh --model birdset_efficientnet_b1` (7/8 complete, SSW running)
-  - [x] HSN, NBP, NES, PER, POW, SNE, UHH complete
-  - [🔄] SSW: 205,200 samples (RUNNING with vectorized approach)
-- [ ] **Re-run all datasets with AUROC fix**: `bash sbatch/inference/run.sh --force` for both models
-- [ ] Total: 2 models × 8 datasets = 16 inference runs
+### 2A.5 Scale to All Datasets ✅ COMPLETED
+- [x] Run `bash sbatch/inference/run.sh --model birdset_convnext` (8/8 complete)
+  - [x] HSN: 11,982 samples, cmAP=0.48, AUROC=0.88
+  - [x] NBP: 342 samples, cmAP=0.63, AUROC=0.90
+  - [x] NES: 24,472 samples, cmAP=0.34, AUROC=0.88
+  - [x] PER: 15,120 samples, cmAP=0.17, AUROC=0.73
+  - [x] POW: 4,560 samples, cmAP=0.34, AUROC=0.82
+  - [x] SNE: 23,755 samples, cmAP=0.30, AUROC=0.83
+  - [x] UHH: 36,388 samples, cmAP=0.25, AUROC=0.78
+  - [x] SSW: 205,200 samples, cmAP=0.34, AUROC=0.93
+- [x] Run `bash sbatch/inference/run.sh --model birdset_efficientnet_b1` (8/8 complete)
+  - [x] HSN: cmAP=0.38, AUROC=0.84
+  - [x] NBP: cmAP=0.62, AUROC=0.90
+  - [x] NES: cmAP=0.32, AUROC=0.90
+  - [x] PER: cmAP=0.18, AUROC=0.72
+  - [x] POW: cmAP=0.35, AUROC=0.83
+  - [x] SNE: cmAP=0.34, AUROC=0.83
+  - [x] UHH: cmAP=0.22, AUROC=0.78
+  - [x] SSW: cmAP=0.37, AUROC=0.93
+- [x] Total: 2 models × 8 datasets = 16 inference runs complete
+- [x] **Results documented**: `RESULTS_SUMMARY.md` created with comprehensive analysis
 
-**⚠️ AUROC Metric Fix (2026-01-25 afternoon)**:
+**✅ AUROC Metric Implementation (2026-01-25)**:
 - Fixed AUROC implementation to properly handle multi-label classification
 - Changed from incorrect `multi_class="ovr"` approach to per-class macro averaging
 - Now matches cmAP computation pattern: excludes classes with undefined ROC AUC
 - Adds `num_classes_auroc` tracking metric
-- **Action Required**: Re-run all datasets with `--force` flag to regenerate metrics with AUROC included
+- All datasets re-run with AUROC metrics included
 
-**⚠️ Performance Fix (2026-01-25 evening)**:
+**✅ Performance Fix (2026-01-25)**:
 - **Problem**: O(n²m) nested loop caused SSW to hang for 1+ hours in "Converting predictions" phase
 - **Root Cause**: 42 billion operations for 205K samples × 81 species
 - **Solution**: Vectorized pandas.reindex() approach - O(n) complexity
 - **Impact**: ~210,000x speedup - conversion now takes seconds instead of hours
-- **Implementation**:
-  - Replaced nested file path matching loop with vectorized reindex
-  - Added 4 comprehensive tests validating correctness and performance
-  - All tests passing with 10K sample benchmark < 1 second
-- **Status**: Deployed to production, SSW jobs now running successfully
+- **Status**: Deployed to production, all jobs completed successfully
+
+**📊 Phase 2A Results (2026-01-26)**:
+- **Total samples processed**: 321,819 per model (643,638 total)
+- **Mean cmAP**: 0.36 (ConvNeXT), 0.35 (EfficientNetB1)
+- **Mean AUROC**: 0.84 (both models)
+- **Best dataset**: NBP (cmAP ~0.63)
+- **Most challenging**: PER (cmAP ~0.17-0.18, 132 species)
+- **Largest dataset**: SSW (205,200 samples, 64% of total)
+- **Results documented**: `RESULTS_SUMMARY.md` with BirdSet paper format tables
 
 ---
 

@@ -1,8 +1,8 @@
 # Proposal: BirdSet Bioacoustics Model Benchmark
 
-**Status**: in-progress (Phase 2A final dataset running)
+**Status**: Phase 2A complete, Phase 2B ready to start
 **Created**: 2026-01-24
-**Updated**: 2026-01-25 (evening)
+**Updated**: 2026-01-26
 **Author**: murilo
 
 ## Related Documentation
