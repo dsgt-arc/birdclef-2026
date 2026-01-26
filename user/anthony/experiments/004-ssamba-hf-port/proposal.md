@@ -1,6 +1,6 @@
 # Proposal: SSAMBA HuggingFace Port
 
-**Status**: proposed
+**Status**: confirmed
 **Created**: 2026-01-25
 **Author**: anthony
 

@@ -9,6 +9,10 @@ class RMSNorm(nn.Module):
     """Root Mean Square Layer Normalization.
 
     Reference: https://arxiv.org/abs/1910.07467
+
+    Note: The original triton RMSNorm does NOT have bias, even though the SSAMBA
+    checkpoint saves norm.bias values. These biases are ignored at inference in
+    the original model, so we also ignore them here for numerical equivalence.
     """
 
     def __init__(self, hidden_size: int, eps: float = 1e-6):

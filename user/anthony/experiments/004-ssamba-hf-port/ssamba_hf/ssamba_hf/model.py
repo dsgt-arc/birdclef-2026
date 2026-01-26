@@ -81,28 +81,50 @@ class SSAMBAModel(nn.Module):
 
         # Patch embedding
         x = self.patch_embed(x)
+        num_patches = x.shape[1]
 
         # Add CLS token
         if self.cls_token is not None:
             cls_tokens = self.cls_token.expand(B, -1, -1)
-            x = torch.cat([cls_tokens, x], dim=1)
+            if self.config.use_middle_cls_token:
+                # Insert CLS token in the middle (SSAMBA default)
+                token_position = num_patches // 2
+                x = torch.cat([x[:, :token_position, :], cls_tokens, x[:, token_position:, :]], dim=1)
+                self._cls_token_position = token_position
+            else:
+                # Insert CLS token at the beginning
+                x = torch.cat([cls_tokens, x], dim=1)
+                self._cls_token_position = 0
 
         # Add positional embedding
         x = x + self.pos_embed
         x = self.pos_drop(x)
 
         # Bidirectional Mamba layers
-        x = self.layers(x)
+        hidden_states, residual = self.layers(x)
 
-        # Final normalization
-        x = self.norm_f(x)
+        # Final residual connection + normalization (matching VisionMamba)
+        if residual is None:
+            residual = hidden_states
+        else:
+            residual = residual + self.drop_path(hidden_states)
+        x = self.norm_f(residual.to(dtype=self.norm_f.weight.dtype))
 
         if return_all_tokens:
             return x
 
-        # Average all tokens except CLS
+        # Average all tokens except CLS (following SSAMBA's approach)
         if self.cls_token is not None:
-            x = x[:, 1:, :].mean(dim=1)
+            if self.config.use_middle_cls_token:
+                # CLS token is in the middle - exclude it and average the rest
+                cls_pos = self._cls_token_position
+                # Concatenate tokens before and after CLS
+                tokens_before = x[:, :cls_pos, :]
+                tokens_after = x[:, cls_pos + 1:, :]
+                x = torch.cat([tokens_before, tokens_after], dim=1).mean(dim=1)
+            else:
+                # CLS token at beginning - skip first token
+                x = x[:, 1:, :].mean(dim=1)
         else:
             x = x.mean(dim=1)
 

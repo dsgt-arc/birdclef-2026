@@ -21,18 +21,19 @@
 ## 2. Implementation
 - [x] 2.1 Create `ssamba_hf/config.py` with `SSAMBAConfig`
 - [x] 2.2 Create `ssamba_hf/layers.py` with `RMSNorm`, `AudioPatchEmbed`
-- [ ] ~~2.3 Create `ssamba_hf/mamba.py` with `BidirectionalMambaBlock`~~ **NEEDS UPDATE**
-  - HF MambaMixer is unidirectional only
-  - Original SSAMBA has bidirectional weights: `A_b_log`, `D_b`, `conv1d_b`, `x_proj_b`, `dt_proj_b`
+- [x] 2.3 Create `ssamba_hf/mamba.py` with custom `BidirectionalMamba` (pure PyTorch SSM)
+  - Implemented custom bidirectional Mamba with both forward and backward weights
+  - Uses pure PyTorch selective scan (no CUDA kernels required)
 - [x] 2.4 Create `ssamba_hf/model.py` with `SSAMBAModel`
-- [ ] ~~2.5 Implement `convert_ssamba_weights()` in `ssamba_hf/convert.py`~~ **NEEDS UPDATE**
-  - Current: 245 weights loaded
-  - Missing: `in_proj.bias`, `out_proj.bias` (48 weights)
-  - Unexpected: `_b` weights (bidirectional), `norm.bias` (168+ weights)
+  - Added middle CLS token positioning
+  - Fixed residual handling to match VisionMamba
+- [x] 2.5 Implement `convert_ssamba_weights()` in `ssamba_hf/convert.py`
+  - 413 weights loaded successfully
+  - norm.bias values ignored (original triton RMSNorm has no bias)
 - [x] 2.6 Add `get_embeddings()` method for feature extraction
 - [x] 2.7 Export public API in `ssamba_hf/__init__.py`
 
-## 2B. Bidirectional Mamba Support (IN PROGRESS)
+## 2B. Bidirectional Mamba Support (COMPLETED)
 The original SSAMBA uses a custom bidirectional Mamba from Vision Mamba (Vim), not standard Mamba:
 - Each layer has separate forward and backward parameters (`_b` suffix)
 - HuggingFace's MambaMixer only supports unidirectional Mamba
@@ -48,19 +49,18 @@ Tasks:
 - [x] 2B.1 Analyze SSAMBA bidirectional Mamba architecture from Vim/vim/models_mamba.py
 - [x] 2B.2 Implement custom BidirectionalMamba class (not using HF MambaMixer)
 - [x] 2B.3 Update weight conversion with detailed analysis and diagnostics
-- [ ] 2B.4 Verify forward pass produces same shape outputs
-- [ ] 2B.5 Run verification to confirm cosine similarity > 0.999
+- [x] 2B.4 Verify forward pass produces same shape outputs
+- [x] 2B.5 Run verification to confirm cosine similarity > 0.999 ✓ (achieved 1.000000!)
 
-## 3. Verification
-- [ ] 3.1 Set up original SSAMBA environment
-  - **BLOCKED**: numpy/scipy/triton compatibility issues with mamba_ssm
-  - Challenges: mamba_ssm triton ops require specific setup
-  - Run: `cd sbatch && sbatch setup-original-ssamba.sbatch`
-- [ ] 3.2 Load original SSAMBA on GPU and extract embeddings for test audio
-- [ ] 3.3 Load ported SSAMBA on CPU and extract embeddings for same audio
-- [ ] 3.4 Compare outputs: cosine similarity, max diff, mean diff
-  - Run: `cd sbatch && sbatch run-verification.sbatch`
-- [ ] 3.5 Debug any discrepancies in layer-by-layer comparison
+## 3. Verification (COMPLETED)
+- [x] 3.1 Set up original SSAMBA environment
+  - Successfully set up with mamba_ssm and triton on GPU
+- [x] 3.2 Load original SSAMBA on GPU and extract embeddings for test audio
+- [x] 3.3 Load ported SSAMBA on CPU and extract embeddings for same audio
+- [x] 3.4 Compare outputs: cosine similarity, max diff, mean diff
+  - **Result: Cosine similarity = 1.000000, Max diff = 5.53e-05**
+- [x] 3.5 Debug any discrepancies in layer-by-layer comparison
+  - Fixed: RMSNorm bias (ignored in original), middle CLS token, residual handling
 
 ## 4. Benchmarking
 - [ ] 4.1 Measure CPU inference time (single sample)
@@ -75,23 +75,32 @@ Tasks:
 
 ## Current Status (2026-01-25)
 
-**Completed:**
-- Verification infrastructure (sbatch scripts, extraction scripts)
-- Initial HF port with HuggingFace MambaMixer (90.3% cosine similarity)
-- Custom `BidirectionalMamba` implementation with both forward and backward weights
-- Enhanced weight conversion with checkpoint analysis
+**VERIFIED: HF port is numerically equivalent to original SSAMBA!**
 
-**Next Steps:**
-1. Run verification with new bidirectional implementation
-2. Debug any remaining weight mapping issues
-3. Confirm cosine similarity > 0.999
+Final Test Results:
+```
+Cosine Similarity: 1.000000 (PASS!)
+Max Absolute Diff: 5.53e-05 (floating point precision)
+Mean Absolute Diff: 4.88e-06
+HF embeddings norm: 20.7406
+Original embeddings norm: 20.7406
+```
 
-**Previous Test Results (with HF MambaMixer):**
-```
-Cosine Similarity: 0.903 (FAIL - needed >0.999)
-Only 245/413 weights loaded
-Missing: all _b suffix weights
-```
+**Key Fixes Applied:**
+1. Custom `BidirectionalMamba` implementation with pure PyTorch SSM
+2. Middle CLS token positioning (`use_middle_cls_token=True`)
+3. Correct residual handling matching VisionMamba's non-fused path
+4. RMSNorm without bias (checkpoint has bias values, but original ignores them)
+5. Fixed original extraction script to use correct forward path (`if_bidirectional=False`)
+
+**Previously Identified Issues:**
+- Original extraction script used wrong forward path (paired-layer instead of single-layer)
+- RMSNorm bias was being loaded but should be ignored (original triton RMSNorm has no bias)
+- CLS token was being added at beginning instead of middle
+
+**Weight Loading Summary:**
+- Matched: 413 weights (all necessary weights)
+- Unexpected: 27 (norm.bias values + head.weight/bias - correctly ignored)
 
 ## Verification Workflow
 

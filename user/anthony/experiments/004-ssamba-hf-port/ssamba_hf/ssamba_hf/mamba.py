@@ -256,16 +256,18 @@ class MambaBlock(nn.Module):
         Returns:
             Tuple of (hidden_states, residual)
         """
-        # Pre-norm pattern matching VisionMamba
+        # Pre-norm pattern matching VisionMamba's non-fused path
         if residual is None:
             residual = hidden_states
-            hidden_states = self.norm(hidden_states)
         else:
-            # Fused add + norm
-            if self.residual_in_fp32:
-                residual = residual.float()
             residual = residual + self.drop_path(hidden_states)
-            hidden_states = self.norm(residual.to(hidden_states.dtype))
+
+        # Normalize for mixer input
+        hidden_states = self.norm(residual.to(dtype=self.norm.weight.dtype))
+
+        # Convert residual to fp32 AFTER norm (matching original)
+        if self.residual_in_fp32:
+            residual = residual.to(torch.float32)
 
         # Bidirectional Mamba mixer
         hidden_states = self.mixer(hidden_states)
@@ -290,14 +292,14 @@ class BidirectionalMambaStack(nn.Module):
             for i in range(config.depth)
         ])
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass through bidirectional Mamba stack.
 
         Args:
             hidden_states: Input tensor (batch, seq_len, embed_dim)
 
         Returns:
-            Output tensor (batch, seq_len, embed_dim)
+            Tuple of (hidden_states, residual) for final norm handling
         """
         residual = None
 
@@ -305,8 +307,5 @@ class BidirectionalMambaStack(nn.Module):
         for layer in self.layers:
             hidden_states, residual = layer(hidden_states, residual)
 
-        # Final residual connection
-        if residual is not None:
-            hidden_states = residual + hidden_states
-
-        return hidden_states
+        # Return both for proper final norm handling
+        return hidden_states, residual

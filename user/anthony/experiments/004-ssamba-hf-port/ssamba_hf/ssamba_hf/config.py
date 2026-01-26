@@ -39,6 +39,7 @@ class SSAMBAConfig:
 
     # Token configuration
     use_cls_token: bool = True
+    use_middle_cls_token: bool = True  # Insert CLS token in middle (SSAMBA default)
 
     # Normalization
     rms_norm: bool = True

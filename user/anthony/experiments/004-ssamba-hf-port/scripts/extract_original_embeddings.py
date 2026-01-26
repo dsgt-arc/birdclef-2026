@@ -167,6 +167,11 @@ def extract_embeddings(model, spectrogram: torch.Tensor, device: str = "cuda") -
 
     Input spectrogram: (batch, time_frames, freq_bins)
     Output: (batch, embed_dim)
+
+    NOTE: This uses the CORRECT forward path for SSAMBA:
+    - if_bidirectional=False (default) means single layer loop
+    - Each layer with bimamba_type='v2' internally handles bidirectionality
+    - CLS token is inserted in the middle (use_middle_cls_token=True)
     """
     model.eval()
     spectrogram = spectrogram.to(device)
@@ -181,26 +186,26 @@ def extract_embeddings(model, spectrogram: torch.Tensor, device: str = "cuda") -
 
         # Patch embedding
         x = model.v.patch_embed(x)
+        num_patches = x.shape[1]
 
-        # Add cls token
+        # Add CLS token in the MIDDLE (use_middle_cls_token=True)
         cls_tokens = model.v.cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
+        token_position = num_patches // 2
+        x = torch.cat([x[:, :token_position, :], cls_tokens, x[:, token_position:, :]], dim=1)
+
         x = x + model.v.pos_embed
         x = model.v.pos_drop(x)
 
-        # Bidirectional Mamba layers
+        # CORRECT: Single layer loop (if_bidirectional=False)
+        # Each layer with bimamba_type='v2' internally handles bidirectionality
         residual = None
         hidden_states = x
 
-        # bimamba_type="v2" uses paired layers
-        for i in range(len(model.v.layers) // 2):
-            hidden_states_f, residual_f = model.v.layers[i * 2](hidden_states, residual)
-            hidden_states_b, residual_b = model.v.layers[i * 2 + 1](
-                hidden_states.flip([1]),
-                None if residual is None else residual.flip([1])
-            )
-            hidden_states = hidden_states_f + hidden_states_b.flip([1])
-            residual = residual_f + residual_b.flip([1])
+        print(f"Model if_bidirectional: {model.v.if_bidirectional}")
+        print(f"Processing {len(model.v.layers)} layers individually (not paired)")
+
+        for layer in model.v.layers:
+            hidden_states, residual = layer(hidden_states, residual)
 
         # Final norm (non-fused path for reproducibility)
         if residual is None:
@@ -209,8 +214,10 @@ def extract_embeddings(model, spectrogram: torch.Tensor, device: str = "cuda") -
             residual = residual + model.v.drop_path(hidden_states)
         hidden_states = model.v.norm_f(residual.to(dtype=model.v.norm_f.weight.dtype))
 
-        # Average all tokens except cls
-        embeddings = torch.mean(hidden_states[:, 1:, :], dim=1)
+        # Average all tokens except CLS (which is in the middle)
+        tokens_before = hidden_states[:, :token_position, :]
+        tokens_after = hidden_states[:, token_position + 1:, :]
+        embeddings = torch.cat([tokens_before, tokens_after], dim=1).mean(dim=1)
 
     return embeddings
 
