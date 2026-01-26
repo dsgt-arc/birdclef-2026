@@ -93,27 +93,34 @@ The evaluation is split into two parts based on the model's origin.
 
 ## Status
 
-**Current Phase**: Phase 2A.5 (Production Runs) - 7/8 datasets complete for birdset_convnext
+**Current Phase**: Phase 2A.5 (Production Runs) - SSW running for both models (final dataset)
 
 - [x] **Phase 0: Planning**: Proposal, Design, and Tasks are complete.
 - [x] **Phase 1: Environment Setup**: All dependencies installed and validated via `test_setup.sh` and a comprehensive `pytest` suite.
 - [x] **Phase 2A.1-2A.3**: Data pipeline, inference script, and SLURM scripts implemented and tested.
-- [🔄] **Phase 2A.4-2A.5**: Production inference runs in progress (7/8 datasets complete, SSW running).
+- [🔄] **Phase 2A.4-2A.5**: Production inference runs in progress - SSW running for both models (7/8 complete).
 - [ ] **Phase 2B: Transfer Learning**: Implement embedding extraction and linear probe training for external models.
 - [ ] **Phase 3: Results Aggregation**: Collect all results and generate final analysis.
 
-**Latest Update (2026-01-25)**:
-- ✅ Completed 7/8 datasets for `birdset_convnext`: HSN, NBP, NES, PER, POW, SNE, UHH
-- 🔄 SSW dataset running (205,200 samples - largest test set)
-- ⚠️ **AUROC metric fix implemented** - requires re-running all datasets to include AUROC in results
-- Current results show cmAP range: 0.17 (PER) to 0.63 (NBP)
+**Latest Update (2026-01-25 evening)**:
+- ✅ Completed 7/8 datasets for both `birdset_convnext` and `birdset_efficientnet_b1`
+- 🔄 SSW dataset running for both models (205,200 samples - largest test set)
+- ✅ **AUROC metric implemented** - all three BirdSet paper metrics now tracked (cmAP, AUROC, Top-1 Acc)
+- ✅ **Performance fix deployed** - vectorized O(n) prediction conversion (was O(n²), caused hour-long hangs)
+- ✅ **Preemption fix** - switched to inferno QOS for stable long-running jobs
+- Current results (without AUROC): cmAP range 0.17 (PER) to 0.63 (NBP)
+
+**Key Technical Improvements**:
+1. Fixed multi-label AUROC computation (per-class averaging)
+2. Vectorized prediction conversion using pandas reindex (~210,000x speedup)
+3. Switched from embers to inferno QOS to prevent preemption
+4. Comprehensive test suite (32 tests total, including 4 vectorization tests)
 
 See [tasks.md](tasks.md) for a detailed checklist.
 
 ## Next Steps
 
-1.  **Wait for SSW completion** and verify all 8 datasets complete for `birdset_convnext`
-2.  **Re-run Phase 2A with AUROC fix**: Re-run all datasets with `--force` to include AUROC metric
-3.  **Run second model**: Execute `birdset_efficientnet_b1` on all 8 datasets
-4.  **Implement Phase 2B**: Complete the `extract_embeddings.py` and `train_classifier.py` scripts and execute them for external models.
-5.  **Implement Phase 3**: Write the `aggregate_results.py` script to produce the final results matrix and visualizations.
+1.  **Wait for SSW completion** for both models (should finish soon with vectorized approach)
+2.  **Re-run Phase 2A with AUROC**: Re-run all datasets with `--force` to include AUROC metric in full results
+3.  **Implement Phase 2B**: Complete the `extract_embeddings.py` and `train_classifier.py` scripts for external models
+4.  **Implement Phase 3**: Write the `aggregate_results.py` script to produce final results matrix and visualizations

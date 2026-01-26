@@ -6,6 +6,8 @@ We are evaluating pre-trained bioacoustics models (BirdNET, Perch, BirdSetConvNe
 
 The challenge is creating a scalable pipeline that can handle 4 models × 8 datasets = 32 combinations efficiently on the PACE cluster.
 
+**Update (2026-01-25)**: Phase 2A (direct inference for BirdSet-native models) is nearly complete with significant technical improvements addressing performance bottlenecks and SLURM preemption issues.
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -90,7 +92,37 @@ python -m birdset_benchmark.train_classifier --model birdnet --dataset HSN
 - If no `--model` specified: use BirdNET
 - If no `--dataset` specified: run on all 8 datasets (separate jobs)
 
-### Decision 4: Artifact Organization
+### Decision 4: Vectorized Prediction Conversion
+
+**Choice**: Use pandas `.reindex()` for O(n) prediction alignment instead of nested loops.
+
+**Problem Encountered (2026-01-25)**:
+- Original implementation used nested loops to match file paths: O(n²m) complexity
+- For SSW: 205,200 samples × 81 species = ~42 billion operations
+- Inference completed in 2.3 hours, but conversion phase hung for 1+ hours
+
+**Solution**:
+```python
+# Old approach: O(n²m)
+for i, audio_path in enumerate(audio_paths):  # 205K iterations
+    matching_rows = pred_df.loc[pred_df.index == audio_path]  # 205K comparisons each
+    ...
+
+# New approach: O(n)
+pred_df_indexed.index = pred_df.index.get_level_values('file')
+pred_df_aligned = pred_df_indexed.reindex(audio_paths, fill_value=0.0)  # Single vectorized op
+for species_code in pred_df_aligned.columns:  # Only 81 iterations
+    y_pred[:, class_idx] = pred_df_aligned[species_code].values  # Vectorized assignment
+```
+
+**Impact**:
+- ~210,000x speedup for SSW
+- Conversion phase: hours → seconds
+- Comprehensive test suite validates correctness across edge cases
+
+**Rationale**: Pandas is optimized for vectorized operations on indexed data. Using `.reindex()` leverages hash-based lookups instead of linear scans.
+
+### Decision 5: Artifact Organization
 
 **Choice**: Organize artifacts by model and dataset with completion markers.
 

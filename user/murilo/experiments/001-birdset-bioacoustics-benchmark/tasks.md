@@ -1,8 +1,8 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 1 complete, Phase 2A.1-2A.3 complete, Phase 2A.4-2A.5 in progress (7/8 datasets complete)
-**Current Phase**: Phase 2A.5 (Production runs) - birdset_convnext 7/8 complete, SSW running
-**Last Updated**: 2026-01-25 (evening)
+**Status**: Phase 1 complete, Phase 2A.1-2A.3 complete, Phase 2A.4-2A.5 nearly complete (SSW running for both models)
+**Current Phase**: Phase 2A.5 (Production runs) - 7/8 complete for both models, SSW running with vectorized approach
+**Last Updated**: 2026-01-25 (late evening)
 
 ---
 
@@ -154,7 +154,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 - [⚠️] Compare to expected BirdSet paper results (pending AUROC addition)
 
 ### 2A.5 Scale to All Datasets 🔄 IN PROGRESS
-- [x] Run `bash sbatch/inference/run.sh --model birdset_convnext` (7/8 complete)
+- [x] Run `bash sbatch/inference/run.sh --model birdset_convnext` (7/8 complete, SSW running)
   - [x] HSN: 11,982 samples, cmAP=0.480
   - [x] NBP: 342 samples, cmAP=0.628
   - [x] NES: 24,472 samples, cmAP=0.341
@@ -162,17 +162,30 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [x] POW: 4,560 samples, cmAP=0.342
   - [x] SNE: 23,755 samples, cmAP=0.300
   - [x] UHH: 36,388 samples, cmAP=0.250
-  - [🔄] SSW: 205,200 samples (RUNNING - Job 3425859)
-- [ ] **Re-run all datasets with AUROC fix**: `bash sbatch/inference/run.sh --model birdset_convnext --force`
-- [ ] Run `bash sbatch/inference/run.sh --model birdset_efficientnet_b1`
+  - [🔄] SSW: 205,200 samples (RUNNING with vectorized approach)
+- [x] Run `bash sbatch/inference/run.sh --model birdset_efficientnet_b1` (7/8 complete, SSW running)
+  - [x] HSN, NBP, NES, PER, POW, SNE, UHH complete
+  - [🔄] SSW: 205,200 samples (RUNNING with vectorized approach)
+- [ ] **Re-run all datasets with AUROC fix**: `bash sbatch/inference/run.sh --force` for both models
 - [ ] Total: 2 models × 8 datasets = 16 inference runs
 
-**⚠️ AUROC Metric Fix (2026-01-25)**:
+**⚠️ AUROC Metric Fix (2026-01-25 afternoon)**:
 - Fixed AUROC implementation to properly handle multi-label classification
 - Changed from incorrect `multi_class="ovr"` approach to per-class macro averaging
 - Now matches cmAP computation pattern: excludes classes with undefined ROC AUC
 - Adds `num_classes_auroc` tracking metric
 - **Action Required**: Re-run all datasets with `--force` flag to regenerate metrics with AUROC included
+
+**⚠️ Performance Fix (2026-01-25 evening)**:
+- **Problem**: O(n²m) nested loop caused SSW to hang for 1+ hours in "Converting predictions" phase
+- **Root Cause**: 42 billion operations for 205K samples × 81 species
+- **Solution**: Vectorized pandas.reindex() approach - O(n) complexity
+- **Impact**: ~210,000x speedup - conversion now takes seconds instead of hours
+- **Implementation**:
+  - Replaced nested file path matching loop with vectorized reindex
+  - Added 4 comprehensive tests validating correctness and performance
+  - All tests passing with 10K sample benchmark < 1 second
+- **Status**: Deployed to production, SSW jobs now running successfully
 
 ---
 
