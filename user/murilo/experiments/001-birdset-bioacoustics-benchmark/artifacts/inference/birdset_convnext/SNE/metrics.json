@@ -1,0 +1,21 @@
+{
+  "cmap": 0.30014709409329343,
+  "num_classes_with_positives": 56,
+  "auroc": 0.8273845212485231,
+  "num_classes_auroc": 56,
+  "f1_micro": 0.2383594214384783,
+  "f1_macro": 0.08535401248211813,
+  "top1_accuracy": 0.4256788044622185,
+  "top5_accuracy": 0.5450221006103978,
+  "model": "birdset_convnext",
+  "dataset": "SNE",
+  "split": "test_5s",
+  "num_samples": 23755,
+  "num_samples_requested": 23756,
+  "num_samples_skipped": 1,
+  "num_classes": 56,
+  "inference_time_sec": 927.4161386489868,
+  "throughput_samples_per_sec": 25.614175783704916,
+  "batch_size": 16,
+  "num_workers": 4
+}

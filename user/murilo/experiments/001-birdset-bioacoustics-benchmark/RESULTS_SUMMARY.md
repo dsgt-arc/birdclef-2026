@@ -13,8 +13,7 @@ Results for all 8 datasets using the three key metrics from the BirdSet paper:
 - **AUROC**: Area Under ROC Curve (multi-label, per-class averaging)
 - **T1-Acc**: Top-1 Accuracy
 
-### Results Table (BirdSet Paper Format)
-![alt text](<Screenshot 2026-01-26 at 8.24.19 AM.png>)
+### Results Table
 |  | | **Test** | | | | | | | | **Score** |
 |--|--|------|------|------|------|------|------|------|------|-------|
 | **Model** | **Metric** | POW | PER | NES | UHH | HSN | NBP | SSW | SNE | **Mean** |
