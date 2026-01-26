@@ -2,30 +2,23 @@
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
-print("[DEBUG] Importing numpy...")
 import numpy as np
-print("[DEBUG] Importing torch...")
 import torch
-print("[DEBUG] Importing torchaudio...")
 import torchaudio
+import soundfile as sf
 
-# OpenSoundscape models - optional for now
-print("[DEBUG] Trying opensoundscape import...")
+# Bioacoustics Model Zoo
 try:
-    from opensoundscape.torch.models.cnn import load_model as load_oss_model
-    OPENSOUNDSCAPE_AVAILABLE = True
-    print("[DEBUG] OpenSoundscape available")
+    import bioacoustics_model_zoo as bmz
+    BMZ_AVAILABLE = True
 except ImportError:
-    OPENSOUNDSCAPE_AVAILABLE = False
-    print("[DEBUG] OpenSoundscape not available")
+    BMZ_AVAILABLE = False
 
-# BEATs encoder from birdclef-anthony
-print("[DEBUG] Importing BEATsEncoder...")
 from birdclef.encoders import BEATsEncoder
-print("[DEBUG] All imports complete")
 
 
 
@@ -49,26 +42,25 @@ def generate_noise_audio(
 
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        torchaudio.save(str(output_path), noise, sample_rate)
-        print(f"Saved noise audio to {output_path}")
+        # Use soundfile directly to avoid torchaudio/torchcodec issues
+        sf.write(str(output_path), noise.squeeze().numpy(), sample_rate)
+        # print(f"Saved noise audio to {output_path}")
 
     return noise
 
 
-def benchmark_opensoundscape(
+def benchmark_bmz_model(
     model_name: str,
-    audio: torch.Tensor,
-    sample_rate: int,
+    audio_path: Path,
     num_runs: int = 10,
     warmup_runs: int = 2,
     device: str = "cuda",
 ) -> dict:
-    """Benchmark OpenSoundscape model inference.
+    """Benchmark Bioacoustics Model Zoo model inference.
 
     Args:
-        model_name: Name of the prebuilt model (e.g., 'BirdNET').
-        audio: Audio tensor of shape (1, num_samples).
-        sample_rate: Sample rate in Hz.
+        model_name: Name of the BMZ model class.
+        audio_path: Path to audio file.
         num_runs: Number of benchmark runs.
         warmup_runs: Number of warmup runs.
         device: Device to run inference on.
@@ -76,42 +68,49 @@ def benchmark_opensoundscape(
     Returns:
         Dictionary with timing results.
     """
-    if not OPENSOUNDSCAPE_AVAILABLE:
-        raise ImportError(f"OpenSoundscape not available. Cannot benchmark {model_name}")
+    print(f"\nBenchmarking BMZ model: {model_name}")
 
-    print(f"\nBenchmarking OpenSoundscape model: {model_name}")
+    if not BMZ_AVAILABLE:
+        raise ImportError("bioacoustics_model_zoo is not installed")
 
     # Load model
     load_start = time.perf_counter()
-    model = load_oss_model(model_name)
+    model_cls = getattr(bmz, model_name)
+    # Instantiate model
+    try:
+        model = model_cls()
+    except Exception as e:
+        # Some models might need arguments or fail to load if deps are missing
+        raise RuntimeError(f"Failed to instantiate {model_name}: {e}")
+
+    # Move to device if supported
+    if hasattr(model, "to"):
+        try:
+            model.to(device)
+        except Exception:
+            pass # Ignore if model doesn't support moving to device (e.g. TF/TFLite wrappers)
+
     load_time = time.perf_counter() - load_start
     print(f"  Model loaded in {load_time:.3f}s")
-
-    # Save audio temporarily for opensoundscape
-    tmp_audio_path = Path("/tmp/benchmark_audio.wav")
-    torchaudio.save(str(tmp_audio_path), audio, sample_rate)
-
+    
     # Warmup runs
     print(f"  Running {warmup_runs} warmup iterations...")
     for _ in range(warmup_runs):
-        _ = model.predict([tmp_audio_path])
+        _ = model.embed([audio_path])
 
     # Benchmark runs
     print(f"  Running {num_runs} benchmark iterations...")
     times = []
     for i in range(num_runs):
         start = time.perf_counter()
-        _ = model.predict([tmp_audio_path])
+        _ = model.embed([audio_path])
         elapsed = time.perf_counter() - start
         times.append(elapsed)
         print(f"    Run {i+1}: {elapsed:.4f}s")
 
-    # Clean up
-    tmp_audio_path.unlink(missing_ok=True)
-
     return {
         "model": model_name,
-        "type": "opensoundscape",
+        "type": "bmz",
         "load_time_s": load_time,
         "mean_inference_s": float(np.mean(times)),
         "std_inference_s": float(np.std(times)),
@@ -192,8 +191,8 @@ def main():
     parser.add_argument(
         "--models",
         nargs="+",
-        default=["BirdNET", "Perch", "beats"],
-        help="Models to benchmark (e.g., BirdNET, Perch, beats)",
+        default=["bmz", "beats"],
+        help="Models to benchmark. Use 'bmz', 'all' for all BMZ models, or specific model names.",
     )
     parser.add_argument(
         "--duration",
@@ -256,17 +255,40 @@ def main():
     print(f"Duration: {args.duration}s")
     print(f"Sample rate: {args.sample_rate} Hz")
     print(f"Device: {args.device}")
-    print(f"Models: {args.models}")
+    
+    # Expand model list
+    model_list = []
+    available_bmz_models = bmz.list_models() if BMZ_AVAILABLE else []
+    
+    for m in args.models:
+        if m.lower() == 'all' or m.lower() == 'bmz':
+            if BMZ_AVAILABLE:
+                model_list.extend(available_bmz_models)
+            else:
+                print("WARNING: bioacoustics_model_zoo not available.")
+        elif m.lower() == 'beats':
+            model_list.append('BEATs')
+        elif m in available_bmz_models:
+            model_list.append(m)
+        else:
+             # Fallback if user passes specific name but we missed it, or just add it
+             model_list.append(m)
+             
+    # Deduplicate
+    model_list = sorted(list(set(model_list)))
+    print(f"Models to benchmark: {model_list}")
 
     # Generate noise audio
+    tmp_audio_path = Path("/tmp") / f"benchmark_noise_{os.getpid()}.wav"
     audio = generate_noise_audio(
         duration_seconds=args.duration,
         sample_rate=args.sample_rate,
+        output_path=tmp_audio_path
     )
 
     results = []
 
-    for model_name in args.models:
+    for model_name in model_list:
         try:
             if model_name.lower() == "beats":
                 ckpt_path = args.checkpoint_dir / "beats" / "BEATs_iter3_plus_AS2M.pt"
@@ -282,10 +304,10 @@ def main():
                     device=args.device,
                 )
             else:
-                result = benchmark_opensoundscape(
+                # Assume BMZ model
+                result = benchmark_bmz_model(
                     model_name=model_name,
-                    audio=audio,
-                    sample_rate=args.sample_rate,
+                    audio_path=tmp_audio_path,
                     num_runs=args.num_runs,
                     warmup_runs=args.warmup_runs,
                     device=args.device,
@@ -294,6 +316,11 @@ def main():
         except Exception as e:
             print(f"  ERROR benchmarking {model_name}: {e}")
             results.append({"model": model_name, "error": str(e)})
+
+    # Cleanup
+    if tmp_audio_path.exists():
+        tmp_audio_path.unlink()
+
 
     # Save results
     args.output_dir.mkdir(parents=True, exist_ok=True)

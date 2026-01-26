@@ -5,6 +5,9 @@ description = "BirdCLEF benchmark experiments"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "tensorflow",
+    "tensorflow_hub",
+    "ai-edge-litert",
     "torch>=2.1",
     "torchaudio>=2.1",
     "transformers>=4.40",
@@ -12,10 +15,12 @@ dependencies = [
     "pandas",
     "opensoundscape",
     "birdclef-anthony", # Depend on shared code
+    "bioacoustics-model-zoo",
 ]
 
 [tool.uv.sources]
 birdclef-anthony = { workspace = true }
+bioacoustics-model-zoo = { path = "../../vendor/bioacoustics-model-zoo", editable = true }
 
 [build-system]
 requires = ["hatchling"]
