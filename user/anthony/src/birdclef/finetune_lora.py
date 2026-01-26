@@ -27,6 +27,12 @@ MODEL_CONFIGS = {
         "embed_dim": 768,
         "default_lr": 1e-5,  # Lower LR to prevent gradient explosion
     },
+    "ssamba-hf": {
+        "checkpoint_path": "ssamba/ssamba_small_400.pth",  # Relative to checkpoint_dir
+        "target_modules": ["in_proj", "out_proj"],  # Shared projections in Mamba blocks
+        "embed_dim": 384,
+        "default_lr": 1e-4,
+    },
 }
 
 
@@ -129,7 +135,98 @@ class Wav2Vec2ForClassification(nn.Module):
         return self.classifier(pooled)
 
 
-def create_model(encoder_type: str, num_classes: int, device: str) -> nn.Module:
+class SSAMBAHFForClassification(nn.Module):
+    """SSAMBA-HF encoder with classification head."""
+
+    def __init__(self, checkpoint_path: str, num_classes: int, device: str = "cuda"):
+        super().__init__()
+        import sys
+        from pathlib import Path
+
+        # Add ssamba_hf to path
+        # __file__ is user/anthony/src/birdclef/finetune_lora.py
+        # parents[2] is user/anthony
+        ssamba_hf_dir = (
+            Path(__file__).parents[2]
+            / "experiments"
+            / "004-ssamba-hf-port"
+            / "ssamba_hf"
+        )
+        if str(ssamba_hf_dir) not in sys.path:
+            sys.path.insert(0, str(ssamba_hf_dir))
+
+        from ssamba_hf import load_from_ssamba_checkpoint
+
+        self.device = device
+        self.encoder, self.config = load_from_ssamba_checkpoint(
+            checkpoint_path, device=device, verbose=True
+        )
+        self.embed_dim = self.config.embed_dim  # 384 for small
+        self.classifier = nn.Linear(self.embed_dim, num_classes)
+
+        # Preprocessing params (matching ssamba_hf.py encoder)
+        self._model_fdim, self._model_tdim = self.config.img_size  # (128, 1024)
+        self.norm_mean = -4.2677393
+        self.norm_std = 4.5689974
+
+    def _waveform_to_fbank(self, waveform: torch.Tensor) -> torch.Tensor:
+        """Convert waveform to filter bank features.
+
+        Args:
+            waveform: (batch, samples) at 16kHz
+
+        Returns:
+            Filter bank features of shape (batch, model_tdim, model_fdim)
+        """
+        import torchaudio
+
+        batch_size = waveform.shape[0]
+        fbanks = []
+
+        target_tdim = self._model_tdim
+        target_fdim = self._model_fdim
+
+        for i in range(batch_size):
+            wav = waveform[i]
+            wav = wav - wav.mean()
+
+            fbank = torchaudio.compliance.kaldi.fbank(
+                wav.unsqueeze(0),
+                htk_compat=True,
+                sample_frequency=16000,
+                use_energy=False,
+                window_type="hanning",
+                num_mel_bins=target_fdim,
+                dither=0.0,
+                frame_shift=10,
+            )
+
+            n_frames = fbank.shape[0]
+            if n_frames < target_tdim:
+                fbank = torch.nn.functional.pad(
+                    fbank, (0, 0, 0, target_tdim - n_frames)
+                )
+            elif n_frames > target_tdim:
+                fbank = fbank[:target_tdim, :]
+
+            fbank = (fbank - self.norm_mean) / (self.norm_std * 2)
+            fbanks.append(fbank)
+
+        return torch.stack(fbanks, dim=0)
+
+    def forward(self, waveform: torch.Tensor) -> torch.Tensor:
+        """Forward pass: waveform -> logits."""
+        if waveform.dim() == 3:
+            waveform = waveform.squeeze(1)
+
+        fbank = self._waveform_to_fbank(waveform).to(self.device)
+        embeddings = self.encoder.get_embeddings(fbank)  # (batch, embed_dim)
+        return self.classifier(embeddings)
+
+
+def create_model(
+    encoder_type: str, num_classes: int, device: str, checkpoint_dir: Path = None
+) -> nn.Module:
     """Create model based on encoder type."""
     config = MODEL_CONFIGS[encoder_type]
 
@@ -137,6 +234,11 @@ def create_model(encoder_type: str, num_classes: int, device: str) -> nn.Module:
         return EATForClassification(config["model_name"], num_classes, device)
     elif encoder_type == "wav2vec2":
         return Wav2Vec2ForClassification(config["model_name"], num_classes, device)
+    elif encoder_type == "ssamba-hf":
+        if checkpoint_dir is None:
+            raise ValueError("checkpoint_dir is required for ssamba-hf encoder")
+        ckpt_path = checkpoint_dir / config["checkpoint_path"]
+        return SSAMBAHFForClassification(str(ckpt_path), num_classes, device)
     else:
         raise ValueError(f"Unknown encoder type: {encoder_type}")
 
@@ -244,6 +346,7 @@ def run_fold(
     batch_size: int,
     device: str,
     max_grad_norm: float = 1.0,
+    checkpoint_dir: Path = None,
 ) -> dict:
     """Run one fold of cross-validation."""
     print(f"\n=== Fold {fold}/5 ===")
@@ -268,7 +371,7 @@ def run_fold(
     )
 
     # Create model with LoRA
-    model = create_model(encoder_type, num_classes=50, device=device)
+    model = create_model(encoder_type, num_classes=50, device=device, checkpoint_dir=checkpoint_dir)
     model = apply_lora(model, encoder_type, rank=lora_rank)
     model = model.to(device)
 
@@ -303,12 +406,18 @@ def main():
     parser.add_argument(
         "--encoder",
         type=str,
-        choices=["eat", "wav2vec2"],
+        choices=["eat", "wav2vec2", "ssamba-hf"],
         default="eat",
         help="Encoder type",
     )
     parser.add_argument("--esc50-root", type=str, required=True, help="ESC-50 dataset root")
     parser.add_argument("--output-dir", type=str, required=True, help="Output directory")
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        default=None,
+        help="Checkpoint directory (required for ssamba-hf)",
+    )
     parser.add_argument("--lora-rank", type=int, default=8, help="LoRA rank")
     parser.add_argument("--epochs", type=int, default=50, help="Training epochs per fold")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (default: model-specific)")
@@ -320,6 +429,11 @@ def main():
     if args.lr is None:
         args.lr = MODEL_CONFIGS[args.encoder]["default_lr"]
         print(f"Using default learning rate for {args.encoder}: {args.lr}")
+
+    # Validate and parse checkpoint_dir
+    checkpoint_dir = Path(args.checkpoint_dir) if args.checkpoint_dir else None
+    if args.encoder == "ssamba-hf" and checkpoint_dir is None:
+        raise ValueError("--checkpoint-dir is required for ssamba-hf encoder")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
@@ -347,6 +461,7 @@ def main():
             batch_size=args.batch_size,
             device=device,
             max_grad_norm=args.max_grad_norm,
+            checkpoint_dir=checkpoint_dir,
         )
         results.append(fold_result)
 
@@ -360,9 +475,10 @@ def main():
     print(f"Mean accuracy: {mean_acc:.4f}")
 
     # Save results
+    config = MODEL_CONFIGS[args.encoder]
     output = {
         "encoder": args.encoder,
-        "model_name": MODEL_CONFIGS[args.encoder]["model_name"],
+        "model_name": config.get("model_name", config.get("checkpoint_path")),
         "lora_rank": args.lora_rank,
         "epochs": args.epochs,
         "lr": args.lr,

@@ -1,0 +1,17 @@
+{
+  "encoder": "wav2vec2",
+  "model_name": "facebook/wav2vec2-base-960h",
+  "lora_rank": 8,
+  "epochs": 50,
+  "lr": 1e-05,
+  "max_grad_norm": 1.0,
+  "batch_size": 16,
+  "fold_accuracies": [
+    0.02,
+    0.0175,
+    0.0325,
+    0.035,
+    0.045
+  ],
+  "mean_accuracy": 0.030000000000000006
+}

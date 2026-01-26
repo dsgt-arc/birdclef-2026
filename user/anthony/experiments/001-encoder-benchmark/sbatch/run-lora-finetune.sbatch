@@ -7,14 +7,18 @@
 #SBATCH --output=logs/lora-finetune-%j.out
 set -eu
 
-echo "LoRA finetuning EAT on ESC-50"
+cd ${SLURM_SUBMIT_DIR:-$(dirname "$0")}
+
+echo "LoRA finetuning on ESC-50"
 echo "Job ID: $SLURM_JOB_ID"
+echo "Encoder: ${ENCODER:-eat}"
 hostname
 date
 nvidia-smi
 
-scratch_dir=~/scratch/birdclef-2026
-repo_dir=~/arc/birdclef-2026
+scratch_dir=$(realpath ~/scratch/birdclef-2026)
+repo_dir=$(realpath ~/arc/birdclef-2026)
+user_dir=$repo_dir/user/anthony
 gpu_stats_file=logs/gpu_stats-lora-${SLURM_JOB_ID}.csv
 
 # Start GPU monitoring in background (every 5 seconds)
@@ -23,24 +27,25 @@ nvidia-smi --query-gpu=timestamp,index,name,utilization.gpu,utilization.memory,m
 GPU_MONITOR_PID=$!
 trap "kill $GPU_MONITOR_PID 2>/dev/null || true" EXIT
 
-# Use scratch venv
-export UV_PROJECT_ENVIRONMENT=$scratch_dir/.venv
+# Sync venv to local NVMe for faster package loading
+export UV_PROJECT_ENVIRONMENT=${TMPDIR}/${SLURM_JOB_ID}/.venv
 
 # Set HuggingFace cache to scratch
 export HF_HOME=$scratch_dir/.cache/huggingface
 
+# Sync dependencies from user directory (where pyproject.toml lives)
+cd $user_dir
+uv sync
+
 cd $repo_dir
 
-# Sync dependencies and install the birdclef package
-uv sync
-uv pip install -e user/anthony
-
 # Run LoRA finetuning
-# ENCODER: eat (default) or wav2vec2
+# ENCODER: eat (default), wav2vec2, or ssamba-hf
 # LORA_RANK: 8 (default) or 16
-# LR: model-specific default if not set (eat=1e-4, wav2vec2=1e-5)
+# LR: model-specific default if not set (eat=1e-4, wav2vec2=1e-5, ssamba-hf=1e-4)
 # MAX_GRAD_NORM: 1.0 (default)
-uv run python -m birdclef.finetune_lora \
+# CHECKPOINT_DIR: required for ssamba-hf (default: $scratch_dir/checkpoints)
+${UV_PROJECT_ENVIRONMENT}/bin/python -m birdclef.finetune_lora \
     --encoder ${ENCODER:-eat} \
     --esc50-root $repo_dir/vendor/ESC-50 \
     --output-dir $scratch_dir/outputs/esc50-lora \
@@ -48,7 +53,8 @@ uv run python -m birdclef.finetune_lora \
     --epochs ${EPOCHS:-50} \
     --batch-size ${BATCH_SIZE:-16} \
     --max-grad-norm ${MAX_GRAD_NORM:-1.0} \
-    ${LR:+--lr $LR}
+    ${LR:+--lr $LR} \
+    ${CHECKPOINT_DIR:+--checkpoint-dir $CHECKPOINT_DIR}
 
 echo ""
 echo "Done!"
