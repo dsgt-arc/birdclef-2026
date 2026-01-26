@@ -17,6 +17,11 @@ try:
 except ImportError:
     SSAMBAEncoder = None
 
+try:
+    from .ssamba_hf import SSAMBAHFEncoder
+except ImportError:
+    SSAMBAHFEncoder = None
+
 __all__ = [
     "AudioEncoder",
     "Wav2Vec2Encoder",
@@ -25,4 +30,5 @@ __all__ = [
     "ASTEncoder",
     "SSASTEncoder",
     "SSAMBAEncoder",
+    "SSAMBAHFEncoder",
 ]

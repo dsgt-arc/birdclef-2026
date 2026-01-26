@@ -1,13 +1,13 @@
 # Results: Encoder Benchmark on ESC-50
 
-**Date Completed**: 2026-01-10
+**Date Completed**: 2026-01-26 (updated)
 **Author**: Anthony Miyaguchi
 
 ## Summary
 
 BEATs and AST both achieve ~95-96% accuracy on ESC-50 using frozen features with a linear probe, significantly outperforming other encoders. EAT requires mean pooling (not CLS token) for competitive performance. LoRA finetuning dramatically improves EAT (77.9% → 94.6%) but fails completely for wav2vec2 due to domain mismatch.
 
-**Verdict**: BEATs is best for frozen features (fastest + highest accuracy); AST is a close second but 5x slower. SSAST/SSAMBA blocked due to environment issues.
+**Verdict**: BEATs is best for frozen features (fastest + highest accuracy); AST is a close second but 5x slower. SSAMBA-HF port works but produces poor linear probe accuracy (18.4%), confirming its representations require finetuning.
 
 ## Observations
 
@@ -102,6 +102,38 @@ EAT's larger gap (18%) indicates the pretrained model benefits more from task-sp
 
 **Conclusion**: LoRA is effective when the pretrained model has relevant domain knowledge (EAT on environmental sounds). It cannot bridge large domain gaps (speech → environmental sounds).
 
+### Part D: SSAMBA-HF Benchmark (2026-01-26)
+
+Successfully ran SSAMBA using the HuggingFace-compatible port (experiment 004), eliminating the CUDA kernel dependency.
+
+| Encoder | Mean Accuracy | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 | Embed Dim | Eval Time |
+|---------|--------------|--------|--------|--------|--------|--------|-----------|-----------|
+| SSAMBA-HF-small (GPU) | **18.4%** | 21.8% | 16.8% | 21.3% | 16.8% | 15.5% | 384 | 2504s |
+| SSAMBA-HF-small (CPU) | **18.5%** | 20.0% | 18.5% | 21.5% | 16.8% | 15.5% | 384 | 9048s |
+
+**GPU Statistics (SSAMBA-HF GPU run, V100-32GB):**
+
+| Metric | Value |
+|--------|-------|
+| Average GPU Utilization | ~10% |
+| Peak GPU Utilization | Low (sequential SSM) |
+| Peak Memory | 934 MiB (2.9% of 32GB) |
+| Average Power Draw | 48.1 W |
+| Peak Power Draw | 71.2 W |
+| Job Duration | ~42 min |
+
+**Why SSAMBA-HF accuracy is so low (18.4% vs published 96%):**
+
+1. **Linear probe vs finetuning gap**: SSAMBA published results (96.0% on ESC-50) are from full finetuning, not frozen feature extraction. The 78% gap is much larger than BEATs (2.3% gap) or EAT (18% gap).
+
+2. **Self-supervised pretraining characteristics**: SSAMBA uses AudioMAE-style masked spectrogram modeling, which may learn representations that require task-specific finetuning to be useful. BEATs' iterative tokenization objective produces more transferable frozen features.
+
+3. **Numerical equivalence confirmed but representations differ from competitors**: The HF port achieves cosine similarity = 1.0 vs original CUDA implementation (see experiment 004). The low accuracy is a property of SSAMBA's pretrained representations, not a porting bug.
+
+4. **Embedding dimension**: SSAMBA-small produces 384-dim embeddings vs 768-dim for BEATs/AST/EAT, which may limit expressiveness for linear probing.
+
+**Conclusion**: SSAMBA pretrained weights are not suitable for frozen feature extraction with linear probes. Would require LoRA/full finetuning to achieve competitive results, similar to the wav2vec2 situation but less severe (18% > 2% random baseline).
+
 ### Confounders
 
 - **Linear probe vs finetuning**: Published results use finetuning; we use frozen features
@@ -129,14 +161,15 @@ EAT's larger gap (18%) indicates the pretrained model benefits more from task-sp
 | wav2vec2 | `facebook/wav2vec2-base-960h` (HuggingFace) | Standard pretrained model |
 | AST | `MIT/ast-finetuned-audioset-10-10-0.4593` (HuggingFace) | Official AudioSet-finetuned model |
 | SSAST | Dropbox (see tasks.md) | Requires `timm==0.4.5`, blocked |
-| SSAMBA | `attentionisallyouneed369/ssamba` (HuggingFace) | Weights only, needs mamba-ssm, blocked |
+| SSAMBA-HF | `ssamba_small_400.pth` (Google Drive) | HF port works, poor linear probe accuracy (18.4%) |
 
 ## Next Steps
 
 - [ ] Fix SSAST environment (port to newer timm or separate venv)
-- [ ] Fix SSAMBA environment (port model code, resolve CUDA mismatch)
+- [x] ~~Fix SSAMBA environment~~ - Completed via HF port (experiment 004); 18.4% accuracy not competitive
 - [ ] Add BirdNET encoder for comparison (bird-specific pretraining)
 - [ ] Run on AudioSet bird subset (stretch goal)
 - [ ] Inference time benchmarks (GPU/CPU at various batch sizes)
+- [ ] Consider SSAMBA LoRA finetuning (may improve like EAT: 77.9% → 94.6%)
 
 **Leads to**: BEATs recommended as primary encoder for BirdCLEF 2026 feature extraction pipeline (fastest + highest accuracy)

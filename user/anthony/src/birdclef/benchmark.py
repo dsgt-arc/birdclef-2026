@@ -15,6 +15,7 @@ from .encoders import (
     ASTEncoder,
     SSASTEncoder,
     SSAMBAEncoder,
+    SSAMBAHFEncoder,
 )
 from .train import evaluate_5fold_cv
 
@@ -28,6 +29,9 @@ ENCODER_NAMES = [
     "ssamba-tiny",
     "ssamba-small",
     "ssamba-base",
+    "ssamba-hf-tiny",
+    "ssamba-hf-small",
+    "ssamba-hf-base",
 ]
 
 
@@ -79,6 +83,26 @@ def get_encoder(encoder_name: str, checkpoint_dir: Path, device: str):
         return SSASTEncoder(
             checkpoint_path=str(ckpt_path),
             model_size="base",
+            input_tdim=512,
+            device=device,
+        )
+    elif encoder_name.startswith("ssamba-hf-"):
+        # Check ssamba-hf- before ssamba- since "ssamba-hf-small" matches both
+        if SSAMBAHFEncoder is None:
+            raise ImportError(
+                "SSAMBAHFEncoder not available. Please check that the ssamba_hf "
+                "module from experiment 004 is accessible."
+            )
+        size = encoder_name.split("-")[2]  # tiny, small, or base
+        ckpt_path = checkpoint_dir / "ssamba" / f"ssamba_{size}_400.pth"
+        if not ckpt_path.exists():
+            raise FileNotFoundError(
+                f"SSAMBA checkpoint not found at {ckpt_path}. "
+                "Please download from Google Drive (see tasks.md)."
+            )
+        return SSAMBAHFEncoder(
+            checkpoint_path=str(ckpt_path),
+            model_size=size,
             input_tdim=512,
             device=device,
         )
