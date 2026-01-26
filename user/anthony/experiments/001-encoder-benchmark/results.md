@@ -134,6 +134,22 @@ Successfully ran SSAMBA using the HuggingFace-compatible port (experiment 004), 
 
 **Conclusion**: SSAMBA pretrained weights are not suitable for frozen feature extraction with linear probes. Would require LoRA/full finetuning to achieve competitive results, similar to the wav2vec2 situation but less severe (18% > 2% random baseline).
 
+### Part E: SSAMBA-HF LoRA Finetuning (2026-01-26, In Progress)
+
+Testing whether LoRA finetuning can improve SSAMBA-HF's poor linear probe accuracy (18.4%), similar to how EAT improved from 77.9% → 94.6%.
+
+**Configuration:**
+- Encoder: SSAMBA-HF-small (25.3M params)
+- LoRA targets: `in_proj`, `out_proj` (Mamba block projections)
+- Trainable params: 589,824 (2.3% of model)
+- Batch size: 4 (limited by memory)
+- GPU: RTX 6000 (24GB)
+- Epochs: 50 (5-fold CV)
+
+**Status:** Running (job 3447764) - ~19s/batch due to HF Mamba port lacking CUDA kernels.
+
+**Known limitation:** The HF Mamba port is ~100x slower than the original mamba-ssm CUDA implementation because it uses explicit Python loops for the SSM recurrence instead of optimized parallel scan kernels.
+
 ### Confounders
 
 - **Linear probe vs finetuning**: Published results use finetuning; we use frozen features
@@ -170,6 +186,7 @@ Successfully ran SSAMBA using the HuggingFace-compatible port (experiment 004), 
 - [ ] Add BirdNET encoder for comparison (bird-specific pretraining)
 - [ ] Run on AudioSet bird subset (stretch goal)
 - [ ] Inference time benchmarks (GPU/CPU at various batch sizes)
-- [ ] Consider SSAMBA LoRA finetuning (may improve like EAT: 77.9% → 94.6%)
+- [x] ~~Consider SSAMBA LoRA finetuning~~ - In progress (job 3447764), but HF port is slow (~19s/batch)
+- [ ] Add mamba-ssm CUDA kernel support to ssamba_hf for faster training (experiment 004)
 
 **Leads to**: BEATs recommended as primary encoder for BirdCLEF 2026 feature extraction pipeline (fastest + highest accuracy)

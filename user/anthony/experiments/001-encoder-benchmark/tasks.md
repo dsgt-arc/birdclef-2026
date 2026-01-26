@@ -36,6 +36,7 @@
 - [x] 5.4 Run wav2vec2 LoRA r=8 on ESC-50 (3.0% - failed, model didn't learn)
 - ~~[ ] 5.5 Run LoRA r=16 on ESC-50 (if r=8 underfits)~~ (skipped - r=8 sufficient)
 - [x] 5.6 Compare to linear probe and published results
+- [ ] 5.7 Run SSAMBA-HF LoRA r=8 on ESC-50 (job 3447764, in progress)
 
 ## ~~6. Part B.5: AudioSet Birds~~ (Deferred)
 *Deferred - focus on encoder comparison first*
@@ -109,6 +110,7 @@
 | 3234438 | EAT | LoRA r=8, epochs=50, lr=1e-4 | 2026-01-10 | ✅ Completed (94.6%) | `logs/lora-finetune-3234438.out` |
 | 3234515 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-4 | 2026-01-10 | ❌ Failed (NaN loss) | `logs/lora-finetune-3234515.out` |
 | 3242824 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-5, grad_clip=1.0 | 2026-01-10 | ❌ Failed (3.0% - no learning) | `logs/lora-finetune-3242824.out` |
+| 3447764 | SSAMBA-HF | LoRA r=8, epochs=50, lr=1e-4, batch=4 | 2026-01-26 | 🔄 Running (RTX 6000) | `logs/lora-finetune-3447764.out` |
 
 **Expected outputs:**
 - `~/scratch/birdclef-2026/outputs/esc50-lora/eat_lora_r8_results.json` ✅
