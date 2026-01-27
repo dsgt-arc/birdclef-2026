@@ -138,6 +138,7 @@ def load_from_ssamba_checkpoint(
     device: str = "cpu",
     strict: bool = False,
     verbose: bool = True,
+    use_cuda_kernels: bool = None,
 ) -> Tuple[SSAMBAModel, SSAMBAConfig]:
     """Load SSAMBA model from original checkpoint.
 
@@ -147,6 +148,10 @@ def load_from_ssamba_checkpoint(
         device: Device to load model on
         strict: If True, raise error on missing/unexpected keys
         verbose: If True, print detailed loading info
+        use_cuda_kernels: CUDA kernel mode for Mamba layers
+            - None (default): Auto-detect, use CUDA if available and on GPU
+            - True: Require CUDA kernels, fail if unavailable
+            - False: Force pure PyTorch implementation
 
     Returns:
         Tuple of (model, config)
@@ -169,6 +174,23 @@ def load_from_ssamba_checkpoint(
     # Infer config if not provided
     if config is None:
         config = SSAMBAConfig.from_checkpoint(checkpoint_path, device=device)
+
+    # Override use_cuda_kernels if explicitly specified
+    if use_cuda_kernels is not None:
+        config.use_cuda_kernels = use_cuda_kernels
+
+    # Report CUDA kernel availability
+    if verbose and config.use_cuda_kernels is not False:
+        from .mamba import MAMBA_SSM_AVAILABLE
+        if MAMBA_SSM_AVAILABLE:
+            print(f"  CUDA kernels: available (mamba-ssm installed)")
+        else:
+            print(f"  CUDA kernels: NOT available (will use slow PyTorch fallback)")
+            if config.use_cuda_kernels is True:
+                raise RuntimeError(
+                    "use_cuda_kernels=True but mamba-ssm is not installed. "
+                    "Install with: pip install mamba-ssm>=2.0.0"
+                )
 
     if verbose:
         print(f"\nModel config:")

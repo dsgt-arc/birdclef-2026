@@ -159,7 +159,8 @@ class SSAMBAHFForClassification(nn.Module):
 
         self.device = device
         self.encoder, self.config = load_from_ssamba_checkpoint(
-            checkpoint_path, device=device, verbose=True
+            checkpoint_path, device=device, verbose=True,
+            use_cuda_kernels=True,  # Require CUDA kernels for training speed
         )
         self.embed_dim = self.config.embed_dim  # 384 for small
         self.classifier = nn.Linear(self.embed_dim, num_classes)

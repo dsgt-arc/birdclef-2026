@@ -33,9 +33,21 @@ export UV_PROJECT_ENVIRONMENT=${TMPDIR}/${SLURM_JOB_ID}/.venv
 # Set HuggingFace cache to scratch
 export HF_HOME=$scratch_dir/.cache/huggingface
 
+# Load CUDA module for mamba-ssm compilation if using ssamba-hf
+if [[ "${ENCODER:-eat}" == "ssamba-hf" ]]; then
+    module load cuda/12.1.1
+    export MAX_JOBS=4  # Limit parallel jobs during CUDA kernel compilation
+fi
+
 # Sync dependencies from user directory (where pyproject.toml lives)
 cd $user_dir
-uv sync
+if [[ "${ENCODER:-eat}" == "ssamba-hf" ]]; then
+    echo "Installing with CUDA kernel support for ssamba-hf..."
+    echo "CUDA module loaded, MAX_JOBS=$MAX_JOBS"
+    uv sync --extra cuda
+else
+    uv sync
+fi
 
 cd $repo_dir
 

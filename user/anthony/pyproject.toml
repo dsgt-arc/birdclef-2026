@@ -34,6 +34,9 @@ dev = [
     "playwright",
     "py-spy",
 ]
+cuda = [
+    "mamba-ssm>=2.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -46,3 +49,14 @@ packages = ["src/birdclef"]
 members = [
     "experiments/004-ssamba-hf-port/ssamba_hf",
 ]
+
+# Use PyTorch cu121 index for CUDA 12.1 compatibility (matches PACE's cuda/12.1.1 module)
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
+torchaudio = { index = "pytorch-cu121" }
+torchvision = { index = "pytorch-cu121" }

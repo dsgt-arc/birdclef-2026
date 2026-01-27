@@ -24,3 +24,6 @@ dev = [
 peft = [
     "peft>=0.10.0",
 ]
+cuda = [
+    "mamba-ssm>=2.0.0",
+]
