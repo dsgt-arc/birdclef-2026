@@ -21,3 +21,6 @@ dev = [
     "pytest>=8.0.0",
     "ipython>=8.0.0",
 ]
+peft = [
+    "peft>=0.10.0",
+]

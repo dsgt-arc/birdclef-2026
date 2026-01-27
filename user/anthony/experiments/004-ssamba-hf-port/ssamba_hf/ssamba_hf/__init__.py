@@ -26,6 +26,7 @@ from .mamba import (
 )
 from .model import SSAMBAModel
 from .convert import convert_ssamba_weights, load_from_ssamba_checkpoint, analyze_checkpoint
+from .inference import get_embeddings_long, estimate_num_windows, pad_to_window_size
 
 __all__ = [
     # Config
@@ -46,6 +47,10 @@ __all__ = [
     "convert_ssamba_weights",
     "load_from_ssamba_checkpoint",
     "analyze_checkpoint",
+    # Inference utilities
+    "get_embeddings_long",
+    "estimate_num_windows",
+    "pad_to_window_size",
 ]
 
 __version__ = "0.1.0"
