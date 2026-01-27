@@ -1,7 +1,7 @@
 """Mamba layers for SSAMBA model.
 
 This module implements bidirectional Mamba blocks matching VisionMamba's bimamba_type="v2".
-Uses pure PyTorch (no CUDA kernel dependency) for portability.
+Uses pure PyTorch by default, with optional mamba-ssm CUDA kernel support for ~100x speedup.
 """
 
 import math
@@ -13,9 +13,22 @@ from typing import Optional, Tuple
 from .config import SSAMBAConfig
 from .layers import RMSNorm, DropPath
 
+# CUDA kernel availability detection
+try:
+    from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
+    MAMBA_SSM_AVAILABLE = True
+except ImportError:
+    selective_scan_fn = None
+    MAMBA_SSM_AVAILABLE = False
+
+
+def is_cuda_kernel_available() -> bool:
+    """Check if mamba-ssm CUDA kernels are available."""
+    return MAMBA_SSM_AVAILABLE
+
 
 class BidirectionalMamba(nn.Module):
-    """Bidirectional Mamba (bimamba_type=v2) with pure PyTorch SSM.
+    """Bidirectional Mamba (bimamba_type=v2) with optional CUDA kernel support.
 
     This matches the VisionMamba's Mamba layer structure with both forward
     and backward processing weights within a single module.
@@ -24,6 +37,12 @@ class BidirectionalMamba(nn.Module):
         Forward: A_log, D, conv1d, x_proj, dt_proj
         Backward: A_b_log, D_b, conv1d_b, x_proj_b, dt_proj_b
         Shared: in_proj, out_proj
+
+    Args:
+        use_cuda_kernels: Optional[bool]
+            - None (default): Auto-detect, use CUDA kernels if available and on GPU
+            - True: Require CUDA kernels, raise error if unavailable
+            - False: Force pure PyTorch implementation
     """
 
     def __init__(
@@ -43,9 +62,11 @@ class BidirectionalMamba(nn.Module):
         layer_idx: Optional[int] = None,
         device=None,
         dtype=None,
+        use_cuda_kernels: Optional[bool] = None,
     ):
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
+        self._use_cuda_kernels = use_cuda_kernels
         self.d_model = d_model
         self.d_state = d_state
         self.d_conv = d_conv
@@ -96,7 +117,93 @@ class BidirectionalMamba(nn.Module):
         # Output projection (shared)
         self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=bias, **factory_kwargs)
 
+    def _should_use_cuda_kernels(self, x: torch.Tensor) -> bool:
+        """Determine whether to use CUDA kernels for this forward pass."""
+        if self._use_cuda_kernels is False:
+            return False
+        if self._use_cuda_kernels is True:
+            if not MAMBA_SSM_AVAILABLE:
+                raise RuntimeError("use_cuda_kernels=True but mamba-ssm not installed")
+            if not x.is_cuda:
+                raise RuntimeError("use_cuda_kernels=True but tensor not on CUDA device")
+            return True
+        # Auto mode: use CUDA if available and tensor is on GPU
+        return MAMBA_SSM_AVAILABLE and x.is_cuda
+
     def _ssm_forward(
+        self,
+        x: torch.Tensor,
+        z: torch.Tensor,
+        conv1d: nn.Conv1d,
+        x_proj: nn.Linear,
+        dt_proj: nn.Linear,
+        A_log: nn.Parameter,
+        D: nn.Parameter,
+    ) -> torch.Tensor:
+        """Selective scan dispatcher - routes to CUDA or PyTorch backend."""
+        if self._should_use_cuda_kernels(x):
+            return self._ssm_forward_cuda(x, z, conv1d, x_proj, dt_proj, A_log, D)
+        return self._ssm_forward_pytorch(x, z, conv1d, x_proj, dt_proj, A_log, D)
+
+    def _ssm_forward_cuda(
+        self,
+        x: torch.Tensor,
+        z: torch.Tensor,
+        conv1d: nn.Conv1d,
+        x_proj: nn.Linear,
+        dt_proj: nn.Linear,
+        A_log: nn.Parameter,
+        D: nn.Parameter,
+    ) -> torch.Tensor:
+        """CUDA-accelerated selective scan using mamba-ssm kernels.
+
+        Args:
+            x: Input after in_proj, shape (B, L, d_inner)
+            z: Gating signal, shape (B, L, d_inner)
+            conv1d: 1D convolution layer
+            x_proj: Projection to dt, B, C
+            dt_proj: Delta projection
+            A_log: Log of A matrix
+            D: Skip connection
+
+        Returns:
+            Output tensor, shape (B, L, d_inner)
+        """
+        B, L, d_inner = x.shape
+
+        # Conv1d (transpose for (B, D, L) layout)
+        x = x.transpose(1, 2)
+        x = conv1d(x)[:, :, :L]
+        x = F.silu(x)
+
+        # Project to get delta, B, C
+        x_dbl = x_proj(x.transpose(1, 2))
+        dt, B_mat, C_mat = x_dbl.split([self.dt_rank, self.d_state, self.d_state], dim=-1)
+        dt = dt_proj.weight @ dt.transpose(1, 2)  # (B, d_inner, L)
+
+        # Prepare for selective_scan_fn (expects specific tensor layouts)
+        A = -torch.exp(A_log.float())  # (d_inner, d_state)
+        B_mat = B_mat.transpose(1, 2).contiguous()  # (B, d_state, L)
+        C_mat = C_mat.transpose(1, 2).contiguous()  # (B, d_state, L)
+        z = z.transpose(1, 2).contiguous()  # (B, d_inner, L)
+
+        # Call CUDA kernel
+        y = selective_scan_fn(
+            u=x.contiguous(),
+            delta=dt.contiguous(),
+            A=A.contiguous(),
+            B=B_mat,
+            C=C_mat,
+            D=D.float(),
+            z=z,
+            delta_bias=dt_proj.bias.float() if dt_proj.bias is not None else None,
+            delta_softplus=True,
+            return_last_state=False,
+        )
+
+        return y.transpose(1, 2)
+
+    def _ssm_forward_pytorch(
         self,
         x: torch.Tensor,
         z: torch.Tensor,
@@ -238,6 +345,7 @@ class MambaBlock(nn.Module):
             d_conv=config.d_conv,
             expand=config.expand,
             layer_idx=layer_idx,
+            use_cuda_kernels=config.use_cuda_kernels,
         )
         self.drop_path = DropPath(config.drop_path_rate)
         self.residual_in_fp32 = config.residual_in_fp32

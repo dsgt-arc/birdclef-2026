@@ -1,7 +1,7 @@
 """SSAMBA model configuration."""
 
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 @dataclass
@@ -47,6 +47,9 @@ class SSAMBAConfig:
 
     # Regularization
     drop_path_rate: float = 0.0
+
+    # CUDA kernel optimization
+    use_cuda_kernels: Optional[bool] = None  # None=auto, True=require, False=disable
 
     @property
     def num_patches(self) -> int:
