@@ -106,28 +106,20 @@ def compare_pre_layer_inputs(
     B = x.shape[0]
 
     # Original model: manually trace to get pre-layer input
+    # use_middle_cls_token=False in pretraining -> CLS prepended
     with torch.no_grad():
         orig_x = original_model.v.patch_embed(x)
-        num_patches = orig_x.shape[1]
         cls_tokens = original_model.v.cls_token.expand(B, -1, -1)
-        token_position = num_patches // 2
-        orig_x = torch.cat(
-            [orig_x[:, :token_position, :], cls_tokens, orig_x[:, token_position:, :]],
-            dim=1,
-        )
+        orig_x = torch.cat([cls_tokens, orig_x], dim=1)
         orig_x = orig_x + original_model.v.pos_embed
         orig_x = original_model.v.pos_drop(orig_x)
 
     # HF model: manually trace to get pre-layer input
+    # use_middle_cls_token=False -> CLS prepended
     with torch.no_grad():
         hf_x = hf_model.patch_embed(x)
-        num_patches_hf = hf_x.shape[1]
         cls_tokens_hf = hf_model.cls_token.expand(B, -1, -1)
-        token_position_hf = num_patches_hf // 2
-        hf_x = torch.cat(
-            [hf_x[:, :token_position_hf, :], cls_tokens_hf, hf_x[:, token_position_hf:, :]],
-            dim=1,
-        )
+        hf_x = torch.cat([cls_tokens_hf, hf_x], dim=1)
         hf_x = hf_x + hf_model.pos_embed
         hf_x = hf_model.pos_drop(hf_x)
 
@@ -197,13 +189,9 @@ def main():
         x = spectrogram_device.unsqueeze(1).transpose(2, 3)
         B = x.shape[0]
         x_orig = original_model.v.patch_embed(x)
-        num_patches = x_orig.shape[1]
         cls_tokens = original_model.v.cls_token.expand(B, -1, -1)
-        token_position = num_patches // 2
-        x_orig = torch.cat(
-            [x_orig[:, :token_position, :], cls_tokens, x_orig[:, token_position:, :]],
-            dim=1,
-        )
+        # use_middle_cls_token=False in pretraining -> CLS prepended
+        x_orig = torch.cat([cls_tokens, x_orig], dim=1)
         x_orig = x_orig + original_model.v.pos_embed
         x_orig = original_model.v.pos_drop(x_orig)
 
