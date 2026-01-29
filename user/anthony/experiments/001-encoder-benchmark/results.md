@@ -5,9 +5,9 @@
 
 ## Summary
 
-BEATs and AST both achieve ~95-96% accuracy on ESC-50 using frozen features with a linear probe, significantly outperforming other encoders. EAT requires mean pooling (not CLS token) for competitive performance. LoRA finetuning dramatically improves EAT (77.9% → 94.6%) but fails completely for wav2vec2 due to domain mismatch.
+BEATs and AST both achieve ~95-96% accuracy on ESC-50 using frozen features with a linear probe, significantly outperforming other encoders. EAT requires mean pooling (not CLS token) for competitive performance. LoRA finetuning dramatically improves EAT (77.9% → 94.6%) but fails completely for wav2vec2 due to domain mismatch. SSAMBA-HF LoRA reaches only 29.6%, far below published 96% — numerical correctness verification is now the priority.
 
-**Verdict**: BEATs is best for frozen features (fastest + highest accuracy); AST is a close second but 5x slower. SSAMBA-HF port works but produces poor linear probe accuracy (18.4%), confirming its representations require finetuning.
+**Verdict**: BEATs is best for frozen features (fastest + highest accuracy); AST is a close second but 5x slower. SSAMBA-HF port produces poor accuracy even with LoRA finetuning (29.6%), which is suspicious and motivates numerical correctness verification before further training.
 
 ## Observations
 
@@ -134,9 +134,12 @@ Successfully ran SSAMBA using the HuggingFace-compatible port (experiment 004), 
 
 **Conclusion**: SSAMBA pretrained weights are not suitable for frozen feature extraction with linear probes. Would require LoRA/full finetuning to achieve competitive results, similar to the wav2vec2 situation but less severe (18% > 2% random baseline).
 
-### Part E: SSAMBA-HF LoRA Finetuning (2026-01-26, In Progress)
+### Part E: SSAMBA-HF LoRA Finetuning (Completed 2026-01-27)
 
-Testing whether LoRA finetuning can improve SSAMBA-HF's poor linear probe accuracy (18.4%), similar to how EAT improved from 77.9% → 94.6%.
+| Encoder | Method | Mean Accuracy | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|---------|--------|--------------|--------|--------|--------|--------|--------|
+| SSAMBA-HF-small | Linear probe | 18.4% | 21.8% | 16.8% | 21.3% | 16.8% | 15.5% |
+| SSAMBA-HF-small | LoRA r=8 | **29.6%** | 30.5% | 23.5% | 32.3% | 34.0% | 27.8% |
 
 **Configuration:**
 - Encoder: SSAMBA-HF-small (25.3M params)
@@ -145,10 +148,39 @@ Testing whether LoRA finetuning can improve SSAMBA-HF's poor linear probe accura
 - Batch size: 4 (limited by memory)
 - GPU: RTX 6000 (24GB)
 - Epochs: 50 (5-fold CV)
+- CUDA kernels: enabled via mamba-ssm (confirmed in job logs)
 
-**Status:** Running (job 3447764) - ~19s/batch due to HF Mamba port lacking CUDA kernels.
+**Job history:**
+- Job 3447764: Crashed in Fold 2 (slow PyTorch fallback, pre-CUDA kernel support)
+- Job 3519842: Completed all 5 folds successfully with CUDA kernels
 
-**Known limitation:** The HF Mamba port is ~100x slower than the original mamba-ssm CUDA implementation because it uses explicit Python loops for the SSM recurrence instead of optimized parallel scan kernels.
+**Key findings:**
+- LoRA improves from 18.4% → 29.6% (+11.2%), far less than EAT's +16.7% improvement
+- 29.6% is far below published 96.0% (full finetuning) — the gap is suspiciously large
+- Even with LoRA, SSAMBA-HF performs worse than EAT's frozen linear probe (77.9%)
+- This suggests either a porting bug or a preprocessing mismatch rather than just a finetuning gap
+
+### Part F: SSAMBA-HF Full Finetuning (Failed)
+
+Attempted full finetuning to match the published 96% result. Both attempts failed.
+
+**Job 3523486 (V100-16GB): Out of Memory**
+- Error: `OutOfMemoryError: CUDA out of memory. Tried to allocate 74.00 MiB (GPU 0; 15.77 GiB total capacity; 15.08 GiB already allocated)`
+- V100-16GB insufficient for full finetuning of 25.3M params with batch size 4
+- Peak memory exceeds 16GB when all parameters require gradients
+
+**Job 3523727 (RTX 6000-24GB): Hit Walltime**
+- Training started successfully on RTX 6000 (24GB)
+- CUDA kernels confirmed working (mamba-ssm loaded)
+- Hit 4-hour walltime limit during Fold 1 training
+- Full finetuning is significantly slower than LoRA even with CUDA kernels
+
+**Conclusion:** Full finetuning requires either:
+1. A larger GPU (A100-40GB) with longer walltime allocation
+2. Gradient checkpointing to reduce memory footprint
+3. The script (`finetune_full.py`) is ready but infrastructure is the bottleneck
+
+**However**: Given the poor LoRA results (29.6%), full finetuning alone is unlikely to reach 96%. The priority is verifying numerical correctness of the SSAMBA-HF port before investing more compute.
 
 ### Confounders
 
@@ -181,12 +213,18 @@ Testing whether LoRA finetuning can improve SSAMBA-HF's poor linear probe accura
 
 ## Next Steps
 
+- [ ] **PRIORITY: Verify SSAMBA-HF numerical correctness** (experiment 004 verification suite)
+  - Preprocessing audit: fbank params, normalization, input dimensions
+  - Multi-input verification: multiple seeds + real ESC-50 audio
+  - Layer-by-layer activation comparison (original vs HF)
+  - CUDA vs PyTorch kernel comparison
 - [ ] Fix SSAST environment (port to newer timm or separate venv)
 - [x] ~~Fix SSAMBA environment~~ - Completed via HF port (experiment 004); 18.4% accuracy not competitive
 - [ ] Add BirdNET encoder for comparison (bird-specific pretraining)
 - [ ] Run on AudioSet bird subset (stretch goal)
 - [ ] Inference time benchmarks (GPU/CPU at various batch sizes)
-- [x] ~~Consider SSAMBA LoRA finetuning~~ - In progress (job 3447764), but HF port is slow (~19s/batch)
-- [ ] Add mamba-ssm CUDA kernel support to ssamba_hf for faster training (experiment 004)
+- [x] ~~SSAMBA LoRA finetuning~~ - Completed (29.6% mean, far below published 96%)
+- [x] ~~Add mamba-ssm CUDA kernel support~~ - Completed (experiment 004), confirmed working in LoRA job
+- [ ] SSAMBA full finetuning (blocked on verification + larger GPU)
 
-**Leads to**: BEATs recommended as primary encoder for BirdCLEF 2026 feature extraction pipeline (fastest + highest accuracy)
+**Leads to**: BEATs recommended as primary encoder for BirdCLEF 2026 feature extraction pipeline (fastest + highest accuracy). SSAMBA-HF requires correctness verification before further investment.

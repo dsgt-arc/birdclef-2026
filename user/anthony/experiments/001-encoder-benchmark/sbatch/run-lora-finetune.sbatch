@@ -30,21 +30,37 @@ trap "kill $GPU_MONITOR_PID 2>/dev/null || true" EXIT
 # Sync venv to local NVMe for faster package loading
 export UV_PROJECT_ENVIRONMENT=${TMPDIR}/${SLURM_JOB_ID}/.venv
 
+# Use copy mode to avoid hardlink failures between scratch and tmpdir filesystems
+export UV_LINK_MODE=copy
+
 # Set HuggingFace cache to scratch
 export HF_HOME=$scratch_dir/.cache/huggingface
-
-# Load CUDA module for mamba-ssm compilation if using ssamba-hf
-if [[ "${ENCODER:-eat}" == "ssamba-hf" ]]; then
-    module load cuda/12.1.1
-    export MAX_JOBS=4  # Limit parallel jobs during CUDA kernel compilation
-fi
 
 # Sync dependencies from user directory (where pyproject.toml lives)
 cd $user_dir
 if [[ "${ENCODER:-eat}" == "ssamba-hf" ]]; then
     echo "Installing with CUDA kernel support for ssamba-hf..."
-    echo "CUDA module loaded, MAX_JOBS=$MAX_JOBS"
+    # mamba-ssm and causal-conv1d wheels are sourced from GitHub releases in pyproject.toml
     uv sync --extra cuda
+
+    # Diagnostic: test mamba-ssm CUDA kernel import
+    echo ""
+    echo "=== Testing mamba-ssm CUDA kernels ==="
+    ${UV_PROJECT_ENVIRONMENT}/bin/python -c "
+import sys
+print(f'Python: {sys.executable}')
+try:
+    import mamba_ssm
+    print(f'mamba_ssm version: {mamba_ssm.__version__}')
+    print(f'mamba_ssm location: {mamba_ssm.__file__}')
+    from mamba_ssm.ops.selective_scan_interface import selective_scan_fn
+    print('CUDA kernels: AVAILABLE')
+except Exception as e:
+    print(f'mamba_ssm import failed: {e}')
+    sys.exit(1)
+"
+    echo "=== End mamba-ssm test ==="
+    echo ""
 else
     uv sync
 fi

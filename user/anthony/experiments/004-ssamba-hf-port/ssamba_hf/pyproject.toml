@@ -25,5 +25,6 @@ peft = [
     "peft>=0.10.0",
 ]
 cuda = [
+    "causal-conv1d>=1.4.0",  # Required by mamba-ssm for CUDA kernels
     "mamba-ssm>=2.0.0",
 ]
