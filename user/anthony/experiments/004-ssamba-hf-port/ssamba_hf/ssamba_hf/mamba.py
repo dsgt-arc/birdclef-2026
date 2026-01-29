@@ -324,7 +324,7 @@ class MambaBlock(nn.Module):
     """Single bidirectional Mamba block with pre-norm.
 
     This matches VisionMamba's Block structure:
-    - Pre-norm with RMSNorm
+    - Pre-norm with RMSNorm or LayerNorm (based on config.rms_norm)
     - Bidirectional Mamba mixer
     - Residual connection with drop path
     """
@@ -338,7 +338,10 @@ class MambaBlock(nn.Module):
         self.config = config
         self.layer_idx = layer_idx
 
-        self.norm = RMSNorm(config.embed_dim)
+        if config.rms_norm:
+            self.norm = RMSNorm(config.embed_dim)
+        else:
+            self.norm = nn.LayerNorm(config.embed_dim)
         self.mixer = BidirectionalMamba(
             d_model=config.embed_dim,
             d_state=config.d_state,

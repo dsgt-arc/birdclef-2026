@@ -50,7 +50,10 @@ class SSAMBAModel(nn.Module):
         self.layers = BidirectionalMambaStack(config)
 
         # Final normalization
-        self.norm_f = RMSNorm(config.embed_dim)
+        if config.rms_norm:
+            self.norm_f = RMSNorm(config.embed_dim)
+        else:
+            self.norm_f = nn.LayerNorm(config.embed_dim)
 
         # Initialize weights
         self._init_weights()

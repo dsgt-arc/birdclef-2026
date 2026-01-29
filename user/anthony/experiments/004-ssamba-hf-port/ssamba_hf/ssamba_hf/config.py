@@ -39,11 +39,11 @@ class SSAMBAConfig:
 
     # Token configuration
     use_cls_token: bool = True
-    use_middle_cls_token: bool = True  # Insert CLS token in middle (SSAMBA default)
+    use_middle_cls_token: bool = False  # CLS token prepended (pretraining uses false)
 
     # Normalization
-    rms_norm: bool = True
-    residual_in_fp32: bool = True
+    rms_norm: bool = False  # Use nn.LayerNorm (pretraining uses rms_norm=false)
+    residual_in_fp32: bool = False  # Pretraining uses residual_in_fp32=false
 
     # Regularization
     drop_path_rate: float = 0.0
@@ -120,9 +120,15 @@ class SSAMBAConfig:
         depth = max(layer_indices) + 1 if layer_indices else 24
         print(f"Inferred depth={depth} from checkpoint (found layer indices: {sorted(layer_indices)[:5]}...)")
 
+        # Auto-detect norm type: LayerNorm has bias, RMSNorm does not
+        has_norm_bias = any(k.endswith("norm.bias") for k in sd.keys())
+        rms_norm = not has_norm_bias
+        print(f"Inferred rms_norm={rms_norm} from checkpoint (norm.bias {'absent' if rms_norm else 'present'})")
+
         return cls(
             embed_dim=embed_dim,
             depth=depth,
             img_size=(input_fdim, input_tdim),
             patch_size=patch_size,
+            rms_norm=rms_norm,
         )

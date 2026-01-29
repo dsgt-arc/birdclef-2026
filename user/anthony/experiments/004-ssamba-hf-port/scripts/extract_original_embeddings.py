@@ -122,15 +122,17 @@ def load_original_model(checkpoint_path: str, device: str = "cuda"):
           f"embed_dim={embed_dim}, model_size={model_size}")
 
     # Vision Mamba config for SSAMBA
+    # The pretraining script (run_mask_patch_amba.sh) uses:
+    #   rms_norm='false', residual_in_fp32='false', use_middle_cls_token='false'
     vision_mamba_config = {
         "img_size": (p_input_fdim, p_input_tdim),
         "patch_size": p_fshape,  # Assuming square patches
         "stride": p_fshape // 2,
         "embed_dim": embed_dim,
         "depth": 24,
-        "rms_norm": True,
-        "residual_in_fp32": True,
-        "fused_add_norm": True,
+        "rms_norm": False,
+        "residual_in_fp32": False,
+        "fused_add_norm": False,
         "final_pool_type": "mean",
         "if_abs_pos_embed": True,
         "if_rope": False,
@@ -138,7 +140,7 @@ def load_original_model(checkpoint_path: str, device: str = "cuda"):
         "bimamba_type": "v2",
         "if_cls_token": True,
         "if_devide_out": True,
-        "use_middle_cls_token": True,
+        "use_middle_cls_token": False,
     }
 
     # Create model
@@ -171,7 +173,7 @@ def extract_embeddings(model, spectrogram: torch.Tensor, device: str = "cuda") -
     NOTE: This uses the CORRECT forward path for SSAMBA:
     - if_bidirectional=False (default) means single layer loop
     - Each layer with bimamba_type='v2' internally handles bidirectionality
-    - CLS token is inserted in the middle (use_middle_cls_token=True)
+    - CLS token is prepended (use_middle_cls_token=False in pretraining script)
     """
     model.eval()
     spectrogram = spectrogram.to(device)
@@ -186,12 +188,10 @@ def extract_embeddings(model, spectrogram: torch.Tensor, device: str = "cuda") -
 
         # Patch embedding
         x = model.v.patch_embed(x)
-        num_patches = x.shape[1]
 
-        # Add CLS token in the MIDDLE (use_middle_cls_token=True)
+        # Add CLS token at the BEGINNING (use_middle_cls_token=False)
         cls_tokens = model.v.cls_token.expand(B, -1, -1)
-        token_position = num_patches // 2
-        x = torch.cat([x[:, :token_position, :], cls_tokens, x[:, token_position:, :]], dim=1)
+        x = torch.cat([cls_tokens, x], dim=1)
 
         x = x + model.v.pos_embed
         x = model.v.pos_drop(x)
@@ -214,10 +214,8 @@ def extract_embeddings(model, spectrogram: torch.Tensor, device: str = "cuda") -
             residual = residual + model.v.drop_path(hidden_states)
         hidden_states = model.v.norm_f(residual.to(dtype=model.v.norm_f.weight.dtype))
 
-        # Average all tokens except CLS (which is in the middle)
-        tokens_before = hidden_states[:, :token_position, :]
-        tokens_after = hidden_states[:, token_position + 1:, :]
-        embeddings = torch.cat([tokens_before, tokens_after], dim=1).mean(dim=1)
+        # Average all tokens except CLS (which is at position 0)
+        embeddings = hidden_states[:, 1:, :].mean(dim=1)
 
     return embeddings
 

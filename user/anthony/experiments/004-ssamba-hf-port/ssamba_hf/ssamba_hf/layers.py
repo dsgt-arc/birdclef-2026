@@ -10,9 +10,10 @@ class RMSNorm(nn.Module):
 
     Reference: https://arxiv.org/abs/1910.07467
 
-    Note: The original triton RMSNorm does NOT have bias, even though the SSAMBA
-    checkpoint saves norm.bias values. These biases are ignored at inference in
-    the original model, so we also ignore them here for numerical equivalence.
+    Note: RMSNorm has no bias parameter. The SSAMBA small-400 checkpoint was
+    pretrained with rms_norm=false (nn.LayerNorm), so norm layers have trained
+    biases. When loading such checkpoints, use rms_norm=False in the config to
+    select nn.LayerNorm instead.
     """
 
     def __init__(self, hidden_size: int, eps: float = 1e-6):
