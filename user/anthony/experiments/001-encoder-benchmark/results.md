@@ -196,6 +196,62 @@ The SSAMBA paper (IEEE SLT 2024) reports finetuned ESC-50 accuracy per model siz
 
 Note: Our 87.0% is a single fold, not a 5-fold mean. The published 85.5% is presumably a 5-fold mean. Full 5-fold CV is needed for a fair comparison, but the fold 1 result is very encouraging.
 
+### Part H: SSAMBA-HF Inference Profiling (2026-01-30)
+
+Stage-level inference profiling on V100-PCIE-16GB, comparing CUDA kernels (mamba-ssm 2.3.0) vs PyTorch fallback.
+
+**GPU Benchmarks (5s audio, 16kHz):**
+
+| Batch | CUDA kernels (ms) | PyTorch fallback (ms) | Kernel speedup | Throughput (CUDA) |
+|-------|-------------------|----------------------|----------------|-------------------|
+| 1 | 30 | 3,908 | 130x | 33 samp/s |
+| 4 | 42 | 3,922 | 94x | 96 samp/s |
+| 16 | 150 | 6,301 | 42x | 107 samp/s |
+| 32 | 292 | 6,348 | 22x | 110 samp/s |
+
+**CPU Benchmarks (4 threads):**
+
+| Batch | With mamba-ssm (ms) | Without mamba-ssm (ms) | Throughput |
+|-------|--------------------|-----------------------|------------|
+| 1 | 3,448 | 4,779 | 0.3 samp/s |
+| 4 | 5,551 | 7,376 | 0.7 samp/s |
+| 16 | 10,827 | 12,230 | 1.5 samp/s |
+
+**SSAMBA-HF-small vs BEATs (GPU, CUDA kernels):**
+
+| Batch | SSAMBA (ms) | BEATs (ms) | SSAMBA / BEATs | SSAMBA peak MB | BEATs peak MB |
+|-------|-------------|------------|----------------|----------------|---------------|
+| 1 | 30 | 8 | 3.8x slower | 132 | 242 |
+| 4 | 42 | 13 | 3.3x slower | 205 | 496 |
+| 16 | 150 | 44 | 3.4x slower | 494 | 1,459 |
+| 32 | 292 | 92 | 3.2x slower | 881 | 2,759 |
+
+**Stage breakdown (GPU, CUDA kernels, batch=1):**
+
+| Stage | Time (ms) | % of total |
+|-------|-----------|------------|
+| fbank (CPU) | 1.5 | 4.9% |
+| patch_embed | 0.2 | 0.5% |
+| pos_embed | 0.1 | 0.3% |
+| **mamba_layers** | **28.1** | **93.5%** |
+| norm | 0.1 | 0.4% |
+| pool | 0.1 | 0.2% |
+
+**Key findings:**
+
+1. **CUDA kernels are essential** — without them, GPU inference is 22-130x slower (the PyTorch fallback selective scan is not parallelized). SSAMBA is unusable without mamba-ssm.
+2. **SSAMBA is ~3-4x slower than BEATs on GPU** despite having fewer parameters (26M vs 90M). Mamba's linear-in-sequence-length advantage doesn't help at the ~1024 patch sequence lengths used for audio spectrograms. BEATs' attention is quadratic but highly optimized, and the constant factors dominate at these lengths.
+3. **SSAMBA uses ~3x less GPU memory** than BEATs — a real advantage for deployment or larger batch sizes.
+4. **Mamba layers dominate** at 84-99% of inference time across all configurations.
+5. **CPU inference is impractical** — 3.4s per sample even with mamba-ssm (vs 124ms for BEATs, a 28x gap).
+
+**Why SSAMBA is slower than BEATs despite Mamba's theoretical advantage:**
+- Mamba's O(n) scaling beats attention's O(n²) only at long sequence lengths. At 1024 patches, attention with optimized CUDA kernels (FlashAttention, cuBLAS GEMM) is faster in absolute terms.
+- SSAMBA-small has 24 layers with bidirectional processing (48 sequential scan operations), creating a deep serial dependency chain that limits GPU parallelism.
+- BEATs has 12 transformer layers with highly parallelizable self-attention.
+
+**Implications for BirdCLEF**: SSAMBA's speed disadvantage makes it less attractive for the inference-constrained Kaggle submission (2-hour limit for ~200k test clips). BEATs at 8ms/sample (GPU batch=1) processes 200k clips in ~27 minutes; SSAMBA at 30ms/sample would need ~100 minutes. Both fit, but BEATs leaves more headroom. SSAMBA's memory advantage matters less given the V100/T4 memory available on Kaggle.
+
 ### Confounders
 
 - **Linear probe vs finetuning**: Published results use finetuning; we use frozen features
@@ -240,6 +296,6 @@ Note: Our 87.0% is a single fold, not a 5-fold mean. The published 85.5% is pres
 - [ ] Fix SSAST environment (port to newer timm or separate venv)
 - [ ] Add BirdNET encoder for comparison (bird-specific pretraining)
 - [ ] Run on AudioSet bird subset (stretch goal)
-- [ ] Inference time benchmarks (GPU/CPU at various batch sizes)
+- [x] ~~Inference time benchmarks~~ - SSAMBA 3-4x slower than BEATs on GPU (30ms vs 8ms batch=1), but uses 3x less memory
 
 **Leads to**: BEATs recommended as primary encoder for frozen features (fastest + highest accuracy). SSAMBA-HF-small with finetuning (87.0% fold 1) exceeds published results for this model size (85.5%) and approaches SSAMBA-base (89.3%). The 96% target in tasks.md was incorrect — it does not appear in the SSAMBA paper for any model size.
