@@ -391,6 +391,11 @@ class BidirectionalMambaStack(nn.Module):
 
     With bimamba_type="v2", each block internally handles both directions.
     The depth parameter specifies the number of blocks.
+
+    The original SSAMBA uses two levels of bidirectionality:
+    1. Inner: each block has bimamba_type="v2" (forward + backward SSM)
+    2. Outer: layers are processed in pairs — even layers see normal input,
+       odd layers see flipped input, and results are summed.
     """
 
     def __init__(self, config: SSAMBAConfig):
@@ -406,6 +411,10 @@ class BidirectionalMambaStack(nn.Module):
     def forward(self, hidden_states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass through bidirectional Mamba stack.
 
+        Matches the original SSAMBA outer bidirectional loop: layers are
+        processed in pairs, where even layers see normal input and odd
+        layers see sequence-flipped input.  Results are summed.
+
         Args:
             hidden_states: Input tensor (batch, seq_len, embed_dim)
 
@@ -414,9 +423,17 @@ class BidirectionalMambaStack(nn.Module):
         """
         residual = None
 
-        # Process through all layers
-        for layer in self.layers:
-            hidden_states, residual = layer(hidden_states, residual)
+        # Process layers in pairs (outer bidirectional loop)
+        for i in range(len(self.layers) // 2):
+            hidden_states_f, residual_f = self.layers[i * 2](
+                hidden_states, residual
+            )
+            hidden_states_b, residual_b = self.layers[i * 2 + 1](
+                hidden_states.flip([1]),
+                None if residual is None else residual.flip([1]),
+            )
+            hidden_states = hidden_states_f + hidden_states_b.flip([1])
+            residual = residual_f + residual_b.flip([1])
 
         # Return both for proper final norm handling
         return hidden_states, residual

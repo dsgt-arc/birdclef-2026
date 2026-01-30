@@ -60,8 +60,9 @@
 - [x] 6.3.1 Run AST + linear probe on ESC-50 → **95.50% accuracy**
 - [ ] 6.3.2 Run SSAST + linear probe on ESC-50 → **BLOCKED** (see issues below)
 - [ ] 6.3.3 Run SSAMBA-tiny + linear probe on ESC-50 → **BLOCKED** (see issues below)
-- [ ] 6.3.4 Run SSAMBA-small + linear probe on ESC-50
+- [x] 6.3.4 Run SSAMBA-HF-small + linear probe on ESC-50 → **18.4%** (config bug, see 6.3.6)
 - [ ] 6.3.5 Run SSAMBA-base + linear probe on ESC-50
+- [ ] 6.3.6 Re-run SSAMBA-HF-small after config fix (job 3580633) — fixes: `rms_norm`, `use_middle_cls_token`, `residual_in_fp32` defaults corrected in `4be6cab`/`d75c0df`
 
 ### 6.4 Inference Time Benchmarks
 - [ ] 6.4.1 Benchmark all encoders on GPU (batch=1, 16, 32)
@@ -111,6 +112,7 @@
 | 3234515 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-4 | 2026-01-10 | ❌ Failed (NaN loss) | `logs/lora-finetune-3234515.out` |
 | 3242824 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-5, grad_clip=1.0 | 2026-01-10 | ❌ Failed (3.0% - no learning) | `logs/lora-finetune-3242824.out` |
 | 3447764 | SSAMBA-HF | LoRA r=8, epochs=50, lr=1e-4, batch=4 | 2026-01-26 | 🔄 Running (RTX 6000) | `logs/lora-finetune-3447764.out` |
+| 3580633 | SSAMBA-HF-small | Linear probe, epochs=100, lr=1e-3 (re-run after config fix) | 2026-01-29 | 🔄 Pending | `logs/benchmark-ssamba-hf-3580633.out` |
 
 **Expected outputs:**
 - `~/scratch/birdclef-2026/outputs/esc50-lora/eat_lora_r8_results.json` ✅
