@@ -64,3 +64,6 @@
 [submodule "vendor/ast"]
 	path = vendor/ast
 	url = https://github.com/YuanGongND/ast.git
+[submodule "vendor/mamba-onnx"]
+	path = vendor/mamba-onnx
+	url = https://github.com/acmiyaguchi/mamba-onnx.git
