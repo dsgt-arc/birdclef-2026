@@ -98,7 +98,8 @@
 
 ## 7. Close SSAMBA-HF Performance Gap
 
-Goal: match published 96% full finetune accuracy on ESC-50.
+Goal: match published SSAMBA-small finetuned accuracy on ESC-50 (85.5%, per paper Table 2).
+Note: The 96% target was incorrect — the SSAMBA paper's highest result is 89.3% (base, 99M params). We are running SSAMBA-small (26M params).
 Reference: 9 differences found between original SSAMBA and HF port finetuning.
 
 ### 7.1 Phase 1: Fix Training Hyperparameters
@@ -126,9 +127,9 @@ Reference: 9 differences found between original SSAMBA and HF port finetuning.
 - [x] 7.4.4 Add `drop_last=True` to training DataLoader (matching `run_amba.py:163`)
 
 ### 7.5 Verification
-- [ ] 7.5.1 Full finetune fold 1 (job 3637115): target val_acc > 85% (Phase 1+2 combined)
-- [ ] 7.5.2 LoRA finetune fold 1 (job 3637117): compare to previous 81.5%
-- [ ] 7.5.3 Full 5-fold mean accuracy vs published 96%
+- [x] 7.5.1 Full finetune fold 1 (job 3637115): **87.0%** ✅ (target was >85%)
+- [x] 7.5.2 LoRA finetune fold 1 (job 3637117): **87.0%** ✅ (up from 81.5%)
+- [ ] 7.5.3 Full 5-fold mean accuracy vs published 85.5% (SSAMBA-small) — need to run all 5 folds
 
 ## 8. Analysis & Documentation
 - [x] 7.1 Compile results table with accuracy/mAP/inference time
@@ -147,8 +148,8 @@ Reference: 9 differences found between original SSAMBA and HF port finetuning.
 | 3242824 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-5, grad_clip=1.0 | 2026-01-10 | ❌ Failed (3.0% - no learning) | `logs/lora-finetune-3242824.out` |
 | 3447764 | SSAMBA-HF | LoRA r=8, epochs=50, lr=1e-4, batch=4 | 2026-01-26 | 🔄 Running (RTX 6000) | `logs/lora-finetune-3447764.out` |
 | 3580633 | SSAMBA-HF-small | Linear probe, epochs=100, lr=1e-3 (re-run after config fix) | 2026-01-29 | 🔄 Pending | `logs/benchmark-ssamba-hf-3580633.out` |
-| 3637115 | SSAMBA-HF | Full finetune fold 1, Phase 1+2 fixes (Adam wd=5e-7, LN head, noise aug, drop_path=0.1, grad_accum=6, target_len=512, stride=10) | 2026-01-29 | 🔄 Submitted | `logs/full-finetune-3637115.out` |
-| 3637117 | SSAMBA-HF | LoRA r=8 fold 1, Phase 1+2 fixes (LN head, noise aug, drop_path=0.1, target_len=512, stride=10) | 2026-01-29 | 🔄 Submitted | `logs/lora-finetune-3637117.out` |
+| 3637115 | SSAMBA-HF-small | Full finetune fold 1, Phase 1+2 fixes (Adam wd=5e-7, LN head, noise aug, drop_path=0.1, grad_accum=6, target_len=512, stride=10) | 2026-01-29 | ✅ Completed (87.0% fold 1) | `logs/full-finetune-3637115.out` |
+| 3637117 | SSAMBA-HF-small | LoRA r=8 fold 1, Phase 1+2 fixes (LN head, noise aug, drop_path=0.1, target_len=512, stride=10) | 2026-01-29 | ✅ Completed (87.0% fold 1) | `logs/lora-finetune-3637117.out` |
 
 **Expected outputs:**
 - `~/scratch/birdclef-2026/outputs/esc50-lora/eat_lora_r8_results.json` ✅

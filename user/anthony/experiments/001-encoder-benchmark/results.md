@@ -5,9 +5,9 @@
 
 ## Summary
 
-BEATs and AST both achieve ~95-96% accuracy on ESC-50 using frozen features with a linear probe, significantly outperforming other encoders. EAT requires mean pooling (not CLS token) for competitive performance. LoRA finetuning dramatically improves EAT (77.9% → 94.6%) but fails completely for wav2vec2 due to domain mismatch. SSAMBA-HF was fixed (missing outer bidirectional loop) and now achieves 61.6% linear probe and 81.5%+ with LoRA (job still running).
+BEATs and AST both achieve ~95-96% accuracy on ESC-50 using frozen features with a linear probe, significantly outperforming other encoders. EAT requires mean pooling (not CLS token) for competitive performance. LoRA finetuning dramatically improves EAT (77.9% → 94.6%) but fails completely for wav2vec2 due to domain mismatch. SSAMBA-HF-small was fixed (missing outer bidirectional loop) and now achieves 61.6% linear probe, and after matching the original training recipe, both full finetuning and LoRA reach **87.0% on fold 1** — exceeding the published 85.5% for SSAMBA-small.
 
-**Verdict**: BEATs is best for frozen features (fastest + highest accuracy); AST is a close second but 5x slower. SSAMBA-HF linear probe (61.6%) is modest but LoRA finetuning shows strong improvement (81.5% fold 1, remaining folds in progress).
+**Verdict**: BEATs is best for frozen features (fastest + highest accuracy); AST is a close second but 5x slower. SSAMBA-HF-small (26M params) with finetuning exceeds published results for this model size (87.0% fold 1 vs 85.5% published). Full 5-fold CV needed for definitive comparison.
 
 ## Observations
 
@@ -131,46 +131,70 @@ The HF port was missing this entirely — it just ran layers sequentially. This 
 
 **Conclusion**: 61.6% linear probe is reasonable for SSL-pretrained SSAMBA-small (384-dim). The ranking is now: BEATs (95.8%) > AST (95.5%) > EAT (77.9%) > SSAMBA-HF (61.6%) > wav2vec2 (48.2%).
 
-### Part E: SSAMBA-HF LoRA Finetuning (2026-01-29, updated)
+### Part E: SSAMBA-HF LoRA Finetuning (2026-01-30, updated)
 
 | Encoder | Method | Mean Accuracy | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
 |---------|--------|--------------|--------|--------|--------|--------|--------|
 | SSAMBA-HF-small (broken) | Linear probe | 18.4% | 21.8% | 16.8% | 21.3% | 16.8% | 15.5% |
 | SSAMBA-HF-small (broken) | LoRA r=8 | 29.6% | 30.5% | 23.5% | 32.3% | 34.0% | 27.8% |
 | SSAMBA-HF-small (fixed) | Linear probe | 61.6% | 63.0% | 64.5% | 62.5% | 61.0% | 57.0% |
-| SSAMBA-HF-small (fixed) | LoRA r=8 | **TBD** | 81.5% | _running_ | - | - | - |
+| SSAMBA-HF-small (fixed) | LoRA r=8 (pre-recipe fix) | **TBD** | 81.5% | - | - | - | - |
+| SSAMBA-HF-small (fixed) | LoRA r=8 (matched recipe) | **TBD** | **87.0%** | - | - | - | - |
 
-**Configuration:**
-- Encoder: SSAMBA-HF-small (25.3M params)
+**Configuration (matched recipe, job 3637117):**
+- Encoder: SSAMBA-HF-small (25.3M params, 384 embed_dim, 24 layers)
 - LoRA targets: `in_proj`, `out_proj` (Mamba block projections)
 - Trainable params: 589,824 (2.3% of model)
-- Batch size: 4 (limited by memory)
-- GPU: V100-32GB
-- Epochs: 50 (5-fold CV)
-- CUDA kernels: enabled via mamba-ssm (confirmed in job logs)
+- Optimizer: Adam(wd=5e-7, betas=(0.95,0.999))
+- Head: LayerNorm → Linear (matching original `mlp_head`)
+- LR schedule: MultiStepLR(start=6, gamma=0.85)
+- Norm stats: ESC-50 (mean=-6.63, std=5.36)
+- Noise aug: uniform noise + temporal roll
+- Drop path: 0.1 with per-layer stochastic depth
+- Grad accumulation: batch 8 × 6 steps = effective 48
+- Target length: 512, stride=10 (overlapping patches)
+- GPU: V100-16GB
+- CUDA kernels: enabled via mamba-ssm
 
 **Job history:**
 - Job 3447764: Crashed in Fold 2 (slow PyTorch fallback, pre-CUDA kernel support)
 - Job 3519842: Completed all 5 folds with broken forward pass (29.6%)
-- Job 3633114: Running with fixed outer bidirectional loop (fold 1: 81.5%, fold 2 in progress)
+- Job 3633114: Fixed bidirectional loop, fold 1: 81.5% (pre-recipe fix)
+- Job 3637117: Matched original training recipe, fold 1: **87.0%** (fold 1 only)
 
-**Key findings (after fix):**
-- LoRA improves from 61.6% → 81.5%+ (fold 1), a ~20% improvement from linear probe
-- The broken forward pass was the root cause of the previous 29.6% result
-- With the fix, SSAMBA-HF LoRA now surpasses EAT linear probe (77.9%) and approaches EAT LoRA (94.6%)
-- Full 5-fold results pending (job 3633114 still running)
+**Key findings (after recipe matching):**
+- LoRA improves from 61.6% → 87.0% (fold 1), a ~25% improvement from linear probe
+- Recipe matching (commit `5ac5aec`) improved LoRA from 81.5% → 87.0% on fold 1
+- Full 5-fold results pending
 
-### Part F: SSAMBA-HF Full Finetuning (Failed — needs retry with fix)
+### Part F: SSAMBA-HF Full Finetuning (2026-01-30, updated)
 
-Attempted full finetuning before the outer bidirectional loop fix. Both attempts failed due to infrastructure.
+| Encoder | Method | Mean Accuracy | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 |
+|---------|--------|--------------|--------|--------|--------|--------|--------|
+| SSAMBA-HF-small | Full finetune (matched recipe) | **TBD** | **87.0%** | - | - | - | - |
 
-**Job 3523486 (V100-16GB): Out of Memory**
-- V100-16GB insufficient for full finetuning of 25.3M params with batch size 4
+**Job 3637115 (V100-16GB): Completed fold 1**
+- Full finetuning with all recipe fixes from commit `5ac5aec`
+- Fold 1 accuracy: **87.0%** (same as LoRA)
+- 200 epochs, Adam optimizer, all 25.3M params trainable
 
-**Job 3523727 (RTX 6000-24GB): Hit Walltime**
-- Hit 4-hour walltime limit during Fold 1 training
+**Prior failed attempts (pre-fix):**
+- Job 3523486 (V100-16GB): Out of Memory
+- Job 3523727 (RTX 6000-24GB): Hit 4-hour walltime limit
 
-**Conclusion:** Full finetuning requires a larger GPU (A100-40GB) with longer walltime. Now that the forward pass is fixed (LoRA reaching 81.5%+), full finetuning would be worth retrying to approach the published 96%.
+### Part G: SSAMBA-HF vs Published Results — Model Size Context (2026-01-30)
+
+The SSAMBA paper (IEEE SLT 2024) reports finetuned ESC-50 accuracy per model size:
+
+| Model | Params | Published ESC-50 | Our Result (fold 1) | Method | Gap |
+|-------|--------|-----------------|---------------------|--------|-----|
+| SSAMBA-tiny | 7M | 80.1% | — | — | — |
+| **SSAMBA-small** | **26M** | **85.5%** | **87.0%** | Full finetune / LoRA | **+1.5%** |
+| SSAMBA-base | 99M | 89.3% | — | — | — |
+
+**We are running SSAMBA-small (26M params, 384 embed_dim).** Our fold 1 result of 87.0% actually **exceeds** the published 85.5% for this model size by 1.5%. The 96% target in `tasks.md` was incorrect — the paper does not report 96% for any SSAMBA variant. The highest published SSAMBA result is 89.3% for base (99M params).
+
+Note: Our 87.0% is a single fold, not a 5-fold mean. The published 85.5% is presumably a 5-fold mean. Full 5-fold CV is needed for a fair comparison, but the fold 1 result is very encouraging.
 
 ### Confounders
 
@@ -207,11 +231,15 @@ Attempted full finetuning before the outer bidirectional loop fix. Both attempts
 - [x] ~~Add mamba-ssm CUDA kernel support~~ - Completed (experiment 004)
 - [x] ~~Verify SSAMBA-HF numerical correctness~~ - Found and fixed missing outer bidirectional loop (18.4% → 61.6%)
 - [x] ~~SSAMBA LoRA finetuning (broken)~~ - 29.6% with broken forward pass
-- [ ] **SSAMBA LoRA finetuning (fixed)** - Job 3633114 running (fold 1: 81.5%, fold 2 in progress)
-- [ ] SSAMBA full finetuning (retry with fixed forward pass on A100)
+- [x] ~~SSAMBA LoRA finetuning (fixed, pre-recipe)~~ - 81.5% fold 1
+- [x] ~~Match original training recipe~~ - 9 differences fixed in commit `5ac5aec`
+- [x] ~~SSAMBA full finetuning fold 1~~ - 87.0% (job 3637115, V100-16GB)
+- [x] ~~SSAMBA LoRA finetuning fold 1 (matched recipe)~~ - 87.0% (job 3637117)
+- [ ] **SSAMBA full 5-fold CV** - Run all 5 folds to get proper mean accuracy for comparison to published 85.5%
+- [ ] **SSAMBA LoRA full 5-fold CV** - Compare LoRA vs full finetune across all folds
 - [ ] Fix SSAST environment (port to newer timm or separate venv)
 - [ ] Add BirdNET encoder for comparison (bird-specific pretraining)
 - [ ] Run on AudioSet bird subset (stretch goal)
 - [ ] Inference time benchmarks (GPU/CPU at various batch sizes)
 
-**Leads to**: BEATs recommended as primary encoder for frozen features (fastest + highest accuracy). SSAMBA-HF with LoRA is now competitive (81.5%+ vs EAT LoRA 94.6%), and full finetuning may close the gap further.
+**Leads to**: BEATs recommended as primary encoder for frozen features (fastest + highest accuracy). SSAMBA-HF-small with finetuning (87.0% fold 1) exceeds published results for this model size (85.5%) and approaches SSAMBA-base (89.3%). The 96% target in tasks.md was incorrect — it does not appear in the SSAMBA paper for any model size.
