@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import random
 from pathlib import Path
 
 import torch
@@ -32,6 +33,9 @@ MODEL_CONFIGS = {
         "target_modules": ["in_proj", "out_proj"],  # Shared projections in Mamba blocks
         "embed_dim": 384,
         "default_lr": 1e-4,
+        # ESC-50 normalization (matches original SSAMBA finetuning)
+        "norm_mean": -6.6268077,
+        "norm_std": 5.358466,
     },
 }
 
@@ -136,16 +140,31 @@ class Wav2Vec2ForClassification(nn.Module):
 
 
 class SSAMBAHFForClassification(nn.Module):
-    """SSAMBA-HF encoder with classification head."""
+    """SSAMBA-HF encoder with classification head.
 
-    def __init__(self, checkpoint_path: str, num_classes: int, device: str = "cuda"):
+    Matches the original SSAMBA finetuning setup:
+    - LayerNorm -> Linear classification head
+    - ESC-50 normalization stats
+    - Noise augmentation + temporal roll
+    - Optional overlapping patches with pos_embed interpolation
+    """
+
+    def __init__(
+        self,
+        checkpoint_path: str,
+        num_classes: int,
+        device: str = "cuda",
+        noise_aug: bool = True,
+        drop_path_rate: float = 0.1,
+        target_length: int = 1024,
+        fstride: int = 16,
+        tstride: int = 16,
+    ):
         super().__init__()
         import sys
         from pathlib import Path
 
         # Add ssamba_hf to path
-        # __file__ is user/anthony/src/birdclef/finetune_lora.py
-        # parents[2] is user/anthony
         ssamba_hf_dir = (
             Path(__file__).parents[2]
             / "experiments"
@@ -160,25 +179,46 @@ class SSAMBAHFForClassification(nn.Module):
         self.device = device
         self.encoder, self.config = load_from_ssamba_checkpoint(
             checkpoint_path, device=device, verbose=True,
-            use_cuda_kernels=True,  # Require CUDA kernels for training speed
+            use_cuda_kernels=True,
         )
         self.embed_dim = self.config.embed_dim  # 384 for small
-        self.classifier = nn.Linear(self.embed_dim, num_classes)
 
-        # Preprocessing params (matching ssamba_hf.py encoder)
-        self._model_fdim, self._model_tdim = self.config.img_size  # (128, 1024)
-        self.norm_mean = -4.2677393
-        self.norm_std = 4.5689974
+        # Set stochastic depth across all layers (matching original SSAMBA: 0.1)
+        self.encoder.set_drop_path_rate(drop_path_rate)
+
+        # Adapt for finetuning with overlapping patches if needed
+        self.target_length = target_length
+        self._model_fdim = self.config.img_size[0]  # 128
+        self._model_tdim = target_length
+        if fstride != self.config.patch_size or tstride != self.config.patch_size:
+            self.encoder.adapt_for_finetuning(
+                finetune_img_size=(self._model_fdim, target_length),
+                fstride=fstride,
+                tstride=tstride,
+            )
+        elif target_length != self.config.img_size[1]:
+            self.encoder.adapt_for_finetuning(
+                finetune_img_size=(self._model_fdim, target_length),
+                fstride=self.config.patch_size,
+                tstride=self.config.patch_size,
+            )
+
+        # LayerNorm -> Linear head (matching original SSAMBA)
+        self.classifier = nn.Sequential(
+            nn.LayerNorm(self.embed_dim),
+            nn.Linear(self.embed_dim, num_classes),
+        )
+
+        # ESC-50 normalization
+        ssamba_config = MODEL_CONFIGS["ssamba-hf"]
+        self.norm_mean = ssamba_config["norm_mean"]
+        self.norm_std = ssamba_config["norm_std"]
+
+        # Noise augmentation
+        self.noise_aug = noise_aug
 
     def _waveform_to_fbank(self, waveform: torch.Tensor) -> torch.Tensor:
-        """Convert waveform to filter bank features.
-
-        Args:
-            waveform: (batch, samples) at 16kHz
-
-        Returns:
-            Filter bank features of shape (batch, model_tdim, model_fdim)
-        """
+        """Convert waveform to filter bank features."""
         import torchaudio
 
         batch_size = waveform.shape[0]
@@ -221,12 +261,26 @@ class SSAMBAHFForClassification(nn.Module):
             waveform = waveform.squeeze(1)
 
         fbank = self._waveform_to_fbank(waveform).to(self.device)
-        embeddings = self.encoder.get_embeddings(fbank)  # (batch, embed_dim)
+
+        # Noise augmentation during training (matching original SSAMBA dataloader.py:214-215)
+        if self.noise_aug and self.training:
+            fbank = fbank + torch.rand(fbank.shape[1], fbank.shape[2], device=fbank.device) * random.random() / 10
+            fbank = torch.roll(fbank, random.randint(-10, 10), dims=1)
+
+        embeddings = self.encoder.get_embeddings(fbank)
         return self.classifier(embeddings)
 
 
 def create_model(
-    encoder_type: str, num_classes: int, device: str, checkpoint_dir: Path = None
+    encoder_type: str,
+    num_classes: int,
+    device: str,
+    checkpoint_dir: Path = None,
+    noise_aug: bool = True,
+    drop_path_rate: float = 0.1,
+    target_length: int = 1024,
+    fstride: int = 16,
+    tstride: int = 16,
 ) -> nn.Module:
     """Create model based on encoder type."""
     config = MODEL_CONFIGS[encoder_type]
@@ -239,7 +293,14 @@ def create_model(
         if checkpoint_dir is None:
             raise ValueError("checkpoint_dir is required for ssamba-hf encoder")
         ckpt_path = checkpoint_dir / config["checkpoint_path"]
-        return SSAMBAHFForClassification(str(ckpt_path), num_classes, device)
+        return SSAMBAHFForClassification(
+            str(ckpt_path), num_classes, device,
+            noise_aug=noise_aug,
+            drop_path_rate=drop_path_rate,
+            target_length=target_length,
+            fstride=fstride,
+            tstride=tstride,
+        )
     else:
         raise ValueError(f"Unknown encoder type: {encoder_type}")
 
@@ -348,6 +409,11 @@ def run_fold(
     device: str,
     max_grad_norm: float = 1.0,
     checkpoint_dir: Path = None,
+    noise_aug: bool = True,
+    drop_path_rate: float = 0.1,
+    target_length: int = 1024,
+    fstride: int = 16,
+    tstride: int = 16,
 ) -> dict:
     """Run one fold of cross-validation."""
     print(f"\n=== Fold {fold}/5 ===")
@@ -360,6 +426,7 @@ def run_fold(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
+        drop_last=True,
         num_workers=4,
         collate_fn=collate_fn,
     )
@@ -372,7 +439,15 @@ def run_fold(
     )
 
     # Create model with LoRA
-    model = create_model(encoder_type, num_classes=50, device=device, checkpoint_dir=checkpoint_dir)
+    model = create_model(
+        encoder_type, num_classes=50, device=device,
+        checkpoint_dir=checkpoint_dir,
+        noise_aug=noise_aug,
+        drop_path_rate=drop_path_rate,
+        target_length=target_length,
+        fstride=fstride,
+        tstride=tstride,
+    )
     model = apply_lora(model, encoder_type, rank=lora_rank)
     model = model.to(device)
 
@@ -424,6 +499,17 @@ def main():
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (default: model-specific)")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
     parser.add_argument("--max-grad-norm", type=float, default=1.0, help="Max gradient norm for clipping")
+    parser.add_argument("--fold", type=int, default=None, help="Single fold to run (1-5)")
+    parser.add_argument("--no-noise-aug", action="store_true",
+                        help="Disable noise augmentation (ssamba-hf only)")
+    parser.add_argument("--drop-path-rate", type=float, default=0.1,
+                        help="Drop path rate (ssamba-hf only)")
+    parser.add_argument("--target-length", type=int, default=1024,
+                        help="Target spectrogram time frames (ssamba-hf only)")
+    parser.add_argument("--fstride", type=int, default=16,
+                        help="Frequency stride for patch embedding (ssamba-hf only)")
+    parser.add_argument("--tstride", type=int, default=16,
+                        help="Time stride for patch embedding (ssamba-hf only)")
     args = parser.parse_args()
 
     # Use model-specific default LR if not specified
@@ -449,9 +535,15 @@ def main():
     dataset = ESC50Dataset(args.esc50_root, target_sr=16000)
     print(f"Dataset: {len(dataset)} samples, {dataset.num_classes} classes")
 
-    # Run 5-fold CV
+    # Run folds
+    if args.fold is not None:
+        folds = [args.fold]
+        print(f"Running single fold: {args.fold}")
+    else:
+        folds = list(range(1, 6))
+
     results = []
-    for fold in range(1, 6):
+    for fold in folds:
         fold_result = run_fold(
             fold=fold,
             dataset=dataset,
@@ -463,6 +555,11 @@ def main():
             device=device,
             max_grad_norm=args.max_grad_norm,
             checkpoint_dir=checkpoint_dir,
+            noise_aug=not args.no_noise_aug,
+            drop_path_rate=args.drop_path_rate,
+            target_length=args.target_length,
+            fstride=args.fstride,
+            tstride=args.tstride,
         )
         results.append(fold_result)
 
@@ -485,11 +582,17 @@ def main():
         "lr": args.lr,
         "max_grad_norm": args.max_grad_norm,
         "batch_size": args.batch_size,
+        "noise_aug": not args.no_noise_aug,
+        "drop_path_rate": args.drop_path_rate,
+        "target_length": args.target_length,
+        "fstride": args.fstride,
+        "tstride": args.tstride,
         "fold_accuracies": accuracies,
         "mean_accuracy": mean_acc,
     }
 
-    output_path = output_dir / f"{args.encoder}_lora_r{args.lora_rank}_results.json"
+    fold_suffix = f"_fold{args.fold}" if args.fold else ""
+    output_path = output_dir / f"{args.encoder}_lora_r{args.lora_rank}{fold_suffix}_results.json"
     with open(output_path, "w") as f:
         json.dump(output, f, indent=2)
     print(f"Results saved to {output_path}")

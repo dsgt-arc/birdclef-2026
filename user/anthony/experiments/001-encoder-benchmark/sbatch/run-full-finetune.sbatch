@@ -2,8 +2,8 @@
 #SBATCH --job-name=full-ssamba
 #SBATCH --account=paceship-dsgt_clef2026
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
-#SBATCH --gres=gpu:1
-#SBATCH -t240 -qembers
+#SBATCH --gres=gpu:v100:1
+#SBATCH -t480 -qembers
 #SBATCH --output=logs/full-finetune-%j.out
 set -eu
 
@@ -63,12 +63,17 @@ echo ""
 
 cd $repo_dir
 
-# Run full finetuning
+# Run full finetuning (matching original SSAMBA hyperparameters)
 # FOLD: 1-5 (default: 1) - single fold for quick testing
 # EPOCHS: 50 (default)
 # LR: 1e-4 (default)
 # BATCH_SIZE: 8 (default, smaller due to full param gradients)
+# GRAD_ACCUM: 6 (default, effective batch = 8*6=48 to match original)
+# TARGET_LENGTH: 512 (default, matches 5s ESC-50 audio without zero padding)
+# FSTRIDE/TSTRIDE: 10 (default, overlapping patches matching original)
+# DROP_PATH: 0.1 (default, matching original)
 # NO_SPECAUGMENT: set to disable SpecAugment
+# NO_NOISE_AUG: set to disable noise augmentation
 ${UV_PROJECT_ENVIRONMENT}/bin/python -m birdclef.finetune_full \
     --encoder ssamba-hf \
     --esc50-root $repo_dir/vendor/ESC-50 \
@@ -79,7 +84,14 @@ ${UV_PROJECT_ENVIRONMENT}/bin/python -m birdclef.finetune_full \
     --batch-size ${BATCH_SIZE:-8} \
     --lr ${LR:-1e-4} \
     --max-grad-norm ${MAX_GRAD_NORM:-1.0} \
-    ${NO_SPECAUGMENT:+--no-specaugment}
+    --grad-accum-steps ${GRAD_ACCUM:-6} \
+    --target-length ${TARGET_LENGTH:-512} \
+    --fstride ${FSTRIDE:-10} \
+    --tstride ${TSTRIDE:-10} \
+    --drop-path-rate ${DROP_PATH:-0.1} \
+    --lr-decay-start ${LR_DECAY_START:-6} \
+    ${NO_SPECAUGMENT:+--no-specaugment} \
+    ${NO_NOISE_AUG:+--no-noise-aug}
 
 echo ""
 echo "Done!"

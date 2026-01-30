@@ -33,6 +33,7 @@ class AudioPatchEmbed(nn.Module):
     """Audio Patch Embedding.
 
     Converts spectrogram to patch embeddings using a Conv2d layer.
+    Supports overlapping patches via separate fstride/tstride parameters.
 
     Input: (batch, 1, freq_bins, time_frames)
     Output: (batch, num_patches, embed_dim)
@@ -44,17 +45,25 @@ class AudioPatchEmbed(nn.Module):
         patch_size: int = 16,
         in_chans: int = 1,
         embed_dim: int = 384,
+        fstride: int = None,
+        tstride: int = None,
     ):
         super().__init__()
         self.img_size = img_size
         self.patch_size = patch_size
-        self.num_patches = (img_size[0] // patch_size) * (img_size[1] // patch_size)
+        self.fstride = fstride if fstride is not None else patch_size
+        self.tstride = tstride if tstride is not None else patch_size
+
+        # Calculate num_patches based on stride (supports overlapping)
+        self.f_dim = (img_size[0] - patch_size) // self.fstride + 1
+        self.t_dim = (img_size[1] - patch_size) // self.tstride + 1
+        self.num_patches = self.f_dim * self.t_dim
 
         self.proj = nn.Conv2d(
             in_chans,
             embed_dim,
             kernel_size=patch_size,
-            stride=patch_size,
+            stride=(self.fstride, self.tstride),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

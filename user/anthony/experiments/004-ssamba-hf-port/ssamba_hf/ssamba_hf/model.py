@@ -65,6 +65,24 @@ class SSAMBAModel(nn.Module):
             nn.init.trunc_normal_(self.cls_token, std=0.02)
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
 
+    def set_drop_path_rate(self, drop_path_rate: float):
+        """Set stochastic depth rate across all Mamba blocks and the final residual.
+
+        Distributes linearly-increasing drop rates across layers (standard
+        stochastic depth schedule), matching the VisionMamba / timm convention.
+        Also updates the model-level drop_path used in the final residual.
+
+        Args:
+            drop_path_rate: Maximum drop path rate (applied to the last layer).
+                            Earlier layers get proportionally smaller rates.
+        """
+        depth = len(self.layers.layers)
+        dpr = [drop_path_rate * i / (depth - 1) for i in range(depth)] if depth > 1 else [drop_path_rate]
+        for i, block in enumerate(self.layers.layers):
+            block.drop_path = DropPath(dpr[i]) if dpr[i] > 0.0 else nn.Identity()
+        self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
+        print(f"Stochastic depth: linearly increasing to {drop_path_rate} across {depth} layers")
+
     def forward_features(
         self,
         x: torch.Tensor,
@@ -111,7 +129,15 @@ class SSAMBAModel(nn.Module):
             residual = hidden_states
         else:
             residual = residual + self.drop_path(hidden_states)
-        x = self.norm_f(residual.to(dtype=self.norm_f.weight.dtype))
+        hidden_states = self.norm_f(residual.to(dtype=self.norm_f.weight.dtype))
+
+        # NOTE: The original SSAMBA finetuningavgtok applies norm_f a second time
+        # here (both_models.py line 391). This is arguably a bug in the original
+        # code — norm_f is already applied in the residual path above — but since
+        # the published 96% result was obtained with this double-norm behaviour,
+        # we replicate it for finetuning parity.  If training from scratch, consider
+        # removing this redundant call.
+        x = self.norm_f(hidden_states)
 
         if return_all_tokens:
             return x
@@ -169,6 +195,107 @@ class SSAMBAModel(nn.Module):
             embeddings = nn.functional.normalize(embeddings, p=2, dim=-1)
 
         return embeddings
+
+    def adapt_for_finetuning(
+        self,
+        finetune_img_size: tuple,
+        fstride: int,
+        tstride: int,
+    ):
+        """Adapt model for finetuning with different input size and/or overlapping patches.
+
+        Matches the original SSAMBA finetuning procedure (both_models.py lines 222-242):
+        1. Replace patch_embed.proj with new stride if different from patch_size
+        2. Interpolate positional embeddings to match new patch grid
+
+        Args:
+            finetune_img_size: (freq_bins, time_frames) for finetuning input
+            fstride: Frequency stride for patch embedding
+            tstride: Time stride for patch embedding
+        """
+        patch_size = self.config.patch_size
+        embed_dim = self.config.embed_dim
+
+        # Compute pretraining patch grid dimensions
+        p_f_dim = self.patch_embed.f_dim
+        p_t_dim = self.patch_embed.t_dim
+        p_num_patches = p_f_dim * p_t_dim
+
+        # Compute finetuning patch grid dimensions
+        f_dim = (finetune_img_size[0] - patch_size) // fstride + 1
+        t_dim = (finetune_img_size[1] - patch_size) // tstride + 1
+        num_patches = f_dim * t_dim
+
+        print(f"adapt_for_finetuning: pretrain grid ({p_f_dim}x{p_t_dim}={p_num_patches}) "
+              f"-> finetune grid ({f_dim}x{t_dim}={num_patches})")
+
+        # Replace patch embedding projection if stride differs
+        if fstride != patch_size or tstride != patch_size:
+            new_proj = torch.nn.Conv2d(
+                self.config.in_chans, embed_dim,
+                kernel_size=patch_size,
+                stride=(fstride, tstride),
+            )
+            # Copy weights from pretrained projection (sum across input channels if needed)
+            old_weight = self.patch_embed.proj.weight.data
+            if old_weight.shape[1] != self.config.in_chans:
+                new_proj.weight = torch.nn.Parameter(
+                    torch.sum(old_weight, dim=1).unsqueeze(1)
+                )
+            else:
+                new_proj.weight = torch.nn.Parameter(old_weight.clone())
+            new_proj.bias = torch.nn.Parameter(self.patch_embed.proj.bias.data.clone())
+            self.patch_embed.proj = new_proj
+
+        # Update patch embed metadata
+        self.patch_embed.img_size = finetune_img_size
+        self.patch_embed.fstride = fstride
+        self.patch_embed.tstride = tstride
+        self.patch_embed.f_dim = f_dim
+        self.patch_embed.t_dim = t_dim
+        self.patch_embed.num_patches = num_patches
+
+        # Interpolate positional embeddings (matching original SSAMBA: both_models.py:230-242)
+        cls_token_num = 1 if self.config.use_cls_token else 0
+
+        # Separate CLS token pos_embed from patch pos_embed
+        old_pos_embed = self.pos_embed.data
+        cls_pos_embed = old_pos_embed[:, :cls_token_num, :]
+        patch_pos_embed = old_pos_embed[:, cls_token_num:, :]
+
+        # Reshape patch pos_embed to 2D grid: (1, embed_dim, p_f_dim, p_t_dim)
+        patch_pos_embed = patch_pos_embed.reshape(
+            1, p_num_patches, embed_dim
+        ).transpose(1, 2).reshape(1, embed_dim, p_f_dim, p_t_dim)
+
+        # Interpolate to new grid size using bilinear interpolation
+        if t_dim <= p_t_dim:
+            # Cut from center (matching original)
+            t_start = p_t_dim // 2 - t_dim // 2
+            patch_pos_embed = patch_pos_embed[:, :, :, t_start:t_start + t_dim]
+        else:
+            patch_pos_embed = torch.nn.functional.interpolate(
+                patch_pos_embed, size=(p_f_dim, t_dim), mode='bilinear', align_corners=False
+            )
+
+        if f_dim <= p_f_dim:
+            # Cut from center
+            f_start = p_f_dim // 2 - f_dim // 2
+            patch_pos_embed = patch_pos_embed[:, :, f_start:f_start + f_dim, :]
+        else:
+            patch_pos_embed = torch.nn.functional.interpolate(
+                patch_pos_embed, size=(f_dim, t_dim), mode='bilinear', align_corners=False
+            )
+
+        # Reshape back to (1, num_patches, embed_dim)
+        patch_pos_embed = patch_pos_embed.reshape(1, embed_dim, num_patches).transpose(1, 2)
+
+        # Reassemble with CLS token
+        new_pos_embed = torch.cat([cls_pos_embed, patch_pos_embed], dim=1)
+        self.pos_embed = torch.nn.Parameter(new_pos_embed)
+
+        print(f"pos_embed shape: {self.pos_embed.shape} "
+              f"(expected: (1, {num_patches + cls_token_num}, {embed_dim}))")
 
     @property
     def embed_dim(self) -> int:

@@ -72,7 +72,9 @@ cd $repo_dir
 # LORA_RANK: 8 (default) or 16
 # LR: model-specific default if not set (eat=1e-4, wav2vec2=1e-5, ssamba-hf=1e-4)
 # MAX_GRAD_NORM: 1.0 (default)
+# FOLD: single fold to run (default: all 5)
 # CHECKPOINT_DIR: required for ssamba-hf (default: $scratch_dir/checkpoints)
+# TARGET_LENGTH/FSTRIDE/TSTRIDE/DROP_PATH: ssamba-hf specific (see finetune_lora.py)
 ${UV_PROJECT_ENVIRONMENT}/bin/python -m birdclef.finetune_lora \
     --encoder ${ENCODER:-eat} \
     --esc50-root $repo_dir/vendor/ESC-50 \
@@ -81,8 +83,14 @@ ${UV_PROJECT_ENVIRONMENT}/bin/python -m birdclef.finetune_lora \
     --epochs ${EPOCHS:-50} \
     --batch-size ${BATCH_SIZE:-16} \
     --max-grad-norm ${MAX_GRAD_NORM:-1.0} \
+    ${FOLD:+--fold $FOLD} \
     ${LR:+--lr $LR} \
-    ${CHECKPOINT_DIR:+--checkpoint-dir $CHECKPOINT_DIR}
+    ${CHECKPOINT_DIR:+--checkpoint-dir $CHECKPOINT_DIR} \
+    ${TARGET_LENGTH:+--target-length $TARGET_LENGTH} \
+    ${FSTRIDE:+--fstride $FSTRIDE} \
+    ${TSTRIDE:+--tstride $TSTRIDE} \
+    ${DROP_PATH:+--drop-path-rate $DROP_PATH} \
+    ${NO_NOISE_AUG:+--no-noise-aug}
 
 echo ""
 echo "Done!"

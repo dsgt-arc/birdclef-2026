@@ -30,6 +30,8 @@ class SSAMBAConfig:
     # Patch embedding
     img_size: Tuple[int, int] = (128, 1024)  # (freq_bins, time_frames)
     patch_size: int = 16
+    fstride: Optional[int] = None  # Frequency stride (default: patch_size)
+    tstride: Optional[int] = None  # Time stride (default: patch_size)
     in_chans: int = 1
 
     # Mamba SSM parameters

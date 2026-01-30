@@ -96,7 +96,41 @@
 - Port minimal model code to avoid vendor dependency pollution
 - For SSAMBA: implement standalone model class that loads HuggingFace weights
 
-## 7. Analysis & Documentation
+## 7. Close SSAMBA-HF Performance Gap
+
+Goal: match published 96% full finetune accuracy on ESC-50.
+Reference: 9 differences found between original SSAMBA and HF port finetuning.
+
+### 7.1 Phase 1: Fix Training Hyperparameters
+- [x] 7.1.1 Fix optimizer: `Adam(wd=5e-7, betas=(0.95,0.999))` with encoder/head param groups
+- [x] 7.1.2 Fix head: `LayerNorm → Linear` (matching `mlp_head`)
+- [x] 7.1.3 Fix LR schedule: `MultiStepLR(milestones=range(6,1000), gamma=0.85)`, no warmup
+- [x] 7.1.4 Add noise augmentation: `fbank += rand * randn/10; roll(fbank, randint(-10,10))`
+- [x] 7.1.5 Set `drop_path=0.1`
+- [x] 7.1.6 Add gradient accumulation (`--grad-accum-steps 6` → effective batch 48)
+- [x] 7.1.7 Fix norm stats: ESC-50 values (mean=-6.6268, std=5.3585)
+
+### 7.2 Phase 2: Overlapping Patches + Correct Input Size
+- [x] 7.2.1 Add `fstride`/`tstride` to `AudioPatchEmbed` (stride=10 → overlapping)
+- [x] 7.2.2 Add `adapt_for_finetuning()` to `SSAMBAModel` with bilinear pos_embed interpolation
+- [x] 7.2.3 Wire `--target-length 512 --fstride 10 --tstride 10` CLI args into both scripts
+
+### 7.3 Apply same fixes to LoRA script
+- [x] 7.3.1 LayerNorm head, ESC-50 norm stats, noise aug, drop_path in `finetune_lora.py`
+- [x] 7.3.2 Add `--fold`, `--target-length`, `--fstride`, `--tstride`, `--drop-path-rate` CLI args
+
+### 7.4 Post-submission bugfixes (applied before jobs started)
+- [x] 7.4.1 Fix double `norm_f` in `forward_features` to match original (original applies `norm_f` twice — a bug, but the published 96% depends on it; see comment in model.py)
+- [x] 7.4.2 Fix per-layer stochastic depth: distribute linearly-increasing drop rates across all 24 Mamba blocks via `set_drop_path_rate()` (was only top-level)
+- [x] 7.4.3 Fix noise augmentation: use uniform `torch.rand` instead of Gaussian `torch.randn` (matching `dataloader.py:214`)
+- [x] 7.4.4 Add `drop_last=True` to training DataLoader (matching `run_amba.py:163`)
+
+### 7.5 Verification
+- [ ] 7.5.1 Full finetune fold 1 (job 3637115): target val_acc > 85% (Phase 1+2 combined)
+- [ ] 7.5.2 LoRA finetune fold 1 (job 3637117): compare to previous 81.5%
+- [ ] 7.5.3 Full 5-fold mean accuracy vs published 96%
+
+## 8. Analysis & Documentation
 - [x] 7.1 Compile results table with accuracy/mAP/inference time
 - [x] 7.2 Analyze which encoder performs best (BEATs)
 - [x] 7.3 Document findings in results.md
@@ -113,6 +147,8 @@
 | 3242824 | wav2vec2 | LoRA r=8, epochs=50, lr=1e-5, grad_clip=1.0 | 2026-01-10 | ❌ Failed (3.0% - no learning) | `logs/lora-finetune-3242824.out` |
 | 3447764 | SSAMBA-HF | LoRA r=8, epochs=50, lr=1e-4, batch=4 | 2026-01-26 | 🔄 Running (RTX 6000) | `logs/lora-finetune-3447764.out` |
 | 3580633 | SSAMBA-HF-small | Linear probe, epochs=100, lr=1e-3 (re-run after config fix) | 2026-01-29 | 🔄 Pending | `logs/benchmark-ssamba-hf-3580633.out` |
+| 3637115 | SSAMBA-HF | Full finetune fold 1, Phase 1+2 fixes (Adam wd=5e-7, LN head, noise aug, drop_path=0.1, grad_accum=6, target_len=512, stride=10) | 2026-01-29 | 🔄 Submitted | `logs/full-finetune-3637115.out` |
+| 3637117 | SSAMBA-HF | LoRA r=8 fold 1, Phase 1+2 fixes (LN head, noise aug, drop_path=0.1, target_len=512, stride=10) | 2026-01-29 | 🔄 Submitted | `logs/lora-finetune-3637117.out` |
 
 **Expected outputs:**
 - `~/scratch/birdclef-2026/outputs/esc50-lora/eat_lora_r8_results.json` ✅
