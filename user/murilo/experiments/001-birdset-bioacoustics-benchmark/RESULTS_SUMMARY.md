@@ -6,6 +6,23 @@
 **Datasets**: All 8 BirdSet evaluation datasets
 **Evaluation**: Direct inference (no training required - models trained on BirdSet)
 
+## Scope
+
+This document covers **Phase 2A only**: evaluation of BirdSet-native models (ConvNeXT and EfficientNetB1) using direct inference.
+
+**What was completed**:
+- 16 inference runs (2 models × 8 datasets)
+- Total samples: 321,819 per model (643,638 total)
+- Metrics: cmAP, AUROC, T1-Acc, F1 scores, throughput
+- Validation against BirdSet paper baselines
+
+**What was NOT completed**:
+- Phase 2B: BirdNET/Perch evaluation via embedding extraction + linear probing
+- Phase 3: Cross-model visualizations and aggregated results analysis
+- Phase 4: Final documentation and artifact archival
+
+**Rationale**: Phase 2A successfully validated BirdSet checkpoints and established baseline performance. The original experiment proposal included external models (BirdNET, Perch) and transfer learning, but these were deferred as valuable future work. This document focuses on the completed Phase 2A results.
+
 ## Primary Metrics (BirdSet Paper Standard)
 
 Results for all 8 datasets using the three key metrics from the BirdSet paper:
@@ -263,22 +280,45 @@ user/murilo/experiments/001-birdset-bioacoustics-benchmark/artifacts/inference/
 - Prediction arrays are large binary files that can be regenerated from model checkpoints
 - This approach balances reproducibility with repository size management
 
-## Next Steps
+## Proposed Future Work
+
+Phase 2A validated BirdSet-native models and established baseline performance. The following phases remain as proposed future work:
 
 ### Phase 2B: Transfer Learning (External Models)
-- Implement embedding extraction for BirdNET and Perch
-- Train linear probes on extracted embeddings
-- Evaluate on same 8 datasets
-- Compare transfer learning vs direct inference
 
-### Phase 3: Final Analysis
-- Generate visualizations (heatmaps, bar charts)
+**Goal**: Evaluate external pre-trained models (BirdNET, Perch) on BirdSet using linear probing.
+
+**Methodology**:
+1. Extract embeddings from BirdNET (1024-dim) and Perch (1280-dim) for all 8 datasets
+2. Train multi-label linear probes on extracted embeddings
+3. Evaluate on test sets to compute cmAP, AUROC, and other metrics
+4. Compare transfer learning performance vs. direct inference (Phase 2A)
+
+**Expected Outcome**: Measure how well external models' learned representations transfer to BirdSet ecosystems.
+
+**Design Status**: Complete - see [design.md](design.md) for full technical architecture.
+
+**Why Deferred**: Phase 2A successfully validated the experimental pipeline and BirdSet checkpoints. Phase 2B represents significant additional work (embedding extraction, linear probe training, 16 additional model runs) that is valuable but not required for experiment closure.
+
+### Phase 3: Results Aggregation and Visualization
+
+**Goal**: Generate comprehensive cross-model analysis and visualizations.
+
+**Planned Deliverables**:
+- Heatmap: cmAP by model × dataset
+- Bar charts: Per-dataset and per-model comparisons
 - Statistical significance testing between models
-- Per-class analysis (identify challenging species)
-- Write comprehensive results document
+- Per-class analysis (identify challenging species across datasets)
+- results_matrix.csv with all model × dataset combinations
 
-### Documentation
-- Compare to BirdSet paper baseline values
-- Document any methodology differences
-- Archive artifacts and update README
-- Tag release: exp-001-phase-2a-complete
+**Why Deferred**: Phase 2A results are fully documented in this file. Cross-model visualizations require Phase 2B completion.
+
+### Phase 4: Documentation and Archival
+
+**Planned Activities**:
+- Archive large artifacts (embeddings, predictions) to scratch storage
+- Code cleanup (ruff format, type hints, docstrings)
+- Final README updates with complete results summary
+- Git tag: `exp-001-complete`
+
+**Current Status**: Phase 2A documentation is complete. Full experiment archival can occur after Phase 2B/3 completion or independently if those phases remain deferred.
