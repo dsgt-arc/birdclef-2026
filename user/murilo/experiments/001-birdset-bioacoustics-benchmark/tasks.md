@@ -1,8 +1,35 @@
 # Tasks: BirdSet Bioacoustics Model Benchmark
 
-**Status**: Phase 1 complete, Phase 2A complete (all 16 inference runs finished with AUROC metrics)
-**Current Phase**: Phase 2B preparation (Transfer Learning for external models)
-**Last Updated**: 2026-01-26
+**Status**: Phase 1 complete, Phase 2A Complete ✅ (Phase 2B deferred to future work)
+**Current Phase**: Experiment closed - Phase 2A achievements documented
+**Last Updated**: 2026-01-30
+
+---
+
+## Completion Summary
+
+**Phase 2A Status**: ✅ Complete (2026-01-26)
+
+### What Was Completed
+- **16 inference runs**: 2 models (ConvNeXT, EfficientNetB1) × 8 datasets
+- **Total samples processed**: 321,819 per model (643,638 total)
+- **Mean performance**:
+  - cmAP: 0.36 (ConvNeXT), 0.35 (EfficientNetB1)
+  - AUROC: 0.84 (both models)
+  - Successfully validated against BirdSet paper baselines (cmAP Δ = 0.00)
+- **Best dataset**: NBP (cmAP ~0.63)
+- **Most challenging**: PER (cmAP ~0.17-0.18, 132 species)
+- **Technical achievements**:
+  - Vectorized prediction conversion (~210,000x speedup)
+  - Comprehensive test suite (32 tests)
+  - Fixed multi-label AUROC computation
+
+### What Was NOT Completed
+- **Phase 2B**: BirdNET/Perch evaluation (design complete, implementation deferred)
+- **Phase 3**: Results aggregation and cross-model visualization (deferred)
+- **Phase 4**: Final documentation cleanup (deferred)
+
+**Rationale**: Phase 2A successfully validated BirdSet checkpoints and established baseline performance. Phase 2B/3/4 are valuable future work but not required for experiment closure.
 
 ---
 
@@ -200,13 +227,15 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 
 ---
 
-## Phase 2B: Transfer Learning (External Models)
+## Proposed Future Work: Phase 2B - Transfer Learning (External Models)
+
+**Status**: Design complete, implementation deferred
 
 **Goal**: Evaluate BirdNET and Perch on BirdSet. Two options:
 1. **Linear probe**: Extract embeddings, train classifier on BirdSet labels
 2. **Taxonomy mapping**: Map BirdNET's native predictions to eBird codes
 
-### 2B.1 Research Taxonomy Mapping (Option 2)
+### 2B.1 [PROPOSED] Research Taxonomy Mapping (Option 2)
 - [ ] Investigate if BirdNET → eBird code mapping exists
   - [ ] Check BirdNET documentation for taxonomy
   - [ ] Check eBird API for species code mappings
@@ -217,7 +246,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [ ] Handle unmapped species (assign to "unknown" or drop)
 - [ ] Decision: Use taxonomy mapping OR fall back to linear probe
 
-### 2B.2 Implement Embedding Extraction (for Linear Probe)
+### 2B.2 [PROPOSED] Implement Embedding Extraction (for Linear Probe)
 - [ ] Create `src/birdset_benchmark/encoders.py`
   - [ ] Class: `BioacousticsEncoder` (abstract base class)
   - [ ] Class: `BirdNETEncoder` (wrapper for bmz.BirdNET)
@@ -236,7 +265,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [ ] `sbatch/extract_embeddings/_job.sh`
   - [ ] `sbatch/extract_embeddings/run.sh`
 
-### 2B.3 Implement Linear Probe Training
+### 2B.3 [PROPOSED] Implement Linear Probe Training
 - [ ] Create `src/birdset_benchmark/train_classifier.py`
   - [ ] CLI with typer: `--model`, `--dataset`, `--epochs`, `--lr`
   - [ ] Load embeddings from `artifacts/embeddings/{model}/{dataset}/`
@@ -248,7 +277,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [ ] `sbatch/train_classifier/_job.sh`
   - [ ] `sbatch/train_classifier/run.sh`
 
-### 2B.4 Run External Model Evaluation
+### 2B.4 [PROPOSED] Run External Model Evaluation
 - [ ] If using taxonomy mapping:
   - [ ] Run direct inference with BirdNET/Perch
   - [ ] Apply taxonomy mapping to predictions
@@ -261,9 +290,11 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 
 ---
 
-## Phase 3: Results Aggregation
+## Proposed Future Work: Phase 3 - Results Aggregation
 
-### 3.1 Implement Aggregation Script
+**Status**: Proposed but not executed
+
+### 3.1 [PROPOSED] Implement Aggregation Script
 - [ ] Create `src/birdset_benchmark/aggregate_results.py`
   - [ ] Collect all `metrics.json` files
   - [ ] Generate `results/summary.json`
@@ -271,20 +302,20 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [ ] Calculate mean cmAP per model
   - [ ] Note which models used direct inference vs linear probe
 
-### 3.2 Generate Visualizations
+### 3.2 [PROPOSED] Generate Visualizations
 - [ ] Heatmap: cmAP by model × dataset
 - [ ] Bar chart: Mean cmAP per model
 - [ ] Bar chart: Per-dataset comparison (all models)
 - [ ] Separate colors for direct inference vs linear probe results
 - [ ] Save to `artifacts/results/plots/`
 
-### 3.3 Compare to Baselines
+### 3.3 [PROPOSED] Compare to Baselines
 - [ ] Look up BirdSet paper results
 - [ ] Compare our BirdSet-native model results to paper
 - [ ] Note differences in methodology
 - [ ] Document any discrepancies
 
-### 3.4 Write Results Summary
+### 3.4 [PROPOSED] Write Results Summary
 - [ ] Create `results.md` with:
   - Summary table (all 32 combinations)
   - Key findings
@@ -295,21 +326,23 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 
 ---
 
-## Phase 4: Cleanup and Documentation
+## Proposed Future Work: Phase 4 - Cleanup and Documentation
 
-### 4.1 Code Quality
+**Status**: Proposed but not executed
+
+### 4.1 [PROPOSED] Code Quality
 - [ ] Run `ruff format` on all Python files
 - [ ] Run `ruff check` and fix issues
 - [ ] Add type hints to public functions
 - [ ] Add docstrings to modules and classes
 
-### 4.2 Update Documentation
+### 4.2 [PROPOSED] Update Documentation
 - [ ] Update README with final results
 - [ ] Update proposal.md with actual results
 - [ ] Archive large artifacts (embeddings) to scratch
 - [ ] Document artifact locations
 
-### 4.3 Final Commit
+### 4.3 [PROPOSED] Final Commit
 - [ ] Commit results and documentation
 - [ ] Tag release: `exp-001-v1.0`
 - [ ] Push to repository
@@ -398,20 +431,19 @@ bash sbatch/inference/run.sh --dry-run
 
 ---
 
-## Estimated Timeline
+## Timeline Summary
 
-| Phase | Description | Time Estimate |
-|-------|-------------|---------------|
+| Phase | Description | Status |
+|-------|-------------|--------|
 | Phase 0 | Planning | ✅ Complete |
 | Phase 1 | Environment Setup | ✅ Complete |
-| Phase 2A.1-2A.2 | Data Pipeline & Inference Script | ✅ Complete |
-| Phase 2A.3-2A.5 | SLURM Scripts & Production Runs | ~2-3 hours + GPU queue |
-| Phase 2B | Transfer Learning (BirdNET/Perch) | ~8-12 hours |
-| Phase 3 | Results Aggregation | ~2-3 hours |
-| Phase 4 | Cleanup & Documentation | ~2-3 hours |
-| **Total Remaining** | | ~14-20 hours + GPU queue |
+| Phase 2A | Direct Inference (BirdSet-native models) | ✅ Complete (2026-01-26) |
+| Phase 2B | Transfer Learning (BirdNET/Perch) | Deferred to future work |
+| Phase 3 | Results Aggregation | Deferred to future work |
+| Phase 4 | Cleanup & Documentation | Deferred to future work |
 
-**Dependencies**:
-- BirdSet dataset availability on HuggingFace (verified)
-- SLURM access with GPU allocation
-- bioacoustics-model-zoo installation (verified)
+**Phase 2A Achievements**:
+- All 16 inference runs completed successfully
+- Results validated against BirdSet paper baselines
+- Comprehensive metrics and artifacts committed to git
+- Technical optimizations implemented and tested

@@ -6,6 +6,23 @@
 **Datasets**: All 8 BirdSet evaluation datasets
 **Evaluation**: Direct inference (no training required - models trained on BirdSet)
 
+## Scope
+
+This document covers **Phase 2A only**: evaluation of BirdSet-native models (ConvNeXT and EfficientNetB1) using direct inference.
+
+**What was completed**:
+- 16 inference runs (2 models × 8 datasets)
+- Total samples: 321,819 per model (643,638 total)
+- Metrics: cmAP, AUROC, T1-Acc, F1 scores, throughput
+- Validation against BirdSet paper baselines
+
+**What was NOT completed**:
+- Phase 2B: BirdNET/Perch evaluation via embedding extraction + linear probing
+- Phase 3: Cross-model visualizations and aggregated results analysis
+- Phase 4: Final documentation and artifact archival
+
+**Rationale**: Phase 2A successfully validated BirdSet checkpoints and established baseline performance. The original experiment proposal included external models (BirdNET, Perch) and transfer learning, but these were deferred as valuable future work. This document focuses on the completed Phase 2A results.
+
 ## Primary Metrics (BirdSet Paper Standard)
 
 Results for all 8 datasets using the three key metrics from the BirdSet paper:
@@ -113,31 +130,23 @@ Results for all 8 datasets using the three key metrics from the BirdSet paper:
 
 ### F1 Scores and Top-K Accuracy (Full Results)
 
-**BirdSetConvNeXT**:
-| Dataset | F1-Micro | F1-Macro | Top-5 Acc | Throughput (samples/s) |
-|---------|----------|----------|-----------|------------------------|
-| HSN | 0.121 | 0.139 | 0.330 | 25.5 |
-| NBP | 0.247 | 0.226 | 0.839 | 16.8 |
-| NES | 0.237 | 0.193 | 0.255 | 24.9 |
-| PER | 0.070 | 0.056 | 0.534 | 21.9 |
-| POW | 0.228 | 0.114 | 0.876 | 25.4 |
-| SSW | 0.206 | 0.196 | 0.225 | 20.4 |
-| SNE | 0.238 | 0.085 | 0.545 | 25.6 |
-| UHH | 0.133 | 0.063 | 0.516 | 25.2 |
+|  | | **Test** | | | | | | | |
+|--|--|------|------|------|------|------|------|------|------|
+| **Model** | **Metric** | POW | PER | NES | UHH | HSN | NBP | SSW | SNE |
+| **ConvNeXT** | F1-Micro | 0.23 | 0.07 | 0.24 | 0.13 | 0.12 | 0.25 | 0.21 | 0.24 |
+| | F1-Macro | 0.11 | 0.06 | 0.19 | 0.06 | 0.14 | 0.23 | 0.20 | 0.09 |
+| | Top-5 Acc | 0.88 | 0.53 | 0.26 | 0.52 | 0.33 | 0.84 | 0.23 | 0.55 |
+| | Throughput | 25.4 | 21.9 | 24.9 | 25.2 | 25.5 | 16.8 | 20.4 | 25.6 |
+| **EfficientNetB1** | F1-Micro | 0.17 | 0.05 | 0.20 | 0.12 | 0.13 | 0.20 | 0.22 | 0.22 |
+| | F1-Macro | 0.09 | 0.04 | 0.16 | 0.05 | 0.12 | 0.20 | 0.18 | 0.11 |
+| | Top-5 Acc | 0.92 | 0.56 | 0.27 | 0.53 | 0.38 | 0.88 | 0.24 | 0.59 |
+| | Throughput | 82.1 | 104.3 | 90.0 | 49.7 | 49.1 | 69.9 | 20.4 | 97.1 |
 
-**BirdSetEfficientNetB1**:
-| Dataset | F1-Micro | F1-Macro | Top-5 Acc | Throughput (samples/s) |
-|---------|----------|----------|-----------|------------------------|
-| HSN | 0.132 | 0.115 | 0.375 | 49.1 |
-| NBP | 0.204 | 0.198 | 0.877 | 69.9 |
-| NES | 0.198 | 0.159 | 0.268 | 90.0 |
-| PER | 0.053 | 0.043 | 0.555 | 104.3 |
-| POW | 0.171 | 0.086 | 0.916 | 82.1 |
-| SSW | 0.215 | 0.175 | 0.235 | 20.4 |
-| SNE | 0.222 | 0.114 | 0.592 | 97.1 |
-| UHH | 0.124 | 0.045 | 0.527 | 49.7 |
-
-**Throughput Note**: EfficientNetB1 is generally faster (2-5x) than ConvNeXT, except on SSW where both models have similar throughput (~20 samples/s) due to I/O bottleneck on the largest dataset.
+**Notes**:
+- **Throughput** measured in samples/second on RTX 6000 GPU
+- EfficientNetB1 is generally 2-5x faster than ConvNeXT for smaller/medium datasets
+- SSW (205K samples) is I/O bound - both models process at ~20 samples/s regardless of architecture
+- Total speedup: EfficientNetB1 is 1.3x faster overall across all datasets
 
 ## Methodology Notes
 
@@ -245,46 +254,71 @@ All results stored in:
 ```
 user/murilo/experiments/001-birdset-bioacoustics-benchmark/artifacts/inference/
 ├── birdset_convnext/
-│   ├── HSN/metrics.json, predictions.npz
-│   ├── NBP/metrics.json, predictions.npz
-│   ├── NES/metrics.json, predictions.npz
-│   ├── PER/metrics.json, predictions.npz
-│   ├── POW/metrics.json, predictions.npz
-│   ├── SSW/metrics.json, predictions.npz
-│   ├── SNE/metrics.json, predictions.npz
-│   └── UHH/metrics.json, predictions.npz
+│   ├── HSN/
+│   │   ├── metrics.json        (committed)
+│   │   └── predictions.npz     (local only, in .gitignore)
+│   ├── NBP/, NES/, PER/, POW/, SSW/, SNE/, UHH/
+│   └── (same structure for each dataset)
 └── birdset_efficientnet_b1/
-    ├── HSN/metrics.json, predictions.npz
-    ├── NBP/metrics.json, predictions.npz
-    ├── NES/metrics.json, predictions.npz
-    ├── PER/metrics.json, predictions.npz
-    ├── POW/metrics.json, predictions.npz
-    ├── SSW/metrics.json, predictions.npz
-    ├── SNE/metrics.json, predictions.npz
-    └── UHH/metrics.json, predictions.npz
+    └── (same structure as above)
 ```
 
-**Total Storage**:
-- 16 metrics.json files (metadata)
-- 16 predictions.npz files (full prediction arrays)
-- Estimated size: ~5-10 GB total
+**Storage and Version Control**:
+- **16 metrics.json files** (committed to git)
+  - Size: ~50KB total
+  - Contains: cmAP, AUROC, T1-Acc, F1 scores, throughput, metadata
+  - Version controlled for reproducibility
 
-## Next Steps
+- **16 predictions.npz files** (local only, excluded from git)
+  - Size: ~725MB total
+  - Contains: Full prediction arrays for all test samples
+  - Excluded via `.gitignore` to avoid large binary files in repo
+  - Can be regenerated by re-running inference if needed
+
+**Rationale**:
+- Metrics JSON files are small, human-readable, and essential for results tracking
+- Prediction arrays are large binary files that can be regenerated from model checkpoints
+- This approach balances reproducibility with repository size management
+
+## Proposed Future Work
+
+Phase 2A validated BirdSet-native models and established baseline performance. The following phases remain as proposed future work:
 
 ### Phase 2B: Transfer Learning (External Models)
-- Implement embedding extraction for BirdNET and Perch
-- Train linear probes on extracted embeddings
-- Evaluate on same 8 datasets
-- Compare transfer learning vs direct inference
 
-### Phase 3: Final Analysis
-- Generate visualizations (heatmaps, bar charts)
+**Goal**: Evaluate external pre-trained models (BirdNET, Perch) on BirdSet using linear probing.
+
+**Methodology**:
+1. Extract embeddings from BirdNET (1024-dim) and Perch (1280-dim) for all 8 datasets
+2. Train multi-label linear probes on extracted embeddings
+3. Evaluate on test sets to compute cmAP, AUROC, and other metrics
+4. Compare transfer learning performance vs. direct inference (Phase 2A)
+
+**Expected Outcome**: Measure how well external models' learned representations transfer to BirdSet ecosystems.
+
+**Design Status**: Complete - see [design.md](design.md) for full technical architecture.
+
+**Why Deferred**: Phase 2A successfully validated the experimental pipeline and BirdSet checkpoints. Phase 2B represents significant additional work (embedding extraction, linear probe training, 16 additional model runs) that is valuable but not required for experiment closure.
+
+### Phase 3: Results Aggregation and Visualization
+
+**Goal**: Generate comprehensive cross-model analysis and visualizations.
+
+**Planned Deliverables**:
+- Heatmap: cmAP by model × dataset
+- Bar charts: Per-dataset and per-model comparisons
 - Statistical significance testing between models
-- Per-class analysis (identify challenging species)
-- Write comprehensive results document
+- Per-class analysis (identify challenging species across datasets)
+- results_matrix.csv with all model × dataset combinations
 
-### Documentation
-- Compare to BirdSet paper baseline values
-- Document any methodology differences
-- Archive artifacts and update README
-- Tag release: exp-001-phase-2a-complete
+**Why Deferred**: Phase 2A results are fully documented in this file. Cross-model visualizations require Phase 2B completion.
+
+### Phase 4: Documentation and Archival
+
+**Planned Activities**:
+- Archive large artifacts (embeddings, predictions) to scratch storage
+- Code cleanup (ruff format, type hints, docstrings)
+- Final README updates with complete results summary
+- Git tag: `exp-001-complete`
+
+**Current Status**: Phase 2A documentation is complete. Full experiment archival can occur after Phase 2B/3 completion or independently if those phases remain deferred.

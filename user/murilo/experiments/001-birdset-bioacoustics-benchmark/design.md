@@ -6,16 +6,21 @@ We are evaluating pre-trained bioacoustics models (BirdNET, Perch, BirdSetConvNe
 
 The challenge is creating a scalable pipeline that can handle 4 models × 8 datasets = 32 combinations efficiently on the PACE cluster.
 
-**Update (2026-01-26)**: Phase 2A (direct inference for BirdSet-native models) is complete. All 16 inference runs finished with cmAP, AUROC, and T1-Acc metrics. Results documented in RESULTS_SUMMARY.md. Ready for Phase 2B (transfer learning with external models).
+**Phase 2A complete (2026-01-26)**: All 16 inference runs for BirdSet-native models finished with cmAP, AUROC, and T1-Acc metrics. Results documented in RESULTS_SUMMARY.md. Phase 2B/3/4 designs below are proposed future work.
 
 ## Goals / Non-Goals
 
-**Goals:**
-- Extract embeddings from 4 models across all 8 BirdSet datasets
-- Train reproducible linear probes that isolate embedding quality
-- Produce cmAP scores comparable to BirdSet published baselines
-- Create reusable SLURM job scripts for scalable execution
-- Generate comprehensive results matrix (model × dataset)
+### Phase 2A Goals (Achieved ✅)
+- ✅ Run direct inference with BirdSet-native models (ConvNeXT, EfficientNetB1)
+- ✅ Produce cmAP scores comparable to BirdSet published baselines
+- ✅ Create reusable SLURM job scripts for scalable execution
+- ✅ Generate comprehensive results documentation
+
+### Phase 2B/3 Goals (Proposed, Not Executed)
+- ⏸️ Extract embeddings from external models (BirdNET, Perch) across all 8 datasets
+- ⏸️ Train reproducible linear probes that isolate embedding quality
+- ⏸️ Generate comprehensive results matrix (all 4 models × 8 datasets)
+- ⏸️ Create visualizations comparing direct inference vs transfer learning
 
 **Non-Goals:**
 - Fine-tuning models end-to-end (linear probe only)
@@ -236,7 +241,7 @@ class MultiLabelLinearProbe(pl.LightningModule):
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│            PHASE 2A: DIRECT INFERENCE (BirdSet-Native)          │
+│    PHASE 2A: DIRECT INFERENCE (BirdSet-Native) - ✅ COMPLETE   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  Models: BirdSetConvNeXT, BirdSetEfficientNetB1                │
@@ -251,11 +256,13 @@ class MultiLabelLinearProbe(pl.LightningModule):
 │  Each _job.sh:                                                  │
 │      BirdSet(test) → Model.predict() → metrics.json            │
 │                                                                 │
+│  Status: All 16 runs complete (321,819 samples/model)          │
+│  Results: RESULTS_SUMMARY.md                                   │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│            PHASE 2B: TRANSFER LEARNING (External Models)        │
+│   PHASE 2B: TRANSFER LEARNING (External) - [PROPOSED FUTURE]   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  Models: BirdNET, Perch                                        │
@@ -270,11 +277,12 @@ class MultiLabelLinearProbe(pl.LightningModule):
 │      Step 2: Train classifier                                  │
 │          Load .npz → Train LinearProbe → metrics.json          │
 │                                                                 │
+│  Status: Design complete, implementation deferred              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   PHASE 3: AGGREGATION                          │
+│           PHASE 3: AGGREGATION - [PROPOSED FUTURE WORK]        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  python aggregate_results.py                                    │
@@ -285,6 +293,7 @@ class MultiLabelLinearProbe(pl.LightningModule):
 │      ├── Compare direct inference vs linear probe              │
 │      └── Compare to BirdSet paper baselines                    │
 │                                                                 │
+│  Status: Requires Phase 2B completion                          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -508,6 +517,67 @@ BMZ Model.predict(file_paths) Internal Flow:
 | **Model loading failures** | Medium | Medium | Graceful error handling; skip failed models |
 | **I/O bottleneck during inference** | High | Low | Use num_workers; expected behavior |
 
+## Phase 2A Completion Notes
+
+### What Was Implemented
+
+**Scripts and Modules** (Production-Ready):
+- ✅ `run_inference.py` - Direct inference CLI for BirdSet-native models
+- ✅ `datasets.py` - HuggingFace dataset loading and constants
+- ✅ `models.py` - LinearProbe and metrics computation
+- ✅ `sbatch/inference/run.sh` - Job controller with completion tracking
+- ✅ `sbatch/inference/_job.sh` - Worker script for SLURM execution
+- ✅ `sbatch/common.sh` - Shared environment setup and utilities
+
+**What Was NOT Implemented**:
+- ⏸️ `encoders.py` - Embedding extractors for BirdNET/Perch
+- ⏸️ `extract_embeddings.py` - CLI for embedding extraction
+- ⏸️ `train_classifier.py` - CLI for linear probe training
+- ⏸️ `taxonomy_mapping.py` - BirdNET → eBird code mapping
+- ⏸️ `aggregate_results.py` - Cross-model results collection
+- ⏸️ `sbatch/extract_embeddings/` - Embedding extraction job scripts
+- ⏸️ `sbatch/train_classifier/` - Linear probe training job scripts
+
+### Design Decisions Validated
+
+1. **Vectorized Prediction Conversion** (Decision 4):
+   - ✅ Successfully deployed to production
+   - ✅ Eliminated O(n²m) bottleneck for large datasets
+   - ✅ ~210,000x speedup confirmed on SSW (205K samples)
+
+2. **BMZ API Constraints** (Decision 9):
+   - ✅ Confirmed I/O bound behavior is expected
+   - ✅ `num_workers=4` effectively parallelizes CPU preprocessing
+   - ✅ BirdSetDataset correctly NOT used for Phase 2A (BMZ API limitation)
+
+3. **Multi-Label AUROC** (Technical Achievement):
+   - ✅ Per-class averaging with undefined class exclusion works correctly
+   - ✅ Matches BirdSet paper AUROC values (mean Δ ≤0.01)
+
+4. **SLURM Architecture** (Decision 1):
+   - ✅ Modular `run.sh` + `_job.sh` pattern scales efficiently
+   - ✅ Completion tracking via `metrics.json` prevents duplicate runs
+   - ✅ Portable directory path handling works across environments
+
+### Lessons Learned
+
+1. **BMZ API Design**: File path-only API is intentional for production safety but prevents pre-loaded tensor optimization. This is acceptable for batch processing.
+
+2. **Performance Bottlenecks**: For large datasets (>200K samples), prediction conversion can become a bottleneck. Vectorized pandas operations are essential.
+
+3. **Multi-Label Metrics**: T1-Acc has multiple valid definitions for multi-label classification. Our implementation differs from BirdSet paper but cmAP/AUROC alignment confirms correctness.
+
+4. **SLURM Queue Management**: Inferno QOS is more reliable than embers for multi-hour jobs (prevents preemption).
+
+### Design Gaps for Phase 2B
+
+If Phase 2B is implemented in the future, the following design considerations apply:
+
+1. **Embedding Extraction**: PyTorch DataLoader required (BMZ models don't support direct embedding extraction API)
+2. **Linear Probe Training**: 2-layer MLP architecture already implemented in `models.py`
+3. **Taxonomy Mapping**: Research needed to determine if BirdNET → eBird mapping exists
+4. **Storage Management**: Embeddings will be large (~725MB for predictions alone); plan for scratch storage
+
 ## Open Questions (Resolved)
 
 1. ~~Should we use class weights for imbalance?~~ → Start without; add if cmAP is poor
@@ -519,4 +589,4 @@ BMZ Model.predict(file_paths) Internal Flow:
 
 ---
 
-**Next**: Create detailed tasks.md with implementation steps.
+**Experiment Status**: Phase 2A complete (2026-01-30). Design validated for implemented components. Phase 2B/3/4 designs remain as proposed future work.

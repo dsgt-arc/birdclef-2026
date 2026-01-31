@@ -9,35 +9,36 @@ This experiment evaluates pre-trained bioacoustics models on the full BirdSet be
 
 ## Quick Start
 
-### 1. Interactive Testing (Phase 1 ✅)
+### Phase 2A: Direct Inference (✅ Complete)
 
-An interactive test script, `test_setup.sh`, has been used to validate the environment, dependencies, and data access. This phase is complete. The script verifies:
-- GPU availability and PyTorch CUDA support
-- Installation of all dependencies via `uv`
-- Correct loading of `bioacoustics-model-zoo` models (BirdNET, Perch)
-- Accessibility of all 8 BirdSet datasets from HuggingFace
-- A comprehensive `pytest` suite (28 tests) passes successfully.
-
-### 2. Full Experiment Execution (Phase 2 🔄)
-
-The experiment is run via a modular SLURM architecture.
+Phase 2A evaluated BirdSet-native models (ConvNeXT, EfficientNetB1) on all 8 datasets:
 
 ```bash
 # Navigate to the experiment directory
 cd user/murilo/experiments/001-birdset-bioacoustics-benchmark
 
-# PART A: Direct Inference for BirdSet-native models
-# (BirdSetConvNeXT, BirdSetEfficientNetB1)
-bash sbatch/inference/run.sh
-
-# PART B: Transfer Learning for external models
-# (BirdNET, Perch, etc.)
-# Step 1: Extract embeddings for all models and datasets
-bash sbatch/extract_embeddings/run.sh
-
-# Step 2: Train linear probes on the extracted embeddings
-bash sbatch/train_classifier/run.sh
+# Run direct inference for BirdSet-native models (Phase 2A)
+bash sbatch/inference/run.sh --model birdset_convnext  # 8 datasets
+bash sbatch/inference/run.sh --model birdset_efficientnet_b1  # 8 datasets
 ```
+
+**Status**: All 16 inference runs complete. Results documented in [RESULTS_SUMMARY.md](RESULTS_SUMMARY.md).
+
+### Phase 2B: Transfer Learning (Proposed Future Work)
+
+Phase 2B would evaluate external models (BirdNET, Perch) via embedding extraction + linear probing:
+
+```bash
+# Step 1: Extract embeddings (NOT IMPLEMENTED)
+bash sbatch/extract_embeddings/run.sh --model birdnet
+bash sbatch/extract_embeddings/run.sh --model perch
+
+# Step 2: Train linear probes (NOT IMPLEMENTED)
+bash sbatch/train_classifier/run.sh --model birdnet
+bash sbatch/train_classifier/run.sh --model perch
+```
+
+**Status**: Design complete (see [design.md](design.md)), implementation deferred.
 
 ## Methodology
 
@@ -93,7 +94,7 @@ The evaluation is split into two parts based on the model's origin.
 
 ## Status
 
-**Current Phase**: Phase 2B preparation (Transfer Learning for external models)
+**Current Phase**: Phase 2A Complete ✅
 
 - [x] **Phase 0: Planning**: Proposal, Design, and Tasks are complete.
 - [x] **Phase 1: Environment Setup**: All dependencies installed and validated via `test_setup.sh` and a comprehensive `pytest` suite.
@@ -121,9 +122,62 @@ The evaluation is split into two parts based on the model's origin.
 
 See [tasks.md](tasks.md) for a detailed checklist and [RESULTS_SUMMARY.md](RESULTS_SUMMARY.md) for complete results.
 
-## Next Steps
+## Phase 2A Achievements
 
-1.  **Implement Phase 2B**: Complete the `extract_embeddings.py` and `train_classifier.py` scripts for external models (BirdNET, Perch)
-2.  **Run Phase 2B**: Extract embeddings and train linear probes on all 8 datasets
-3.  **Implement Phase 3**: Write the `aggregate_results.py` script to produce final results matrix and visualizations
-4.  **Compare to BirdSet paper**: Validate our Phase 2A results against published baseline values
+**Scientific Validation**:
+- Successfully validated BirdSet checkpoints against published paper baselines
+- Mean cmAP alignment: 0.00 difference for both models (perfect agreement)
+- Mean AUROC alignment: ≤0.01 difference (very good agreement)
+- Confirmed correct implementation of multi-label evaluation metrics
+
+**Technical Achievements**:
+1. **Vectorized Prediction Conversion**: Eliminated O(n²m) bottleneck with pandas reindex approach
+   - Impact: ~210,000x speedup (SSW conversion: hours → seconds)
+   - Enables processing of large datasets (205K+ samples)
+
+2. **Multi-Label AUROC Fix**: Proper per-class averaging with undefined class exclusion
+   - Matches cmAP computation pattern
+   - Adds `num_classes_auroc` tracking for transparency
+
+3. **Comprehensive Test Suite**: 32 tests covering data pipeline, inference, and metrics
+   - Validates correctness across edge cases
+   - Performance regression tests for vectorized operations
+
+4. **Production-Ready SLURM Architecture**: Modular job scripts with completion tracking
+   - Automatic skip-if-done behavior
+   - Force-rerun flag for debugging
+   - Portable directory path handling
+
+**Performance Summary**:
+- Total samples processed: 643,638 across 16 runs
+- Best performance: NBP (cmAP 0.62-0.63, 51 species)
+- Most challenging: PER (cmAP 0.17-0.18, 132 species, Amazon diversity)
+- Largest dataset: SSW (205,200 samples, 64% of total test set)
+
+**Key Findings**:
+- ConvNeXT and EfficientNetB1 are highly competitive (cmAP difference <1%)
+- Both models show strong AUROC performance (>0.84 average)
+- Performance varies significantly by dataset (cmAP range: 0.17-0.63)
+- Geographic and acoustic diversity creates substantial evaluation challenges
+
+## Proposed Future Work
+
+Phase 2A established baseline performance for BirdSet-native models. The following phases remain as valuable future work:
+
+**Phase 2B - Transfer Learning**: Evaluate external models (BirdNET, Perch) using linear probing
+- Extract embeddings from pre-trained models
+- Train multi-label classifiers on BirdSet labels
+- Compare transfer learning vs. direct inference approaches
+- **Design Status**: Complete - see [design.md](design.md) for full technical architecture
+
+**Phase 3 - Results Aggregation**: Generate cross-model visualizations and statistical analysis
+- Heatmaps showing performance across model × dataset combinations
+- Per-class analysis identifying challenging species
+- Statistical significance testing between models
+
+**Phase 4 - Documentation**: Final cleanup and archival
+- Archive large artifacts to scratch storage
+- Code quality improvements (type hints, docstrings)
+- Complete experiment closure with git tag
+
+**Why Deferred**: Phase 2A successfully validated the experimental pipeline and achieved the core scientific goal (validating BirdSet checkpoints). Phases 2B/3/4 represent significant additional work that is valuable but not required for experiment closure.

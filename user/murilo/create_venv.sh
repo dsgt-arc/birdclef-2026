@@ -54,8 +54,8 @@ echo ""
 
 # Step 2: Set up environment variables
 echo "Step 2: Setting up environment variables..."
-export EXPERIMENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PROJECT_ROOT="$(cd "$EXPERIMENT_DIR/../../../.." && pwd)"
+export SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Use TMPDIR if available (SLURM job), otherwise use ~/tmp for interactive session
 if [ -n "${TMPDIR:-}" ]; then
@@ -71,7 +71,7 @@ JOB_ID="${SLURM_JOB_ID:-$$}"
 export JOB_VENV_DIR="$VENV_BASE/birdset-benchmark-$JOB_ID"
 export JOB_VENV="$JOB_VENV_DIR/.venv"
 
-echo "  - Experiment dir: $EXPERIMENT_DIR"
+echo "  - Script dir: $SCRIPT_DIR"
 echo "  - Project root: $PROJECT_ROOT"
 echo "  - Job ID: $JOB_ID"
 echo "  - Virtual env: $JOB_VENV"
