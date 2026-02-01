@@ -17,6 +17,9 @@ dependencies = [
     "tensorflow==2.17",      # For Perch and other TF-based models
     "tensorflow-hub",        # TensorFlow Hub for pretrained models
     "numpy>=1.24.0",
+    "timm>=0.9.0",           # Vision Transformer models
+    "wandb>=0.16.0",         # Weights & Biases logging
+    "einops>=0.7.0",         # Tensor operations (for MAE)
 
     # Data handling
     "datasets==3.6.0",   # Upgraded to 3.6.0 for trust_remote_code support (required by BirdSet)
