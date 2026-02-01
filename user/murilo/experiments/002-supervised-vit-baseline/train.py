@@ -60,6 +60,18 @@ def main():
         default=None,
         help="Override num_workers from config (useful for debugging)",
     )
+    parser.add_argument(
+        "--devices",
+        type=int,
+        default=1,
+        help="Number of GPUs to use (default: 1)",
+    )
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="auto",
+        help="Training strategy: 'auto', 'ddp', 'ddp_spawn', etc. (default: auto)",
+    )
     args = parser.parse_args()
 
     # Load configuration
@@ -164,10 +176,12 @@ def main():
 
     # Initialize trainer
     logger.info("Initializing PyTorch Lightning trainer...")
+    logger.info(f"Using {args.devices} GPU(s) with strategy: {args.strategy}")
     trainer = pl.Trainer(
         max_epochs=config['training']['max_epochs'],
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        devices=1,
+        devices=args.devices,
+        strategy=args.strategy if args.devices > 1 else "auto",
         precision=config['training']['precision'],
         gradient_clip_val=config['training']['grad_clip_val'],
         accumulate_grad_batches=config['training']['accumulate_grad_batches'],
