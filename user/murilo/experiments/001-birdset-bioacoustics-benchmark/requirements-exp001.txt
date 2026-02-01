@@ -1,12 +1,13 @@
-# Experiment 001: BirdSet Bioacoustics Benchmark
-# Phase 2A (Direct Inference) + Phase 2B (Transfer Learning)
-# Frozen on: 2026-01-31
+# Experiment 001: BirdSet Bioacoustics Benchmark - Phase 2A
+# Evaluation of BirdSet-native models (ConvNeXT, EfficientNetB1) via direct inference
+# Frozen on: 2026-01-26
 # Python: 3.11
 #
-# This file captures the dependencies used for Experiment 001 before
-# adding ViT/MAE dependencies (experiments 002/003).
+# What was completed: Phase 2A (16 inference runs: 2 models × 8 datasets)
+#   - BirdSetConvNeXT: Direct inference on all 8 datasets
+#   - BirdSetEfficientNetB1: Direct inference on all 8 datasets
 #
-# Based on: user/murilo/pyproject.toml (pre-experiments 002/003)
+# What was NOT completed: Phase 2B (BirdNET/Perch evaluation - deferred as future work)
 
 # ============================================================================
 # Core ML/DL
@@ -16,53 +17,64 @@ torchaudio==2.10.0
 torchvision==0.20.0
 pytorch-lightning==2.6.1
 torchmetrics==1.6.2
-transformers==4.48.1
-tensorflow==2.17.0
-tensorflow-hub==0.16.1
+transformers==4.48.1        # Required by BirdSet models
 numpy==2.2.2
 
 # ============================================================================
 # Data handling
 # ============================================================================
-datasets==3.6.0              # Upgraded for trust_remote_code support (BirdSet requirement)
-pyarrow==19.0.0              # Required by datasets for full feature support
-polars==1.23.0               # Fast dataframes (preferred over pandas)
-pandas==2.2.3                # Fallback if needed
+datasets==3.6.0             # BirdSet data loading with trust_remote_code support
+pyarrow==19.0.0             # Required by datasets for full feature support
+polars==1.23.0              # Fast dataframes
+pandas==2.2.3               # Data manipulation
 
 # ============================================================================
 # Audio processing
 # ============================================================================
-librosa==0.10.2.post1
-resampy==0.4.3               # Required by librosa for resampling
-soundfile==0.12.1
-audioread==3.0.1
+librosa==0.10.2.post1       # Audio utilities
+resampy==0.4.3              # Required by librosa for resampling
+soundfile==0.12.1           # Audio I/O
+audioread==3.0.1            # Audio backend
 
 # ============================================================================
-# Bioacoustics models
+# Bioacoustics models - CORE DEPENDENCY for Phase 2A
 # ============================================================================
-# NOTE: bioacoustics-model-zoo installed from git:
-#   git+https://github.com/kitzeslab/bioacoustics-model-zoo.git@main
-opensoundscape==0.10.4
-ai-edge-litert==1.1.1        # TensorFlow Lite for BirdNET
+# NOTE: bioacoustics-model-zoo must be installed from git:
+#   uv pip install git+https://github.com/kitzeslab/bioacoustics-model-zoo.git@main
+#
+# This package provides:
+#   ✅ BirdSetConvNeXT (used in Phase 2A)
+#   ✅ BirdSetEfficientNetB1 (used in Phase 2A)
+#   ⏸️ BirdNET (planned for Phase 2B, not yet used)
+#   ⏸️ Perch (planned for Phase 2B, not yet used)
+
+opensoundscape==0.10.4      # Audio preprocessing utilities (used by BMZ models)
+ai-edge-litert==1.1.1       # TensorFlow Lite runtime (dependency of BMZ)
+
+# ============================================================================
+# TensorFlow (required by bioacoustics-model-zoo and some models)
+# ============================================================================
+tensorflow==2.17.0          # Required by BMZ for some model backends
+tensorflow-hub==0.16.1      # TensorFlow Hub for pretrained models
 
 # ============================================================================
 # Machine learning
 # ============================================================================
-scikit-learn==1.6.1
+scikit-learn==1.6.1         # Metrics (cmAP, AUROC computation)
 
 # ============================================================================
 # Utilities
 # ============================================================================
-tqdm==4.67.1
-pyyaml==6.0.2
-typer==0.15.2                # CLI framework
-rich==13.9.4                 # Beautiful terminal output
+tqdm==4.67.1                # Progress bars
+pyyaml==6.0.2               # Config files
+typer==0.15.2               # CLI framework
+rich==13.9.4                # Beautiful terminal output
 
 # ============================================================================
 # Testing
 # ============================================================================
 pytest==8.3.4
-pytest-cov==6.0.0            # Required by pytest.ini addopts
+pytest-cov==6.0.0
 
 # ============================================================================
 # Visualization
@@ -74,19 +86,27 @@ seaborn==0.13.2
 # Notes
 # ============================================================================
 #
-# Key dependencies NOT included (added in later experiments):
-#   - timm (added in Experiment 002 for ViT)
-#   - wandb (added in Experiment 002 for logging)
-#   - einops (added in Experiment 003 for MAE)
+# Phase 2A (completed) used bioacoustics-model-zoo for:
+#   ✅ BirdSetConvNeXT - Direct inference on 8 datasets
+#   ✅ BirdSetEfficientNetB1 - Direct inference on 8 datasets
 #
-# To install this environment:
+# Phase 2B (deferred) would additionally use:
+#   ⏸️ BirdNET - Embedding extraction + linear probing
+#   ⏸️ Perch - Embedding extraction + linear probing
+#
+# Dependencies NOT yet added (added in later experiments):
+#   - timm (Experiment 002: Vision Transformers)
+#   - wandb (Experiment 002: W&B logging)
+#   - einops (Experiment 003: Audio-MAE)
+#
+# Installation:
 #   uv venv .venv --python 3.11
 #   source .venv/bin/activate
 #   uv pip install -r requirements-exp001.txt
-#
-# For bioacoustics-model-zoo (not in PyPI):
 #   uv pip install git+https://github.com/kitzeslab/bioacoustics-model-zoo.git@main
 #
-# To reproduce exact environment (including transitive dependencies):
-#   uv pip install -r requirements-frozen.txt
-#   (Note: requirements-frozen.txt must be generated by running freeze_environment.sh)
+# Results:
+#   - See RESULTS_SUMMARY.md for complete analysis
+#   - cmAP: 0.36 (ConvNeXT), 0.35 (EfficientNetB1) - matches BirdSet paper
+#   - 16 metrics.json files committed to git
+#   - Total inference time: ~7.2 hours for both models
