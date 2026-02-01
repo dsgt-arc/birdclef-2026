@@ -33,13 +33,16 @@ Research ideas, hypotheses, and directions being explored for BirdCLEF 2026.
 | [data-and-compute-scale](data-and-compute-scale.md) | developing | Dataset sizes, model params, Kaggle constraints |
 | [mlp-mixer-distillation](mlp-mixer-distillation.md) | nascent | ViT→MLP-Mixer distillation for CPU inference |
 | [research-leads](research-leads.md) | developing | Active model candidates and next steps |
-| [vit-mae-bioacoustics-pretraining](vit-mae-bioacoustics-pretraining.md) | **mature** | Self-supervised ViT+MAE pre-training for BirdSet (Experiments 002-003) |
+| [supervised-vit-audio-pipeline](supervised-vit-audio-pipeline.md) | **implementing** | End-to-end supervised ViT training pipeline for BirdSet (Experiment 002) |
+| [vit-mae-bioacoustics-pretraining](vit-mae-bioacoustics-pretraining.md) | deferred | Self-supervised ViT+MAE pre-training for BirdSet (Experiment 003 - deferred) |
 
 ## Status Definitions
 
 - **nascent**: Initial idea, minimal exploration
 - **developing**: Active exploration, hypotheses forming
 - **mature**: Ready for experiments, clear hypotheses
+- **implementing**: Actively being implemented in an experiment
+- **deferred**: Planned but postponed
 - **archived**: Explored and concluded
 
 ## Adding a New Concept

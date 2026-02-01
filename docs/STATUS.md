@@ -32,6 +32,7 @@ Experiment 001 (encoder benchmark) is complete. Key result: **BEATs is best for 
 1. **Distillation target selection** - EAT vs OpenBEATs vs BirdMAE
 2. **CPU-viable architectures** - MLP-Mixer, model2vec, quantization
 3. **Domain adaptation** - ProtoCLR, MixIT denoising
+4. **ViT for bioacoustics** - Validating supervised ViT baseline on BirdSet (Exp 002)
 
 See [concepts/research-leads.md](concepts/research-leads.md) for full list.
 
@@ -51,6 +52,8 @@ See [concepts/research-leads.md](concepts/research-leads.md) for full list.
 | anthony/002 | [BEATs Inference Optimization](../user/anthony/experiments/002-beats-inference-optimization/) | Complete | **Rejected** - 32x speedup, 63% best accuracy (21% gap) |
 | anthony/003 | [Model Distillation](../user/anthony/experiments/003-model-distillation/) | Proposed | Distill BEATs → lightweight student on AudioSet |
 | murilo/001 | [BirdSet Bioacoustics Benchmark](../user/murilo/experiments/001-birdset-bioacoustics-benchmark/) | **Phase 2A Complete** | ConvNeXT/EfficientNetB1 on 8 datasets, mean cmAP 0.36/0.35. Phase 2B deferred. |
+| murilo/002 | [Supervised ViT Baseline](../user/murilo/experiments/002-supervised-vit-baseline/) | Ready for execution | HSN single-GPU baseline |
+| murilo/003 | Audio-MAE Pre-training | **Deferred** (2026-02-01) | Planning complete, archived |
 
 Experiments are tracked per-user in `user/<name>/experiments/`.
 
@@ -59,7 +62,9 @@ Experiments are tracked per-user in `user/<name>/experiments/`.
 1. ~~Benchmark foundation models (BEATs, EAT, wav2vec2) on ESC-50~~ Done (Exp 001)
 2. ~~Optimize BEATs inference for CPU~~ Done (Exp 002) - static embeddings rejected (63% best, 21% gap)
 3. **[Active]** Knowledge distillation on AudioSet (Exp 003) - Mamba2, ConvNeXt1D, TCN students
-4. Consider INT8 quantization or pruning as alternative approaches
+4. **[Active]** Execute Experiment 002 on HSN (single GPU, 2-4 hours)
+5. Evaluate HSN results and compare to BirdSet baseline (ConvNeXT: 0.38 cmAP)
+6. Decide next direction: scale to XCM, iterate architecture, or explore BEATS/EATS
 
 ## Quick Links
 

@@ -1,14 +1,28 @@
 # Concept: Vision Transformer + Masked Autoencoding for Bioacoustics Pre-training
 
-**Status**: mature
+**Status**: deferred (as of 2026-02-01)
 **Created**: 2026-01-31
-**Updated**: 2026-01-31
+**Updated**: 2026-02-01
 
 ## Idea
 
 Leverage self-supervised pre-training via Masked Autoencoders (MAE) to learn robust audio representations from BirdSet spectrograms, enabling better generalization to rare species and soundscape audio. The approach treats mel-spectrograms as images, adapts Vision Transformers (ViT) for single-channel audio, and uses aggressive masking (75%) to force semantic understanding of bird vocalizations.
 
 **Key insight**: Rather than relying solely on supervised learning (which struggles with long-tail species distribution in BirdSet), we can leverage the abundance of unlabeled audio through self-supervised pre-training. MAE's aggressive masking forces the encoder to learn global semantic features rather than local texture patterns, making it ideal for soundscape audio where birds appear in cluttered acoustic scenes.
+
+---
+**⚠️ EXPERIMENT STATUS (2026-02-01)**
+
+Experiment 003 (Audio-MAE Pre-training) was planned but **deferred** after discussion with Anthony. We decided to:
+1. Focus on validating Experiment 002 (Supervised ViT Baseline) infrastructure first
+2. Ensure models fit on single GPU (competition constraint for CPU inference)
+3. Complete HSN baseline and evaluate results before pursuing self-supervised pre-training
+
+**Planning artifacts**: Archived at `user/murilo/experiments/_archived/003-audio-mae-pretraining/`
+
+**Concept preservation**: This document remains valuable for future reference if we decide to pursue MAE pre-training after Experiment 002 completes.
+
+---
 
 ## Motivation
 
@@ -166,20 +180,17 @@ Experiment 002 (Implementing)
          └─> PyTorch Lightning pipeline
          └─> On-the-fly mel-spec generation
          └─> Multi-label metrics (cmAP, AUROC)
-         └─> HSN → XCM workflow
+         └─> HSN → XCM workflow (HSN first)
 
-Experiment 003 (Next)
+Experiment 003 (DEFERRED - 2026-02-01)
     └─> Audio-MAE Pre-training
-         └─> Reuse Exp 002 infrastructure
-         └─> Encoder-decoder architecture
-         └─> 75% random masking
-         └─> Reconstruction visualizations
-         └─> Save encoder checkpoints
+         └─> Planning complete, implementation deferred
+         └─> See archived planning docs
+         └─> May revisit after Exp 002 completes
 
-Future (Experiments 004+)
-    └─> Fine-tuning on BirdCLEF 2026
-    └─> Zero-shot retrieval
-    └─> Distillation to CPU models
+Future (TBD)
+    └─> Based on Exp 002 results
+    └─> Options: Scale to XCM, iterate architecture, or explore BEATS/EATS
 ```
 
 **Success Criteria Evolution**:
