@@ -24,7 +24,7 @@ from pytorch_lightning.callbacks import (  # noqa: E402
     LearningRateMonitor,
     ModelCheckpoint,
 )
-from pytorch_lightning.loggers import WandbLogger  # noqa: E402
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger  # noqa: E402
 
 # Add src to path
 repo_root = Path(__file__).parent.parent.parent
@@ -37,6 +37,10 @@ from birdset_benchmark.models.vit_audio import ViTAudio  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Suppress noisy loggers
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
 
 def load_config(config_path: str) -> dict:
@@ -167,10 +171,22 @@ def main():
     device_stats = DeviceStatsMonitor()
     callbacks.append(device_stats)
 
-    # Setup logger
+    # Setup loggers
+    loggers = []
+    experiment_name = f"exp002-{dataset_name}"
+
+    # TensorBoard logger (always enabled, even for fast_dev_run for local debugging)
+    logger.info("Initializing TensorBoard logger...")
+    tb_logger = TensorBoardLogger(
+        save_dir=Path(__file__).parent / "outputs",
+        name="tensorboard",
+        version=experiment_name,
+    )
+    loggers.append(tb_logger)
+
     if not args.fast_dev_run:
+        # W&B logger (only for full training runs)
         logger.info("Initializing W&B logger...")
-        experiment_name = f"exp002-{dataset_name}"
         wandb_logger = WandbLogger(
             entity=config["logging"]["entity"],
             project=config["logging"]["project"],
@@ -180,9 +196,9 @@ def main():
         )
         # Log config to W&B
         wandb_logger.experiment.config.update(config)
+        loggers.append(wandb_logger)
     else:
         logger.info("Fast dev run - skipping W&B logging")
-        wandb_logger = None
 
     # Initialize trainer
     logger.info("Initializing PyTorch Lightning trainer...")
@@ -196,7 +212,7 @@ def main():
         gradient_clip_val=config["training"]["grad_clip_val"],
         accumulate_grad_batches=config["training"]["accumulate_grad_batches"],
         callbacks=callbacks,
-        logger=wandb_logger,
+        logger=loggers,
         log_every_n_steps=config["logging"]["log_every_n_steps"],
         fast_dev_run=5 if args.fast_dev_run else False,
         enable_progress_bar=True,
@@ -207,10 +223,14 @@ def main():
     logger.info("Starting training...")
     trainer.fit(pl_module, data_module)
 
-    # Test on best checkpoint
+    # Test on best checkpoint (or current model for fast_dev_run)
     if not args.fast_dev_run:
         logger.info("Testing on best checkpoint...")
         trainer.test(pl_module, data_module, ckpt_path="best")
+    else:
+        # In fast_dev_run, test with current model to validate test_step works
+        logger.info("Testing current model (fast dev run)...")
+        trainer.test(pl_module, data_module)
 
     logger.info("Training complete!")
 

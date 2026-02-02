@@ -127,7 +127,7 @@ echo ""
 echo "Starting training..."
 echo ""
 
-python train.py --config config.yaml
+srun python train.py --config config.yaml
 
 echo ""
 echo "=============================================="

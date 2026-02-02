@@ -50,6 +50,9 @@ class SupervisedViTModule(pl.LightningModule):
         self.train_cmap = torchmetrics.AveragePrecision(
             task="multilabel", num_labels=num_classes, average="macro"
         )
+        self.train_auroc = torchmetrics.AUROC(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
         self.train_f1_macro = torchmetrics.F1Score(
             task="multilabel", average="macro", num_labels=num_classes
         )
@@ -63,6 +66,9 @@ class SupervisedViTModule(pl.LightningModule):
         self.val_cmap = torchmetrics.AveragePrecision(
             task="multilabel", num_labels=num_classes, average="macro"
         )
+        self.val_auroc = torchmetrics.AUROC(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
         self.val_f1_macro = torchmetrics.F1Score(
             task="multilabel", average="macro", num_labels=num_classes
         )
@@ -71,6 +77,22 @@ class SupervisedViTModule(pl.LightningModule):
         )
         self.val_top1 = MultiLabelTopKAccuracy(k=1)
         self.val_top5 = MultiLabelTopKAccuracy(k=5)
+
+        # Test metrics
+        self.test_cmap = torchmetrics.AveragePrecision(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
+        self.test_auroc = torchmetrics.AUROC(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
+        self.test_f1_macro = torchmetrics.F1Score(
+            task="multilabel", average="macro", num_labels=num_classes
+        )
+        self.test_f1_micro = torchmetrics.F1Score(
+            task="multilabel", average="micro", num_labels=num_classes
+        )
+        self.test_top1 = MultiLabelTopKAccuracy(k=1)
+        self.test_top5 = MultiLabelTopKAccuracy(k=5)
 
     def forward(self, x):
         """Forward pass returns raw logits (before sigmoid)."""
@@ -96,6 +118,7 @@ class SupervisedViTModule(pl.LightningModule):
 
         # Update metrics
         self.train_cmap.update(probs, labels.int())
+        self.train_auroc.update(probs, labels.int())
         self.train_f1_macro.update(preds, labels.int())
         self.train_f1_micro.update(preds, labels.int())
         self.train_top1.update(probs, labels.int())
@@ -109,6 +132,7 @@ class SupervisedViTModule(pl.LightningModule):
     def on_train_epoch_end(self):
         """Log training metrics at epoch end."""
         self.log("train/cmap", self.train_cmap.compute(), prog_bar=True)
+        self.log("train/auroc", self.train_auroc.compute(), prog_bar=False)
         self.log("train/f1_macro", self.train_f1_macro.compute(), prog_bar=True)
         self.log("train/f1_micro", self.train_f1_micro.compute(), prog_bar=False)
         self.log("train/top1_acc", self.train_top1.compute(), prog_bar=False)
@@ -116,6 +140,7 @@ class SupervisedViTModule(pl.LightningModule):
 
         # Reset metrics
         self.train_cmap.reset()
+        self.train_auroc.reset()
         self.train_f1_macro.reset()
         self.train_f1_micro.reset()
         self.train_top1.reset()
@@ -135,6 +160,7 @@ class SupervisedViTModule(pl.LightningModule):
 
         # Update metrics
         self.val_cmap.update(probs, labels.int())
+        self.val_auroc.update(probs, labels.int())
         self.val_f1_macro.update(preds, labels.int())
         self.val_f1_micro.update(preds, labels.int())
         self.val_top1.update(probs, labels.int())
@@ -148,6 +174,7 @@ class SupervisedViTModule(pl.LightningModule):
     def on_validation_epoch_end(self):
         """Log validation metrics at epoch end."""
         self.log("val/cmap", self.val_cmap.compute(), prog_bar=True)
+        self.log("val/auroc", self.val_auroc.compute(), prog_bar=True)
         self.log("val/f1_macro", self.val_f1_macro.compute(), prog_bar=True)
         self.log("val/f1_micro", self.val_f1_micro.compute(), prog_bar=False)
         self.log("val/top1_acc", self.val_top1.compute(), prog_bar=True)
@@ -155,10 +182,53 @@ class SupervisedViTModule(pl.LightningModule):
 
         # Reset metrics
         self.val_cmap.reset()
+        self.val_auroc.reset()
         self.val_f1_macro.reset()
         self.val_f1_micro.reset()
         self.val_top1.reset()
         self.val_top5.reset()
+
+    def test_step(self, batch, batch_idx):
+        """Test step for multi-label classification."""
+        mel_specs, labels = batch
+        logits = self(mel_specs)
+
+        # Compute loss
+        loss = self.criterion(logits, labels.float())
+
+        # Convert logits to probabilities for metrics
+        probs = torch.sigmoid(logits)
+        preds = (probs > self.threshold).int()
+
+        # Update metrics
+        self.test_cmap.update(probs, labels.int())
+        self.test_auroc.update(probs, labels.int())
+        self.test_f1_macro.update(preds, labels.int())
+        self.test_f1_micro.update(preds, labels.int())
+        self.test_top1.update(probs, labels.int())
+        self.test_top5.update(probs, labels.int())
+
+        # Log loss
+        self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+
+        return loss
+
+    def on_test_epoch_end(self):
+        """Log test metrics at epoch end."""
+        self.log("test/cmap", self.test_cmap.compute(), prog_bar=True)
+        self.log("test/auroc", self.test_auroc.compute(), prog_bar=True)
+        self.log("test/f1_macro", self.test_f1_macro.compute(), prog_bar=True)
+        self.log("test/f1_micro", self.test_f1_micro.compute(), prog_bar=False)
+        self.log("test/top1_acc", self.test_top1.compute(), prog_bar=True)
+        self.log("test/top5_acc", self.test_top5.compute(), prog_bar=True)
+
+        # Reset metrics
+        self.test_cmap.reset()
+        self.test_auroc.reset()
+        self.test_f1_macro.reset()
+        self.test_f1_micro.reset()
+        self.test_top1.reset()
+        self.test_top5.reset()
 
     def configure_optimizers(self):
         """Configure AdamW optimizer with cosine annealing and warmup."""
