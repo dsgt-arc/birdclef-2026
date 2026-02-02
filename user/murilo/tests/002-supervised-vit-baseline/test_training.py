@@ -118,8 +118,8 @@ class TestTrainingPipeline:
         # Run training
         trainer.fit(pl_module, dm)
 
-        # Check that training completed
-        assert trainer.current_epoch == 0  # 0-indexed, so epoch 0 means 1 epoch completed
+        # Check that training completed (current_epoch is 1 after 1 epoch)
+        assert trainer.current_epoch == 1
 
     @pytest.mark.slow
     @pytest.mark.download
@@ -167,8 +167,8 @@ class TestTrainingPipeline:
         # Run training
         trainer.fit(pl_module, dm)
 
-        # Check model is on GPU
-        assert next(pl_module.parameters()).device.type == "cuda"
+        # Check that training used GPU (trainer.strategy confirms GPU was used)
+        assert trainer.strategy.root_device.type == "cuda"
 
     @pytest.mark.slow
     @pytest.mark.download

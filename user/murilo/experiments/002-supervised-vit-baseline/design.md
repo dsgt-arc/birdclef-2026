@@ -107,6 +107,25 @@ Key constraints:
 
 **Rationale**: HSN provides ~100x faster iteration (minutes vs hours per epoch), enabling rapid debugging and validation. Infrastructure bugs (data loading, GPU OOM, etc.) will surface quickly on HSN. Scaling to XCM is straightforward (change dataset name in config).
 
+### Decision 6: Validation Strategy (HSN Dataset Splits)
+
+**Options considered:**
+1. **Custom train/val/test split**: Manually split training data with stratification
+   - Pros: Control over split ratios, guaranteed species coverage
+   - Cons: Extra engineering, may not match BirdSet evaluation protocol
+2. **Use BirdSet pre-defined splits**: Use `train` for training, `test_5s` for validation
+   - Pros: Follows BirdSet conventions, no custom code needed, species coverage already ensured
+   - Cons: Naming is confusing (`test_5s` used as validation)
+
+**Decision**: Use BirdSet pre-defined splits (option 2)
+
+**Rationale**: BirdSet HSN comes with pre-defined splits that already ensure species coverage:
+- `train`: 5,460 samples, 21 species
+- `test_5s`: 12,000 samples, 21 species (used for validation)
+- All 21 species appear in both splits
+
+No custom splitting is needed. The `test_5s` split serves as our validation set during training, following BirdSet conventions.
+
 ## Architecture / Approach
 
 ```
@@ -125,8 +144,8 @@ Key constraints:
 │  BirdSetDataset     │  (PyTorch Dataset, from torch_data.py)
 │  (existing)         │  - Loads audio from disk
 └──────────┬──────────┘  - Resamples to 32kHz
-           │              - Pads/crops to 5 seconds
-           │              - Returns raw waveform
+           │             - Pads/crops to 5 seconds
+           │             - Returns raw waveform
            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  DataLoader (8 workers, persistent, prefetch_factor=4)          │

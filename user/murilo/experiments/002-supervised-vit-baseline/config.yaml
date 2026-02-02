@@ -52,6 +52,7 @@ callbacks:
     min_delta: 0.001
 
 logging:
+  entity: "dsgt-arc"  # W&B team name
   project: "birdset-vit-baseline"
   save_dir: "outputs/wandb"
   log_model: false  # Don't upload checkpoints (too large)

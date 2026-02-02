@@ -4,8 +4,10 @@
 - [x] 1.1 Add dependencies to pyproject.toml (timm, wandb, einops)
 - [x] 1.2 Create directory structure (lightning/, models/, preprocessing/)
 - [x] 1.3 Install dependencies with `uv sync`
-- [ ] 1.4 Verify BirdSet HSN dataset is accessible
-- [ ] 1.5 Create experiment output directories
+- [x] 1.4 Add python-dotenv for W&B API key management
+- [x] 1.5 Create .env.example template
+- [ ] 1.6 Verify BirdSet HSN dataset is accessible
+- [ ] 1.7 Create experiment output directories
 
 ## 2. Infrastructure (Complete)
 - [x] 2.1 Implement `MelSpectrogramTransform` (preprocessing/mel_spectrogram.py)
@@ -71,3 +73,20 @@
 1. BirdSet uses `test_5s` split (not `val` or `test`)
 2. Audio files need stereo→mono conversion
 3. Lightning module: access hparams.lr, return loss from validation_step
+
+---
+
+## Environment Setup (2026-02-01)
+
+**W&B Integration**:
+- Added `python-dotenv>=1.0.0` to pyproject.toml
+- Created `.env.example` with WANDB_API_KEY placeholder
+- Updated `train.py` to load `.env` before W&B initialization
+- Added `.env` to `.gitignore` for security
+
+**Next Steps**:
+1. Get GPU session: `salloc -p gpu-rtx6000 --gres=gpu:1 -c 4 --mem=32G -t 2:00:00`
+2. Run `bash create_venv.sh` to create environment with new dependencies
+3. Create `.env` file with your WANDB_API_KEY (copy from `.env.example`)
+4. Run tests: `pytest tests/002-supervised-vit-baseline/ -v --tb=short`
+5. Run fast dev: `python train.py --fast-dev-run`
