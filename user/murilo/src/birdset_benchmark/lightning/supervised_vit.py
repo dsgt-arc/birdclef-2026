@@ -143,6 +143,8 @@ class SupervisedViTModule(pl.LightningModule):
         # Log loss
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 
+        return loss
+
     def on_validation_epoch_end(self):
         """Log validation metrics at epoch end."""
         self.log("val/cmap", self.val_cmap.compute(), prog_bar=True)

@@ -30,7 +30,7 @@ class TestSupervisedViTModule:
 
         assert pl_module is not None
         assert pl_module.num_classes == 21
-        assert pl_module.lr == 1e-4
+        assert pl_module.hparams.lr == 1e-4
 
     def test_module_forward(self):
         """Test forward pass through Lightning module."""

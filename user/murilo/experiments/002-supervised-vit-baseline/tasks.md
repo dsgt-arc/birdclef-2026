@@ -19,10 +19,10 @@
 ## 3. Testing & Debugging (In Progress)
 - [x] 3.1 Create pytest test suite (39 tests across 5 modules)
 - [x] 3.2 Run initial test suite (27/39 passing)
-- [ ] 3.3 Debug failing tests:
-  - [ ] 3.3.1 Fix datamodule tests (6 failures)
-  - [ ] 3.3.2 Fix lightning module tests (2 failures)
-  - [ ] 3.3.3 Fix training pipeline tests (4 failures)
+- [x] 3.3 Debug failing tests:
+  - [x] 3.3.1 Fix datamodule tests (All 8 passing - fixed splits and stereo conversion)
+  - [ ] 3.3.2 Fix lightning module tests (2 failures - investigating timeout issue)
+  - [ ] 3.3.3 Fix training pipeline tests (4 failures - likely depends on 3.3.2)
 - [ ] 3.4 Verify all tests passing
 
 ## 4. Execution
