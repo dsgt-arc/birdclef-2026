@@ -19,6 +19,7 @@ import pytorch_lightning as pl  # noqa: E402
 import torch  # noqa: E402
 import yaml  # noqa: E402
 from pytorch_lightning.callbacks import (  # noqa: E402
+    DeviceStatsMonitor,
     EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
@@ -161,6 +162,10 @@ def main():
     # Learning rate monitor
     lr_monitor = LearningRateMonitor(logging_interval="epoch")
     callbacks.append(lr_monitor)
+
+    # GPU stats monitor (logs GPU utilization to W&B)
+    device_stats = DeviceStatsMonitor()
+    callbacks.append(device_stats)
 
     # Setup logger
     if not args.fast_dev_run:

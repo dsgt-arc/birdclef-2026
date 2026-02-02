@@ -111,20 +111,6 @@ if [ -f "$EXPERIMENT_DIR/.env" ]; then
 fi
 
 # ============================================================================
-# GPU Monitoring
-# ============================================================================
-
-GPU_STATS_FILE="$EXPERIMENT_DIR/logs/gpu_stats_${SLURM_JOB_ID:-local}.csv"
-
-nvidia-smi --query-gpu=timestamp,index,name,utilization.gpu,utilization.memory,memory.used,memory.total,power.draw,temperature.gpu \
-    --format=csv -l 30 > "$GPU_STATS_FILE" &
-GPU_MONITOR_PID=$!
-trap "kill $GPU_MONITOR_PID 2>/dev/null || true" EXIT
-
-echo "GPU monitoring started (log: $GPU_STATS_FILE)"
-echo ""
-
-# ============================================================================
 # Log configuration
 # ============================================================================
 
