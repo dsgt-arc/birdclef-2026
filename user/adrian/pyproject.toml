@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-birdclef-anthony = { workspace = true }
+birdclef-anthony = { path = "../anthony", editable = true }
 bioacoustics-model-zoo = { path = "../../vendor/bioacoustics-model-zoo", editable = true }
 
 [build-system]

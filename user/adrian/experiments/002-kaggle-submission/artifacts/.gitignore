@@ -1,0 +1,7 @@
+# Build artifacts (don't commit to git)
+dist/
+*.log
+*.out
+
+# Keep directory structure
+!.gitkeep

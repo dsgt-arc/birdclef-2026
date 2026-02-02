@@ -1,0 +1,30 @@
+# Kaggle Submission Configuration
+
+kaggle:
+  username: "cheungus"
+  python_version: "3.10"
+  platform: "manylinux2014_x86_64"
+
+datasets:
+  dependencies: "birdclef-2026-deps"
+  code: "birdclef-2026-code"
+  weights: "birdclef-2026-weights"
+
+paths:
+  # All paths relative to experiment directory unless absolute
+  dist_dir: "artifacts/dist"
+  checkpoint_path: "checkpoints/dummy.pt"
+  
+  # Source directories to bundle (relative to repo root)
+  source_dirs:
+    - "user/adrian/src"
+    - "user/anthony/src"
+
+# Dependencies to explicitly include (beyond pyproject.toml)
+extra_dependencies: []
+
+# Files to exclude from code bundle
+code_excludes:
+  - "__pycache__"
+  - "*.pyc"
+  - ".git"
