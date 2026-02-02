@@ -1,10 +1,12 @@
 """PyTorch Lightning DataModule for BirdSet datasets.
 
+Used by: Experiment 002 (Supervised ViT Baseline)
+
 Integrates existing BirdSetDataset with Lightning's data loading patterns.
+Generates mel-spectrograms on-the-fly in DataLoader workers.
 """
 
 import logging
-from typing import Optional
 
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
@@ -76,14 +78,14 @@ class BirdSetDataModule(pl.LightningDataModule):
         )
 
         # Datasets (populated in setup())
-        self.train_dataset: Optional[BirdSetDataset] = None
-        self.val_dataset: Optional[BirdSetDataset] = None
-        self.test_dataset: Optional[BirdSetDataset] = None
+        self.train_dataset: BirdSetDataset | None = None
+        self.val_dataset: BirdSetDataset | None = None
+        self.test_dataset: BirdSetDataset | None = None
 
         # Number of classes (populated in setup())
-        self.num_classes: Optional[int] = None
+        self.num_classes: int | None = None
 
-    def setup(self, stage: Optional[str] = None):
+    def setup(self, stage: str | None = None):
         """Load datasets and determine number of classes.
 
         Args:
@@ -199,6 +201,7 @@ class BirdSetDataModule(pl.LightningDataModule):
 
         # Stack into batch: (batch, 1, n_mels, target_frames)
         import torch
+
         mel_specs = torch.stack(mel_specs, dim=0)
 
         labels = batched["labels"]  # (batch, num_classes)

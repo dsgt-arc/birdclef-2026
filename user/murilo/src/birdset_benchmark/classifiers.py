@@ -1,11 +1,16 @@
-"""PyTorch Lightning models for BirdSet benchmark.
+"""PyTorch Lightning classifiers for BirdSet benchmark.
+
+Contains LinearProbe models and custom metrics for multi-label classification.
+
+Used by:
+- Experiment 001: BirdSet Bioacoustics Benchmark (linear probing with BirdNET, Perch)
 
 Adapted from dsgt-arc/birdclef-2025 for multi-label classification.
 """
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
 import torchmetrics
 from torchmetrics import Metric
 

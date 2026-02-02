@@ -1,7 +1,10 @@
 """BirdSet dataset loading from HuggingFace.
 
 This module provides utilities for loading BirdSet datasets and dataset metadata.
-Used by Phase 2A (Direct Inference) and Phase 2B (Transfer Learning).
+
+Used by:
+- Experiment 001: BirdSet Bioacoustics Benchmark (load_birdset_dataset, get_num_classes)
+- Experiment 002: Supervised ViT Baseline (get_num_classes)
 
 Usage:
     from birdset_benchmark.datasets import load_birdset_dataset, get_num_classes, BIRDSET_DATASETS

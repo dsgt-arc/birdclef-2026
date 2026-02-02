@@ -1,12 +1,13 @@
 """Test PyTorch Lightning classifiers for linear probing."""
 
 import pytest
-import torch
 import pytorch_lightning as pl
-from torch.utils.data import TensorDataset, DataLoader
-from birdset_benchmark.models import (
-    MultiLabelLinearProbe,
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+from birdset_benchmark.classifiers import (
     LinearProbe,
+    MultiLabelLinearProbe,
     MultiLabelTopKAccuracy,
 )
 
@@ -22,22 +23,26 @@ class TestMultiLabelMetrics:
         # Sample 1: true=[1,0,1,0,0], top pred=class 0 (correct!)
         # Sample 2: true=[0,1,0,0,0], top pred=class 2 (wrong)
         # Sample 3: true=[0,0,0,1,1], top pred=class 3 (correct!)
-        preds = torch.tensor([
-            [0.9, 0.2, 0.3, 0.1, 0.05],  # Top-1: class 0
-            [0.1, 0.3, 0.8, 0.2, 0.1],   # Top-1: class 2
-            [0.1, 0.2, 0.3, 0.7, 0.5],   # Top-1: class 3
-        ])
-        target = torch.tensor([
-            [1, 0, 1, 0, 0],
-            [0, 1, 0, 0, 0],
-            [0, 0, 0, 1, 1],
-        ])
+        preds = torch.tensor(
+            [
+                [0.9, 0.2, 0.3, 0.1, 0.05],  # Top-1: class 0
+                [0.1, 0.3, 0.8, 0.2, 0.1],  # Top-1: class 2
+                [0.1, 0.2, 0.3, 0.7, 0.5],  # Top-1: class 3
+            ]
+        )
+        target = torch.tensor(
+            [
+                [1, 0, 1, 0, 0],
+                [0, 1, 0, 0, 0],
+                [0, 0, 0, 1, 1],
+            ]
+        )
 
         metric.update(preds, target)
         accuracy = metric.compute()
 
         # 2 out of 3 correct (samples 1 and 3)
-        assert accuracy.item() == pytest.approx(2/3, abs=0.01)
+        assert accuracy.item() == pytest.approx(2 / 3, abs=0.01)
 
     def test_topk_accuracy_top5(self):
         """Test Top-5 accuracy for multi-label."""
@@ -59,12 +64,7 @@ class TestMultiLabelLinearProbe:
 
     def test_model_initialization(self):
         """Test model can be initialized."""
-        model = MultiLabelLinearProbe(
-            input_dim=1024,
-            num_classes=50,
-            hidden_dim=512,
-            lr=1e-3
-        )
+        model = MultiLabelLinearProbe(input_dim=1024, num_classes=50, hidden_dim=512, lr=1e-3)
         assert model is not None
         assert model.num_classes == 50
 

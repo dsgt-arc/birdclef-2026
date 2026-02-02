@@ -1,5 +1,7 @@
 """Mel-spectrogram generation for audio preprocessing.
 
+Used by: Experiment 002 (Supervised ViT Baseline)
+
 Following patterns from EAT encoder (encoders/eat.py) with Kaldi fbank generation.
 """
 
@@ -56,7 +58,7 @@ class MelSpectrogramTransform(nn.Module):
             htk_compat=True,
             sample_frequency=self.sample_rate,
             use_energy=False,
-            window_type='hanning',
+            window_type="hanning",
             num_mel_bins=self.n_mels,
             dither=0.0,
             frame_shift=self.frame_shift,
@@ -69,11 +71,11 @@ class MelSpectrogramTransform(nn.Module):
         if fbank.shape[1] < self.target_frames:
             # Pad with zeros
             pad_length = self.target_frames - fbank.shape[1]
-            fbank = torch.nn.functional.pad(fbank, (0, pad_length), mode='constant', value=0)
+            fbank = torch.nn.functional.pad(fbank, (0, pad_length), mode="constant", value=0)
         elif fbank.shape[1] > self.target_frames:
             # Crop from center
             start_idx = (fbank.shape[1] - self.target_frames) // 2
-            fbank = fbank[:, start_idx:start_idx + self.target_frames]
+            fbank = fbank[:, start_idx : start_idx + self.target_frames]
 
         # Normalize: (mel - mean) / (std * 2)
         # Following EAT encoder normalization pattern

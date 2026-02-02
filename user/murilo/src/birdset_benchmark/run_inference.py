@@ -4,6 +4,9 @@
 This script runs inference with models that were trained on BirdSet data
 (BirdSetConvNeXT, BirdSetEfficientNetB1) and can directly predict BirdSet species.
 
+Used by:
+- Experiment 001: BirdSet Bioacoustics Benchmark (direct inference phase)
+
 Usage:
     # Basic inference on a single dataset
     python -m birdset_benchmark.run_inference --model birdset_convnext --dataset HSN

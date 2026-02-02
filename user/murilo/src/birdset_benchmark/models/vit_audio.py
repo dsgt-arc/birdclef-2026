@@ -1,11 +1,13 @@
 """Vision Transformer adapted for single-channel audio spectrograms.
 
+Used by: Experiment 002 (Supervised ViT Baseline)
+
 Modifies timm's ViT-Base to accept 1-channel mel-spectrograms instead of 3-channel RGB images.
 """
 
+import timm
 import torch
 import torch.nn as nn
-import timm
 
 
 class ViTAudio(nn.Module):
@@ -31,7 +33,7 @@ class ViTAudio(nn.Module):
 
         # Load pretrained ViT-Base from timm
         self.backbone = timm.create_model(
-            'vit_base_patch16_224',
+            "vit_base_patch16_224",
             pretrained=pretrained,
             num_classes=0,  # Remove classification head
             img_size=img_size,
@@ -54,9 +56,7 @@ class ViTAudio(nn.Module):
         if pretrained:
             with torch.no_grad():
                 # Average across RGB channels: (768, 3, 16, 16) -> (768, 1, 16, 16)
-                self.backbone.patch_embed.proj.weight[:] = (
-                    old_conv.weight.mean(dim=1, keepdim=True)
-                )
+                self.backbone.patch_embed.proj.weight[:] = old_conv.weight.mean(dim=1, keepdim=True)
                 if old_conv.bias is not None:
                     self.backbone.patch_embed.proj.bias[:] = old_conv.bias
 

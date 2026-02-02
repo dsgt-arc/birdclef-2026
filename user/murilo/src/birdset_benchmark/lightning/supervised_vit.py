@@ -1,14 +1,16 @@
 """PyTorch Lightning module for supervised ViT training on BirdSet.
 
-Following patterns from models.py (MultiLabelLinearProbe) for metrics and training.
+Used by: Experiment 002 (Supervised ViT Baseline)
+
+Following patterns from classifiers.py (MultiLabelLinearProbe) for metrics and training.
 """
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
 import torchmetrics
 
-from birdset_benchmark.models import MultiLabelTopKAccuracy
+from birdset_benchmark.classifiers import MultiLabelTopKAccuracy
 
 
 class SupervisedViTModule(pl.LightningModule):
@@ -35,7 +37,7 @@ class SupervisedViTModule(pl.LightningModule):
         threshold: float = 0.5,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=['model'])
+        self.save_hyperparameters(ignore=["model"])
 
         self.model = model
         self.num_classes = num_classes
@@ -176,7 +178,7 @@ class SupervisedViTModule(pl.LightningModule):
             warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
                 optimizer,
                 start_factor=0.1,  # Start at 10% of lr
-                end_factor=1.0,    # Ramp up to full lr
+                end_factor=1.0,  # Ramp up to full lr
                 total_iters=self.hparams.warmup_epochs,
             )
 
@@ -193,7 +195,7 @@ class SupervisedViTModule(pl.LightningModule):
                 "scheduler": scheduler,
                 "interval": "epoch",
                 "frequency": 1,
-            }
+            },
         }
 
     def predict_step(self, batch, batch_idx):
