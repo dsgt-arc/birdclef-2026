@@ -28,17 +28,50 @@
   - [x] 3.3.3 Add test_step() and test metrics (was missing, caused MisconfigurationException)
 - [x] 3.4 Run fast-dev-run to verify full pipeline (train → val → test)
 
-## 4. Execution
+## 4. Execution (Complete)
 - [x] 4.1 Run fast-dev-run validation (5 batches) - PASSED
-- [ ] 4.2 Run full HSN training (50 epochs) - IN PROGRESS
-  ```bash
-  cd experiments/002-supervised-vit-baseline
-  bash sbatch/run.sh
-  ```
-- [ ] 4.3 Monitor W&B and TensorBoard for training curves
-- [ ] 4.4 Evaluate results against BirdSet baselines (ConvNeXT: 0.38 cmAP)
-- [ ] 4.5 Document results in results.md
+- [x] 4.2 Run full HSN training (50 epochs) - COMPLETE (early stopped at epoch 13)
+- [x] 4.3 Monitor W&B and TensorBoard for training curves
+- [x] 4.4 Evaluate results against BirdSet baselines (ConvNeXT: 0.38 cmAP)
+- [x] 4.5 Document results in results.md
 - [ ] 4.6 Update docs/STATUS.md
+
+---
+
+## Final Results Summary
+
+| Metric | ViT (Ours) | ConvNeXT (Baseline) | % of Baseline |
+|--------|------------|---------------------|---------------|
+| **cmAP** | **0.164** | 0.480 | 34% |
+| AUROC | 0.578 | 0.883 | 65% |
+| F1 Macro | 0.086 | 0.139 | 62% |
+| Top-1 Acc | 0.112 | 0.251 | 45% |
+| Top-5 Acc | 0.547 | 0.330 | 166% ⬆️ |
+
+**Key findings:**
+- Severe overfitting: train/cmap=0.984 vs val/cmap=0.164
+- Early stopped at epoch 13 (best at epoch 3)
+- 34% of BirdSet ConvNeXT baseline on cmAP
+- Top-5 accuracy exceeds baseline (54.7% vs 33.0%)
+- Training time: 37 min on RTX 6000
+
+**See [results.md](results.md) for full analysis and improvement suggestions.**
+
+---
+
+## Recent Work Summary (2026-02-02, Session 3)
+
+**Training completed successfully!**
+
+- Job ID: 3692914
+- Wall time: 37 min 16 sec
+- Best epoch: 3 (val/cmap=0.164)
+- Early stopped: epoch 13 (patience=10)
+
+**Artifacts:**
+- Best checkpoint: `/storage/project/ps-dsgt_clef2026-0/shared/.../checkpoints/best-epochepoch=03.ckpt`
+- W&B: https://wandb.ai/dsgt-arc/birdset-vit-baseline/runs/dvoxy50z
+- Results: [results.md](results.md)
 
 ---
 
@@ -57,13 +90,6 @@
    - Old: `~/experiments/.../outputs/checkpoints/` (home dir, 20GB quota)
    - New: `/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/002-supervised-vit-baseline/checkpoints/`
    - Added `PROJECT_NAME` variable for easy switching between projects
-
-**First Training Run Results** (epoch 0, before crash):
-```
-val/cmap: 0.087    val/auroc: 0.644    val/f1_macro: 0.022
-val/top1_acc: 0.011    val/top5_acc: 0.088
-```
-(Promising start - model is learning!)
 
 **Storage Setup**:
 | Storage | Path | Quota | Usage |
@@ -85,24 +111,6 @@ val/top1_acc: 0.011    val/top5_acc: 0.088
 4. **Noisy logs** - Suppressed verbose httpx and huggingface_hub loggers
 5. **SLURM integration** - Added `srun` to sbatch script for proper signal handling
 
-**Fast-dev-run Results** (5 batches):
-```
-val/cmap: 0.033    val/auroc: 0.251    val/f1_macro: 0.000
-val/top1_acc: 0.013    val/top5_acc: 0.307
-test/cmap: 0.033   test/auroc: 0.251   test/f1_macro: 0.000
-```
-
-**Metrics Tracked**:
-- cmAP (class-mean Average Precision) - primary BirdSet metric
-- AUROC (macro average)
-- F1 macro/micro
-- Top-1/Top-5 accuracy
-- Loss
-
-**Logging**:
-- W&B: `dsgt-arc/birdset-vit-baseline` (full runs only)
-- TensorBoard: `outputs/tensorboard/exp002-HSN/`
-
 ---
 
 ## Previous Work Summary (2026-02-01)
@@ -121,12 +129,7 @@ test/cmap: 0.033   test/auroc: 0.251   test/f1_macro: 0.000
 
 ## Next Steps
 
-1. Submit full training job:
-   ```bash
-   cd user/murilo/experiments/002-supervised-vit-baseline
-   bash sbatch/run.sh
-   ```
-2. Monitor progress:
-   - W&B: https://wandb.ai/dsgt-arc/birdset-vit-baseline
-   - Logs: `tail -f logs/slurm_*.log`
-3. After completion, evaluate against BirdSet baselines (ConvNeXT: 0.38 cmAP)
+1. **Address overfitting** - Add data augmentation (SpecAugment, mixup)
+2. **Try different architectures** - Audio Spectrogram Transformer (AST), ConvNeXT
+3. **Hyperparameter tuning** - Lower learning rate, increase regularization
+4. **Scale to larger dataset** - Try XCM (larger BirdSet dataset)
