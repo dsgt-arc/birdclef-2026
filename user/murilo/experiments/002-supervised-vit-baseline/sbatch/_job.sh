@@ -7,8 +7,6 @@
 #SBATCH --mem=64G
 #SBATCH --time=8:00:00
 #SBATCH -qinferno
-#SBATCH --output=outputs/slurm/%x-%j.out
-#SBATCH --error=outputs/slurm/%x-%j.err
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=mgustineli3@gatech.edu
 #
@@ -17,7 +15,7 @@
 #
 # Usage:
 #   cd user/murilo/experiments/002-supervised-vit-baseline
-#   sbatch sbatch/train.sh
+#   bash sbatch/run.sh
 #
 
 set -eu
@@ -92,7 +90,7 @@ echo ""
 # ============================================================================
 
 cd "$EXPERIMENT_DIR"
-mkdir -p outputs/slurm
+mkdir -p logs
 mkdir -p outputs/checkpoints
 mkdir -p outputs/wandb
 
@@ -116,7 +114,7 @@ fi
 # GPU Monitoring
 # ============================================================================
 
-GPU_STATS_FILE="$EXPERIMENT_DIR/outputs/slurm/gpu_stats_${SLURM_JOB_ID:-local}.csv"
+GPU_STATS_FILE="$EXPERIMENT_DIR/logs/gpu_stats_${SLURM_JOB_ID:-local}.csv"
 
 nvidia-smi --query-gpu=timestamp,index,name,utilization.gpu,utilization.memory,memory.used,memory.total,power.draw,temperature.gpu \
     --format=csv -l 30 > "$GPU_STATS_FILE" &
