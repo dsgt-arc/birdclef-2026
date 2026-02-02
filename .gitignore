@@ -103,6 +103,9 @@ models/
 # Wandb
 wandb/
 
+# Environment files (secrets)
+.env
+
 # OS
 .DS_Store
 Thumbs.db

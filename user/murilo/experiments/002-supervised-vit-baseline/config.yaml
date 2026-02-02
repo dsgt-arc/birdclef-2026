@@ -1,0 +1,64 @@
+# Configuration for Experiment 002: Supervised ViT Baseline
+#
+# Purpose: Build robust PyTorch Lightning pipeline for BirdSet
+# - Stress-test GPU data loading infrastructure
+# - Maximize GPU utilization with on-the-fly mel-spectrogram generation
+# - Establish baseline multi-label classification performance
+
+model:
+  architecture: "vit_base_patch16"
+  img_size: [128, 500]  # (n_mels, target_frames)
+  patch_size: 16
+  pretrained: true
+  drop_rate: 0.0
+
+data:
+  dataset_name: "HSN"  # Start with HSN for faster iteration, switch to XCM later
+  sample_rate: 32000
+  target_duration: 5.0
+  n_mels: 128
+  frame_shift_ms: 10
+  target_frames: 500  # ~5 seconds at 10ms frame shift
+  batch_size: 32
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  # AudioSet normalization constants
+  norm_mean: -4.268
+  norm_std: 4.569
+
+training:
+  max_epochs: 50
+  lr: 1.0e-4
+  weight_decay: 0.01
+  warmup_epochs: 5
+  threshold: 0.5  # Classification threshold
+  grad_clip_val: 1.0
+  precision: "16-mixed"  # Mixed precision training
+  accumulate_grad_batches: 1
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/cmap"
+    mode: "max"
+    save_top_k: 1  # Reduced to save disk space (~979MB per checkpoint)
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/cmap"
+    mode: "max"
+    patience: 10
+    min_delta: 0.001
+
+logging:
+  entity: "dsgt-arc"  # W&B team name
+  project: "birdset-vit-baseline"
+  save_dir: "outputs/wandb"
+  log_model: false  # Don't upload checkpoints (too large)
+  log_every_n_steps: 50
+
+# System monitoring
+system:
+  log_gpu_memory: true
+  log_gpu_utilization: true

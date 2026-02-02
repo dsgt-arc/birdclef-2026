@@ -106,7 +106,7 @@ echo ""
 # Step 6: Install dependencies
 echo "Step 6: Installing dependencies from pyproject.toml..."
 echo "  This may take 5-10 minutes for first install..."
-uv pip install -e "$PROJECT_ROOT/user/murilo"
+uv pip install -e "$PROJECT_ROOT/user/murilo[dev]"
 print_status "Dependencies installed"
 echo ""
 

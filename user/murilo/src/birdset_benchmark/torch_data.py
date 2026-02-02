@@ -1,12 +1,10 @@
 """PyTorch Dataset and DataLoader for BirdSet data.
 
-This module provides PyTorch-native data loading utilities for Phase 2B
-(Transfer Learning) where we need to:
-1. Extract embeddings from external models (BirdNET, Perch)
-2. Train linear probes on those embeddings
+This module provides PyTorch-native data loading utilities for transfer learning
+where we extract embeddings from external models and train linear probes.
 
-For Phase 2A (Direct Inference), use the BMZ model's native .predict() API
-which handles data loading internally.
+Used by:
+- Experiment 001: BirdSet Bioacoustics Benchmark (transfer learning with BirdNET, Perch)
 
 Usage:
     from birdset_benchmark.torch_data import BirdSetDataset, create_dataloader
@@ -185,6 +183,11 @@ class BirdSetDataset(Dataset):
         import soundfile as sf
 
         audio, source_sr = sf.read(audio_path, dtype="float32")
+
+        # Convert stereo to mono if needed
+        if audio.ndim == 2:
+            audio = audio.mean(axis=1)  # Average across channels
+
         original_length = len(audio) / source_sr  # Save before processing
 
         # Resample if needed

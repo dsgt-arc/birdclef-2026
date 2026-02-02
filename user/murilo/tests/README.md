@@ -2,7 +2,9 @@
 
 Tests are organized by experiment number for better modularity and maintainability.
 
-**Current Status**: 56 tests across 6 test modules for Experiment 001
+**Current Status**:
+- Experiment 001: 56 tests across 6 test modules
+- Experiment 002: 39 tests across 5 test modules
 
 ## Structure
 
@@ -17,8 +19,13 @@ tests/
 │   ├── test_datasets.py                    # BirdSet dataset loading tests (6 tests)
 │   ├── test_data_pipeline.py               # Data loading and preprocessing (16 tests)
 │   └── test_inference.py                   # Direct inference workflow (6 tests)
-├── 002-next-experiment/                    # Future experiment tests
-└── common/                                 # Shared test utilities (future)
+├── 002-supervised-vit-baseline/            # Experiment 002 tests (39 tests)
+│   ├── test_preprocessing.py               # MelSpectrogramTransform tests (7 tests)
+│   ├── test_models.py                      # ViTAudio model tests (9 tests)
+│   ├── test_datamodule.py                  # BirdSetDataModule tests (9 tests)
+│   ├── test_lightning_module.py            # SupervisedViTModule tests (9 tests)
+│   └── test_training.py                    # End-to-end training pipeline (5 tests)
+└── common/                                 # Shared test utilities
     ├── fixtures.py                         # Common pytest fixtures
     └── utils.py                            # Test helper functions
 ```
@@ -62,6 +69,47 @@ tests/
 - End-to-end inference workflow
 - Output validation (metrics.json, predictions.npz)
 
+### Experiment 002: Supervised ViT Baseline
+
+**test_preprocessing.py** (7 tests)
+- MelSpectrogramTransform instantiation and configuration
+- Kaldi fbank generation with AudioSet normalization
+- Padding and cropping to target frames
+- Batch processing and deterministic behavior
+- No NaN/Inf validation
+
+**test_models.py** (9 tests)
+- ViTAudio model instantiation (pretrained and random init)
+- Forward pass (single sample and batch)
+- 1-channel patch embedding for audio spectrograms
+- GPU compatibility
+- Different number of classes (21, 100, 9736)
+- Training mode with gradient computation
+
+**test_datamodule.py** (9 tests)
+- BirdSetDataModule instantiation and setup
+- DataLoader creation with on-the-fly mel-spec generation
+- Batch shapes and dtypes validation
+- Multi-worker support with persistent workers
+- Test/train/val split handling
+- No NaN/Inf in batches
+
+**test_lightning_module.py** (9 tests)
+- SupervisedViTModule instantiation
+- Training and validation steps
+- Multi-label loss computation (BCEWithLogitsLoss)
+- Optimizer configuration (AdamW + cosine annealing)
+- Metric computation (cmAP, F1, Top-K)
+- GPU compatibility
+- Loss convergence on dummy data
+
+**test_training.py** (5 tests)
+- Fast dev run (5 batches) end-to-end validation
+- Single epoch training
+- GPU training
+- Mixed precision (16-bit) training
+- Config file validation
+
 ## Running Tests
 
 **Run all tests:**
@@ -72,14 +120,26 @@ pytest tests/
 
 **Run tests for specific experiment:**
 ```bash
+# Experiment 001
 pytest tests/001-birdset-bioacoustics-benchmark/
+
+# Experiment 002
+pytest tests/002-supervised-vit-baseline/
 ```
 
 **Run specific test file:**
 ```bash
+# Experiment 001
 pytest tests/001-birdset-bioacoustics-benchmark/test_environment.py
 pytest tests/001-birdset-bioacoustics-benchmark/test_data_pipeline.py
 pytest tests/001-birdset-bioacoustics-benchmark/test_inference.py
+
+# Experiment 002
+pytest tests/002-supervised-vit-baseline/test_preprocessing.py
+pytest tests/002-supervised-vit-baseline/test_models.py
+pytest tests/002-supervised-vit-baseline/test_datamodule.py
+pytest tests/002-supervised-vit-baseline/test_lightning_module.py
+pytest tests/002-supervised-vit-baseline/test_training.py
 ```
 
 **Run specific test class or function:**
@@ -147,23 +207,41 @@ pytest tests/ -m "not slow and not download"
 
 **Fast validation** (skip slow tests):
 ```bash
-# Fast tests only (~10 tests, <5s)
+# Experiment 001: Fast tests only (~10 tests, <5s)
 pytest tests/001-birdset-bioacoustics-benchmark/ -m "not slow"
+
+# Experiment 002: Fast tests only (~9 tests, <5s)
+pytest tests/002-supervised-vit-baseline/ -m "not slow"
 ```
 
-**Full test suite** (all 56 tests, ~2-5 minutes):
+**Full test suite**:
 ```bash
-# All tests including model/dataset loading
+# Experiment 001: All 56 tests (~2-5 minutes)
 pytest tests/001-birdset-bioacoustics-benchmark/
+
+# Experiment 002: All 39 tests (~2-5 minutes)
+pytest tests/002-supervised-vit-baseline/
+
+# All experiments: 95 tests (~5-10 minutes)
+pytest tests/
 ```
 
-**Test specific phase**:
+**Test specific components**:
 ```bash
-# Phase 2A.1 - Data pipeline
+# Experiment 001 - Data pipeline
 pytest tests/001-birdset-bioacoustics-benchmark/test_data_pipeline.py
 
-# Phase 2A.2 - Inference workflow
+# Experiment 001 - Inference workflow
 pytest tests/001-birdset-bioacoustics-benchmark/test_inference.py
+
+# Experiment 002 - Preprocessing
+pytest tests/002-supervised-vit-baseline/test_preprocessing.py
+
+# Experiment 002 - Models
+pytest tests/002-supervised-vit-baseline/test_models.py
+
+# Experiment 002 - Training pipeline
+pytest tests/002-supervised-vit-baseline/test_training.py
 ```
 
 **Coverage report**:
