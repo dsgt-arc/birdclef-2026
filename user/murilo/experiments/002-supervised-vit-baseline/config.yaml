@@ -42,9 +42,9 @@ callbacks:
   model_checkpoint:
     monitor: "val/cmap"
     mode: "max"
-    save_top_k: 3
+    save_top_k: 1  # Reduced to save disk space (~979MB per checkpoint)
     save_last: true
-    filename: "epoch{epoch:02d}-cmap{val/cmap:.4f}"
+    filename: "best-epoch{epoch:02d}"
   early_stopping:
     monitor: "val/cmap"
     mode: "max"
