@@ -109,9 +109,9 @@ class BirdSetDataModule(pl.LightningDataModule):
             )
             logger.info(f"Train dataset: {len(self.train_dataset)} samples")
 
-            # Load validation data
-            logger.info(f"Loading {self.dataset_name} val split...")
-            hf_val = load_birdset_dataset(self.dataset_name, split="val")
+            # Load validation data (BirdSet uses 'test_5s' for validation)
+            logger.info(f"Loading {self.dataset_name} test_5s split for validation...")
+            hf_val = load_birdset_dataset(self.dataset_name, split="test_5s")
             self.val_dataset = BirdSetDataset(
                 hf_val,
                 num_classes=self.num_classes,
@@ -123,9 +123,9 @@ class BirdSetDataModule(pl.LightningDataModule):
             logger.info(f"Val dataset: {len(self.val_dataset)} samples")
 
         if stage == "test" or stage == "predict":
-            # Load test data
-            logger.info(f"Loading {self.dataset_name} test split...")
-            hf_test = load_birdset_dataset(self.dataset_name, split="test")
+            # Load test data (BirdSet uses 'test_5s' for standard evaluation)
+            logger.info(f"Loading {self.dataset_name} test_5s split for testing...")
+            hf_test = load_birdset_dataset(self.dataset_name, split="test_5s")
             self.test_dataset = BirdSetDataset(
                 hf_test,
                 num_classes=self.num_classes,

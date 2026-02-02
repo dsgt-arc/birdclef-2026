@@ -183,6 +183,11 @@ class BirdSetDataset(Dataset):
         import soundfile as sf
 
         audio, source_sr = sf.read(audio_path, dtype="float32")
+
+        # Convert stereo to mono if needed
+        if audio.ndim == 2:
+            audio = audio.mean(axis=1)  # Average across channels
+
         original_length = len(audio) / source_sr  # Save before processing
 
         # Resample if needed
