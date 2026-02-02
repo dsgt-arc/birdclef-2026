@@ -8,6 +8,7 @@
 - [x] 1.5 Create .env.example template
 - [x] 1.6 Verify BirdSet HSN dataset is accessible
 - [x] 1.7 Create experiment output directories
+- [x] 1.8 Setup project shared storage for checkpoints
 
 ## 2. Infrastructure (Complete)
 - [x] 2.1 Implement `MelSpectrogramTransform` (preprocessing/mel_spectrogram.py)
@@ -29,7 +30,7 @@
 
 ## 4. Execution
 - [x] 4.1 Run fast-dev-run validation (5 batches) - PASSED
-- [ ] 4.2 Run full HSN training (50 epochs)
+- [ ] 4.2 Run full HSN training (50 epochs) - IN PROGRESS
   ```bash
   cd experiments/002-supervised-vit-baseline
   bash sbatch/run.sh
@@ -41,7 +42,39 @@
 
 ---
 
-## Recent Work Summary (2026-02-02)
+## Recent Work Summary (2026-02-02, Session 2)
+
+**Commits**:
+- `f5a3238` - Fix checkpoint config: reduce save_top_k, simplify filename
+- `afeffdc` - Save checkpoints to project shared storage instead of home dir
+
+**Issues Fixed**:
+1. **Disk quota exceeded** - First training run crashed after epoch 0 due to home dir quota (20GB limit)
+   - Cleaned up 11GB of old checkpoints from `outputs/checkpoints/`
+   - Reduced `save_top_k: 1` (was 3) to save ~2GB per run
+   - Simplified checkpoint filename pattern to avoid `/` directory issues
+2. **Storage location** - Moved checkpoints to project shared storage
+   - Old: `~/experiments/.../outputs/checkpoints/` (home dir, 20GB quota)
+   - New: `/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/002-supervised-vit-baseline/checkpoints/`
+   - Added `PROJECT_NAME` variable for easy switching between projects
+
+**First Training Run Results** (epoch 0, before crash):
+```
+val/cmap: 0.087    val/auroc: 0.644    val/f1_macro: 0.022
+val/top1_acc: 0.011    val/top5_acc: 0.088
+```
+(Promising start - model is learning!)
+
+**Storage Setup**:
+| Storage | Path | Quota | Usage |
+|---------|------|-------|-------|
+| Home | `/storage/home/.../` | 20GB | Code, configs |
+| Project | `/storage/project/ps-dsgt_clef2026-0/shared/` | 1TB | Checkpoints, results |
+| Scratch | `/storage/scratch1/.../` | 15TB | Temp files, W&B logs |
+
+---
+
+## Previous Work Summary (2026-02-02, Session 1)
 
 **Commit**: `af0bf77` - Add test_step, AUROC metrics, and TensorBoard logging to exp002
 
@@ -58,7 +91,6 @@ val/cmap: 0.033    val/auroc: 0.251    val/f1_macro: 0.000
 val/top1_acc: 0.013    val/top5_acc: 0.307
 test/cmap: 0.033   test/auroc: 0.251   test/f1_macro: 0.000
 ```
-(Low metrics expected with untrained model and only 5 batches)
 
 **Metrics Tracked**:
 - cmAP (class-mean Average Precision) - primary BirdSet metric
@@ -97,4 +129,4 @@ test/cmap: 0.033   test/auroc: 0.251   test/f1_macro: 0.000
 2. Monitor progress:
    - W&B: https://wandb.ai/dsgt-arc/birdset-vit-baseline
    - Logs: `tail -f logs/slurm_*.log`
-3. After completion, evaluate against BirdSet baselines
+3. After completion, evaluate against BirdSet baselines (ConvNeXT: 0.38 cmAP)
