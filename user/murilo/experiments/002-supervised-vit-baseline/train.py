@@ -42,6 +42,13 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
+# =============================================================================
+# Project paths - update PROJECT_NAME when switching projects
+# =============================================================================
+PROJECT_NAME = "ps-dsgt_clef2026-0"  # PACE project allocation name
+PROJECT_DIR = Path(f"/storage/project/{PROJECT_NAME}/shared/birdclef-2026")
+EXPERIMENT_NAME = "002-supervised-vit-baseline"
+
 
 def load_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
@@ -141,17 +148,21 @@ def main():
     # Setup callbacks
     callbacks = []
 
-    # Model checkpoint
+    # Model checkpoint - save to project shared storage (more quota than home)
+    checkpoint_dir = PROJECT_DIR / "experiments" / EXPERIMENT_NAME / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
     checkpoint_callback = ModelCheckpoint(
         monitor=config["callbacks"]["model_checkpoint"]["monitor"],
         mode=config["callbacks"]["model_checkpoint"]["mode"],
         save_top_k=config["callbacks"]["model_checkpoint"]["save_top_k"],
         save_last=config["callbacks"]["model_checkpoint"]["save_last"],
         filename=config["callbacks"]["model_checkpoint"]["filename"],
-        dirpath=Path(__file__).parent / "outputs" / "checkpoints",
+        dirpath=checkpoint_dir,
         verbose=True,
     )
     callbacks.append(checkpoint_callback)
+    logger.info(f"Checkpoints will be saved to: {checkpoint_dir}")
 
     # Early stopping
     early_stopping = EarlyStopping(
