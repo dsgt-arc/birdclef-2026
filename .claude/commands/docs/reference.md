@@ -31,7 +31,7 @@ Create a reference document to capture external knowledge (papers, articles, dee
    - `docs/references/deep-research/` for AI research outputs
    - `docs/references/literature/` for papers/articles
 
-4. Use the template from `docs/templates/reference.md`:
+4. Use the template from `docs/_templates/reference.md`:
    - Fill in Source (URL or citation)
    - Write a 2-3 sentence Summary
    - Extract 3-5 Key Points

@@ -24,7 +24,7 @@ Create a concept document to explore an idea, hypothesis, or research direction.
 
 2. Create the file at `docs/concepts/<name>.md`
 
-3. Use the template from `docs/templates/concept.md`:
+3. Use the template from `docs/_templates/concept.md`:
    - Set Status to `nascent` (new idea, not yet developed)
    - Write a clear 1-2 paragraph Idea description
    - Explain Motivation (why this is worth exploring)
