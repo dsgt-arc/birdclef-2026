@@ -1,7 +1,7 @@
 """SSAMBA model configuration."""
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 
 @dataclass
@@ -12,7 +12,8 @@ class SSAMBAConfig:
         embed_dim: Embedding dimension (192/384/768 for tiny/small/base)
         depth: Number of Mamba blocks (24 for all sizes)
         img_size: Input size as (freq_bins, time_frames)
-        patch_size: Patch size for patch embedding
+        patch_size: Patch size for patch embedding. Int for square patches,
+            or (freq, time) tuple for rectangular patches.
         in_chans: Number of input channels (1 for spectrogram)
         d_state: SSM state dimension
         d_conv: Convolution kernel size
@@ -29,9 +30,9 @@ class SSAMBAConfig:
 
     # Patch embedding
     img_size: Tuple[int, int] = (128, 1024)  # (freq_bins, time_frames)
-    patch_size: int = 16
-    fstride: Optional[int] = None  # Frequency stride (default: patch_size)
-    tstride: Optional[int] = None  # Time stride (default: patch_size)
+    patch_size: Union[int, Tuple[int, int]] = 16
+    fstride: Optional[int] = None  # Frequency stride (default: fpatch)
+    tstride: Optional[int] = None  # Time stride (default: tpatch)
     in_chans: int = 1
 
     # Mamba SSM parameters
@@ -54,10 +55,24 @@ class SSAMBAConfig:
     use_cuda_kernels: Optional[bool] = None  # None=auto, True=require, False=disable
 
     @property
+    def fpatch(self) -> int:
+        """Frequency patch size (normalizes int -> tuple)."""
+        if isinstance(self.patch_size, tuple):
+            return self.patch_size[0]
+        return self.patch_size
+
+    @property
+    def tpatch(self) -> int:
+        """Time patch size (normalizes int -> tuple)."""
+        if isinstance(self.patch_size, tuple):
+            return self.patch_size[1]
+        return self.patch_size
+
+    @property
     def num_patches(self) -> int:
         """Calculate number of patches."""
-        f_patches = self.img_size[0] // self.patch_size
-        t_patches = self.img_size[1] // self.patch_size
+        f_patches = self.img_size[0] // self.fpatch
+        t_patches = self.img_size[1] // self.tpatch
         return f_patches * t_patches
 
     @property

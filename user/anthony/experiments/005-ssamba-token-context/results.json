@@ -1,0 +1,826 @@
+[
+  {
+    "patch_name": "coarse-128x24",
+    "patch_size": [
+      128,
+      24
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 125,
+    "parameters": 7388544,
+    "mean_ms": 28.33,
+    "std_ms": 0.11,
+    "tokens_per_sec": 4412.1,
+    "num_runs": 10,
+    "peak_gpu_mb": 40.8,
+    "status": "ok"
+  },
+  {
+    "patch_name": "coarse-128x24",
+    "patch_size": [
+      128,
+      24
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 250,
+    "parameters": 7412544,
+    "mean_ms": 28.35,
+    "std_ms": 0.08,
+    "tokens_per_sec": 8816.9,
+    "num_runs": 10,
+    "peak_gpu_mb": 45.2,
+    "status": "ok"
+  },
+  {
+    "patch_name": "coarse-128x24",
+    "patch_size": [
+      128,
+      24
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 125,
+    "parameters": 26278656,
+    "mean_ms": 28.43,
+    "std_ms": 0.09,
+    "tokens_per_sec": 4397.0,
+    "num_runs": 10,
+    "peak_gpu_mb": 119.0,
+    "status": "ok"
+  },
+  {
+    "patch_name": "coarse-128x24",
+    "patch_size": [
+      128,
+      24
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 250,
+    "parameters": 26326656,
+    "mean_ms": 28.41,
+    "std_ms": 0.1,
+    "tokens_per_sec": 8798.5,
+    "num_runs": 10,
+    "peak_gpu_mb": 126.6,
+    "status": "ok"
+  },
+  {
+    "patch_name": "medium-128x6",
+    "patch_size": [
+      128,
+      6
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 500,
+    "parameters": 7018176,
+    "mean_ms": 28.18,
+    "std_ms": 0.03,
+    "tokens_per_sec": 17741.1,
+    "num_runs": 10,
+    "peak_gpu_mb": 48.0,
+    "status": "ok"
+  },
+  {
+    "patch_name": "medium-128x6",
+    "patch_size": [
+      128,
+      6
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 1000,
+    "parameters": 7114176,
+    "mean_ms": 27.96,
+    "std_ms": 0.03,
+    "tokens_per_sec": 35770.3,
+    "num_runs": 10,
+    "peak_gpu_mb": 61.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "medium-128x6",
+    "patch_size": [
+      128,
+      6
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 500,
+    "parameters": 25537920,
+    "mean_ms": 28.25,
+    "std_ms": 0.03,
+    "tokens_per_sec": 17700.7,
+    "num_runs": 10,
+    "peak_gpu_mb": 134.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "medium-128x6",
+    "patch_size": [
+      128,
+      6
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 1000,
+    "parameters": 25729920,
+    "mean_ms": 28.14,
+    "std_ms": 0.06,
+    "tokens_per_sec": 35539.0,
+    "num_runs": 10,
+    "peak_gpu_mb": 161.3,
+    "status": "ok"
+  },
+  {
+    "patch_name": "wideframe-128x4",
+    "patch_size": [
+      128,
+      4
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 750,
+    "parameters": 7017024,
+    "mean_ms": 28.86,
+    "std_ms": 0.09,
+    "tokens_per_sec": 25984.2,
+    "num_runs": 10,
+    "peak_gpu_mb": 54.2,
+    "status": "ok"
+  },
+  {
+    "patch_name": "wideframe-128x4",
+    "patch_size": [
+      128,
+      4
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 1500,
+    "parameters": 7161024,
+    "mean_ms": 28.96,
+    "std_ms": 0.1,
+    "tokens_per_sec": 51803.2,
+    "num_runs": 10,
+    "peak_gpu_mb": 74.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "wideframe-128x4",
+    "patch_size": [
+      128,
+      4
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 750,
+    "parameters": 25535616,
+    "mean_ms": 28.92,
+    "std_ms": 0.1,
+    "tokens_per_sec": 25929.6,
+    "num_runs": 10,
+    "peak_gpu_mb": 145.6,
+    "status": "ok"
+  },
+  {
+    "patch_name": "wideframe-128x4",
+    "patch_size": [
+      128,
+      4
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 1500,
+    "parameters": 25823616,
+    "mean_ms": 29.29,
+    "std_ms": 0.09,
+    "tokens_per_sec": 51214.4,
+    "num_runs": 10,
+    "peak_gpu_mb": 182.6,
+    "status": "ok"
+  },
+  {
+    "patch_name": "baseline-16x16",
+    "patch_size": 16,
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 1496,
+    "parameters": 7111104,
+    "mean_ms": 65.38,
+    "std_ms": 0.29,
+    "tokens_per_sec": 22880.5,
+    "num_runs": 10,
+    "peak_gpu_mb": 72.0,
+    "status": "ok"
+  },
+  {
+    "patch_name": "baseline-16x16",
+    "patch_size": 16,
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 3000,
+    "parameters": 7399872,
+    "mean_ms": 65.19,
+    "std_ms": 0.26,
+    "tokens_per_sec": 46017.0,
+    "num_runs": 10,
+    "peak_gpu_mb": 110.0,
+    "status": "ok"
+  },
+  {
+    "patch_name": "baseline-16x16",
+    "patch_size": 16,
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 1496,
+    "parameters": 25723776,
+    "mean_ms": 65.76,
+    "std_ms": 0.24,
+    "tokens_per_sec": 22748.9,
+    "num_runs": 10,
+    "peak_gpu_mb": 180.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "baseline-16x16",
+    "patch_size": 16,
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 3000,
+    "parameters": 26301312,
+    "mean_ms": 66.62,
+    "std_ms": 0.27,
+    "tokens_per_sec": 45029.9,
+    "num_runs": 10,
+    "peak_gpu_mb": 252.5,
+    "status": "ok"
+  },
+  {
+    "patch_name": "fullband-128x2",
+    "patch_size": [
+      128,
+      2
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 1500,
+    "parameters": 7111872,
+    "mean_ms": 28.32,
+    "std_ms": 0.05,
+    "tokens_per_sec": 52963.8,
+    "num_runs": 10,
+    "peak_gpu_mb": 72.0,
+    "status": "ok"
+  },
+  {
+    "patch_name": "fullband-128x2",
+    "patch_size": [
+      128,
+      2
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 3000,
+    "parameters": 7399872,
+    "mean_ms": 28.33,
+    "std_ms": 0.02,
+    "tokens_per_sec": 105900.9,
+    "num_runs": 10,
+    "peak_gpu_mb": 110.0,
+    "status": "ok"
+  },
+  {
+    "patch_name": "fullband-128x2",
+    "patch_size": [
+      128,
+      2
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 1500,
+    "parameters": 25725312,
+    "mean_ms": 28.33,
+    "std_ms": 0.03,
+    "tokens_per_sec": 52938.3,
+    "num_runs": 10,
+    "peak_gpu_mb": 180.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "fullband-128x2",
+    "patch_size": [
+      128,
+      2
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 3000,
+    "parameters": 26301312,
+    "mean_ms": 52.41,
+    "std_ms": 0.08,
+    "tokens_per_sec": 57245.1,
+    "num_runs": 10,
+    "peak_gpu_mb": 252.5,
+    "status": "ok"
+  },
+  {
+    "patch_name": "quarterband-32x4",
+    "patch_size": [
+      32,
+      4
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 3000,
+    "parameters": 7375296,
+    "mean_ms": 28.62,
+    "std_ms": 0.27,
+    "tokens_per_sec": 104839.1,
+    "num_runs": 10,
+    "peak_gpu_mb": 109.1,
+    "status": "ok"
+  },
+  {
+    "patch_name": "quarterband-32x4",
+    "patch_size": [
+      32,
+      4
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 6000,
+    "parameters": 7951296,
+    "mean_ms": 45.4,
+    "std_ms": 0.02,
+    "tokens_per_sec": 132150.9,
+    "num_runs": 10,
+    "peak_gpu_mb": 180.1,
+    "status": "ok"
+  },
+  {
+    "patch_name": "quarterband-32x4",
+    "patch_size": [
+      32,
+      4
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 3000,
+    "parameters": 26252160,
+    "mean_ms": 51.6,
+    "std_ms": 0.04,
+    "tokens_per_sec": 58139.0,
+    "num_runs": 10,
+    "peak_gpu_mb": 250.9,
+    "status": "ok"
+  },
+  {
+    "patch_name": "quarterband-32x4",
+    "patch_size": [
+      32,
+      4
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 6000,
+    "parameters": 27404160,
+    "mean_ms": 97.1,
+    "std_ms": 0.15,
+    "tokens_per_sec": 61794.5,
+    "num_runs": 10,
+    "peak_gpu_mb": 400.0,
+    "status": "ok"
+  },
+  {
+    "patch_name": "framelevel-128x1",
+    "patch_size": [
+      128,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 3000,
+    "parameters": 7375296,
+    "mean_ms": 29.24,
+    "std_ms": 0.1,
+    "tokens_per_sec": 102606.6,
+    "num_runs": 10,
+    "peak_gpu_mb": 109.1,
+    "status": "ok"
+  },
+  {
+    "patch_name": "framelevel-128x1",
+    "patch_size": [
+      128,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 6000,
+    "parameters": 7951296,
+    "mean_ms": 42.68,
+    "std_ms": 0.07,
+    "tokens_per_sec": 140570.1,
+    "num_runs": 10,
+    "peak_gpu_mb": 180.1,
+    "status": "ok"
+  },
+  {
+    "patch_name": "framelevel-128x1",
+    "patch_size": [
+      128,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 3000,
+    "parameters": 26252160,
+    "mean_ms": 49.29,
+    "std_ms": 0.02,
+    "tokens_per_sec": 60867.3,
+    "num_runs": 10,
+    "peak_gpu_mb": 250.9,
+    "status": "ok"
+  },
+  {
+    "patch_name": "framelevel-128x1",
+    "patch_size": [
+      128,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 6000,
+    "parameters": 27404160,
+    "mean_ms": 91.62,
+    "std_ms": 0.32,
+    "tokens_per_sec": 65487.5,
+    "num_runs": 10,
+    "peak_gpu_mb": 400.0,
+    "status": "ok"
+  },
+  {
+    "patch_name": "halfframe-64x1",
+    "patch_size": [
+      64,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 6000,
+    "parameters": 7939008,
+    "mean_ms": 43.12,
+    "std_ms": 2.2,
+    "tokens_per_sec": 139149.7,
+    "num_runs": 10,
+    "peak_gpu_mb": 179.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "halfframe-64x1",
+    "patch_size": [
+      64,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 12000,
+    "parameters": 9091008,
+    "mean_ms": 84.31,
+    "std_ms": 0.07,
+    "tokens_per_sec": 142333.1,
+    "num_runs": 5,
+    "peak_gpu_mb": 327.6,
+    "status": "ok"
+  },
+  {
+    "patch_name": "halfframe-64x1",
+    "patch_size": [
+      64,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 6000,
+    "parameters": 27379584,
+    "mean_ms": 90.26,
+    "std_ms": 0.44,
+    "tokens_per_sec": 66474.0,
+    "num_runs": 10,
+    "peak_gpu_mb": 398.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "halfframe-64x1",
+    "patch_size": [
+      64,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 12000,
+    "parameters": 29683584,
+    "mean_ms": 184.3,
+    "std_ms": 0.4,
+    "tokens_per_sec": 65110.7,
+    "num_runs": 5,
+    "peak_gpu_mb": 688.5,
+    "status": "ok"
+  },
+  {
+    "patch_name": "quarterframe-32x1",
+    "patch_size": [
+      32,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 12000,
+    "parameters": 9084864,
+    "mean_ms": 84.37,
+    "std_ms": 0.75,
+    "tokens_per_sec": 142226.7,
+    "num_runs": 5,
+    "peak_gpu_mb": 327.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "quarterframe-32x1",
+    "patch_size": [
+      32,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 24000,
+    "parameters": 11388864,
+    "mean_ms": 174.4,
+    "std_ms": 0.21,
+    "tokens_per_sec": 137612.9,
+    "num_runs": 5,
+    "peak_gpu_mb": 618.7,
+    "status": "ok"
+  },
+  {
+    "patch_name": "quarterframe-32x1",
+    "patch_size": [
+      32,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 12000,
+    "parameters": 29671296,
+    "mean_ms": 182.29,
+    "std_ms": 0.14,
+    "tokens_per_sec": 65828.9,
+    "num_runs": 5,
+    "peak_gpu_mb": 688.1,
+    "status": "ok"
+  },
+  {
+    "patch_name": "quarterframe-32x1",
+    "patch_size": [
+      32,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 24000,
+    "parameters": 34279296,
+    "mean_ms": 379.75,
+    "std_ms": 0.14,
+    "tokens_per_sec": 63200.2,
+    "num_runs": 5,
+    "peak_gpu_mb": 1248.5,
+    "status": "ok"
+  },
+  {
+    "patch_name": "eighthframe-8x1",
+    "patch_size": [
+      8,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 48000,
+    "parameters": 15992256,
+    "mean_ms": 490.51,
+    "std_ms": 0.39,
+    "tokens_per_sec": 97857.5,
+    "num_runs": 3,
+    "peak_gpu_mb": 1178.3,
+    "status": "ok"
+  },
+  {
+    "patch_name": "eighthframe-8x1",
+    "patch_size": [
+      8,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 96000,
+    "parameters": 25208256,
+    "mean_ms": 2020.54,
+    "std_ms": 0.76,
+    "tokens_per_sec": 47512.1,
+    "num_runs": 3,
+    "peak_gpu_mb": 2317.7,
+    "status": "ok"
+  },
+  {
+    "patch_name": "eighthframe-8x1",
+    "patch_size": [
+      8,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 48000,
+    "parameters": 43486080,
+    "mean_ms": 1078.42,
+    "std_ms": 0.13,
+    "tokens_per_sec": 44509.4,
+    "num_runs": 3,
+    "peak_gpu_mb": 2377.8,
+    "status": "ok"
+  },
+  {
+    "patch_name": "eighthframe-8x1",
+    "patch_size": [
+      8,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 96000,
+    "parameters": 61918080,
+    "mean_ms": 4255.18,
+    "std_ms": 1.26,
+    "tokens_per_sec": 22560.7,
+    "num_runs": 3,
+    "peak_gpu_mb": 4655.9,
+    "status": "ok"
+  },
+  {
+    "patch_name": "fine-4x1",
+    "patch_size": [
+      4,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 96000,
+    "parameters": 25207488,
+    "mean_ms": 2010.43,
+    "std_ms": 0.08,
+    "tokens_per_sec": 47750.9,
+    "num_runs": 3,
+    "peak_gpu_mb": 2316.7,
+    "status": "ok"
+  },
+  {
+    "patch_name": "fine-4x1",
+    "patch_size": [
+      4,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 192000,
+    "parameters": 43639488,
+    "mean_ms": 4114.34,
+    "std_ms": 2.3,
+    "tokens_per_sec": 46666.0,
+    "num_runs": 3,
+    "peak_gpu_mb": 4606.0,
+    "status": "ok"
+  },
+  {
+    "patch_name": "fine-4x1",
+    "patch_size": [
+      4,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 96000,
+    "parameters": 61916544,
+    "mean_ms": 4245.2,
+    "std_ms": 1.41,
+    "tokens_per_sec": 22613.8,
+    "num_runs": 3,
+    "peak_gpu_mb": 4654.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "fine-4x1",
+    "patch_size": [
+      4,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 192000,
+    "parameters": 98780544,
+    "mean_ms": 8606.98,
+    "std_ms": 2.93,
+    "tokens_per_sec": 22307.5,
+    "num_runs": 3,
+    "peak_gpu_mb": 9186.5,
+    "status": "ok"
+  }
+]

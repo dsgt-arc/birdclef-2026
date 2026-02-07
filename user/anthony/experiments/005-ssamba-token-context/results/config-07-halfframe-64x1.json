@@ -1,0 +1,78 @@
+[
+  {
+    "patch_name": "halfframe-64x1",
+    "patch_size": [
+      64,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 6000,
+    "parameters": 7939008,
+    "mean_ms": 43.12,
+    "std_ms": 2.2,
+    "tokens_per_sec": 139149.7,
+    "num_runs": 10,
+    "peak_gpu_mb": 179.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "halfframe-64x1",
+    "patch_size": [
+      64,
+      1
+    ],
+    "model_size": "tiny",
+    "embed_dim": 192,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 12000,
+    "parameters": 9091008,
+    "mean_ms": 84.31,
+    "std_ms": 0.07,
+    "tokens_per_sec": 142333.1,
+    "num_runs": 5,
+    "peak_gpu_mb": 327.6,
+    "status": "ok"
+  },
+  {
+    "patch_name": "halfframe-64x1",
+    "patch_size": [
+      64,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 30,
+    "time_frames": 3000,
+    "expected_tokens": 6000,
+    "parameters": 27379584,
+    "mean_ms": 90.26,
+    "std_ms": 0.44,
+    "tokens_per_sec": 66474.0,
+    "num_runs": 10,
+    "peak_gpu_mb": 398.4,
+    "status": "ok"
+  },
+  {
+    "patch_name": "halfframe-64x1",
+    "patch_size": [
+      64,
+      1
+    ],
+    "model_size": "small",
+    "embed_dim": 384,
+    "duration_s": 60,
+    "time_frames": 6000,
+    "expected_tokens": 12000,
+    "parameters": 29683584,
+    "mean_ms": 184.3,
+    "std_ms": 0.4,
+    "tokens_per_sec": 65110.7,
+    "num_runs": 5,
+    "peak_gpu_mb": 688.5,
+    "status": "ok"
+  }
+]

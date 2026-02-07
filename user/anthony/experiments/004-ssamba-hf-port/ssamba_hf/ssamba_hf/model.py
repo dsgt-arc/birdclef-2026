@@ -213,6 +213,8 @@ class SSAMBAModel(nn.Module):
             fstride: Frequency stride for patch embedding
             tstride: Time stride for patch embedding
         """
+        # TODO: adapt_for_finetuning assumes scalar patch_size. Update when
+        # rectangular patches need finetuning support (not needed for exp 005).
         patch_size = self.config.patch_size
         embed_dim = self.config.embed_dim
 

@@ -25,6 +25,7 @@ dependencies = [
     "psutil>=5.9",
     "tensorboard>=2.14",
     "safetensors>=0.4",
+    "mamba-onnx>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -65,3 +66,5 @@ torchvision = { index = "pytorch-cu121" }
 # These have correct PyTorch ABI, unlike PyPI source distributions
 causal-conv1d = { url = "https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.6.0/causal_conv1d-1.6.0+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl" }
 mamba-ssm = { url = "https://github.com/state-spaces/mamba/releases/download/v2.3.0/mamba_ssm-2.3.0+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl" }
+# Pre-built mamba-onnx wheel with AVX2 custom ops for ONNX Runtime CPU inference
+mamba-onnx = { url = "https://github.com/acmiyaguchi/mamba-onnx/releases/latest/download/mamba_onnx-0.1.0-py3-none-manylinux_2_17_x86_64.whl" }

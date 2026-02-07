@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from typing import Tuple
+from typing import Tuple, Union
 
 
 class RMSNorm(nn.Module):
@@ -42,7 +42,7 @@ class AudioPatchEmbed(nn.Module):
     def __init__(
         self,
         img_size: Tuple[int, int] = (128, 1024),
-        patch_size: int = 16,
+        patch_size: Union[int, Tuple[int, int]] = 16,
         in_chans: int = 1,
         embed_dim: int = 384,
         fstride: int = None,
@@ -50,19 +50,23 @@ class AudioPatchEmbed(nn.Module):
     ):
         super().__init__()
         self.img_size = img_size
-        self.patch_size = patch_size
-        self.fstride = fstride if fstride is not None else patch_size
-        self.tstride = tstride if tstride is not None else patch_size
+        # Normalize patch_size to (freq, time) tuple
+        if isinstance(patch_size, int):
+            self.patch_size = (patch_size, patch_size)
+        else:
+            self.patch_size = tuple(patch_size)
+        self.fstride = fstride if fstride is not None else self.patch_size[0]
+        self.tstride = tstride if tstride is not None else self.patch_size[1]
 
         # Calculate num_patches based on stride (supports overlapping)
-        self.f_dim = (img_size[0] - patch_size) // self.fstride + 1
-        self.t_dim = (img_size[1] - patch_size) // self.tstride + 1
+        self.f_dim = (img_size[0] - self.patch_size[0]) // self.fstride + 1
+        self.t_dim = (img_size[1] - self.patch_size[1]) // self.tstride + 1
         self.num_patches = self.f_dim * self.t_dim
 
         self.proj = nn.Conv2d(
             in_chans,
             embed_dim,
-            kernel_size=patch_size,
+            kernel_size=self.patch_size,
             stride=(self.fstride, self.tstride),
         )
 
