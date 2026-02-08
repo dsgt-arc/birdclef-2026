@@ -72,6 +72,42 @@ Exp 002 used ViT-Base (85.5M params), making any comparison with ConvNeXT unfair
 - **Confirm if**: Pretrained variants achieve higher cmAP than scratch variants for both architectures
 - **Reject if**: Scratch variants match or exceed pretrained variants (would suggest pretraining is not helpful)
 
+## GPU Utilization Investigation
+
+### Problem
+
+ConvNeXT-Tiny training showed spiky GPU utilization (bursts to 100%, drops to 0%) while ViT-Small in exp 002 maintained steady utilization with the same data pipeline.
+
+### Root Cause
+
+ConvNeXT uses depthwise separable convolutions that are heavily CUDA-optimized and processes each batch significantly faster than ViT. ViT-Small with `patch16` on a 128x500 input creates ~248 patches, and self-attention is O(n^2) on sequence length, so each forward/backward pass takes long enough for the data pipeline to prepare the next batch. ConvNeXT finishes each batch before the next one arrives from network storage, causing the GPU to idle waiting for I/O.
+
+In short: ViT was never fast enough to expose the data-loading bottleneck. ConvNeXT is.
+
+### Data Pipeline Bottleneck
+
+Each `__getitem__` call performed these steps every batch:
+1. `soundfile.sf.read(path)` -- network I/O from `/storage/home/...` (primary bottleneck)
+2. Stereo-to-mono conversion
+3. Resampling check (no-op for HSN since source=target=32kHz)
+4. Pad/crop to 5s
+5. Mel spectrogram computation (CPU FFT)
+
+### Optimizations Applied
+
+| Commit | Change | Impact |
+|--------|--------|--------|
+| `019fd6f` | Vectorize mel-spectrogram transform, increase batch to 128 | Reduced per-batch mel overhead |
+| `c2b65cd` | Move mel-spectrogram from main-process collate into worker `__getitem__` | 8x parallelism for mel computation |
+| `b46bd94` | Reduce `num_workers` from 8 to 6 | Match PACE GPU CPU:GPU ratio limit |
+| `60fa19c` | Add opt-in `cache_mel_specs` to pre-compute all mels in `setup()` | Eliminates all disk I/O during training |
+
+### Mel Caching
+
+The final optimization pre-computes all mel spectrograms during `setup()` and caches them in RAM. HSN totals ~4.4 GB (17,460 samples x (1, 128, 500) x 4 bytes), fitting easily in the 64 GB allocation. This is controlled by `cache_mel_specs: true` in config (default `false` for backward compatibility with larger datasets).
+
+Trade-off: setup takes ~34 minutes (sequential reads from network storage) but training loop becomes memory-only with near-constant GPU utilization.
+
 ## Limitations
 
 - Only testing on HSN dataset; generalization to XCM not tested
