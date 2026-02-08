@@ -18,6 +18,18 @@ Experiment 002 trained ViT-Base (85.5M params) with ImageNet pretrained weights 
 
 Train 4 models in a 2x2 matrix: {ConvNeXT-Tiny, ViT-Small} x {scratch, pretrained}. Use a generic `AudioClassifier` class that handles 1-channel input adaptation for both model families.
 
+### Design Rationale: Model Size Parity
+
+ConvNeXT-Tiny was chosen over ConvNeXT-Small to keep parameter counts comparable with ViT-Small:
+
+| Model | Params | Family |
+|-------|--------|--------|
+| ViT-Small | ~22M | Transformer |
+| ConvNeXT-Tiny | ~28.6M | CNN |
+| ConvNeXT-Small | ~50M | CNN |
+
+Exp 002 used ViT-Base (85.5M params), making any comparison with ConvNeXT unfair due to the ~3x size gap. By pairing ConvNeXT-Tiny (~28.6M) with ViT-Small (~22M), both models sit in the ~20-30M range, isolating architecture differences (CNN vs Transformer) from capacity differences. ConvNeXT-Small at ~50M would reintroduce this confound.
+
 ### Setup
 
 | Component | Details |
