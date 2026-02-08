@@ -11,6 +11,9 @@
 #   # With a different PACE project allocation
 #   bash sbatch/run.sh config/convnext_tiny_scratch.yaml --project-name my-other-project
 #
+#   # Fast dev run (5 batches, no W&B logging — useful for pipeline validation)
+#   bash sbatch/run.sh config/convnext_tiny_scratch.yaml --fast-dev-run
+#
 #   # Dry run (preview command without submitting)
 #   bash sbatch/run.sh config/convnext_tiny_scratch.yaml --dry-run
 #
@@ -22,6 +25,7 @@ set -eu
 # ============================================================================
 
 DRY_RUN=false
+FAST_DEV_RUN=false
 CONFIG=""
 PROJECT_NAME="ps-dsgt_clef2026-0"
 
@@ -29,6 +33,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --fast-dev-run)
+            FAST_DEV_RUN=true
             shift
             ;;
         --project-name)
@@ -43,6 +51,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --project-name    PACE project allocation name (default: ps-dsgt_clef2026-0)"
+            echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
             echo "  --dry-run         Preview command without submitting job"
             echo "  -h, --help        Show this help message"
             exit 0
@@ -61,7 +70,7 @@ done
 
 if [[ -z "$CONFIG" ]]; then
     echo "Error: CONFIG_PATH is required"
-    echo "Usage: $0 CONFIG_PATH [--project-name NAME] [--dry-run]"
+    echo "Usage: $0 CONFIG_PATH [--project-name NAME] [--fast-dev-run] [--dry-run]"
     echo ""
     echo "Available configs:"
     echo "  config/convnext_tiny_scratch.yaml"
@@ -92,6 +101,7 @@ echo "Experiment dir: ${EXPERIMENT_DIR}"
 echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
 echo "Project: ${PROJECT_NAME}"
+echo "Fast dev run: ${FAST_DEV_RUN}"
 echo ""
 
 # Verify config exists
@@ -113,7 +123,7 @@ JOB_SCRIPT="${SCRIPT_DIR}/_job.sh"
 
 CMD="sbatch \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME} \
+    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN} \
     --job-name=exp003-${RUN_NAME} \
     ${JOB_SCRIPT}"
 

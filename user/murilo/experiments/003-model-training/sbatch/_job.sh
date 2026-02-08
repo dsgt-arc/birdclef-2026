@@ -16,6 +16,7 @@
 # Usage:
 #   cd user/murilo/experiments/003-model-training
 #   bash sbatch/run.sh config/convnext_tiny_scratch.yaml
+#   bash sbatch/run.sh config/convnext_tiny_scratch.yaml --fast-dev-run
 #
 
 set -eu
@@ -23,6 +24,7 @@ set -eu
 # Config file and project name (passed via environment variables from run.sh)
 CONFIG="${CONFIG:-config/convnext_tiny_scratch.yaml}"
 PROJECT_NAME="${PROJECT_NAME:-ps-dsgt_clef2026-0}"
+FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 
 # ============================================================================
 # Determine paths
@@ -133,7 +135,13 @@ echo ""
 echo "Starting training..."
 echo ""
 
-srun python train.py --config "${CONFIG}" --project-name "${PROJECT_NAME}"
+TRAIN_CMD="python train.py --config ${CONFIG} --project-name ${PROJECT_NAME}"
+if [[ "${FAST_DEV_RUN}" == "true" ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --fast-dev-run"
+    echo "  (fast dev run: 5 batches, no W&B)"
+fi
+
+srun ${TRAIN_CMD}
 
 echo ""
 echo "=============================================="
