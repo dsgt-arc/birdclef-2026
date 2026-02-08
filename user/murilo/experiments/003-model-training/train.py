@@ -160,6 +160,7 @@ def main():
         pin_memory=config["data"]["pin_memory"],
         persistent_workers=config["data"]["persistent_workers"],
         prefetch_factor=config["data"]["prefetch_factor"],
+        cache_mel_specs=config["data"].get("cache_mel_specs", False),
     )
 
     # Setup callbacks

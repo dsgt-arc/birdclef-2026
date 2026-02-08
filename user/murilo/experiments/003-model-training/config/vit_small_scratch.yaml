@@ -24,6 +24,7 @@ data:
   prefetch_factor: 4
   norm_mean: -4.268
   norm_std: 4.569
+  cache_mel_specs: true  # Pre-compute mels in setup() — HSN fits in 64 GB RAM
 
 training:
   max_epochs: 100
