@@ -2,7 +2,7 @@
 #
 # ~28.6M params, pretrained initialization, shorter schedule
 
-run_name: "convnext-tiny-pretrained"
+run_name: "convnext-tiny-imagenet"
 
 model:
   model_name: "convnext_tiny.fb_in22k_ft_in1k"

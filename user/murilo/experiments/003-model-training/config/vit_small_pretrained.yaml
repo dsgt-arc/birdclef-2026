@@ -2,7 +2,7 @@
 #
 # ~22M params, pretrained initialization, shorter schedule
 
-run_name: "vit-small-pretrained"
+run_name: "vit-small-imagenet"
 
 model:
   model_name: "vit_small_patch16_224.augreg_in21k_ft_in1k"
