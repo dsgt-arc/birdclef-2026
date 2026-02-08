@@ -1,0 +1,38 @@
+{
+  "cmap": 0.059947770088911057,
+  "auroc": 0.5421555042266846,
+  "f1_macro": 0.024725275114178658,
+  "f1_micro": 0.0006292276084423065,
+  "top1_accuracy": 0.0014878184301778674,
+  "top5_accuracy": 0.0364515520632267,
+  "loss": 0.16188956797122955,
+  "model": "convnext_tiny",
+  "model_name_timm": "convnext_tiny",
+  "pretrained": false,
+  "pretrained_source": null,
+  "num_params": 27819669,
+  "dataset": "HSN",
+  "split": "test_5s",
+  "num_classes": null,
+  "best_epoch": 15,
+  "stopped_epoch": 30,
+  "best_val_cmap": 0.05995,
+  "best_checkpoint_path": "/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/003-model-training/checkpoints/convnext-tiny-scratch/best-epochepoch=15.ckpt",
+  "training": {
+    "max_epochs": 100,
+    "lr": 0.0005,
+    "weight_decay": 0.05,
+    "warmup_epochs": 10,
+    "batch_size": 128,
+    "precision": "16-mixed",
+    "early_stopping_patience": 15,
+    "drop_rate": 0.1,
+    "grad_clip_val": 1.0,
+    "cache_mel_specs": true
+  },
+  "compute": {
+    "gpu": "unknown",
+    "slurm_job_id": 3812411,
+    "node": null
+  }
+}

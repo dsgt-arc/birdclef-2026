@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -255,11 +256,34 @@ def main():
     # Test on best checkpoint (or current model for fast_dev_run)
     if not args.fast_dev_run:
         logger.info("Testing on best checkpoint...")
-        trainer.test(pl_module, data_module, ckpt_path="best")
+        test_results = trainer.test(pl_module, data_module, ckpt_path="best")
     else:
         # In fast_dev_run, test with current model to validate test_step works
         logger.info("Testing current model (fast dev run)...")
-        trainer.test(pl_module, data_module)
+        test_results = trainer.test(pl_module, data_module)
+
+    # Save raw test results for save_metrics.py to consume
+    results_dir = Path(__file__).parent / "outputs" / "test_results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    results_file = results_dir / f"{run_name}.json"
+
+    raw_results = {
+        "test_metrics": test_results[0] if test_results else {},
+        "config_path": str(config_path),
+        "run_name": run_name,
+        "best_epoch": checkpoint_callback.best_model_score is not None
+        and int(Path(checkpoint_callback.best_model_path).stem.split("epoch=")[-1])
+        or None,
+        "best_val_cmap": float(checkpoint_callback.best_model_score)
+        if checkpoint_callback.best_model_score is not None
+        else None,
+        "best_checkpoint_path": str(checkpoint_callback.best_model_path),
+        "stopped_epoch": trainer.current_epoch,
+        "num_params": sum(p.numel() for p in model.parameters()),
+    }
+    with open(results_file, "w") as f:
+        json.dump(raw_results, f, indent=2)
+    logger.info(f"Raw test results saved to {results_file}")
 
     logger.info("Training complete!")
 

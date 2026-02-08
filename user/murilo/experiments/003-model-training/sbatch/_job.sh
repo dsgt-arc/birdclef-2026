@@ -143,6 +143,14 @@ fi
 
 srun ${TRAIN_CMD}
 
+# ============================================================================
+# Save structured metrics
+# ============================================================================
+
+echo ""
+echo "Saving structured metrics..."
+python save_metrics.py --config ${CONFIG}
+
 echo ""
 echo "=============================================="
 echo "End Time: $(date)"
