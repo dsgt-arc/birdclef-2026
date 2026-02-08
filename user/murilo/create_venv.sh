@@ -8,17 +8,75 @@
 #   2. Sets up environment variables
 #   3. Installs uv package manager
 #   4. Creates virtual environment
-#   5. Installs dependencies from pyproject.toml
+#   5. Installs dependencies from the experiment's pyproject.toml
 #   6. Installs PyTorch with CUDA support
 #   7. Verifies PyTorch CUDA support
 #
 # Usage:
 #   salloc -p gpu-rtx6000 --gres=gpu:1 -c 4 --mem=32G -t 2:00:00
-#   bash create_venv.sh
+#   bash create_venv.sh --exp-num 3
+#
+# Options:
+#   --exp-num NUM  Experiment number (1, 2, or 3) - required
+#   -h, --help     Show this help message
 #
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
+
+# ============================================================================
+# Argument parsing
+# ============================================================================
+
+EXP_NUM=""
+
+usage() {
+    echo "Usage: bash create_venv.sh --exp-num NUM"
+    echo ""
+    echo "Options:"
+    echo "  --exp-num NUM  Experiment number (required):"
+    echo "                   1 = 001-birdset-bioacoustics-benchmark"
+    echo "                   2 = 002-supervised-vit-baseline"
+    echo "                   3 = 003-model-training"
+    echo "  -h, --help     Show this help message"
+    exit "${1:-0}"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --exp-num)
+            if [[ -z "${2:-}" ]]; then
+                echo "ERROR: --exp-num requires a value"
+                usage 1
+            fi
+            EXP_NUM="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage 0
+            ;;
+        *)
+            echo "ERROR: Unknown argument: $1"
+            usage 1
+            ;;
+    esac
+done
+
+if [[ -z "$EXP_NUM" ]]; then
+    echo "ERROR: --exp-num is required"
+    usage 1
+fi
+
+# Map experiment number to directory name
+case "$EXP_NUM" in
+    1) EXP_DIR_NAME="001-birdset-bioacoustics-benchmark" ;;
+    2) EXP_DIR_NAME="002-supervised-vit-baseline" ;;
+    3) EXP_DIR_NAME="003-model-training" ;;
+    *)
+        echo "ERROR: Invalid experiment number: $EXP_NUM (must be 1, 2, or 3)"
+        exit 1
+        ;;
+esac
 
 echo "=========================================="
 echo "BirdSet Benchmark - Environment Setup"
@@ -56,6 +114,12 @@ echo ""
 echo "Step 2: Setting up environment variables..."
 export SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+EXPERIMENT_DIR="$SCRIPT_DIR/experiments/$EXP_DIR_NAME"
+
+if [[ ! -d "$EXPERIMENT_DIR" ]]; then
+    echo -e "${RED}✗ Experiment directory not found: $EXPERIMENT_DIR${NC}"
+    exit 1
+fi
 
 # Use TMPDIR if available (SLURM job), otherwise use ~/tmp for interactive session
 if [ -n "${TMPDIR:-}" ]; then
@@ -73,6 +137,8 @@ export JOB_VENV="$JOB_VENV_DIR/.venv"
 
 echo "  - Script dir: $SCRIPT_DIR"
 echo "  - Project root: $PROJECT_ROOT"
+echo "  - Experiment: $EXP_DIR_NAME"
+echo "  - Experiment dir: $EXPERIMENT_DIR"
 echo "  - Job ID: $JOB_ID"
 echo "  - Virtual env: $JOB_VENV"
 print_status "Environment variables set"
@@ -92,7 +158,7 @@ echo ""
 # Step 4: Create virtual environment
 echo "Step 4: Setting up venv at $JOB_VENV..."
 mkdir -p "$JOB_VENV_DIR"
-cd "$PROJECT_ROOT/user/murilo"
+cd "$EXPERIMENT_DIR"
 uv venv "$JOB_VENV" --python 3.11
 print_status "Virtual environment created"
 echo ""
@@ -104,9 +170,9 @@ print_status "Environment activated"
 echo ""
 
 # Step 6: Install dependencies
-echo "Step 6: Installing dependencies from pyproject.toml..."
+echo "Step 6: Installing dependencies from $EXP_DIR_NAME/pyproject.toml..."
 echo "  This may take 5-10 minutes for first install..."
-uv pip install -e "$PROJECT_ROOT/user/murilo[dev]"
+uv pip install -e "$EXPERIMENT_DIR[dev]"
 print_status "Dependencies installed"
 echo ""
 
@@ -127,9 +193,10 @@ echo "=========================================="
 echo -e "${GREEN}✓ ENVIRONMENT SETUP COMPLETE${NC}"
 echo "=========================================="
 echo ""
-echo "Environment is ready for experiments!"
+echo "Environment is ready for experiment: $EXP_DIR_NAME"
 echo ""
 echo "Summary:"
+echo "  - Experiment: $EXP_DIR_NAME"
 echo "  - GPU: Available ($(nvidia-smi --query-gpu=name --format=csv,noheader))"
 echo "  - PyTorch: $(python -c 'import torch; print(torch.__version__)')"
 echo "  - CUDA: $(python -c "import torch; print(torch.version.cuda if torch.cuda.is_available() else 'N/A')")"

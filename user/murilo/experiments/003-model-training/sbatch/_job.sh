@@ -78,7 +78,7 @@ source "$JOB_VENV/bin/activate"
 
 # Install the user package (includes all dependencies from pyproject.toml)
 echo "  Installing dependencies..."
-uv pip install -e "$USER_DIR"
+uv pip install -e "$EXPERIMENT_DIR"
 
 # Install PyTorch with CUDA support
 echo "  Installing PyTorch with CUDA..."
