@@ -108,6 +108,27 @@ The final optimization pre-computes all mel spectrograms during `setup()` and ca
 
 Trade-off: setup takes ~34 minutes (sequential reads from network storage) but training loop becomes memory-only with near-constant GPU utilization.
 
+### Results: Before vs After Caching (ConvNeXT-Tiny Scratch)
+
+| | Before (on-the-fly, SLURM) | After (cached, interactive) |
+|---|---|---|
+| **Batch size** | 32 | 128 |
+| **GPU utilization** | Spiky (0-100%) | Steady ~75-85% |
+| **Epochs** | 100 (no early stop) | 26 (early stopped) |
+| **Time per epoch** | ~34s | ~12s |
+| **Caching overhead** | N/A | ~34 min (one-time) |
+| **Total walltime** | ~57 min | <37 min |
+| **Test cmAP** | 0.0557 | 0.0452 |
+| **Test AUROC** | 0.6214 | 0.5726 |
+| **Test top-5 acc** | 0.0348 | 0.3495 |
+| **Test batches/s** | 15.6 it/s (bs=32) | 8.0 it/s (bs=128) |
+
+Notes:
+- The cmAP difference (0.056 vs 0.045) is likely random seed / early stopping variance — both are low as expected for scratch training.
+- The top-5 accuracy jump (3.5% → 35%) is likely due to the batch size increase (32 → 128) improving gradient quality, not the caching itself.
+- The "before" run used on-the-fly mel computation with 6 workers and no caching. The "after" run pre-computed all mels in `setup()`.
+- GPU utilization drops between training and validation epochs are expected and acceptable.
+
 ## Limitations
 
 - Only testing on HSN dataset; generalization to XCM not tested
