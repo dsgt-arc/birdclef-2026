@@ -17,7 +17,7 @@ data:
   n_mels: 128
   frame_shift_ms: 10
   target_frames: 500
-  batch_size: 32
+  batch_size: 128
   num_workers: 8
   pin_memory: true
   persistent_workers: true

@@ -177,7 +177,7 @@ class BirdSetDataModule(pl.LightningDataModule):
         )
 
     def _collate_with_melspec(self, batch):
-        """Custom collate function that applies mel-spectrogram transform.
+        """Custom collate that applies vectorized mel-spectrogram transform.
 
         Args:
             batch: List of sample dicts from BirdSetDataset
@@ -187,23 +187,8 @@ class BirdSetDataModule(pl.LightningDataModule):
                 - mel_spectrograms: Tensor of shape (batch, 1, n_mels, target_frames)
                 - labels: Tensor of shape (batch, num_classes)
         """
-        # Use default collate to stack audio and labels
         batched = collate_fn(batch)
-
-        # Apply mel-spectrogram transform to each audio sample
         audio_batch = batched["audio"]  # (batch, samples)
-        mel_specs = []
-
-        for i in range(audio_batch.shape[0]):
-            # Transform single audio sample: (samples,) -> (1, n_mels, target_frames)
-            mel_spec = self.mel_transform(audio_batch[i])
-            mel_specs.append(mel_spec)
-
-        # Stack into batch: (batch, 1, n_mels, target_frames)
-        import torch
-
-        mel_specs = torch.stack(mel_specs, dim=0)
-
+        mel_specs = self.mel_transform(audio_batch)  # (batch, 1, n_mels, target_frames)
         labels = batched["labels"]  # (batch, num_classes)
-
         return mel_specs, labels

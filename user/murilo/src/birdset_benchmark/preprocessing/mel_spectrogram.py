@@ -1,17 +1,22 @@
 """Mel-spectrogram generation for audio preprocessing.
 
-Used by: Experiment 002 (Supervised ViT Baseline)
-
-Following patterns from EAT encoder (encoders/eat.py) with Kaldi fbank generation.
+Vectorized implementation using torchaudio.transforms.MelSpectrogram
+for efficient batched processing in DataLoader collate functions.
 """
+
+import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchaudio
 
 
 class MelSpectrogramTransform(nn.Module):
-    """On-the-fly Kaldi fbank generation with normalization.
+    """Vectorized log-mel spectrogram with normalization.
+
+    Supports both single waveforms and batched input for efficient
+    collate-time processing without per-sample Python loops.
 
     Args:
         sample_rate: Audio sample rate (default: 32000 Hz for BirdSet)
@@ -32,60 +37,60 @@ class MelSpectrogramTransform(nn.Module):
         norm_std: float = 4.569,
     ):
         super().__init__()
-        self.sample_rate = sample_rate
-        self.n_mels = n_mels
-        self.frame_shift = frame_shift_ms
         self.target_frames = target_frames
         self.norm_mean = norm_mean
         self.norm_std = norm_std
 
-    def __call__(self, waveform: torch.Tensor) -> torch.Tensor:
-        """Convert waveform to normalized mel-spectrogram.
+        hop_length = int(frame_shift_ms / 1000.0 * sample_rate)
+        win_length = int(0.025 * sample_rate)  # 25ms window (standard)
+        n_fft = 2 ** math.ceil(math.log2(win_length))  # next power of 2 for FFT efficiency
+
+        self.mel_spec = torchaudio.transforms.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=n_fft,
+            win_length=win_length,
+            hop_length=hop_length,
+            n_mels=n_mels,
+            window_fn=torch.hann_window,
+            power=2.0,
+        )
+
+    def forward(self, waveform: torch.Tensor) -> torch.Tensor:
+        """Convert waveform(s) to normalized log-mel spectrogram(s).
 
         Args:
-            waveform: Audio waveform tensor, shape (samples,) or (1, samples)
+            waveform: Audio tensor — single (samples,) or batched (batch, samples).
 
         Returns:
-            Normalized mel-spectrogram, shape (1, n_mels, target_frames)
+            Single input:  (1, n_mels, target_frames)
+            Batched input: (batch, 1, n_mels, target_frames)
         """
-        # Ensure 1D waveform
-        if waveform.dim() == 2:
-            waveform = waveform.squeeze(0)
+        single = waveform.dim() == 1
+        if single:
+            waveform = waveform.unsqueeze(0)
 
-        # Compute Kaldi fbank (following EAT encoder patterns)
-        fbank = torchaudio.compliance.kaldi.fbank(
-            waveform.unsqueeze(0),  # Add batch dim for kaldi
-            htk_compat=True,
-            sample_frequency=self.sample_rate,
-            use_energy=False,
-            window_type="hanning",
-            num_mel_bins=self.n_mels,
-            dither=0.0,
-            frame_shift=self.frame_shift,
-        )  # Shape: (num_frames, n_mels)
+        # Compute mel spectrogram for entire batch at once: (batch, n_mels, time)
+        mel = self.mel_spec(waveform)
 
-        # Transpose to (n_mels, num_frames)
-        fbank = fbank.transpose(0, 1)
+        # Log scale (add epsilon to avoid log(0))
+        mel = torch.log(mel + 1e-6)
 
         # Pad or crop to target_frames
-        if fbank.shape[1] < self.target_frames:
-            # Pad with zeros
-            pad_length = self.target_frames - fbank.shape[1]
-            fbank = torch.nn.functional.pad(fbank, (0, pad_length), mode="constant", value=0)
-        elif fbank.shape[1] > self.target_frames:
-            # Crop from center
-            start_idx = (fbank.shape[1] - self.target_frames) // 2
-            fbank = fbank[:, start_idx : start_idx + self.target_frames]
+        n_frames = mel.shape[-1]
+        if n_frames < self.target_frames:
+            mel = F.pad(mel, (0, self.target_frames - n_frames))
+        elif n_frames > self.target_frames:
+            start = (n_frames - self.target_frames) // 2
+            mel = mel[..., start : start + self.target_frames]
 
         # Normalize: (mel - mean) / (std * 2)
         # Following EAT encoder normalization pattern
-        fbank = (fbank - self.norm_mean) / (self.norm_std * 2)
+        mel = (mel - self.norm_mean) / (self.norm_std * 2)
 
-        # Add channel dimension: (1, n_mels, target_frames)
-        fbank = fbank.unsqueeze(0)
+        # Add channel dim: (..., 1, n_mels, target_frames)
+        mel = mel.unsqueeze(-3)
 
-        return fbank
+        if single:
+            mel = mel.squeeze(0)
 
-    def forward(self, waveform: torch.Tensor) -> torch.Tensor:
-        """Forward pass for nn.Module compatibility."""
-        return self(waveform)
+        return mel
