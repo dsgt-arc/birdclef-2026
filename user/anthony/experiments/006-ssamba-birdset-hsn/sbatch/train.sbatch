@@ -17,4 +17,6 @@ cd $repo_dir/user/anthony/experiments/006-ssamba-birdset-hsn
 
 module load cuda/12.1.1
 
-uv run python train.py --config config.yaml
+cache_dir=$scratch_dir/cache/006-hsn
+
+uv run python train.py --config config.yaml --cache-dir $cache_dir

@@ -10,7 +10,7 @@ import logging
 
 import pytorch_lightning as pl
 import yaml
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import DeviceStatsMonitor, EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from ssamba_hf.config import SSAMBAConfig
 
@@ -28,6 +28,8 @@ def main():
     parser.add_argument("--fast-dev-run", action="store_true")
     parser.add_argument("--ckpt-path", type=str, default=None, help="Resume from checkpoint")
     parser.add_argument("--num-workers", type=int, default=None)
+    parser.add_argument("--cache-dir", type=str, default=None, help="Pre-computed mel cache directory")
+    parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -55,6 +57,7 @@ def main():
     )
 
     # Build data module
+    cache_dir = args.cache_dir or data_cfg.get("cache_dir")
     dm = BirdSetDataModule(
         dataset_name=data_cfg["dataset_name"],
         batch_size=data_cfg["batch_size"],
@@ -66,6 +69,7 @@ def main():
         target_frames=data_cfg["target_frames"],
         norm_mean=data_cfg["norm_mean"],
         norm_std=data_cfg["norm_std"],
+        cache_dir=cache_dir,
     )
     num_classes = dm.num_classes
 
@@ -98,7 +102,10 @@ def main():
     )
 
     # Callbacks
-    callbacks = [LearningRateMonitor(logging_interval="epoch")]
+    callbacks = [
+        LearningRateMonitor(logging_interval="epoch"),
+        DeviceStatsMonitor(cpu_stats=False),
+    ]
 
     es_cfg = cb_cfg.get("early_stopping", {})
     if es_cfg:

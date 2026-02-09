@@ -10,13 +10,16 @@ are zero-padded, and padding masks track which tokens are real vs padded.
 
 import logging
 import math
+import os
+import random
+from pathlib import Path
 
 import pytorch_lightning as pl
 import soundfile as sf
 import torch
 import torchaudio
 from datasets import load_dataset
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, IterableDataset
 
 logger = logging.getLogger(__name__)
 
@@ -114,15 +117,14 @@ class MelSpectrogramTransform:
         return fbank.unsqueeze(0), real_frames  # (1, n_mels, target_frames), int
 
 
-class BirdSetDataset(Dataset):
-    """PyTorch Dataset wrapping a HuggingFace BirdSet split.
+class StreamingBirdSetDataset(IterableDataset):
+    """Streaming dataset that reads each audio file exactly once per epoch.
 
-    For training: splits each recording into non-overlapping chunks of
-    target_duration seconds. A 90s recording with target_duration=30s yields
-    3 chunks. The last chunk is zero-padded if shorter.
+    Iterates over recordings, reads each file once, and yields all non-overlapping
+    chunks. Workers are assigned disjoint subsets of recordings.
 
-    For validation (test_5s): each clip is already 5s, loaded as-is and
-    padded to target_duration.
+    For training (chunk=True): splits recordings into 30s windows.
+    For validation (chunk=False): yields each clip as-is, padded to target_duration.
     """
 
     def __init__(
@@ -132,84 +134,138 @@ class BirdSetDataset(Dataset):
         target_sr: int = 32000,
         target_duration: float = 30.0,
         chunk: bool = False,
+        shuffle: bool = False,
+    ):
+        self.dataset = hf_dataset
+        self.num_classes = num_classes
+        self.target_sr = target_sr
+        self.target_samples = int(target_duration * target_sr)
+        self.chunk = chunk
+        self.shuffle = shuffle
+        # Pre-count total chunks for logging / progress
+        self._total_chunks = None
+
+    def count_chunks(self):
+        """Count total chunks across all recordings (for logging)."""
+        if self._total_chunks is not None:
+            return self._total_chunks
+        if not self.chunk:
+            self._total_chunks = len(self.dataset)
+            return self._total_chunks
+        total = 0
+        for i in range(len(self.dataset)):
+            sample = self.dataset[i]
+            info = sf.info(sample["audio"]["path"])
+            total_samples = int(info.frames * self.target_sr / info.samplerate)
+            total += max(1, math.ceil(total_samples / self.target_samples))
+        self._total_chunks = total
+        return total
+
+    def _make_labels(self, sample):
+        labels = torch.zeros(self.num_classes, dtype=torch.float32)
+        label_indices = sample.get("ebird_code_multilabel", [])
+        if label_indices:
+            for li in label_indices:
+                if 0 <= li < self.num_classes:
+                    labels[li] = 1.0
+        return labels
+
+    def _load_audio(self, sample):
+        """Load and resample audio, returning (tensor, source_sr)."""
+        audio_path = sample["audio"]["path"]
+        audio, source_sr = sf.read(audio_path, dtype="float32")
+        if audio.ndim == 2:
+            audio = audio.mean(axis=1)
+        audio_tensor = torch.from_numpy(audio).float()
+        if source_sr != self.target_sr:
+            audio_tensor = torchaudio.functional.resample(
+                audio_tensor, orig_freq=source_sr, new_freq=self.target_sr
+            )
+        return audio_tensor
+
+    def _yield_chunks(self, audio_tensor, labels):
+        """Yield non-overlapping chunks from a single recording."""
+        total_samples = audio_tensor.shape[0]
+        n_chunks = max(1, math.ceil(total_samples / self.target_samples))
+        for c in range(n_chunks):
+            start = c * self.target_samples
+            chunk = audio_tensor[start : start + self.target_samples]
+            real_samples = chunk.shape[0]
+            if chunk.shape[0] < self.target_samples:
+                chunk = torch.nn.functional.pad(
+                    chunk, (0, self.target_samples - chunk.shape[0])
+                )
+            yield {"audio": chunk, "labels": labels, "real_samples": real_samples}
+
+    def __iter__(self):
+        indices = list(range(len(self.dataset)))
+        if self.shuffle:
+            random.shuffle(indices)
+
+        # Split across DataLoader workers
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None:
+            per_worker = math.ceil(len(indices) / worker_info.num_workers)
+            start = worker_info.id * per_worker
+            indices = indices[start : start + per_worker]
+
+        for idx in indices:
+            sample = self.dataset[idx]
+            labels = self._make_labels(sample)
+            audio_tensor = self._load_audio(sample)
+
+            if self.chunk:
+                yield from self._yield_chunks(audio_tensor, labels)
+            else:
+                real_samples = audio_tensor.shape[0]
+                if audio_tensor.shape[0] < self.target_samples:
+                    audio_tensor = torch.nn.functional.pad(
+                        audio_tensor, (0, self.target_samples - audio_tensor.shape[0])
+                    )
+                yield {"audio": audio_tensor, "labels": labels, "real_samples": real_samples}
+
+
+class BirdSetDataset(Dataset):
+    """Map-style dataset wrapping a HuggingFace BirdSet split (no chunking).
+
+    Used for validation where each clip is already 5s, loaded as-is and
+    padded to target_duration. For chunked training, use StreamingBirdSetDataset.
+    """
+
+    def __init__(
+        self,
+        hf_dataset,
+        num_classes: int,
+        target_sr: int = 32000,
+        target_duration: float = 30.0,
     ):
         self.dataset = hf_dataset
         self.num_classes = num_classes
         self.target_sr = target_sr
         self.target_samples = int(target_duration * target_sr)
 
-        if chunk:
-            # Build chunk index: [(dataset_idx, chunk_start, chunk_real_samples)]
-            self.chunks = self._build_chunk_index()
-        else:
-            # One-to-one: each dataset sample is one item, padded to target_duration
-            self.chunks = None
-
-    def _build_chunk_index(self):
-        """Pre-compute non-overlapping chunk offsets for all recordings."""
-        chunks = []
-        for i in range(len(self.dataset)):
-            sample = self.dataset[i]
-            # Get audio duration from metadata or file info
-            audio_info = sample["audio"]
-            audio_path = audio_info["path"]
-            info = sf.info(audio_path)
-            total_samples = int(info.frames * self.target_sr / info.samplerate)
-
-            n_chunks = max(1, math.ceil(total_samples / self.target_samples))
-            for c in range(n_chunks):
-                start = c * self.target_samples
-                real = min(self.target_samples, total_samples - start)
-                chunks.append((i, start, real))
-        return chunks
-
     def __len__(self):
-        if self.chunks is not None:
-            return len(self.chunks)
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        if self.chunks is not None:
-            dataset_idx, chunk_start_target, chunk_real = self.chunks[idx]
-        else:
-            dataset_idx = idx
-            chunk_start_target = 0
-            chunk_real = None  # determined after loading
+        sample = self.dataset[idx]
 
-        sample = self.dataset[dataset_idx]
-
-        # Load audio from file path
         audio_path = sample["audio"]["path"]
         audio, source_sr = sf.read(audio_path, dtype="float32")
-
-        # Stereo -> mono
         if audio.ndim == 2:
             audio = audio.mean(axis=1)
-
         audio_tensor = torch.from_numpy(audio).float()
-
-        # Resample if needed
         if source_sr != self.target_sr:
             audio_tensor = torchaudio.functional.resample(
                 audio_tensor, orig_freq=source_sr, new_freq=self.target_sr
             )
 
-        if self.chunks is not None:
-            # Extract chunk
-            start = chunk_start_target
-            end = start + self.target_samples
-            audio_tensor = audio_tensor[start:end]
-            real_samples = min(chunk_real, audio_tensor.shape[0])
-        else:
-            real_samples = audio_tensor.shape[0]
-
-        # Pad to target_samples if needed
+        real_samples = audio_tensor.shape[0]
         if audio_tensor.shape[0] < self.target_samples:
             audio_tensor = torch.nn.functional.pad(
                 audio_tensor, (0, self.target_samples - audio_tensor.shape[0])
             )
 
-        # Multi-hot labels
         labels = torch.zeros(self.num_classes, dtype=torch.float32)
         label_indices = sample.get("ebird_code_multilabel", [])
         if label_indices:
@@ -218,6 +274,33 @@ class BirdSetDataset(Dataset):
                     labels[li] = 1.0
 
         return {"audio": audio_tensor, "labels": labels, "real_samples": real_samples}
+
+
+class CachedMelDataset(Dataset):
+    """Dataset that loads pre-computed mel spectrograms from disk.
+
+    Expects files named {idx:06d}.pt containing:
+        mel: (1, n_mels, target_frames) float16 tensor
+        labels: (num_classes,) float32 tensor
+        real_frames: int
+    """
+
+    def __init__(self, cache_dir):
+        self.cache_dir = Path(cache_dir)
+        self.length = len([f for f in os.listdir(cache_dir) if f.endswith(".pt")])
+        if self.length == 0:
+            raise FileNotFoundError(f"No cached .pt files in {cache_dir}")
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        data = torch.load(self.cache_dir / f"{idx:06d}.pt", weights_only=True)
+        return {
+            "mel": data["mel"].float(),
+            "labels": data["labels"],
+            "real_frames": int(data["real_frames"]),
+        }
 
 
 class BirdSetDataModule(pl.LightningDataModule):
@@ -235,6 +318,7 @@ class BirdSetDataModule(pl.LightningDataModule):
         target_frames: int = 3000,
         norm_mean: float = -4.268,
         norm_std: float = 4.569,
+        cache_dir: str | None = None,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -244,7 +328,9 @@ class BirdSetDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.sample_rate = sample_rate
         self.target_duration = target_duration
+        self.target_frames = target_frames
         self.num_classes = BIRDSET_NUM_CLASSES[dataset_name]
+        self.cache_dir = cache_dir
 
         self.mel_transform = MelSpectrogramTransform(
             sample_rate=sample_rate,
@@ -260,65 +346,97 @@ class BirdSetDataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         if stage == "fit" or stage is None:
-            logger.info(f"Loading {self.dataset_name} train split...")
-            hf_train = load_dataset(
-                "DBD-research-group/BirdSet",
-                self.dataset_name,
-                split="train",
-                trust_remote_code=True,
-            )
-            self.train_dataset = BirdSetDataset(
-                hf_train,
-                num_classes=self.num_classes,
-                target_sr=self.sample_rate,
-                target_duration=self.target_duration,
-                chunk=True,
-            )
-            logger.info(f"Train: {len(self.train_dataset)} chunks from {len(hf_train)} recordings")
+            if self.cache_dir:
+                train_cache = Path(self.cache_dir) / "train"
+                val_cache = Path(self.cache_dir) / "val"
+                self.train_dataset = CachedMelDataset(train_cache)
+                self.val_dataset = CachedMelDataset(val_cache)
+                logger.info(
+                    f"Using cached mels: {len(self.train_dataset)} train, "
+                    f"{len(self.val_dataset)} val"
+                )
+            else:
+                logger.info(f"Loading {self.dataset_name} train split...")
+                hf_train = load_dataset(
+                    "DBD-research-group/BirdSet",
+                    self.dataset_name,
+                    split="train",
+                    trust_remote_code=True,
+                )
+                self.train_dataset = StreamingBirdSetDataset(
+                    hf_train,
+                    num_classes=self.num_classes,
+                    target_sr=self.sample_rate,
+                    target_duration=self.target_duration,
+                    chunk=True,
+                    shuffle=True,
+                )
+                n_chunks = self.train_dataset.count_chunks()
+                logger.info(f"Train: {n_chunks} chunks from {len(hf_train)} recordings (streaming)")
 
-            logger.info(f"Loading {self.dataset_name} test_5s split for validation...")
-            hf_val = load_dataset(
-                "DBD-research-group/BirdSet",
-                self.dataset_name,
-                split="test_5s",
-                trust_remote_code=True,
-            )
-            self.val_dataset = BirdSetDataset(
-                hf_val,
-                num_classes=self.num_classes,
-                target_sr=self.sample_rate,
-                target_duration=self.target_duration,
-                chunk=False,
-            )
-            logger.info(f"Val: {len(self.val_dataset)} samples")
+                logger.info(f"Loading {self.dataset_name} test_5s split for validation...")
+                hf_val = load_dataset(
+                    "DBD-research-group/BirdSet",
+                    self.dataset_name,
+                    split="test_5s",
+                    trust_remote_code=True,
+                )
+                self.val_dataset = BirdSetDataset(
+                    hf_val,
+                    num_classes=self.num_classes,
+                    target_sr=self.sample_rate,
+                    target_duration=self.target_duration,
+                )
+                logger.info(f"Val: {len(self.val_dataset)} samples")
 
     def train_dataloader(self):
+        is_cached = self.cache_dir is not None
+        collate_fn = self._collate_cached if is_cached else self._collate_with_melspec
+        # Cached = map-style (shuffle in DataLoader); streaming = shuffle internally
+        shuffle = is_cached
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=shuffle,
             num_workers=self.num_workers,
-            collate_fn=self._collate_with_melspec,
+            collate_fn=collate_fn,
             pin_memory=True,
-            persistent_workers=self.num_workers > 0,
+            persistent_workers=self.num_workers > 0 and is_cached,
             prefetch_factor=4 if self.num_workers > 0 else None,
             drop_last=True,
         )
 
     def val_dataloader(self):
+        collate_fn = self._collate_cached if self.cache_dir else self._collate_with_melspec
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            collate_fn=self._collate_with_melspec,
+            collate_fn=collate_fn,
             pin_memory=True,
             persistent_workers=self.num_workers > 0,
             prefetch_factor=4 if self.num_workers > 0 else None,
         )
 
+    def _collate_cached(self, batch):
+        """Collate pre-computed mel spectrograms.
+
+        Returns:
+            (mel_specs, labels, padding_mask) same format as _collate_with_melspec
+        """
+        mel_specs = torch.stack([item["mel"] for item in batch])
+        labels = torch.stack([item["labels"] for item in batch])
+
+        num_tokens = self.target_frames
+        padding_mask = torch.zeros(len(batch), num_tokens, dtype=torch.bool)
+        for i, item in enumerate(batch):
+            padding_mask[i, : item["real_frames"]] = True
+
+        return mel_specs, labels, padding_mask
+
     def _collate_with_melspec(self, batch):
-        """Collate batch and apply mel-spectrogram transform.
+        """Collate batch and apply mel-spectrogram transform on-the-fly.
 
         Returns:
             (mel_specs, labels, padding_mask) where:

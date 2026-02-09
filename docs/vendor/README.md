@@ -6,6 +6,7 @@ This directory contains documentation for the 14 external repositories vendored 
 
 | Repository | Category | Pipeline Stage | License | Status |
 |------------|----------|----------------|---------|--------|
+| [bambird + scikit-maad](bambird-scikit-maad.md) | utility | data-processing | BSD-3-Clause | reference |
 | [BirdNET-Analyzer](birdnet-analyzer.md) | pretrained-model | inference, embedding | MIT / CC BY-NC-SA 4.0 | reference |
 | [BirdSet](birdset.md) | dataset | data-processing, representation-learning | BSD-3-Clause | active |
 | [ProtoCLR](protoclr.md) | self-supervised | representation-learning | Unspecified | reference |
