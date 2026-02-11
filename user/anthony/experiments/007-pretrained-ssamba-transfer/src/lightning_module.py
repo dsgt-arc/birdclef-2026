@@ -119,12 +119,10 @@ class SSAMBALightningModule(pl.LightningModule):
 
     def on_train_epoch_start(self):
         if self.freeze_epochs > 0:
-            if self.current_epoch == 0 and not self._backbone_frozen:
+            if self.current_epoch < self.freeze_epochs and not self._backbone_frozen:
                 self._freeze_backbone()
-            elif self.current_epoch == self.freeze_epochs and self._backbone_frozen:
+            elif self.current_epoch >= self.freeze_epochs and self._backbone_frozen:
                 self._unfreeze_backbone()
-                # Reconfigure optimizer to include all params
-                # Lightning will use configure_optimizers() on next step
 
     def forward(self, x, padding_mask=None):
         return self.model(x, padding_mask=padding_mask)

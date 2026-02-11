@@ -41,15 +41,17 @@ class CachedMelDataset(Dataset):
 
     def __init__(self, cache_dir):
         self.cache_dir = Path(cache_dir)
-        self.length = len([f for f in os.listdir(cache_dir) if f.endswith(".pt")])
-        if self.length == 0:
+        self.files = sorted(
+            [f for f in os.listdir(cache_dir) if f.endswith(".pt")]
+        )
+        if len(self.files) == 0:
             raise FileNotFoundError(f"No cached .pt files in {cache_dir}")
 
     def __len__(self):
-        return self.length
+        return len(self.files)
 
     def __getitem__(self, idx):
-        data = torch.load(self.cache_dir / f"{idx:06d}.pt", weights_only=True)
+        data = torch.load(self.cache_dir / self.files[idx], weights_only=True)
         return {
             "mel": data["mel"].float(),
             "labels": data["labels"],

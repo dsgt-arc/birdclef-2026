@@ -3,7 +3,7 @@
 #SBATCH --account=paceship-dsgt_clef2026
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH -p cpu-small
-#SBATCH -t120 -qinferno
+#SBATCH -t240 -qinferno
 #SBATCH --output=logs/precompute-events-%j.out
 
 set -eu

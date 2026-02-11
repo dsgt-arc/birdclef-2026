@@ -20,7 +20,10 @@ module load cuda/12.1.1
 cache_dir=$scratch_dir/cache/007-hsn-events
 ckpt=$scratch_dir/checkpoints/ssamba/ssamba_tiny_400.pth
 
+CKPT_PATH=${CKPT_PATH:-}
+
 uv run --project $repo_dir/user/anthony python train.py \
     --config config-default-16x16.yaml \
     --cache-dir $cache_dir \
-    --pretrained-ckpt $ckpt
+    --pretrained-ckpt $ckpt \
+    ${CKPT_PATH:+--ckpt-path $CKPT_PATH}

@@ -4,7 +4,7 @@
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH --gres=gpu:1
 #SBATCH -p gpu-rtx6000
-#SBATCH -t720 -qinferno
+#SBATCH -t1440 -qinferno
 #SBATCH --output=logs/train-framelevel-%j.out
 
 set -eu
@@ -20,7 +20,10 @@ module load cuda/12.1.1
 cache_dir=$scratch_dir/cache/007-hsn-events
 ckpt=$scratch_dir/checkpoints/ssamba/ssamba_tiny_400.pth
 
+CKPT_PATH=${CKPT_PATH:-}
+
 uv run --project $repo_dir/user/anthony python train.py \
     --config config-framelevel-128x1.yaml \
     --cache-dir $cache_dir \
-    --pretrained-ckpt $ckpt
+    --pretrained-ckpt $ckpt \
+    ${CKPT_PATH:+--ckpt-path $CKPT_PATH}
