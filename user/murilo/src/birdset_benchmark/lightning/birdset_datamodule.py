@@ -1,25 +1,71 @@
 """PyTorch Lightning DataModule for BirdSet datasets.
 
-Used by: Experiment 002 (Supervised ViT Baseline)
+Supports two data-loading modes controlled by ``cache_mel_specs``:
 
-Integrates existing BirdSetDataset with Lightning's data loading patterns.
-Generates mel-spectrograms on-the-fly in DataLoader workers.
+* **False (default)** — mel spectrograms are computed on-the-fly inside
+  DataLoader workers, suitable for any dataset size.
+* **True** — all mel spectrograms are pre-computed during ``setup()`` and
+  cached in RAM, eliminating disk I/O during training.  Only use this when
+  the dataset fits comfortably in memory (e.g. HSN ≈ 4.4 GB for 17 k samples).
 """
 
 import logging
+import time
 
 import pytorch_lightning as pl
-from torch.utils.data import DataLoader
+import torch
+from torch.utils.data import DataLoader, Dataset
 
 from birdset_benchmark.datasets import get_num_classes, load_birdset_dataset
 from birdset_benchmark.preprocessing.mel_spectrogram import MelSpectrogramTransform
-from birdset_benchmark.torch_data import BirdSetDataset, collate_fn
+from birdset_benchmark.torch_data import BirdSetDataset
 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Dataset wrappers
+# ---------------------------------------------------------------------------
+
+
+class _MelDataset(Dataset):
+    """Computes mel spectrograms on-the-fly inside DataLoader workers."""
+
+    def __init__(self, base_dataset: BirdSetDataset, mel_transform: MelSpectrogramTransform):
+        self.base_dataset = base_dataset
+        self.mel_transform = mel_transform
+
+    def __len__(self) -> int:
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        sample = self.base_dataset[idx]
+        mel = self.mel_transform(sample["audio"])  # (1, n_mels, target_frames)
+        labels = sample["labels"]  # (num_classes,)
+        return mel, labels
+
+
+class _CachedMelDataset(Dataset):
+    """Pre-computed mel spectrograms served from memory. Zero disk I/O."""
+
+    def __init__(self, mel_specs: torch.Tensor, labels: torch.Tensor):
+        self.mel_specs = mel_specs  # (N, 1, n_mels, target_frames)
+        self.labels = labels  # (N, num_classes)
+
+    def __len__(self) -> int:
+        return self.mel_specs.shape[0]
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.mel_specs[idx], self.labels[idx]
+
+
+# ---------------------------------------------------------------------------
+# DataModule
+# ---------------------------------------------------------------------------
+
+
 class BirdSetDataModule(pl.LightningDataModule):
-    """PyTorch Lightning DataModule for BirdSet with on-the-fly mel-spectrogram generation.
+    """PyTorch Lightning DataModule for BirdSet datasets.
 
     Args:
         dataset_name: BirdSet dataset name (e.g., "HSN", "XCM")
@@ -35,6 +81,9 @@ class BirdSetDataModule(pl.LightningDataModule):
         pin_memory: Whether to pin memory for faster GPU transfer (default: True)
         persistent_workers: Keep workers alive between epochs (default: True)
         prefetch_factor: Number of batches to prefetch per worker (default: 4)
+        cache_mel_specs: Pre-compute all mel spectrograms and cache in RAM.
+            Eliminates disk I/O during training but requires the full dataset
+            to fit in memory. (default: False)
     """
 
     def __init__(
@@ -52,6 +101,7 @@ class BirdSetDataModule(pl.LightningDataModule):
         pin_memory: bool = True,
         persistent_workers: bool = True,
         prefetch_factor: int = 4,
+        cache_mel_specs: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -62,6 +112,7 @@ class BirdSetDataModule(pl.LightningDataModule):
         self.pin_memory = pin_memory
         self.persistent_workers = persistent_workers
         self.prefetch_factor = prefetch_factor
+        self.cache_mel_specs = cache_mel_specs
 
         # Audio preprocessing params
         self.target_sr = target_sr
@@ -78,28 +129,71 @@ class BirdSetDataModule(pl.LightningDataModule):
         )
 
         # Datasets (populated in setup())
-        self.train_dataset: BirdSetDataset | None = None
-        self.val_dataset: BirdSetDataset | None = None
-        self.test_dataset: BirdSetDataset | None = None
+        self.train_dataset: Dataset | None = None
+        self.val_dataset: Dataset | None = None
+        self.test_dataset: Dataset | None = None
 
         # Number of classes (populated in setup())
         self.num_classes: int | None = None
 
+    # ------------------------------------------------------------------
+    # Caching helpers
+    # ------------------------------------------------------------------
+
+    def _precompute_mels(self, base_dataset: BirdSetDataset, split_name: str) -> _CachedMelDataset:
+        """Pre-compute all mel spectrograms and cache in memory."""
+        n = len(base_dataset)
+        logger.info(f"Pre-computing mel spectrograms for {split_name} ({n} samples)...")
+        t0 = time.time()
+
+        mel_list = []
+        label_list = []
+        for i in range(n):
+            sample = base_dataset[i]
+            mel = self.mel_transform(sample["audio"])  # (1, n_mels, target_frames)
+            mel_list.append(mel)
+            label_list.append(sample["labels"])
+
+            if (i + 1) % 2000 == 0:
+                elapsed = time.time() - t0
+                logger.info(f"  {split_name}: {i + 1}/{n} samples ({elapsed:.1f}s)")
+
+        mel_tensor = torch.stack(mel_list)  # (N, 1, n_mels, target_frames)
+        label_tensor = torch.stack(label_list)  # (N, num_classes)
+
+        elapsed = time.time() - t0
+        mem_gb = mel_tensor.nbytes / (1024**3)
+        logger.info(f"  {split_name}: done — {n} samples, {mem_gb:.2f} GB, {elapsed:.1f}s")
+
+        return _CachedMelDataset(mel_tensor, label_tensor)
+
+    def _wrap_dataset(self, base_dataset: BirdSetDataset, split_name: str) -> Dataset:
+        """Wrap a base dataset — cached or on-the-fly depending on config."""
+        if self.cache_mel_specs:
+            return self._precompute_mels(base_dataset, split_name)
+        return _MelDataset(base_dataset, self.mel_transform)
+
+    # ------------------------------------------------------------------
+    # Lightning hooks
+    # ------------------------------------------------------------------
+
     def setup(self, stage: str | None = None):
-        """Load datasets and determine number of classes.
+        """Load datasets and optionally pre-compute mel spectrograms.
 
         Args:
             stage: 'fit', 'validate', 'test', or 'predict'
         """
-        # Get number of classes for this dataset
         self.num_classes = get_num_classes(self.dataset_name)
-        logger.info(f"Loading {self.dataset_name} dataset with {self.num_classes} classes")
+        mode = "cached" if self.cache_mel_specs else "on-the-fly"
+        logger.info(
+            f"Loading {self.dataset_name} dataset with {self.num_classes} classes "
+            f"(mel mode: {mode})"
+        )
 
         if stage == "fit" or stage is None:
-            # Load training data
             logger.info(f"Loading {self.dataset_name} train split...")
             hf_train = load_birdset_dataset(self.dataset_name, split="train")
-            self.train_dataset = BirdSetDataset(
+            base_train = BirdSetDataset(
                 hf_train,
                 num_classes=self.num_classes,
                 target_sr=self.target_sr,
@@ -107,12 +201,12 @@ class BirdSetDataModule(pl.LightningDataModule):
                 return_labels=True,
                 return_metadata=False,
             )
+            self.train_dataset = self._wrap_dataset(base_train, "train")
             logger.info(f"Train dataset: {len(self.train_dataset)} samples")
 
-            # Load validation data (BirdSet uses 'test_5s' for validation)
             logger.info(f"Loading {self.dataset_name} test_5s split for validation...")
             hf_val = load_birdset_dataset(self.dataset_name, split="test_5s")
-            self.val_dataset = BirdSetDataset(
+            base_val = BirdSetDataset(
                 hf_val,
                 num_classes=self.num_classes,
                 target_sr=self.target_sr,
@@ -120,13 +214,13 @@ class BirdSetDataModule(pl.LightningDataModule):
                 return_labels=True,
                 return_metadata=False,
             )
+            self.val_dataset = self._wrap_dataset(base_val, "val")
             logger.info(f"Val dataset: {len(self.val_dataset)} samples")
 
         if stage == "test" or stage == "predict":
-            # Load test data (BirdSet uses 'test_5s' for standard evaluation)
             logger.info(f"Loading {self.dataset_name} test_5s split for testing...")
             hf_test = load_birdset_dataset(self.dataset_name, split="test_5s")
-            self.test_dataset = BirdSetDataset(
+            base_test = BirdSetDataset(
                 hf_test,
                 num_classes=self.num_classes,
                 target_sr=self.target_sr,
@@ -134,76 +228,39 @@ class BirdSetDataModule(pl.LightningDataModule):
                 return_labels=True,
                 return_metadata=False,
             )
+            self.test_dataset = self._wrap_dataset(base_test, "test")
             logger.info(f"Test dataset: {len(self.test_dataset)} samples")
 
     def train_dataloader(self) -> DataLoader:
-        """Create training DataLoader with on-the-fly mel-spectrogram generation."""
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
-            collate_fn=self._collate_with_melspec,
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers if self.num_workers > 0 else False,
             prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
-            drop_last=True,  # Drop incomplete batches for stable training
+            drop_last=True,
         )
 
     def val_dataloader(self) -> DataLoader:
-        """Create validation DataLoader."""
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            collate_fn=self._collate_with_melspec,
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers if self.num_workers > 0 else False,
             prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def test_dataloader(self) -> DataLoader:
-        """Create test DataLoader."""
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            collate_fn=self._collate_with_melspec,
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers if self.num_workers > 0 else False,
             prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
-
-    def _collate_with_melspec(self, batch):
-        """Custom collate function that applies mel-spectrogram transform.
-
-        Args:
-            batch: List of sample dicts from BirdSetDataset
-
-        Returns:
-            tuple: (mel_spectrograms, labels)
-                - mel_spectrograms: Tensor of shape (batch, 1, n_mels, target_frames)
-                - labels: Tensor of shape (batch, num_classes)
-        """
-        # Use default collate to stack audio and labels
-        batched = collate_fn(batch)
-
-        # Apply mel-spectrogram transform to each audio sample
-        audio_batch = batched["audio"]  # (batch, samples)
-        mel_specs = []
-
-        for i in range(audio_batch.shape[0]):
-            # Transform single audio sample: (samples,) -> (1, n_mels, target_frames)
-            mel_spec = self.mel_transform(audio_batch[i])
-            mel_specs.append(mel_spec)
-
-        # Stack into batch: (batch, 1, n_mels, target_frames)
-        import torch
-
-        mel_specs = torch.stack(mel_specs, dim=0)
-
-        labels = batched["labels"]  # (batch, num_classes)
-
-        return mel_specs, labels

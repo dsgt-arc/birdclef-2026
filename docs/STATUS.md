@@ -29,8 +29,11 @@ The gap between SSAMBA (0.08) and ConvNeXT (0.48) is too large to attribute to a
 |---------|--------|-------------|
 | BEATs 95.8% on ESC-50 (linear probe) | Exp 001 | Best frozen feature extractor |
 | Static embeddings lose 48% accuracy | Exp 002 | Model2vec approach fails for transformers |
-| ConvNeXT achieves 0.48 cmAP on HSN | Murilo exp 001 | Strong baseline from pre-trained convolutions |
-| ViT from scratch: 0.164 cmAP on HSN | Murilo exp 002 | Pre-training matters more than architecture |
+| ConvNeXT achieves 0.48 cmAP on HSN | murilo/Exp 001 | Strong baseline from pre-trained convolutions |
+| ViT from scratch: 0.164 cmAP on HSN | murilo/Exp 002 | Pre-training matters more than architecture |
+| ConvNeXT-Tiny pretrained cmAP=0.180 on HSN | [murilo/Exp 003](../user/murilo/experiments/003-model-training/results.md) | Best supervised baseline, beats ViT-Base (85M) with 3x fewer params |
+| ImageNet pretraining gives 3.0x lift (ConvNeXT) | [murilo/Exp 003](../user/murilo/experiments/003-model-training/results.md) | Pretraining critical for small datasets |
+| CNNs transfer better than ViTs to spectrograms | [murilo/Exp 003](../user/murilo/experiments/003-model-training/results.md) | Hierarchical conv features > patch tokenization for audio |
 | SSAMBA 30s windows: **0.08 cmAP** on HSN | Exp 006 | Far below baselines — backbone needs diagnosis |
 | SSAMBA forward pass ~28ms up to 3000 tokens | Exp 005 | Speed is not the bottleneck; learning is |
 | Pure PyTorch SSM too slow for >1000 tokens | Exp 004 | CUDA kernels (mamba-ssm) required |
@@ -49,7 +52,7 @@ The gap between SSAMBA (0.08) and ConvNeXT (0.48) is too large to attribute to a
 | anthony/008 | Multi-Signal SED | Proposed | ConvNeXT distillation + bambird + SSL |
 | murilo/001 | BirdSet Benchmark | Complete | ConvNeXT 0.48, EfficientNet 0.38 on HSN |
 | murilo/002 | Supervised ViT Baseline | Complete | 0.164 cmAP on HSN |
-| murilo/003 | Audio-MAE Pre-training | Deferred | Planning complete, archived |
+| murilo/003 | [Model Training](../user/murilo/experiments/003-model-training/) | Complete | ConvNeXT-Tiny pretrained best (cmAP=0.180), 3x pretraining lift, CNNs > ViTs for spectrograms |
 
 ## Concept Docs
 

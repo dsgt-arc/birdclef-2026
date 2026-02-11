@@ -42,7 +42,7 @@ setup_environment() {
 
     # Sync dependencies and install user package
     uv sync
-    uv pip install -e "${USER_DIR}"
+    uv pip install -e "${EXPERIMENT_DIR}"
 }
 
 # ============================================================================

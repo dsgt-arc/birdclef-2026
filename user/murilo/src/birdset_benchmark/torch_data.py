@@ -31,6 +31,7 @@ from typing import Any
 
 import librosa
 import numpy as np
+import soundfile as sf
 import torch
 from torch.utils.data import DataLoader, Dataset
 
@@ -180,8 +181,6 @@ class BirdSetDataset(Dataset):
 
         # Extract audio from file path
         audio_path = sample["audio"]["path"]
-        import soundfile as sf
-
         audio, source_sr = sf.read(audio_path, dtype="float32")
 
         # Convert stereo to mono if needed
