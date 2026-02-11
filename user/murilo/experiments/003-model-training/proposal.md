@@ -1,6 +1,6 @@
 # Proposal: Model Training (ConvNeXT-Tiny & ViT-Small)
 
-**Status**: proposed
+**Status**: completed
 **Created**: 2026-02-08
 **Author**: Murilo
 

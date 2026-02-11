@@ -26,6 +26,6 @@
 
 ## Analysis
 
-- [ ] Compare cmAP across all 4 runs
-- [ ] Analyze training curves and convergence
-- [ ] Document results in experiment result file
+- [x] Compare cmAP across all 4 runs
+- [x] Analyze training curves and convergence
+- [x] Document results in experiment result file

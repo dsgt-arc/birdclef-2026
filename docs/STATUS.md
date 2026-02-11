@@ -1,6 +1,6 @@
 # Project Status
 
-> **Last Updated**: January 2026
+> **Last Updated**: February 2026
 
 ## Research Thesis
 
@@ -26,6 +26,10 @@ Experiment 001 (encoder benchmark) is complete. Key result: **BEATs is best for 
 | OpenBEATs (300M) is SOTA on bioacoustics | [literature.md](references/literature.md) | Best available teacher model |
 | BirdMAE wins on BirdSet benchmark | [literature.md](references/literature.md) | Domain-specific training helps |
 | Focal→soundscape domain gap is critical | [soundscape-domain-shift.md](concepts/soundscape-domain-shift.md) | Must address in pipeline |
+| ConvNeXT-Tiny pretrained cmAP=0.180 on HSN | [murilo/Exp 003](../user/murilo/experiments/003-model-training/results.md) | Best supervised baseline, beats ViT-Base (85M) with 3x fewer params |
+| ImageNet pretraining gives 3.0x lift (ConvNeXT) | [murilo/Exp 003](../user/murilo/experiments/003-model-training/results.md) | Pretraining critical for small datasets |
+| CNNs transfer better than ViTs to spectrograms | [murilo/Exp 003](../user/murilo/experiments/003-model-training/results.md) | Hierarchical conv features > patch tokenization for audio |
+| Best supervised model still 37% of audio-pretrained | [murilo/Exp 003](../user/murilo/experiments/003-model-training/results.md) | Domain-specific pretraining far more valuable than ImageNet |
 
 ## Active Research Directions
 
@@ -52,8 +56,8 @@ See [concepts/research-leads.md](concepts/research-leads.md) for full list.
 | anthony/002 | [BEATs Inference Optimization](../user/anthony/experiments/002-beats-inference-optimization/) | Complete | **Rejected** - 32x speedup, 63% best accuracy (21% gap) |
 | anthony/003 | [Model Distillation](../user/anthony/experiments/003-model-distillation/) | Proposed | Distill BEATs → lightweight student on AudioSet |
 | murilo/001 | [BirdSet Bioacoustics Benchmark](../user/murilo/experiments/001-birdset-bioacoustics-benchmark/) | **Phase 2A Complete** | ConvNeXT/EfficientNetB1 on 8 datasets, mean cmAP 0.36/0.35. Phase 2B deferred. |
-| murilo/002 | [Supervised ViT Baseline](../user/murilo/experiments/002-supervised-vit-baseline/) | Ready for execution | HSN single-GPU baseline |
-| murilo/003 | Audio-MAE Pre-training | **Deferred** (2026-02-01) | Planning complete, archived |
+| murilo/002 | [Supervised ViT Baseline](../user/murilo/experiments/002-supervised-vit-baseline/) | Complete | ViT-Base pretrained on HSN, cmAP=0.164 |
+| murilo/003 | [Model Training](../user/murilo/experiments/003-model-training/) | Complete | ConvNeXT-Tiny pretrained best (cmAP=0.180), 3x pretraining lift, CNNs > ViTs for spectrograms |
 
 Experiments are tracked per-user in `user/<name>/experiments/`.
 
@@ -61,10 +65,11 @@ Experiments are tracked per-user in `user/<name>/experiments/`.
 
 1. ~~Benchmark foundation models (BEATs, EAT, wav2vec2) on ESC-50~~ Done (Exp 001)
 2. ~~Optimize BEATs inference for CPU~~ Done (Exp 002) - static embeddings rejected (63% best, 21% gap)
-3. **[Active]** Knowledge distillation on AudioSet (Exp 003) - Mamba2, ConvNeXt1D, TCN students
-4. **[Active]** Execute Experiment 002 on HSN (single GPU, 2-4 hours)
-5. Evaluate HSN results and compare to BirdSet baseline (ConvNeXT: 0.38 cmAP)
-6. Decide next direction: scale to XCM, iterate architecture, or explore BEATS/EATS
+3. ~~Train ConvNeXT-Tiny & ViT-Small on HSN~~ Done (murilo/Exp 003) - ConvNeXT pretrained best (0.180), still 37% of audio-pretrained baseline
+4. **[Active]** Knowledge distillation on AudioSet (anthony/Exp 003) - Mamba2, ConvNeXt1D, TCN students
+5. Address overfitting: data augmentation (mixup, time/freq masking) for small-data training
+6. Explore audio-specific pretrained backbones (BEATs, AST, PaSST) to close gap with exp 001
+7. Scale to larger BirdSet datasets (XCM) to evaluate scaling behavior
 
 ## Quick Links
 
