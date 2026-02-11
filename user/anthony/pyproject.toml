@@ -50,6 +50,7 @@ packages = ["src/birdclef"]
 [tool.uv.workspace]
 members = [
     "experiments/004-ssamba-hf-port/ssamba_hf",
+    "experiments/006-ssamba-birdset-hsn",
 ]
 
 # Use PyTorch cu121 index for CUDA 12.1 compatibility (matches PACE's cuda/12.1.1 module)
