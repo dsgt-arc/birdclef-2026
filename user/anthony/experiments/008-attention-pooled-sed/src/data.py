@@ -32,9 +32,29 @@ BIRDSET_NUM_CLASSES = {
 }
 
 
-def _load_audio(audio_path, target_sr):
-    """Load and resample audio to target sample rate."""
-    audio, source_sr = sf.read(audio_path, dtype="float32")
+def _load_audio_chunk(audio_path, target_sr, start_sample=0, num_samples=None):
+    """Load a chunk of audio and resample to target sample rate.
+
+    Uses sf.read(start, frames) for partial reads to avoid loading entire files.
+
+    Args:
+        audio_path: Path to audio file
+        target_sr: Target sample rate
+        start_sample: Start position in target sample rate
+        num_samples: Number of samples to read in target sample rate (None = to end)
+    """
+    info = sf.info(audio_path)
+    source_sr = info.samplerate
+
+    # Convert target-domain positions to source-domain
+    src_start = int(start_sample * source_sr / target_sr)
+    if num_samples is not None:
+        # Read a bit extra to avoid off-by-one after resampling
+        src_frames = int(num_samples * source_sr / target_sr) + 2
+    else:
+        src_frames = -1  # read to end
+
+    audio, _ = sf.read(audio_path, dtype="float32", start=src_start, frames=src_frames)
     if audio.ndim == 2:
         audio = audio.mean(axis=1)
     audio_tensor = torch.from_numpy(audio).float()
@@ -42,6 +62,11 @@ def _load_audio(audio_path, target_sr):
         audio_tensor = torchaudio.functional.resample(
             audio_tensor, orig_freq=source_sr, new_freq=target_sr
         )
+
+    # Trim to exact requested length (resampling can produce ±1 sample)
+    if num_samples is not None and audio_tensor.shape[0] > num_samples:
+        audio_tensor = audio_tensor[:num_samples]
+
     return audio_tensor
 
 
@@ -160,12 +185,12 @@ class BirdSetStreamingDataset(Dataset):
         rec_idx, chunk_start, chunk_end, real_samples = self.chunks[idx]
         sample = self.hf_dataset[rec_idx]
 
-        # Load audio
+        # Load only the chunk we need (partial read, no full-file loading)
         audio_path = sample["audio"]["path"]
-        audio = _load_audio(audio_path, self.sample_rate)
-
-        # Extract chunk
-        waveform = audio[chunk_start:chunk_end]
+        waveform = _load_audio_chunk(
+            audio_path, self.sample_rate,
+            start_sample=chunk_start, num_samples=real_samples,
+        )
         # Pad to chunk_samples if needed
         if waveform.shape[0] < self.chunk_samples:
             waveform = torch.nn.functional.pad(
