@@ -12,11 +12,12 @@ import logging
 import pytorch_lightning as pl
 import yaml
 from nnAudio.features import MelSpectrogram
-from pytorch_lightning.callbacks import DeviceStatsMonitor, EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from ssamba_hf.config import SSAMBAConfig
 
 from src.data import BirdSetStreamingDataModule
+from src.gpu_monitor import GPUUtilizationMonitor
 from src.lightning_module import SEDLightningModule
 from src.model import SSAMBASEDClassifier
 from src.pretrained import load_pretrained_backbone
@@ -148,7 +149,7 @@ def main():
     ]
 
     if args.overfit_batches == 0:
-        callbacks.append(DeviceStatsMonitor(cpu_stats=False))
+        callbacks.append(GPUUtilizationMonitor(log_every_n_steps=10))
 
         es_cfg = cb_cfg.get("early_stopping", {})
         if es_cfg:
