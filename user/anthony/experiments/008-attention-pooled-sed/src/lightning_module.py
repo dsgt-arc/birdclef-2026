@@ -1,0 +1,235 @@
+"""PyTorch Lightning module for SSAMBA SED training with dual clip + token losses.
+
+Supports freeze/unfreeze of backbone for pre-trained transfer learning.
+"""
+
+import logging
+
+import pytorch_lightning as pl
+import torch
+import torch.nn as nn
+import torchmetrics
+
+from .losses import FocalBCELoss
+from .spec_augment import SpecAugment
+
+logger = logging.getLogger(__name__)
+
+
+class SEDLightningModule(pl.LightningModule):
+    """Lightning module for attention-pooled SED training.
+
+    Uses dual loss: focal BCE on clip-level predictions (from attention pooling)
+    + focal BCE on per-token SED logits.
+
+    Args:
+        model: SSAMBASEDClassifier instance
+        num_classes: Number of output classes
+        lr: Learning rate
+        weight_decay: AdamW weight decay
+        max_epochs: Max epochs for cosine annealing
+        warmup_epochs: Linear warmup epochs
+        threshold: Classification threshold for binary predictions
+        augmentation: Dict of SpecAugment params (or None to disable)
+        freeze_epochs: Number of epochs to freeze backbone (0 = no freezing)
+        alpha: Weight for SED token-level loss
+        gamma_clip: Focal gamma for clip loss (0 = plain BCE)
+        gamma_sed: Focal gamma for SED loss (0 = plain BCE)
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        num_classes: int,
+        lr: float = 1e-4,
+        weight_decay: float = 0.05,
+        max_epochs: int = 100,
+        warmup_epochs: int = 5,
+        threshold: float = 0.5,
+        augmentation: dict | None = None,
+        freeze_epochs: int = 0,
+        alpha: float = 1.0,
+        gamma_clip: float = 2.0,
+        gamma_sed: float = 2.0,
+    ):
+        super().__init__()
+        self.save_hyperparameters(ignore=["model"])
+
+        self.model = model
+        self.num_classes = num_classes
+        self.threshold = threshold
+        self.freeze_epochs = freeze_epochs
+        self.alpha = alpha
+        self._backbone_frozen = False
+
+        # Clip loss operates on probabilities (attention-pooled output)
+        self.clip_loss = FocalBCELoss(gamma=gamma_clip, from_logits=False)
+        # SED loss operates on raw logits
+        self.sed_loss = FocalBCELoss(gamma=gamma_sed, from_logits=True)
+
+        # SpecAugment (training only)
+        if augmentation:
+            self.spec_augment = SpecAugment(**augmentation)
+        else:
+            self.spec_augment = None
+
+        # Metrics — train
+        self.train_cmap = torchmetrics.AveragePrecision(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
+        self.train_auroc = torchmetrics.AUROC(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
+        self.train_f1_macro = torchmetrics.F1Score(
+            task="multilabel", average="macro", num_labels=num_classes
+        )
+        self.train_f1_micro = torchmetrics.F1Score(
+            task="multilabel", average="micro", num_labels=num_classes
+        )
+
+        # Metrics — val
+        self.val_cmap = torchmetrics.AveragePrecision(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
+        self.val_auroc = torchmetrics.AUROC(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
+        self.val_f1_macro = torchmetrics.F1Score(
+            task="multilabel", average="macro", num_labels=num_classes
+        )
+        self.val_f1_micro = torchmetrics.F1Score(
+            task="multilabel", average="micro", num_labels=num_classes
+        )
+
+    def _freeze_backbone(self):
+        """Freeze backbone Mamba layers and norms, leave mel_spec, patch_embed, and SED head trainable."""
+        frozen_count = 0
+        for name, param in self.model.named_parameters():
+            # Keep trainable: mel_spec, sed_head, patch_embed, pos_embed, cls_token
+            if any(k in name for k in ["sed_head.", "mel_spec.", "patch_embed.", "pos_embed", "cls_token"]):
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+                frozen_count += 1
+
+        trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in self.model.parameters())
+        logger.info(
+            f"Backbone frozen: {frozen_count} params frozen, "
+            f"{trainable:,} / {total:,} trainable ({100*trainable/total:.1f}%)"
+        )
+        self._backbone_frozen = True
+
+    def _unfreeze_backbone(self):
+        """Unfreeze all parameters."""
+        for param in self.model.parameters():
+            param.requires_grad = True
+        trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        logger.info(f"Backbone unfrozen: all {trainable:,} params trainable")
+        self._backbone_frozen = False
+
+    def on_train_epoch_start(self):
+        if self.freeze_epochs > 0:
+            if self.current_epoch < self.freeze_epochs and not self._backbone_frozen:
+                self._freeze_backbone()
+            elif self.current_epoch >= self.freeze_epochs and self._backbone_frozen:
+                self._unfreeze_backbone()
+
+    def on_before_optimizer_step(self, optimizer):
+        grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), float("inf"))
+        self.log("train/grad_norm", grad_norm, on_step=True, on_epoch=False, prog_bar=False)
+
+    def training_step(self, batch, batch_idx):
+        waveforms, clip_labels, token_labels, padding_mask = batch
+
+        # Forward with SpecAugment
+        clip_pred, sed_logits = self.model(
+            waveforms, padding_mask=padding_mask,
+            spec_augment=self.spec_augment if self.training else None,
+        )
+
+        # Clip loss (probabilities)
+        l_clip = self.clip_loss(clip_pred, clip_labels)
+
+        # SED token loss (logits, masked)
+        l_sed = self.sed_loss(sed_logits, token_labels, mask=padding_mask)
+
+        loss = l_clip + self.alpha * l_sed
+
+        # Metrics
+        preds = (clip_pred > self.threshold).int()
+        self.train_cmap.update(clip_pred, clip_labels.int())
+        self.train_auroc.update(clip_pred, clip_labels.int())
+        self.train_f1_macro.update(preds, clip_labels.int())
+        self.train_f1_micro.update(preds, clip_labels.int())
+
+        self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train/loss_clip", l_clip, on_step=True, on_epoch=True)
+        self.log("train/loss_sed", l_sed, on_step=True, on_epoch=True)
+        return loss
+
+    def on_train_epoch_end(self):
+        self.log("train/cmap", self.train_cmap.compute(), prog_bar=True)
+        self.log("train/auroc", self.train_auroc.compute())
+        self.log("train/f1_macro", self.train_f1_macro.compute(), prog_bar=True)
+        self.log("train/f1_micro", self.train_f1_micro.compute())
+
+        self.train_cmap.reset()
+        self.train_auroc.reset()
+        self.train_f1_macro.reset()
+        self.train_f1_micro.reset()
+
+    def validation_step(self, batch, batch_idx):
+        waveforms, clip_labels, token_labels, padding_mask = batch
+
+        clip_pred, sed_logits = self.model(waveforms, padding_mask=padding_mask)
+
+        # Only clip-level loss for validation (no meaningful token labels)
+        loss = self.clip_loss(clip_pred, clip_labels)
+
+        preds = (clip_pred > self.threshold).int()
+        self.val_cmap.update(clip_pred, clip_labels.int())
+        self.val_auroc.update(clip_pred, clip_labels.int())
+        self.val_f1_macro.update(preds, clip_labels.int())
+        self.val_f1_micro.update(preds, clip_labels.int())
+
+        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
+
+    def on_validation_epoch_end(self):
+        self.log("val/cmap", self.val_cmap.compute(), prog_bar=True)
+        self.log("val/auroc", self.val_auroc.compute(), prog_bar=True)
+        self.log("val/f1_macro", self.val_f1_macro.compute(), prog_bar=True)
+        self.log("val/f1_micro", self.val_f1_micro.compute())
+
+        self.val_cmap.reset()
+        self.val_auroc.reset()
+        self.val_f1_macro.reset()
+        self.val_f1_micro.reset()
+
+    def configure_optimizers(self):
+        trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+        optimizer = torch.optim.AdamW(
+            trainable_params,
+            lr=self.hparams.lr,
+            weight_decay=self.hparams.weight_decay,
+        )
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=self.hparams.max_epochs, eta_min=1e-6
+        )
+
+        if self.hparams.warmup_epochs > 0:
+            warmup = torch.optim.lr_scheduler.LinearLR(
+                optimizer, start_factor=0.1, end_factor=1.0, total_iters=self.hparams.warmup_epochs
+            )
+            scheduler = torch.optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup, scheduler],
+                milestones=[self.hparams.warmup_epochs],
+            )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "interval": "epoch", "frequency": 1},
+        }
