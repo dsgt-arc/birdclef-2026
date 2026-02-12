@@ -12,7 +12,7 @@ Specifically, the multi-signal model will exceed the ConvNeXT teacher's clip-lev
 
 ## Background
 
-Experiment 007 establishes pure token-level SED using bambird's `detected_events`. However, bambird only tells us *when* something vocalizes, not *what* species — it relies on recording-level labels for species identity. This means:
+The token-level SED experiment establishes pure token-level SED using bambird's `detected_events`. However, bambird only tells us *when* something vocalizes, not *what* species — it relies on recording-level labels for species identity. This means:
 - Chunks where a secondary species vocalizes (not the labeled one) get incorrect per-token labels
 - bambird has no confidence scores — it's hard clustering, so borderline events are either fully in or fully out
 - No supervision signal from silent/background tokens beyond "this is not a vocalization"
@@ -107,7 +107,7 @@ Loss weights `α, β, γ` are hyperparameters. Starting point: `α=1.0, β=0.1, 
 | Data | BirdSet HSN train (with `detected_events`) + ConvNeXT pseudo-labels (pre-computed). Val on test_5s |
 | Compute | 1x RTX 6000 (24GB). Three heads add minimal VRAM over single-head. SSL masking reduces compute (skip masked tokens in backbone) |
 | Dependencies | ssamba_hf, pytorch_lightning, torchaudio, soundfile. ConvNeXT checkpoint from Murilo's exp 001 |
-| Code | Fork from exp 007 (SED baseline), add SSL and clip heads |
+| Code | Fork from token-level SED experiment, add SSL and clip heads |
 | Pre-compute | bambird events (CPU job), ConvNeXT inference (GPU job, ~8 min on HSN per Murilo's results) |
 
 ### Procedure
@@ -115,7 +115,7 @@ Loss weights `α, β, γ` are hyperparameters. Starting point: `α=1.0, β=0.1, 
 1. Pre-compute ConvNeXT pseudo-labels: run Murilo's ConvNeXT over all HSN train recordings in 5s sliding windows, save per-window species predictions as parquet
 2. Pre-compute bambird events (if not using BirdSet's `detected_events` directly): run bambird on all train recordings, save event timestamps
 3. Build intersection: combine bambird temporal events + ConvNeXT predictions into per-token soft labels, cache alongside mel spectrograms
-4. Implement multi-head architecture: SED head (from exp 007) + SSL head (masked token prediction) + clip head (pooled weak supervision)
+4. Implement multi-head architecture: SED head (from token-level SED experiment) + SSL head (masked token prediction) + clip head (pooled weak supervision)
 5. Implement multi-task loss with configurable weights
 6. Fast-dev-run: verify all three losses are finite, shapes correct, no OOM
 7. Ablation: train with each signal individually, then combined, compare convergence and final metrics
@@ -144,14 +144,14 @@ Loss weights `α, β, γ` are hyperparameters. Starting point: `α=1.0, β=0.1, 
 | Experiment | cmAP | Description |
 |------------|------|-------------|
 | 006 (clip-level, 30s) | ~0.08 | Recording-level labels, no negatives |
-| 007 (SED, bambird) | TBD | Per-token labels from bambird only |
+| Token-level SED (bambird) | TBD | Per-token labels from bambird only |
 | ConvNeXT teacher | 0.48 | Upper bound from pre-trained model |
 | ViT supervised | 0.164 | From-scratch supervised baseline |
 
 ### Success Criteria
 
-- **Confirm if**: val/cmAP > 0.25 (exceeding ViT-from-scratch, closing gap to ConvNeXT) AND converges faster than exp 007 (reaches 0.10 cmAP in fewer epochs)
-- **Reject if**: val/cmAP < 0.15 or no improvement over exp 007 alone, indicating that multi-signal complexity doesn't justify the additional engineering
+- **Confirm if**: val/cmAP > 0.25 (exceeding ViT-from-scratch, closing gap to ConvNeXT) AND converges faster than token-level SED (reaches 0.10 cmAP in fewer epochs)
+- **Reject if**: val/cmAP < 0.15 or no improvement over token-level SED alone, indicating that multi-signal complexity doesn't justify the additional engineering
 
 ## Limitations
 
@@ -159,5 +159,5 @@ Loss weights `α, β, γ` are hyperparameters. Starting point: `α=1.0, β=0.1, 
 - **Loss weight sensitivity**: Three-way multi-task learning is notoriously sensitive to loss weights. May require significant tuning of `α, β, γ`.
 - **SSL masking + SED interaction**: Masking tokens for SSL removes them from SED supervision. Need to ensure masked tokens don't corrupt SED gradients (detach or separate forward passes).
 - **Pre-compute cost**: Requires running both bambird and ConvNeXT over all training audio. For BirdCLEF competition (potentially 10k+ recordings), this adds pipeline complexity.
-- **Depends on exp 007**: This experiment builds on exp 007's SED implementation. If 007 reveals fundamental issues with token-level SED on SSAMBA, this experiment may need redesign.
+- **Depends on token-level SED**: This experiment builds on the token-level SED implementation. If that experiment reveals fundamental issues with token-level SED on SSAMBA, this experiment may need redesign.
 - **Ablation cost**: Testing all signal combinations (7 configurations) multiplies GPU time. May need to prioritize key comparisons.
