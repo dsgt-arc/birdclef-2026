@@ -1,6 +1,6 @@
 # Proposal: Attention-Pooled Sound Event Detection
 
-**Status**: proposed
+**Status**: in-progress
 **Created**: 2026-02-11
 **Author**: Anthony
 
