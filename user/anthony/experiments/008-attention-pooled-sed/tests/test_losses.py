@@ -115,3 +115,49 @@ class TestFocalBCELossMasked:
 
         loss = loss_fn(logits, targets, mask=mask)
         assert loss.isfinite()
+
+
+class TestFocalBCEAutocast:
+    """Test that FocalBCELoss works under bf16 autocast (training precision)."""
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+    def test_from_logits_under_autocast(self):
+        """from_logits=True uses binary_cross_entropy_with_logits which is autocast-safe."""
+        loss_fn = FocalBCELoss(gamma=2.0, from_logits=True).cuda()
+        logits = torch.randn(4, 21, device="cuda")
+        targets = torch.zeros(4, 21, device="cuda")
+        targets[:, 0] = 1.0
+
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            loss = loss_fn(logits, targets)
+
+        assert loss.isfinite()
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+    def test_from_probs_under_autocast(self):
+        """from_logits=False uses binary_cross_entropy which needs autocast disabled."""
+        loss_fn = FocalBCELoss(gamma=2.0, from_logits=False).cuda()
+        probs = torch.sigmoid(torch.randn(4, 21, device="cuda"))
+        targets = torch.zeros(4, 21, device="cuda")
+        targets[:, 0] = 1.0
+
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            loss = loss_fn(probs, targets)
+
+        assert loss.isfinite()
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+    def test_masked_sed_loss_under_autocast(self):
+        """Token-level masked SED loss under autocast."""
+        loss_fn = FocalBCELoss(gamma=2.0, from_logits=True).cuda()
+        B, T, C = 2, 1000, 21
+        logits = torch.randn(B, T, C, device="cuda")
+        targets = torch.zeros(B, T, C, device="cuda")
+        targets[:, 100:200, 0] = 1.0
+        mask = torch.ones(B, T, dtype=torch.bool, device="cuda")
+        mask[:, 500:] = False
+
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            loss = loss_fn(logits, targets, mask=mask)
+
+        assert loss.isfinite()

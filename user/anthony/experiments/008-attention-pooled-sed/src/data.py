@@ -199,18 +199,13 @@ class BirdSetStreamingDataset(Dataset):
 
         # Build clip-level labels
         clip_labels = torch.zeros(self.num_classes, dtype=torch.float32)
-        # BirdSet uses ebird_code_multilabel: a dict mapping species index to 1
+        # BirdSet ebird_code_multilabel is a list of class indices, e.g. [2, 4, 6]
         ebird_labels = sample.get("ebird_code_multilabel")
         if ebird_labels is not None:
-            if isinstance(ebird_labels, dict):
-                for k, v in ebird_labels.items():
-                    li = int(k)
-                    if 0 <= li < self.num_classes:
-                        clip_labels[li] = float(v)
-            elif isinstance(ebird_labels, (list, np.ndarray)):
-                for li, v in enumerate(ebird_labels):
-                    if 0 <= li < self.num_classes:
-                        clip_labels[li] = float(v)
+            for idx in ebird_labels:
+                li = int(idx)
+                if 0 <= li < self.num_classes:
+                    clip_labels[li] = 1.0
 
         # Build per-token labels (train only)
         if self.is_train:

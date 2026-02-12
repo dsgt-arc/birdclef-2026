@@ -86,7 +86,7 @@ class GPUUtilizationMonitor(pl.Callback):
             device = pl_module.device
             mem_used = torch.cuda.memory_allocated(device) / 1e9
             mem_reserved = torch.cuda.memory_reserved(device) / 1e9
-            mem_total = torch.cuda.get_device_properties(device).total_mem / 1e9
+            mem_total = torch.cuda.get_device_properties(device).total_memory / 1e9
             mem_pct = 100.0 * mem_used / mem_total if mem_total > 0 else 0.0
 
             pl_module.log("gpu/memory_used_gb", mem_used, on_step=True, on_epoch=False)

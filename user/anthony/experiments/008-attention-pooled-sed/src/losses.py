@@ -37,8 +37,11 @@ class FocalBCELoss(nn.Module):
             bce = F.binary_cross_entropy_with_logits(input, target, reduction="none")
             p = torch.sigmoid(input)
         else:
-            p = input.clamp(1e-7, 1 - 1e-7)
-            bce = F.binary_cross_entropy(p, target, reduction="none")
+            # Compute BCE manually — F.binary_cross_entropy is not autocast-safe
+            # and has strict CUDA assertions on target values.
+            p = input.float().clamp(1e-7, 1 - 1e-7)
+            target = target.float()
+            bce = -(target * torch.log(p) + (1 - target) * torch.log(1 - p))
 
         if self.gamma > 0:
             pt = torch.where(target > 0.5, p, 1 - p)
