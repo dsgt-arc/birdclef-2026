@@ -26,4 +26,5 @@ uv run --project $repo_dir/user/anthony python train.py \
     --config config-framelevel-128x1.yaml \
     --cache-dir $cache_dir \
     --pretrained-ckpt $ckpt \
+    --run-name framelevel-128x1 \
     ${CKPT_PATH:+--ckpt-path $CKPT_PATH}

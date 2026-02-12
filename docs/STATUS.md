@@ -8,20 +8,19 @@ Foundation models like BEATs/AudioMAE learn superior bioacoustic representations
 
 ## Current State
 
-**Phase**: SSAMBA Backbone Validation
+**Phase**: SSAMBA Backbone Validation — Pre-training Confirmed
 
-The project has pivoted from transformer distillation (exps 001-003) to Mamba-based audio models (exps 004-006). The SSAMBA architecture has been ported to HuggingFace format with rectangular patch support, but **training results are poor** — 0.08 cmAP on BirdSet HSN vs. ConvNeXT's 0.48. Before pursuing more sophisticated approaches (SED, multi-signal, prompted detection), we need to diagnose why the backbone underperforms.
+The project has pivoted from transformer distillation (exps 001-003) to Mamba-based audio models (exps 004-007). Experiment 007 confirmed that **AudioSet pre-training is the dominant factor**: pre-trained SSAMBA Tiny achieves 0.18 cmAP, doubling the from-scratch baseline (0.086). However, a large gap remains to ConvNeXt (0.48) and SOTA (0.55).
 
 ### Honest Assessment
 
-The gap between SSAMBA (0.08) and ConvNeXT (0.48) is too large to attribute to any single factor. Possible causes include:
+Pre-training closed the gap from 0.086 to 0.18 cmAP, confirming the architecture can learn when given good initialization. The remaining gap to competitive models (~0.47-0.55) likely comes from:
 
-- **No pre-training**: SSAMBA is trained from scratch; ConvNeXT uses ImageNet pre-training. This is likely the dominant factor.
-- **Architecture suitability**: Mamba may not be the right inductive bias for audio classification. The sequential scan assumption may not capture the 2D structure of spectrograms as well as convolutions or attention.
-- **Training dynamics**: SSAMBA Tiny (7.4M params, 192-dim, 24 layers) may have poor optimization landscape for this task. Learning rate, warmup, and batch size haven't been systematically tuned.
-- **Data pipeline issues**: Exp 006 fixed the no-negatives problem (30s windows with padding), but there may be other data-side issues.
+- **Model capacity**: SSAMBA Tiny (7M params) vs ConvNeXt/ViT-Base (85M+). The model memorizes training data (train cmAP >0.95) but can't generalize.
+- **Pre-training domain**: AudioSet is generic audio; bird-specific pre-training (Bird-MAE) achieves 0.55 cmAP.
+- **Architecture efficiency**: Mamba's selective scan is slower per-parameter than attention/convolution on GPU, limiting the model size we can practically train.
 
-**The highest-priority work is diagnostic**: understand *why* SSAMBA fails before building more on top of it. Concepts like prompted SED and weak supervision are theoretically motivated but premature without a functional backbone.
+**Next priority**: determine whether scaling up (larger SSAMBA) or hybridizing (CNN frontend + Mamba backbone) can close the gap, or whether a different architecture is needed.
 
 ## Key Findings
 
@@ -35,6 +34,7 @@ The gap between SSAMBA (0.08) and ConvNeXT (0.48) is too large to attribute to a
 | ImageNet pretraining gives 3.0x lift (ConvNeXT) | [murilo/Exp 003](../user/murilo/experiments/003-model-training/results.md) | Pretraining critical for small datasets |
 | CNNs transfer better than ViTs to spectrograms | [murilo/Exp 003](../user/murilo/experiments/003-model-training/results.md) | Hierarchical conv features > patch tokenization for audio |
 | SSAMBA 30s windows: **0.08 cmAP** on HSN | Exp 006 | Far below baselines — backbone needs diagnosis |
+| SSAMBA pre-trained: **0.18 cmAP** on HSN | Exp 007 | Pre-training doubles performance; Mamba-only transfer ≈ full transfer |
 | SSAMBA forward pass ~28ms up to 3000 tokens | Exp 005 | Speed is not the bottleneck; learning is |
 | Pure PyTorch SSM too slow for >1000 tokens | Exp 004 | CUDA kernels (mamba-ssm) required |
 
@@ -47,12 +47,18 @@ The gap between SSAMBA (0.08) and ConvNeXT (0.48) is too large to attribute to a
 | anthony/003 | Model Distillation | Proposed | Distill BEATs → lightweight student |
 | anthony/004 | SSAMBA HF Port | Complete | SSAMBA ported to HuggingFace format |
 | anthony/005 | Token Context Shaping | Complete | Rectangular patches + ONNX benchmark |
-| anthony/006 | SSAMBA BirdSet HSN | **In Progress** | 0.08 cmAP — far below baselines |
-| anthony/007 | Token-Level SED | Proposed | Per-token supervision via detected_events |
-| anthony/008 | Multi-Signal SED | Proposed | ConvNeXT distillation + bambird + SSL |
+| anthony/006 | SSAMBA BirdSet HSN | Complete | 0.086 cmAP from scratch — far below baselines |
+| anthony/007 | Pre-trained SSAMBA Transfer | **Complete** | 0.179 cmAP (16x16), 0.172 cmAP (128x1) — pre-training confirmed |
 | murilo/001 | BirdSet Benchmark | Complete | ConvNeXT 0.48, EfficientNet 0.38 on HSN |
 | murilo/002 | Supervised ViT Baseline | Complete | 0.164 cmAP on HSN |
 | murilo/003 | [Model Training](../user/murilo/experiments/003-model-training/) | Complete | ConvNeXT-Tiny pretrained best (cmAP=0.180), 3x pretraining lift, CNNs > ViTs for spectrograms |
+
+### Proposed (not yet scheduled)
+
+| Dir | Name | Proposal | Key Idea |
+|-----|------|----------|----------|
+| anthony/XXX-token-level-sed | Token-Level SED | [proposal](../user/anthony/experiments/XXX-token-level-sed/proposal.md) | Per-token supervision via detected_events |
+| anthony/XXX-multi-signal-sed | Multi-Signal SED | [proposal](../user/anthony/experiments/XXX-multi-signal-sed/proposal.md) | ConvNeXT distillation + bambird + SSL |
 
 ## Concept Docs
 
@@ -66,16 +72,13 @@ Research ideas explored but not yet validated:
 | [Soundscape Domain Shift](concepts/soundscape-domain-shift.md) | XenoCanto → soundscape gap analysis | Fundamental challenge |
 | [Context Recovery](concepts/context-recovery.md) | Using temporal context for predictions | Addressed by 30s windows |
 
-**Critical gap**: All concept docs assume a working backbone. None address the question of whether SSAMBA is the right architecture.
+**Key insight from exp 007**: Pre-training is confirmed as the dominant factor. The backbone can learn — the question is now about capacity and generalization, not fundamental viability.
 
 ## Priority Stack
 
-1. **Diagnose SSAMBA failure** — Is it pre-training, architecture, optimization, or data? Run controlled comparisons:
-   - SSAMBA with pre-trained weights (if available) vs. from scratch
-   - Learning rate / warmup sweep on current setup
-   - Compare SSAMBA vs. a simple ConvNet of similar size trained from scratch on the same data
-2. **Decide go/no-go on SSAMBA** — If a similarly-sized ConvNet from scratch beats SSAMBA, the architecture may not be suitable and the Mamba bet needs reassessment
-3. **Only then**: pursue exps 007/008 and the concept ideas, on a backbone that's shown it can learn
+1. **Close the capacity gap** — SSAMBA Tiny (7M params) hits 0.18 cmAP with severe overfitting. Investigate whether larger SSAMBA variants or hybrid CNN+Mamba architectures can improve generalization.
+2. **Explore CNN frontend** — Replace raw mel patches with a learned CNN tokenizer (see concepts/cnn-mamba-hybrid-frontend.md) to give Mamba better input features.
+3. **Pursue downstream tasks** — With a validated backbone, revisit token-level SED and multi-signal approaches on a foundation that can learn.
 
 ## Quick Links
 

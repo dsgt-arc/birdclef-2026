@@ -26,4 +26,5 @@ uv run --project $repo_dir/user/anthony python train.py \
     --config config-default-16x16.yaml \
     --cache-dir $cache_dir \
     --pretrained-ckpt $ckpt \
+    --run-name default-16x16 \
     ${CKPT_PATH:+--ckpt-path $CKPT_PATH}

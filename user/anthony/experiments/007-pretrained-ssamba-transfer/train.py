@@ -35,6 +35,7 @@ def main():
     parser.add_argument("--pretrained-ckpt", type=str, default=None, help="Path to SSAMBA pre-trained checkpoint")
     parser.add_argument("--freeze-epochs", type=int, default=None, help="Epochs to freeze backbone")
     parser.add_argument("--overfit-batches", type=int, default=0, help="Overfit on N batches (0=disabled)")
+    parser.add_argument("--run-name", type=str, default="ssamba-hsn-pretrained", help="Run name for logs/checkpoints")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -153,7 +154,7 @@ def main():
         checkpoint_callback = None
 
     # Logger
-    tb_logger = TensorBoardLogger(save_dir="logs", name="ssamba-hsn-pretrained")
+    tb_logger = TensorBoardLogger(save_dir="logs", name=args.run_name)
 
     # Trainer
     max_epochs = train_cfg["max_epochs"]
