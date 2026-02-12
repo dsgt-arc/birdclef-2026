@@ -49,16 +49,10 @@ Pre-training closed the gap from 0.086 to 0.18 cmAP, confirming the architecture
 | anthony/005 | Token Context Shaping | Complete | Rectangular patches + ONNX benchmark |
 | anthony/006 | SSAMBA BirdSet HSN | Complete | 0.086 cmAP from scratch — far below baselines |
 | anthony/007 | Pre-trained SSAMBA Transfer | **Complete** | 0.179 cmAP (16x16), 0.172 cmAP (128x1) — pre-training confirmed |
+| anthony/008 | Attention-Pooled SED | **Proposed** | SED attention pooling + frequency attention tokenizer + nnAudio |
 | murilo/001 | BirdSet Benchmark | Complete | ConvNeXT 0.48, EfficientNet 0.38 on HSN |
 | murilo/002 | Supervised ViT Baseline | Complete | 0.164 cmAP on HSN |
 | murilo/003 | [Model Training](../user/murilo/experiments/003-model-training/) | Complete | ConvNeXT-Tiny pretrained best (cmAP=0.180), 3x pretraining lift, CNNs > ViTs for spectrograms |
-
-### Proposed (not yet scheduled)
-
-| Dir | Name | Proposal | Key Idea |
-|-----|------|----------|----------|
-| anthony/XXX-token-level-sed | Token-Level SED | [proposal](../user/anthony/experiments/XXX-token-level-sed/proposal.md) | Per-token supervision via detected_events |
-| anthony/XXX-multi-signal-sed | Multi-Signal SED | [proposal](../user/anthony/experiments/XXX-multi-signal-sed/proposal.md) | ConvNeXT distillation + bambird + SSL |
 
 ## Concept Docs
 
