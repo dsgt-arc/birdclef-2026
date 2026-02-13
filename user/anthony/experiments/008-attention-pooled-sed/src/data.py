@@ -7,7 +7,10 @@ Training: sequential non-overlapping 10s chunks from full recordings
 Validation: 5s clips padded to 10s (clip-level labels only)
 """
 
+import json
 import logging
+from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import pytorch_lightning as pl
@@ -15,7 +18,7 @@ import soundfile as sf
 import torch
 import torchaudio
 from datasets import load_dataset
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,11 @@ def _load_audio_chunk(audio_path, target_sr, start_sample=0, num_samples=None):
     """
     info = sf.info(audio_path)
     source_sr = info.samplerate
+
+    # Log sample rates on first call to detect unnecessary resampling
+    if not hasattr(_load_audio_chunk, "_logged"):
+        logger.info(f"Audio source sample rate: {source_sr}, target: {target_sr}")
+        _load_audio_chunk._logged = True
 
     # Convert target-domain positions to source-domain
     src_start = int(start_sample * source_sr / target_sr)
@@ -134,6 +142,7 @@ class BirdSetStreamingDataset(Dataset):
         chunk_duration: float = 10.0,
         num_tokens: int = 1000,
         is_train: bool = True,
+        chunk_cache_dir: str | None = None,
     ):
         self.hf_dataset = hf_dataset
         self.num_classes = num_classes
@@ -143,25 +152,55 @@ class BirdSetStreamingDataset(Dataset):
         self.num_tokens = num_tokens
         self.hop_s = chunk_duration / num_tokens  # seconds per token
         self.is_train = is_train
+        self.chunk_cache_dir = Path(chunk_cache_dir) if chunk_cache_dir else None
 
-        # Build chunk index: list of (recording_idx, chunk_start_sample, chunk_end_sample, real_samples)
-        self.chunks = self._build_chunk_index()
+        # Build chunk index from audio manifest
+        manifest = self._load_or_build_manifest()
+        self.chunks = self._chunks_from_manifest(manifest)
         logger.info(f"{'Train' if is_train else 'Val'} dataset: {len(self.chunks)} chunks from {len(hf_dataset)} recordings")
 
-    def _build_chunk_index(self):
-        """Pre-index all chunks from all recordings."""
-        chunks = []
+    def _manifest_path(self):
+        """Cache path for audio manifest (reusable across chunking configs)."""
+        split = "train" if self.is_train else "val"
+        return self.chunk_cache_dir / f"manifest_{split}_{len(self.hf_dataset)}.json"
+
+    def _load_or_build_manifest(self):
+        """Load or build audio manifest: list of (rec_idx, path, native_frames, native_sr).
+
+        The manifest captures the slow I/O (HF deserialization + sf.info) and is
+        reusable across any sample_rate or chunk_duration.
+        """
+        if self.chunk_cache_dir:
+            path = self._manifest_path()
+            if path.exists():
+                logger.info(f"Loading audio manifest from cache: {path}")
+                with open(path) as f:
+                    return json.load(f)
+
+        logger.info(f"Building audio manifest for {len(self.hf_dataset)} recordings...")
+        manifest = []
         for rec_idx in range(len(self.hf_dataset)):
             sample = self.hf_dataset[rec_idx]
-            audio_info = sample["audio"]
+            audio_path = sample["audio"]["path"]
+            info = sf.info(audio_path)
+            manifest.append((rec_idx, audio_path, info.frames, info.samplerate))
+
+        if self.chunk_cache_dir:
+            path = self._manifest_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w") as f:
+                json.dump(manifest, f)
+            logger.info(f"Saved audio manifest to cache: {path}")
+
+        return manifest
+
+    def _chunks_from_manifest(self, manifest):
+        """Compute chunk index from manifest — pure arithmetic, instant."""
+        chunks = []
+        for rec_idx, _path, native_frames, native_sr in manifest:
+            total_samples = int(native_frames * self.sample_rate / native_sr)
 
             if self.is_train:
-                # Get duration from audio metadata
-                path = audio_info["path"]
-                info = sf.info(path)
-                total_samples = int(info.frames * self.sample_rate / info.samplerate)
-
-                # Sequential non-overlapping chunks
                 pos = 0
                 while pos < total_samples:
                     end = min(pos + self.chunk_samples, total_samples)
@@ -169,12 +208,8 @@ class BirdSetStreamingDataset(Dataset):
                     chunks.append((rec_idx, pos, end, real_samples))
                     pos += self.chunk_samples
             else:
-                # Validation: single chunk per clip (5s padded to 10s)
-                path = audio_info["path"]
-                info = sf.info(path)
-                total_samples = int(info.frames * self.sample_rate / info.samplerate)
                 real_samples = min(total_samples, self.chunk_samples)
-                chunks.append((rec_idx, 0, min(total_samples, self.chunk_samples), real_samples))
+                chunks.append((rec_idx, 0, real_samples, real_samples))
 
         return chunks
 
@@ -264,6 +299,31 @@ def _collate_fn(batch):
     return waveforms, clip_labels, token_labels, padding_mask
 
 
+class RecordingShuffleSampler(Sampler):
+    """Shuffle recording order but yield chunks within each recording sequentially.
+
+    This gives each DataLoader worker sequential file access (good for OS page cache
+    and network storage), while still shuffling across recordings each epoch.
+    """
+
+    def __init__(self, chunks):
+        self.chunks = chunks
+        # Group chunk indices by recording_idx
+        rec_to_indices = defaultdict(list)
+        for i, (rec_idx, *_) in enumerate(chunks):
+            rec_to_indices[rec_idx].append(i)
+        self.rec_groups = list(rec_to_indices.values())
+
+    def __iter__(self):
+        # Shuffle recording order each epoch, keep chunks sequential within
+        order = torch.randperm(len(self.rec_groups)).tolist()
+        for i in order:
+            yield from self.rec_groups[i]
+
+    def __len__(self):
+        return len(self.chunks)
+
+
 class BirdSetStreamingDataModule(pl.LightningDataModule):
     """Lightning DataModule for streaming BirdSet audio with SED labels."""
 
@@ -275,6 +335,7 @@ class BirdSetStreamingDataModule(pl.LightningDataModule):
         sample_rate: int = 32000,
         chunk_duration: float = 10.0,
         num_tokens: int = 1000,
+        chunk_cache_dir: str | None = None,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -286,6 +347,7 @@ class BirdSetStreamingDataModule(pl.LightningDataModule):
         self.chunk_duration = chunk_duration
         self.num_tokens = num_tokens
         self.num_classes = BIRDSET_NUM_CLASSES[dataset_name]
+        self.chunk_cache_dir = chunk_cache_dir
 
         self.train_dataset = None
         self.val_dataset = None
@@ -304,6 +366,7 @@ class BirdSetStreamingDataModule(pl.LightningDataModule):
                 chunk_duration=self.chunk_duration,
                 num_tokens=self.num_tokens,
                 is_train=True,
+                chunk_cache_dir=self.chunk_cache_dir,
             )
             self.val_dataset = BirdSetStreamingDataset(
                 hf_dataset=ds["test_5s"],
@@ -312,18 +375,20 @@ class BirdSetStreamingDataModule(pl.LightningDataModule):
                 chunk_duration=self.chunk_duration,
                 num_tokens=self.num_tokens,
                 is_train=False,
+                chunk_cache_dir=self.chunk_cache_dir,
             )
 
     def train_dataloader(self):
+        sampler = RecordingShuffleSampler(self.train_dataset.chunks)
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
-            shuffle=True,
+            sampler=sampler,
             num_workers=self.num_workers,
             collate_fn=_collate_fn,
             pin_memory=True,
             persistent_workers=self.num_workers > 0,
-            prefetch_factor=4 if self.num_workers > 0 else None,
+            prefetch_factor=8 if self.num_workers > 0 else None,
             drop_last=True,
         )
 
@@ -336,5 +401,5 @@ class BirdSetStreamingDataModule(pl.LightningDataModule):
             collate_fn=_collate_fn,
             pin_memory=True,
             persistent_workers=self.num_workers > 0,
-            prefetch_factor=4 if self.num_workers > 0 else None,
+            prefetch_factor=8 if self.num_workers > 0 else None,
         )

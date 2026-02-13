@@ -10,6 +10,7 @@ import argparse
 import logging
 
 import pytorch_lightning as pl
+import torch
 import yaml
 from nnAudio.features import MelSpectrogram
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
@@ -37,7 +38,14 @@ def main():
     parser.add_argument("--freeze-epochs", type=int, default=None, help="Epochs to freeze backbone")
     parser.add_argument("--overfit-batches", type=int, default=0, help="Overfit on N batches (0=disabled)")
     parser.add_argument("--run-name", type=str, default="sed-128x1", help="Run name for logs/checkpoints")
+    parser.add_argument("--auto-scale-batch", action="store_true", help="Use Lightning Tuner to find max batch size")
+    parser.add_argument("--profiler", type=str, default=None, choices=["simple", "advanced"], help="Lightning profiler")
+    parser.add_argument("--chunk-cache-dir", type=str, default=None, help="Directory to cache chunk index")
     args = parser.parse_args()
+
+    # GPU performance: TF32 matmul on Ampere+ and cuDNN autotuner for fixed input sizes
+    torch.set_float32_matmul_precision("medium")
+    torch.backends.cudnn.benchmark = True
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
@@ -73,6 +81,7 @@ def main():
         sample_rate=data_cfg["sample_rate"],
         chunk_duration=data_cfg.get("chunk_duration", 10.0),
         num_tokens=data_cfg["target_frames"],
+        chunk_cache_dir=args.chunk_cache_dir,
     )
     num_classes = dm.num_classes
 
@@ -193,7 +202,13 @@ def main():
         fast_dev_run=args.fast_dev_run,
         overfit_batches=args.overfit_batches,
         enable_progress_bar=True,
+        profiler=args.profiler,
     )
+
+    if args.auto_scale_batch:
+        tuner = pl.tuner.Tuner(trainer)
+        tuner.scale_batch_size(module, datamodule=dm, mode="power", steps_per_trial=3)
+        logger.info(f"Auto-scaled batch size: {dm.batch_size}")
 
     logger.info("Starting training...")
     trainer.fit(module, dm, ckpt_path=args.ckpt_path)

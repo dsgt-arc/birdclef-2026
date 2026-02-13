@@ -12,7 +12,7 @@ data:
   chunk_duration: 10.0     # 10s chunks (streaming)
   n_mels: 128
   target_frames: 1000      # 10s @ 100Hz
-  batch_size: 16
+  batch_size: 64
   num_workers: 8
   norm_mean: -4.268        # AudioSet normalization (verify with nnAudio output)
   norm_std: 4.569

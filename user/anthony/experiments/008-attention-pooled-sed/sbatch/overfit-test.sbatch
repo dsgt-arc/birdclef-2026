@@ -24,4 +24,5 @@ uv run --project $repo_dir/user/anthony python train.py \
     --pretrained-ckpt $ckpt \
     --overfit-batches 4 \
     --freeze-epochs 0 \
-    --num-workers 2
+    --num-workers 2 \
+    --chunk-cache-dir $scratch_dir/cache/008-chunk-index

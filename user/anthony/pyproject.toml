@@ -26,6 +26,7 @@ dependencies = [
     "tensorboard>=2.14",
     "safetensors>=0.4",
     "mamba-onnx>=0.1.0",
+    "pynvml>=11.5",
 ]
 
 [project.optional-dependencies]

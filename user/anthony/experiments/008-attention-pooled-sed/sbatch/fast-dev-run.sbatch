@@ -23,4 +23,5 @@ uv run --project $repo_dir/user/anthony python train.py \
     --config config-sed-128x1.yaml \
     --fast-dev-run \
     --num-workers 2 \
+    --chunk-cache-dir $scratch_dir/cache/008-chunk-index \
     --pretrained-ckpt $ckpt

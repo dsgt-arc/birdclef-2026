@@ -25,4 +25,5 @@ uv run --project $repo_dir/user/anthony python train.py \
     --config config-sed-128x1.yaml \
     --pretrained-ckpt $ckpt \
     --run-name sed-128x1 \
+    --chunk-cache-dir $scratch_dir/cache/008-chunk-index \
     ${CKPT_PATH:+--ckpt-path $CKPT_PATH}
