@@ -1,0 +1,32 @@
+model:
+  embed_dim: 192
+  depth: 24
+  img_size: [128, 1000]
+  patch_size: [128, 1]
+  mask_ratio: 0.78
+  mask_mode: span
+  mask_span_min: 5        # variable spans: Uniform[5, 15] tokens
+  mask_span_max: 15       # = 50ms to 150ms per span
+  grid_jitter: 5          # max 5 frames = 50ms temporal shift
+  normalize_targets: true # per-patch norm: predict shape, not loudness
+  loss_fn: mse            # mse or l1
+  decoder_depth: 2        # 1=linear (SimMIM), 2=MLP
+
+data:
+  soundscape_dir: ~/scratch/birdclef-2026/data/birdclef-2025/train_soundscapes/
+  sample_rate: 32000
+  chunk_duration: 10.0
+  n_mels: 128
+  target_frames: 1000
+  batch_size: 64
+  num_workers: 8
+  norm_mean: -4.268
+  norm_std: 4.569
+
+training:
+  max_epochs: 50
+  lr: 1.5e-4
+  weight_decay: 0.05
+  warmup_epochs: 5
+  precision: bf16-mixed
+  jitter_weight: 0.0      # block shuffle disabled (fights Mamba sequential scan)

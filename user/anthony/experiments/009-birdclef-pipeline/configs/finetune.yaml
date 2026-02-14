@@ -1,0 +1,32 @@
+model:
+  embed_dim: 192
+  depth: 24
+  img_size: [128, 1000]
+  patch_size: [128, 1]
+  drop_path_rate: 0.2
+  head_dropout: 0.3
+
+data:
+  audio_dir: ~/scratch/birdclef-2026/data/birdclef-2025/train_audio/
+  metadata_csv: ~/scratch/birdclef-2026/data/birdclef-2025/train.csv
+  sample_rate: 32000
+  chunk_duration: 10.0
+  n_mels: 128
+  target_frames: 1000
+  batch_size: 32
+  num_workers: 8
+  val_fraction: 0.1
+
+training:
+  max_epochs: 50
+  lr: 1.0e-4
+  weight_decay: 0.05
+  warmup_epochs: 5
+  precision: bf16-mixed
+  freeze_epochs: 5
+  pretrained_ckpt: null
+  gamma: 2.0
+
+callbacks:
+  early_stopping: { monitor: val/cmap, mode: max, patience: 15 }
+  model_checkpoint: { monitor: val/cmap, mode: max, save_top_k: 1 }

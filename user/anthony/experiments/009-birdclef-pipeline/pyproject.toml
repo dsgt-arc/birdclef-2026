@@ -1,0 +1,36 @@
+[project]
+name = "exp009-birdclef-pipeline"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "ssamba-hf",
+    "nnAudio>=0.3",
+    "torchmetrics>=1.0.0",
+    "pytorch-lightning>=2.0",
+    "torchaudio>=2.1",
+    "torch>=2.1",
+    "soundfile>=0.12",
+    "tensorboard>=2.14",
+    "pyyaml>=6.0",
+    "numpy>=1.24",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+birdclef-explore = "birdclef_009.cli.explore:main"
+birdclef-pretrain = "birdclef_009.cli.pretrain:main"
+birdclef-finetune = "birdclef_009.cli.finetune:main"
+birdclef-predict = "birdclef_009.cli.predict:main"
+
+[tool.uv.sources]
+ssamba-hf = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/birdclef_009"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

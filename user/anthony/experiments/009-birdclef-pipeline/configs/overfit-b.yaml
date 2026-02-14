@@ -1,0 +1,32 @@
+# Condition B: No normalization — same as A but normalize_targets=false
+# Tests whether gradient dynamics require per-patch normalization.
+model:
+  embed_dim: 192
+  depth: 24
+  img_size: [128, 1000]
+  patch_size: [128, 1]
+  mask_ratio: 0.78
+  mask_mode: span
+  mask_span_min: 5
+  mask_span_max: 15
+  grid_jitter: 0
+  normalize_targets: false   # <-- ablation: raw mel patch targets
+
+data:
+  soundscape_dir: ~/scratch/birdclef-2026/data/birdclef-2025/train_soundscapes/
+  sample_rate: 32000
+  chunk_duration: 10.0
+  n_mels: 128
+  target_frames: 1000
+  batch_size: 64
+  num_workers: 8
+  norm_mean: -4.268
+  norm_std: 4.569
+
+training:
+  max_epochs: 100
+  lr: 1.5e-4
+  weight_decay: 0.05
+  warmup_epochs: 5
+  precision: bf16-mixed
+  jitter_weight: 0.0

@@ -54,6 +54,7 @@ members = [
     "experiments/006-ssamba-birdset-hsn",
     "experiments/007-pretrained-ssamba-transfer",
     "experiments/008-attention-pooled-sed",
+    "experiments/009-birdclef-pipeline",
 ]
 
 # Use PyTorch cu121 index for CUDA 12.1 compatibility (matches PACE's cuda/12.1.1 module)
