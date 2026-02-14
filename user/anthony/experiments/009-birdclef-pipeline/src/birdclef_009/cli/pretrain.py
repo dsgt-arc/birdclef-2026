@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 
 import pytorch_lightning as pl
 import torch
@@ -22,7 +23,9 @@ def main():
     parser.add_argument("--config", type=str, required=True, help="Path to config YAML")
     parser.add_argument("--fast-dev-run", action="store_true", help="Run 1 batch for sanity check")
     parser.add_argument("--overfit-batches", type=int, default=0, help="Overfit on N batches (0=disabled)")
-    parser.add_argument("--ckpt-path", type=str, default=None, help="Resume from checkpoint")
+    parser.add_argument("--ckpt-path", type=str, default=None, help="Resume from checkpoint (use 'last' to auto-find last.ckpt)")
+    parser.add_argument("--ckpt-dir", type=str, default=None, help="Checkpoint directory (default: logs/pretrain/checkpoints)")
+    parser.add_argument("--pretrained", type=str, default=None, help="Path to pre-trained SSAMBA .pth checkpoint to initialize backbone")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -78,6 +81,28 @@ def main():
     total_params = sum(p.numel() for p in model.parameters())
     logger.info(f"Model parameters: {total_params:,}")
 
+    # Checkpoint and log directories (use --ckpt-dir or default)
+    ckpt_dir = args.ckpt_dir or "logs/pretrain/checkpoints"
+    log_dir = os.path.dirname(ckpt_dir)  # e.g. logs/pretrain-full
+
+    # Resolve --ckpt-path=last
+    ckpt_path = args.ckpt_path
+    resuming = False
+    if ckpt_path == "last":
+        last_ckpt = os.path.join(ckpt_dir, "last.ckpt")
+        if os.path.exists(last_ckpt):
+            ckpt_path = last_ckpt
+            resuming = True
+            logger.info(f"Resuming from {ckpt_path}")
+        else:
+            logger.info("No last.ckpt found, starting from scratch")
+            ckpt_path = None
+
+    # Load pre-trained backbone weights (skip if resuming from Lightning checkpoint)
+    if args.pretrained and not resuming:
+        from ..utils.pretrained import load_pretrained_backbone
+        load_pretrained_backbone(model, args.pretrained)
+
     # Build Lightning module
     lightning_module = PretrainLightningModule(
         model=model,
@@ -85,7 +110,7 @@ def main():
         weight_decay=train_cfg["weight_decay"],
         max_epochs=train_cfg["max_epochs"],
         warmup_epochs=train_cfg.get("warmup_epochs", 5),
-        jitter_weight=train_cfg.get("jitter_weight", 1.0),
+        jitter_weight=train_cfg.get("jitter_weight", 0.0),
     )
 
     # Build data module
@@ -102,14 +127,22 @@ def main():
         GPUUtilizationMonitor(log_every_n_steps=10),
         pl.callbacks.LearningRateMonitor(logging_interval="step"),
         pl.callbacks.ModelCheckpoint(
-            dirpath="logs/pretrain/checkpoints",
+            dirpath=ckpt_dir,
             filename="pretrain-{epoch:02d}-{train/loss:.4f}",
             save_top_k=3,
             monitor="train/loss_epoch",
             mode="min",
-            every_n_epochs=5,
+            every_n_epochs=1,
+            save_last=True,
         ),
     ]
+
+    # Fixed-version logger so resumes append to the same TensorBoard run
+    tb_logger = pl.loggers.TensorBoardLogger(
+        save_dir=log_dir,
+        name="lightning_logs",
+        version="run",
+    )
 
     # Trainer
     max_epochs = train_cfg["max_epochs"]
@@ -122,7 +155,8 @@ def main():
         accelerator="auto",
         devices=1,
         callbacks=callbacks,
-        default_root_dir="logs/pretrain",
+        logger=tb_logger,
+        default_root_dir=log_dir,
         log_every_n_steps=10,
         gradient_clip_val=1.0,
         fast_dev_run=args.fast_dev_run,
@@ -130,7 +164,7 @@ def main():
         enable_progress_bar=True,
     )
 
-    trainer.fit(lightning_module, data_module, ckpt_path=args.ckpt_path)
+    trainer.fit(lightning_module, data_module, ckpt_path=ckpt_path)
 
 
 if __name__ == "__main__":

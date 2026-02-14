@@ -40,12 +40,37 @@
 - **Condition D** (low-mask: mask=50%): Epoch 54, loss=0.444 — nearly identical to A, 78% masking is fine
 - Note: A vs B absolute values not comparable; B's lower loss doesn't mean better learning
 
-## Mini-grid (real data, 10 epochs each)
-- **A**: Baseline — variable spans [5,15], MSE, MLP decoder
-- **G**: L1 loss — same as A but loss_fn=l1
-- **H**: Linear decoder — same as A but decoder_depth=1 (SimMIM philosophy)
+## Mini-grid Results (Job 3953050, TIMED OUT at 2h — 3/10 epochs completed)
+- **A** (MSE+MLP): loss 0.767→0.456→0.371, monitor_mse=0.371, monitor_l1=0.450
+- **G** (L1+MLP): loss 0.664→0.511→0.446, monitor_mse=0.371, monitor_l1=0.446
+- **H** (MSE+Linear): loss 0.777→0.440→0.356, monitor_mse=**0.356**, monitor_l1=**0.439**
+- Throughput: ~28 samples/sec, GPU 100%, ~40 min/epoch (911 steps × batch 64)
+- **H (linear decoder) leads on both cross-metrics** — encoder absorbs complexity (SimMIM philosophy confirmed)
+- **A vs G tied** on cross-metrics after 3 epochs — too early to differentiate
 - Configs: `configs/minigrid-{a,g,h}.yaml`
-- Sbatch: `sbatch/pretrain-minigrid.sbatch` (array 0-2, 2h wall time)
+
+## Full Pretrain Runs (IN PROGRESS)
+
+### pretrain-full (Job 3957327) — from scratch
+- **Config**: L1 loss + linear decoder, random init
+- `configs/pretrain-full.yaml`, `sbatch/pretrain-full.sbatch`
+- 100 epochs, 24h wall time (~36 epochs/run), auto-resume via `--ckpt-path last`
+- Checkpoints: `logs/pretrain-full/checkpoints/`
+- TensorBoard: `logs/pretrain-full/lightning_logs/run/`
+
+### pretrain-warm (Job 3957368) — AudioSet backbone
+- **Config**: L1 loss + linear decoder, initialized from `ssamba_tiny_400.pth`
+- `configs/pretrain-warm.yaml`, `sbatch/pretrain-warm.sbatch`
+- Mamba layers (96.9%) from AudioSet pretrained; patch_embed + pos_embed re-initialized (16x16→128x1)
+- Checkpoints: `logs/pretrain-warm/checkpoints/`
+- TensorBoard: `logs/pretrain-warm/lightning_logs/run/`
+
+### Resume infrastructure
+- CLI: `--ckpt-path last` auto-finds `last.ckpt`, `--ckpt-dir` sets checkpoint location
+- `--pretrained` skipped on resume (Lightning checkpoint restores full state)
+- `save_last=True` + `every_n_epochs=1` — at most 1 epoch lost on timeout
+- Fixed TensorBoard version (`version="run"`) for continuous metrics across restarts
+- Resubmit same sbatch on timeout to continue
 
 ## Prior Overfit Results
 - **Job 3952833**: Random masking + JiTTER. Loss 0.559→0.036 (epoch 154). JiTTER works mechanically but likely hurts representations.
