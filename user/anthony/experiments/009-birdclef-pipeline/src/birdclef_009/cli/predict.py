@@ -11,7 +11,7 @@ from ssamba_hf.config import SSAMBAConfig
 from ..data.finetune import build_species_list
 from ..inference.predict import predict_directory
 from ..inference.submission import build_submission
-from ..models.finetune import SSAMBASEDClassifier
+from ..models.finetune import SSAMBAClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +58,12 @@ def main():
         depth=model_cfg["depth"],
     )
 
-    model = SSAMBASEDClassifier(
+    model = SSAMBAClassifier(
         config=config,
         num_classes=num_classes,
         mel_spec_layer=mel_spec,
         target_frames=data_cfg["target_frames"],
+        head_dropout=model_cfg.get("head_dropout", 0.3),
     )
 
     # Load trained weights from Lightning checkpoint
