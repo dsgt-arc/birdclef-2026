@@ -51,17 +51,24 @@
 
 ## Full Pretrain Runs (IN PROGRESS)
 
-### pretrain-full (Job 3957327) — from scratch
+### pretrain-full — from scratch
 - **Config**: L1 loss + linear decoder, random init
 - `configs/pretrain-full.yaml`, `sbatch/pretrain-full.sbatch`
-- 100 epochs, 24h wall time (~36 epochs/run), auto-resume via `--ckpt-path last`
+- 100 epochs, 24h wall time (~35 epochs/run), auto-resume via `--ckpt-path last`
+- Jobs: 3957327 (epochs 0–34) → 3973084 (continuation, epochs 35+)
 - Checkpoints: `logs/pretrain-full/checkpoints/`
 - TensorBoard: `logs/pretrain-full/lightning_logs/run/`
+- **Epoch 34 metrics**: loss=0.411, monitor_MSE=0.324, monitor_L1=0.411
+- Curve shape: steep drop epochs 0–10 (0.67→0.45), then gradual (0.45→0.41 by epoch 34)
+- Still decreasing — no plateau, worth continuing to 100
+- Plot: `artifacts/plots/pretrain_curves.png` (via `scripts/plot_pretrain.py`)
 
-### pretrain-warm (Job 3957368) — AudioSet backbone
+### pretrain-warm — AudioSet backbone
 - **Config**: L1 loss + linear decoder, initialized from `ssamba_tiny_400.pth`
 - `configs/pretrain-warm.yaml`, `sbatch/pretrain-warm.sbatch`
 - Mamba layers (96.9%) from AudioSet pretrained; patch_embed + pos_embed re-initialized (16x16→128x1)
+- Original job 3957368 FAILED (28s) — `UnboundLocalError: resuming` unbound, now fixed
+- **Resubmitted as Job 3972957** — running
 - Checkpoints: `logs/pretrain-warm/checkpoints/`
 - TensorBoard: `logs/pretrain-warm/lightning_logs/run/`
 
@@ -86,11 +93,29 @@
 - Pretrain model: 7.1M params (backbone + mask_embed + gpredlayer)
 - Finetune model: 7.0M params (head: Dropout(0.3) → Linear(192, 206))
 
+## Kaggle Submission Pipeline (WORKING)
+- ONNX export: `scripts/export_onnx.py` — `TokenLogitsWrapper` wraps backbone+head, outputs `(B, T, C)` per-token logits
+- Inference: `scripts/kaggle_inference.py` — librosa mel, ONNX Runtime + mamba-onnx custom ops, windowed pooling
+- Deps: `scripts/build_deps.sh` — cp312 wheels, `manylinux_2_28` + `manylinux_2_17` platforms
+- Upload: `scripts/upload_kaggle.py` — creates/versions Kaggle datasets (detects "already in use" in stdout)
+- Kernel: `kaggle_kernel/submission.py` + `kernel-metadata.json`
+- **Kernel v6 completed** (13s total, 1.5s ONNX session init) — pipeline end-to-end verified
+- Submission to BirdCLEF 2025 pending scoring (epoch 1 checkpoint, cmAP ~0.014 — pipeline test only)
+- To re-submit with better model: re-export ONNX → upload weights → push kernel → submit
+
+## Finetune Runs
+- **Job 3960497**: AudioSet backbone + BirdCLEF finetune, epoch 1 best (cmAP 0.0135)
+- **Finetune config updated**: added SpecAugment (freq_mask=20, time_mask=50, 2+2 masks)
+- **Finetune sbatch updated**: uses `--pretrained-ckpt` for AudioSet backbone init
+- Need better pretrained checkpoint or longer finetune to improve cmAP
+
 ## Key Files
 - Model: `src/birdclef_009/models/pretrain.py` (SSAMBAPretrainModel — MPG)
 - Model: `src/birdclef_009/models/finetune.py` (SSAMBAClassifier)
 - Training: `src/birdclef_009/training/pretrain.py` (PretrainLightningModule — cross-metrics + viz)
 - Training: `src/birdclef_009/training/finetune.py` (FinetuneLightningModule)
 - CLI: `src/birdclef_009/cli/pretrain.py`, `cli/finetune.py`
+- ONNX: `scripts/export_onnx.py`, `scripts/kaggle_inference.py`
+- Upload: `scripts/upload_kaggle.py`, `scripts/build_deps.sh`
 - Tests: 51 tests (job 3953043 pending)
 - Reference: `docs/references/deep-research/2026-02-14-frame-level-ssl-pretraining.md`
