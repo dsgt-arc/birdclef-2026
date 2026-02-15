@@ -1,83 +1,103 @@
 # Kaggle Package Build Command
 
-Build the project package and/or dependencies for Kaggle.
+Build artifacts for Kaggle submission: dependency wheels, ONNX model export, and weight staging.
 
 ## Arguments
-- `$ARGUMENTS` - Required: "package", "deps", or "all"
-  - `package` - Build just the project wheel (fast)
-  - `deps` - Build all dependency wheels (slow, rarely needed)
-  - `all` - Build both
+- `$ARGUMENTS` - Required: "deps", "export", or "all"
+  - `deps` - Download dependency wheels for offline Kaggle install
+  - `export` - Export fine-tuned model to ONNX (requires checkpoint)
+  - `all` - Build deps + export + stage everything
+
+## Paths
+
+```
+EXP_DIR=user/anthony/experiments/009-birdclef-pipeline
+```
 
 ## Instructions
 
-### Building the Package (frequent)
+### Building Dependencies (`deps`)
 
-1. **Run the package build script**:
-   ```bash
-   ./scripts/build-kaggle-package.sh
-   ```
-
-   This will:
-   - Build the project wheel
-   - Copy to `kaggle/datasets/<project>-package/`
-
-2. **Upload to Kaggle** (run in background to avoid context exhaustion):
-   ```bash
-   kaggle datasets version -p kaggle/datasets/<project>-package/ -m "Update to <version>"
-   ```
-   **Note**: Run this in a background task or subagent—the upload generates verbose output that can overwhelm context.
-
-### Building Dependencies (infrequent)
-
-Only needed when `pyproject.toml` dependencies change.
+Downloads manylinux wheels for Kaggle's Python 3.12 + x86_64 environment.
 
 1. **Run the deps build script**:
    ```bash
-   ./scripts/build-kaggle-deps.sh
+   cd $EXP_DIR && bash scripts/build_deps.sh
    ```
 
-   This will:
-   - Compile requirements (excluding torch, which Kaggle provides)
-   - Download all dependency wheels
-   - Copy to `kaggle/datasets/<project>-deps/`
+   This downloads to `artifacts/dist/dependencies/`:
+   - onnxruntime, numpy, pandas, soundfile, librosa wheels
+   - mamba-onnx pre-built wheel from GitHub releases
+   - requirements.txt
 
-2. **Upload to Kaggle** (run in background to avoid context exhaustion):
-
-   First time:
+2. **Verify**:
    ```bash
-   kaggle datasets create -p kaggle/datasets/<project>-deps/
+   ls -lh $EXP_DIR/artifacts/dist/dependencies/
    ```
 
-   Or update:
+### Exporting Model (`export`)
+
+Exports the fine-tuned SSAMBAClassifier to ONNX with mamba-onnx custom ops.
+
+1. **Find the best checkpoint**:
    ```bash
-   kaggle datasets version -p kaggle/datasets/<project>-deps/ -m "Update to <version>"
+   ls -lt $EXP_DIR/logs/finetune/checkpoints/*.ckpt | head -3
    ```
 
-   **Note**: Run these in a background task or subagent—large uploads generate verbose output that can overwhelm context.
+2. **Submit ONNX export job** (needs GPU for loading PyTorch checkpoint):
+   ```bash
+   cd $EXP_DIR && sbatch sbatch/export-onnx.sbatch [checkpoint_path]
+   ```
+   If no checkpoint path given, it auto-selects the most recent one.
 
-## Dataset Structure
+   Or run directly if on a GPU node:
+   ```bash
+   cd $EXP_DIR && python scripts/export_onnx.py \
+       --checkpoint logs/finetune/checkpoints/best.ckpt \
+       --config configs/finetune.yaml \
+       --metadata-csv ~/scratch/birdclef-2026/data/birdclef-2025/train.csv \
+       --output-dir artifacts/weights/
+   ```
+
+3. **Verify outputs**:
+   ```bash
+   ls -lh $EXP_DIR/artifacts/weights/
+   ```
+   Should contain: `ssamba_classifier.onnx`, `species_list.json`, `mel_config.json`
+
+### Building All (`all`)
+
+1. Run deps build
+2. Run ONNX export (via sbatch or directly)
+3. Run upload dry-run to verify:
+   ```bash
+   cd $EXP_DIR && python scripts/upload_kaggle.py --dry-run
+   ```
+
+## Artifact Structure
 
 ```
-kaggle/datasets/
-├── <project>-package/        # Package only (updates frequently)
-│   ├── <project>-*.whl
-│   └── dataset-metadata.json
-└── <project>-deps/           # Dependencies (rarely changes)
-    ├── pip-packages/
-    │   ├── *.whl
-    │   └── ...
-    ├── requirements.txt
-    └── dataset-metadata.json
+009-birdclef-pipeline/artifacts/
+├── dist/
+│   └── dependencies/          # Offline wheel files
+│       ├── onnxruntime-*.whl
+│       ├── mamba_onnx-*.whl
+│       ├── librosa-*.whl
+│       ├── ...
+│       └── requirements.txt
+└── weights/                   # Model artifacts
+    ├── ssamba_classifier.onnx
+    ├── species_list.json
+    └── mel_config.json
 ```
 
 ## Report
 
-- Package wheel size
-- Number of dependency wheels (if building deps)
-- Upload status
+- ONNX model size (MB)
+- Number of dependency wheels and total size
+- Species count from species_list.json
 
 ## Notes
-- PyTorch/CUDA excluded (Kaggle provides them)
-- Targets Linux x86_64 Python 3.12
-- Version is based on timestamp + git commit hash
-- Experiments must list both datasets in kernel-metadata.json
+- PyTorch is NOT needed on Kaggle — mel via librosa, backbone via ONNX Runtime, head included in ONNX
+- Targets Linux x86_64 Python 3.12 (manylinux_2_28 + manylinux_2_17)
+- mamba-onnx provides AVX2 CPU kernels for Mamba selective scan

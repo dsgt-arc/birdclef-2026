@@ -26,6 +26,11 @@ training:
   freeze_epochs: 5
   pretrained_ckpt: null
   gamma: 2.0
+  augmentation:
+    freq_mask_param: 20
+    time_mask_param: 50
+    num_freq_masks: 2
+    num_time_masks: 2
 
 callbacks:
   early_stopping: { monitor: val/cmap, mode: max, patience: 15 }

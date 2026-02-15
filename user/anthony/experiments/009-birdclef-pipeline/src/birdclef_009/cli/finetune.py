@@ -101,6 +101,7 @@ def main():
         warmup_epochs=train_cfg.get("warmup_epochs", 5),
         freeze_epochs=freeze_epochs,
         gamma=train_cfg.get("gamma", 2.0),
+        augmentation=train_cfg.get("augmentation"),
     )
 
     # Build data module

@@ -17,5 +17,12 @@ cd $repo_dir/user/anthony/experiments/009-birdclef-pipeline
 
 module load cuda/12.1.1
 
+pretrained_ckpt=$scratch_dir/checkpoints/ssamba/ssamba_tiny_400.pth
+
+echo "=== Fine-tune: AudioSet backbone + SpecAugment ==="
+echo "Config: configs/finetune.yaml"
+echo "Pre-trained: $pretrained_ckpt"
+
 uv run --project $repo_dir/user/anthony birdclef-finetune \
-    --config configs/finetune.yaml
+    --config configs/finetune.yaml \
+    --pretrained-ckpt $pretrained_ckpt

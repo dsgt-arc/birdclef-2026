@@ -1,20 +1,29 @@
 # Kaggle Kernel Status Command
 
-Check the status of a Kaggle kernel.
+Check the status of the SSAMBA inference kernel on Kaggle.
 
 ## Arguments
-- `$ARGUMENTS` - Experiment ID (e.g., `exp002_linear_dino`)
+- `$ARGUMENTS` - Optional: kernel slug override. Defaults to reading from kernel-metadata.json.
+
+## Paths
+
+```
+EXP_DIR=user/anthony/experiments/009-birdclef-pipeline
+KERNEL_DIR=$EXP_DIR/kaggle_kernel
+```
 
 ## Instructions
 
 1. **Extract the kernel ID** from `kernel-metadata.json`:
    ```bash
-   jq -r '.id' kaggle/experiments/$ARGUMENTS/kernel-metadata.json
+   KERNEL_ID=$(jq -r '.id' $KERNEL_DIR/kernel-metadata.json)
+   echo "Kernel: $KERNEL_ID"
    ```
+   If `$ARGUMENTS` is provided, use that as the kernel ID instead.
 
 2. **Check kernel status**:
    ```bash
-   kaggle kernels status <kernel_id>
+   kaggle kernels status $KERNEL_ID
    ```
 
 3. **Report based on status**:
@@ -23,13 +32,13 @@ Check the status of a Kaggle kernel.
    - **RUNNING**: Kernel is currently executing
    - **COMPLETE**: Download output and report runtime
      ```bash
-     kaggle kernels output <kernel_id> -p /tmp/kaggle-output/
+     kaggle kernels output $KERNEL_ID -p /tmp/kaggle-output/
      ls -la /tmp/kaggle-output/
      ```
    - **ERROR**: Download and display logs
      ```bash
-     kaggle kernels output <kernel_id> -p /tmp/kaggle-output/
-     cat /tmp/kaggle-output/*.log
+     kaggle kernels output $KERNEL_ID -p /tmp/kaggle-output/
+     cat /tmp/kaggle-output/*.log | tail -50
      ```
 
 4. **Show summary** including:
