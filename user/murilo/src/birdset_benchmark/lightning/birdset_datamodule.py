@@ -1,12 +1,14 @@
 """PyTorch Lightning DataModule for BirdSet datasets.
 
-Supports two data-loading modes controlled by ``cache_mel_specs``:
+Supports three data-loading modes controlled by ``cache_mel_specs`` and
+``waveform_only``:
 
-* **False (default)** — mel spectrograms are computed on-the-fly inside
-  DataLoader workers, suitable for any dataset size.
-* **True** — all mel spectrograms are pre-computed during ``setup()`` and
-  cached in RAM, eliminating disk I/O during training.  Only use this when
-  the dataset fits comfortably in memory (e.g. HSN ≈ 4.4 GB for 17 k samples).
+* **waveform_only=True** — returns raw waveforms (batch, num_samples) for
+  GPU-side mel computation via nnAudio. Fastest option.
+* **cache_mel_specs=True** — pre-computes mel spectrograms on CPU during
+  ``setup()`` and caches in RAM. No disk I/O during training.
+* **Both False (default)** — mel spectrograms computed on-the-fly in
+  DataLoader workers on CPU.
 """
 
 import logging
@@ -59,6 +61,20 @@ class _CachedMelDataset(Dataset):
         return self.mel_specs[idx], self.labels[idx]
 
 
+class _WaveformDataset(Dataset):
+    """Returns raw waveforms for GPU-side mel computation (e.g., nnAudio)."""
+
+    def __init__(self, base_dataset: BirdSetDataset):
+        self.base_dataset = base_dataset
+
+    def __len__(self) -> int:
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        sample = self.base_dataset[idx]
+        return sample["audio"], sample["labels"]
+
+
 # ---------------------------------------------------------------------------
 # DataModule
 # ---------------------------------------------------------------------------
@@ -84,6 +100,9 @@ class BirdSetDataModule(pl.LightningDataModule):
         cache_mel_specs: Pre-compute all mel spectrograms and cache in RAM.
             Eliminates disk I/O during training but requires the full dataset
             to fit in memory. (default: False)
+        waveform_only: Return raw waveforms instead of mel spectrograms.
+            Use this when the model has a GPU mel front-end (e.g., nnAudio).
+            Takes precedence over cache_mel_specs. (default: False)
     """
 
     def __init__(
@@ -102,6 +121,7 @@ class BirdSetDataModule(pl.LightningDataModule):
         persistent_workers: bool = True,
         prefetch_factor: int = 4,
         cache_mel_specs: bool = False,
+        waveform_only: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -113,6 +133,7 @@ class BirdSetDataModule(pl.LightningDataModule):
         self.persistent_workers = persistent_workers
         self.prefetch_factor = prefetch_factor
         self.cache_mel_specs = cache_mel_specs
+        self.waveform_only = waveform_only
 
         # Audio preprocessing params
         self.target_sr = target_sr
@@ -168,7 +189,9 @@ class BirdSetDataModule(pl.LightningDataModule):
         return _CachedMelDataset(mel_tensor, label_tensor)
 
     def _wrap_dataset(self, base_dataset: BirdSetDataset, split_name: str) -> Dataset:
-        """Wrap a base dataset — cached or on-the-fly depending on config."""
+        """Wrap a base dataset — waveform, cached, or on-the-fly depending on config."""
+        if self.waveform_only:
+            return _WaveformDataset(base_dataset)
         if self.cache_mel_specs:
             return self._precompute_mels(base_dataset, split_name)
         return _MelDataset(base_dataset, self.mel_transform)
@@ -184,10 +207,15 @@ class BirdSetDataModule(pl.LightningDataModule):
             stage: 'fit', 'validate', 'test', or 'predict'
         """
         self.num_classes = get_num_classes(self.dataset_name)
-        mode = "cached" if self.cache_mel_specs else "on-the-fly"
+        if self.waveform_only:
+            mode = "waveform (GPU mel via nnAudio)"
+        elif self.cache_mel_specs:
+            mode = "cached"
+        else:
+            mode = "on-the-fly"
         logger.info(
             f"Loading {self.dataset_name} dataset with {self.num_classes} classes "
-            f"(mel mode: {mode})"
+            f"(mode: {mode})"
         )
 
         if stage == "fit" or stage is None:

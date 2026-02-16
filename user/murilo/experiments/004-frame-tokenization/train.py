@@ -132,6 +132,12 @@ def main():
         patch_size=patch_size,
         pretrained=pretrained,
         drop_rate=config["model"]["drop_rate"],
+        sample_rate=config["data"]["sample_rate"],
+        n_mels=config["data"]["n_mels"],
+        frame_shift_ms=config["data"]["frame_shift_ms"],
+        target_frames=config["data"]["target_frames"],
+        norm_mean=config["data"]["norm_mean"],
+        norm_std=config["data"]["norm_std"],
     )
 
     # Log patch info
@@ -168,7 +174,7 @@ def main():
         pin_memory=config["data"]["pin_memory"],
         persistent_workers=config["data"]["persistent_workers"],
         prefetch_factor=config["data"]["prefetch_factor"],
-        cache_mel_specs=config["data"].get("cache_mel_specs", False),
+        waveform_only=True,  # nnAudio computes mel on GPU inside model
     )
 
     # Setup callbacks

@@ -29,14 +29,20 @@
 
 ## 3. Next Steps — Integration
 
-- [ ] 3.1 Integrate `NNAudioMelSpectrogram` into the training pipeline
-  - Move mel computation from DataModule (CPU) to model forward pass (GPU)
-  - DataModule returns raw waveforms instead of pre-computed mel specs
-  - Eliminates CPU→GPU transfer of mel spectrograms
-- [ ] 3.2 Verify positional embeddings are correctly sized for each patch configuration
+- [x] 3.1 Integrate `NNAudioMelSpectrogram` into the training pipeline
+  - `FrameTokenizedViT` now always creates `NNAudioMelSpectrogram` internally (GPU mel is default)
+  - `train.py` passes mel params (sample_rate, n_mels, etc.) to model and sets `waveform_only=True` on DataModule
+  - DataModule returns raw waveforms via `_WaveformDataset`; model computes mel on GPU
+  - Removed `cache_mel_specs` from all config files (no longer needed)
+- [ ] 3.2 Add pytest tests for DataModule + nnAudio GPU integration
+  - Verify `_WaveformDataset` returns correct shapes (raw waveforms + labels)
+  - Verify `FrameTokenizedViT` end-to-end: waveform in → logits out
+  - Verify GPU utilization: mel computation happens on GPU (not CPU)
+  - Test all 4 patch configurations produce correct token counts
+- [ ] 3.3 Verify positional embeddings are correctly sized for each patch configuration
   - 16×16 → 248 positions, 128×2 → 250 positions, 128×4 → 125 positions, 128×1 → 500 positions
   - Run fast-dev-run for each config to confirm shapes
-- [ ] 3.3 Run fast-dev-run for all 4 configs to validate pipeline end-to-end
+- [ ] 3.4 Run fast-dev-run for all 4 configs to validate pipeline end-to-end
 
 ## 4. Execution
 
