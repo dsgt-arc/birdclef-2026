@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import soundfile as sf
 import typer
-from maad import sound, rois
+from maad import sound, rois, util
 from maad.util import power2dB
 
 from teacher_labels.utils import (
@@ -50,20 +50,35 @@ def extract_rois(
     # Convert to mono if stereo
     if s.ndim > 1:
         s = s.mean(axis=1)
+
     # Compute spectrogram
     Sxx, tn, fn, ext = sound.spectrogram(s, sr, nperseg=1024, noverlap=512)
-    # Convert to dB
-    Sxx_db = power2dB(Sxx)
-    # Find ROIs using the binary method
-    # create_mask can fail on silent/unusual audio (empty percentile array)
-    try:
-        Sxx_bin = rois.create_mask(Sxx_db, mode_bin="relative", bin_h=6, bin_l=1)
-        rois_df = rois.select_rois(Sxx_bin, tn, fn)
-    except (IndexError, ValueError):
+
+    # Bug fix 1: Remove background noise BEFORE dB conversion.
+    # Without this, raw power values are << 1, dB values are all negative,
+    # and create_mask's percentile on positive values gets an empty array.
+    Sxx_noNoise = sound.median_equalizer(Sxx)
+
+    # No energy after noise removal → silent audio, nothing to detect
+    if not np.any(Sxx_noNoise > 0):
         return []
+
+    Sxx_db = power2dB(Sxx_noNoise)
+
+    # Bug fix 2: relative mode uses bin_std/bin_per, NOT bin_h/bin_l (absolute mode).
+    # The old bin_h=6, bin_l=1 were silently absorbed by **kwargs and ignored.
+    Sxx_bin = rois.create_mask(Sxx_db, mode_bin="relative", bin_std=6, bin_per=0.5)
+
+    # Bug fix 3: select_rois returns (im_rois, df_rois) tuple, not a DataFrame.
+    # Also, tn/fn were incorrectly passed as positional args (mapped to min_roi/max_roi).
+    # The resulting df has pixel coords — need format_features to get physical time/freq.
+    _, rois_df = rois.select_rois(Sxx_bin)
 
     if rois_df.empty:
         return []
+
+    # Convert pixel coordinates to physical time/frequency units
+    rois_df = util.format_features(rois_df, tn, fn)
 
     events = []
     for _, roi in rois_df.iterrows():
