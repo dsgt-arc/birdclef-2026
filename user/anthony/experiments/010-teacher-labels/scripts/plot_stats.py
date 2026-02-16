@@ -2,7 +2,7 @@
 """Plot statistics from teacher label outputs.
 
 Generates:
-- Event density histogram (BamBird ROIs per file)
+- BamBird cluster quality (signal vs noise)
 - Species frequency bar chart (top N species per model)
 - Confidence distribution (BirdNET vs Perch)
 """
@@ -16,24 +16,42 @@ import numpy as np
 import pandas as pd
 
 
-def plot_bambird_density(stats: dict, ax: plt.Axes):
-    """Plot BamBird ROI density across sources."""
-    sources = []
-    means = []
-    medians = []
-    for src, s in stats.get("bambird", {}).items():
-        sources.append(src.replace("train_", ""))
-        means.append(s["rois_per_file_mean"])
-        medians.append(s["rois_per_file_median"])
+def plot_bambird_cluster_quality(stats: dict, ax: plt.Axes):
+    """Plot BamBird cluster quality stats."""
+    bambird = stats.get("bambird", {})
 
-    x = np.arange(len(sources))
-    ax.bar(x - 0.15, means, 0.3, label="Mean", alpha=0.8)
-    ax.bar(x + 0.15, medians, 0.3, label="Median", alpha=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(sources)
-    ax.set_ylabel("ROIs per file")
-    ax.set_title("BamBird: ROI Density")
-    ax.legend()
+    cluster = bambird.get("cluster", {})
+    if not cluster:
+        ax.set_title("BamBird: No cluster data")
+        return
+
+    signal = cluster.get("total_signal_rois", 0)
+    noise = cluster.get("total_noise_rois", 0)
+    total = signal + noise
+
+    labels = ["Signal", "Noise"]
+    values = [signal, noise]
+    colors = ["#2ecc71", "#e74c3c"]
+
+    bars = ax.bar(labels, values, color=colors, alpha=0.8)
+    ax.set_ylabel("Number of ROIs")
+    ax.set_title(f"BamBird: Cluster Quality ({total} ROIs)")
+
+    # Add value labels on bars
+    for bar, val in zip(bars, values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                f"{val:,}", ha="center", va="bottom", fontsize=10)
+
+    # Add signal ratio annotation
+    ratio = cluster.get("signal_ratio", 0)
+    ax.annotate(
+        f"Signal ratio: {ratio:.1%}\n"
+        f"Files all-noise: {cluster.get('files_all_noise', 0)}\n"
+        f"Species: {cluster.get('num_species', 0)}",
+        xy=(0.95, 0.95), xycoords="axes fraction",
+        ha="right", va="top", fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.5),
+    )
 
 
 def plot_top_species(stats: dict, model: str, ax: plt.Axes, n: int = 15):
@@ -98,7 +116,7 @@ def main():
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle("Teacher Label Statistics", fontsize=14)
 
-    plot_bambird_density(stats, axes[0, 0])
+    plot_bambird_cluster_quality(stats, axes[0, 0])
     plot_top_species(stats, "birdnet", axes[0, 1])
     plot_top_species(stats, "perch", axes[1, 0])
     plot_confidence_comparison(stats, axes[1, 1])

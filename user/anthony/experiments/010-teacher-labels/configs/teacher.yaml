@@ -15,9 +15,7 @@ partitions:
 
 models:
   bambird:
-    # No special model path needed — uses scikit-maad directly
-    min_roi_duration: 0.05   # seconds, minimum ROI duration to keep
-    max_roi_duration: 10.0   # seconds, maximum ROI duration to keep
+    config: configs/bambird.yaml  # bambird-format YAML with extract/features/cluster params
 
   birdnet:
     clip_step: 1.0  # seconds between clip starts (default 3.0, we use 1.0)

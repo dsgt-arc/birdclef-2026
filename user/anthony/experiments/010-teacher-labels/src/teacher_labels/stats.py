@@ -21,38 +21,60 @@ app = typer.Typer()
 
 
 def bambird_stats(label_dir: Path) -> dict:
-    """Compute stats from BamBird outputs."""
-    stats = {}
-    for source_label in ["train_audio", "train_soundscapes"]:
-        source_dir = label_dir / "bambird" / source_label
-        if not source_dir.exists():
-            continue
-        parts = sorted(source_dir.glob("part_*.parquet"))
-        if not parts:
-            continue
+    """Compute stats from BamBird outputs.
 
-        df = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
-        events_per_file = df["num_rois"]
-        durations = df["duration_s"]
+    Reads both feature partitions (per-ROI) and the final cluster labels
+    (per-file with signal/noise classification).
+    """
+    stats = {}
+
+    # Feature-level stats (per-ROI)
+    features_dir = label_dir / "bambird" / "features"
+    if features_dir.exists():
+        parts = sorted(features_dir.glob("part_*.parquet"))
+        if parts:
+            df_feat = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
+            num_files = df_feat["fullfilename"].nunique() if "fullfilename" in df_feat.columns else 0
+
+            stats["features"] = {
+                "num_partitions": len(parts),
+                "total_rois": len(df_feat),
+                "num_files_with_rois": num_files,
+                "rois_per_file_mean": round(len(df_feat) / max(num_files, 1), 2),
+                "num_species": df_feat["categories"].nunique() if "categories" in df_feat.columns else 0,
+            }
+
+    # Cluster-level stats (per-file)
+    labels_path = label_dir / "bambird" / "train_audio" / "bambird_labels.parquet"
+    if labels_path.exists():
+        df_labels = pd.read_parquet(labels_path)
 
         # Parse events for duration stats
         all_events = []
-        for events_json in df["events_json"]:
-            events = json.loads(events_json)
+        all_clusters = []
+        for _, row in df_labels.iterrows():
+            events = json.loads(row["detected_events"])
+            clusters = json.loads(row["event_cluster"])
             all_events.extend(events)
+            all_clusters.extend(clusters)
 
-        event_durations = [e["duration_s"] for e in all_events]
+        event_durations = [e[1] - e[0] for e in all_events if len(e) == 2]
+        num_signal_clusters = sum(1 for c in all_clusters if c >= 0)
+        num_noise_clusters = sum(1 for c in all_clusters if c < 0)
 
-        stats[source_label] = {
-            "num_files": len(df),
-            "total_rois": int(events_per_file.sum()),
-            "rois_per_file_mean": round(float(events_per_file.mean()), 2),
-            "rois_per_file_median": round(float(events_per_file.median()), 2),
-            "rois_per_file_max": int(events_per_file.max()),
-            "files_with_no_rois": int((events_per_file == 0).sum()),
-            "audio_duration_total_h": round(float(durations.sum()) / 3600, 2),
+        stats["cluster"] = {
+            "num_files": len(df_labels),
+            "total_signal_rois": int(df_labels["num_signal_rois"].sum()),
+            "total_noise_rois": int(df_labels["num_noise_rois"].sum()),
+            "signal_ratio": round(
+                float(df_labels["num_signal_rois"].sum())
+                / max(df_labels["num_signal_rois"].sum() + df_labels["num_noise_rois"].sum(), 1),
+                4,
+            ),
+            "files_all_noise": int((df_labels["num_signal_rois"] == 0).sum()),
             "event_duration_mean_s": round(float(np.mean(event_durations)), 4) if event_durations else 0,
             "event_duration_median_s": round(float(np.median(event_durations)), 4) if event_durations else 0,
+            "num_species": df_labels["species"].nunique() if "species" in df_labels.columns else 0,
         }
 
     return stats

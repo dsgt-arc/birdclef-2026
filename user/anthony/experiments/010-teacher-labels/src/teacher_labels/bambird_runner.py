@@ -1,25 +1,31 @@
-"""BamBird runner: extract temporal event boundaries (ROIs) from audio.
+"""BamBird runner: full 3-stage pipeline using the bambird library.
 
-Uses scikit-maad for spectrogram computation and ROI extraction.
-BamBird identifies acoustic events without species classification —
-it produces temporal boundaries that can be used as one labeling function
-in the weak supervision pipeline.
+Stage 1 (extract-features): Per-file ROI extraction + wavelet feature computation
+  - Uses bambird.single_file_extract_rois for bandpass + ROI detection
+  - Uses bambird.compute_features for wavelet shape features per ROI
+  - Saves features to parquet partitions
+  - Designed to run as SLURM array job (one partition per task)
 
-Output: parquet with columns [file, events_json, num_rois, duration_s]
-  - events_json: JSON string with list of {min_t, max_t, min_f, max_f, duration_s}
+Stage 2 (cluster): Per-species DBSCAN clustering across all features
+  - Uses bambird.find_cluster to separate signal from noise
+  - Produces final labels: detected_events, event_cluster, auto_label per file
+  - Single SLURM job after all extract jobs complete
+
+Output: bambird_labels.parquet with columns:
+  [file, species, detected_events, event_cluster, num_signal_rois, num_noise_rois]
 """
 
 import json
+import shutil
+import tempfile
 import time
 import traceback
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-import soundfile as sf
 import typer
-from maad import sound, rois, util
-from maad.util import power2dB
+
+import bambird
 
 from teacher_labels.utils import (
     list_audio_files,
@@ -31,155 +37,230 @@ from teacher_labels.utils import (
 app = typer.Typer()
 
 
-def extract_rois(
-    audio_path: Path,
-    min_duration: float = 0.05,
-    max_duration: float = 10.0,
-) -> list[dict]:
-    """Extract acoustic ROIs from a single audio file using scikit-maad.
-
-    Args:
-        audio_path: Path to audio file.
-        min_duration: Minimum ROI duration in seconds.
-        max_duration: Maximum ROI duration in seconds.
-
-    Returns:
-        List of ROI dicts with min_t, max_t, min_f, max_f, duration_s.
-    """
-    s, sr = sf.read(str(audio_path))
-    # Convert to mono if stereo
-    if s.ndim > 1:
-        s = s.mean(axis=1)
-
-    # Compute spectrogram
-    Sxx, tn, fn, ext = sound.spectrogram(s, sr, nperseg=1024, noverlap=512)
-
-    # Bug fix 1: Remove background noise BEFORE dB conversion.
-    # Without this, raw power values are << 1, dB values are all negative,
-    # and create_mask's percentile on positive values gets an empty array.
-    Sxx_noNoise = sound.median_equalizer(Sxx)
-
-    # No energy after noise removal → silent audio, nothing to detect
-    if not np.any(Sxx_noNoise > 0):
-        return []
-
-    Sxx_db = power2dB(Sxx_noNoise)
-
-    # Bug fix 2: relative mode uses bin_std/bin_per, NOT bin_h/bin_l (absolute mode).
-    # The old bin_h=6, bin_l=1 were silently absorbed by **kwargs and ignored.
-    Sxx_bin = rois.create_mask(Sxx_db, mode_bin="relative", bin_std=6, bin_per=0.5)
-
-    # Bug fix 3: select_rois returns (im_rois, df_rois) tuple, not a DataFrame.
-    # Also, tn/fn were incorrectly passed as positional args (mapped to min_roi/max_roi).
-    # The resulting df has pixel coords — need format_features to get physical time/freq.
-    _, rois_df = rois.select_rois(Sxx_bin)
-
-    if rois_df.empty:
-        return []
-
-    # Convert pixel coordinates to physical time/frequency units
-    rois_df = util.format_features(rois_df, tn, fn)
-
-    events = []
-    for _, roi in rois_df.iterrows():
-        duration = roi["max_t"] - roi["min_t"]
-        if duration < min_duration or duration > max_duration:
-            continue
-        events.append({
-            "min_t": round(float(roi["min_t"]), 4),
-            "max_t": round(float(roi["max_t"]), 4),
-            "min_f": round(float(roi["min_f"]), 1),
-            "max_f": round(float(roi["max_f"]), 1),
-            "duration_s": round(duration, 4),
-        })
-    return events
+def _load_bambird_config(config_path: str) -> dict:
+    """Load bambird-format YAML config and return the PARAMS dict."""
+    return bambird.load_config(config_path)
 
 
-def process_partition(
-    files: list[Path],
-    output_path: Path,
-    min_duration: float = 0.05,
-    max_duration: float = 10.0,
+def _extract_features_single_file(
+    audio_path: str,
+    params_extract: dict,
+    params_features: dict,
+    temp_dir: Path,
 ) -> pd.DataFrame:
-    """Process a partition of audio files and save results.
+    """Extract ROIs and compute features for a single audio file.
 
-    Args:
-        files: List of audio file paths.
-        output_path: Path to save the output parquet.
-        min_duration: Minimum ROI duration.
-        max_duration: Maximum ROI duration.
-
-    Returns:
-        DataFrame with results.
+    Returns a DataFrame of features (one row per ROI), or empty DataFrame on failure.
     """
-    records = []
-    for i, fpath in enumerate(files):
-        try:
-            info = sf.info(str(fpath))
-            duration_s = info.duration
-            events = extract_rois(fpath, min_duration, max_duration)
-            records.append({
-                "file": str(fpath),
-                "events_json": json.dumps(events),
-                "num_rois": len(events),
-                "duration_s": round(duration_s, 2),
-            })
-        except Exception:
-            traceback.print_exc()
-            records.append({
-                "file": str(fpath),
-                "events_json": "[]",
-                "num_rois": 0,
-                "duration_s": 0.0,
-            })
-        if (i + 1) % 50 == 0:
-            print(f"  Processed {i + 1}/{len(files)} files")
+    # Stage 1a: Extract ROIs — saves .wav files for each ROI
+    df_rois = bambird.single_file_extract_rois(
+        audio_path=str(audio_path),
+        fun=params_extract["FUNC"],
+        params=params_extract,
+        save_path=str(temp_dir),
+        display=False,
+        verbose=False,
+    )
 
-    df = pd.DataFrame(records)
-    ensure_output_dir(output_path.parent)
-    df.to_parquet(output_path, index=False)
-    return df
+    if df_rois.empty:
+        return pd.DataFrame()
+
+    # Stage 1b: Compute wavelet shape features for each ROI .wav file
+    feature_frames = []
+    for _, row in df_rois.iterrows():
+        if "fullfilename_ts" not in row or not Path(str(row["fullfilename_ts"])).exists():
+            continue
+        df_feat = bambird.compute_features(
+            audio_path=str(row["fullfilename_ts"]),
+            params=params_features,
+            display=False,
+            verbose=False,
+        )
+        if not df_feat.empty:
+            # Carry over metadata from ROI extraction
+            for col in ["filename", "fullfilename", "species", "categories", "abs_min_t"]:
+                if col in row.index:
+                    df_feat[col] = row[col]
+            # Carry over ROI time/freq bounds
+            for col in ["min_t", "max_t", "min_f", "max_f"]:
+                if col in row.index:
+                    df_feat[col] = row[col]
+            feature_frames.append(df_feat)
+
+    if not feature_frames:
+        return pd.DataFrame()
+
+    return pd.concat(feature_frames, ignore_index=True)
 
 
-@app.command()
-def run(
+@app.command("extract-features")
+def extract_features(
     config: str = "configs/teacher.yaml",
-    source: str = typer.Argument(..., help="'focal' or 'soundscape'"),
     partition_id: int = typer.Argument(..., help="Partition ID (0-indexed)"),
 ):
-    """Run BamBird ROI extraction on a partition of audio files."""
+    """Extract ROIs and compute features for a partition of focal audio files."""
     cfg = load_config(config)
-    source_key = "focal_dir" if source == "focal" else "soundscape_dir"
-    audio_dir = cfg["data"][source_key]
-    num_partitions = cfg["partitions"][source]
-    bambird_cfg = cfg["models"]["bambird"]
+    audio_dir = cfg["data"]["focal_dir"]
+    num_partitions = cfg["partitions"]["focal"]
+    bambird_cfg_path = cfg["models"]["bambird"]["config"]
 
-    source_label = "train_audio" if source == "focal" else "train_soundscapes"
-    output_dir = Path(cfg["output"]["root"]).expanduser() / "bambird" / source_label
+    output_dir = Path(cfg["output"]["root"]).expanduser() / "bambird" / "features"
     output_path = output_dir / f"part_{partition_id:04d}.parquet"
 
     if output_path.exists():
         print(f"Output already exists: {output_path}, skipping.")
         return
 
-    files = list_audio_files(audio_dir, source)
+    # Load bambird config
+    params = _load_bambird_config(bambird_cfg_path)
+    params_extract = params["PARAMS_EXTRACT"]
+    params_features = params["PARAMS_FEATURES"]
+
+    files = list_audio_files(audio_dir, "focal")
     partition = partition_files(files, num_partitions, partition_id)
 
-    print(f"BamBird {source} partition {partition_id}/{num_partitions}")
+    print(f"BamBird extract-features partition {partition_id}/{num_partitions}")
     print(f"  Total files: {len(files)}, this partition: {len(partition)}")
 
     start = time.time()
-    df = process_partition(
-        partition,
-        output_path,
-        min_duration=bambird_cfg["min_roi_duration"],
-        max_duration=bambird_cfg["max_roi_duration"],
-    )
+    all_features = []
+
+    for i, fpath in enumerate(partition):
+        # Use a per-file temp dir for ROI .wav files — cleaned up after each file
+        temp_dir = Path(tempfile.mkdtemp(prefix="bambird_rois_"))
+        try:
+            df_feat = _extract_features_single_file(
+                audio_path=str(fpath),
+                params_extract=params_extract,
+                params_features=params_features,
+                temp_dir=temp_dir,
+            )
+            if not df_feat.empty:
+                all_features.append(df_feat)
+        except Exception:
+            traceback.print_exc()
+        finally:
+            # Clean up temp .wav files to keep disk bounded
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+        if (i + 1) % 50 == 0:
+            print(f"  Processed {i + 1}/{len(partition)} files")
+
     elapsed = time.time() - start
 
-    total_rois = df["num_rois"].sum()
-    print(f"  Done in {elapsed:.1f}s — {len(partition)} files, {total_rois} ROIs")
+    if all_features:
+        df = pd.concat(all_features, ignore_index=True)
+    else:
+        df = pd.DataFrame()
+
+    ensure_output_dir(output_dir)
+    df.to_parquet(output_path, index=False)
+
+    total_rois = len(df)
+    print(f"  Done in {elapsed:.1f}s — {len(partition)} files, {total_rois} ROIs with features")
     print(f"  Output: {output_path}")
+
+
+@app.command("cluster")
+def cluster(
+    config: str = "configs/teacher.yaml",
+):
+    """Cluster all extracted features per-species and produce final labels."""
+    cfg = load_config(config)
+    bambird_cfg_path = cfg["models"]["bambird"]["config"]
+
+    label_dir = Path(cfg["output"]["root"]).expanduser() / "bambird"
+    features_dir = label_dir / "features"
+    output_path = label_dir / "train_audio" / "bambird_labels.parquet"
+
+    if output_path.exists():
+        print(f"Output already exists: {output_path}, skipping.")
+        return
+
+    # Load bambird config
+    params = _load_bambird_config(bambird_cfg_path)
+    params_cluster = params["PARAMS_CLUSTER"]
+
+    # Load all feature parquets
+    parts = sorted(features_dir.glob("part_*.parquet"))
+    if not parts:
+        print(f"No feature parquets found in {features_dir}")
+        return
+
+    print(f"Loading {len(parts)} feature partitions...")
+    df_all = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
+    print(f"  Total ROIs: {len(df_all)}")
+
+    if df_all.empty:
+        print("No ROIs to cluster.")
+        ensure_output_dir(output_path.parent)
+        pd.DataFrame(columns=["file", "species", "detected_events", "event_cluster",
+                               "num_signal_rois", "num_noise_rois"]).to_parquet(output_path, index=False)
+        return
+
+    # Ensure required columns exist
+    if "categories" not in df_all.columns:
+        print("WARNING: 'categories' column missing from features — cannot cluster per-species")
+        return
+    if "filename_ts" not in df_all.columns:
+        # compute_features adds filename_ts; if missing, create a placeholder
+        df_all["filename_ts"] = df_all.index.astype(str)
+    if "fullfilename_ts" not in df_all.columns:
+        df_all["fullfilename_ts"] = ""
+
+    # Run bambird clustering (per-species via 'categories' column)
+    print("Clustering per-species...")
+    start = time.time()
+    df_cluster, _ = bambird.find_cluster(
+        dataset=df_all,
+        params=params_cluster,
+        display=False,
+        verbose=True,
+    )
+    elapsed = time.time() - start
+    print(f"  Clustering done in {elapsed:.1f}s")
+
+    # Convert clustered ROIs to per-file output format
+    # Group by original audio file and collect events + cluster labels
+    if "fullfilename" not in df_cluster.columns:
+        print("WARNING: 'fullfilename' column missing — cannot group by file")
+        return
+
+    records = []
+    for fullfilename, group in df_cluster.groupby("fullfilename"):
+        species = group["categories"].iloc[0] if "categories" in group.columns else ""
+
+        events = []
+        clusters = []
+        for _, row in group.iterrows():
+            # Compute absolute time if abs_min_t is available
+            abs_offset = float(row.get("abs_min_t", 0) or 0)
+            min_t = float(row.get("min_t", 0)) + abs_offset
+            max_t = float(row.get("max_t", 0)) + abs_offset
+            events.append([round(min_t, 4), round(max_t, 4)])
+            clusters.append(int(row.get("cluster_number", -1)))
+
+        auto_labels = group["auto_label"].astype(int).tolist() if "auto_label" in group.columns else []
+        num_signal = sum(1 for a in auto_labels if a == 1)
+        num_noise = sum(1 for a in auto_labels if a == 0)
+
+        records.append({
+            "file": str(fullfilename),
+            "species": species,
+            "detected_events": json.dumps(events),
+            "event_cluster": json.dumps(clusters),
+            "num_signal_rois": num_signal,
+            "num_noise_rois": num_noise,
+        })
+
+    df_output = pd.DataFrame(records)
+    ensure_output_dir(output_path.parent)
+    df_output.to_parquet(output_path, index=False)
+
+    print(f"\nFinal output: {output_path}")
+    print(f"  Files: {len(df_output)}")
+    print(f"  Signal ROIs: {df_output['num_signal_rois'].sum()}")
+    print(f"  Noise ROIs: {df_output['num_noise_rois'].sum()}")
 
 
 def main():

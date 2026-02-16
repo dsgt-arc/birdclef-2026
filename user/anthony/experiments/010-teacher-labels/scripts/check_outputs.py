@@ -13,7 +13,10 @@ import yaml
 def check_model_partitions(label_dir: Path, model: str, source_label: str, num_parts: int) -> list[int]:
     """Check which partitions are missing for a model/source combo."""
     if model == "bambird":
-        output_dir = label_dir / model / source_label
+        # BamBird uses feature partitions (focal only) + cluster output
+        if source_label == "train_soundscapes":
+            return []  # bambird only runs on focal
+        output_dir = label_dir / model / "features"
         expected = {output_dir / f"part_{i:04d}.parquet" for i in range(num_parts)}
     else:
         output_dir = label_dir / model / source_label / "parts"
@@ -37,7 +40,27 @@ def main():
     soundscape_parts = cfg["partitions"]["soundscape"]
 
     all_ok = True
-    for model in ["bambird", "birdnet", "perch"]:
+
+    # BamBird: check feature partitions + cluster output
+    print("BamBird:")
+    missing = check_model_partitions(label_dir, "bambird", "train_audio", focal_parts)
+    status = "OK" if not missing else f"MISSING {len(missing)}"
+    print(f"  features (focal): {status}")
+    if missing:
+        all_ok = False
+        for p in missing[:5]:
+            print(f"    {p}")
+        if len(missing) > 5:
+            print(f"    ... and {len(missing) - 5} more")
+
+    cluster_path = label_dir / "bambird" / "train_audio" / "bambird_labels.parquet"
+    cluster_status = "OK" if cluster_path.exists() else "MISSING"
+    print(f"  cluster output: {cluster_status}")
+    if not cluster_path.exists():
+        all_ok = False
+
+    # BirdNET and Perch
+    for model in ["birdnet", "perch"]:
         for source_label, num_parts in [("train_audio", focal_parts), ("train_soundscapes", soundscape_parts)]:
             missing = check_model_partitions(label_dir, model, source_label, num_parts)
             status = "OK" if not missing else f"MISSING {len(missing)}"

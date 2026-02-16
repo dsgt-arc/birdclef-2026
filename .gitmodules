@@ -67,3 +67,9 @@
 [submodule "vendor/mamba-onnx"]
 	path = vendor/mamba-onnx
 	url = https://github.com/acmiyaguchi/mamba-onnx.git
+[submodule "vendor/bambird"]
+	path = vendor/bambird
+	url = https://github.com/ear-team/bambird.git
+[submodule "vendor/scikit-maad"]
+	path = vendor/scikit-maad
+	url = https://github.com/scikit-maad/scikit-maad.git

@@ -14,6 +14,13 @@ dependencies = [
     "pyyaml>=6.0",
     "soundfile>=0.12",
     "typer>=0.9",
+    # bambird transitive deps (for clustering pipeline)
+    "hdbscan>=0.8.29",
+    "umap-learn>=0.5",
+    "kneed>=0.8",
+    "librosa>=0.8.0",
+    "scikit-image>=0.19.2",
+    "scikit-learn>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +44,10 @@ teacher-stats = "teacher_labels.stats:main"
 [tool.uv]
 # docopt 0.6.2 sdist is broken (no setup.py); use the maintained fork
 override-dependencies = ["docopt-ng>=0.9"]
+
+[tool.uv.sources]
+bambird = { path = "../../../../vendor/bambird", editable = true }
+scikit-maad = { path = "../../../../vendor/scikit-maad", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/teacher_labels"]
