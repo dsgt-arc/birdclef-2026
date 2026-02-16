@@ -28,6 +28,7 @@ Use slash commands to create properly structured documents:
 | `/experiment:proposal` | Experiment proposal | `docs/_templates/experiment-proposal.md` |
 | `/experiment:result` | Experiment results | `docs/_templates/experiment-result.md` |
 | `/experiment:validate` | Validate experiment structure | - |
+| `/experiment:summary` | Experiment status summary for session context | - |
 
 ## Documentation Structure
 
