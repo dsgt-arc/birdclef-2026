@@ -1,0 +1,46 @@
+[project]
+name = "exp010-teacher-labels"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "bioacoustics-model-zoo",
+    "bambird",
+    "scikit-maad",
+    "ai-edge-litert",
+    "pandas>=2.0",
+    "polars>=0.20",
+    "pyarrow>=14.0",
+    "matplotlib>=3.7",
+    "pyyaml>=6.0",
+    "soundfile>=0.12",
+    "typer>=0.9",
+]
+
+[project.optional-dependencies]
+compile = [
+    "tensorflow==2.17",
+    "tensorflow-hub",
+    "setuptools<82",  # provides pkg_resources needed by tensorflow-hub (removed in 82+)
+]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+teacher-bambird = "teacher_labels.bambird_runner:main"
+teacher-birdnet = "teacher_labels.birdnet_runner:main"
+teacher-perch = "teacher_labels.perch_runner:main"
+teacher-compile-perch = "teacher_labels.compile_perch:main"
+teacher-benchmark = "teacher_labels.benchmark:main"
+teacher-stats = "teacher_labels.stats:main"
+
+[tool.uv]
+# docopt 0.6.2 sdist is broken (no setup.py); use the maintained fork
+override-dependencies = ["docopt-ng>=0.9"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/teacher_labels"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

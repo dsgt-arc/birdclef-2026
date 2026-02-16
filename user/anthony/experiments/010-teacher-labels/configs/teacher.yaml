@@ -1,0 +1,30 @@
+# Teacher label generation config for BirdCLEF 2025
+
+data:
+  # BirdCLEF 2025 audio directories
+  focal_dir: ~/scratch/birdclef-2026/data/birdclef-2025/train_audio
+  soundscape_dir: ~/scratch/birdclef-2026/data/birdclef-2025/train_soundscapes
+
+output:
+  # Root output directory for all teacher labels
+  root: ~/scratch/birdclef-2026/outputs/exp010/labels
+
+partitions:
+  focal: 50
+  soundscape: 20
+
+models:
+  bambird:
+    # No special model path needed — uses scikit-maad directly
+    min_roi_duration: 0.05   # seconds, minimum ROI duration to keep
+    max_roi_duration: 10.0   # seconds, maximum ROI duration to keep
+
+  birdnet:
+    clip_step: 1.0  # seconds between clip starts (default 3.0, we use 1.0)
+
+  perch:
+    tflite_path: ~/scratch/birdclef-2026/outputs/exp010/perch.tflite
+    clip_step: 5.0  # seconds between clip starts
+
+benchmark:
+  num_files: 5  # files per model for benchmarking
