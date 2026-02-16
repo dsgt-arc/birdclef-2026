@@ -24,6 +24,9 @@ dependencies = [
     "resampy>=0.4.0",
     "soundfile>=0.12.0",
 
+    # Logging
+    "tensorboard>=2.14.0",
+
     # Utilities
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
