@@ -25,6 +25,18 @@ JOB_VENV_DIR="$TMPDIR/birdset-benchmark-$SLURM_JOB_ID"
 JOB_VENV="$JOB_VENV_DIR/.venv"
 ```
 
+**NEVER use bare `pip install`** — it writes to `~/.local/` and eats home dir quota:
+```bash
+pip install nnAudio                           # WRONG — writes to ~/.local (7GB+ for torch)
+pip install --user some-package               # WRONG — same thing
+```
+**Always use `uv pip install` inside an activated venv:**
+```bash
+source "$JOB_VENV/bin/activate"
+uv pip install -e ".[dev]"                    # CORRECT — installs into venv
+uv pip install nnAudio                        # CORRECT — installs into venv
+```
+
 **WRONG — never do this:**
 ```bash
 python -m venv .venv                          # pollutes home dir
