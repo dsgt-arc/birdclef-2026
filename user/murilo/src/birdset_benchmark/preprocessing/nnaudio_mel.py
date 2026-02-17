@@ -62,6 +62,8 @@ class NNAudioMelSpectrogram(nn.Module):
             n_mels=n_mels,
             fmin=0,
             fmax=None,
+            htk=True,  # Match torchaudio's mel_scale="htk"
+            norm=None,  # Match torchaudio's norm=None (no area normalization)
             trainable_mel=False,
             trainable_STFT=False,
         )
@@ -83,8 +85,8 @@ class NNAudioMelSpectrogram(nn.Module):
         # nnAudio returns (batch, n_mels, time) in linear power scale
         mel = self.mel_spec(waveform)
 
-        # Log scale
-        mel = torch.log(mel.clamp(min=1e-6))
+        # Log scale (match torchaudio: additive epsilon, not clamp)
+        mel = torch.log(mel + 1e-6)
 
         # Pad or crop to target_frames
         n_frames = mel.shape[-1]

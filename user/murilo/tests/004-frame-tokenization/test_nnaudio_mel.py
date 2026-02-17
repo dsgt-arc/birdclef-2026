@@ -89,7 +89,12 @@ class TestGPU:
 
 class TestConsistency:
     def test_similar_to_torchaudio(self, nnaudio_mel, torchaudio_mel, waveform):
-        """nnAudio and torchaudio should produce approximately similar outputs."""
+        """nnAudio and torchaudio should produce nearly identical outputs.
+
+        With matched filterbank params (htk=True, norm=None), the only
+        difference is STFT backend (Conv1d vs torch.stft) floating-point
+        precision. See test_nnaudio_torchaudio_parity.py for thorough tests.
+        """
         mel_nn = nnaudio_mel(waveform)
         mel_ta = torchaudio_mel(waveform)
 
@@ -97,10 +102,8 @@ class TestConsistency:
             mel_nn.shape == mel_ta.shape
         ), f"Shape mismatch: nnAudio {mel_nn.shape} vs torchaudio {mel_ta.shape}"
 
-        # They won't be identical (different STFT implementations) but should
-        # be in the same ballpark — same mean/std order of magnitude
         mean_diff = abs(mel_nn.mean().item() - mel_ta.mean().item())
-        assert mean_diff < 1.0, f"Mean difference too large: {mean_diff}"
+        assert mean_diff < 0.05, f"Mean difference too large: {mean_diff}"
 
     def test_no_nans(self, nnaudio_mel, waveform):
         mel = nnaudio_mel(waveform)
