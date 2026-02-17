@@ -1,117 +1,87 @@
 # Concept: SSAMBA (Self-Supervised Audio Mamba)
 
-**Status**: developing
+**Status**: mature
 **Created**: 2026-01-15
-**Updated**: 2026-01-15
+**Updated**: 2026-02-17
 
 ## Idea
 
 SSAMBA is the first self-supervised, attention-free audio representation model based on bidirectional Mamba state space models. It replaces the quadratic-complexity transformer in SSAST with linear-complexity Mamba blocks, achieving **92.7% faster inference** and **95.4% better memory efficiency** while maintaining competitive accuracy.
 
-This could be the key to getting under BirdCLEF's inference budget without sacrificing accuracy through aggressive distillation.
+This is the backbone architecture for our BirdCLEF pipeline, validated through experiments 004-009.
 
-## Motivation
+## Architecture
 
-Our Experiment 002 showed that static embeddings achieve 32x speedup but suffer 48% accuracy loss due to context collapse. SSAMBA offers an alternative path: keep the full sequence model but use an inherently efficient architecture.
+### Core Structure
 
-**Key advantages for BirdCLEF**:
-- Linear complexity in sequence length (vs quadratic for transformers)
-- 92.7% faster than SSAST at 22k tokens (typical for 10s audio)
-- Pretrained on AudioSet - same domain as BEATs
-- Multiple model sizes available (7M, 26M, 99M params)
+```
+Mel spectrogram (1, 128, T)
+         ↓
+AudioPatchEmbed (Conv2d) → patch tokens (B, N, D)
+         ↓
++ learned positional embeddings (1, N+1, D)
++ CLS token (inserted at middle of sequence)
+         ↓
+24 bidirectional Mamba layers (paired: even=forward, odd=flipped)
+         ↓
+LayerNorm → token embeddings (B, N+1, D)
+         ↓
+Task head (classification, SED, or reconstruction)
+```
 
-## Background
+### Two Levels of Bidirectionality
 
-### Architecture
+1. **Inner (per-block)**: each `BidirectionalMamba` module has separate forward and backward SSMs (bimamba_type="v2") with independent A, B, C, D, conv1d parameters
+2. **Outer (layer pairs)**: layers processed in pairs — even layers see normal input, odd layers see `.flip([1])`, results summed
 
-| Component | SSAST | SSAMBA |
-|-----------|-------|--------|
-| Backbone | Transformer (self-attention) | Bidirectional Mamba (SSM) |
-| Complexity | O(n^2) | O(n) |
-| Memory | Quadratic in sequence length | Linear in sequence length |
+**Consequence**: every token's output embedding reflects the **entire sequence** from both directions. There is no single "state compression" token — each position has a different perspective on the same global information. See `pretrained-mamba-transfer.md` for implications on prompted SED.
 
 ### Model Sizes
 
-| Model | Params | ESC-50 | AudioSet-20K mAP |
-|-------|--------|--------|------------------|
-| SSAMBA-tiny | 7M | 80.1% | 23.3 |
-| SSAMBA-small | 26M | 85.5% | 25.6 |
-| SSAMBA-base | 99M | 89.3% | 28.3 |
+| Model | Params | ESC-50 | AudioSet-20K mAP | embed_dim | d_state |
+|-------|--------|--------|------------------|-----------|---------|
+| SSAMBA-tiny | 7M | 80.1% | 23.3 | 192 | 16 |
+| SSAMBA-small | 26M | 85.5% | 25.6 | 384 | 16 |
+| SSAMBA-base | 99M | 89.3% | 28.3 | 768 | 16 |
 
-### Efficiency Gains (vs SSAST-tiny, batch=4, 22k tokens)
+### Key Implementation Details
 
-- **Inference speed**: 92.7% faster
-- **Memory usage**: 95.4% reduction
-- **Scaling**: Advantage grows with sequence length due to linear vs quadratic complexity
+- **CLS token**: inserted at `num_patches // 2` (middle of sequence), not at the beginning
+- **Positional embeddings**: learned, shape `(1, num_patches + 1, embed_dim)`, tied to input length
+- **Double-norm quirk**: `norm_f` is applied twice in the original SSAMBA code (a bug replicated for checkpoint compatibility)
+- **Patch sizes**: originally 16x16; experiment 005 added support for rectangular patches (128x1 for 10ms/token SED)
+- **CUDA kernels**: required via `mamba-ssm` for practical training; pure PyTorch SSM has O(L) Python loop
 
-### Pretraining
+## Experimental Results
 
-- **Data**: AudioSet-2M (~2M 10s clips) + LibriSpeech (960h)
-- **Objective**: Joint discriminative and generative masked patch modeling (same as SSAST)
-- **Patch masking**: 400 masked patches performs best for audio tasks
+| Experiment | Configuration | Result | Key Finding |
+|------------|--------------|--------|-------------|
+| 004 | HuggingFace port | Working | SSAMBA ported with full weight loading |
+| 005 | Rectangular patches (128x1) | Working | 10ms/token resolution, ONNX benchmark |
+| 006 | BirdSet HSN from scratch | **0.086 cmAP** | Far below baselines — needs pretraining |
+| 007 | AudioSet pretrained transfer | **0.173 cmAP** | Pretraining 2x lift; Mamba-only transfer ≈ full |
+| 008 | Attention-pooled SED | **0.164 cmAP** | SED attention didn't help — bottleneck is elsewhere |
+| 009 | SSL pretrain + finetune pipeline | In progress | L1 + linear decoder, Kaggle 0.484 |
 
-### References
+### Key Findings
 
-- [SSAMBA Paper (SLT 2024)](https://arxiv.org/abs/2405.11831)
-- [Official Code](https://github.com/SiavashShams/ssamba)
-- [Pretrained Weights](https://drive.google.com/drive/folders/1E1gf5SxdSByDJ16_WQvzTKn8lIoYtZiX)
-- [Mamba Paper](https://arxiv.org/abs/2312.00752)
-
-### Vendor Documentation
-
-- [SSAMBA Vendor Doc](../vendor/ssamba.md) - Local code at `vendor/ssamba/`
-- [SSAST Vendor Doc](../vendor/ssast.md) - Transformer baseline at `vendor/ssast/`
-- [AST Vendor Doc](../vendor/ast.md) - Supervised baseline at `vendor/ast/`
+1. **Pretraining is the dominant factor**: 0.086 (scratch) → 0.173 (pretrained), 2x lift
+2. **Mamba-only transfer works**: transferring only the Mamba layers (96.9% of params, skipping patch_embed + pos_embed) matches full transfer
+3. **Severe overfitting**: train cmAP >0.95, val ~0.17 — the 7M param model memorizes but doesn't generalize
+4. **Capacity gap**: SSAMBA Tiny 0.17 vs ConvNeXt 0.48 vs SOTA 0.55 — likely model size, not architecture
+5. **SED attention pooling didn't help**: bottleneck is representation quality, not pooling strategy
+6. **Scaling model size didn't help**: SSAMBA Small (25.5M) achieved same 0.165 cmAP as Tiny (7M)
 
 ## Open Questions
 
-- How does SSAMBA-small (85.5% ESC-50) compare to BEATs (95.8%) on bird audio?
-- Can we distill BEATs into SSAMBA architecture (best of both worlds)?
-- What is the actual CPU inference time for SSAMBA vs our current BEATs pipeline?
-- Does bidirectional Mamba work well for variable-length audio (BirdCLEF has varying clip lengths)?
-
-## Testable Hypotheses
-
-1. **SSAMBA-small achieves >80% ESC-50 accuracy at <5ms CPU inference per sample** - This would satisfy BirdCLEF inference budget while maintaining acceptable accuracy.
-
-2. **SSAMBA-base matches BEATs on bird-specific classification** - Despite lower general audio scores (89.3% vs 95.8% on ESC-50), SSAMBA-base might perform comparably on bird vocalizations.
-
-3. **Distilling BEATs into SSAMBA architecture recovers >90% of BEATs accuracy** - Use BEATs as teacher, SSAMBA-small as student architecture. The student learns BEATs' representations but runs at SSAMBA speed.
-
-4. **SSAMBA inference scales better than BEATs for long recordings** - For full soundscape analysis (minutes of audio), SSAMBA's linear complexity should provide even larger speedups.
+- **Can larger SSAMBA close the gap?** Small (26M) didn't improve over Tiny. Is the issue architecture-fundamental, or does it need even more scale?
+- **Does bidirectional processing prevent state compression?** For prompted SED, we need the reference to condition target processing. See `pretrained-mamba-transfer.md` for analysis.
+- **Would a CNN frontend help?** See `cnn-mamba-hybrid-frontend.md` for LEAF + frequency attention proposal.
+- **Is the double-norm bug hurting fine-tuning?** Could test removing it after transfer.
 
 ## Connections
 
-- **Based on**: Mamba state space models, SSAST pretraining framework
-- **Related to**: [ssast-audio-transformer](ssast-audio-transformer.md), [distilled-sequence-model](distilled-sequence-model.md)
-- **Vendor docs**: [SSAMBA](../vendor/ssamba.md), [SSAST](../vendor/ssast.md), [AST](../vendor/ast.md), [BEATs](../vendor/beats.md)
-- **Experiment**: [001-encoder-benchmark](../../user/anthony/experiments/001-encoder-benchmark/proposal.md) Part C
-- **Could lead to**:
-  - New experiment: Benchmark SSAMBA on ESC-50/BirdSet
-  - Hybrid approach: BEATs teacher + SSAMBA student distillation
-  - Direct use of pretrained SSAMBA for BirdCLEF submission
-
-## Notes
-
-### Why This Might Be Better Than Our Current Approach
-
-Current Exp 003 approach: Distill BEATs into CNN/MLP-Mixer/TinyTransformer
-- Risk: Student might not have capacity to capture BEATs' temporal patterns
-- Result: Still struggling to close the accuracy gap
-
-SSAMBA approach: Use pretrained SSAMBA directly or as student architecture
-- Advantage: Already pretrained on AudioSet with proven results
-- Advantage: Bidirectional context (unlike CNN which is local)
-- Advantage: Linear complexity means we can keep full sequence processing
-
-### Integration Path
-
-1. **Quick win**: Benchmark pretrained SSAMBA-small on ESC-50 and BirdSet
-2. **If good**: Use SSAMBA directly for BirdCLEF submission
-3. **If gap exists**: Distill BEATs into SSAMBA architecture (student has proven capacity)
-
-### Caveats
-
-- SSAMBA-base (89.3% ESC-50) is still 6.5% below BEATs (95.8%)
-- Mamba requires custom CUDA kernels for full speed (pure PyTorch is slower)
-- Need to verify pretrained weights work with our preprocessing pipeline
+- **HF port**: `user/anthony/experiments/004-ssamba-hf-port/ssamba_hf/`
+- **Related concepts**: [Pretrained Mamba transfer](pretrained-mamba-transfer.md), [CNN-Mamba hybrid](cnn-mamba-hybrid-frontend.md), [Prompted SED](prompted-sound-event-detection.md)
+- **Vendor docs**: [SSAMBA](../vendor/ssamba.md), [SSAST](../vendor/ssast.md)
+- **References**: [SSAMBA Paper (SLT 2024)](https://arxiv.org/abs/2405.11831), [Mamba Paper](https://arxiv.org/abs/2312.00752)

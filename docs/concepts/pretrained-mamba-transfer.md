@@ -1,8 +1,8 @@
 # Concept: Pre-trained Mamba Transfer with Re-initialized Tokenizer
 
-**Status**: nascent
+**Status**: developing
 **Created**: 2026-02-09
-**Updated**: 2026-02-09
+**Updated**: 2026-02-17
 
 ## Idea
 
@@ -112,7 +112,66 @@ for i in range(num_layers // 2):
     tokens = h_fwd + h_bwd.flip()
 ```
 
-For prompted SED, this means: the forward SSM compresses the reference prefix into a state that conditions soundscape processing. The backward SSM processes the soundscape first, then the reference — which provides a different kind of conditioning (future context). The bidirectional combination should give the model information about both "what does the reference say to look for?" (forward) and "what does the soundscape contain that might match?" (backward).
+#### Two conditioning regimes
+
+The original framing of prompted SED assumed unidirectional Mamba: the forward SSM compresses the reference into a state, then scans the soundscape with that state as a "learned matched filter." But SSAMBA's bidirectionality changes this picture fundamentally:
+
+**Regime 1: State compression** — the forward scan's accumulated state after the reference carries species identity. The last reference token has compressed the reference into a fixed-size state that conditions all subsequent target processing. The backward scan provides complementary information (target context flowing back into reference positions). This is the "learned matched filter" model.
+
+**Regime 2: Distributed conditioning** — species identity is encoded across the **spatial pattern** of token embeddings, not compressed into any single position. Because both forward and backward scans see the entire sequence, every token's output reflects global information. The reference conditions target tokens through deep feature interaction across 24 layers of bidirectional mixing, not through a single compressed state vector.
+
+The key insight: in bidirectional SSAMBA, **every token sees the full sequence from both directions**. There is no position that uniquely compresses the sequence — each token has a different *perspective* on the same global information (different positional emphasis of forward vs backward recency).
+
+#### Implications for prompted SED
+
+**If Regime 1 holds** (state compression works): the original prompted SED design works as described. Feed `[ref][SEP][target]`, the forward state carries species identity into target processing.
+
+**If Regime 2 holds** (distributed, not compressed): the prompting still works, just through a different mechanism. The reference modulates the entire target representation through deep bidirectional interaction. Each target token's embedding becomes a function of (local audio content, full reference context mediated by 24 layers).
+
+Distributed conditioning is actually **less lossy** than state compression — a fixed-size state is an information bottleneck, while distributed conditioning preserves all reference information across the sequence. But the concern is **dilution**: the reference (500 tokens) is ~14% of the total input (3501 tokens). In a bidirectional model, target tokens dominate both forward and backward context, and the reference signal may get washed out in deeper layers.
+
+#### The critical diagnostic: conditioning delta
+
+The Phase 0 test for prompted SED (exp 011) checks whether the backbone encodes species at all (clustering). But the **prompted-SED-specific** diagnostic is whether the reference actually influences target processing:
+
+```python
+# Same target, different references
+emb_A = backbone(concat(ref_species_X, target))[:, 500:, :]  # target portion
+emb_B = backbone(concat(ref_species_Y, target))[:, 500:, :]  # same target, different ref
+
+delta = (emb_A - emb_B).norm(dim=-1).mean()
+```
+
+If `delta ≈ 0`: the model ignores the reference entirely. Target embeddings are the same regardless of what reference is prepended. Prompted SED cannot work through concatenation — need explicit comparison mechanism.
+
+If `delta > 0`: the reference IS influencing target embeddings through the bidirectional layers. The SED head has something to work with. The magnitude of delta relative to the overall embedding norm indicates conditioning strength.
+
+#### Fallback strategies if conditioning is weak
+
+If the conditioning delta is small (reference influence is diluted), three approaches in order of increasing complexity:
+
+**1. Prototypical similarity head** — process ref and target separately, compare explicitly:
+```python
+ref_emb = backbone(mel_ref, return_all_tokens=True).mean(dim=1)   # (B, D)
+tgt_emb = backbone(mel_tgt, return_all_tokens=True)               # (B, T, D)
+similarity = (tgt_emb * ref_emb.unsqueeze(1)).sum(-1)             # (B, T)
+```
+No concatenation needed. The backbone just needs to produce good per-token features (which the mean-pool clustering test confirms). This is ProtoCLR at token level — simple, robust, no architectural risk.
+
+**2. Lightweight cross-attention** — add one cross-attention layer between ref and target embeddings:
+```python
+attn_out = cross_attention(
+    query=target_embeddings,   # (B, 3000, D)
+    key=ref_embeddings,        # (B, 500, D)
+    value=ref_embeddings
+)
+logits = sed_head(attn_out)   # (B, 3000, 1)
+```
+Makes the comparison explicit. Cost is O(3000 × 500) — cheap. Adds one layer of parameters but doesn't modify the backbone.
+
+**3. Standard fixed-head SED** — abandon prompting, use `Linear(D, 206)` per token. This is what the BirdCLEF 2025 winners use. Lose zero-shot capability but keep the SED gains (+0.03-0.05 over clip classification). The distributed features are good for classification, just not for the specific prompting mechanism.
+
+The prototypical similarity head (option 1) is the strongest fallback because it preserves zero-shot capability (just provide a new species' reference clip at inference) while avoiding the conditioning question entirely.
 
 ### Pre-trained weight structure
 
