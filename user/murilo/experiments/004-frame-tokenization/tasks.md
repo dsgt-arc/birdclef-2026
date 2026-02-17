@@ -110,12 +110,43 @@ to isolate the tokenization variable from the mel backend change.
   - **Verdict: confirmed** — vertical frame tokenization improves cmAP by 30–49%
 - [x] 7.8 Update `results.md` with torchaudio rerun results
 
-## 8. Optimization (optional)
+## 8. Fix nnAudio Mel Filterbank
+
+Root cause identified: `NNAudioMelSpectrogram` doesn't override nnAudio defaults
+that differ from torchaudio's. Two mel filterbank parameters are mismatched:
+
+| Parameter | nnAudio default | torchaudio default | Fix |
+|-----------|----------------|-------------------|-----|
+| Mel scale | `htk=False` (Slaney) | `mel_scale="htk"` (HTK) | Pass `htk=True` |
+| Mel norm | `norm=1` (area norm) | `norm=None` (no norm) | Pass `norm=None` |
+
+STFT, power (2.0), window (Hann), fmin/fmax are all identical — the filterbank
+construction is the only difference.
+
+- [ ] 8.1 Fix `NNAudioMelSpectrogram`: pass `htk=True, norm=None` to `nnAudio.features.MelSpectrogram(...)`
+  - File: `src/birdset_benchmark/preprocessing/nnaudio_mel.py`
+  - Also align log epsilon: `torch.log(mel + 1e-6)` instead of `torch.log(mel.clamp(min=1e-6))` to match torchaudio
+- [ ] 8.2 Add pytest: numerical comparison of nnAudio vs torchaudio output
+  - Generate mel from a reference waveform using both `NNAudioMelSpectrogram` and `MelSpectrogramTransform`
+  - Assert `torch.allclose(nnaudio_mel, torchaudio_mel, atol=1e-3)` — outputs should be nearly identical after fix
+  - Test with real audio (from HSN) and synthetic waveforms (sine, silence, noise)
+  - File: `tests/004-frame-tokenization/test_nnaudio_torchaudio_parity.py`
+- [ ] 8.3 Update existing nnAudio tests in `test_pipeline_integration.py` if any assertions change
+- [ ] 8.4 Fast-dev-run with fixed nnAudio (`waveform_only=True`, no `cache_mel_specs`)
+  - Confirm logs show `mode: waveform` and training completes
+  - Compare mel output shape/range to torchaudio baseline
+- [ ] 8.5 Re-run all 4 nnAudio configs with fixed filterbank
+  - Use original configs (no `cache_mel_specs`) — model computes mel on GPU via fixed nnAudio
+  - Expect results close to torchaudio rerun (baseline ~0.066, 128×2 ~0.098)
+  - If nnAudio results match torchaudio within seed variance, GPU mel is validated for future use
+- [ ] 8.6 Update `results.md` with fixed nnAudio rerun results
+
+## 9. Optimization (optional)
 
 See `docs/concepts/audio-pipeline-bottlenecks.md` for full analysis of the
 disk I/O vs GPU mel computation problem discovered during this experiment.
 
-- [ ] 8.1 Cache pre-loaded waveforms to `.pt` files on disk
+- [ ] 9.1 Cache pre-loaded waveforms to `.pt` files on disk
   - Pre-load takes ~25 min (train: 1025s, val: 528s) due to sf.read + librosa.resample
   - Save `HSN_train_waveforms.pt` / `HSN_val_waveforms.pt` after first pre-load
   - Subsequent runs load from `.pt` in ~5s instead of re-reading all audio files
