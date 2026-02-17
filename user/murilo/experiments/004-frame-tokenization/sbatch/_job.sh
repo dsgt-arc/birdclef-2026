@@ -78,13 +78,13 @@ uv venv "$JOB_VENV" --python 3.11
 # Activate the virtual environment
 source "$JOB_VENV/bin/activate"
 
-# Install the user package (includes all dependencies from pyproject.toml)
-echo "  Installing dependencies..."
-uv pip install -e "$EXPERIMENT_DIR"
-
-# Install PyTorch with CUDA support
+# Install PyTorch with CUDA support first (avoids pulling CPU-only torch from PyPI)
 echo "  Installing PyTorch with CUDA..."
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install the user package (skips torch since it's already installed)
+echo "  Installing dependencies..."
+uv pip install -e "$EXPERIMENT_DIR"
 
 echo "  Virtual environment ready!"
 echo ""

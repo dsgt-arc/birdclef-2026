@@ -45,7 +45,8 @@
 - [x] 3.4 Verify positional embeddings are correctly sized for each patch configuration
   - Added `test_pos_embed_shape` — parametrized across all 4 configs, 8/8 tests passing
   - 16×16 → (1, 249, 384), 128×2 → (1, 251, 384), 128×4 → (1, 126, 384), 128×1 → (1, 501, 384)
-- [ ] 3.5 Run fast-dev-run for remaining 3 configs (128×2, 128×4, 128×1)
+- [x] 3.5 Run fast-dev-run for remaining 3 configs (128×2, 128×4, 128×1)
+  - All 4 configs validated end-to-end with nnAudio GPU mel
 
 ## 4. Execution
 
