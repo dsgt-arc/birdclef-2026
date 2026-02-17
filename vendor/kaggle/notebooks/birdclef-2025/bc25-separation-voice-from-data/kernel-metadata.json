@@ -1,0 +1,19 @@
+{
+  "id": "kdmitrie/bc25-separation-voice-from-data",
+  "id_no": 78531592,
+  "title": "BC25: separation voice from data",
+  "code_file": "bc25-separation-voice-from-data.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

@@ -1,0 +1,124 @@
+# Kaggle asset manifest (analogous to .gitmodules)
+#
+# Datasets:  kaggle datasets download -p <path> --unzip <slug>
+# Notebooks: kaggle kernels pull -p <path> -m <slug>
+
+[notebook "birdclef-2025/bird25-weightedblend-0-88"]
+	slug = kumarandatascientist/bird25-weightedblend-0-88
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird25-weightedblend-0-88
+	votes = 577
+
+[notebook "birdclef-2025/bird25-openvino-ensemble-infer-baseline-lb-874"]
+	slug = kurisew/bird25-openvino-ensemble-infer-baseline-lb-874
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird25-openvino-ensemble-infer-baseline-lb-874
+	votes = 375
+
+[notebook "birdclef-2025/efficientnet-b0-pytorch-train-birdclef-25"]
+	slug = kadircandrisolu/efficientnet-b0-pytorch-train-birdclef-25
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/efficientnet-b0-pytorch-train-birdclef-25
+	votes = 936
+
+[notebook "birdclef-2025/lb-0-804-efficientnet-b0-pytorch-pipeline"]
+	slug = kumarandatascientist/lb-0-804-efficientnet-b0-pytorch-pipeline
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/lb-0-804-efficientnet-b0-pytorch-pipeline
+	votes = 385
+
+[notebook "birdclef-2025/bird25-weightedblend-nfnet-seresnext-0-878"]
+	slug = johnyim1570/bird25-weightedblend-nfnet-seresnext-0-878
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird25-weightedblend-nfnet-seresnext-0-878
+	votes = 241
+
+[notebook "birdclef-2025/bc25-separation-voice-from-data"]
+	slug = kdmitrie/bc25-separation-voice-from-data
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bc25-separation-voice-from-data
+	votes = 181
+
+[notebook "birdclef-2025/birdclef-2025-mfcc-feature-roc-auc-analysis"]
+	slug = jocelyndumlao/birdclef-2025-mfcc-feature-roc-auc-analysis
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/birdclef-2025-mfcc-feature-roc-auc-analysis
+	votes = 146
+
+[notebook "birdclef-2025/labels-tta-efficientnet-b0-pytorch-inference"]
+	slug = salmanahmedtamu/labels-tta-efficientnet-b0-pytorch-inference
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/labels-tta-efficientnet-b0-pytorch-inference
+	votes = 159
+
+[notebook "birdclef-2025/post-processing-with-power-adjustment-for-low-rank"]
+	slug = myso1987/post-processing-with-power-adjustment-for-low-rank
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/post-processing-with-power-adjustment-for-low-rank
+	votes = 351
+
+[notebook "birdclef-2025/bird-25-submission-regnety008-v1"]
+	slug = shionao7/bird-25-submission-regnety008-v1
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird-25-submission-regnety008-v1
+	votes = 269
+
+[notebook "birdclef-2025/bird25-nfnet-convnextv2-weightedblend-lb-860"]
+	slug = hideyukizushi/bird25-nfnet-convnextv2-weightedblend-lb-860
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird25-nfnet-convnextv2-weightedblend-lb-860
+	votes = 436
+
+[notebook "birdclef-2025/transforming-audio-to-mel-spec-birdclef-25"]
+	slug = kadircandrisolu/transforming-audio-to-mel-spec-birdclef-25
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/transforming-audio-to-mel-spec-birdclef-25
+	votes = 450
+
+[notebook "birdclef-2025/bird-25-regnety008-v1-default-v1"]
+	slug = overvalueawareness/bird-25-regnety008-v1-default-v1
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird-25-regnety008-v1-default-v1
+	votes = 155
+
+[notebook "birdclef-2025/bird25-onlyin-lb-834-changed-cfg"]
+	slug = kumarandatascientist/bird25-onlyin-lb-834-changed-cfg
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird25-onlyin-lb-834-changed-cfg
+	votes = 363
+
+[notebook "birdclef-2025/lb-0-81-efficientnetv2-b0-pytorch-inference"]
+	slug = hiranorm/lb-0-81-efficientnetv2-b0-pytorch-inference
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/lb-0-81-efficientnetv2-b0-pytorch-inference
+	votes = 138
+
+[notebook "birdclef-2025/bird2025-single-sed-model-inference-lb-0-857"]
+	slug = i2nfinit3y/bird2025-single-sed-model-inference-lb-0-857
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird2025-single-sed-model-inference-lb-0-857
+	votes = 329
+
+[notebook "birdclef-2025/bird25-onlyinf-v2-s-focallossbce-cv-962-lb-829"]
+	slug = hideyukizushi/bird25-onlyinf-v2-s-focallossbce-cv-962-lb-829
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird25-onlyinf-v2-s-focallossbce-cv-962-lb-829
+	votes = 401
+
+[notebook "birdclef-2025/efficientnet-b0-pytorch-inference-birdclef-25"]
+	slug = kadircandrisolu/efficientnet-b0-pytorch-inference-birdclef-25
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/efficientnet-b0-pytorch-inference-birdclef-25
+	votes = 710
+
+[notebook "birdclef-2025/birdclef-2025-sample-submission"]
+	slug = stefankahl/birdclef-2025-sample-submission
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/birdclef-2025-sample-submission
+	votes = 245
+
+[notebook "birdclef-2025/birdclef2025-sound-event-visualisations"]
+	slug = myso1987/birdclef2025-sound-event-visualisations
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/birdclef2025-sound-event-visualisations
+	votes = 530

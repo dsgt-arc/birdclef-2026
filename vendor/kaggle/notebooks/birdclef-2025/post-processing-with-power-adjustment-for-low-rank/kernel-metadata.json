@@ -1,0 +1,21 @@
+{
+  "id": "myso1987/post-processing-with-power-adjustment-for-low-rank",
+  "id_no": 82968645,
+  "title": "Post-Processing with Power Adjustment for Low-Rank",
+  "code_file": "post-processing-with-power-adjustment-for-low-rank.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    "myso1987/birdclef-2025-sed-models-p"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

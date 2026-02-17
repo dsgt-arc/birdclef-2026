@@ -1,0 +1,23 @@
+{
+  "id": "overvalueawareness/bird-25-regnety008-v1-default-v1",
+  "id_no": 80355654,
+  "title": "Bird'25 RegNetY008 v1 \u00b7 default \u00b7 V1",
+  "code_file": "bird-25-regnety008-v1-default-v1.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    "xiaoazuzong/birdclef-2025-efficientnet-b0"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": [
+    "shionao7/regnrty008/PyTorch/default/1"
+  ]
+}

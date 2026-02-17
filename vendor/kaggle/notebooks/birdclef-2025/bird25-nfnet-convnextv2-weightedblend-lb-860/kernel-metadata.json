@@ -1,0 +1,22 @@
+{
+  "id": "hideyukizushi/bird25-nfnet-convnextv2-weightedblend-lb-860",
+  "id_no": 83214963,
+  "title": "Bird25|nfnet+convnextv2|WeightedBlend|LB.860",
+  "code_file": "bird25-nfnet-convnextv2-weightedblend-lb-860.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    "hideyukizushi/bird25-d-330v2-ppv15-convnextv2-nano",
+    "myso1987/birdclef-2025-sed-models-p"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

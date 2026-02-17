@@ -25,6 +25,8 @@ Use slash commands to create properly structured documents:
 | `/docs:concept` | Research idea or hypothesis | `docs/_templates/concept.md` |
 | `/docs:reference` | External knowledge capture | `docs/_templates/reference.md` |
 | `/docs:vendor` | External tool/dataset documentation | `docs/vendor/_TEMPLATE.md` |
+| `/docs:kaggle-summary` | Clean-room Kaggle notebook/dataset summary | `docs/_templates/kaggle-summary.md` |
+| `/kaggle:vendor` | Vendor Kaggle notebooks/datasets into `vendor/kaggle/` | `.kaggle-datasets` |
 | `/experiment:proposal` | Experiment proposal | `docs/_templates/experiment-proposal.md` |
 | `/experiment:result` | Experiment results | `docs/_templates/experiment-result.md` |
 | `/experiment:validate` | Validate experiment structure | - |

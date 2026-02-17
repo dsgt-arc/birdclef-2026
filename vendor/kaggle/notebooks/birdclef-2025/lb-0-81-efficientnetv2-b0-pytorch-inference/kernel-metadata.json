@@ -1,0 +1,23 @@
+{
+  "id": "hiranorm/lb-0-81-efficientnetv2-b0-pytorch-inference",
+  "id_no": 79613193,
+  "title": "[LB:0.81] EfficientNetV2 B0 Pytorch [Inference]",
+  "code_file": "lb-0-81-efficientnetv2-b0-pytorch-inference.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    ""
+  ],
+  "kernel_sources": [
+    "packagemanager/pm-79613193-at-04-13-2025-12-30-20"
+  ],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

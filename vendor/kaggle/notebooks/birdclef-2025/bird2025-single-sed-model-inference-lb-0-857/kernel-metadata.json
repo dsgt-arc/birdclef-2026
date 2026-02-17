@@ -1,0 +1,22 @@
+{
+  "id": "i2nfinit3y/bird2025-single-sed-model-inference-lb-0-857",
+  "id_no": 83232058,
+  "title": "Bird2025 | Single SED Model Inference [LB 0.857]",
+  "code_file": "bird2025-single-sed-model-inference-lb-0-857.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    "i2nfinit3y/bird2025-sed-ckpt",
+    "i2nfinit3y/onnxruntime"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

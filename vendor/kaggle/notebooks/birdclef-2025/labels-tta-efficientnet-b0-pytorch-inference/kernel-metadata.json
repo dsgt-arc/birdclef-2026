@@ -1,0 +1,21 @@
+{
+  "id": "salmanahmedtamu/labels-tta-efficientnet-b0-pytorch-inference",
+  "id_no": 79013434,
+  "title": "Labels TTA EfficientNet B0 Pytorch [Inference]",
+  "code_file": "labels-tta-efficientnet-b0-pytorch-inference.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    "xiaoazuzong/birdclef-2025-efficientnet-b0"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

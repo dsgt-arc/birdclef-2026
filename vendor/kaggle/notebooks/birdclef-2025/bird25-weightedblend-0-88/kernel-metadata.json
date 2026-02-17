@@ -1,0 +1,22 @@
+{
+  "id": "kumarandatascientist/bird25-weightedblend-0-88",
+  "id_no": 83913480,
+  "title": "Bird25 | WeightedBlend  | 0.88",
+  "code_file": "bird25-weightedblend-0-88.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    "i2nfinit3y/bird2025-sed-ckpt",
+    "myso1987/birdclef-2025-sed-models-p"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

@@ -1,0 +1,21 @@
+{
+  "id": "kadircandrisolu/efficientnet-b0-pytorch-inference-birdclef-25",
+  "id_no": 78739069,
+  "title": "EfficientNet B0 Pytorch [Inference] | BirdCLEF'25",
+  "code_file": "efficientnet-b0-pytorch-inference-birdclef-25.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    "kadircandrisolu/birdclef25-effnetb0-starter-weight"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

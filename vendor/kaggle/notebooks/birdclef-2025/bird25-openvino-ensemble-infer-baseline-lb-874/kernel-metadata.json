@@ -1,0 +1,29 @@
+{
+  "id": "kurisew/bird25-openvino-ensemble-infer-baseline-lb-874",
+  "id_no": 83763845,
+  "title": "Bird25|Openvino|Ensemble infer|Baseline|LB.874",
+  "code_file": "bird25-openvino-ensemble-infer-baseline-lb-874.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    "i2nfinit3y/bird2025-sed-ckpt",
+    "myso1987/birdclef-2025-sed-models-p",
+    "i2nfinit3y/onnxruntime"
+  ],
+  "kernel_sources": [
+    "kurisew/openvino-wheels"
+  ],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": [
+    "kurisew/5.30-fold-model/PyTorch/default/1",
+    "kurisew/efficientnet_b0/PyTorch/openvino/1",
+    "kurisew/regnety_008/PyTorch/default/1"
+  ]
+}
