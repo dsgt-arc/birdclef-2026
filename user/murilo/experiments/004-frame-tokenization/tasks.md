@@ -73,6 +73,9 @@
 
 ## 6. Optimization (optional)
 
+See `docs/concepts/audio-pipeline-bottlenecks.md` for full analysis of the
+disk I/O vs GPU mel computation problem discovered during this experiment.
+
 - [ ] 6.1 Cache pre-loaded waveforms to `.pt` files on disk
   - Pre-load takes ~25 min (train: 1025s, val: 528s) due to sf.read + librosa.resample
   - Save `HSN_train_waveforms.pt` / `HSN_val_waveforms.pt` after first pre-load
