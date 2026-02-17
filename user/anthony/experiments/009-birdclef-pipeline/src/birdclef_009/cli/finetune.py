@@ -134,6 +134,7 @@ def main():
             callbacks.append(pl.callbacks.ModelCheckpoint(
                 dirpath="logs/finetune/checkpoints",
                 filename="finetune-{epoch:02d}-{val/cmap:.4f}",
+                save_last=True,
                 **mc_cfg,
             ))
 
