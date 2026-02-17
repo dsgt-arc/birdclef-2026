@@ -115,47 +115,39 @@ The torchaudio rerun confirms the core hypothesis: **vertical frame tokenization
 
 ### Why nnAudio Underperforms
 
-Comparing `NNAudioMelSpectrogram` (`preprocessing/nnaudio_mel.py`) with `MelSpectrogramTransform` (`preprocessing/mel_spectrogram.py`) reveals several differences that compound to produce materially different spectrograms:
+The performance gap is caused by a **mel filterbank configuration mismatch** in our `NNAudioMelSpectrogram` wrapper. The STFT itself (window, hop, n_fft, power) is identical between the two — both use Hann window and `power=2.0`. The problem is that nnAudio and torchaudio have different *defaults* for mel filterbank construction, and our wrapper doesn't override them to match:
 
-**1. Power scale mismatch (most likely primary cause)**
+| Parameter | nnAudio default | torchaudio default | Effect |
+|-----------|----------------|-------------------|--------|
+| **Mel scale** | `htk=False` (Slaney) | `mel_scale="htk"` (HTK) | Different frequency-to-mel mapping |
+| **Mel norm** | `norm=1` (Slaney area norm) | `norm=None` (no norm) | Different triangle filter weighting |
+| power | 2.0 | 2.0 | Same |
+| window | hann | hann | Same |
+| fmax | None (Nyquist) | None (Nyquist) | Same |
+
+**1. Mel scale mismatch (Slaney vs HTK)**
+
+nnAudio defaults to `htk=False`, which uses the Slaney Auditory Toolbox formula (linear below 1000 Hz, logarithmic above). torchaudio defaults to `mel_scale="htk"`, which uses the pure logarithmic HTK formula (`2595 * log10(1 + f/700)`). This changes the spacing of all 128 mel frequency bins — the filters cover different frequency ranges, so the same audio produces different energy distributions across bins. Our wrapper doesn't set `htk=True`, so it silently uses Slaney instead of HTK.
+
+**2. Mel filterbank normalization (area norm vs none)**
+
+nnAudio defaults to `norm=1` (Slaney-style area normalization — each triangular filter is divided by its bandwidth). torchaudio defaults to `norm=None` (raw triangular filters with peak=1.0). Area normalization compresses higher-frequency bins (which are wider in mel space), changing the relative weighting across the frequency axis. Our wrapper doesn't set `norm=None`, so it silently applies area normalization that torchaudio doesn't use.
+
+**3. Log epsilon handling (minor)**
 
 ```python
-# torchaudio — explicitly computes power spectrogram (|STFT|²)
-torchaudio.transforms.MelSpectrogram(..., power=2.0)
-
-# nnAudio — no power parameter specified, defaults to magnitude (|STFT|)
-nnAudio.features.MelSpectrogram(...)
-```
-
-If nnAudio returns magnitude (|STFT|) while torchaudio returns power (|STFT|²), the log-domain values are on different scales: `log(|STFT|²) = 2 × log(|STFT|)`. The normalization constants (mean=-4.268, std=4.569) come from AudioSet/AST literature that uses torchaudio's power spectrogram. Applying these constants to nnAudio's magnitude spectrogram shifts the normalized output distribution away from what pretrained/standard models expect, effectively compressing the feature range and losing discriminative detail.
-
-**2. Log epsilon handling**
-
-```python
-# torchaudio — additive epsilon (shifts all values up by 1e-6)
+# torchaudio — additive epsilon
 mel = torch.log(mel + 1e-6)
 
-# nnAudio — clamp epsilon (only affects values below threshold)
+# nnAudio wrapper — clamp epsilon
 mel = torch.log(mel.clamp(min=1e-6))
 ```
 
-For near-silent regions: `log(0 + 1e-6) = -13.8` vs `log(clamp(0, 1e-6)) = -13.8` — identical. But for non-zero values, `log(x + 1e-6)` slightly inflates all values while `log(clamp(x, 1e-6))` leaves them untouched. This is a minor difference for most mel values but changes the floor behavior for silence-heavy spectrograms.
+Minor difference: `log(x + 1e-6)` slightly inflates all values while `log(clamp(x, 1e-6))` only affects near-zero values. Negligible for most mel bins.
 
-**3. STFT implementation**
+**Root cause**: This is an implementation bug in `NNAudioMelSpectrogram` — it doesn't configure nnAudio's mel filterbank to match torchaudio's defaults. The fix would be to pass `htk=True, norm=None` to `nnAudio.features.MelSpectrogram(...)`.
 
-torchaudio uses `torch.stft` (FFT-based), while nnAudio uses a learned/fixed `Conv1d` kernel to compute STFT. Both are mathematically equivalent for `trainable_STFT=False`, but numerical precision differences in the convolution vs FFT path can produce subtly different spectrogram values, especially at frequency bin boundaries.
-
-**4. Mel filterbank construction**
-
-Both target the same mel-scale parameters (128 bins, fmin=0, fmax=Nyquist), but nnAudio and torchaudio implement the triangular mel filters independently. Differences in filter normalization (area vs peak normalization), frequency-to-mel mapping (HTK vs Slaney), or bin edge rounding can shift energy across frequency bins.
-
-**5. Window function**
-
-torchaudio explicitly specifies `window_fn=torch.hann_window`. nnAudio's default is also Hann, but this is not explicitly set in our code — if the default ever changed or differs between versions, it would affect the spectrogram.
-
-**Net effect**: The power scale mismatch (issue 1) is the most likely primary cause because it introduces a systematic 2× scaling in log domain that the normalization constants cannot correct for. The other differences are second-order but compound to further degrade spectrogram quality. The disproportionate harm to 16×16 patches (2.28× worse) vs vertical frames (~1.4–1.8× worse) suggests that square patches are more sensitive to spectrogram quality — possibly because they fragment the frequency axis and rely on precise cross-band amplitude relationships that a scale mismatch distorts.
-
-**Recommendation**: To use nnAudio for GPU mel in future experiments, explicitly set `power=2` (if supported) or square the output before log, and validate numerically against torchaudio's output on a reference batch.
+**Why 16×16 patches are hit harder**: The mel filterbank mismatch redistributes energy across frequency bins. Square 16×16 patches fragment the 128-bin frequency axis into 8 disjoint bands of 16 bins each — if the energy within each 16-bin band is shifted by the filterbank mismatch, the model sees fundamentally different per-patch features. Vertical 128×N patches span the full frequency axis, so energy redistribution within the 128 bins is less disruptive since each token still captures the full spectral shape.
 
 ## Artifacts
 
