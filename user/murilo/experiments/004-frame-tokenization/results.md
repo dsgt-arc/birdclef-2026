@@ -107,7 +107,7 @@ The torchaudio rerun confirms the core hypothesis: **vertical frame tokenization
 
 **Mel backend (resolved)**: The torchaudio rerun confirmed the mel backend was the primary confound in the original results. The torchaudio baseline (0.066) closely matches exp 003 (0.073), validating cross-experiment comparison.
 
-**Hardware**: Torchaudio reruns used V100 16GB (same as original nnAudio runs). Exp 003 used RTX 6000 24GB. This should not affect model accuracy (same 16-mixed AMP precision).
+**Hardware**: All exp 004 runs were allocated V100 16GB by SLURM despite requesting `gpu-rtx6000` in the job script (cluster queue routing). Exp 003 ran on RTX 6000 24GB as requested. This GPU difference should not affect model accuracy (both use 16-mixed AMP precision), but is noted for completeness. The remaining 10% gap between the torchaudio baseline (0.066) and exp 003 (0.073) may partly reflect hardware differences, seed variance, or minor environment differences (PyTorch 2.5.1 vs 2.10.0).
 
 **Single seed**: Each config run once — no variance estimate. The consistent improvement across all 3 vertical configs (all beat baseline by 30%+) makes the finding robust, but multi-seed runs would strengthen it.
 
