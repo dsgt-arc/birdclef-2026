@@ -10,7 +10,7 @@ PARAMS_XC:
   CSV_XC_FILE: 'xc_metadata.csv'
 
 PARAMS_EXTRACT:
-  FUNC: !FUNC bambird.extract_rois_full_sig
+  FUNC: !FUNC bambird.segmentation_extract_rois_full_sig.extract_rois_full_sig
   SAMPLE_RATE: 48000
   LOW_FREQ: 250
   HIGH_FREQ: 12000

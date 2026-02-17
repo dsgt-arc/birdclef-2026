@@ -16,6 +16,6 @@ cd $repo_dir/user/anthony/experiments/010-teacher-labels
 
 echo "=== BamBird extract-features partition ${SLURM_ARRAY_TASK_ID} ==="
 
-$venv/bin/teacher-bambird extract-features \
+PYTHONUNBUFFERED=1 $venv/bin/teacher-bambird extract-features \
     --config configs/teacher.yaml \
     ${SLURM_ARRAY_TASK_ID}

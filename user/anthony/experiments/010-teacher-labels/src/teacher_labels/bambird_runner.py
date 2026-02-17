@@ -25,8 +25,6 @@ from pathlib import Path
 import pandas as pd
 import typer
 
-import bambird
-
 from teacher_labels.utils import (
     list_audio_files,
     load_config,
@@ -39,7 +37,8 @@ app = typer.Typer()
 
 def _load_bambird_config(config_path: str) -> dict:
     """Load bambird-format YAML config and return the PARAMS dict."""
-    return bambird.load_config(config_path)
+    from bambird.config import load_config
+    return load_config(config_path)
 
 
 def _extract_features_single_file(
@@ -53,7 +52,8 @@ def _extract_features_single_file(
     Returns a DataFrame of features (one row per ROI), or empty DataFrame on failure.
     """
     # Stage 1a: Extract ROIs — saves .wav files for each ROI
-    df_rois = bambird.single_file_extract_rois(
+    from bambird.segmentation import single_file_extract_rois
+    df_rois = single_file_extract_rois(
         audio_path=str(audio_path),
         fun=params_extract["FUNC"],
         params=params_extract,
@@ -70,7 +70,8 @@ def _extract_features_single_file(
     for _, row in df_rois.iterrows():
         if "fullfilename_ts" not in row or not Path(str(row["fullfilename_ts"])).exists():
             continue
-        df_feat = bambird.compute_features(
+        from bambird.features import compute_features
+        df_feat = compute_features(
             audio_path=str(row["fullfilename_ts"]),
             params=params_features,
             display=False,
@@ -93,23 +94,29 @@ def _extract_features_single_file(
     return pd.concat(feature_frames, ignore_index=True)
 
 
+def _file_output_name(audio_path: str) -> str:
+    """Derive a unique output filename from an audio path (species/stem)."""
+    p = Path(audio_path)
+    return f"{p.parent.name}__{p.stem}.parquet"
+
+
 @app.command("extract-features")
 def extract_features(
     config: str = "configs/teacher.yaml",
     partition_id: int = typer.Argument(..., help="Partition ID (0-indexed)"),
 ):
-    """Extract ROIs and compute features for a partition of focal audio files."""
+    """Extract ROIs and compute features for a partition of focal audio files.
+
+    Writes one parquet per audio file for idempotency — already-processed
+    files are skipped on restart.
+    """
     cfg = load_config(config)
     audio_dir = cfg["data"]["focal_dir"]
     num_partitions = cfg["partitions"]["focal"]
     bambird_cfg_path = cfg["models"]["bambird"]["config"]
 
-    output_dir = Path(cfg["output"]["root"]).expanduser() / "bambird" / "features"
-    output_path = output_dir / f"part_{partition_id:04d}.parquet"
-
-    if output_path.exists():
-        print(f"Output already exists: {output_path}, skipping.")
-        return
+    output_dir = Path(cfg["output"]["root"]).expanduser() / "bambird" / "features" / f"part_{partition_id:04d}"
+    ensure_output_dir(output_dir)
 
     # Load bambird config
     params = _load_bambird_config(bambird_cfg_path)
@@ -119,14 +126,18 @@ def extract_features(
     files = list_audio_files(audio_dir, "focal")
     partition = partition_files(files, num_partitions, partition_id)
 
+    # Skip already-processed files
+    existing = set(p.name for p in output_dir.glob("*.parquet"))
+    to_process = [(i, f) for i, f in enumerate(partition) if _file_output_name(str(f)) not in existing]
+
     print(f"BamBird extract-features partition {partition_id}/{num_partitions}")
     print(f"  Total files: {len(files)}, this partition: {len(partition)}")
+    print(f"  Already done: {len(partition) - len(to_process)}, remaining: {len(to_process)}")
 
     start = time.time()
-    all_features = []
+    total_rois = 0
 
-    for i, fpath in enumerate(partition):
-        # Use a per-file temp dir for ROI .wav files — cleaned up after each file
+    for idx, (i, fpath) in enumerate(to_process):
         temp_dir = Path(tempfile.mkdtemp(prefix="bambird_rois_"))
         try:
             df_feat = _extract_features_single_file(
@@ -135,30 +146,27 @@ def extract_features(
                 params_features=params_features,
                 temp_dir=temp_dir,
             )
+            out_path = output_dir / _file_output_name(str(fpath))
             if not df_feat.empty:
-                all_features.append(df_feat)
+                df_feat.to_parquet(out_path, index=False)
+                total_rois += len(df_feat)
+            else:
+                # Write empty parquet so we don't re-process silent/empty files
+                pd.DataFrame().to_parquet(out_path, index=False)
         except Exception:
             traceback.print_exc()
         finally:
-            # Clean up temp .wav files to keep disk bounded
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-        if (i + 1) % 50 == 0:
-            print(f"  Processed {i + 1}/{len(partition)} files")
+        if (idx + 1) % 10 == 0:
+            elapsed = time.time() - start
+            rate = (idx + 1) / elapsed
+            remaining = (len(to_process) - idx - 1) / rate if rate > 0 else 0
+            print(f"  [{idx + 1}/{len(to_process)}] {total_rois} ROIs, {rate:.1f} files/s, ~{remaining:.0f}s left")
 
     elapsed = time.time() - start
-
-    if all_features:
-        df = pd.concat(all_features, ignore_index=True)
-    else:
-        df = pd.DataFrame()
-
-    ensure_output_dir(output_dir)
-    df.to_parquet(output_path, index=False)
-
-    total_rois = len(df)
-    print(f"  Done in {elapsed:.1f}s — {len(partition)} files, {total_rois} ROIs with features")
-    print(f"  Output: {output_path}")
+    n_done = len(list(output_dir.glob("*.parquet")))
+    print(f"  Done in {elapsed:.1f}s — {n_done}/{len(partition)} files complete, {total_rois} new ROIs")
 
 
 @app.command("cluster")
@@ -181,14 +189,27 @@ def cluster(
     params = _load_bambird_config(bambird_cfg_path)
     params_cluster = params["PARAMS_CLUSTER"]
 
-    # Load all feature parquets
-    parts = sorted(features_dir.glob("part_*.parquet"))
-    if not parts:
-        print(f"No feature parquets found in {features_dir}")
+    # Load all per-file feature parquets from partition subdirectories
+    all_parquets = sorted(features_dir.glob("part_*/*.parquet"))
+    if not all_parquets:
+        print(f"No feature parquets found in {features_dir}/part_*/")
         return
 
-    print(f"Loading {len(parts)} feature partitions...")
-    df_all = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
+    frames = []
+    for p in all_parquets:
+        df = pd.read_parquet(p)
+        if not df.empty:
+            frames.append(df)
+
+    print(f"Loaded {len(all_parquets)} files ({len(frames)} non-empty)")
+    if not frames:
+        print("All parquets are empty — no ROIs to cluster.")
+        ensure_output_dir(output_path.parent)
+        pd.DataFrame(columns=["file", "species", "detected_events", "event_cluster",
+                               "num_signal_rois", "num_noise_rois"]).to_parquet(output_path, index=False)
+        return
+
+    df_all = pd.concat(frames, ignore_index=True)
     print(f"  Total ROIs: {len(df_all)}")
 
     if df_all.empty:
@@ -209,9 +230,10 @@ def cluster(
         df_all["fullfilename_ts"] = ""
 
     # Run bambird clustering (per-species via 'categories' column)
+    from bambird.cluster import find_cluster
     print("Clustering per-species...")
     start = time.time()
-    df_cluster, _ = bambird.find_cluster(
+    df_cluster, _ = find_cluster(
         dataset=df_all,
         params=params_cluster,
         display=False,
