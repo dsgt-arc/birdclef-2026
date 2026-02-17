@@ -1,6 +1,6 @@
 # Proposal: BirdCLEF End-to-End Pipeline
 
-**Status**: proposed
+**Status**: confirmed (pipeline operational, performance improvements ongoing)
 **Created**: 2026-02-13
 **Author**: Anthony
 
