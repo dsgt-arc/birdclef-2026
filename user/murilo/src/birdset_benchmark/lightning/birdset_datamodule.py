@@ -3,8 +3,9 @@
 Supports three data-loading modes controlled by ``cache_mel_specs`` and
 ``waveform_only``:
 
-* **waveform_only=True** — returns raw waveforms (batch, num_samples) for
-  GPU-side mel computation via nnAudio. Fastest option.
+* **waveform_only=True** — pre-loads all waveforms into RAM during
+  ``setup()`` and returns them for GPU-side mel computation via nnAudio.
+  Zero disk I/O during training. Fastest option.
 * **cache_mel_specs=True** — pre-computes mel spectrograms on CPU during
   ``setup()`` and caches in RAM. No disk I/O during training.
 * **Both False (default)** — mel spectrograms computed on-the-fly in
@@ -61,18 +62,22 @@ class _CachedMelDataset(Dataset):
         return self.mel_specs[idx], self.labels[idx]
 
 
-class _WaveformDataset(Dataset):
-    """Returns raw waveforms for GPU-side mel computation (e.g., nnAudio)."""
+class _CachedWaveformDataset(Dataset):
+    """Pre-loaded waveforms served from memory for GPU-side mel (nnAudio).
 
-    def __init__(self, base_dataset: BirdSetDataset):
-        self.base_dataset = base_dataset
+    All audio is read from disk once during construction and cached as
+    contiguous tensors. Zero disk I/O during training.
+    """
+
+    def __init__(self, waveforms: torch.Tensor, labels: torch.Tensor):
+        self.waveforms = waveforms  # (N, num_samples)
+        self.labels = labels  # (N, num_classes)
 
     def __len__(self) -> int:
-        return len(self.base_dataset)
+        return self.waveforms.shape[0]
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        sample = self.base_dataset[idx]
-        return sample["audio"], sample["labels"]
+        return self.waveforms[idx], self.labels[idx]
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +166,34 @@ class BirdSetDataModule(pl.LightningDataModule):
     # Caching helpers
     # ------------------------------------------------------------------
 
+    def _precompute_waveforms(
+        self, base_dataset: BirdSetDataset, split_name: str
+    ) -> _CachedWaveformDataset:
+        """Pre-load all waveforms into RAM. Zero disk I/O during training."""
+        n = len(base_dataset)
+        logger.info(f"Pre-loading waveforms for {split_name} ({n} samples)...")
+        t0 = time.time()
+
+        wav_list = []
+        label_list = []
+        for i in range(n):
+            sample = base_dataset[i]
+            wav_list.append(sample["audio"])
+            label_list.append(sample["labels"])
+
+            if (i + 1) % 2000 == 0:
+                elapsed = time.time() - t0
+                logger.info(f"  {split_name}: {i + 1}/{n} samples ({elapsed:.1f}s)")
+
+        wav_tensor = torch.stack(wav_list)  # (N, num_samples)
+        label_tensor = torch.stack(label_list)  # (N, num_classes)
+
+        elapsed = time.time() - t0
+        mem_gb = wav_tensor.nbytes / (1024**3)
+        logger.info(f"  {split_name}: done — {n} samples, {mem_gb:.2f} GB, {elapsed:.1f}s")
+
+        return _CachedWaveformDataset(wav_tensor, label_tensor)
+
     def _precompute_mels(self, base_dataset: BirdSetDataset, split_name: str) -> _CachedMelDataset:
         """Pre-compute all mel spectrograms and cache in memory."""
         n = len(base_dataset)
@@ -191,7 +224,7 @@ class BirdSetDataModule(pl.LightningDataModule):
     def _wrap_dataset(self, base_dataset: BirdSetDataset, split_name: str) -> Dataset:
         """Wrap a base dataset — waveform, cached, or on-the-fly depending on config."""
         if self.waveform_only:
-            return _WaveformDataset(base_dataset)
+            return self._precompute_waveforms(base_dataset, split_name)
         if self.cache_mel_specs:
             return self._precompute_mels(base_dataset, split_name)
         return _MelDataset(base_dataset, self.mel_transform)
@@ -208,7 +241,7 @@ class BirdSetDataModule(pl.LightningDataModule):
         """
         self.num_classes = get_num_classes(self.dataset_name)
         if self.waveform_only:
-            mode = "waveform (GPU mel via nnAudio)"
+            mode = "cached waveform (GPU mel via nnAudio)"
         elif self.cache_mel_specs:
             mode = "cached"
         else:

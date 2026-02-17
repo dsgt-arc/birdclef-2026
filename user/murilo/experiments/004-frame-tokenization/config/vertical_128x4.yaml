@@ -21,10 +21,10 @@ data:
   frame_shift_ms: 10
   target_frames: 500
   batch_size: 128
-  num_workers: 6
+  num_workers: 8
   pin_memory: true
   persistent_workers: true
-  prefetch_factor: 4
+  prefetch_factor: 8
   norm_mean: -4.268
   norm_std: 4.569
 

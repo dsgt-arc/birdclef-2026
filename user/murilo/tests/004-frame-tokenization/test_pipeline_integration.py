@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 # Add shared src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from birdset_benchmark.lightning.birdset_datamodule import _WaveformDataset
+from birdset_benchmark.lightning.birdset_datamodule import _CachedWaveformDataset
 from birdset_benchmark.models.frame_vit import FrameTokenizedViT
 
 SAMPLE_RATE = 32000
@@ -67,7 +67,10 @@ def mock_dataset():
 
 @pytest.fixture
 def waveform_dataset(mock_dataset):
-    return _WaveformDataset(mock_dataset)
+    """Simulate what _precompute_waveforms produces: pre-loaded tensors."""
+    waveforms = mock_dataset.waveforms  # (N, num_samples)
+    labels = mock_dataset.labels  # (N, num_classes)
+    return _CachedWaveformDataset(waveforms, labels)
 
 
 @pytest.fixture
