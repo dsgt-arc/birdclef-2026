@@ -114,3 +114,4 @@ The `.kaggle-datasets` file uses INI format mirroring `.gitmodules`:
 - The `.kaggle-datasets` manifest is checked into git; vendored content in `vendor/kaggle/` should be gitignored or kept small
 - Use tabs for indentation in the manifest (matching `.gitmodules` convention)
 - If `kaggle` CLI is not available, inform the user to install it: `pip install kaggle`
+- Each competition has an index at `docs/references/kaggle/<competition>/README.md` — use `/docs:kaggle-summary` to create summaries that automatically update the index

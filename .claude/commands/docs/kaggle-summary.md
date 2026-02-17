@@ -42,6 +42,11 @@ Create a clean-room summary of a vendored Kaggle notebook or dataset.
    - Link to experiments this could inform
    - Link to similar kaggle summaries if any exist
 
+7. **Update the competition index** at `docs/references/kaggle/<competition>/README.md`:
+   - If the index exists, add the new summary to the appropriate table (scored, training, or utility)
+   - If no index exists, create one following the pattern in `docs/references/kaggle/birdclef-2025/README.md`
+   - Keep tables sorted by LB score (descending) for scored notebooks, by votes (descending) for others
+
 ## Output Path
 
 ```
