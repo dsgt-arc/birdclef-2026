@@ -159,7 +159,14 @@ def main():
     )
 
     # Initialize data module
-    logger.info("Initializing data module...")
+    # cache_mel_specs=True → torchaudio mel on CPU (cached), model skips nnAudio
+    # default (no key) → waveform_only=True, model computes mel on GPU via nnAudio
+    cache_mel_specs = config["data"].get("cache_mel_specs", False)
+    waveform_only = not cache_mel_specs  # mutually exclusive
+    logger.info(
+        f"Initializing data module... "
+        f"(cache_mel_specs={cache_mel_specs}, waveform_only={waveform_only})"
+    )
     data_module = BirdSetDataModule(
         dataset_name=config["data"]["dataset_name"],
         batch_size=config["data"]["batch_size"],
@@ -174,7 +181,8 @@ def main():
         pin_memory=config["data"]["pin_memory"],
         persistent_workers=config["data"]["persistent_workers"],
         prefetch_factor=config["data"]["prefetch_factor"],
-        waveform_only=True,  # nnAudio computes mel on GPU inside model
+        cache_mel_specs=cache_mel_specs,
+        waveform_only=waveform_only,
     )
 
     # Setup callbacks
@@ -291,7 +299,7 @@ def main():
         "config_path": str(config_path),
         "run_name": run_name,
         "best_epoch": checkpoint_callback.best_model_score is not None
-        and int(Path(checkpoint_callback.best_model_path).stem.split("epoch=")[-1])
+        and int(Path(checkpoint_callback.best_model_path).stem.split("epoch=")[-1].split("-")[0])
         or None,
         "best_val_cmap": float(checkpoint_callback.best_model_score)
         if checkpoint_callback.best_model_score is not None

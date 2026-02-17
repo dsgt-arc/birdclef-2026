@@ -55,28 +55,67 @@
 - [x] 4.1 Submit all 4 training runs via `sbatch/run.sh --all`
   - Baseline (16×16), Config A (128×2), Config B (128×4), Config C (128×1)
   - All submitted — check SLURM logs and W&B for results
-- [ ] 4.2 Check SLURM job completion — verify all 4 runs finished successfully
-  - Review logs in `logs/slurm_*.log` for errors or OOM
-  - Confirm checkpoints saved in project shared storage
-  - Verify test metrics JSON saved in `outputs/test_results/`
-- [ ] 4.3 Check GPU utilization in W&B DeviceStatsMonitor
-  - Verify cached waveform loading improved GPU utilization vs. the earlier spiky pattern
-- [ ] 4.4 Monitor training via W&B, check for convergence issues
+- [x] 4.2 Check SLURM job completion — verify all 4 runs finished successfully
+  - All 4 trained and tested successfully; 128×4 and 128×1 crashed post-training in metric saving (epoch parsing bug)
+  - Fixed `train.py:294` — checkpoint `-v1` suffix from PL naming collision
+  - Recovered metrics from SLURM logs, wrote corrected `artifacts/training/` metrics.json
+- [x] 4.3 Check GPU utilization in W&B DeviceStatsMonitor
+  - Cached waveform loading confirmed via `artifacts/gpu-utilization.png`
+- [x] 4.4 Monitor training via W&B, check for convergence issues
+  - All vertical frame configs peaked at epoch 2; baseline at epoch 7; all early-stopped at epoch 17–18
 
 ## 5. Analysis
 
-- [ ] 5.1 Compare cmAP across all 4 configurations
-- [ ] 5.2 Analyze training curves (convergence speed, overfitting patterns)
-- [ ] 5.3 Compare walltime per epoch across configs (token count affects attention cost)
-- [ ] 5.4 Document results in `results.md`
+- [x] 5.1 Compare cmAP across all 4 configurations
+  - B: 128×4 (0.063) > A: 128×2 (0.054) > C: 128×1 (0.051) > Baseline (0.029)
+  - All vertical configs outperform 16×16 by 1.8–2.2×
+- [x] 5.2 Analyze training curves (convergence speed, overfitting patterns)
+  - Vertical frames converge 3.5× faster (epoch 2 vs 7)
+  - All configs show overfitting (train cmAP >> test cmAP)
+- [x] 5.3 Compare walltime per epoch across configs (token count affects attention cost)
+  - 128×4: 5.95 it/s, 128×2: 4.15 it/s, 16×16: 4.16 it/s, 128×1: 2.34 it/s
+  - Scales with O(n²) attention cost; job walltimes similar (~37–43 min) due to data loading dominance
+- [x] 5.4 Document results in `results.md`
 - [ ] 5.5 Update concept doc `temporal-resolution-sequence-length.md` with findings
 
-## 6. Optimization (optional)
+## 6. Analysis — Verdict Update
+
+- [x] 6.1 Identified mel backend confound: nnAudio (exp 004) vs torchaudio (exp 003) caused 16×16 baseline to drop from cmAP=0.073 → 0.029
+  - Within-experiment ranking is valid (all 4 configs used nnAudio)
+  - Cross-experiment comparison to exp 003 is unreliable
+  - Updated `results.md` verdict to "inconclusive (pending torchaudio rerun)"
+
+## 7. Torchaudio Mel Rerun
+
+Re-run all 4 configs with the original torchaudio mel backend (`cache_mel_specs: true`)
+to isolate the tokenization variable from the mel backend change.
+
+- [x] 7.1 Add mel bypass in `FrameTokenizedViT.forward()` — dispatch on `x.dim()` (2D=waveform, 4D=pre-computed mel)
+- [x] 7.2 Update `train.py` — read `cache_mel_specs` from config, set `waveform_only = not cache_mel_specs`
+- [x] 7.3 Create 4 torchaudio config files (suffix `-torchaudio`, add `data.cache_mel_specs: true`)
+  - `config/baseline_16x16_torchaudio.yaml`
+  - `config/vertical_128x2_torchaudio.yaml`
+  - `config/vertical_128x4_torchaudio.yaml`
+  - `config/vertical_128x1_torchaudio.yaml`
+- [x] 7.4 Validate with fast-dev-run: `bash sbatch/run.sh config/baseline_16x16_torchaudio.yaml --fast-dev-run`
+  - Confirmed logs show `mode: cached` and `cache_mel_specs=True, waveform_only=False`
+- [x] 7.5 Submit all 4 torchaudio runs
+  - All 4 completed successfully (SLURM jobs 4017565, 4017567, 4017569, 4017568)
+- [x] 7.6 Compare torchaudio baseline to exp 003 baseline
+  - Torchaudio baseline cmAP=0.066 vs exp 003 cmAP=0.073 (within 10%) — mel backend confirmed as primary confound
+- [x] 7.7 Compare torchaudio vertical configs to torchaudio baseline — final verdict
+  - A: 128×2 (0.098) > B: 128×4 (0.087) ≈ C: 128×1 (0.086) > Baseline (0.066)
+  - All vertical configs beat baseline by +30–49%; all beat exp 003's 0.073
+  - Ranking changed: 128×2 is now best (was 128×4 with nnAudio)
+  - **Verdict: confirmed** — vertical frame tokenization improves cmAP by 30–49%
+- [x] 7.8 Update `results.md` with torchaudio rerun results
+
+## 8. Optimization (optional)
 
 See `docs/concepts/audio-pipeline-bottlenecks.md` for full analysis of the
 disk I/O vs GPU mel computation problem discovered during this experiment.
 
-- [ ] 6.1 Cache pre-loaded waveforms to `.pt` files on disk
+- [ ] 8.1 Cache pre-loaded waveforms to `.pt` files on disk
   - Pre-load takes ~25 min (train: 1025s, val: 528s) due to sf.read + librosa.resample
   - Save `HSN_train_waveforms.pt` / `HSN_val_waveforms.pt` after first pre-load
   - Subsequent runs load from `.pt` in ~5s instead of re-reading all audio files

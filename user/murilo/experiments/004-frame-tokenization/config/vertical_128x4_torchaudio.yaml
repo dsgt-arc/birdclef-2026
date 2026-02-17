@@ -1,0 +1,63 @@
+# Exp 004 Config B: Vertical frame 128x4 (torchaudio mel rerun)
+#
+# Same as vertical_128x4.yaml but uses torchaudio CPU mel (cache_mel_specs)
+# instead of nnAudio GPU mel to match exp 003's mel backend.
+#
+# 128x4 patches: 1x125 = 125 tokens (half of baseline)
+# Embed input dim: 512
+# Temporal resolution: 40ms per token
+
+run_name: "vit-small-128x4-vertical-torchaudio"
+
+model:
+  model_name: "vit_small_patch16_224"
+  img_size: [128, 500]
+  patch_size: [128, 4]    # Full-band vertical frames: 1x125 = 125 tokens
+  pretrained: false
+  drop_rate: 0.1
+
+data:
+  dataset_name: "HSN"
+  sample_rate: 32000
+  target_duration: 5.0
+  n_mels: 128
+  frame_shift_ms: 10
+  target_frames: 500
+  batch_size: 128
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 8
+  norm_mean: -4.268
+  norm_std: 4.569
+  cache_mel_specs: true   # Use torchaudio CPU mel (matches exp 003)
+
+training:
+  max_epochs: 100
+  lr: 5.0e-4
+  weight_decay: 0.05
+  warmup_epochs: 10
+  threshold: 0.5
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/cmap"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/cmap"
+    mode: "max"
+    patience: 15
+    min_delta: 0.001
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdset-frame-tokenization"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50
