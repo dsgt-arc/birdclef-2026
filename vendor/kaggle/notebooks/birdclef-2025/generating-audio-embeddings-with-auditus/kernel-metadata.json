@@ -1,0 +1,28 @@
+{
+  "id": "carlolepelaars/generating-audio-embeddings-with-auditus",
+  "id_no": 79304929,
+  "title": "Generating Audio Embeddings with Auditus",
+  "code_file": "generating-audio-embeddings-with-auditus.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [
+    "audio",
+    "audio classification",
+    "audio event classification",
+    "numpy",
+    "animals",
+    "gpu"
+  ],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": [
+    "google/bird-vocalization-classifier/TensorFlow2/bird-vocalization-classifier/8"
+  ]
+}

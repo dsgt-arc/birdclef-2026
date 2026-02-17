@@ -1,0 +1,21 @@
+{
+  "id": "tomkkk/change-secondary-labels-in-train-csv",
+  "id_no": 81295884,
+  "title": "Change secondary labels in train.csv",
+  "code_file": "change-secondary-labels-in-train-csv.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": [
+    ""
+  ]
+}

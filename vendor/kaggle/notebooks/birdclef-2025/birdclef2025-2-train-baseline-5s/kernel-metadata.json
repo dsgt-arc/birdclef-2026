@@ -1,0 +1,27 @@
+{
+  "id": "myso1987/birdclef2025-2-train-baseline-5s",
+  "id_no": 78437371,
+  "title": "BirdCLEF2025-2 Train-baseline 5s",
+  "code_file": "birdclef2025-2-train-baseline-5s.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [
+    "gpu"
+  ],
+  "dataset_sources": [
+    "myso1987/birdclef-2025-train-data"
+  ],
+  "kernel_sources": [
+    "metric/birdclef-roc-auc",
+    "metric/kaggle-metric-utilities",
+    "myso1987/birdclef2025-1-crop-audio-5s"
+  ],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

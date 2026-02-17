@@ -1,0 +1,19 @@
+{
+  "id": "maxmelichov/bird25-0-902-auc",
+  "id_no": 84006018,
+  "title": "Bird25 | 0.902 AUC",
+  "code_file": "bird25-0-902-auc.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

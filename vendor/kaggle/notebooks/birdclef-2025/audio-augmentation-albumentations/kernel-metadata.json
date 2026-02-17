@@ -1,0 +1,23 @@
+{
+  "id": "gopidurgaprasad/audio-augmentation-albumentations",
+  "id_no": 10454909,
+  "title": "Audio Augmentation - Albumentations",
+  "code_file": "audio-augmentation-albumentations.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [
+    "audio"
+  ],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025",
+    "birdsong-recognition",
+    "rfcx-species-audio-detection"
+  ],
+  "model_sources": []
+}

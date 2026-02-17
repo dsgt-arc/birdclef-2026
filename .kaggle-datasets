@@ -122,3 +122,93 @@
 	competition = birdclef-2025
 	path = vendor/kaggle/notebooks/birdclef-2025/birdclef2025-sound-event-visualisations
 	votes = 530
+
+[notebook "birdclef-2025/birdclef2025-2-train-baseline-5s"]
+	slug = myso1987/birdclef2025-2-train-baseline-5s
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/birdclef2025-2-train-baseline-5s
+	votes = 132
+
+[notebook "birdclef-2025/bird2025-9th-place-solution"]
+	slug = i2nfinit3y/bird2025-9th-place-solution
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird2025-9th-place-solution
+	votes = 17
+
+[notebook "birdclef-2025/pseudo-label-creator"]
+	slug = sietze535/pseudo-label-creator
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/pseudo-label-creator
+	votes = 29
+
+[notebook "birdclef-2025/generating-audio-embeddings-with-auditus"]
+	slug = carlolepelaars/generating-audio-embeddings-with-auditus
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/generating-audio-embeddings-with-auditus
+	votes = 35
+
+[notebook "birdclef-2025/biodenoising"]
+	slug = samvelkoch/biodenoising
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/biodenoising
+	votes = 26
+
+[notebook "birdclef-2025/birdclef-2025-eda-geography"]
+	slug = docxian/birdclef-2025-eda-geography
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/birdclef-2025-eda-geography
+	votes = 60
+
+[notebook "birdclef-2025/bc25-birdnet-starter"]
+	slug = kdmitrie/bc25-birdnet-starter
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bc25-birdnet-starter
+	votes = 34
+
+[notebook "birdclef-2025/birdclef2025-1st-place-inference"]
+	slug = nikitababich/birdclef2025-1st-place-inference
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/birdclef2025-1st-place-inference
+	votes = 65
+
+[notebook "birdclef-2025/bird25-0-902-auc"]
+	slug = maxmelichov/bird25-0-902-auc
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bird25-0-902-auc
+	votes = 10
+
+[notebook "birdclef-2025/audio-augmentation-albumentations"]
+	slug = gopidurgaprasad/audio-augmentation-albumentations
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/audio-augmentation-albumentations
+	votes = 87
+
+[notebook "birdclef-2025/bc25-bvc-starter"]
+	slug = kdmitrie/bc25-bvc-starter
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/bc25-bvc-starter
+	votes = 111
+
+[notebook "birdclef-2025/birdclef-2020-2025-all-training-extra-npy-dataset"]
+	slug = seshurajup/birdclef-2020-2025-all-training-extra-npy-dataset
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/birdclef-2020-2025-all-training-extra-npy-dataset
+	votes = 83
+
+[notebook "birdclef-2025/change-secondary-labels-in-train-csv"]
+	slug = tomkkk/change-secondary-labels-in-train-csv
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/change-secondary-labels-in-train-csv
+	votes = 22
+
+[notebook "birdclef-2025/20th-place-training"]
+	slug = salmanahmedtamu/20th-place-training
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/20th-place-training
+	votes = 13
+
+[notebook "birdclef-2025/efficientnet-vit"]
+	slug = vtqunh/efficientnet-vit
+	competition = birdclef-2025
+	path = vendor/kaggle/notebooks/birdclef-2025/efficientnet-vit
+	votes = 13

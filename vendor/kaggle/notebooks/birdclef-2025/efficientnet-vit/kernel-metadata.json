@@ -1,0 +1,21 @@
+{
+  "id": "vtqunh/efficientnet-vit",
+  "id_no": 82429174,
+  "title": "efficientNet + ViT",
+  "code_file": "efficientnet-vit.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [
+    "thanhtranguyen/birdclef-melspec-data"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

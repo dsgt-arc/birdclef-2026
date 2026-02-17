@@ -1,0 +1,25 @@
+{
+  "id": "docxian/birdclef-2025-eda-geography",
+  "id_no": 78318307,
+  "title": "\ud83d\udc26BirdCLEF+ 2025 - EDA & Geography",
+  "code_file": "birdclef-2025-eda-geography.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [
+    "animals",
+    "audio classification",
+    "geospatial analysis",
+    "multiclass classification",
+    "audio"
+  ],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

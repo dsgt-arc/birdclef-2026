@@ -1,0 +1,25 @@
+{
+  "id": "sietze535/pseudo-label-creator",
+  "id_no": 82416964,
+  "title": "Pseudo-label creator",
+  "code_file": "pseudo-label-creator.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [
+    "gpu"
+  ],
+  "dataset_sources": [
+    "kadircandrisolu/birdclef25-effnetb0-starter-weight"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": [
+    "shionao7/regnrty008/PyTorch/default/1"
+  ]
+}

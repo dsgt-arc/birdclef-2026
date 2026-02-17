@@ -1,0 +1,19 @@
+{
+  "id": "salmanahmedtamu/20th-place-training",
+  "id_no": 84995025,
+  "title": "20th place Training",
+  "code_file": "20th-place-training.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2025"
+  ],
+  "model_sources": []
+}

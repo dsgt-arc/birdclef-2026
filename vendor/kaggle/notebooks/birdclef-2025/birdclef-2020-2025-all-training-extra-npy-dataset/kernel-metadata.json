@@ -1,0 +1,26 @@
+{
+  "id": "seshurajup/birdclef-2020-2025-all-training-extra-npy-dataset",
+  "id_no": 78317615,
+  "title": "BirdCLEF 2020-2025 All Training+ extra npy Dataset",
+  "code_file": "birdclef-2020-2025-all-training-extra-npy-dataset.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [
+    "ludovick/birdclef2024-additional-mp3"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "birdclef-2021",
+    "birdclef-2022",
+    "birdclef-2023",
+    "birdclef-2024",
+    "birdclef-2025",
+    "birdsong-recognition"
+  ],
+  "model_sources": []
+}
