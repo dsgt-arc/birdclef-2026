@@ -97,7 +97,7 @@ The torchaudio rerun confirms the core hypothesis: **vertical frame tokenization
 
 **Why 128×2 wins with torchaudio**: The ranking change from 128×4 (nnAudio) to 128×2 (torchaudio) is informative. With a higher-fidelity mel spectrogram, finer temporal resolution (20ms vs 40ms) becomes beneficial — the model can leverage temporal detail that was absent or degraded in nnAudio's spectrograms. The 250-token sequence (128×2) is a good balance: enough tokens for fine temporal discrimination, few enough for effective attention learning with 5,460 training samples.
 
-**Mel backend is a critical variable**: The nnAudio mel spectrogram consistently underperforms torchaudio across all 4 configs. The baseline was hit hardest (2.28× worse with nnAudio), but even the best vertical config improved 39% from mel fix alone. This implies nnAudio's FFT implementation, window function, or mel filter bank construction differs materially from torchaudio's. **Future experiments should use torchaudio mel unless nnAudio is specifically validated** to match.
+**Mel backend is a critical variable**: The nnAudio mel spectrogram consistently underperforms torchaudio across all 4 configs. The baseline was hit hardest (2.28× worse with nnAudio), but even the best vertical config improved 39% from mel fix alone. **Future experiments should use torchaudio mel unless nnAudio is specifically validated** to match. See [Why nnAudio Underperforms](#why-nnaudio-underperforms) for a detailed comparison of the two implementations.
 
 **Convergence behavior**: The shift from epoch-2 peaks (nnAudio) to epoch 6–8 peaks (torchaudio) suggests the torchaudio spectrograms are more information-rich. With nnAudio, the model quickly extracted what it could from impoverished inputs and then overfit. With torchaudio, productive learning continues longer, resulting in both higher peaks and later convergence.
 
@@ -112,6 +112,50 @@ The torchaudio rerun confirms the core hypothesis: **vertical frame tokenization
 **Single seed**: Each config run once — no variance estimate. The consistent improvement across all 3 vertical configs (all beat baseline by 30%+) makes the finding robust, but multi-seed runs would strengthen it.
 
 **Hyperparameters tuned for 16×16**: lr=5e-4, wd=0.05, warmup=10 carried over from exp 003. Vertical frame configs may benefit from different hyperparameters — best epochs (6–8) are near the end of the 10-epoch warmup, suggesting peak LR is nearly reached when the model peaks. A shorter warmup or higher initial LR could further improve vertical frame performance.
+
+### Why nnAudio Underperforms
+
+Comparing `NNAudioMelSpectrogram` (`preprocessing/nnaudio_mel.py`) with `MelSpectrogramTransform` (`preprocessing/mel_spectrogram.py`) reveals several differences that compound to produce materially different spectrograms:
+
+**1. Power scale mismatch (most likely primary cause)**
+
+```python
+# torchaudio — explicitly computes power spectrogram (|STFT|²)
+torchaudio.transforms.MelSpectrogram(..., power=2.0)
+
+# nnAudio — no power parameter specified, defaults to magnitude (|STFT|)
+nnAudio.features.MelSpectrogram(...)
+```
+
+If nnAudio returns magnitude (|STFT|) while torchaudio returns power (|STFT|²), the log-domain values are on different scales: `log(|STFT|²) = 2 × log(|STFT|)`. The normalization constants (mean=-4.268, std=4.569) come from AudioSet/AST literature that uses torchaudio's power spectrogram. Applying these constants to nnAudio's magnitude spectrogram shifts the normalized output distribution away from what pretrained/standard models expect, effectively compressing the feature range and losing discriminative detail.
+
+**2. Log epsilon handling**
+
+```python
+# torchaudio — additive epsilon (shifts all values up by 1e-6)
+mel = torch.log(mel + 1e-6)
+
+# nnAudio — clamp epsilon (only affects values below threshold)
+mel = torch.log(mel.clamp(min=1e-6))
+```
+
+For near-silent regions: `log(0 + 1e-6) = -13.8` vs `log(clamp(0, 1e-6)) = -13.8` — identical. But for non-zero values, `log(x + 1e-6)` slightly inflates all values while `log(clamp(x, 1e-6))` leaves them untouched. This is a minor difference for most mel values but changes the floor behavior for silence-heavy spectrograms.
+
+**3. STFT implementation**
+
+torchaudio uses `torch.stft` (FFT-based), while nnAudio uses a learned/fixed `Conv1d` kernel to compute STFT. Both are mathematically equivalent for `trainable_STFT=False`, but numerical precision differences in the convolution vs FFT path can produce subtly different spectrogram values, especially at frequency bin boundaries.
+
+**4. Mel filterbank construction**
+
+Both target the same mel-scale parameters (128 bins, fmin=0, fmax=Nyquist), but nnAudio and torchaudio implement the triangular mel filters independently. Differences in filter normalization (area vs peak normalization), frequency-to-mel mapping (HTK vs Slaney), or bin edge rounding can shift energy across frequency bins.
+
+**5. Window function**
+
+torchaudio explicitly specifies `window_fn=torch.hann_window`. nnAudio's default is also Hann, but this is not explicitly set in our code — if the default ever changed or differs between versions, it would affect the spectrogram.
+
+**Net effect**: The power scale mismatch (issue 1) is the most likely primary cause because it introduces a systematic 2× scaling in log domain that the normalization constants cannot correct for. The other differences are second-order but compound to further degrade spectrogram quality. The disproportionate harm to 16×16 patches (2.28× worse) vs vertical frames (~1.4–1.8× worse) suggests that square patches are more sensitive to spectrogram quality — possibly because they fragment the frequency axis and rely on precise cross-band amplitude relationships that a scale mismatch distorts.
+
+**Recommendation**: To use nnAudio for GPU mel in future experiments, explicitly set `power=2` (if supported) or square the output before log, and validate numerically against torchaudio's output on a reference batch.
 
 ## Artifacts
 
