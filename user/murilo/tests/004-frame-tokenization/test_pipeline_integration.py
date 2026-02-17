@@ -216,6 +216,23 @@ class TestFrameTokenizedViT:
         conv = model.backbone.patch_embed.proj
         assert conv.in_channels == 1, f"Expected 1 input channel, got {conv.in_channels}"
 
+    @pytest.mark.parametrize("patch_size,expected_tokens", PATCH_CONFIGS)
+    def test_pos_embed_shape(self, patch_size, expected_tokens):
+        """Positional embeddings should be (1, num_tokens + 1, embed_dim).
+
+        The +1 accounts for the CLS token. embed_dim is 384 for vit_small.
+        """
+        model = FrameTokenizedViT(
+            model_name="vit_small_patch16_224",
+            num_classes=NUM_CLASSES,
+            patch_size=patch_size,
+        )
+        pos_embed = model.backbone.pos_embed
+        expected_shape = (1, expected_tokens + 1, 384)  # +1 for CLS, 384 = vit_small embed_dim
+        assert (
+            pos_embed.shape == expected_shape
+        ), f"patch_size={patch_size}: expected pos_embed {expected_shape}, got {pos_embed.shape}"
+
 
 # ---------------------------------------------------------------------------
 # GPU integration tests
