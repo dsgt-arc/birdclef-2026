@@ -27,7 +27,7 @@
   - Drop-in replacement for `MelSpectrogramTransform` that runs on GPU
   - 10/10 tests passing (shapes, GPU, torchaudio consistency, edge cases)
 
-## 3. Next Steps — Integration
+## 3. Integration
 
 - [x] 3.1 Integrate `NNAudioMelSpectrogram` into the training pipeline
   - `FrameTokenizedViT` now always creates `NNAudioMelSpectrogram` internally (GPU mel is default)
@@ -39,10 +39,13 @@
   - `TestWaveformDataset` (8 tests): shapes, dtypes, multi-hot labels, DataLoader batching
   - `TestFrameTokenizedViT` (7 tests): forward pass, all 4 patch configs, token counts, NaN/Inf, channel check
   - `TestGPUIntegration` (4 tests): GPU forward, mel-on-GPU hook, all configs on GPU, DataLoader→GPU pipeline
-- [ ] 3.3 Verify positional embeddings are correctly sized for each patch configuration
+- [x] 3.3 Fast-dev-run validated with nnAudio GPU mel (baseline_16x16)
+  - Logs confirm `mode: waveform (GPU mel via nnAudio)` — no more CPU pre-compute
+  - 21.5M params, 248 tokens, train/val/test all completed successfully
+- [ ] 3.4 Verify positional embeddings are correctly sized for each patch configuration
   - 16×16 → 248 positions, 128×2 → 250 positions, 128×4 → 125 positions, 128×1 → 500 positions
   - Run fast-dev-run for each config to confirm shapes
-- [ ] 3.4 Run fast-dev-run for all 4 configs to validate pipeline end-to-end
+- [ ] 3.5 Run fast-dev-run for remaining 3 configs (128×2, 128×4, 128×1)
 
 ## 4. Execution
 
