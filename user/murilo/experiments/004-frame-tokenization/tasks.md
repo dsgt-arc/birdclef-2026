@@ -160,7 +160,8 @@ disk I/O vs GPU mel computation problem discovered during this experiment.
 - [x] 10.4 Create 4 streaming config files
 - [x] 10.5 Update run.sh with --all-streaming flag
 - [x] 10.6 Export from lightning/__init__.py
-- [ ] 10.7 Fast-dev-run validation
-- [ ] 10.8 Submit all 4 streaming runs
-- [ ] 10.9 Monitor GPU utilization during training
-- [ ] 10.10 Analyze results and update results.md
+- [ ] 10.7 Update `docs/concepts/audio-pipeline-bottlenecks.md` with streaming pipeline findings
+- [ ] 10.8 Fast-dev-run validation
+- [ ] 10.9 Submit all 4 streaming runs
+- [ ] 10.10 Monitor GPU utilization during training
+- [ ] 10.11 Analyze results and update results.md
