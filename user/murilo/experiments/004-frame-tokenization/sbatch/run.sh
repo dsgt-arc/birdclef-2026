@@ -11,6 +11,9 @@
 #   # Run all 4 configurations
 #   bash sbatch/run.sh --all
 #
+#   # Run all 4 streaming configurations
+#   bash sbatch/run.sh --all-streaming
+#
 #   # Fast dev run (5 batches, no W&B logging — pipeline validation)
 #   bash sbatch/run.sh config/vertical_128x2.yaml --fast-dev-run
 #
@@ -27,6 +30,7 @@ set -eu
 DRY_RUN=false
 FAST_DEV_RUN=false
 RUN_ALL=false
+RUN_ALL_STREAMING=false
 CONFIG=""
 PROJECT_NAME="ps-dsgt_clef2026-0"
 
@@ -44,6 +48,10 @@ while [[ $# -gt 0 ]]; do
             RUN_ALL=true
             shift
             ;;
+        --all-streaming)
+            RUN_ALL_STREAMING=true
+            shift
+            ;;
         --project-name)
             PROJECT_NAME="$2"
             shift 2
@@ -56,6 +64,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --all             Submit all 4 configurations"
+            echo "  --all-streaming   Submit all 4 streaming configurations"
             echo "  --project-name    PACE project allocation name (default: ps-dsgt_clef2026-0)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
             echo "  --dry-run         Preview command without submitting job"
@@ -143,6 +152,16 @@ if [[ "${RUN_ALL}" == "true" ]]; then
     submit_job "config/vertical_128x1.yaml"
     echo "=============================================="
     echo "All jobs submitted! Monitor with: squeue -u \$USER"
+    echo "=============================================="
+elif [[ "${RUN_ALL_STREAMING}" == "true" ]]; then
+    echo "Submitting all 4 streaming configurations..."
+    echo ""
+    submit_job "config/baseline_16x16_streaming.yaml"
+    submit_job "config/vertical_128x2_streaming.yaml"
+    submit_job "config/vertical_128x4_streaming.yaml"
+    submit_job "config/vertical_128x1_streaming.yaml"
+    echo "=============================================="
+    echo "All streaming jobs submitted! Monitor with: squeue -u \$USER"
     echo "=============================================="
 elif [[ -z "$CONFIG" ]]; then
     echo "Error: CONFIG_PATH is required (or use --all)"

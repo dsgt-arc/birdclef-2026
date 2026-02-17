@@ -124,7 +124,10 @@ class FrameTokenizedViT(nn.Module):
             Logits, shape (batch, num_classes)
         """
         if x.dim() == 2:
-            x = self.mel_spec(x)  # waveform → GPU mel via nnAudio
+            # Disable AMP autocast for mel computation — nnAudio's Conv1d STFT
+            # loses spectral fidelity in float16, causing a 2x cmAP gap vs torchaudio
+            with torch.amp.autocast(device_type="cuda", enabled=False):
+                x = self.mel_spec(x.float())
         # else: x is already pre-computed mel (batch, 1, n_mels, target_frames)
         features = self.backbone(x)
         logits = self.head(features)

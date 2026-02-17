@@ -1,11 +1,11 @@
 {
-  "cmap": 0.05383262410759926,
-  "auroc": 0.5357638597488403,
-  "f1_macro": 0.0,
-  "f1_micro": 0.0,
-  "top1_accuracy": 0.09317463636398315,
-  "top5_accuracy": 0.5729960799217224,
-  "loss": 0.12268362194299698,
+  "cmap": 0.05116375535726547,
+  "auroc": 0.5425806641578674,
+  "f1_macro": 0.01587301678955555,
+  "f1_micro": 0.00031964201480150223,
+  "top1_accuracy": 0.0007439092150889337,
+  "top5_accuracy": 0.21015435457229614,
+  "loss": 0.13631103932857513,
   "model": "vit_small_patch16_224",
   "model_name_timm": "vit_small_patch16_224",
   "pretrained": false,
@@ -26,8 +26,8 @@
   "num_classes": 21,
   "best_epoch": 2,
   "stopped_epoch": 18,
-  "best_val_cmap": 0.05383262410759926,
-  "best_checkpoint_path": "/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/004-frame-tokenization/checkpoints/vit-small-128x2-vertical/best-epochepoch=02.ckpt",
+  "best_val_cmap": 0.05116375535726547,
+  "best_checkpoint_path": "/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/004-frame-tokenization/checkpoints/vit-small-128x2-vertical/best-epochepoch=02-v1.ckpt",
   "training": {
     "max_epochs": 100,
     "lr": 0.0005,
@@ -41,8 +41,8 @@
     "cache_mel_specs": false
   },
   "compute": {
-    "gpu": "0",
-    "slurm_job_id": 4011401,
-    "node": "atl1-1-01-003-34-0"
+    "gpu": "1",
+    "slurm_job_id": 4019470,
+    "node": "atl1-1-02-008-32-0"
   }
 }

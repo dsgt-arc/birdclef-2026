@@ -135,11 +135,11 @@ construction is the only difference.
 - [ ] 8.4 Fast-dev-run with fixed nnAudio (`waveform_only=True`, no `cache_mel_specs`)
   - Confirm logs show `mode: waveform` and training completes
   - Compare mel output shape/range to torchaudio baseline
-- [ ] 8.5 Re-run all 4 nnAudio configs with fixed filterbank
+- [x] 8.5 Re-run all 4 nnAudio configs with fixed filterbank
   - Use original configs (no `cache_mel_specs`) — model computes mel on GPU via fixed nnAudio
   - Expect results close to torchaudio rerun (baseline ~0.066, 128×2 ~0.098)
-  - If nnAudio results match torchaudio within seed variance, GPU mel is validated for future use
-- [ ] 8.6 Update `results.md` with fixed nnAudio rerun results
+  - Results unchanged — confirming filterbank wasn't the issue; AMP precision is the likely cause
+- [x] 8.6 Update `results.md` with fixed nnAudio rerun results
 
 ## 9. Optimization (optional)
 
@@ -151,3 +151,16 @@ disk I/O vs GPU mel computation problem discovered during this experiment.
   - Save `HSN_train_waveforms.pt` / `HSN_val_waveforms.pt` after first pre-load
   - Subsequent runs load from `.pt` in ~5s instead of re-reading all audio files
   - nnAudio handles mel on GPU correctly; the bottleneck is disk I/O, not mel computation
+
+## 10. Streaming Data Pipeline + AMP Precision Fix
+
+- [x] 10.1 Create streaming_datamodule.py (StreamingBirdSetDataset, RecordingShuffleSampler, StreamingBirdSetDataModule)
+- [x] 10.2 Fix AMP precision in FrameTokenizedViT.forward() — autocast(enabled=False) around mel
+- [x] 10.3 Update train.py — streaming mode dispatch on data.streaming config key
+- [x] 10.4 Create 4 streaming config files
+- [x] 10.5 Update run.sh with --all-streaming flag
+- [x] 10.6 Export from lightning/__init__.py
+- [ ] 10.7 Fast-dev-run validation
+- [ ] 10.8 Submit all 4 streaming runs
+- [ ] 10.9 Monitor GPU utilization during training
+- [ ] 10.10 Analyze results and update results.md

@@ -159,31 +159,50 @@ def main():
     )
 
     # Initialize data module
-    # cache_mel_specs=True → torchaudio mel on CPU (cached), model skips nnAudio
-    # default (no key) → waveform_only=True, model computes mel on GPU via nnAudio
-    cache_mel_specs = config["data"].get("cache_mel_specs", False)
-    waveform_only = not cache_mel_specs  # mutually exclusive
-    logger.info(
-        f"Initializing data module... "
-        f"(cache_mel_specs={cache_mel_specs}, waveform_only={waveform_only})"
-    )
-    data_module = BirdSetDataModule(
-        dataset_name=config["data"]["dataset_name"],
-        batch_size=config["data"]["batch_size"],
-        num_workers=config["data"]["num_workers"],
-        target_sr=config["data"]["sample_rate"],
-        target_duration=config["data"]["target_duration"],
-        n_mels=config["data"]["n_mels"],
-        frame_shift_ms=config["data"]["frame_shift_ms"],
-        target_frames=config["data"]["target_frames"],
-        norm_mean=config["data"]["norm_mean"],
-        norm_std=config["data"]["norm_std"],
-        pin_memory=config["data"]["pin_memory"],
-        persistent_workers=config["data"]["persistent_workers"],
-        prefetch_factor=config["data"]["prefetch_factor"],
-        cache_mel_specs=cache_mel_specs,
-        waveform_only=waveform_only,
-    )
+    streaming = config["data"].get("streaming", False)
+
+    if streaming:
+        from birdset_benchmark.lightning.streaming_datamodule import StreamingBirdSetDataModule
+
+        manifest_cache_dir = str(project_dir / "cache" / "streaming_manifests")
+        logger.info(f"Using streaming data module (manifest cache: {manifest_cache_dir})")
+        data_module = StreamingBirdSetDataModule(
+            dataset_name=config["data"]["dataset_name"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            sample_rate=config["data"]["sample_rate"],
+            chunk_duration=config["data"]["target_duration"],
+            pin_memory=config["data"]["pin_memory"],
+            persistent_workers=config["data"]["persistent_workers"],
+            prefetch_factor=config["data"]["prefetch_factor"],
+            manifest_cache_dir=manifest_cache_dir,
+        )
+    else:
+        # cache_mel_specs=True → torchaudio mel on CPU (cached), model skips nnAudio
+        # default (no key) → waveform_only=True, model computes mel on GPU via nnAudio
+        cache_mel_specs = config["data"].get("cache_mel_specs", False)
+        waveform_only = not cache_mel_specs  # mutually exclusive
+        logger.info(
+            f"Initializing data module... "
+            f"(cache_mel_specs={cache_mel_specs}, waveform_only={waveform_only})"
+        )
+        data_module = BirdSetDataModule(
+            dataset_name=config["data"]["dataset_name"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            target_sr=config["data"]["sample_rate"],
+            target_duration=config["data"]["target_duration"],
+            n_mels=config["data"]["n_mels"],
+            frame_shift_ms=config["data"]["frame_shift_ms"],
+            target_frames=config["data"]["target_frames"],
+            norm_mean=config["data"]["norm_mean"],
+            norm_std=config["data"]["norm_std"],
+            pin_memory=config["data"]["pin_memory"],
+            persistent_workers=config["data"]["persistent_workers"],
+            prefetch_factor=config["data"]["prefetch_factor"],
+            cache_mel_specs=cache_mel_specs,
+            waveform_only=waveform_only,
+        )
 
     # Setup callbacks
     callbacks = []
