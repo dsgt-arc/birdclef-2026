@@ -32,8 +32,10 @@
 - [x] 3.1 Integrate `NNAudioMelSpectrogram` into the training pipeline
   - `FrameTokenizedViT` now always creates `NNAudioMelSpectrogram` internally (GPU mel is default)
   - `train.py` passes mel params (sample_rate, n_mels, etc.) to model and sets `waveform_only=True` on DataModule
-  - DataModule returns raw waveforms via `_WaveformDataset`; model computes mel on GPU
+  - DataModule pre-loads all waveforms into RAM via `_CachedWaveformDataset`; model computes mel on GPU
   - Removed `cache_mel_specs` from all config files (no longer needed)
+  - Fixed GPU starvation: disk I/O (sf.read + librosa.resample) was the bottleneck, not mel computation
+  - Bumped num_workers 6→8, prefetch_factor 4→8 (matching Anthony's exp 008)
 - [x] 3.2 Add pytest tests for DataModule + nnAudio GPU integration
   - `tests/004-frame-tokenization/test_pipeline_integration.py`
   - `TestWaveformDataset` (8 tests): shapes, dtypes, multi-hot labels, DataLoader batching
@@ -50,11 +52,16 @@
 
 ## 4. Execution
 
-- [ ] 4.1 Run baseline (16×16) with same seed — controlled comparison
-- [ ] 4.2 Run Config A (128×2) — primary hypothesis test
-- [ ] 4.3 Run Config B (128×4) — coarser temporal resolution comparison
-- [ ] 4.4 Run Config C (128×1) — finest temporal resolution comparison
-- [ ] 4.5 Monitor training via W&B, check for convergence issues
+- [x] 4.1 Submit all 4 training runs via `sbatch/run.sh --all`
+  - Baseline (16×16), Config A (128×2), Config B (128×4), Config C (128×1)
+  - All submitted — check SLURM logs and W&B for results
+- [ ] 4.2 Check SLURM job completion — verify all 4 runs finished successfully
+  - Review logs in `logs/slurm_*.log` for errors or OOM
+  - Confirm checkpoints saved in project shared storage
+  - Verify test metrics JSON saved in `outputs/test_results/`
+- [ ] 4.3 Check GPU utilization in W&B DeviceStatsMonitor
+  - Verify cached waveform loading improved GPU utilization vs. the earlier spiky pattern
+- [ ] 4.4 Monitor training via W&B, check for convergence issues
 
 ## 5. Analysis
 
@@ -63,3 +70,11 @@
 - [ ] 5.3 Compare walltime per epoch across configs (token count affects attention cost)
 - [ ] 5.4 Document results in `results.md`
 - [ ] 5.5 Update concept doc `temporal-resolution-sequence-length.md` with findings
+
+## 6. Optimization (optional)
+
+- [ ] 6.1 Cache pre-loaded waveforms to `.pt` files on disk
+  - Pre-load takes ~25 min (train: 1025s, val: 528s) due to sf.read + librosa.resample
+  - Save `HSN_train_waveforms.pt` / `HSN_val_waveforms.pt` after first pre-load
+  - Subsequent runs load from `.pt` in ~5s instead of re-reading all audio files
+  - nnAudio handles mel on GPU correctly; the bottleneck is disk I/O, not mel computation
