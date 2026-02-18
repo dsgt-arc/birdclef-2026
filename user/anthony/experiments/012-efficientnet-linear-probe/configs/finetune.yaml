@@ -1,0 +1,31 @@
+model:
+  model_name: "DBD-research-group/EfficientNet-B1-BirdSet-XCL"
+  head_dropout: 0.3
+
+data:
+  audio_dir: ~/scratch/birdclef-2026/data/birdclef-2025/train_audio/
+  metadata_csv: ~/scratch/birdclef-2026/data/birdclef-2025/train.csv
+  sample_rate: 32000
+  chunk_duration: 10.0
+  n_mels: 128
+  target_frames: 1000
+  batch_size: 256
+  num_workers: 8
+  val_fraction: 0.1
+
+training:
+  max_epochs: 30
+  lr: 1.0e-3
+  weight_decay: 0.01
+  warmup_epochs: 0
+  precision: bf16-mixed
+  gamma: 2.0
+  augmentation:
+    freq_mask_param: 20
+    time_mask_param: 50
+    num_freq_masks: 2
+    num_time_masks: 2
+
+callbacks:
+  early_stopping: { monitor: val/cmap, mode: max, patience: 10 }
+  model_checkpoint: { monitor: val/cmap, mode: max, save_top_k: 1 }
