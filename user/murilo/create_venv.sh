@@ -14,10 +14,10 @@
 #
 # Usage:
 #   salloc -p gpu-rtx6000 --gres=gpu:1 -c 4 --mem=32G -t 2:00:00
-#   bash create_venv.sh --exp-num 3
+#   bash create_venv.sh --exp-num 4
 #
 # Options:
-#   --exp-num NUM  Experiment number (1, 2, or 3) - required
+#   --exp-num NUM  Experiment number (e.g., 1, 2, 3, 4) - required
 #   -h, --help     Show this help message
 #
 
@@ -30,15 +30,19 @@ set -u  # Exit on undefined variable
 
 EXP_NUM=""
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
     echo "Usage: bash create_venv.sh --exp-num NUM"
     echo ""
     echo "Options:"
-    echo "  --exp-num NUM  Experiment number (required):"
-    echo "                   1 = 001-birdset-bioacoustics-benchmark"
-    echo "                   2 = 002-supervised-vit-baseline"
-    echo "                   3 = 003-model-training"
+    echo "  --exp-num NUM  Experiment number (e.g., 1, 2, 3, 4)"
     echo "  -h, --help     Show this help message"
+    echo ""
+    echo "Available experiments:"
+    for d in "$SCRIPT_DIR"/experiments/[0-9][0-9][0-9]-*/; do
+        [ -d "$d" ] && echo "                   $(basename "$d")"
+    done
     exit "${1:-0}"
 }
 
@@ -67,16 +71,30 @@ if [[ -z "$EXP_NUM" ]]; then
     usage 1
 fi
 
-# Map experiment number to directory name
-case "$EXP_NUM" in
-    1) EXP_DIR_NAME="001-birdset-bioacoustics-benchmark" ;;
-    2) EXP_DIR_NAME="002-supervised-vit-baseline" ;;
-    3) EXP_DIR_NAME="003-model-training" ;;
-    *)
-        echo "ERROR: Invalid experiment number: $EXP_NUM (must be 1, 2, or 3)"
-        exit 1
-        ;;
-esac
+# Map experiment number to directory name dynamically
+# Zero-pad to 3 digits (e.g., 4 -> 004) and glob for matching directory
+EXP_NUM_PADDED=$(printf "%03d" "$EXP_NUM")
+EXP_DIR_MATCH=("$SCRIPT_DIR"/experiments/${EXP_NUM_PADDED}-*/)
+
+if [[ ! -d "${EXP_DIR_MATCH[0]}" ]]; then
+    echo "ERROR: No experiment directory found matching ${EXP_NUM_PADDED}-*"
+    echo ""
+    echo "Available experiments:"
+    for d in "$SCRIPT_DIR"/experiments/[0-9][0-9][0-9]-*/; do
+        [ -d "$d" ] && echo "  $(basename "$d")"
+    done
+    exit 1
+fi
+
+if [[ ${#EXP_DIR_MATCH[@]} -gt 1 ]]; then
+    echo "ERROR: Multiple directories match ${EXP_NUM_PADDED}-*:"
+    for d in "${EXP_DIR_MATCH[@]}"; do
+        echo "  $(basename "$d")"
+    done
+    exit 1
+fi
+
+EXP_DIR_NAME="$(basename "${EXP_DIR_MATCH[0]}")"
 
 echo "=========================================="
 echo "BirdSet Benchmark - Environment Setup"
@@ -112,7 +130,6 @@ echo ""
 
 # Step 2: Set up environment variables
 echo "Step 2: Setting up environment variables..."
-export SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 EXPERIMENT_DIR="$SCRIPT_DIR/experiments/$EXP_DIR_NAME"
 
@@ -121,14 +138,14 @@ if [[ ! -d "$EXPERIMENT_DIR" ]]; then
     exit 1
 fi
 
-# Use TMPDIR if available (SLURM job), otherwise use ~/tmp for interactive session
+# Use TMPDIR if available (SLURM job), otherwise use /tmp for interactive session
+# IMPORTANT: Never use ~/tmp or home dir — 20GB quota on PACE
 if [ -n "${TMPDIR:-}" ]; then
     VENV_BASE="$TMPDIR"
     echo "  Using SLURM TMPDIR for fast local I/O"
 else
-    VENV_BASE="$HOME/tmp"
-    mkdir -p "$VENV_BASE"
-    echo "  Using ~/tmp for interactive session"
+    VENV_BASE="/tmp"
+    echo "  Using /tmp for interactive session"
 fi
 
 JOB_ID="${SLURM_JOB_ID:-$$}"

@@ -1,8 +1,8 @@
 # Concept: Temporal Resolution and Sequence Length in Audio Models
 
-**Status**: nascent
+**Status**: developing
 **Created**: 2026-01-30
-**Updated**: 2026-01-30
+**Updated**: 2026-02-18
 
 ## Idea
 
@@ -68,7 +68,7 @@ Mamba scales linearly in all these cases. Attention-based models need chunking, 
 ## Testable Hypotheses
 
 1. **Mamba outperforms attention at long sequences**: For audio clips >30s, a Mamba-based student will achieve higher accuracy per FLOP than an attention-based model of similar size, because it doesn't need chunking and can process the full context.
-2. **Patch shape affects bioacoustic performance**: Non-square patches (e.g., 32×8 frequency-tall) will improve species classification accuracy on BirdCLEF data compared to standard 16×16, because bird calls have narrow frequency extent but rapid temporal modulation.
+2. **Patch shape affects bioacoustic performance**: ~~Non-square patches (e.g., 32×8 frequency-tall) will improve species classification accuracy on BirdCLEF data compared to standard 16×16, because bird calls have narrow frequency extent but rapid temporal modulation.~~ **CONFIRMED in Exp 004** — see experimental results below.
 3. **Dilated CNN receptive field has a saturation point**: There exists a receptive field size beyond which adding more dilation layers gives diminishing returns on ESC-50/BirdCLEF, revealing the minimum context window for audio classification.
 4. **Longer training windows improve distillation**: A student trained on 30s teacher windows will outperform one trained on 5s windows when evaluated on full soundscapes, because it learns temporal patterns across calls.
 5. **32kHz with full-band tokens outperforms 16kHz with square tokens on BirdCLEF**: A model using 128×2 patches at 32kHz (same token count as BEATs' 16×16 at 16kHz) will achieve higher species classification accuracy on BirdCLEF data, because it preserves high-frequency content and captures temporal modulation that 16kHz 16×16 patches lose.
@@ -76,8 +76,37 @@ Mamba scales linearly in all these cases. Attention-based models need chunking, 
 ## Connections
 
 - **Based on**: [Exp 001 results](../../user/anthony/experiments/001-encoder-benchmark/results.md), [Exp 002 context collapse](../../user/anthony/experiments/002-beats-inference-optimization/results.md), [Exp 004 SSAMBA port](../../user/anthony/experiments/004-ssamba-hf-port/results.md)
-- **Related to**: [context-recovery](context-recovery.md), [distilled-sequence-model](distilled-sequence-model.md), [ssamba-audio-mamba](ssamba-audio-mamba.md)
-- **Could lead to**: Experiment on non-square patch sizes for bioacoustics; Mamba vs attention long-sequence benchmark; adaptive chunking strategy for soundscapes
+- **Validated by**: [Exp 004 Frame-Based Tokenization](../../user/murilo/experiments/004-frame-tokenization/results.md) — hypothesis #2 confirmed, 128×4 achieves cmAP=0.118 (+37% over 16×16 baseline)
+- **Related to**: [context-recovery](context-recovery.md), [distilled-sequence-model](distilled-sequence-model.md), [ssamba-audio-mamba](ssamba-audio-mamba.md), [audio-pipeline-bottlenecks](audio-pipeline-bottlenecks.md)
+- **Could lead to**: Vertical frame tokenization + pretrained ViT; data augmentation for overfitting; horizontal frame tokenization; Mamba vs attention long-sequence benchmark
+
+## Experimental Results (Exp 004: Frame-Based Tokenization)
+
+[Exp 004](../../user/murilo/experiments/004-frame-tokenization/results.md) directly tested hypothesis #2 by training ViT-Small from scratch on HSN with vertical frame patches (128×1, 128×2, 128×4) vs the standard 16×16 baseline. Three pipeline iterations were run.
+
+### Key findings (streaming pipeline — canonical results)
+
+**Vertical frames outperform 16×16 square patches** by 15–37% in cmAP:
+
+| Config | Patch | Tokens | cmAP | Lift vs Baseline |
+|--------|-------|--------|------|-----------------|
+| Baseline | 16×16 | 248 | 0.086 | — |
+| C: 128×1 | 128×1 | 500 | 0.099 | **+15%** |
+| A: 128×2 | 128×2 | 250 | 0.115 | **+34%** |
+| **B: 128×4** | **128×4** | **125** | **0.118** | **+37%** |
+
+**128×4 (40ms, 125 tokens) is the best config**: The coarser 40ms temporal resolution with the shortest sequence (125 tokens) produces the highest cmAP. The shorter sequence allows more effective self-attention with ViT-Small's 6 heads on HSN's ~66k training chunks.
+
+**128×1 (10ms, 500 tokens) is the weakest vertical config**: 500 tokens is too many for effective attention — it converges earliest (epoch 6) and overfits quickly. This suggests a practical upper bound on sequence length for ViT-Small.
+
+**Best from-scratch result nearly matches pretrained**: 128×4 (0.118) is within 2.5% of exp 003's pretrained ViT-Small (0.121), showing that better tokenization can largely compensate for the lack of ImageNet pretraining.
+
+### Implications for this concept
+
+- **Hypothesis #2 is confirmed**: patch shape matters for bioacoustics. Full-band vertical frames (128×W) are a better inductive bias than 16×16 squares.
+- **The token count tradeoff is real**: 125 tokens (128×4) vs 250 (128×2) vs 500 (128×1) shows that shorter sequences can outperform longer ones, because self-attention is more effective over shorter sequences.
+- **20–40ms is the sweet spot for temporal resolution**: 128×1 (10ms) consistently underperforms, while 128×4 (40ms) and 128×2 (20ms) are close. Bird call temporal modulation on HSN is well-captured at 40ms resolution.
+- **Scaling implications**: with larger datasets (BirdCLEF competition data), finer resolution configs (128×2, 128×1) might become more competitive as the model has more data to learn from longer sequences.
 
 ## Notes
 

@@ -98,7 +98,7 @@ logs/
 
 # Model weights
 weights/
-models/
+/models/
 
 # Wandb
 wandb/

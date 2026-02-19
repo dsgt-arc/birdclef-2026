@@ -1,3 +1,52 @@
+# CRITICAL: Virtual Environment Policy (PACE Cluster)
+
+**NEVER install `.venv` under the home directory or any subdirectory of this project.**
+The home directory on PACE has a **20GB quota**. Installing venvs there WILL cause OOM,
+crash the session, and potentially corrupt work.
+
+**Interactive sessions** — use `$TMPDIR` (SLURM) or `/tmp/` (fallback):
+```bash
+# Convention: $TMPDIR/birdset-benchmark-<JOB_ID>/.venv
+VENV_BASE="${TMPDIR:-/tmp}"
+JOB_ID="${SLURM_JOB_ID:-$$}"
+JOB_VENV_DIR="$VENV_BASE/birdset-benchmark-$JOB_ID"
+JOB_VENV="$JOB_VENV_DIR/.venv"
+
+mkdir -p "$JOB_VENV_DIR"
+uv venv "$JOB_VENV" --python 3.11
+source "$JOB_VENV/bin/activate"
+uv pip install -e "$EXPERIMENT_DIR"
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
+
+**SLURM batch jobs** — always use `$TMPDIR` (fast local NVMe):
+```bash
+JOB_VENV_DIR="$TMPDIR/birdset-benchmark-$SLURM_JOB_ID"
+JOB_VENV="$JOB_VENV_DIR/.venv"
+```
+
+**NEVER use bare `pip install`** — it writes to `~/.local/` and eats home dir quota:
+```bash
+pip install nnAudio                           # WRONG — writes to ~/.local (7GB+ for torch)
+pip install --user some-package               # WRONG — same thing
+```
+**Always use `uv pip install` inside an activated venv:**
+```bash
+source "$JOB_VENV/bin/activate"
+uv pip install -e ".[dev]"                    # CORRECT — installs into venv
+uv pip install nnAudio                        # CORRECT — installs into venv
+```
+
+**WRONG — never do this:**
+```bash
+python -m venv .venv                          # pollutes home dir
+uv venv user/murilo/experiments/004-*/.venv   # same problem
+```
+
+See `user/murilo/create_venv.sh` and `user/murilo/experiments/003-model-training/sbatch/_job.sh` for reference.
+
+---
+
 # OpenSpec (OPSX Workflow)
 
 This project uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for spec-driven change management. The OPSX workflow replaces the legacy phase-locked approach with fluid, iterative actions.
