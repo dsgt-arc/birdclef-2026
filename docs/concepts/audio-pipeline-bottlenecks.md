@@ -2,7 +2,7 @@
 
 **Status**: developing
 **Created**: 2026-02-16
-**Updated**: 2026-02-16
+**Updated**: 2026-02-18
 
 ## Idea
 
@@ -99,7 +99,19 @@ with GPU computation. No pre-loading needed.
 - **Cons**: May still starve GPU if I/O is too slow per sample
 - **Best for**: Large datasets that don't fit in memory, fast storage (NVMe)
 
-### 4. HuggingFace Arrow-cached decoded audio
+### 4. Streaming with manifest caching (current best — exp 004)
+
+Pre-compute a manifest of all non-overlapping 5s chunks per recording.
+At training time, do partial reads (`sf.read(start, frames)`) for each chunk.
+No pre-loading needed, no RAM pressure, instant startup.
+
+- **Pros**: 12× more training data, no RAM usage, instant startup, correct
+  data utilization (all chunks, not random crops)
+- **Cons**: ~35% slower per-iteration vs cached waveforms, requires manifest
+  pre-computation (cached to project storage)
+- **Best for**: Any dataset — this is now the default pipeline
+
+### 5. HuggingFace Arrow-cached decoded audio
 
 Configure HF datasets to decode audio into Arrow format. Subsequent
 accesses are memory-mapped from the Arrow cache.
@@ -108,14 +120,58 @@ accesses are memory-mapped from the Arrow cache.
 - **Cons**: Requires initial decode pass, Arrow cache can be large
 - **Best for**: HF dataset workflows
 
+## Streaming Pipeline Results (Exp 004)
+
+The streaming data pipeline (`StreamingBirdSetDataModule`) was implemented and tested
+in exp 004. It combines strategies 3 and 5 (Anthony's approach):
+
+- **On-the-fly partial reads**: `sf.read(path, start=X, frames=Y)` reads only
+  the needed 5s chunk, not the full file
+- **Manifest caching**: pre-computed JSON manifest with file metadata
+  (duration, sample rate, chunk boundaries) — cached to project storage
+- **Non-overlapping 5s chunks**: full recordings split into all non-overlapping
+  5s windows → ~12× more training data (66,504 chunks from 5,460 recordings)
+- **Event-aware label filtering**: each chunk gets labels based on which
+  bird events actually overlap that time window
+- **Recording-sequential sampling**: `RecordingShuffleSampler` groups chunks
+  from the same recording for better OS page cache locality
+
+### Impact on training
+
+| Metric | Pre-loading pipeline | Streaming pipeline | Change |
+|--------|---------------------|--------------------|--------|
+| Training data/epoch | 5,460 samples | 66,504 chunks | **12× more** |
+| Steps/epoch (batch 128) | ~43 | 519 | **12× more** |
+| Startup time | ~17 min (pre-load) | ~instant | eliminated |
+| Per-iteration speed | ~5.1 it/s | ~3.3 it/s | -35% |
+| Best cmAP (128×4) | 0.087 (torchaudio) | 0.118 (streaming) | **+36%** |
+| Best cmAP (baseline) | 0.066 (torchaudio) | 0.086 (streaming) | **+30%** |
+| RAM usage | ~10 GB (waveforms) | minimal | **eliminated** |
+
+The streaming pipeline is slower per-iteration (~35%) due to on-the-fly audio
+loading, but this is more than compensated by the ~12× increase in training data
+per epoch. Models train more epochs (16–34 best epoch vs 6–8) and achieve
+significantly higher test metrics.
+
+### Key takeaway
+
+The data loading bottleneck is less important than the **data utilization**
+bottleneck. Pre-loading all waveforms into RAM was fast per-iteration but
+only used a single random 5s crop per recording. The streaming pipeline
+uses ALL non-overlapping 5s chunks, providing much more training signal.
+For small-to-medium datasets like HSN, data volume matters more than
+data loading speed.
+
 ## Open Questions
 
 - Does the BirdSet HF dataset store audio as decoded arrays or file paths?
   (Currently file paths — `sample["audio"]["path"]` with `bytes=None`)
 - Can we avoid `librosa.resample()` entirely by pre-resampling the dataset
   to 32kHz once and caching?
-- What is the break-even point where on-the-fly loading (strategy 3) is
-  faster than pre-loading (strategy 1) for a given dataset size and epoch count?
+- ~~What is the break-even point where on-the-fly loading (strategy 3) is
+  faster than pre-loading (strategy 1) for a given dataset size and epoch count?~~
+  **Answered**: streaming is always better because it provides 12× more data,
+  even though per-iteration speed is 35% slower
 - Would `torchaudio.transforms.Resample` (GPU) be faster than `librosa.resample`
   (CPU) for the resampling step?
 

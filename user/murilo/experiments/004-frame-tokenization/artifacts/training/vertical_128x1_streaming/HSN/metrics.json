@@ -1,0 +1,48 @@
+{
+  "cmap": 0.0987563282251358,
+  "auroc": 0.6329320669174194,
+  "f1_macro": 0.0,
+  "f1_micro": 0.0,
+  "top1_accuracy": 0.4961874783039093,
+  "top5_accuracy": 0.6066579818725586,
+  "loss": 0.10647647082805634,
+  "model": "vit_small_patch16_224",
+  "model_name_timm": "vit_small_patch16_224",
+  "pretrained": false,
+  "num_params": 21544725,
+  "patch_size": [
+    128,
+    1
+  ],
+  "patch_size_str": "128x1",
+  "img_size": [
+    128,
+    500
+  ],
+  "num_tokens": 500,
+  "patch_grid": "1x500",
+  "dataset": "HSN",
+  "split": "test_5s",
+  "num_classes": 21,
+  "best_epoch": 6,
+  "stopped_epoch": 22,
+  "best_val_cmap": 0.0987563282251358,
+  "best_checkpoint_path": "/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/004-frame-tokenization/checkpoints/vit-small-128x1-vertical-streaming/best-epochepoch=06.ckpt",
+  "training": {
+    "max_epochs": 100,
+    "lr": 0.0005,
+    "weight_decay": 0.05,
+    "warmup_epochs": 10,
+    "batch_size": 128,
+    "precision": "16-mixed",
+    "early_stopping_patience": 15,
+    "drop_rate": 0.1,
+    "grad_clip_val": 1.0,
+    "cache_mel_specs": false
+  },
+  "compute": {
+    "gpu": "0",
+    "slurm_job_id": 4021523,
+    "node": "atl1-1-03-007-5-0"
+  }
+}

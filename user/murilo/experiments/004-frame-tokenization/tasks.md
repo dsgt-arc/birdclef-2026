@@ -35,7 +35,7 @@
 - [x] 5.2 Vertical frames converge 3.5× faster (epoch 2 vs 7), all configs show overfitting
 - [x] 5.3 Walltime scales with O(n²) attention cost; ~37–43 min per job
 - [x] 5.4 Document results in `results.md`
-- [ ] 5.5 Update concept doc `temporal-resolution-sequence-length.md` with findings
+- [x] 5.5 Update concept doc `temporal-resolution-sequence-length.md` with findings
 
 ## 6. Verdict Update
 
@@ -83,8 +83,8 @@ chunks (~6x more training data per epoch, no RAM pre-load, near-instant startup)
 - [x] 10.4 Create 4 streaming config files
 - [x] 10.5 Update run.sh with --all-streaming flag
 - [x] 10.6 Export from lightning/__init__.py
-- [ ] 10.7 Update `docs/concepts/audio-pipeline-bottlenecks.md` with streaming findings
+- [x] 10.7 Update `docs/concepts/audio-pipeline-bottlenecks.md` with streaming findings
 - [x] 10.8 Fast-dev-run validation
 - [x] 10.9 Submit all 4 streaming runs — training in progress
-- [ ] 10.10 Monitor GPU utilization during training
-- [ ] 10.11 Analyze results and update results.md
+- [x] 10.10 All 4 streaming runs on RTX 6000; 3.3–3.5 it/s (baseline/128x2/128x4), 2.5 it/s (128x1)
+- [x] 10.11 Streaming results analyzed: B: 128×4 (0.118) > A: 128×2 (0.115) > C: 128×1 (0.099) > Baseline (0.086)
