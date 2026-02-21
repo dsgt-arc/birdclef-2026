@@ -1,0 +1,56 @@
+# Experiment 005: EAT Linear Probe (frozen encoder)
+#
+# Frozen EAT-base encoder + linear classification head on BirdCLEF 2025.
+# Fast baseline: only head parameters train (~160K params).
+
+run_name: "eat-frozen"
+
+encoder:
+  type: "eat"
+  model_name: "worstchan/EAT-base_epoch30_pretrain"
+  embed_dim: 768
+  target_length: 512  # 5s at 16kHz with 10ms hop
+
+data:
+  data_dir: "~/scratch/birdclef-2026/data/birdclef-2025"
+  sample_rate: 16000
+  chunk_duration: 5.0
+  batch_size: 32
+  num_workers: 8
+  val_fraction: 0.1
+  seed: 42
+
+training:
+  max_epochs: 30
+  lr: 1.0e-3
+  encoder_lr: 1.0e-5          # unused when frozen, but kept for config consistency
+  weight_decay: 0.01
+  warmup_epochs: 3
+  threshold: 0.5
+  freeze_encoder: true
+  unfreeze_epoch: 0            # 0 = never unfreeze
+  hidden_dim: 0                # 0 = linear probe (no hidden layer)
+  dropout: 0.0
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/cmap"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/cmap"
+    mode: "max"
+    patience: 10
+    min_delta: 0.001
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-pretrained-finetune"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50
