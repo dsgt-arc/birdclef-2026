@@ -23,24 +23,31 @@
 ## 3. Setup
 
 - [x] 3.1 Create `pyproject.toml` with dependencies (torch, torchaudio, BEATs/EAT, nnAudio)
-- [ ] 3.2 Create BirdCLEF 2025 PyTorch Dataset class in shared `src/birdclef/`
-- [ ] 3.3 Create streaming DataModule for BirdCLEF 2025 (reuse `StreamingBirdSetDataModule` pattern or adapt)
+- [x] 3.2 Create BirdCLEF 2025 PyTorch Dataset class in shared `src/birdclef/data/birdclef2025.py`
+  - `BirdCLEF2025Dataset`: 5s non-overlapping chunks at 16kHz, multi-hot labels, sf.read partial reads
+  - `BirdCLEF2025DataModule`: stratified train/val split by primary_label (90/10)
+  - `build_species_list()`: sorted unique primary_label values
+- [x] 3.3 Create DataModule for BirdCLEF 2025 (adapted from Anthony's `BirdCLEFDataModule` pattern)
 - [x] 3.4 Write `proposal.md` with hypothesis, method, and evaluation plan
-- [ ] 3.5 Download BEATs/EAT pretrained checkpoints to shared storage
+- [ ] 3.5 Download BEATs/EAT pretrained checkpoints to shared storage (EAT auto-downloads via HuggingFace)
 
 ## 4. Model Implementation
 
-- [ ] 4.1 Create feature extractor wrapper for chosen model (BEATs or EAT)
-- [ ] 4.2 Create fine-tuning Lightning module (frozen encoder + trainable classification head)
-- [ ] 4.3 Create config files (frozen vs full fine-tune, learning rate sweeps)
-- [ ] 4.4 Validate with fast-dev-run
+- [x] 4.1 Create EAT encoder wrapper (`src/birdclef/encoders/eat.py`) — HuggingFace, Kaldi fbank, mean pool, freeze/unfreeze
+- [x] 4.2 Create BEATs encoder wrapper (`src/birdclef/encoders/beats.py`) — vendor checkpoint, freeze/unfreeze
+- [x] 4.3 Create `PretrainedFinetuneModule` (`src/birdclef/lightning/pretrained_finetune.py`)
+  - Staged unfreezing, dual LR (head + encoder), AdamW + cosine annealing + warmup
+  - Full metrics: cmAP, AUROC, F1 macro/micro, top-1/top-5
+- [x] 4.4 Create config files: `config/eat_frozen.yaml` (linear probe), `config/eat_finetune.yaml` (staged fine-tune)
+- [ ] 4.5 Validate with fast-dev-run
 
 ## 5. Training
 
-- [ ] 5.1 Create SLURM scripts (`sbatch/_job.sh`, `sbatch/run.sh`)
-- [ ] 5.2 Run frozen-encoder baseline (linear probe)
-- [ ] 5.3 Run full fine-tuning with lower learning rate
-- [ ] 5.4 Monitor training via W&B
+- [x] 5.1 Create SLURM scripts (`sbatch/_job.sh`, `sbatch/run.sh`) with HF_HOME caching
+- [x] 5.2 Create training script (`train.py`) with YAML config loading, W&B/TensorBoard logging
+- [ ] 5.3 Run frozen-encoder baseline (linear probe)
+- [ ] 5.4 Run full fine-tuning with lower learning rate
+- [ ] 5.5 Monitor training via W&B
 
 ## 6. Analysis
 
