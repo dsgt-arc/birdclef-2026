@@ -2,13 +2,13 @@
 
 ## 1. Data Acquisition
 
-- [ ] 1.1 Write download script (`scripts/download_birdclef2025.sh`)
+- [x] 1.1 Write download script (`scripts/download_birdclef2025.sh`)
 - [ ] 1.2 Download BirdCLEF 2025 dataset to shared project storage (`~/ps-clef2026_birdclef-0/data/birdclef-2025/`)
 - [ ] 1.3 Verify download integrity (file counts, total size, spot-check audio files)
 
 ## 2. Exploratory Data Analysis
 
-- [ ] 2.1 Create EDA notebook (`notebooks/eda_birdclef2025.ipynb`)
+- [x] 2.1 Create EDA notebook (`notebooks/eda_birdclef2025.ipynb`)
 - [ ] 2.2 Analyze `train_metadata.csv` — species distribution, recording durations, geographic coverage
 - [ ] 2.3 Analyze audio properties — sample rates, duration histogram, silence detection
 - [ ] 2.4 Identify class imbalance and long-tail species
@@ -17,10 +17,10 @@
 
 ## 3. Setup
 
-- [ ] 3.1 Create `pyproject.toml` with dependencies (torch, torchaudio, BEATs/EAT, nnAudio)
+- [x] 3.1 Create `pyproject.toml` with dependencies (torch, torchaudio, BEATs/EAT, nnAudio)
 - [ ] 3.2 Create BirdCLEF 2025 PyTorch Dataset class in shared `src/birdclef/`
 - [ ] 3.3 Create streaming DataModule for BirdCLEF 2025 (reuse `StreamingBirdSetDataModule` pattern or adapt)
-- [ ] 3.4 Write `proposal.md` with hypothesis, method, and evaluation plan
+- [x] 3.4 Write `proposal.md` with hypothesis, method, and evaluation plan
 - [ ] 3.5 Download BEATs/EAT pretrained checkpoints to shared storage
 
 ## 4. Model Implementation
