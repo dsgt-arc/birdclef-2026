@@ -10,11 +10,15 @@
 ## 2. Exploratory Data Analysis
 
 - [x] 2.1 Create EDA notebook (`notebooks/eda_birdclef2025.ipynb`)
-- [ ] 2.2 Analyze `train_metadata.csv` — species distribution, recording durations, geographic coverage
-- [ ] 2.3 Analyze audio properties — sample rates, duration histogram, silence detection
-- [ ] 2.4 Identify class imbalance and long-tail species
+- [x] 2.2 Analyze `train.csv` — species distribution, recording durations, geographic coverage
+  - 206 species, 28,564 recordings, 3 collections (XC, CSA, iNaturalist)
+  - 97.2% have coordinates, concentrated in South America
+- [x] 2.3 Analyze audio properties — sample rates, duration histogram, silence detection
+  - Uniform 32kHz sample rate, duration 1.2s–382.3s (median 30s)
+- [x] 2.4 Identify class imbalance and long-tail species
+  - Severe long-tail: max 990 (grekis), median 80, min 2 per species
 - [ ] 2.5 Compare BirdCLEF 2025 species overlap with BirdSet HSN/XCM datasets
-- [ ] 2.6 Summarize findings in EDA section of `proposal.md`
+- [x] 2.6 Summarize findings in EDA notebook summary section
 
 ## 3. Setup
 
