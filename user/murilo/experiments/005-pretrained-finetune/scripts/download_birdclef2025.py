@@ -40,7 +40,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load .env from user/murilo/ (contains KAGGLE_API_TOKEN, WANDB_API_KEY, etc.)
-_user_dir = Path(__file__).resolve().parent.parent.parent
+# scripts/ → 005-pretrained-finetune/ → experiments/ → murilo/
+_user_dir = Path(__file__).resolve().parent.parent.parent.parent
 load_dotenv(_user_dir / ".env")
 
 COMPETITION = "birdclef-2025"
