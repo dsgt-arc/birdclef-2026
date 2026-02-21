@@ -37,10 +37,19 @@ uv pip install -e ".[dev]"                    # CORRECT — installs into venv
 uv pip install nnAudio                        # CORRECT — installs into venv
 ```
 
+**NEVER use `uv sync`** — it ignores the active venv and creates `.venv` in cwd:
+```bash
+source "$JOB_VENV/bin/activate"
+cd user/murilo/experiments/005-*/
+uv sync                                      # WRONG — creates .venv in cwd (home dir), ignores active venv
+uv pip install -e ".[dev]"                   # CORRECT — installs into active venv
+```
+
 **WRONG — never do this:**
 ```bash
 python -m venv .venv                          # pollutes home dir
 uv venv user/murilo/experiments/004-*/.venv   # same problem
+uv sync                                      # creates .venv in cwd, ignores active venv
 ```
 
 See `user/murilo/create_venv.sh` and `user/murilo/experiments/003-model-training/sbatch/_job.sh` for reference.
