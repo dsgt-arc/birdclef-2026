@@ -38,7 +38,7 @@ Experiments 002–004 trained ViT and ConvNeXT models from scratch or with Image
 
 | Component | Details |
 |-----------|---------|
-| Data | BirdCLEF 2025 train_audio (~30-50 GB, hundreds of species) |
+| Data | BirdCLEF 2025 train_audio (~11.5 GB, 206 species, 28k recordings) |
 | Compute | 1x RTX 6000, 64 GB RAM, 8 CPUs |
 | Dependencies | torch, torchaudio, nnAudio, BEATs/EAT checkpoints |
 | Code | `user/murilo/experiments/005-pretrained-finetune/` |

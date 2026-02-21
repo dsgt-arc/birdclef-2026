@@ -2,9 +2,10 @@
 
 ## 1. Data Acquisition
 
-- [x] 1.1 Write download script (`scripts/download_birdclef2025.sh`)
-- [ ] 1.2 Download BirdCLEF 2025 dataset to shared project storage (`~/ps-clef2026_birdclef-0/data/birdclef-2025/`)
-- [ ] 1.3 Verify download integrity (file counts, total size, spot-check audio files)
+- [x] 1.1 Write download script (`scripts/download_birdclef_data.py`)
+- [x] 1.2 Download BirdCLEF 2025 dataset to shared project storage (`~/ps-clef2026_birdclef-0/data/birdclef-2025/`)
+  - 206 species, 28,564 audio files, 11.5 GB
+- [x] 1.3 Verify download integrity (file counts, total size, spot-check audio files)
 
 ## 2. Exploratory Data Analysis
 
