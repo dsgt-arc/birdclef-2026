@@ -11,6 +11,7 @@ model:
   drop_rate: 0.1
 
 data:
+  streaming: true  # Use StreamingBirdSetDataModule (~6x more training data)
   dataset_name: "HSN"
   sample_rate: 32000
   target_duration: 5.0

@@ -24,6 +24,10 @@ class SupervisedViTModule(pl.LightningModule):
         max_epochs: Maximum number of epochs for cosine annealing (default: 50)
         warmup_epochs: Number of warmup epochs (default: 5)
         threshold: Classification threshold for binary predictions (default: 0.5)
+        mel_transform: Optional nn.Module that converts raw waveforms (B, samples)
+            to mel-spectrograms (B, 1, n_mels, target_frames). Used when the
+            datamodule returns waveforms instead of pre-computed mel-specs
+            (e.g. StreamingBirdSetDataModule).
     """
 
     def __init__(
@@ -35,11 +39,13 @@ class SupervisedViTModule(pl.LightningModule):
         max_epochs: int = 50,
         warmup_epochs: int = 5,
         threshold: float = 0.5,
+        mel_transform: nn.Module | None = None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["model"])
+        self.save_hyperparameters(ignore=["model", "mel_transform"])
 
         self.model = model
+        self.mel_transform = mel_transform
         self.num_classes = num_classes
         self.threshold = threshold
 
@@ -94,6 +100,17 @@ class SupervisedViTModule(pl.LightningModule):
         self.test_top1 = MultiLabelTopKAccuracy(k=1)
         self.test_top5 = MultiLabelTopKAccuracy(k=5)
 
+    def _prepare_input(self, x):
+        """Convert waveform to mel-spectrogram if mel_transform is set.
+
+        When streaming, input is 2D waveform (B, samples). AMP autocast is
+        disabled for mel computation — float16 mel causes ~2x cmAP loss.
+        """
+        if self.mel_transform is not None and x.dim() == 2:
+            with torch.amp.autocast(device_type="cuda", enabled=False):
+                x = self.mel_transform(x.float())
+        return x
+
     def forward(self, x):
         """Forward pass returns raw logits (before sigmoid)."""
         return self.model(x)
@@ -102,12 +119,14 @@ class SupervisedViTModule(pl.LightningModule):
         """Training step for multi-label classification.
 
         Args:
-            batch: Tuple of (mel_spectrograms, labels)
-                - mel_spectrograms: (batch, 1, n_mels, target_frames)
+            batch: Tuple of (input, labels)
+                - input: mel-specs (batch, 1, n_mels, target_frames) or
+                         waveforms (batch, samples) when streaming
                 - labels: (batch, num_classes) multi-hot
         """
-        mel_specs, labels = batch
-        logits = self(mel_specs)
+        x, labels = batch
+        x = self._prepare_input(x)
+        logits = self(x)
 
         # Compute loss
         loss = self.criterion(logits, labels.float())
@@ -148,8 +167,9 @@ class SupervisedViTModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         """Validation step for multi-label classification."""
-        mel_specs, labels = batch
-        logits = self(mel_specs)
+        x, labels = batch
+        x = self._prepare_input(x)
+        logits = self(x)
 
         # Compute loss
         loss = self.criterion(logits, labels.float())
@@ -190,8 +210,9 @@ class SupervisedViTModule(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         """Test step for multi-label classification."""
-        mel_specs, labels = batch
-        logits = self(mel_specs)
+        x, labels = batch
+        x = self._prepare_input(x)
+        logits = self(x)
 
         # Compute loss
         loss = self.criterion(logits, labels.float())
@@ -272,8 +293,9 @@ class SupervisedViTModule(pl.LightningModule):
 
     def predict_step(self, batch, batch_idx):
         """Prediction step returning probabilities and binary predictions."""
-        mel_specs = batch if isinstance(batch, torch.Tensor) else batch[0]
-        logits = self(mel_specs)
+        x = batch if isinstance(batch, torch.Tensor) else batch[0]
+        x = self._prepare_input(x)
+        logits = self(x)
         probs = torch.sigmoid(logits)
         preds = (probs > self.threshold).int()
         return {"probabilities": probs, "predictions": preds, "logits": logits}

@@ -32,6 +32,7 @@ dependencies = [
     "resampy>=0.4.0",    # Required by librosa for resampling
     "soundfile>=0.12.0",
     "audioread>=3.0.0",
+    "nnAudio>=0.3",      # GPU-accelerated mel-spectrograms for streaming
 
     # Bioacoustics models
     "bioacoustics-model-zoo",
