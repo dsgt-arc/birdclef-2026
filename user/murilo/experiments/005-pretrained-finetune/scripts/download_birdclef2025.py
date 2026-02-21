@@ -4,8 +4,9 @@
 Prerequisites:
     1. pip install kaggle (or uv pip install kaggle)
     2. Authenticate via ONE of:
-       a) export KAGGLE_API_TOKEN=KGAT_...  (newer token format)
-       b) Place API token at ~/.kaggle/kaggle.json
+       a) Add KAGGLE_API_TOKEN=KGAT_... to user/murilo/.env
+       b) export KAGGLE_API_TOKEN=KGAT_...  (session only)
+       c) Place API token at ~/.kaggle/kaggle.json
     3. Accept competition rules at https://www.kaggle.com/competitions/birdclef-2025/rules
 
 Usage:
@@ -35,6 +36,12 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from user/murilo/ (contains KAGGLE_API_TOKEN, WANDB_API_KEY, etc.)
+_user_dir = Path(__file__).resolve().parent.parent.parent
+load_dotenv(_user_dir / ".env")
 
 COMPETITION = "birdclef-2025"
 DATA_ROOT = Path.home() / "ps-clef2026_birdclef-0" / "data"
