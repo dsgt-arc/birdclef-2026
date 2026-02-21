@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from birdset_benchmark.lightning.supervised_vit import SupervisedViTModule
-from birdset_benchmark.models.vit_audio import ViTAudio
+from birdclef.lightning.supervised_vit import SupervisedViTModule
+from birdclef.models.vit_audio import ViTAudio
 
 
 class TestSupervisedViTModule:

@@ -15,8 +15,8 @@ import torch
 # Add shared src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from birdset_benchmark.preprocessing.mel_spectrogram import MelSpectrogramTransform
-from birdset_benchmark.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
+from birdclef.preprocessing.mel_spectrogram import MelSpectrogramTransform
+from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
 
 SAMPLE_RATE = 32000
 DURATION = 5.0

@@ -13,7 +13,7 @@
   - [BirdNET](../../../docs/vendor/birdnet-analyzer.md) - Species-specific neural network
   - [Perch](../../../docs/vendor/perch.md) - Google's bioacoustics model
 - **References**:
-  - [BirdSet Paper Summary](../../../docs/references/birdset-benchmark-paper.md) - arXiv:2403.10380
+  - [BirdSet Paper Summary](../../../docs/references/birdclef-paper.md) - arXiv:2403.10380
 - **Related Experiments**:
   - [anthony/001-encoder-benchmark](../../anthony/experiments/001-encoder-benchmark/) - Similar methodology on ESC-50/AudioSet
 
@@ -99,7 +99,7 @@ All 8 BirdSet evaluation datasets:
 | **Test Split** | test_5s (5-second soundscapes, multi-label) |
 | **Compute** | PACE cluster with GPU (RTX 6000) |
 | **Dependencies** | `datasets`, `bioacoustics-model-zoo`, `opensoundscape`, `torch`, `pytorch-lightning`, `tensorflow` |
-| **Code** | `user/murilo/src/birdset_benchmark/` |
+| **Code** | `user/murilo/src/birdclef/` |
 
 ### Procedure
 

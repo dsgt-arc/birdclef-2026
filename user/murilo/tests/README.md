@@ -247,7 +247,7 @@ pytest tests/002-supervised-vit-baseline/test_training.py
 **Coverage report**:
 ```bash
 # Run with coverage (configured in pyproject.toml)
-pytest tests/001-birdset-bioacoustics-benchmark/ --cov=birdset_benchmark --cov-report=term-missing
+pytest tests/001-birdset-bioacoustics-benchmark/ --cov=birdclef --cov-report=term-missing
 ```
 
 **Verbose output** (see test names as they run):

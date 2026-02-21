@@ -1,1 +1,1 @@
-"""Tests for birdset-benchmark package."""
+"""Tests for birdclef package."""

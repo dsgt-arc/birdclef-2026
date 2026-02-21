@@ -23,7 +23,7 @@ import torch
 import torchaudio
 from torch.utils.data import DataLoader, Dataset, Sampler
 
-from birdset_benchmark.datasets import get_num_classes, load_birdset_dataset
+from birdclef.datasets import get_num_classes, load_birdset_dataset
 
 logger = logging.getLogger(__name__)
 

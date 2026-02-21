@@ -32,10 +32,10 @@ from pytorch_lightning.callbacks import (  # noqa: E402
 )
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger  # noqa: E402
 
-from birdset_benchmark.datasets import get_num_classes  # noqa: E402
-from birdset_benchmark.lightning.birdset_datamodule import BirdSetDataModule  # noqa: E402
-from birdset_benchmark.lightning.supervised_vit import SupervisedViTModule  # noqa: E402
-from birdset_benchmark.models.frame_vit import FrameTokenizedViT  # noqa: E402
+from birdclef.datasets import get_num_classes  # noqa: E402
+from birdclef.lightning.birdset_datamodule import BirdSetDataModule  # noqa: E402
+from birdclef.lightning.supervised_vit import SupervisedViTModule  # noqa: E402
+from birdclef.models.frame_vit import FrameTokenizedViT  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -162,7 +162,7 @@ def main():
     streaming = config["data"].get("streaming", False)
 
     if streaming:
-        from birdset_benchmark.lightning.streaming_datamodule import StreamingBirdSetDataModule
+        from birdclef.lightning.streaming_datamodule import StreamingBirdSetDataModule
 
         manifest_cache_dir = str(project_dir / "cache" / "streaming_manifests")
         logger.info(f"Using streaming data module (manifest cache: {manifest_cache_dir})")

@@ -30,10 +30,10 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger  # noqa: E4
 repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root / "src"))
 
-from birdset_benchmark.datasets import get_num_classes  # noqa: E402
-from birdset_benchmark.lightning.birdset_datamodule import BirdSetDataModule  # noqa: E402
-from birdset_benchmark.lightning.supervised_vit import SupervisedViTModule  # noqa: E402
-from birdset_benchmark.models.vit_audio import ViTAudio  # noqa: E402
+from birdclef.datasets import get_num_classes  # noqa: E402
+from birdclef.lightning.birdset_datamodule import BirdSetDataModule  # noqa: E402
+from birdclef.lightning.supervised_vit import SupervisedViTModule  # noqa: E402
+from birdclef.models.vit_audio import ViTAudio  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

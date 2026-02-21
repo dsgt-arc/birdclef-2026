@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torchmetrics
 
-from birdset_benchmark.classifiers import MultiLabelTopKAccuracy
+from birdclef.classifiers import MultiLabelTopKAccuracy
 
 
 class SupervisedViTModule(pl.LightningModule):

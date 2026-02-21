@@ -53,7 +53,7 @@ Key observations:
 | Compute | 1× RTX 6000 GPU, 64GB RAM, 8 CPUs |
 | Dependencies | timm>=0.9.0, PyTorch Lightning, W&B |
 | Code | `user/murilo/experiments/004-frame-tokenization/` |
-| Base code | `AudioClassifier` from `user/murilo/src/birdset_benchmark/models/` |
+| Base code | `AudioClassifier` from `user/murilo/src/birdclef/models/` |
 
 ### Procedure
 

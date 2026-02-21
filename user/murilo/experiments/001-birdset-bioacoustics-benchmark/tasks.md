@@ -65,7 +65,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 
 - [x] 1.1 Create Python package structure
   - [x] `user/murilo/pyproject.toml` with all dependencies
-  - [x] `user/murilo/src/birdset_benchmark/__init__.py`
+  - [x] `user/murilo/src/birdclef/__init__.py`
   - [x] Fixed git URL dependency (moved to `[tool.uv.sources]`)
   - [x] Added `ai-edge-litert` for TensorFlow Lite (BirdNET requirement)
   - [x] Added `tensorflow==2.17` and `tensorflow-hub` for Perch model support
@@ -122,7 +122,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 - Dataset-agnostic: constant class counts ensure correct multi-hot vector size even with subsets
 
 ### 2A.2 Implement Inference Script ✅ COMPLETED
-- [x] Create `src/birdset_benchmark/run_inference.py`
+- [x] Create `src/birdclef/run_inference.py`
   - [x] CLI with typer: `--model`, `--dataset`, `--batch-size`, `--num-workers`, `--output-dir`
   - [x] Support models: `birdset_convnext`, `birdset_efficientnet_b1`
   - [x] Load BirdSet test split
@@ -163,7 +163,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 
 - [x] Create `sbatch/inference/_job.sh`
   - [x] SLURM configuration: 1 GPU (RTX 6000), 8 CPUs, 32GB RAM, 4 hours, embers queue
-  - [x] Run `python -m birdset_benchmark.run_inference`
+  - [x] Run `python -m birdclef.run_inference`
   - [x] Use MODEL and DATASET environment variables
   - [x] Optional BATCH_SIZE and NUM_WORKERS overrides
 
@@ -241,20 +241,20 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [ ] Check eBird API for species code mappings
   - [ ] Determine overlap between BirdNET species and BirdSet species
 - [ ] If mapping exists:
-  - [ ] Implement `src/birdset_benchmark/taxonomy_mapping.py`
+  - [ ] Implement `src/birdclef/taxonomy_mapping.py`
   - [ ] Create mapping table (BirdNET class → eBird code)
   - [ ] Handle unmapped species (assign to "unknown" or drop)
 - [ ] Decision: Use taxonomy mapping OR fall back to linear probe
 
 ### 2B.2 [PROPOSED] Implement Embedding Extraction (for Linear Probe)
-- [ ] Create `src/birdset_benchmark/encoders.py`
+- [ ] Create `src/birdclef/encoders.py`
   - [ ] Class: `BioacousticsEncoder` (abstract base class)
   - [ ] Class: `BirdNETEncoder` (wrapper for bmz.BirdNET)
   - [ ] Class: `PerchEncoder` (wrapper for bmz.Perch)
   - [ ] Each encoder: `.embed(audio_batch)` → `[batch, embedding_dim]`
   - [ ] Handle sample rate differences (48kHz for BirdNET, 32kHz for Perch)
 
-- [ ] Create `src/birdset_benchmark/extract_embeddings.py`
+- [ ] Create `src/birdclef/extract_embeddings.py`
   - [ ] CLI with typer: `--model`, `--dataset`, `--batch-size`, `--output-dir`
   - [ ] Support models: `birdnet`, `perch`
   - [ ] Extract embeddings for train and test splits
@@ -266,7 +266,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
   - [ ] `sbatch/extract_embeddings/run.sh`
 
 ### 2B.3 [PROPOSED] Implement Linear Probe Training
-- [ ] Create `src/birdset_benchmark/train_classifier.py`
+- [ ] Create `src/birdclef/train_classifier.py`
   - [ ] CLI with typer: `--model`, `--dataset`, `--epochs`, `--lr`
   - [ ] Load embeddings from `artifacts/embeddings/{model}/{dataset}/`
   - [ ] Train `MultiLabelLinearProbe` with PyTorch Lightning
@@ -295,7 +295,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 **Status**: Proposed but not executed
 
 ### 3.1 [PROPOSED] Implement Aggregation Script
-- [ ] Create `src/birdset_benchmark/aggregate_results.py`
+- [ ] Create `src/birdclef/aggregate_results.py`
   - [ ] Collect all `metrics.json` files
   - [ ] Generate `results/summary.json`
   - [ ] Generate `results/results_matrix.csv` (cmAP by model × dataset)
@@ -353,7 +353,7 @@ This experiment evaluates pre-trained bioacoustics models on the BirdSet benchma
 
 ### Source Files to Create
 ```
-src/birdset_benchmark/
+src/birdclef/
 ├── __init__.py              ✅ exists
 ├── models.py                ✅ exists - LinearProbe, metrics
 ├── datasets.py              ✅ exists - HuggingFace loading, constants (Phase 2A & 2B)

@@ -121,7 +121,7 @@ def main():
 
     # Try to get num_classes
     try:
-        from birdset_benchmark.datasets import get_num_classes
+        from birdclef.datasets import get_num_classes
 
         metrics["num_classes"] = get_num_classes(dataset_name)
     except Exception:

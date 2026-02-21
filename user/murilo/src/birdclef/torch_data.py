@@ -7,8 +7,8 @@ Used by:
 - Experiment 001: BirdSet Bioacoustics Benchmark (transfer learning with BirdNET, Perch)
 
 Usage:
-    from birdset_benchmark.torch_data import BirdSetDataset, create_dataloader
-    from birdset_benchmark.datasets import load_birdset_dataset, get_num_classes
+    from birdclef.torch_data import BirdSetDataset, create_dataloader
+    from birdclef.datasets import load_birdset_dataset, get_num_classes
 
     # Load HuggingFace dataset
     hf_dataset = load_birdset_dataset("HSN", split="train")

@@ -2,7 +2,7 @@
 
 import torch
 
-from birdset_benchmark.preprocessing.mel_spectrogram import MelSpectrogramTransform
+from birdclef.preprocessing.mel_spectrogram import MelSpectrogramTransform
 
 
 class TestMelSpectrogramTransform:

@@ -149,7 +149,7 @@ else
 fi
 
 JOB_ID="${SLURM_JOB_ID:-$$}"
-export JOB_VENV_DIR="$VENV_BASE/birdset-benchmark-$JOB_ID"
+export JOB_VENV_DIR="$VENV_BASE/birdclef-$JOB_ID"
 export JOB_VENV="$JOB_VENV_DIR/.venv"
 
 echo "  - Script dir: $SCRIPT_DIR"
