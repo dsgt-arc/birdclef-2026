@@ -5,9 +5,9 @@ This module tests both Phase 2A and Phase 2B data loading:
 - Phase 2B (Transfer Learning): Uses torch_data.py for PyTorch Dataset/DataLoader
 
 Module structure:
-- birdset_benchmark.datasets: HuggingFace loading, constants (Phase 2A & 2B)
-- birdset_benchmark.torch_data: PyTorch Dataset/DataLoader (Phase 2B)
-- birdset_benchmark.data: Backwards compatibility re-exports
+- birdclef.datasets: HuggingFace loading, constants (Phase 2A & 2B)
+- birdclef.torch_data: PyTorch Dataset/DataLoader (Phase 2B)
+- birdclef.data: Backwards compatibility re-exports
 """
 
 import numpy as np
@@ -15,14 +15,14 @@ import pytest
 import torch
 
 # Phase 2A imports (dataset loading and constants)
-from birdset_benchmark.datasets import (
+from birdclef.datasets import (
     BIRDSET_DATASETS,
     get_num_classes,
     load_birdset_dataset,
 )
 
 # Phase 2B imports (PyTorch data loading)
-from birdset_benchmark.torch_data import (
+from birdclef.torch_data import (
     BirdSetDataset,
     create_dataloader,
     pad_or_crop,

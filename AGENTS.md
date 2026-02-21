@@ -6,10 +6,10 @@ crash the session, and potentially corrupt work.
 
 **Interactive sessions** — use `$TMPDIR` (SLURM) or `/tmp/` (fallback):
 ```bash
-# Convention: $TMPDIR/birdset-benchmark-<JOB_ID>/.venv
+# Convention: $TMPDIR/birdclef-<JOB_ID>/.venv
 VENV_BASE="${TMPDIR:-/tmp}"
 JOB_ID="${SLURM_JOB_ID:-$$}"
-JOB_VENV_DIR="$VENV_BASE/birdset-benchmark-$JOB_ID"
+JOB_VENV_DIR="$VENV_BASE/birdclef-$JOB_ID"
 JOB_VENV="$JOB_VENV_DIR/.venv"
 
 mkdir -p "$JOB_VENV_DIR"
@@ -21,7 +21,7 @@ uv pip install torch torchvision torchaudio --index-url https://download.pytorch
 
 **SLURM batch jobs** — always use `$TMPDIR` (fast local NVMe):
 ```bash
-JOB_VENV_DIR="$TMPDIR/birdset-benchmark-$SLURM_JOB_ID"
+JOB_VENV_DIR="$TMPDIR/birdclef-$SLURM_JOB_ID"
 JOB_VENV="$JOB_VENV_DIR/.venv"
 ```
 

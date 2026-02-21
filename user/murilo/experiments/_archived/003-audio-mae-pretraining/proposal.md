@@ -53,7 +53,7 @@ After pre-training, encoder provides high-quality embeddings for downstream task
 | Data | **XCM**: ~160k recordings (unlabeled, use all splits for pre-training)<br>Map-style dataset, mel-spectrograms generated on-the-fly |
 | Compute | **GPU**: 1x RTX 6000 (24GB VRAM)<br>**CPUs**: 16 cores for DataLoader workers<br>**Memory**: 64GB RAM<br>**Time**: ~48-72 hours (100 epochs) |
 | Dependencies | `einops>=0.7.0` (patchify/unpatchify), `timm>=0.9.0` (transformer blocks), `wandb>=0.16.0` |
-| Code | `user/murilo/src/birdset_benchmark/`:<br>- `models/mae_decoder.py`<br>- `lightning/audio_mae.py`<br>- `lightning/callbacks.py` (MAEImageLogger) |
+| Code | `user/murilo/src/birdclef/`:<br>- `models/mae_decoder.py`<br>- `lightning/audio_mae.py`<br>- `lightning/callbacks.py` (MAEImageLogger) |
 
 ### Procedure
 

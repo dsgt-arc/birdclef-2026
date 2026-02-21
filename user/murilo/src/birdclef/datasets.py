@@ -7,7 +7,7 @@ Used by:
 - Experiment 002: Supervised ViT Baseline (get_num_classes)
 
 Usage:
-    from birdset_benchmark.datasets import load_birdset_dataset, get_num_classes, BIRDSET_DATASETS
+    from birdclef.datasets import load_birdset_dataset, get_num_classes, BIRDSET_DATASETS
 
     # Load a dataset
     dataset = load_birdset_dataset("HSN", split="test_5s")

@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from birdset_benchmark.datasets import get_num_classes, load_birdset_dataset
-from birdset_benchmark.run_inference import (
+from birdclef.datasets import get_num_classes, load_birdset_dataset
+from birdclef.run_inference import (
     MODELS,
     compute_metrics,
 )
@@ -345,7 +345,7 @@ class TestInferenceWorkflow:
             cmd = [
                 sys.executable,
                 "-m",
-                "birdset_benchmark.run_inference",
+                "birdclef.run_inference",
                 "--model",
                 "birdset_convnext",
                 "--dataset",

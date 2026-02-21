@@ -45,7 +45,7 @@ Train ViT-Base end-to-end on BirdSet HSN (quick iteration) then scale to XCM. Th
 | Data | **HSN**: ~5,460 train samples, 21 species (fast iteration)<br>**XCM**: ~160k train samples, ~9,736 species (production)<br>Map-style dataset (download to local cache ~90GB) |
 | Compute | **GPU**: 1x RTX 6000 (24GB VRAM)<br>**CPUs**: 16 cores for DataLoader workers<br>**Memory**: 64GB RAM<br>**Time**: HSN ~2-4 hours, XCM ~24-48 hours |
 | Dependencies | `timm>=0.9.0` (ViT), `wandb>=0.16.0` (logging), `pytorch-lightning>=2.0.0`, `torchaudio` (Kaldi fbank) |
-| Code | `user/murilo/src/birdset_benchmark/`:<br>- `lightning/birdset_datamodule.py`<br>- `lightning/supervised_vit.py`<br>- `models/vit_audio.py`<br>- `preprocessing/mel_spectrogram.py` |
+| Code | `user/murilo/src/birdclef/`:<br>- `lightning/birdset_datamodule.py`<br>- `lightning/supervised_vit.py`<br>- `models/vit_audio.py`<br>- `preprocessing/mel_spectrogram.py` |
 
 ### Procedure
 

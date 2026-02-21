@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from birdset_benchmark.models.vit_audio import ViTAudio
+from birdclef.models.vit_audio import ViTAudio
 
 
 class TestViTAudio:

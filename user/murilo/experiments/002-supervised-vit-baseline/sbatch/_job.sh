@@ -58,7 +58,7 @@ echo ""
 echo "Setting up per-job virtual environment..."
 
 # Create job-specific venv in TMPDIR for fast local I/O
-JOB_VENV_DIR="$TMPDIR/birdset-benchmark-$SLURM_JOB_ID"
+JOB_VENV_DIR="$TMPDIR/birdclef-$SLURM_JOB_ID"
 JOB_VENV="$JOB_VENV_DIR/.venv"
 
 echo "  TMPDIR: $TMPDIR"

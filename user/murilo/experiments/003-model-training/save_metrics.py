@@ -114,7 +114,7 @@ def main():
     # Try to get num_classes from the datasets module
     try:
         sys.path.insert(0, str(experiment_dir.parent.parent / "src"))
-        from birdset_benchmark.datasets import get_num_classes
+        from birdclef.datasets import get_num_classes
 
         metrics["num_classes"] = get_num_classes(dataset_name)
     except Exception:

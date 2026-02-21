@@ -18,7 +18,7 @@ import timm
 import torch
 import torch.nn as nn
 
-from birdset_benchmark.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
+from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
 
 
 class FrameTokenizedViT(nn.Module):
