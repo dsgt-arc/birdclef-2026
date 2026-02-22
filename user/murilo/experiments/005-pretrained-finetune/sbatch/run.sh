@@ -21,6 +21,7 @@ set -eu
 
 DRY_RUN=false
 FAST_DEV_RUN=false
+GPU_CHECK=0
 CONFIG=""
 PROJECT_NAME="ps-dsgt_clef2026-0"
 
@@ -33,6 +34,10 @@ while [[ $# -gt 0 ]]; do
         --fast-dev-run)
             FAST_DEV_RUN=true
             shift
+            ;;
+        --gpu-check)
+            GPU_CHECK="$2"
+            shift 2
             ;;
         --project-name)
             PROJECT_NAME="$2"
@@ -47,6 +52,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --project-name    PACE project allocation name (default: ps-dsgt_clef2026-0)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
+            echo "  --gpu-check N     Run N epochs for GPU utilization check, then exit"
             echo "  --dry-run         Preview command without submitting job"
             echo "  -h, --help        Show this help message"
             exit 0
@@ -95,6 +101,7 @@ echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
 echo "Project: ${PROJECT_NAME}"
 echo "Fast dev run: ${FAST_DEV_RUN}"
+echo "GPU check: ${GPU_CHECK}"
 echo ""
 
 # Verify config exists
@@ -116,7 +123,7 @@ JOB_SCRIPT="${SCRIPT_DIR}/_job.sh"
 
 CMD="sbatch \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN} \
+    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK} \
     --job-name=exp005-${RUN_NAME} \
     ${JOB_SCRIPT}"
 

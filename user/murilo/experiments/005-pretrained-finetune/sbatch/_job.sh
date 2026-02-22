@@ -25,6 +25,7 @@ set -eu
 CONFIG="${CONFIG:-config/eat_frozen.yaml}"
 PROJECT_NAME="${PROJECT_NAME:-ps-dsgt_clef2026-0}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
+GPU_CHECK="${GPU_CHECK:-0}"
 
 # ============================================================================
 # Determine paths
@@ -147,6 +148,10 @@ TRAIN_CMD="python train.py --config ${CONFIG} --project-name ${PROJECT_NAME}"
 if [[ "${FAST_DEV_RUN}" == "true" ]]; then
     TRAIN_CMD="${TRAIN_CMD} --fast-dev-run"
     echo "  (fast dev run: 5 batches, no W&B)"
+fi
+if [[ "${GPU_CHECK}" -gt 0 ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --gpu-check ${GPU_CHECK}"
+    echo "  (GPU check mode: ${GPU_CHECK} epoch(s), no W&B)"
 fi
 
 srun ${TRAIN_CMD}
