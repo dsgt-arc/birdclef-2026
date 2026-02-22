@@ -312,8 +312,11 @@ def main():
 
     # GPU check mode: print summary, save to file, and exit early
     if gpu_check_mode:
+        import os
+
+        job_id = os.environ.get("SLURM_JOB_ID", "local")
         summary_dir = Path(__file__).parent / "outputs" / "gpu_check"
-        summary_file = summary_dir / f"{run_name}.txt"
+        summary_file = summary_dir / f"{run_name}_{job_id}.txt"
         gpu_monitor.print_summary(save_path=summary_file)
         logger.info("GPU check complete!")
         return

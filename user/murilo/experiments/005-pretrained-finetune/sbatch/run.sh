@@ -22,6 +22,7 @@ set -eu
 DRY_RUN=false
 FAST_DEV_RUN=false
 GPU_CHECK=0
+NUM_WORKERS=""
 CONFIG=""
 PROJECT_NAME="ps-dsgt_clef2026-0"
 
@@ -39,6 +40,10 @@ while [[ $# -gt 0 ]]; do
             GPU_CHECK="$2"
             shift 2
             ;;
+        --num-workers)
+            NUM_WORKERS="$2"
+            shift 2
+            ;;
         --project-name)
             PROJECT_NAME="$2"
             shift 2
@@ -53,6 +58,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --project-name    PACE project allocation name (default: ps-dsgt_clef2026-0)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
             echo "  --gpu-check N     Run N epochs for GPU utilization check, then exit"
+            echo "  --num-workers N   Override num_workers from config"
             echo "  --dry-run         Preview command without submitting job"
             echo "  -h, --help        Show this help message"
             exit 0
@@ -102,6 +108,7 @@ echo "Run name: ${RUN_NAME}"
 echo "Project: ${PROJECT_NAME}"
 echo "Fast dev run: ${FAST_DEV_RUN}"
 echo "GPU check: ${GPU_CHECK}"
+echo "Num workers: ${NUM_WORKERS:-config default}"
 echo ""
 
 # Verify config exists
@@ -121,10 +128,18 @@ JOB_SCRIPT="${SCRIPT_DIR}/_job.sh"
 # Submit job
 # ============================================================================
 
+# Override cpus-per-task if num-workers specified
+# Max CPU:GPU ratio is 12:1 on gpu-rtx6000/gpu-v100 partitions
+CPUS_OVERRIDE=""
+if [[ -n "$NUM_WORKERS" ]]; then
+    CPUS_OVERRIDE="--cpus-per-task=${NUM_WORKERS}"
+fi
+
 CMD="sbatch \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK} \
+    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK},NUM_WORKERS=${NUM_WORKERS} \
     --job-name=exp005-${RUN_NAME} \
+    ${CPUS_OVERRIDE} \
     ${JOB_SCRIPT}"
 
 if [[ "${DRY_RUN}" == "true" ]]; then

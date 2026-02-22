@@ -149,6 +149,8 @@ class GPUUtilizationMonitor(pl.Callback):
 
     def _build_summary(self) -> str:
         """Build the summary report as a string."""
+        from datetime import datetime
+
         lines = []
         lines.append("=" * 60)
         lines.append("GPU Utilization Summary")
@@ -158,6 +160,8 @@ class GPUUtilizationMonitor(pl.Callback):
             lines.append("No data collected. Run training first.")
             lines.append("=" * 60)
             return "\n".join(lines)
+
+        lines.append(datetime.now().strftime("%b-%d-%Y %H:%M:%S"))
 
         # Total GPU memory for context
         if self._total_gpu_memory_gb > 0:
@@ -250,11 +254,98 @@ class GPUUtilizationMonitor(pl.Callback):
         lines.append("=" * 60)
         return "\n".join(lines)
 
+    def save_plot(self, save_path: str | Path):
+        """Generate an nvtop-style GPU utilization plot.
+
+        Creates a two-panel chart:
+        - Top: GPU utilization % and memory % over training steps
+        - Bottom: data loading time vs compute time per step
+
+        Args:
+            save_path: Path to save the PNG plot.
+        """
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        gpu_util = self._history["gpu_util_pct"]
+        mem_pct = self._history["memory_pct"]
+        data_ms = self._history["data_time_ms"]
+        compute_ms = self._history["compute_time_ms"]
+
+        if not data_ms:
+            return
+
+        steps = range(len(data_ms))
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+
+        # --- Top panel: GPU Utilization % and Memory % ---
+        if gpu_util:
+            gpu_steps = range(len(gpu_util))
+            ax1.fill_between(gpu_steps, gpu_util, alpha=0.3, color="tab:cyan")
+            ax1.plot(
+                gpu_steps,
+                gpu_util,
+                color="tab:cyan",
+                linewidth=0.8,
+                label=f"GPU Util % (avg {mean(gpu_util):.1f}%)",
+            )
+        if mem_pct:
+            mem_steps = range(len(mem_pct))
+            ax1.plot(
+                mem_steps,
+                mem_pct,
+                color="gold",
+                linewidth=1.5,
+                label=f"GPU Mem % (avg {mean(mem_pct):.1f}%)",
+            )
+
+        ax1.set_ylabel("Percentage (%)")
+        ax1.set_ylim(-2, 105)
+        ax1.legend(loc="upper right")
+        ax1.set_title("GPU Utilization & Memory")
+        ax1.grid(axis="y", alpha=0.3)
+
+        # --- Bottom panel: Data time vs Compute time ---
+        ax2.fill_between(
+            steps,
+            data_ms,
+            alpha=0.4,
+            color="tab:red",
+            label=f"Data time (avg {mean(data_ms):.0f} ms)",
+        )
+        ax2.fill_between(
+            steps,
+            compute_ms,
+            alpha=0.4,
+            color="tab:blue",
+            label=f"Compute time (avg {mean(compute_ms):.0f} ms)",
+        )
+        ax2.plot(steps, data_ms, color="tab:red", linewidth=0.5)
+        ax2.plot(steps, compute_ms, color="tab:blue", linewidth=0.5)
+
+        ax2.set_ylabel("Time (ms)")
+        ax2.set_xlabel("Training Step")
+        ax2.legend(loc="upper right")
+        ax2.set_title("Data Loading vs Compute Time")
+        ax2.grid(axis="y", alpha=0.3)
+
+        fig.tight_layout()
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Plot saved to: {save_path}")
+
     def print_summary(self, save_path: str | Path | None = None):
         """Print a formatted summary table with recommendations.
 
         Args:
-            save_path: If provided, also write the summary to this file.
+            save_path: If provided, also write the summary and a plot to this path.
+                The plot is saved alongside with a .png extension.
         """
         summary = self._build_summary()
         print(f"\n{summary}\n")
@@ -264,6 +355,10 @@ class GPUUtilizationMonitor(pl.Callback):
             save_path.parent.mkdir(parents=True, exist_ok=True)
             save_path.write_text(summary + "\n")
             print(f"Summary saved to: {save_path}")
+
+            # Generate plot alongside the text summary
+            plot_path = save_path.with_suffix(".png")
+            self.save_plot(plot_path)
 
     def teardown(self, trainer, pl_module, stage=None):
         if self._nvml_available:

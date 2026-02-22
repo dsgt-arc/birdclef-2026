@@ -31,8 +31,8 @@ continuously.
 ┌─────────────────────────── CPU (dataloader workers) ───────────────────────────┐
 │                                                                                │
 │  ┌─────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────────┐  │
-│  │  sf.read()   │───>│  Resample    │───>│  Kaldi fbank │───>│  Normalize +  │  │
-│  │  (disk I/O)  │    │  32k → 16k   │    │  (128 bins)  │    │  pad/truncate │  │
+│  │  sf.read()  │───>│  Resample    │───>│  Kaldi fbank │───>│  Normalize +  │  │
+│  │  (disk I/O) │    │  32k → 16k   │    │  (128 bins)  │    │  pad/truncate │  │
 │  └─────────────┘    └──────────────┘    └──────────────┘    └───────┬───────┘  │
 │      ~5-20 ms            ~2-5 ms            ~15-30 ms               │          │
 │                                                                     │          │
@@ -66,9 +66,9 @@ continuously.
 ```
                     CPU work per sample
                 ┌────────────────────────────┐
-                │ sf.read    resample  fbank  │
+                │ sf.read    resample  fbank │
                 │  ~10ms   +  ~3ms  + ~20ms  │
-                │         = ~33ms/sample      │
+                │         = ~33ms/sample     │
                 └────────────────────────────┘
 
     With 8 workers processing 256 samples:
@@ -123,7 +123,7 @@ GPU:      [██ compute N ██]  [░░░░ IDLE ░░░░░░░░
 **The GPU is underutilized because:**
 1. Kaldi fbank is CPU-intensive (~20-30ms per 5s clip) and cannot be GPU-accelerated
    (torchaudio's Kaldi fbank has no CUDA backend)
-2. Only 8 CPU workers available (`--cpus-per-task=8`)
+2. Only 8 CPU workers available (`--cpus-per-task=8`); max ratio is 12:1 for batch jobs on gpu-rtx6000/gpu-v100 (6:1 for interactive)
 3. The frozen encoder finishes fast — no gradient computation for encoder params
 4. VRAM is 97% empty — batch size could be much larger, but more samples per batch
    would increase data pipeline pressure even further
@@ -164,17 +164,20 @@ These parameters are **EAT-specific**. Other models use different representation
 
 ### Option A: Increase CPU workers (quick, moderate improvement)
 
-Increase SLURM allocation from 8 to 16-24 CPUs, set `num_workers` to match.
+Increase SLURM allocation from 8 to 12 CPUs (max for gpu-rtx6000 batch jobs), set `num_workers` to match.
+
+**PACE CPU:GPU limits (gpu-rtx6000/gpu-v100):**
+- Interactive (salloc): 6:1
+- Batch (sbatch): 12:1
 
 ```
 Expected improvement:
   8 workers:  1056ms per batch → GPU waits ~580ms
-  16 workers:  528ms per batch → GPU waits ~50ms   (good overlap!)
-  24 workers:  352ms per batch → GPU never waits   (fully saturated)
+  12 workers:  704ms per batch → GPU waits ~230ms  (max for RTX 6000)
 ```
 
 **Pros:** No code changes, just config.
-**Cons:** Uses more CPU allocation; fbank is still computed every epoch.
+**Cons:** Limited to 12 workers max on RTX 6000; fbank is still computed every epoch.
 
 ### Option B: Pre-compute fbanks to disk (best for EAT)
 

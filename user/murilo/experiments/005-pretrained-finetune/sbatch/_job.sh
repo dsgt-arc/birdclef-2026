@@ -26,6 +26,7 @@ CONFIG="${CONFIG:-config/eat_frozen.yaml}"
 PROJECT_NAME="${PROJECT_NAME:-ps-dsgt_clef2026-0}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 GPU_CHECK="${GPU_CHECK:-0}"
+NUM_WORKERS="${NUM_WORKERS:-}"
 
 # ============================================================================
 # Determine paths
@@ -152,6 +153,10 @@ fi
 if [[ "${GPU_CHECK}" -gt 0 ]]; then
     TRAIN_CMD="${TRAIN_CMD} --gpu-check ${GPU_CHECK}"
     echo "  (GPU check mode: ${GPU_CHECK} epoch(s), no W&B)"
+fi
+if [[ -n "${NUM_WORKERS}" ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --num-workers ${NUM_WORKERS}"
+    echo "  (num_workers override: ${NUM_WORKERS})"
 fi
 
 srun ${TRAIN_CMD}
