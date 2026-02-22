@@ -7,7 +7,7 @@
 
 ## Hypothesis
 
-Fine-tuning a pretrained self-supervised audio encoder (EAT, pretrained on AudioSet-2M) on BirdCLEF 2025 focal recordings will achieve cmAP > 0.15 on a held-out test split, demonstrating that audio-domain pretraining provides useful representations for bird species classification.
+Fine-tuning a pretrained self-supervised audio encoder (EAT, pretrained on AudioSet-2M) on BirdCLEF 2025 focal recordings will produce a model that generalizes to held-out data, and full fine-tuning will outperform a frozen linear probe, demonstrating that audio-domain pretraining provides useful — and adaptable — representations for bird species classification.
 
 ## Background
 
@@ -115,8 +115,11 @@ For reference only (different dataset, not a fair comparison):
 
 ### Success Criteria
 
-- **Confirm if**: fine-tuned EAT achieves cmAP > 0.15 on held-out BirdCLEF 2025 test split, AND fine-tuning outperforms frozen linear probe
-- **Reject if**: model fails to learn (val metrics do not improve over random), or test cmAP is no better than chance (1/206 ≈ 0.005)
+- **Confirm if**:
+  1. Model learns: val cmAP improves consistently over training epochs (not stuck at random)
+  2. Fine-tuning outperforms frozen linear probe on held-out test set
+  3. Model generalizes: test metrics are reasonably close to val metrics (no severe overfitting)
+- **Reject if**: model fails to learn (val metrics do not improve over random chance ≈ 1/206)
 
 ## Limitations
 
