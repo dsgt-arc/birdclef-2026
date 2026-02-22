@@ -171,8 +171,13 @@ class BirdCLEF2025Dataset(Dataset):
 class BirdCLEF2025DataModule(pl.LightningDataModule):
     """Lightning DataModule for BirdCLEF 2025 labeled training data.
 
-    Reads train.csv, does stratified train/val split by primary_label,
+    Reads train.csv, does stratified train/val/test split by primary_label,
     and creates BirdCLEF2025Dataset for each split.
+
+    Split strategy (80/10/10 by default):
+        - Train: model training
+        - Val: early stopping, checkpoint selection, HP tuning
+        - Test: held-out final evaluation (never used during training)
     """
 
     def __init__(
@@ -185,6 +190,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
         batch_size: int = 32,
         num_workers: int = 8,
         val_fraction: float = 0.1,
+        test_fraction: float = 0.1,
         seed: int = 42,
     ):
         super().__init__()
@@ -196,6 +202,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.val_fraction = val_fraction
+        self.test_fraction = test_fraction
         self.seed = seed
 
         # Build or use provided species list
@@ -207,41 +214,100 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
         self.num_classes = len(self.species_list)
         self.train_dataset = None
         self.val_dataset = None
+        self.test_dataset = None
+
+    def _split_dataframe(self, df: pd.DataFrame):
+        """Stratified three-way split by primary_label.
+
+        Guarantees every species has at least 1 sample in each split.
+        For species with fewer than 3 samples, duplicates are placed into
+        the deficient splits so no class is absent from any split.
+        """
+        rng = np.random.RandomState(self.seed)
+        train_indices = []
+        val_indices = []
+        test_indices = []
+        duplicated_species = []
+
+        for species, group in df.groupby("primary_label"):
+            indices = group.index.tolist()
+            rng.shuffle(indices)
+            n = len(indices)
+
+            if n >= 3:
+                # Normal case: allocate at least 1 to test and val, rest to train
+                n_test = max(1, int(n * self.test_fraction))
+                n_val = max(1, int(n * self.val_fraction))
+                # Ensure train gets at least 1
+                if n_test + n_val >= n:
+                    n_test = 1
+                    n_val = 1
+                test_indices.extend(indices[:n_test])
+                val_indices.extend(indices[n_test : n_test + n_val])
+                train_indices.extend(indices[n_test + n_val :])
+            elif n == 2:
+                # 2 samples: one to train, one to val, duplicate train sample to test
+                train_indices.append(indices[0])
+                val_indices.append(indices[1])
+                test_indices.append(indices[0])  # duplicate
+                duplicated_species.append(species)
+            else:
+                # 1 sample: put in all three splits (rare edge case)
+                train_indices.append(indices[0])
+                val_indices.append(indices[0])
+                test_indices.append(indices[0])
+                duplicated_species.append(species)
+
+        if duplicated_species:
+            logger.warning(
+                f"{len(duplicated_species)} species had <3 samples and required "
+                f"duplication across splits: {duplicated_species[:5]}"
+                + ("..." if len(duplicated_species) > 5 else "")
+            )
+
+        train_df = df.loc[train_indices].reset_index(drop=True)
+        val_df = df.loc[val_indices].reset_index(drop=True)
+        test_df = df.loc[test_indices].reset_index(drop=True)
+
+        return train_df, val_df, test_df
 
     def setup(self, stage=None):
-        if stage == "fit" or stage is None:
-            df = pd.read_csv(self.metadata_csv)
+        # Only build datasets once (they're deterministic given the seed)
+        if (
+            self.train_dataset is not None
+            and self.val_dataset is not None
+            and self.test_dataset is not None
+        ):
+            return
 
-            # Stratified split by primary_label
-            rng = np.random.RandomState(self.seed)
-            val_indices = []
-            train_indices = []
-            for _species, group in df.groupby("primary_label"):
-                indices = group.index.tolist()
-                rng.shuffle(indices)
-                n_val = max(1, int(len(indices) * self.val_fraction))
-                val_indices.extend(indices[:n_val])
-                train_indices.extend(indices[n_val:])
+        df = pd.read_csv(self.metadata_csv)
+        train_df, val_df, test_df = self._split_dataframe(df)
 
-            train_df = df.loc[train_indices].reset_index(drop=True)
-            val_df = df.loc[val_indices].reset_index(drop=True)
+        logger.info(
+            f"Split: {len(train_df)} train, {len(val_df)} val, " f"{len(test_df)} test recordings"
+        )
 
-            logger.info(f"Train: {len(train_df)} recordings, Val: {len(val_df)} recordings")
-
-            self.train_dataset = BirdCLEF2025Dataset(
-                audio_dir=self.audio_dir,
-                metadata_df=train_df,
-                species_list=self.species_list,
-                sample_rate=self.sample_rate,
-                chunk_duration=self.chunk_duration,
-            )
-            self.val_dataset = BirdCLEF2025Dataset(
-                audio_dir=self.audio_dir,
-                metadata_df=val_df,
-                species_list=self.species_list,
-                sample_rate=self.sample_rate,
-                chunk_duration=self.chunk_duration,
-            )
+        self.train_dataset = BirdCLEF2025Dataset(
+            audio_dir=self.audio_dir,
+            metadata_df=train_df,
+            species_list=self.species_list,
+            sample_rate=self.sample_rate,
+            chunk_duration=self.chunk_duration,
+        )
+        self.val_dataset = BirdCLEF2025Dataset(
+            audio_dir=self.audio_dir,
+            metadata_df=val_df,
+            species_list=self.species_list,
+            sample_rate=self.sample_rate,
+            chunk_duration=self.chunk_duration,
+        )
+        self.test_dataset = BirdCLEF2025Dataset(
+            audio_dir=self.audio_dir,
+            metadata_df=test_df,
+            species_list=self.species_list,
+            sample_rate=self.sample_rate,
+            chunk_duration=self.chunk_duration,
+        )
 
     def train_dataloader(self):
         return DataLoader(
@@ -258,6 +324,17 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(
             self.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=self.num_workers > 0,
+            prefetch_factor=4 if self.num_workers > 0 else None,
+        )
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,

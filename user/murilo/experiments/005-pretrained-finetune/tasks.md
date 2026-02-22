@@ -44,17 +44,28 @@
   - 90.1M total params (158K trainable when frozen, 90M non-trainable)
   - Pipeline verified: data loading, encoder forward, loss, metrics all working
 
-## 5. Training
+## 5. Evaluation Setup
 
-- [x] 5.1 Create SLURM scripts (`sbatch/_job.sh`, `sbatch/run.sh`) with HF_HOME caching
-- [x] 5.2 Create training script (`train.py`) with YAML config loading, W&B/TensorBoard logging
-- [ ] 5.3 Run frozen-encoder baseline (linear probe)
-- [ ] 5.4 Run full fine-tuning with lower learning rate
-- [ ] 5.5 Monitor training via W&B
+- [x] 5.1 Update DataModule to support 80/10/10 stratified train/val/test split
+  - Added `test_fraction` param, `_split_dataframe()` three-way split, `test_dataloader()`
+  - Handles edge cases for small groups (min 1 per split, at least 1 train sample)
+- [x] 5.2 Update YAML configs with new split fractions (`val_fraction: 0.1`, `test_fraction: 0.1`)
+- [x] 5.3 Add test-set evaluation to `train.py` — run `trainer.test()` on best checkpoint after training
+  - Added `test_step` / `on_test_epoch_end` to `PretrainedFinetuneModule`
+  - `train.py` runs `trainer.test()` with best checkpoint, saves test metrics to results JSON
+- [ ] 5.4 Re-validate fast-dev-run with updated 80/10/10 split
 
-## 6. Analysis
+## 6. Training
 
-- [ ] 6.1 Compare cmAP between frozen and fine-tuned variants
-- [ ] 6.2 Compare with exp 002/003/004 baselines (trained from scratch on BirdSet HSN)
-- [ ] 6.3 Analyze per-species performance and failure modes
-- [ ] 6.4 Document results in `results.md`
+- [x] 6.1 Create SLURM scripts (`sbatch/_job.sh`, `sbatch/run.sh`) with HF_HOME caching
+- [x] 6.2 Create training script (`train.py`) with YAML config loading, W&B/TensorBoard logging
+- [ ] 6.3 Run frozen-encoder baseline (linear probe)
+- [ ] 6.4 Run full fine-tuning with lower learning rate
+- [ ] 6.5 Monitor training via W&B
+
+## 7. Analysis
+
+- [ ] 7.1 Compare cmAP between frozen and fine-tuned variants on held-out test set
+- [ ] 7.2 Analyze per-species performance and failure modes
+- [ ] 7.3 Document results in `results.md`
+- [ ] 7.4 Identify follow-up directions (soundscape evaluation, Kaggle submission, class imbalance handling)

@@ -1,20 +1,27 @@
 # Proposal: Pretrained Audio Model Fine-Tuning on BirdCLEF 2025
 
-**Status**: proposed
+**Status**: in-progress
 **Created**: 2026-02-21
+**Updated**: 2026-02-22
 **Author**: Murilo Gustineli
 
 ## Hypothesis
 
-Fine-tuning a pretrained self-supervised audio model (BEATs or EAT) on the BirdCLEF 2025 dataset will significantly outperform training from scratch (exp 002/003/004), because these models have learned general-purpose audio representations from AudioSet-2M that transfer well to bioacoustics.
+Fine-tuning a pretrained self-supervised audio encoder (EAT, pretrained on AudioSet-2M) on BirdCLEF 2025 focal recordings will achieve cmAP > 0.15 on a held-out test split, demonstrating that audio-domain pretraining provides useful representations for bird species classification.
 
 ## Background
 
-Experiments 002–004 trained ViT and ConvNeXT models from scratch or with ImageNet pretraining on BirdSet HSN (~21 species). The best result was cmAP=0.118 (exp 004, streaming 128x4). However:
+Experiments 002–004 trained ViT and ConvNeXT models on BirdSet HSN (~21 Hawaiian species). Those results are **not directly comparable** to this experiment because:
 
-- **ImageNet pretraining** captures visual features, not audio semantics
-- **Self-supervised audio models** (BEATs, EAT) are pretrained on AudioSet-2M with audio-specific objectives (acoustic tokenization, masked prediction)
-- **BirdCLEF 2025** is a larger, more realistic dataset than BirdSet HSN, with hundreds of species and real-world soundscape evaluation
+- **Different dataset**: BirdCLEF 2025 has 206 species (vs 21 in HSN), different geographic coverage (South America vs Hawaii), and far more training data (28k recordings vs ~2k)
+- **Different model family**: EAT is a self-supervised audio transformer (pretrained on AudioSet-2M), whereas exp 002–004 used vision models (ViT, ConvNeXT) with ImageNet or no pretraining
+
+This experiment establishes the **first baseline on BirdCLEF 2025** and validates whether audio-domain self-supervised pretraining (EAT) produces useful representations for bird species classification. The key comparisons are:
+
+1. **Frozen encoder (linear probe)** vs **full fine-tuning** — measures how much task-specific adaptation helps beyond the pretrained features
+2. **Training curves and generalization** — does the model learn meaningful patterns (val metrics improving) or overfit?
+
+Future experiments can compare against other architectures on the same BirdCLEF 2025 data for fair comparisons.
 
 ### Model Candidates
 
@@ -48,10 +55,14 @@ Experiments 002–004 trained ViT and ConvNeXT models from scratch or with Image
 1. Download BirdCLEF 2025 data to shared storage
 2. Run EDA: species counts, duration distribution, class imbalance
 3. Create PyTorch Dataset + DataModule for BirdCLEF 2025
-4. Load pretrained encoder, attach classification head
-5. Train linear probe (frozen encoder) as baseline
-6. Train full fine-tuning with lower learning rate for encoder
-7. Evaluate on BirdCLEF 2025 validation split
+4. Create **80/10/10 stratified train/val/test split** from focal recordings (by primary_label)
+   - Train: model training
+   - Val: hyperparameter tuning, early stopping, checkpoint selection
+   - Test: held-out final evaluation (never used during training)
+5. Load pretrained encoder, attach classification head
+6. Train linear probe (frozen encoder) as baseline
+7. Train full fine-tuning with lower learning rate for encoder
+8. Evaluate best checkpoint on held-out test set
 
 ### Variables
 
@@ -71,18 +82,21 @@ Experiments 002–004 trained ViT and ConvNeXT models from scratch or with Image
 
 ### Baseline
 
-- Exp 003 best: ConvNeXT-Tiny pretrained (ImageNet) on HSN — cmAP=0.073
-- Exp 004 best: Vertical 128x4 streaming on HSN — cmAP=0.118
-- Note: direct comparison is limited since BirdCLEF 2025 has different species/data than HSN
+This experiment establishes the **first baseline on BirdCLEF 2025**. There is no prior result on this dataset to compare against.
+
+For reference only (different dataset, not a fair comparison):
+- Exp 003 best: ConvNeXT-Tiny (ImageNet pretrained) on BirdSet HSN — cmAP=0.073
+- Exp 004 best: Vertical 128x4 streaming on BirdSet HSN — cmAP=0.118
 
 ### Success Criteria
 
-- **Confirm if**: fine-tuned model achieves cmAP > 0.15 on BirdCLEF 2025 validation
-- **Reject if**: fine-tuned model performs no better than a randomly initialized model of same architecture
+- **Confirm if**: fine-tuned EAT achieves cmAP > 0.15 on held-out BirdCLEF 2025 test split, AND fine-tuning outperforms frozen linear probe
+- **Reject if**: model fails to learn (val metrics do not improve over random), or test cmAP is no better than chance (1/206 ≈ 0.005)
 
 ## Limitations
 
-- BirdCLEF 2025 evaluation is on soundscapes (different domain than focal recordings in train)
-- Pretrained models use 16kHz; BirdCLEF audio is 32kHz — may need resampling
-- EAT/BEATs expect specific input format (fbank features) that may differ from our mel pipeline
-- Class imbalance in BirdCLEF may require weighted loss or sampling strategies
+- **Train/test domain gap**: training data is focal recordings (clean, single species), but the actual competition evaluates on soundscapes (noisy, multi-species, continuous). Our held-out test split is also focal recordings, so it measures in-domain generalization only.
+- **No Kaggle leaderboard comparison yet**: true competition performance requires a Kaggle submission (future work).
+- Pretrained models use 16kHz; BirdCLEF audio is 32kHz — resampling handled in data pipeline.
+- EAT expects Kaldi fbank features — handled in encoder wrapper.
+- Severe class imbalance (max 990, min 2 per species) may require weighted loss or sampling in future iterations.

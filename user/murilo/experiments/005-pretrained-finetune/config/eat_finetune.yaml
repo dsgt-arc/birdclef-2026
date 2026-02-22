@@ -19,6 +19,7 @@ data:
   batch_size: 16               # smaller batch for full fine-tuning (more VRAM)
   num_workers: 8
   val_fraction: 0.1
+  test_fraction: 0.1
   seed: 42
 
 training:

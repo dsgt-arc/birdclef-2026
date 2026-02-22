@@ -117,6 +117,22 @@ class PretrainedFinetuneModule(pl.LightningModule):
         self.val_top1 = MultiLabelTopKAccuracy(k=1)
         self.val_top5 = MultiLabelTopKAccuracy(k=5)
 
+        # Test
+        self.test_cmap = torchmetrics.AveragePrecision(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
+        self.test_auroc = torchmetrics.AUROC(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
+        self.test_f1_macro = torchmetrics.F1Score(
+            task="multilabel", average="macro", num_labels=num_classes
+        )
+        self.test_f1_micro = torchmetrics.F1Score(
+            task="multilabel", average="micro", num_labels=num_classes
+        )
+        self.test_top1 = MultiLabelTopKAccuracy(k=1)
+        self.test_top5 = MultiLabelTopKAccuracy(k=5)
+
     def forward(self, waveform: torch.Tensor) -> torch.Tensor:
         """Forward pass: waveform -> encoder -> head -> logits.
 
@@ -210,6 +226,41 @@ class PretrainedFinetuneModule(pl.LightningModule):
         self.val_f1_micro.reset()
         self.val_top1.reset()
         self.val_top5.reset()
+
+    def test_step(self, batch, batch_idx):
+        waveform, labels = batch
+        logits = self(waveform)
+
+        loss = self.criterion(logits, labels.float())
+
+        probs = torch.sigmoid(logits)
+        preds = (probs > self.threshold).int()
+
+        self.test_cmap.update(probs, labels.int())
+        self.test_auroc.update(probs, labels.int())
+        self.test_f1_macro.update(preds, labels.int())
+        self.test_f1_micro.update(preds, labels.int())
+        self.test_top1.update(probs, labels.int())
+        self.test_top5.update(probs, labels.int())
+
+        self.log("test/loss", loss, on_step=False, on_epoch=True)
+
+        return loss
+
+    def on_test_epoch_end(self):
+        self.log("test/cmap", self.test_cmap.compute(), prog_bar=True)
+        self.log("test/auroc", self.test_auroc.compute(), prog_bar=True)
+        self.log("test/f1_macro", self.test_f1_macro.compute(), prog_bar=True)
+        self.log("test/f1_micro", self.test_f1_micro.compute(), prog_bar=False)
+        self.log("test/top1_acc", self.test_top1.compute(), prog_bar=True)
+        self.log("test/top5_acc", self.test_top5.compute(), prog_bar=True)
+
+        self.test_cmap.reset()
+        self.test_auroc.reset()
+        self.test_f1_macro.reset()
+        self.test_f1_micro.reset()
+        self.test_top1.reset()
+        self.test_top5.reset()
 
     def configure_optimizers(self):
         """Configure AdamW with separate LR for encoder and head.

@@ -173,6 +173,7 @@ def main():
         batch_size=config["data"]["batch_size"],
         num_workers=config["data"]["num_workers"],
         val_fraction=config["data"].get("val_fraction", 0.1),
+        test_fraction=config["data"].get("test_fraction", 0.1),
         seed=config["data"].get("seed", 42),
     )
 
@@ -261,6 +262,20 @@ def main():
     logger.info("Starting training...")
     trainer.fit(pl_module, data_module)
 
+    # Evaluate on held-out test set using best checkpoint
+    if not args.fast_dev_run and checkpoint_callback.best_model_path:
+        logger.info(
+            f"Evaluating best checkpoint on test set: {checkpoint_callback.best_model_path}"
+        )
+        test_results = trainer.test(
+            pl_module, datamodule=data_module, ckpt_path=checkpoint_callback.best_model_path
+        )
+    elif args.fast_dev_run:
+        logger.info("Fast dev run — running test step for pipeline validation")
+        test_results = trainer.test(pl_module, datamodule=data_module)
+    else:
+        test_results = None
+
     # Save results
     if not args.fast_dev_run:
         results_dir = Path(__file__).parent / "outputs" / "test_results"
@@ -278,6 +293,7 @@ def main():
             "num_classes": num_classes,
             "encoder_type": config["encoder"]["type"],
             "freeze_encoder": config["training"]["freeze_encoder"],
+            "test_metrics": test_results[0] if test_results else None,
         }
         with open(results_file, "w") as f:
             json.dump(raw_results, f, indent=2)
