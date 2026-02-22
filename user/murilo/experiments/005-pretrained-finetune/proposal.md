@@ -59,6 +59,7 @@ Future experiments can compare against other architectures on the same BirdCLEF 
    - Train: model training
    - Val: hyperparameter tuning, early stopping, checkpoint selection
    - Test: held-out final evaluation (never used during training)
+   - See [Data Split Details](#data-split-details) below for edge-case handling
 5. Load pretrained encoder, attach classification head
 6. Train linear probe (frozen encoder) as baseline
 7. Train full fine-tuning with lower learning rate for encoder
@@ -69,6 +70,30 @@ Future experiments can compare against other architectures on the same BirdCLEF 
 - **Independent**: training strategy (frozen vs fine-tuned encoder), pretrained model (BEATs vs EAT)
 - **Dependent**: cmAP, AUROC, F1 on validation set
 - **Controlled**: data preprocessing (5s chunks, 32kHz, streaming), optimizer (AdamW), training duration
+
+### Data Split Details
+
+The BirdCLEF 2025 competition provides `test_soundscapes/` but it is empty (labels only exist on the Kaggle hidden evaluation server). The `train_soundscapes/` directory contains 9,726 labeled soundscape files, but these are a different domain (continuous, multi-species) from the focal recordings used for training. We therefore create our own held-out test set from `train_audio/` focal recordings.
+
+**Stratified 80/10/10 split** (by `primary_label`, seed=42):
+
+| Split | Recordings | Ratio | Purpose |
+|-------|-----------|-------|---------|
+| Train | 22,973 | 80.4% | Model training |
+| Val | 2,803 | 9.8% | Early stopping, checkpoint selection |
+| Test | 2,803 | 9.8% | Final held-out evaluation |
+
+**Edge cases — species with very few samples:**
+
+The dataset has severe class imbalance (min 2, median 80, max 990 samples per species). 15 species have only 2 samples, making a clean 3-way split impossible without leaving a class absent from at least one split. Our approach:
+
+| Group size | Count | Strategy |
+|-----------|-------|----------|
+| n >= 3 | 191 species | Normal split: `int(n * 0.1)` to test/val (min 1 each), rest to train |
+| n = 2 | 15 species | 1 to train, 1 to val, train sample **duplicated** into test |
+| n = 1 | 0 species | Would duplicate into all 3 splits (not encountered) |
+
+This guarantees all 206 species appear in every split. The 15 duplicated species mean those test samples also appear in train — a minor leak, but with only 15 of 206 classes affected and 1 sample each, the impact on aggregate metrics is negligible.
 
 ## Evaluation
 
