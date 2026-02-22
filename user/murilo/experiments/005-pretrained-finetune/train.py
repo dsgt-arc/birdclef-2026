@@ -297,9 +297,11 @@ def main():
     logger.info("Starting training...")
     trainer.fit(pl_module, data_module)
 
-    # GPU check mode: print summary and exit early
+    # GPU check mode: print summary, save to file, and exit early
     if gpu_check_mode:
-        gpu_monitor.print_summary()
+        summary_dir = Path(__file__).parent / "outputs" / "gpu_check"
+        summary_file = summary_dir / f"{run_name}.txt"
+        gpu_monitor.print_summary(save_path=summary_file)
         logger.info("GPU check complete!")
         return
 

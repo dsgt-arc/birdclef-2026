@@ -8,6 +8,7 @@ with min/avg/max statistics and concrete recommendations.
 """
 
 import time
+from pathlib import Path
 from statistics import mean
 
 import pytorch_lightning as pl
@@ -146,22 +147,23 @@ class GPUUtilizationMonitor(pl.Callback):
         if gpu_util_pct is not None:
             pl_module.log("gpu/utilization_pct", gpu_util_pct, on_step=True, on_epoch=False)
 
-    def print_summary(self):
-        """Print a formatted summary table with recommendations."""
-        print("\n" + "=" * 60)
-        print("GPU Utilization Summary")
-        print("=" * 60)
+    def _build_summary(self) -> str:
+        """Build the summary report as a string."""
+        lines = []
+        lines.append("=" * 60)
+        lines.append("GPU Utilization Summary")
+        lines.append("=" * 60)
 
         if not self._history["data_time_ms"]:
-            print("No data collected. Run training first.")
-            print("=" * 60)
-            return
+            lines.append("No data collected. Run training first.")
+            lines.append("=" * 60)
+            return "\n".join(lines)
 
-        # Print total GPU memory for context
+        # Total GPU memory for context
         if self._total_gpu_memory_gb > 0:
-            print(f"Total GPU VRAM: {self._total_gpu_memory_gb:.1f} GB")
-            print(f"Steps recorded: {len(self._history['data_time_ms'])}")
-            print()
+            lines.append(f"Total GPU VRAM: {self._total_gpu_memory_gb:.1f} GB")
+            lines.append(f"Steps recorded: {len(self._history['data_time_ms'])}")
+            lines.append("")
 
         # Define metrics to display
         rows = [
@@ -186,8 +188,8 @@ class GPUUtilizationMonitor(pl.Callback):
                 return f"{v:.0f} {unit}"
 
         # Header
-        print(f"{'Metric':<20} {'Min':>10} {'Avg':>10} {'Max':>10}")
-        print("-" * 52)
+        lines.append(f"{'Metric':<20} {'Min':>10} {'Avg':>10} {'Max':>10}")
+        lines.append("-" * 52)
 
         avg_mem_pct = None
         avg_data_pct = None
@@ -195,11 +197,13 @@ class GPUUtilizationMonitor(pl.Callback):
         for label, key, unit in rows:
             vals = self._history[key]
             if not vals:
-                print(f"{label:<20} {'n/a':>10} {'n/a':>10} {'n/a':>10}")
+                lines.append(f"{label:<20} {'n/a':>10} {'n/a':>10} {'n/a':>10}")
                 continue
 
             lo, avg, hi = min(vals), mean(vals), max(vals)
-            print(f"{label:<20} {_fmt(lo, unit):>10} {_fmt(avg, unit):>10} {_fmt(hi, unit):>10}")
+            lines.append(
+                f"{label:<20} {_fmt(lo, unit):>10} {_fmt(avg, unit):>10} {_fmt(hi, unit):>10}"
+            )
 
             if key == "memory_pct":
                 avg_mem_pct = avg
@@ -207,9 +211,9 @@ class GPUUtilizationMonitor(pl.Callback):
                 avg_data_pct = avg
 
         # Recommendations
-        print()
-        print("Recommendations:")
-        print("-" * 52)
+        lines.append("")
+        lines.append("Recommendations:")
+        lines.append("-" * 52)
 
         has_recommendation = False
 
@@ -217,33 +221,49 @@ class GPUUtilizationMonitor(pl.Callback):
             headroom = int(100 / avg_mem_pct) if avg_mem_pct > 0 else 99
             avg_alloc = mean(self._history["memory_allocated_gb"])
             free_gb = self._total_gpu_memory_gb - avg_alloc
-            print(
+            lines.append(
                 f"  Memory usage is {avg_mem_pct:.1f}% of "
                 f"{self._total_gpu_memory_gb:.0f} GB "
                 f"({free_gb:.1f} GB free)"
             )
-            print(f"  -> Batch size could be ~{headroom}x larger")
+            lines.append(f"  -> Batch size could be ~{headroom}x larger")
             has_recommendation = True
 
         if avg_data_pct is not None and avg_data_pct > 20:
-            print(f"  Data loading is {avg_data_pct:.1f}% of step time")
-            print("  -> Consider more num_workers or RAM caching")
+            lines.append(f"  Data loading is {avg_data_pct:.1f}% of step time")
+            lines.append("  -> Consider more num_workers or RAM caching")
             has_recommendation = True
 
         gpu_vals = self._history["gpu_util_pct"]
         if gpu_vals:
             avg_gpu = mean(gpu_vals)
             if avg_gpu < 50:
-                print(f"  GPU compute utilization is {avg_gpu:.1f}%")
-                print(
+                lines.append(f"  GPU compute utilization is {avg_gpu:.1f}%")
+                lines.append(
                     "  -> GPU is idle most of the time; increase batch size or reduce data stalls"
                 )
                 has_recommendation = True
 
         if not has_recommendation:
-            print("  No issues detected. GPU utilization looks healthy.")
+            lines.append("  No issues detected. GPU utilization looks healthy.")
 
-        print("=" * 60 + "\n")
+        lines.append("=" * 60)
+        return "\n".join(lines)
+
+    def print_summary(self, save_path: str | Path | None = None):
+        """Print a formatted summary table with recommendations.
+
+        Args:
+            save_path: If provided, also write the summary to this file.
+        """
+        summary = self._build_summary()
+        print(f"\n{summary}\n")
+
+        if save_path is not None:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            save_path.write_text(summary + "\n")
+            print(f"Summary saved to: {save_path}")
 
     def teardown(self, trainer, pl_module, stage=None):
         if self._nvml_available:
