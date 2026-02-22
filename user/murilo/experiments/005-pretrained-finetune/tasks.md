@@ -59,9 +59,38 @@
 
 - [x] 6.1 Create SLURM scripts (`sbatch/_job.sh`, `sbatch/run.sh`) with HF_HOME caching
 - [x] 6.2 Create training script (`train.py`) with YAML config loading, W&B/TensorBoard logging
-- [~] 6.3 Run frozen-encoder baseline (linear probe) — SLURM job submitted
-- [~] 6.4 Run full fine-tuning with lower learning rate — SLURM job submitted
-- [ ] 6.5 Monitor training via W&B and collect results
+- [x] 6.3 Run frozen-encoder baseline (linear probe) — completed
+- [~] 6.4 Run full fine-tuning (staged unfreezing) — SLURM job running
+  - 50 epochs, batch_size=256, 12hr time limit — at risk of timeout
+  - Encoder unfreezes at epoch 5 (backward pass through 90M params will be slower)
+- [ ] 6.5 Check if finetune run completed or was killed by SLURM time limit
+  - Check: `sacct -j <JOB_ID> --format=JobID,State,Elapsed,MaxRSS`
+  - If timed out: resubmit with `--time=24:00:00` or reduce `max_epochs`
+- [ ] 6.6 Monitor training via W&B and collect results
+
+## 6b. GPU Utilization Optimization
+
+GPU profiling revealed data pipeline bottleneck: 8 CPU workers computing
+fbanks (~1056ms/batch) cannot keep the frozen EAT encoder (~477ms/batch) fed.
+GPU utilization is 84.8% avg but drops to 3% during data stalls.
+See `gpu-utilization-analysis.md` for full analysis and diagrams.
+
+- [x] 6b.1 Move fbank conversion from EAT forward pass to dataloader workers
+  - Extracted `waveform_to_fbank()` as module-level function in `eat.py`
+  - Added `precomputed_features` flag to `EATEncoder`, `transform` param to dataset/datamodule
+  - Result: architecturally correct but insufficient — workers still can't keep up
+- [x] 6b.2 Profile GPU utilization with `--gpu-check` flag and document findings
+  - GPU: 84.8% avg, 3% min — spiky due to data starvation
+  - VRAM: 2.6% used (0.66 GB / 25.2 GB) — massive headroom
+  - Data time spikes to 4.7s (10x compute time)
+- [ ] 6b.3 Increase `--cpus-per-task` to 16-24 in SLURM config and `num_workers` to match
+  - Quick fix: more parallel workers reduces data production time proportionally
+  - 16 workers → ~528ms/batch (matches compute); 24 workers → GPU fully saturated
+- [ ] 6b.4 Re-run `--gpu-check` after increasing workers to verify improvement
+- [ ] 6b.5 (Optional) Pre-compute EAT fbanks to disk for maximum throughput
+  - One-time ~5 min preprocessing, eliminates CPU bottleneck entirely
+  - EAT-specific — other models (BEATs) would not benefit from cached fbanks
+  - Only needed if Option A (more workers) is insufficient
 
 ## 7. Analysis
 
