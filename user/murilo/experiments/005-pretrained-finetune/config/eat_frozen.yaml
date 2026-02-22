@@ -15,7 +15,7 @@ data:
   data_dir: "~/ps-clef2026_birdclef-0/data/birdclef-2025"
   sample_rate: 16000
   chunk_duration: 5.0
-  batch_size: 32
+  batch_size: 256
   num_workers: 8
   val_fraction: 0.1
   test_fraction: 0.1
@@ -23,7 +23,7 @@ data:
 
 training:
   max_epochs: 30
-  lr: 1.0e-3
+  lr: 8.0e-3
   encoder_lr: 1.0e-5          # unused when frozen, but kept for config consistency
   weight_decay: 0.01
   warmup_epochs: 3

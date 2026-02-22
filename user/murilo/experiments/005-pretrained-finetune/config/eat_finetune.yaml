@@ -16,7 +16,7 @@ data:
   data_dir: "~/ps-clef2026_birdclef-0/data/birdclef-2025"
   sample_rate: 16000
   chunk_duration: 5.0
-  batch_size: 16               # smaller batch for full fine-tuning (more VRAM)
+  batch_size: 256
   num_workers: 8
   val_fraction: 0.1
   test_fraction: 0.1
@@ -24,8 +24,8 @@ data:
 
 training:
   max_epochs: 50
-  lr: 1.0e-4                   # head learning rate
-  encoder_lr: 1.0e-5           # encoder learning rate (10x lower)
+  lr: 8.0e-4                   # head learning rate (scaled 8x for batch 256)
+  encoder_lr: 8.0e-5           # encoder learning rate (10x lower than head)
   weight_decay: 0.01
   warmup_epochs: 5
   threshold: 0.5
@@ -35,7 +35,7 @@ training:
   dropout: 0.1
   grad_clip_val: 1.0
   precision: "16-mixed"
-  accumulate_grad_batches: 2   # effective batch size = 32
+  accumulate_grad_batches: 1   # no accumulation needed at batch_size=256
 
 callbacks:
   model_checkpoint:
