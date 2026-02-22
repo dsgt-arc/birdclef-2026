@@ -13,7 +13,7 @@ encoder:
   target_length: 512  # 5s at 16kHz with 10ms hop
 
 data:
-  data_dir: "~/scratch/birdclef-2026/data/birdclef-2025"
+  data_dir: "~/ps-clef2026_birdclef-0/data/birdclef-2025"
   sample_rate: 16000
   chunk_duration: 5.0
   batch_size: 16               # smaller batch for full fine-tuning (more VRAM)

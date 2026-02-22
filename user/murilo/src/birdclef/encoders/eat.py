@@ -35,7 +35,13 @@ class EATEncoder(nn.Module):
         self.norm_std = norm_std
         self._embed_dim = 768
 
-        from transformers import AutoModel
+        from transformers import AutoModel, PreTrainedModel
+
+        # Compat: EAT's custom HF code predates transformers 4.47 which added
+        # all_tied_weights_keys in PreTrainedModel.__init__. Setting a class-level
+        # default prevents AttributeError for models that don't call super().__init__.
+        if "all_tied_weights_keys" not in PreTrainedModel.__dict__:
+            PreTrainedModel.all_tied_weights_keys = {}
 
         self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
 

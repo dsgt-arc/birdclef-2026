@@ -39,7 +39,10 @@
   - Staged unfreezing, dual LR (head + encoder), AdamW + cosine annealing + warmup
   - Full metrics: cmAP, AUROC, F1 macro/micro, top-1/top-5
 - [x] 4.4 Create config files: `config/eat_frozen.yaml` (linear probe), `config/eat_finetune.yaml` (staged fine-tune)
-- [ ] 4.5 Validate with fast-dev-run
+- [x] 4.5 Validate with fast-dev-run
+  - 194,489 train chunks, 21,776 val chunks (206 classes)
+  - 90.1M total params (158K trainable when frozen, 90M non-trainable)
+  - Pipeline verified: data loading, encoder forward, loss, metrics all working
 
 ## 5. Training
 
