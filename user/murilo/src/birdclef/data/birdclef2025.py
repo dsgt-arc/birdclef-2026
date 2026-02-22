@@ -83,6 +83,7 @@ class BirdCLEF2025Dataset(Dataset):
         species_list: list[str],
         sample_rate: int = 16000,
         chunk_duration: float = 5.0,
+        transform=None,
     ):
         self.audio_dir = Path(audio_dir).expanduser()
         self.species_list = species_list
@@ -91,6 +92,7 @@ class BirdCLEF2025Dataset(Dataset):
         self.sample_rate = sample_rate
         self.chunk_duration = chunk_duration
         self.chunk_samples = int(chunk_duration * sample_rate)
+        self.transform = transform
 
         # Build chunk index from metadata
         self.chunks = []
@@ -165,6 +167,10 @@ class BirdCLEF2025Dataset(Dataset):
                 waveform, (0, self.chunk_samples - waveform.shape[0])
             )
 
+        # Apply optional transform (e.g., fbank conversion for EAT)
+        if self.transform is not None:
+            waveform = self.transform(waveform)
+
         return waveform, label_vec.clone()
 
 
@@ -192,9 +198,10 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
         val_fraction: float = 0.1,
         test_fraction: float = 0.1,
         seed: int = 42,
+        transform=None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["species_list"])
+        self.save_hyperparameters(ignore=["species_list", "transform"])
         self.audio_dir = audio_dir
         self.metadata_csv = metadata_csv
         self.sample_rate = sample_rate
@@ -204,6 +211,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
         self.val_fraction = val_fraction
         self.test_fraction = test_fraction
         self.seed = seed
+        self.transform = transform
 
         # Build or use provided species list
         if species_list is not None:
@@ -293,6 +301,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
             species_list=self.species_list,
             sample_rate=self.sample_rate,
             chunk_duration=self.chunk_duration,
+            transform=self.transform,
         )
         self.val_dataset = BirdCLEF2025Dataset(
             audio_dir=self.audio_dir,
@@ -300,6 +309,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
             species_list=self.species_list,
             sample_rate=self.sample_rate,
             chunk_duration=self.chunk_duration,
+            transform=self.transform,
         )
         self.test_dataset = BirdCLEF2025Dataset(
             audio_dir=self.audio_dir,
@@ -307,6 +317,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
             species_list=self.species_list,
             sample_rate=self.sample_rate,
             chunk_duration=self.chunk_duration,
+            transform=self.transform,
         )
 
     def train_dataloader(self):

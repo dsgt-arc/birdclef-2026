@@ -6,7 +6,52 @@ Adapted from user/anthony/src/birdclef/encoders/eat.py for fine-tuning
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchaudio
+
+
+def waveform_to_fbank(
+    waveform: torch.Tensor,
+    target_length: int = 512,
+    norm_mean: float = -4.268,
+    norm_std: float = 4.569,
+) -> torch.Tensor:
+    """Convert single waveform to normalized Kaldi fbank features.
+
+    Intended for use as a dataloader transform so fbank computation
+    runs in parallel across workers instead of on GPU in the forward pass.
+
+    Args:
+        waveform: (samples,) raw audio at 16kHz
+        target_length: Target number of mel frames
+        norm_mean: Normalization mean for fbank features
+        norm_std: Normalization std for fbank features
+
+    Returns:
+        (1, target_length, 128) normalized fbank tensor
+    """
+    waveform = waveform - waveform.mean()
+    mel = torchaudio.compliance.kaldi.fbank(
+        waveform.unsqueeze(0),
+        htk_compat=True,
+        sample_frequency=16000,
+        use_energy=False,
+        window_type="hanning",
+        num_mel_bins=128,
+        dither=0.0,
+        frame_shift=10,
+    )  # (time, 128)
+
+    # Pad or truncate to target length
+    n_frames = mel.shape[0]
+    if n_frames < target_length:
+        mel = F.pad(mel, (0, 0, 0, target_length - n_frames))
+    elif n_frames > target_length:
+        mel = mel[:target_length, :]
+
+    # Normalize and add channel dimension
+    mel = (mel - norm_mean) / (norm_std * 2)
+    return mel.unsqueeze(0)  # (1, target_length, 128)
 
 
 class EATEncoder(nn.Module):
@@ -28,11 +73,13 @@ class EATEncoder(nn.Module):
         target_length: int = 512,
         norm_mean: float = -4.268,
         norm_std: float = 4.569,
+        precomputed_features: bool = False,
     ):
         super().__init__()
         self.target_length = target_length
         self.norm_mean = norm_mean
         self.norm_std = norm_std
+        self.precomputed_features = precomputed_features
         self._embed_dim = 768
 
         from transformers import AutoModel, PreTrainedModel
@@ -109,17 +156,20 @@ class EATEncoder(nn.Module):
 
         return mel
 
-    def forward(self, waveform: torch.Tensor) -> torch.Tensor:
-        """Extract features from waveform.
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Extract features from waveform or precomputed fbank.
 
         Args:
-            waveform: Audio tensor of shape (batch, samples) at 16kHz
+            x: If precomputed_features=True: fbank tensor (batch, 1, T, 128).
+               Otherwise: raw waveform (batch, samples) at 16kHz.
 
         Returns:
             Features of shape (batch, 768) — mean pooled over time
         """
-        # Convert to fbank
-        fbank = self._waveform_to_fbank(waveform)
+        if self.precomputed_features:
+            fbank = x  # Already (batch, 1, T, 128)
+        else:
+            fbank = self._waveform_to_fbank(x)
 
         # Extract features — returns (batch, seq_len+1, embed_dim) with CLS token
         features = self.model.extract_features(fbank)

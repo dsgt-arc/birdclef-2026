@@ -59,7 +59,7 @@ def load_config(config_path: str) -> dict:
     return config
 
 
-def build_encoder(config: dict):
+def build_encoder(config: dict, precomputed_features: bool = False):
     """Build encoder based on config."""
     encoder_type = config["encoder"]["type"]
 
@@ -69,6 +69,7 @@ def build_encoder(config: dict):
         return EATEncoder(
             model_name=config["encoder"].get("model_name", "worstchan/EAT-base_epoch30_pretrain"),
             target_length=config["encoder"].get("target_length", 512),
+            precomputed_features=precomputed_features,
         )
     elif encoder_type == "beats":
         from birdclef.encoders.beats import BEATsEncoder
@@ -159,9 +160,20 @@ def main():
     num_classes = len(species_list)
     logger.info(f"Classes: {num_classes}")
 
-    # Initialize encoder
+    # Initialize encoder (with fbank transform offloaded to dataloader for EAT)
+    audio_transform = None
+    if config["encoder"]["type"] == "eat":
+        from functools import partial
+
+        from birdclef.encoders.eat import waveform_to_fbank
+
+        audio_transform = partial(
+            waveform_to_fbank,
+            target_length=config["encoder"].get("target_length", 512),
+        )
+
     logger.info(f"Initializing {config['encoder']['type'].upper()} encoder...")
-    encoder = build_encoder(config)
+    encoder = build_encoder(config, precomputed_features=audio_transform is not None)
 
     # Initialize Lightning module
     logger.info("Initializing PretrainedFinetuneModule...")
@@ -194,6 +206,7 @@ def main():
         val_fraction=config["data"].get("val_fraction", 0.1),
         test_fraction=config["data"].get("test_fraction", 0.1),
         seed=config["data"].get("seed", 42),
+        transform=audio_transform,
     )
 
     # Setup callbacks
