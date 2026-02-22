@@ -118,11 +118,11 @@ export HF_HOME="/storage/project/${PROJECT_NAME}/shared/birdclef-2026/cache/hugg
 mkdir -p "$HF_HOME"
 echo "HF_HOME: $HF_HOME"
 
-# Load .env file for W&B API key (if exists)
-if [ -f "$EXPERIMENT_DIR/.env" ]; then
-    echo "Loading .env file..."
+# Load .env file for W&B API key from user directory
+if [ -f "$USER_DIR/.env" ]; then
+    echo "Loading .env from $USER_DIR/.env..."
     set -a
-    source "$EXPERIMENT_DIR/.env"
+    source "$USER_DIR/.env"
     set +a
 fi
 

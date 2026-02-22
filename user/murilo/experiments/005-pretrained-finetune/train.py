@@ -17,8 +17,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load environment variables from .env file (must be before W&B imports)
-load_dotenv()
+# Load environment variables from user-level .env (must be before W&B imports)
+_user_dir = Path(__file__).parent.parent.parent
+load_dotenv(_user_dir / ".env")
 
 import pytorch_lightning as pl  # noqa: E402
 import torch  # noqa: E402
