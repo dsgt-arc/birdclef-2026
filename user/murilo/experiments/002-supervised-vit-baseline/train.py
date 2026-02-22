@@ -30,10 +30,10 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger  # noqa: E4
 repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root / "src"))
 
-from birdset_benchmark.datasets import get_num_classes  # noqa: E402
-from birdset_benchmark.lightning.birdset_datamodule import BirdSetDataModule  # noqa: E402
-from birdset_benchmark.lightning.supervised_vit import SupervisedViTModule  # noqa: E402
-from birdset_benchmark.models.vit_audio import ViTAudio  # noqa: E402
+from birdclef.datasets import get_num_classes  # noqa: E402
+from birdclef.lightning.birdset_datamodule import BirdSetDataModule  # noqa: E402
+from birdclef.lightning.supervised_vit import SupervisedViTModule  # noqa: E402
+from birdclef.models.vit_audio import ViTAudio  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -115,6 +115,53 @@ def main():
         drop_rate=config["model"]["drop_rate"],
     )
 
+    # Initialize data module
+    streaming = config["data"].get("streaming", False)
+    mel_transform = None
+
+    if streaming:
+        from birdclef.lightning.streaming_datamodule import StreamingBirdSetDataModule
+        from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
+
+        manifest_cache_dir = str(PROJECT_DIR / "cache" / "streaming_manifests")
+        logger.info(f"Using streaming data module (manifest cache: {manifest_cache_dir})")
+        data_module = StreamingBirdSetDataModule(
+            dataset_name=config["data"]["dataset_name"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            sample_rate=config["data"]["sample_rate"],
+            chunk_duration=config["data"]["target_duration"],
+            pin_memory=config["data"]["pin_memory"],
+            persistent_workers=config["data"]["persistent_workers"],
+            prefetch_factor=config["data"]["prefetch_factor"],
+            manifest_cache_dir=manifest_cache_dir,
+        )
+        mel_transform = NNAudioMelSpectrogram(
+            sample_rate=config["data"]["sample_rate"],
+            n_mels=config["data"]["n_mels"],
+            frame_shift_ms=config["data"]["frame_shift_ms"],
+            target_frames=config["data"]["target_frames"],
+            norm_mean=config["data"]["norm_mean"],
+            norm_std=config["data"]["norm_std"],
+        )
+    else:
+        logger.info("Initializing data module...")
+        data_module = BirdSetDataModule(
+            dataset_name=config["data"]["dataset_name"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            target_sr=config["data"]["sample_rate"],
+            target_duration=config["data"]["target_duration"],
+            n_mels=config["data"]["n_mels"],
+            frame_shift_ms=config["data"]["frame_shift_ms"],
+            target_frames=config["data"]["target_frames"],
+            norm_mean=config["data"]["norm_mean"],
+            norm_std=config["data"]["norm_std"],
+            pin_memory=config["data"]["pin_memory"],
+            persistent_workers=config["data"]["persistent_workers"],
+            prefetch_factor=config["data"]["prefetch_factor"],
+        )
+
     # Initialize Lightning module
     logger.info("Initializing PyTorch Lightning module...")
     pl_module = SupervisedViTModule(
@@ -125,24 +172,7 @@ def main():
         max_epochs=config["training"]["max_epochs"],
         warmup_epochs=config["training"]["warmup_epochs"],
         threshold=config["training"]["threshold"],
-    )
-
-    # Initialize data module
-    logger.info("Initializing data module...")
-    data_module = BirdSetDataModule(
-        dataset_name=config["data"]["dataset_name"],
-        batch_size=config["data"]["batch_size"],
-        num_workers=config["data"]["num_workers"],
-        target_sr=config["data"]["sample_rate"],
-        target_duration=config["data"]["target_duration"],
-        n_mels=config["data"]["n_mels"],
-        frame_shift_ms=config["data"]["frame_shift_ms"],
-        target_frames=config["data"]["target_frames"],
-        norm_mean=config["data"]["norm_mean"],
-        norm_std=config["data"]["norm_std"],
-        pin_memory=config["data"]["pin_memory"],
-        persistent_workers=config["data"]["persistent_workers"],
-        prefetch_factor=config["data"]["prefetch_factor"],
+        mel_transform=mel_transform,
     )
 
     # Setup callbacks

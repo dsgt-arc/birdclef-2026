@@ -101,7 +101,7 @@ echo ""
 echo "Setting up per-job virtual environment..."
 
 # Create job-specific venv in TMPDIR for fast local I/O
-JOB_VENV_DIR="$TMPDIR/birdset-benchmark-$SLURM_JOB_ID"
+JOB_VENV_DIR="$TMPDIR/birdclef-$SLURM_JOB_ID"
 JOB_VENV="$JOB_VENV_DIR/.venv"
 
 echo "  TMPDIR: $TMPDIR"
@@ -159,7 +159,7 @@ echo "Output directory: ${OUTPUT_DIR}"
 echo ""
 
 # Build inference command
-INFERENCE_CMD="python -m birdset_benchmark.run_inference \
+INFERENCE_CMD="python -m birdclef.run_inference \
     --model ${MODEL} \
     --dataset ${DATASET} \
     --batch-size ${BATCH_SIZE:-16} \

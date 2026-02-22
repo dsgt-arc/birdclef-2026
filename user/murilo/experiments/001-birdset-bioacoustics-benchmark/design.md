@@ -87,10 +87,10 @@ sbatch/
 **Scripts**:
 ```bash
 # Extract embeddings for one model + one dataset
-python -m birdset_benchmark.extract_embeddings --model birdnet --dataset HSN
+python -m birdclef.extract_embeddings --model birdnet --dataset HSN
 
 # Train classifier on extracted embeddings
-python -m birdset_benchmark.train_classifier --model birdnet --dataset HSN
+python -m birdclef.train_classifier --model birdnet --dataset HSN
 ```
 
 **Default Behavior**:
@@ -301,7 +301,7 @@ class MultiLabelLinearProbe(pl.LightningModule):
 
 ```
 user/murilo/
-├── src/birdset_benchmark/
+├── src/birdclef/
 │   ├── __init__.py
 │   ├── data.py                    # BirdSet loading, preprocessing
 │   ├── models.py                  # LinearProbe, metrics (existing)
@@ -348,7 +348,7 @@ user/murilo/
 
 setup_environment() {
     # Create venv in TMPDIR for fast I/O
-    export JOB_VENV="$TMPDIR/birdset-benchmark-$SLURM_JOB_ID/.venv"
+    export JOB_VENV="$TMPDIR/birdclef-$SLURM_JOB_ID/.venv"
 
     # Install dependencies
     uv venv "$JOB_VENV" --python 3.11
@@ -444,7 +444,7 @@ dependencies = [
 
 **Structure**:
 ```
-src/birdset_benchmark/
+src/birdclef/
 ├── datasets.py      # HuggingFace loading, constants (Phase 2A & 2B)
 ├── torch_data.py    # PyTorch Dataset/DataLoader (Phase 2B only)
 └── data.py          # Backwards compatibility re-exports

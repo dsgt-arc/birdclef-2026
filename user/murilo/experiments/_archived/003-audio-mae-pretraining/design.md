@@ -215,7 +215,7 @@ Input: Mel-spectrogram (batch, 1, 128, 500)
 ### Code Organization
 
 ```
-user/murilo/src/birdset_benchmark/
+user/murilo/src/birdclef/
 ├── models/
 │   ├── vit_audio.py              # Reuse from Exp 002
 │   └── mae_decoder.py            # NEW: Transformer decoder

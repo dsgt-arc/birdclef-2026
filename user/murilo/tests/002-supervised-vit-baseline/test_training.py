@@ -6,9 +6,9 @@ import pytest
 import pytorch_lightning as pl
 import torch
 
-from birdset_benchmark.lightning.birdset_datamodule import BirdSetDataModule
-from birdset_benchmark.lightning.supervised_vit import SupervisedViTModule
-from birdset_benchmark.models.vit_audio import ViTAudio
+from birdclef.lightning.birdset_datamodule import BirdSetDataModule
+from birdclef.lightning.supervised_vit import SupervisedViTModule
+from birdclef.models.vit_audio import ViTAudio
 
 
 class TestTrainingPipeline:

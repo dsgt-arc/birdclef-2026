@@ -17,8 +17,8 @@ from torch.utils.data import Dataset
 # Add shared src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from birdset_benchmark.lightning.birdset_datamodule import _CachedWaveformDataset
-from birdset_benchmark.models.frame_vit import FrameTokenizedViT
+from birdclef.lightning.birdset_datamodule import _CachedWaveformDataset
+from birdclef.models.frame_vit import FrameTokenizedViT
 
 SAMPLE_RATE = 32000
 DURATION = 5.0
@@ -202,7 +202,7 @@ class TestFrameTokenizedViT:
 
     def test_mel_spec_is_nnaudio(self):
         """Model should use NNAudioMelSpectrogram (nn.Module, not torchaudio)."""
-        from birdset_benchmark.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
+        from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
 
         model = FrameTokenizedViT(
             model_name="vit_small_patch16_224",

@@ -11,7 +11,7 @@ echo ""
 if [ -z "$VIRTUAL_ENV" ]; then
     echo "ERROR: No virtual environment activated!"
     echo "Please activate the environment used for Experiment 001:"
-    echo "  source /tmp/birdset-benchmark-*/. venv/bin/activate"
+    echo "  source /tmp/birdclef-*/. venv/bin/activate"
     exit 1
 fi
 

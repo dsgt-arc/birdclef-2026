@@ -8,6 +8,9 @@
 #   bash sbatch/run.sh config/convnext_tiny_pretrained.yaml
 #   bash sbatch/run.sh config/vit_small_pretrained.yaml
 #
+#   # Run all 4 configurations
+#   bash sbatch/run.sh --all
+#
 #   # With a different PACE project allocation
 #   bash sbatch/run.sh config/convnext_tiny_scratch.yaml --project-name my-other-project
 #
@@ -26,6 +29,7 @@ set -eu
 
 DRY_RUN=false
 FAST_DEV_RUN=false
+RUN_ALL=false
 CONFIG=""
 PROJECT_NAME="ps-dsgt_clef2026-0"
 
@@ -39,6 +43,10 @@ while [[ $# -gt 0 ]]; do
             FAST_DEV_RUN=true
             shift
             ;;
+        --all)
+            RUN_ALL=true
+            shift
+            ;;
         --project-name)
             PROJECT_NAME="$2"
             shift 2
@@ -50,6 +58,7 @@ while [[ $# -gt 0 ]]; do
             echo "  CONFIG_PATH       Path to config file (e.g., config/convnext_tiny_scratch.yaml)"
             echo ""
             echo "Options:"
+            echo "  --all             Submit all 4 configurations"
             echo "  --project-name    PACE project allocation name (default: ps-dsgt_clef2026-0)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
             echo "  --dry-run         Preview command without submitting job"
@@ -68,18 +77,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$CONFIG" ]]; then
-    echo "Error: CONFIG_PATH is required"
-    echo "Usage: $0 CONFIG_PATH [--project-name NAME] [--fast-dev-run] [--dry-run]"
-    echo ""
-    echo "Available configs:"
-    echo "  config/convnext_tiny_scratch.yaml"
-    echo "  config/vit_small_scratch.yaml"
-    echo "  config/convnext_tiny_pretrained.yaml"
-    echo "  config/vit_small_pretrained.yaml"
-    exit 1
-fi
-
 # ============================================================================
 # Determine paths
 # ============================================================================
@@ -88,55 +85,84 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # ============================================================================
-# Setup
+# Submit function
 # ============================================================================
 
-# Extract run name from config filename (e.g., convnext_tiny_scratch)
-RUN_NAME="$(basename "$CONFIG" .yaml)"
+submit_job() {
+    local config="$1"
+    local run_name
+    run_name="$(basename "$config" .yaml)"
 
-echo "=============================================="
-echo "Experiment 003: Model Training"
-echo "=============================================="
-echo "Experiment dir: ${EXPERIMENT_DIR}"
-echo "Config: ${CONFIG}"
-echo "Run name: ${RUN_NAME}"
-echo "Project: ${PROJECT_NAME}"
-echo "Fast dev run: ${FAST_DEV_RUN}"
-echo ""
+    echo "=============================================="
+    echo "Experiment 003: Model Training"
+    echo "=============================================="
+    echo "Experiment dir: ${EXPERIMENT_DIR}"
+    echo "Config: ${config}"
+    echo "Run name: ${run_name}"
+    echo "Project: ${PROJECT_NAME}"
+    echo "Fast dev run: ${FAST_DEV_RUN}"
+    echo ""
 
-# Verify config exists
-if [[ ! -f "${EXPERIMENT_DIR}/${CONFIG}" ]]; then
-    echo "Error: Config file not found: ${EXPERIMENT_DIR}/${CONFIG}"
+    # Verify config exists
+    if [[ ! -f "${EXPERIMENT_DIR}/${config}" ]]; then
+        echo "Error: Config file not found: ${EXPERIMENT_DIR}/${config}"
+        return 1
+    fi
+
+    # Create log directory
+    LOG_DIR="${EXPERIMENT_DIR}/logs"
+    mkdir -p "${LOG_DIR}"
+
+    # Job script
+    JOB_SCRIPT="${SCRIPT_DIR}/_job.sh"
+
+    CMD="sbatch \
+        --output=${LOG_DIR}/slurm_${run_name}_%j.log \
+        --export=ALL,CONFIG=${config},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN} \
+        --job-name=exp003-${run_name} \
+        ${JOB_SCRIPT}"
+
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        echo "[DRY-RUN] ${CMD}"
+    else
+        echo "Submitting job..."
+        ${CMD}
+        echo ""
+        echo "Job submitted!"
+    fi
+    echo ""
+}
+
+# ============================================================================
+# Submit job(s)
+# ============================================================================
+
+if [[ "${RUN_ALL}" == "true" ]]; then
+    echo "Submitting all 4 configurations..."
+    echo ""
+    submit_job "config/convnext_tiny_pretrained.yaml"
+    submit_job "config/convnext_tiny_scratch.yaml"
+    submit_job "config/vit_small_pretrained.yaml"
+    submit_job "config/vit_small_scratch.yaml"
+    echo "=============================================="
+    echo "All jobs submitted! Monitor with: squeue -u \$USER"
+    echo "=============================================="
+elif [[ -z "$CONFIG" ]]; then
+    echo "Error: CONFIG_PATH is required (or use --all)"
+    echo "Usage: $0 CONFIG_PATH [--project-name NAME] [--fast-dev-run] [--dry-run]"
+    echo ""
+    echo "Available configs:"
+    echo "  config/convnext_tiny_pretrained.yaml"
+    echo "  config/convnext_tiny_scratch.yaml"
+    echo "  config/vit_small_pretrained.yaml"
+    echo "  config/vit_small_scratch.yaml"
+    echo ""
+    echo "Or submit all: $0 --all"
     exit 1
-fi
-
-# Create log directory
-LOG_DIR="${EXPERIMENT_DIR}/logs"
-mkdir -p "${LOG_DIR}"
-
-# Job script
-JOB_SCRIPT="${SCRIPT_DIR}/_job.sh"
-
-# ============================================================================
-# Submit job
-# ============================================================================
-
-CMD="sbatch \
-    --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN} \
-    --job-name=exp003-${RUN_NAME} \
-    ${JOB_SCRIPT}"
-
-if [[ "${DRY_RUN}" == "true" ]]; then
-    echo "[DRY-RUN] ${CMD}"
 else
-    echo "Submitting job..."
-    ${CMD}
-    echo ""
+    submit_job "$CONFIG"
     echo "=============================================="
-    echo "Job submitted!"
-    echo "=============================================="
-    echo ""
     echo "Monitor with: squeue -u \$USER"
-    echo "View logs in: ${LOG_DIR}/"
+    echo "View logs in: ${EXPERIMENT_DIR}/logs/"
+    echo "=============================================="
 fi

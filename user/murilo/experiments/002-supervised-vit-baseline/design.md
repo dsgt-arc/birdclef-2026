@@ -205,7 +205,7 @@ No custom splitting is needed. The `test_5s` split serves as our validation set 
 ### Code Organization
 
 ```
-user/murilo/src/birdset_benchmark/
+user/murilo/src/birdclef/
 ├── preprocessing/
 │   └── mel_spectrogram.py       # MelSpectrogramTransform (Kaldi fbank)
 ├── models/

@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from birdset_benchmark.classifiers import (
+from birdclef.classifiers import (
     LinearProbe,
     MultiLabelLinearProbe,
     MultiLabelTopKAccuracy,

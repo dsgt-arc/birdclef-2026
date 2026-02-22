@@ -19,9 +19,9 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from birdset_benchmark.datasets import get_num_classes, load_birdset_dataset
-from birdset_benchmark.preprocessing.mel_spectrogram import MelSpectrogramTransform
-from birdset_benchmark.torch_data import BirdSetDataset
+from birdclef.datasets import get_num_classes, load_birdset_dataset
+from birdclef.preprocessing.mel_spectrogram import MelSpectrogramTransform
+from birdclef.torch_data import BirdSetDataset
 
 logger = logging.getLogger(__name__)
 

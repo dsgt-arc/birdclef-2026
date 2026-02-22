@@ -9,19 +9,19 @@ Used by:
 
 Usage:
     # Basic inference on a single dataset
-    python -m birdset_benchmark.run_inference --model birdset_convnext --dataset HSN
+    python -m birdclef.run_inference --model birdset_convnext --dataset HSN
 
     # Custom batch size for better GPU utilization
-    python -m birdset_benchmark.run_inference --model birdset_efficientnet_b1 --dataset PER --batch-size 32
+    python -m birdclef.run_inference --model birdset_efficientnet_b1 --dataset PER --batch-size 32
 
     # Test on small subset before full run
-    python -m birdset_benchmark.run_inference --model birdset_convnext --dataset HSN --subset-size 100
+    python -m birdclef.run_inference --model birdset_convnext --dataset HSN --subset-size 100
 
     # Custom output directory
-    python -m birdset_benchmark.run_inference --model birdset_convnext --dataset HSN --output-dir ./my_results
+    python -m birdclef.run_inference --model birdset_convnext --dataset HSN --output-dir ./my_results
 
     # Use different split (default is test_5s)
-    python -m birdset_benchmark.run_inference --model birdset_convnext --dataset HSN --split test_10s
+    python -m birdclef.run_inference --model birdset_convnext --dataset HSN --split test_10s
 
 Available models: birdset_convnext, birdset_efficientnet_b1
 Available datasets: HSN, PER, NES, UHH, POW, SSW, SNE, NBP
@@ -67,7 +67,7 @@ import typer
 from rich.console import Console
 from sklearn.metrics import average_precision_score, f1_score, roc_auc_score
 
-from birdset_benchmark.datasets import BIRDSET_DATASETS, load_birdset_dataset
+from birdclef.datasets import BIRDSET_DATASETS, load_birdset_dataset
 
 # Restore warnings.warn after import (optional - keep suppressed for cleaner output)
 # warnings.warn = _original_warn
@@ -82,7 +82,7 @@ logger = logging.getLogger(__name__)
 # Suppress TensorFlow and other module logging
 logging.getLogger("tensorflow").setLevel(logging.ERROR)
 logging.getLogger("absl").setLevel(logging.ERROR)
-logging.getLogger("birdset_benchmark.data").setLevel(logging.WARNING)
+logging.getLogger("birdclef.data").setLevel(logging.WARNING)
 
 console = Console()
 
@@ -193,9 +193,9 @@ def main(
     # Setup output directory - default to experiment artifacts folder
     if output_dir is None:
         # Find the experiment directory relative to this script
-        # Script is in: user/murilo/src/birdset_benchmark/run_inference.py
+        # Script is in: user/murilo/src/birdclef/run_inference.py
         # Experiment is in: user/murilo/experiments/001-birdset-bioacoustics-benchmark/
-        script_dir = Path(__file__).parent  # src/birdset_benchmark
+        script_dir = Path(__file__).parent  # src/birdclef
         user_murilo_dir = script_dir.parent.parent  # user/murilo
         experiment_dir = user_murilo_dir / "experiments" / "001-birdset-bioacoustics-benchmark"
         output_dir = experiment_dir / "artifacts" / "inference" / model / dataset

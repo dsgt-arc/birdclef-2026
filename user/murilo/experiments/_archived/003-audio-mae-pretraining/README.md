@@ -242,7 +242,7 @@ W&B logs reconstruction images with 3 columns:
 ## Code Structure
 
 ```
-src/birdset_benchmark/
+src/birdclef/
 ├── models/
 │   ├── vit_audio.py          # Encoder (reuse from Exp 002)
 │   └── mae_decoder.py        # NEW: Transformer decoder

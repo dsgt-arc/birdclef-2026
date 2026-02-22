@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from birdset_benchmark.lightning.birdset_datamodule import BirdSetDataModule
+from birdclef.lightning.birdset_datamodule import BirdSetDataModule
 
 
 class TestBirdSetDataModule:

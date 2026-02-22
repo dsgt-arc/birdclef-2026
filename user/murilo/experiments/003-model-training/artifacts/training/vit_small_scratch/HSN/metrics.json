@@ -1,23 +1,23 @@
 {
-  "cmap": 0.07321793586015701,
-  "auroc": 0.5086743831634521,
-  "f1_macro": 0.011428571306169033,
-  "f1_micro": 0.0009548058733344078,
-  "top1_accuracy": 0.0018597730668261647,
-  "top5_accuracy": 0.04854007810354233,
-  "loss": 0.14666606485843658,
+  "cmap": 0.09769950807094574,
+  "auroc": 0.5936787128448486,
+  "f1_macro": 0.02467998117208481,
+  "f1_micro": 0.00382409174926579,
+  "top1_accuracy": 0.008368979208171368,
+  "top5_accuracy": 0.04742421582341194,
+  "loss": 0.1554141491651535,
   "model": "vit_small_patch16_224",
   "model_name_timm": "vit_small_patch16_224",
   "pretrained": false,
   "pretrained_source": null,
-  "num_params": 21530133,
+  "num_params": 21497109,
   "dataset": "HSN",
   "split": "test_5s",
-  "num_classes": null,
-  "best_epoch": 8,
-  "stopped_epoch": 23,
-  "best_val_cmap": 0.07322,
-  "best_checkpoint_path": "/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/003-model-training/checkpoints/vit-small-scratch/best-epochepoch=08.ckpt",
+  "num_classes": 21,
+  "best_epoch": 20,
+  "stopped_epoch": 31,
+  "best_val_cmap": 0.09769950807094574,
+  "best_checkpoint_path": "/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/003-model-training/checkpoints/vit-small-scratch/best-epochepoch=20.ckpt",
   "training": {
     "max_epochs": 100,
     "lr": 0.0005,
@@ -31,8 +31,8 @@
     "cache_mel_specs": true
   },
   "compute": {
-    "gpu": "unknown",
-    "slurm_job_id": 3812411,
-    "node": null
+    "gpu": "2",
+    "slurm_job_id": 4100650,
+    "node": "atl1-1-02-005-31-0"
   }
 }
