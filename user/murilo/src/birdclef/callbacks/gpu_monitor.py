@@ -28,7 +28,7 @@ class GPUUtilizationMonitor(pl.Callback):
         gpu/memory_pct         - % of total GPU VRAM allocated
         gpu/utilization_pct    - GPU compute utilization (from nvidia-smi)
 
-    Requires pynvml for GPU utilization %. Falls back gracefully if unavailable.
+    Requires nvidia-ml-py for GPU utilization %. Falls back gracefully if unavailable.
     """
 
     def __init__(self, log_every_n_steps: int = 10):
