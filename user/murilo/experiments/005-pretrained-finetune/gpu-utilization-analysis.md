@@ -5,12 +5,14 @@
 A GPU training loop is a **producer-consumer pipeline**:
 
 ```
-CPU (producer)                          GPU (consumer)
-─────────────                          ──────────────
-Load audio from disk ──┐
-Resample / transform   │  ──batch──>   Forward pass (compute predictions)
-Collate into batch   ──┘               Backward pass (compute gradients)
-                                       Optimizer step (update weights)
+┌─────────────────────┐                  ┌──────────────────────────────────┐
+│   CPU (producer)    │                  │         GPU (consumer)           │
+│                     │                  │                                  │
+│  Load audio         │                  │  Forward pass                    │
+│  Resample           │  ──── batch ──>  │  Backward pass                   │
+│  Transform          │                  │  Optimizer step                  │
+│  Collate into batch │                  │                                  │
+└─────────────────────┘                  └──────────────────────────────────┘
 ```
 
 The GPU can only work when a batch is ready. If the CPU can't produce batches
