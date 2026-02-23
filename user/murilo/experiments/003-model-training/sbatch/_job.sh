@@ -110,11 +110,11 @@ mkdir -p outputs/wandb
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
-# Load .env file for W&B API key (if exists)
-if [ -f "$EXPERIMENT_DIR/.env" ]; then
-    echo "Loading .env file..."
+# Load .env file for W&B API key from user directory
+if [ -f "$USER_DIR/.env" ]; then
+    echo "Loading .env from $USER_DIR/.env..."
     set -a
-    source "$EXPERIMENT_DIR/.env"
+    source "$USER_DIR/.env"
     set +a
 fi
 
