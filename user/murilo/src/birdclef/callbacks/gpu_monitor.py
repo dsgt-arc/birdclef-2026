@@ -39,6 +39,9 @@ class GPUUtilizationMonitor(pl.Callback):
         self._nvml_available = False
         self._nvml_handle = None
         self._total_gpu_memory_gb = 0.0
+        self._gpu_name = ""
+        self._num_workers = 0
+        self._batch_size = 0
 
         # History for summary statistics
         self._history = {
@@ -56,12 +59,22 @@ class GPUUtilizationMonitor(pl.Callback):
         if stage != "fit":
             return
 
-        # Get total GPU memory
+        # Get GPU info
         if torch.cuda.is_available():
             device = (
                 pl_module.device if pl_module.device.type == "cuda" else torch.device("cuda", 0)
             )
-            self._total_gpu_memory_gb = torch.cuda.get_device_properties(device).total_memory / 1e9
+            props = torch.cuda.get_device_properties(device)
+            self._total_gpu_memory_gb = props.total_memory / 1e9
+            self._gpu_name = props.name
+
+        # Capture dataloader config
+        if hasattr(trainer, "datamodule") and trainer.datamodule is not None:
+            dm = trainer.datamodule
+            if hasattr(dm, "num_workers"):
+                self._num_workers = dm.num_workers
+            if hasattr(dm, "batch_size"):
+                self._batch_size = dm.batch_size
 
         # Initialize pynvml for GPU utilization %
         try:
@@ -163,11 +176,20 @@ class GPUUtilizationMonitor(pl.Callback):
 
         lines.append(datetime.now().strftime("%b-%d-%Y %H:%M:%S"))
 
-        # Total GPU memory for context
-        if self._total_gpu_memory_gb > 0:
+        # Run metadata
+        import os
+
+        job_id = os.environ.get("SLURM_JOB_ID", "n/a")
+        cpus = os.environ.get("SLURM_CPUS_PER_TASK", "n/a")
+        if self._gpu_name:
+            lines.append(f"GPU: {self._gpu_name} ({self._total_gpu_memory_gb:.1f} GB)")
+        elif self._total_gpu_memory_gb > 0:
             lines.append(f"Total GPU VRAM: {self._total_gpu_memory_gb:.1f} GB")
-            lines.append(f"Steps recorded: {len(self._history['data_time_ms'])}")
-            lines.append("")
+        lines.append(
+            f"Job ID: {job_id} | CPUs: {cpus} | Workers: {self._num_workers} | Batch size: {self._batch_size}"
+        )
+        lines.append(f"Steps recorded: {len(self._history['data_time_ms'])}")
+        lines.append("")
 
         # Define metrics to display
         rows = [
