@@ -1,7 +1,7 @@
 # Experiment 012: EfficientNet-B1 Linear Probe
 
 - **Date**: 2026-02-18
-- **Status**: proposed
+- **Status**: completed
 - **Depends on**: exp 009 (data pipeline, training loop)
 
 ## Hypothesis
