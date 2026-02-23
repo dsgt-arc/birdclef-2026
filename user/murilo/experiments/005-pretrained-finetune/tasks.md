@@ -66,8 +66,14 @@
 - [x] 6.4 Run full fine-tuning (staged unfreezing) — timed out (job 4105050, 12hr limit hit)
 - [x] 6.5 Check if finetune run completed or was killed by SLURM time limit
   - Confirmed TIMEOUT via `sacct`: job 4105050 hit 12:00:24 walltime
-- [~] 6.6 Re-run frozen + finetune with 12 workers after GPU optimization — SLURM jobs submitted
-- [ ] 6.7 Monitor training via W&B and collect results
+- [~] 6.6 Re-run frozen + finetune with 12 workers after GPU optimization
+  - Frozen: running with 12 workers
+  - Finetune: OOM at epoch 5 when encoder unfroze (job 4114047) — batch_size=256
+    fills 23+ GB VRAM once 90M encoder params need gradients + Adam states
+  - Fix: reduce batch_size to 32 with `accumulate_grad_batches=8` (effective 256)
+    to keep same training dynamics in smaller VRAM footprint
+- [ ] 6.7 Re-submit finetune with gradient accumulation (batch_size=32, accumulate=8)
+- [ ] 6.8 Monitor training via W&B and collect results
 
 ## 6b. GPU Utilization Optimization
 
