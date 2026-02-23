@@ -59,6 +59,9 @@
 
 - [x] 6.1 Create SLURM scripts (`sbatch/_job.sh`, `sbatch/run.sh`) with HF_HOME caching
 - [x] 6.2 Create training script (`train.py`) with YAML config loading, W&B/TensorBoard logging
+- [x] 6.2b Add `save_metrics.py` to write structured metrics to `artifacts/training/<variant>/metrics.json`
+  - Auto-runs from `_job.sh` after training (skips gpu-check and fast-dev-run)
+  - Frozen baseline saved: cmAP 0.267, AUROC 0.879 on held-out test set
 - [x] 6.3 Run frozen-encoder baseline (linear probe) — completed (job 4105049, 9h15m)
 - [x] 6.4 Run full fine-tuning (staged unfreezing) — timed out (job 4105050, 12hr limit hit)
 - [x] 6.5 Check if finetune run completed or was killed by SLURM time limit
@@ -68,10 +71,11 @@
 
 ## 6b. GPU Utilization Optimization
 
-GPU profiling revealed data pipeline bottleneck: 8 CPU workers computing
-fbanks (~1056ms/batch) cannot keep the frozen EAT encoder (~477ms/batch) fed.
-GPU utilization is 84.8% avg but drops to 3% during data stalls.
-See `gpu-utilization-analysis.md` for full analysis and diagrams.
+GPU profiling revealed a data pipeline bottleneck: 8 CPU workers computing
+fbanks (~1056ms/batch) couldn't keep the GPU fed (~477ms/batch compute).
+**Resolved** by increasing to 12 workers (max for RTX 6000 batch jobs),
+which reduced data time from 61ms to 5ms avg and eliminated the bottleneck.
+See `gpu-utilization-analysis.md` for full analysis, diagrams, and future options.
 
 - [x] 6b.1 Move fbank conversion from EAT forward pass to dataloader workers
   - Extracted `waveform_to_fbank()` as module-level function in `eat.py`
