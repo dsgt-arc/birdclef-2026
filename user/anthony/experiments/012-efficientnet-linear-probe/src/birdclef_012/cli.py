@@ -39,12 +39,14 @@ def main():
     num_classes = len(species_list)
     logger.info(f"Number of classes: {num_classes}")
 
-    # Build nnAudio mel layer (same as exp 009)
+    # Build nnAudio mel layer (matching BirdSet preprocessing)
+    n_fft = data_cfg.get("n_fft", 2048)
+    hop_length = data_cfg.get("hop_length", 256)
     mel_spec = MelSpectrogram(
         sr=data_cfg["sample_rate"],
-        n_fft=1024,
-        win_length=1024,
-        hop_length=int(data_cfg["sample_rate"] * data_cfg["chunk_duration"] / data_cfg["target_frames"]),
+        n_fft=n_fft,
+        win_length=n_fft,
+        hop_length=hop_length,
         n_mels=data_cfg["n_mels"],
         fmin=50,
         fmax=14000,

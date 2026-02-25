@@ -31,7 +31,7 @@ class EfficientNetClassifier(nn.Module):
         model_name: str,
         num_classes: int,
         mel_spec_layer: nn.Module,
-        target_frames: int = 1000,
+        target_frames: int = 625,
         norm_mean: float = -4.268,
         norm_std: float = 4.569,
         head_dropout: float = 0.3,

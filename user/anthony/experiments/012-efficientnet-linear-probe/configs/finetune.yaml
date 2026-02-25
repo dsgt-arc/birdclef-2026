@@ -6,9 +6,12 @@ data:
   audio_dir: ~/scratch/birdclef-2026/data/birdclef-2025/train_audio/
   metadata_csv: ~/scratch/birdclef-2026/data/birdclef-2025/train.csv
   sample_rate: 32000
-  chunk_duration: 10.0
-  n_mels: 128
-  target_frames: 1000
+  chunk_duration: 5.0
+  # BirdSet original mel params: n_mels=256, n_fft=2048, hop_length=256
+  n_mels: 256
+  n_fft: 2048
+  hop_length: 256
+  target_frames: 625  # 5s * 32000 / 256 = 625
   batch_size: 256
   num_workers: 8
   val_fraction: 0.1
@@ -21,7 +24,7 @@ training:
   precision: bf16-mixed
   gamma: 2.0
   augmentation:
-    freq_mask_param: 20
+    freq_mask_param: 40
     time_mask_param: 50
     num_freq_masks: 2
     num_time_masks: 2
