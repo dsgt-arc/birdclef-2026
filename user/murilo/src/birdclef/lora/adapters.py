@@ -7,23 +7,43 @@ import logging
 
 import adapters
 from adapters import AdapterModelInterface, LoRAConfig
+from adapters.methods.lora import LoRAMergedLinear
 
 logger = logging.getLogger(__name__)
+
+# Workaround for adapters bug: LoRAMergedLinear.get_n_heads() counts "o" in
+# attn_matrices, but the fused QKV layer only has Q/K/V. This causes a shape
+# mismatch in the grouped conv1d (lora_B sized for 4 groups, enable_lora has 3).
+# Fix: only count Q/K/V matrices for the merged (fused QKV) layer.
+_QKV_MATRICES = frozenset({"q", "k", "v"})
+_orig_get_n_heads = LoRAMergedLinear.get_n_heads
+
+
+def _patched_get_n_heads(self, lora):
+    return len(set(lora.attn_matrices) & _QKV_MATRICES)
+
+
+LoRAMergedLinear.get_n_heads = _patched_get_n_heads
 
 # Maps EAT's module names to the standardized hook points the adapters library
 # needs. EAT is structurally a standard ViT with fused QKV (same pattern as
 # ModernBERT, which is already supported via attn_qkv_proj).
 #
-# Module hierarchy (relative to base_model="model", i.e. EATModel.model):
-#   blocks[i].attn.qkv  -> nn.Linear(768, 2304) [fused Q/K/V]
-#   blocks[i].attn.proj -> nn.Linear(768, 768)   [output projection]
-#   blocks[i].mlp.fc1   -> nn.Linear(768, 3072)  [FFN intermediate]
-#   blocks[i].mlp.fc2   -> nn.Linear(3072, 768)  [FFN output]
+# base_model is omitted (defaults to None) so that EATModel itself — which IS
+# a PreTrainedModel — serves as the base model (EATModel.base_model_prefix="").
+# Model-level paths use "model." prefix to reach through to the EAT backbone.
+# Layer-level paths are relative to each AltBlock.
+#
+# Resolved module hierarchy:
+#   EATModel.model.blocks[i].attn.qkv  -> nn.Linear(768, 2304) [fused Q/K/V]
+#   EATModel.model.blocks[i].attn.proj -> nn.Linear(768, 768)   [output projection]
+#   EATModel.model.blocks[i].mlp.fc1   -> nn.Linear(768, 3072)  [FFN intermediate]
+#   EATModel.model.blocks[i].mlp.fc2   -> nn.Linear(3072, 768)  [FFN output]
 
 EAT_ADAPTER_INTERFACE = AdapterModelInterface(
     adapter_methods=["lora"],
-    model_embeddings="local_encoder",
-    model_layers="blocks",
+    model_embeddings="model.local_encoder",
+    model_layers="model.blocks",
     layer_self_attn="attn",
     layer_cross_attn=None,
     attn_qkv_proj="qkv",
@@ -34,7 +54,6 @@ EAT_ADAPTER_INTERFACE = AdapterModelInterface(
     layer_pre_ffn="norm2",
     layer_ln_1=None,  # EAT uses pre-norm architecture
     layer_ln_2=None,
-    base_model="model",  # EATModel.model is the EAT backbone
 )
 
 
@@ -64,8 +83,20 @@ def apply_adapters_lora(encoder, config: dict):
     encoder.model.config.hidden_size = encoder.model.config.embed_dim
     encoder.model.config.num_attention_heads = encoder.model.config.num_heads
 
-    # Initialize adapters on the EAT model
-    adapters.init(encoder.model, interface=EAT_ADAPTER_INTERFACE)
+    # EATModel is an audio model without a token vocabulary, so its
+    # get_input_embeddings() raises NotImplementedError. The adapters library's
+    # EmbeddingAdaptersMixin calls it during init to cache the default embedding.
+    # Point it at the patch embedding (local_encoder) which is the closest analog.
+    model = encoder.model
+    model.get_input_embeddings = lambda: model.model.local_encoder
+    model.set_input_embeddings = lambda v: setattr(model.model, "local_encoder", v)
+
+    # Initialize adapters on the EAT model.
+    # EATModel.base_model_prefix="" means EATModel IS its own base model.
+    # Since EATModel is a PreTrainedModel, it already has the interface the
+    # adapters mixins expect — avoiding the crash that occurred when the plain
+    # nn.Module EAT backbone was used as base model.
+    adapters.init(model, interface=EAT_ADAPTER_INTERFACE)
 
     # Create and add LoRA adapter
     lora_config = LoRAConfig(

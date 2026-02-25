@@ -27,10 +27,14 @@
 - [x] Create train_adapters.py with adapter-hub/adapters library
 - [x] Define EAT AdapterModelInterface (plugin interface)
 - [x] Add adapters optional dependency to pyproject.toml
-- [ ] Fast-dev-run: verify adapters.init() wraps EAT correctly
+- [x] Fix base_model resolution (use EATModel as base, dotted paths for model-level fields)
+- [x] Fix get_input_embeddings() NotImplementedError (monkey-patch for audio model)
+- [x] Fix fused QKV LoRA shape mismatch (adapters bug: get_n_heads counts "o")
+- [x] Write pytest suite: tests/006-lora-finetune/test_adapters_lora.py (10/10 pass)
+- [x] Fast-dev-run: verify adapters.init() wraps EAT correctly
 - [ ] Fast-dev-run: trainable params match PEFT (~608K for attn config)
 - [ ] GPU check: confirm equivalent memory usage to PEFT
-- [ ] (Optional) Open PR / issue on adapter-hub/adapters with EAT interface
+- [ ] (Optional) Open PR / issue on adapter-hub/adapters with fused QKV bug report
 
 ## Analysis
 
