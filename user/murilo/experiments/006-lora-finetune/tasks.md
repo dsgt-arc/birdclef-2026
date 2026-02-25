@@ -12,15 +12,25 @@
 
 ## Validation
 
-- [ ] Fast-dev-run: verify PEFT wraps correctly, trainable params ~600K
-- [ ] Fast-dev-run: forward pass works, loss decreases over 5 batches
-- [ ] GPU check (2 epochs): batch_size=256 fits in 24GB VRAM
+- [x] Fast-dev-run: verify PEFT wraps correctly, trainable params ~608K
+- [x] Fast-dev-run: forward pass works, loss starts at ~0.694 (expected for 206-class BCE)
+- [ ] GPU check (2 epochs): batch_size=32 × accum 8 fits in 24GB VRAM
 
 ## Training
 
 - [ ] Submit primary run: `eat_lora_attn.yaml`
 - [ ] Submit ablation: `eat_lora_all.yaml`
 - [ ] Submit ablation: `eat_lora_attn_mlphead.yaml`
+
+## Adapters Library Integration (alternative backend)
+
+- [x] Create train_adapters.py with adapter-hub/adapters library
+- [x] Define EAT AdapterModelInterface (plugin interface)
+- [x] Add adapters optional dependency to pyproject.toml
+- [ ] Fast-dev-run: verify adapters.init() wraps EAT correctly
+- [ ] Fast-dev-run: trainable params match PEFT (~608K for attn config)
+- [ ] GPU check: confirm equivalent memory usage to PEFT
+- [ ] (Optional) Open PR / issue on adapter-hub/adapters with EAT interface
 
 ## Analysis
 

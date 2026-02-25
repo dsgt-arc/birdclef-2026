@@ -6,9 +6,9 @@
 
 ## Hypothesis
 
-LoRA fine-tuning of EAT-base (~600K trainable params, 0.7% of model) will outperform
+LoRA fine-tuning of EAT-base (~608K trainable params, 0.67% of model) will outperform
 the frozen linear probe baseline (cmAP=0.301 from Exp 005) while training in <4 hours
-with batch_size=256 (no gradient accumulation needed).
+on a single RTX 6000.
 
 ## Background
 
@@ -32,23 +32,33 @@ Apply PEFT LoRA externally to `EATEncoder.model` — no shared `src/` modificati
 | rank (r) | 8 | Proven on ESC-50 (Anthony's code) |
 | alpha | 16 | Standard 2× rank scaling |
 | dropout | 0.1 | Regularization |
-| target_modules | `["qkv", "proj"]` | Attention layers only (~442K LoRA params) |
+| target_modules | `["qkv", "proj"]` | Attention layers only (450K LoRA params) |
 | bias | "none" | Don't train biases |
 
 ### Training Configuration
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| batch_size | 256 | Fits in 24GB — only ~600K trainable params |
+| batch_size | 32 | Activations still backprop through full encoder |
 | lr | 3e-4 | Higher than full finetune, standard for LoRA |
 | hidden_dim | 0 | Linear head (158K params) |
 | max_epochs | 50 | With early stopping patience=10 |
-| accumulate_grad_batches | 1 | No gradient accumulation needed |
+| accumulate_grad_batches | 8 | effective batch_size = 32 * 8 = 256 |
 
-### Ablations
+### Run Comparison
 
-1. **LoRA on all layers** (`eat_lora_all`): `target_modules: ["qkv", "proj", "fc1", "fc2"]` (~1.18M LoRA params). Tests whether adapting MLP layers adds capacity.
-2. **LoRA attention + MLP head** (`eat_lora_attn_mlphead`): Same LoRA as primary but `hidden_dim: 512`. Fair comparison with Exp 005 finetune's MLP head.
+| | `eat_lora_attn` (primary) | `eat_lora_all` (ablation) | `eat_lora_attn_mlphead` (ablation) |
+|---|---|---|---|
+| **LoRA targets** | `qkv`, `proj` | `qkv`, `proj`, `fc1`, `fc2` | `qkv`, `proj` |
+| **Head** | Linear (`hidden_dim: 0`) | Linear (`hidden_dim: 0`) | MLP 512 (`hidden_dim: 512`) |
+| **LoRA params** | 451K | 1,188K | 451K |
+| **Head params** | 158K | 158K | 499K |
+| **Total trainable** | 608K (0.67%) | 1,346K (1.47%) | 949K (1.04%) |
+
+**What each tests:**
+1. **`eat_lora_attn`** — Baseline LoRA: attention-only adapters + linear head. Cheapest config.
+2. **`eat_lora_all`** — Does adapting MLP layers inside transformer blocks (fc1, fc2) add useful capacity beyond attention-only LoRA? Same linear head, so the only variable is LoRA scope.
+3. **`eat_lora_attn_mlphead`** — Does a richer classification head help? Same LoRA as primary but with 768→512→206 MLP head. Fair comparison with Exp 005's full finetune which also used `hidden_dim: 512`.
 
 ## Comparison Baseline
 
@@ -67,4 +77,7 @@ Apply PEFT LoRA externally to `EATEncoder.model` — no shared `src/` modificati
 
 - test cmAP > 0.301 (frozen baseline)
 - Training completes in <4 hours on single RTX 6000
-- batch_size=256 fits without gradient accumulation
+
+> **Note**: Original proposal assumed batch_size=256 without gradient accumulation.
+> Fast-dev-run OOM'd — LoRA adapters still require backprop through all encoder layers,
+> so activation memory matches full fine-tuning. Fixed to batch_size=32 × accum 8 = 256 effective.
