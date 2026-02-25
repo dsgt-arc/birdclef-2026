@@ -37,9 +37,9 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger  # noqa: E4
 repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root / "src"))
 
-from birdclef.adapters.peft import apply_lora  # noqa: E402
 from birdclef.data import BirdCLEF2025DataModule, build_species_list  # noqa: E402
 from birdclef.lightning.lora_finetune import LoRAFinetuneModule  # noqa: E402
+from birdclef.lora.peft import apply_lora  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
