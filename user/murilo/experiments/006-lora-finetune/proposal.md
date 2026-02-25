@@ -1,7 +1,8 @@
 # Experiment 006: LoRA Fine-Tuning EAT on BirdCLEF 2025
 
-**Status**: Proposed
+**Status**: In-progress
 **Created**: 2026-02-23
+**Updated**: 2026-02-25
 **Author**: Murilo Gustineli
 
 ## Hypothesis
@@ -23,7 +24,18 @@ PEFT LoRA works with EAT's custom architecture. The concept doc
 
 ## Method
 
-Apply PEFT LoRA externally to `EATEncoder.model` — no shared `src/` modifications needed.
+Apply LoRA externally to `EATEncoder.model` — no shared `src/` modifications needed.
+Each config is run with two independent backends (PEFT and adapters) for a total of 6 runs.
+
+### LoRA Backends
+
+**PEFT** (`birdclef.lora.peft`): HuggingFace PEFT library. Wraps `encoder.model` via
+`get_peft_model()`. Straightforward, widely used.
+
+**Adapters** (`birdclef.lora.adapters`): adapter-hub/adapters library. Uses
+`AdapterModelInterface` to map EAT's layer structure to the adapters plugin system.
+Required three workarounds for EAT compatibility (see "Upstream Contributions" below).
+Provides an alternative backend that produces comparable or better results.
 
 ### LoRA Configuration
 
@@ -33,7 +45,7 @@ Apply PEFT LoRA externally to `EATEncoder.model` — no shared `src/` modificati
 | alpha | 16 | Standard 2× rank scaling |
 | dropout | 0.1 | Regularization |
 | target_modules | `["qkv", "proj"]` | Attention layers only (450K LoRA params) |
-| bias | "none" | Don't train biases |
+| bias | "none" | Don't train biases (PEFT); adapters defaults |
 
 ### Training Configuration
 
@@ -47,6 +59,8 @@ Apply PEFT LoRA externally to `EATEncoder.model` — no shared `src/` modificati
 
 ### Run Comparison
 
+Each config below is run once with PEFT and once with adapters (6 total runs).
+
 | | `eat_lora_attn` (primary) | `eat_lora_all` (ablation) | `eat_lora_attn_mlphead` (ablation) |
 |---|---|---|---|
 | **LoRA targets** | `qkv`, `proj` | `qkv`, `proj`, `fc1`, `fc2` | `qkv`, `proj` |
@@ -59,6 +73,10 @@ Apply PEFT LoRA externally to `EATEncoder.model` — no shared `src/` modificati
 1. **`eat_lora_attn`** — Baseline LoRA: attention-only adapters + linear head. Cheapest config.
 2. **`eat_lora_all`** — Does adapting MLP layers inside transformer blocks (fc1, fc2) add useful capacity beyond attention-only LoRA? Same linear head, so the only variable is LoRA scope.
 3. **`eat_lora_attn_mlphead`** — Does a richer classification head help? Same LoRA as primary but with 768→512→206 MLP head. Fair comparison with Exp 005's full finetune which also used `hidden_dim: 512`.
+
+**What PEFT vs adapters tests:**
+Running identical configs on both backends isolates library-level differences (fused QKV
+handling, LoRA initialization, parameter counting) from architectural choices.
 
 ## Comparison Baseline
 
@@ -77,6 +95,29 @@ Apply PEFT LoRA externally to `EATEncoder.model` — no shared `src/` modificati
 
 - test cmAP > 0.301 (frozen baseline)
 - Training completes in <4 hours on single RTX 6000
+
+## Upstream Contributions (adapter-hub/adapters)
+
+Integrating EAT with the adapters library required three workarounds that point to
+upstream fixes:
+
+1. **Fused QKV LoRA shape mismatch** — `LoRAMergedLinear.get_n_heads()` counts all
+   `attn_matrices` including `"o"`, but the fused QKV layer only has Q/K/V. This
+   produces a grouped conv1d sized for 4 heads with `enable_lora` for 3, causing a shape
+   error. Fix: only count `{"q", "k", "v"}` in `get_n_heads` for merged layers.
+
+2. **`get_input_embeddings()` NotImplementedError** — EAT is an audio model without a
+   token vocabulary. The adapters `EmbeddingAdaptersMixin` calls
+   `get_input_embeddings()` during init, which raises `NotImplementedError` on
+   `EATModel`. Workaround: monkey-patch to return `model.local_encoder` (patch embedding).
+
+3. **EAT as a supported model** — EAT follows standard ViT structure (fused QKV, same
+   as ModernBERT). An `AdapterModelInterface` plugin makes it work without modifying
+   the adapters library. This could be contributed as a built-in model support.
+
+**Planned PRs:**
+- Fix `LoRAMergedLinear.get_n_heads` for fused QKV layers (bug fix)
+- Add EAT model support via `AdapterModelInterface` (new model)
 
 > **Note**: Original proposal assumed batch_size=256 without gradient accumulation.
 > Fast-dev-run OOM'd — LoRA adapters still require backprop through all encoder layers,
