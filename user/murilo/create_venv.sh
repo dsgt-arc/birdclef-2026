@@ -152,6 +152,11 @@ JOB_ID="${SLURM_JOB_ID:-$$}"
 export JOB_VENV_DIR="$VENV_BASE/birdclef-$JOB_ID"
 export JOB_VENV="$JOB_VENV_DIR/.venv"
 
+# Keep uv cache on the same filesystem as the venv to avoid cross-filesystem
+# hardlink failures that produce empty stubs (e.g., tokenizers .so missing).
+# The global cache lives on scratch (XDG_CACHE_HOME) — a different filesystem.
+export UV_CACHE_DIR="$VENV_BASE/uv-cache"
+
 echo "  - Script dir: $SCRIPT_DIR"
 echo "  - Project root: $PROJECT_ROOT"
 echo "  - Experiment: $EXP_DIR_NAME"
