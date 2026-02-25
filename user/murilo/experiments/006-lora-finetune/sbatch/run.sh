@@ -13,6 +13,12 @@
 #   # Fast dev run (5 batches, no W&B logging — useful for pipeline validation)
 #   bash sbatch/run.sh config/eat_lora_attn.yaml --fast-dev-run
 #
+#   # Submit all 3 configs at once (peft)
+#   bash sbatch/run.sh --all
+#
+#   # Submit all 3 configs at once (adapters)
+#   bash sbatch/run.sh --all --backend adapters
+#
 #   # Dry run (preview command without submitting)
 #   bash sbatch/run.sh config/eat_lora_attn.yaml --dry-run
 #
@@ -28,11 +34,16 @@ FAST_DEV_RUN=false
 GPU_CHECK=0
 NUM_WORKERS=""
 CONFIG=""
+ALL=false
 BACKEND="peft"
 PROJECT_NAME="ps-dsgt_clef2026-0"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --all)
+            ALL=true
+            shift
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -62,10 +73,11 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            echo "Usage: $0 CONFIG_PATH [OPTIONS]"
+            echo "Usage: $0 [CONFIG_PATH | --all] [OPTIONS]"
             echo ""
             echo "Arguments:"
             echo "  CONFIG_PATH       Path to config file (e.g., config/eat_lora_attn.yaml)"
+            echo "  --all             Submit all configs in config/ directory"
             echo ""
             echo "Options:"
             echo "  --backend B       PEFT backend: 'peft' (default) or 'adapters'"
@@ -94,9 +106,32 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# --all: re-invoke this script for each config in config/
+if [[ "${ALL}" == "true" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
+
+    # Forward all flags except --all and CONFIG
+    EXTRA_ARGS=()
+    [[ "${BACKEND}" != "peft" ]] && EXTRA_ARGS+=(--backend "${BACKEND}")
+    [[ "${DRY_RUN}" == "true" ]] && EXTRA_ARGS+=(--dry-run)
+    [[ "${FAST_DEV_RUN}" == "true" ]] && EXTRA_ARGS+=(--fast-dev-run)
+    [[ "${GPU_CHECK}" -gt 0 ]] && EXTRA_ARGS+=(--gpu-check "${GPU_CHECK}")
+    [[ -n "${NUM_WORKERS}" ]] && EXTRA_ARGS+=(--num-workers "${NUM_WORKERS}")
+    [[ "${PROJECT_NAME}" != "ps-dsgt_clef2026-0" ]] && EXTRA_ARGS+=(--project-name "${PROJECT_NAME}")
+
+    for cfg in "${EXPERIMENT_DIR}"/config/*.yaml; do
+        cfg_rel="config/$(basename "$cfg")"
+        echo ">>> Submitting ${cfg_rel} (${BACKEND})..."
+        bash "${BASH_SOURCE[0]}" "${cfg_rel}" "${EXTRA_ARGS[@]}"
+        echo ""
+    done
+    exit 0
+fi
+
 if [[ -z "$CONFIG" ]]; then
-    echo "Error: CONFIG_PATH is required"
-    echo "Usage: $0 CONFIG_PATH [--project-name NAME] [--fast-dev-run] [--dry-run]"
+    echo "Error: CONFIG_PATH or --all is required"
+    echo "Usage: $0 [CONFIG_PATH | --all] [--backend B] [--fast-dev-run] [--dry-run]"
     echo ""
     echo "Available configs:"
     echo "  config/eat_lora_attn.yaml          LoRA on attention layers (primary)"
