@@ -102,6 +102,7 @@ def apply_adapters_lora(encoder, config: dict):
     lora_config = LoRAConfig(
         r=lora_cfg["rank"],
         alpha=lora_cfg["alpha"],
+        dropout=lora_cfg.get("dropout", 0.0),
         attn_matrices=attn_matrices,
         intermediate_lora=intermediate_lora,
         output_lora=output_lora,
