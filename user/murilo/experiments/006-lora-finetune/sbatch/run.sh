@@ -13,11 +13,10 @@
 #   # Fast dev run (5 batches, no W&B logging — useful for pipeline validation)
 #   bash sbatch/run.sh config/eat_lora_attn.yaml --fast-dev-run
 #
-#   # Submit all 3 configs at once (peft)
-#   bash sbatch/run.sh --all
-#
-#   # Submit all 3 configs at once (adapters)
-#   bash sbatch/run.sh --all --backend adapters
+#   # Submit all 3 configs at once
+#   bash sbatch/run.sh --all                      # all 3 with peft
+#   bash sbatch/run.sh --all --backend adapters   # all 3 with adapters
+#   bash sbatch/run.sh --all --dry-run            # preview without submitting
 #
 #   # Dry run (preview command without submitting)
 #   bash sbatch/run.sh config/eat_lora_attn.yaml --dry-run
