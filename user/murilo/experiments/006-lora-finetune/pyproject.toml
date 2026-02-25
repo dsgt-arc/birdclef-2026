@@ -16,9 +16,6 @@ dependencies = [
     "wandb>=0.16.0",
     "transformers>=4.30.0",
 
-    # PEFT (LoRA)
-    "peft>=0.7.0",
-
     # Data handling
     "datasets==3.6.0",
     "pyarrow>=15.0.0",
@@ -56,8 +53,12 @@ dev = [
     "ipykernel>=6.0.0",
     "pytest>=7.0.0",
 ]
+peft = [
+    "peft>=0.7.0",
+]
 adapters = [
     "adapters>=1.0.0",
+    "transformers>=4.48.0,<4.49.0",  # adapters 1.2.0 requires transformers 4.48.x
 ]
 
 [build-system]

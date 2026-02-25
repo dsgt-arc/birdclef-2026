@@ -82,28 +82,19 @@ uv venv "$JOB_VENV" --python 3.11
 # Activate the virtual environment
 source "$JOB_VENV/bin/activate"
 
-# Install the user package (includes all dependencies from pyproject.toml)
-# For adapters backend, install the [adapters] extra which pulls in adapter-transformers
+# Install the user package with backend-specific extra
+# Each backend extra pulls in its own dependencies (peft or adapters)
 if [[ "${BACKEND}" == "adapters" ]]; then
     echo "  Installing dependencies (adapters backend)..."
     uv pip install -e "$EXPERIMENT_DIR[adapters]"
 else
     echo "  Installing dependencies (peft backend)..."
-    uv pip install -e "$EXPERIMENT_DIR"
+    uv pip install -e "$EXPERIMENT_DIR[peft]"
 fi
 
 # Install PyTorch with CUDA support
 echo "  Installing PyTorch with CUDA..."
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# Install transformers for EAT model loading (peft backend only — adapters bundles its own)
-if [[ "${BACKEND}" == "peft" ]]; then
-    echo "  Installing transformers..."
-    uv pip install "transformers>=4.30.0"
-
-    echo "  Installing PEFT..."
-    uv pip install "peft>=0.7.0"
-fi
 
 echo "  Virtual environment ready!"
 echo ""
