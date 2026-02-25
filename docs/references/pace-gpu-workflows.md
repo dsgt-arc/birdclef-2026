@@ -19,17 +19,12 @@ Local NVMe (`$TMPDIR`) is a physical SSD on the compute node itself — no netwo
 
 ## Why This Matters for Training
 
-A typical training loop does thousands of disk reads per epoch. Where those files live
-determines a huge chunk of training time.
+A typical training loop does thousands of disk reads per epoch (loading audio, images,
+etc.). Where those files live determines a huge chunk of wall-clock training time.
 
-**Example from Exp 006** (batch_size=32, 5,411 steps/epoch, 30 epochs):
-
-| Data location | Avg read time | Data loading % | Est. wasted time |
-|---------------|---------------|----------------|------------------|
-| Network NFS (cold node) | 68 ms/step | 35.5% | ~2.9 hours |
-| Local NVMe / page cache | 3 ms/step | 1.9% | ~8 minutes |
-
-That's ~2.9 hours of the 9-hour training spent waiting for NFS file reads.
+On a cold compute node (no OS page cache), reading data from NFS can consume 20-40% of
+each training step. The OS caches recently-read files in RAM, so repeated reads on the
+same node are fast — but the first epoch on a fresh SLURM node always hits NFS.
 
 ## Best Practice: Use `$TMPDIR` for Everything Ephemeral
 
@@ -56,36 +51,31 @@ filesystems):
 export UV_CACHE_DIR="$TMPDIR/uv-cache"
 ```
 
-See `user/murilo/create_venv.sh` and `user/murilo/experiments/006-lora-finetune/sbatch/_job.sh`
-for working examples.
-
 ### 2. Training data
 
 Copy training data to `$TMPDIR` at job start. This is the single biggest speedup for
 I/O-bound training:
 
 ```bash
-# Copy dataset to local NVMe (~7GB, takes 1-3 min)
-LOCAL_DATA="$TMPDIR/data/birdclef-2025"
+# Copy dataset to local NVMe (takes a few minutes, saves hours)
+LOCAL_DATA="$TMPDIR/data/my-dataset"
 if [[ ! -d "$LOCAL_DATA" ]]; then
-    echo "Copying training data to local NVMe..."
     mkdir -p "$TMPDIR/data"
-    cp -r ~/ps-clef2026_birdclef-0/data/birdclef-2025 "$LOCAL_DATA"
-    echo "  Done ($(du -sh "$LOCAL_DATA" | cut -f1))"
+    cp -r /path/to/nfs/dataset "$LOCAL_DATA"
 fi
 ```
 
-Then point your training config or CLI at `$LOCAL_DATA` instead of the NFS path.
+Then point your training script at `$LOCAL_DATA` instead of the NFS path.
 
 **When to do this:**
 - Dataset fits in `$TMPDIR` (~1.4 TB available)
 - Training runs multiple epochs (cost of copy is amortized)
-- You see >20% data loading time in GPU checks
+- You observe >20% data loading time in profiling
 
 **When NOT to do this:**
 - Datasets larger than available `$TMPDIR` space
 - Single-epoch or few-step jobs (copy overhead > time saved)
-- Data is already being read from memory (e.g., HuggingFace `datasets` with memory mapping)
+- Data is already memory-mapped (e.g., HuggingFace `datasets` with Arrow)
 
 ### 3. Model caches (HuggingFace, torch hub)
 
@@ -93,7 +83,7 @@ Pre-trained model weights are downloaded once and reused. Keep these on **projec
 (shared across jobs/users) rather than `$TMPDIR` (wiped each job) or home (tiny quota):
 
 ```bash
-export HF_HOME="/storage/project/<alloc>/shared/birdclef-2026/cache/huggingface"
+export HF_HOME="/storage/project/<alloc>/shared/cache/huggingface"
 ```
 
 ## Anatomy of a Well-Optimized sbatch Job
@@ -110,65 +100,55 @@ export HF_HOME="/storage/project/<alloc>/shared/birdclef-2026/cache/huggingface"
 export UV_CACHE_DIR="$TMPDIR/uv-cache"
 
 # === 2. Venv on local NVMe ===
-JOB_VENV="$TMPDIR/birdclef-$SLURM_JOB_ID/.venv"
+JOB_VENV="$TMPDIR/my-project-$SLURM_JOB_ID/.venv"
 uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
-uv pip install -e "$EXPERIMENT_DIR[peft]"
+uv pip install -e "$EXPERIMENT_DIR"
 uv pip install torch --index-url https://download.pytorch.org/whl/cu121
 
 # === 3. Copy training data to local NVMe ===
-LOCAL_DATA="$TMPDIR/data/birdclef-2025"
+LOCAL_DATA="$TMPDIR/data/my-dataset"
 mkdir -p "$TMPDIR/data"
-cp -r ~/ps-clef2026_birdclef-0/data/birdclef-2025 "$LOCAL_DATA"
+cp -r /path/to/nfs/dataset "$LOCAL_DATA"
 
 # === 4. Model cache on project storage (persistent, shared) ===
-export HF_HOME="/storage/project/$PROJECT_NAME/shared/birdclef-2026/cache/huggingface"
+export HF_HOME="/storage/project/$PROJECT_NAME/shared/cache/huggingface"
 
-# === 5. Train (data reads from local NVMe, model from shared cache) ===
-srun python train.py --config config/my_config.yaml --data-dir "$LOCAL_DATA"
+# === 5. Train ===
+srun python train.py --data-dir "$LOCAL_DATA"
 ```
 
 ## Diagnosing I/O Bottlenecks
 
-### GPU utilization check
-
-Run a 1-2 epoch GPU check before submitting full training:
-
-```bash
-python train.py --config config/my_config.yaml --gpu-check 1
-```
-
-This produces a summary in `outputs/gpu_check/` with data time, compute time, and
-memory usage. Key things to look for:
+### What to look for
 
 | Metric | Healthy | Bottlenecked |
 |--------|---------|--------------|
-| Data loading % | <5% | >20% |
-| GPU utilization | >85% | <50% |
-| Memory % | 20-80% | <5% (batch too small) or OOM |
+| Data loading % of step time | <5% | >20% |
+| GPU compute utilization | >85% | <50% |
+| GPU memory usage | 20-80% | <5% (batch too small) or OOM |
 
 ### Common bottleneck patterns
 
 **High data loading % (>20%)**
 - Data on NFS → copy to `$TMPDIR`
 - Too many small file reads → precompute features as tensors
-- num_workers too low → increase (max 12 per GPU on PACE)
+- num_workers too low → increase (max 12 per GPU on RTX 6000 / V100 partitions)
 
 **Low GPU utilization (<50%)**
 - Batch size too small → increase batch_size (check memory headroom)
 - CPU transform bottleneck → move transforms to GPU or precompute
-- Python overhead → reduce number of steps (larger batches)
+- Python loop overhead → reduce number of steps (larger batches)
 
 **Low memory usage (<5%)**
 - Batch size is much smaller than what the GPU can handle
-- Note: `memory_allocated` is a snapshot, not peak. Check `memory_reserved` for a
-  better estimate of actual peak usage. Activation memory scales linearly with batch
-  size during backprop.
+- Note: `memory_allocated` is a point-in-time snapshot, not peak. Check
+  `memory_reserved` for a better estimate. Activation memory during backprop
+  scales linearly with batch size.
 
-**OOM despite "low" memory reported**
+**OOM despite "low" reported memory**
 - Peak activation memory during backprop is much higher than the average snapshot
-- LoRA still backprops through all encoder layers — activation memory ≈ full fine-tuning
-- Use gradient accumulation: keep batch_size small, accumulate N steps for larger
+- Use gradient accumulation: keep batch_size small, accumulate N steps for a larger
   effective batch
 
 ## Gradient Accumulation vs Batch Size
@@ -176,12 +156,12 @@ memory usage. Key things to look for:
 Both achieve larger effective batches, but they are NOT equivalent for performance:
 
 ```
-batch_size=32, accumulate=8  → effective_batch=256, but 8× forward+backward passes
-batch_size=256, accumulate=1 → effective_batch=256, but 1× forward+backward pass
+batch_size=32, accumulate=8  → effective_batch=256, but 8x forward+backward per epoch
+batch_size=256, accumulate=1 → effective_batch=256, but 1x forward+backward per epoch
 ```
 
 Gradient accumulation does NOT save compute — the GPU runs the same number of
-forward+backward passes per epoch. It only saves memory (smaller activations per step).
+forward+backward passes. It only saves memory (smaller activations per step).
 
 **Prefer larger batch_size with less accumulation** when memory allows. This reduces:
 - DataLoader fetch overhead (fewer calls)

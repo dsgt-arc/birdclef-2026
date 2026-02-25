@@ -1,1 +1,0 @@
-../../../docs/references/pace-gpu-workflows.md
