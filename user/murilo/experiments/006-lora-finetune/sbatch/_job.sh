@@ -69,6 +69,9 @@ echo ""
 
 echo "Setting up per-job virtual environment..."
 
+# Fallback: ensure copy mode for cross-filesystem installs (set globally in ~/.bashrc)
+export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
+
 # Create job-specific venv in TMPDIR for fast local I/O
 JOB_VENV_DIR="$TMPDIR/birdclef-$SLURM_JOB_ID"
 JOB_VENV="$JOB_VENV_DIR/.venv"
