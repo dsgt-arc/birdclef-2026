@@ -14,13 +14,14 @@
 
 - [x] Fast-dev-run: verify PEFT wraps correctly, trainable params ~608K
 - [x] Fast-dev-run: forward pass works, loss starts at ~0.694 (expected for 206-class BCE)
-- [ ] GPU check (2 epochs): batch_size=32 × accum 8 fits in 24GB VRAM
+- [x] GPU check (2 epochs): 90.6% GPU util, 2.6% memory, 182 samples/s throughput
 
-## Training
+## Training (PEFT)
 
-- [ ] Submit primary run: `eat_lora_attn.yaml`
-- [ ] Submit ablation: `eat_lora_all.yaml`
-- [ ] Submit ablation: `eat_lora_attn_mlphead.yaml`
+- [x] Submit primary run: `eat_lora_attn.yaml`
+- [x] Submit ablation: `eat_lora_all.yaml`
+- [x] Submit ablation: `eat_lora_attn_mlphead.yaml`
+- [ ] Monitor runs on W&B
 
 ## Adapters Library Integration (alternative backend)
 
@@ -31,10 +32,13 @@
 - [x] Fix get_input_embeddings() NotImplementedError (monkey-patch for audio model)
 - [x] Fix fused QKV LoRA shape mismatch (adapters bug: get_n_heads counts "o")
 - [x] Write pytest suite: tests/006-lora-finetune/test_adapters_lora.py (10/10 pass)
-- [x] Fast-dev-run: verify adapters.init() wraps EAT correctly
-- [ ] Fast-dev-run: trainable params match PEFT (~608K for attn config)
+- [x] Fast-dev-run: verify adapters.init() wraps EAT correctly (442K LoRA params, loss ~0.690)
+- [x] Pass dropout config to adapters LoRAConfig
+- [x] Add --all flag to run.sh for batch submission
 - [ ] GPU check: confirm equivalent memory usage to PEFT
+- [ ] Submit all 3 adapters runs (`bash sbatch/run.sh --all --backend adapters`)
 - [ ] (Optional) Open PR / issue on adapter-hub/adapters with fused QKV bug report
+- [x] Write reference doc for upstream contribution (docs/references/adapters-lora-eat.md)
 
 ## Analysis
 
