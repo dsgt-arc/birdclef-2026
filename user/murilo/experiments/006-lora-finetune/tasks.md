@@ -21,7 +21,7 @@
 - [x] Submit primary run: `eat_lora_attn.yaml`
 - [x] Submit ablation: `eat_lora_all.yaml`
 - [x] Submit ablation: `eat_lora_attn_mlphead.yaml`
-- [ ] Monitor runs on W&B
+- [x] All 3 PEFT runs completed with test evaluation
 
 ## Adapters Library Integration (alternative backend)
 
@@ -35,17 +35,33 @@
 - [x] Fast-dev-run: verify adapters.init() wraps EAT correctly (442K LoRA params, loss ~0.690)
 - [x] Pass dropout config to adapters LoRAConfig
 - [x] Add --all flag to run.sh for batch submission
-- [ ] GPU check: confirm equivalent memory usage to PEFT
 - [x] Submit all 3 adapters runs (`bash sbatch/run.sh --all --backend adapters`)
 - [x] Write reference doc for upstream contribution (docs/references/adapters-lora-eat.md)
+- [x] 2/3 adapters runs completed; `adapters-eat-lora-all` timed out (>12h SLURM limit)
+
+## Analysis
+
+- [x] Compare test cmAP across variants (5 completed runs)
+- [x] Compare with Exp 005 frozen baseline (cmAP=0.301) — all runs beat it by 56-78%
+- [x] Document results in results.md
+- [x] Update proposal.md with dual-backend method and upstream contributions
+
+## GPU Profiling
+
+- [x] GPU check: PEFT bs=32 (90.6% util, 5.4 GB reserved, 182 samples/s)
+- [x] GPU check: adapters bs=32 (88.3% util, 5.1 GB reserved, 178 samples/s)
+- [x] GPU check: PEFT bs=64 (92.5% util, 9.8 GB reserved, 232 samples/s)
+- [x] Tested batch_size=64 — only ~18% faster per epoch, not worth changing configs
+- [x] Document profiling results in gpu-profiling.md
+- [x] Conclusion: 9-11h training is encoder-bound, not data/overhead-bound
+
+## Infrastructure Fixes
+
+- [x] Fix save_metrics.py to support `--backend adapters` flag
+- [x] Fix cross-filesystem uv cache in create_venv.sh (`UV_CACHE_DIR`)
+- [x] Write PACE GPU workflows reference (docs/references/pace-gpu-workflows.md)
 
 ## Upstream Contributions (adapter-hub/adapters)
 
 - [ ] Open issue/PR: fix fused QKV LoRA shape mismatch (`LoRAMergedLinear.get_n_heads` counts "o")
 - [ ] Open PR: add EAT as a supported model via plugin interface (`AdapterModelInterface`)
-
-## Analysis
-
-- [ ] Compare test cmAP across variants
-- [ ] Compare with Exp 005 frozen baseline (cmAP=0.301)
-- [ ] Document results with `/experiment:result`

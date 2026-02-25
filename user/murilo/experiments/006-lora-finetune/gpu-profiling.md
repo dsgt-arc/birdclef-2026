@@ -5,17 +5,18 @@ For general PACE GPU best practices, see `docs/references/pace-gpu-workflows.md`
 
 ## GPU Check Results
 
-Two 1-epoch GPU checks using `--gpu-check 1` on the `eat_lora_attn` config:
+Three 1-epoch GPU checks using `--gpu-check 1` on `eat_lora_attn` configs:
 
-| Metric | PEFT (job 4233484) | Adapters (interactive 4282919) |
-|--------|-------------------|-------------------------------|
-| Data Time (avg) | **68.1 ms** | 3.4 ms |
-| Compute Time (avg) | 116.7 ms | **176.1 ms** |
-| Data Loading % | **35.5%** | 1.9% |
-| Throughput | 182 samples/s | 178 samples/s |
-| Memory Allocated | 0.61 GB (2.6%) | 0.61 GB (2.4%) |
-| Memory Reserved | 5.36 GB | 5.12 GB |
-| GPU Utilization | 90.6% | 88.3% |
+| Metric | PEFT bs=32 (4233484) | Adapters bs=32 (4282919) | PEFT bs=64 (4282919) |
+|--------|---------------------|-------------------------|---------------------|
+| Steps/epoch | 5,411 | 5,411 | 2,705 |
+| Data Time (avg) | **68.1 ms** | 3.4 ms | **110.7 ms** |
+| Compute Time (avg) | 116.7 ms | **176.1 ms** | 203.2 ms |
+| Data Loading % | **35.5%** | 1.9% | **31.8%** |
+| Throughput | 182 samples/s | 178 samples/s | **232 samples/s** |
+| Memory Allocated | 0.61 GB (2.6%) | 0.61 GB (2.4%) | 0.62 GB (2.5%) |
+| Memory Reserved | 5.36 GB | 5.12 GB | **9.84 GB** |
+| GPU Utilization | 90.6% | 88.3% | **92.5%** |
 
 ### Why the data loading difference?
 
@@ -79,58 +80,48 @@ backprops through all 90M encoder params, so activation memory ≈ full fine-tun
 
 Memory headroom analysis (`memory_reserved` ≈ actual peak usage):
 
-| batch_size | accum | steps/epoch | est. reserved | fits 24GB? |
-|-----------|-------|------------|---------------|------------|
-| 32 | 8 | 5,411 | ~5.4 GB | yes (current) |
-| 64 | 4 | 2,706 | ~10.3 GB | likely yes |
-| 128 | 2 | 1,353 | ~20.2 GB | tight |
-| 256 | 1 | 676 | ~40 GB | OOM |
+| batch_size | accum | steps/epoch | reserved (measured) | fits 24GB? |
+|-----------|-------|------------|---------------------|------------|
+| 32 | 8 | 5,411 | 5.4 GB | yes (current) |
+| 64 | 4 | 2,706 | **9.8 GB** (tested) | yes |
+| 128 | 2 | 1,353 | ~20 GB (est.) | tight |
+| 256 | 1 | 676 | — | OOM (confirmed) |
 
-**batch_size=64 with accum=4** is the safe next step — halves per-epoch overhead with
-the same effective batch size.
+## Potential Optimizations
 
-## Potential Optimizations (Ranked by Impact)
+### batch_size=64 — tested, not worth it
 
-### 1. Increase batch_size to 64, reduce accum to 4 (est. ~40% faster)
+GPU check with `batch_size=64, accum=4` confirmed it fits in memory (9.8 GB reserved)
+but **per-epoch time only improves ~18%** (from ~17 min to ~14 min). Half the steps but
+each step takes ~70% longer — the forward+backward through the 90M EAT encoder scales
+linearly with batch size, so doubling the batch roughly doubles per-step compute.
 
-The main bottleneck is 5,411 forward+backward passes per epoch. Doubling batch_size
-halves that to 2,706 — fewer DataLoader calls, fewer Python iterations, better GPU
-parallelism. Same effective batch size (256).
+The real bottleneck is the encoder itself, not Python/DataLoader overhead.
 
-```yaml
-data:
-  batch_size: 64          # was 32
-training:
-  accumulate_grad_batches: 4  # was 8
-```
-
-Needs a `--gpu-check 1` to confirm no OOM (~10 GB estimated reserved).
-
-### 2. Precompute fbank features (eliminates CPU transform overhead)
+### Precompute fbank features (best remaining option)
 
 The `waveform_to_fbank` transform runs on CPU workers every `__getitem__` call. Saving
 precomputed fbank tensors would eliminate both disk I/O and CPU transform cost. Bigger
-engineering effort but the most impactful for repeated experiments.
+engineering effort but the most impactful for repeated experiments on this dataset.
 
-### 3. Copy audio data to `$TMPDIR` (helps on cold nodes only)
+### Copy audio data to `$TMPDIR` (marginal for this dataset)
 
 The BirdCLEF 2025 dataset is ~7GB — small enough that the OS page cache absorbs it
 after the first epoch. On a warm node, NFS data loading is already ~3ms/step (1.9% of
-step time), so the copy would have negligible impact.
+step time). On a cold node it jumps to ~68-111ms/step. Copying to `$TMPDIR` guarantees
+consistent reads but doesn't address the core compute bottleneck.
 
-However, on a **cold SLURM node** (first job on that machine, or evicted page cache),
-data loading jumps to ~68ms/step (35% of step time). Copying to `$TMPDIR` guarantees
-consistently fast reads regardless of cache state:
+### Conclusion
 
-```bash
-LOCAL_DATA="$TMPDIR/data/birdclef-2025"
-mkdir -p "$TMPDIR/data"
-cp -r ~/ps-clef2026_birdclef-0/data/birdclef-2025 "$LOCAL_DATA"
-```
-
-Worth doing for robustness, but not the primary bottleneck for this experiment.
+Training time for LoRA fine-tuning of EAT-base on BirdCLEF 2025 is fundamentally
+limited by the encoder forward+backward pass (~117-203ms per step depending on backend
+and batch size). With ~173K training samples and early stopping at ~30 epochs, 9-11
+hours on a single RTX 6000 is roughly the floor for this architecture. Meaningful
+speedups would require model-level changes (smaller encoder, gradient checkpointing,
+multi-GPU) rather than data pipeline tuning.
 
 ## Outputs
 
-- `outputs/gpu_check/eat-lora-attn_4233484.{txt,png}` — PEFT (interactive session, cold page cache)
-- `outputs/gpu_check/adapters-eat-lora-attn_4282919.{txt,png}` — Adapters (interactive session, warm page cache)
+- `outputs/gpu_check/eat-lora-attn_4233484.{txt,png}` — PEFT bs=32 (interactive, cold page cache)
+- `outputs/gpu_check/adapters-eat-lora-attn_4282919.{txt,png}` — Adapters bs=32 (interactive, warm page cache)
+- `outputs/gpu_check/eat-lora-attn-bs64_4282919.{txt,png}` — PEFT bs=64 (interactive, cold page cache)
