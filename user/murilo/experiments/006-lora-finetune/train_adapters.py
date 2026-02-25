@@ -40,7 +40,7 @@ sys.path.insert(0, str(repo_root / "src"))
 
 from birdclef.data import BirdCLEF2025DataModule, build_species_list  # noqa: E402
 from birdclef.lightning.lora_finetune import LoRAFinetuneModule  # noqa: E402
-from birdclef.lora.adapterhub import apply_adapters_lora  # noqa: E402
+from birdclef.lora.adapters import apply_adapters_lora  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
