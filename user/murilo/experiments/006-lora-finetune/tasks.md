@@ -63,6 +63,8 @@
 
 ## Upstream Contributions (adapter-hub/adapters)
 
+See `upstream-prs.md` for full context, blockers, and implementation plan.
+
 - [x] PR #830: fix fused QKV LoRA shape mismatch (`LoRAMergedLinear.get_n_heads` counts "o") — CI passing, awaiting review
 - [x] PR #831: handle `NotImplementedError` from `get_input_embeddings()` for audio/vision models — CI passing, awaiting review
-- [ ] After PRs merge: add EAT to `CUSTOM_INTERFACES` for auto-detection (requires config attribute aliasing for `embed_dim`→`hidden_size`, `num_heads`→`num_attention_heads`)
+- [ ] After PRs merge: add EAT to `CUSTOM_INTERFACES` for auto-detection (see `upstream-prs.md` § "Next PR")
