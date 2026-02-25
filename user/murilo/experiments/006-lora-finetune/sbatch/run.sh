@@ -7,6 +7,9 @@
 #   bash sbatch/run.sh config/eat_lora_all.yaml
 #   bash sbatch/run.sh config/eat_lora_attn_mlphead.yaml
 #
+#   # Use adapters backend instead of peft (default)
+#   bash sbatch/run.sh config/eat_lora_attn.yaml --backend adapters
+#
 #   # Fast dev run (5 batches, no W&B logging — useful for pipeline validation)
 #   bash sbatch/run.sh config/eat_lora_attn.yaml --fast-dev-run
 #
@@ -25,6 +28,7 @@ FAST_DEV_RUN=false
 GPU_CHECK=0
 NUM_WORKERS=""
 CONFIG=""
+BACKEND="peft"
 PROJECT_NAME="ps-dsgt_clef2026-0"
 
 while [[ $# -gt 0 ]]; do
@@ -32,6 +36,14 @@ while [[ $# -gt 0 ]]; do
         --dry-run)
             DRY_RUN=true
             shift
+            ;;
+        --backend)
+            BACKEND="$2"
+            if [[ "$BACKEND" != "peft" && "$BACKEND" != "adapters" ]]; then
+                echo "Error: --backend must be 'peft' or 'adapters' (got: $BACKEND)"
+                exit 1
+            fi
+            shift 2
             ;;
         --fast-dev-run)
             FAST_DEV_RUN=true
@@ -56,6 +68,7 @@ while [[ $# -gt 0 ]]; do
             echo "  CONFIG_PATH       Path to config file (e.g., config/eat_lora_attn.yaml)"
             echo ""
             echo "Options:"
+            echo "  --backend B       PEFT backend: 'peft' (default) or 'adapters'"
             echo "  --project-name    PACE project allocation name (default: ps-dsgt_clef2026-0)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
             echo "  --gpu-check N     Run N epochs for GPU utilization check, then exit"
@@ -112,6 +125,7 @@ echo "=============================================="
 echo "Experiment dir: ${EXPERIMENT_DIR}"
 echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
+echo "Backend: ${BACKEND}"
 echo "Project: ${PROJECT_NAME}"
 echo "Fast dev run: ${FAST_DEV_RUN}"
 echo "GPU check: ${GPU_CHECK}"
@@ -144,7 +158,7 @@ fi
 
 CMD="sbatch \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK},NUM_WORKERS=${NUM_WORKERS} \
+    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},BACKEND=${BACKEND},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK},NUM_WORKERS=${NUM_WORKERS} \
     --job-name=exp006-${RUN_NAME} \
     ${CPUS_OVERRIDE} \
     ${JOB_SCRIPT}"

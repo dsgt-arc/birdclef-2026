@@ -24,6 +24,7 @@ set -eu
 # Config file and project name (passed via environment variables from run.sh)
 CONFIG="${CONFIG:-config/eat_lora_attn.yaml}"
 PROJECT_NAME="${PROJECT_NAME:-ps-dsgt_clef2026-0}"
+BACKEND="${BACKEND:-peft}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 GPU_CHECK="${GPU_CHECK:-0}"
 NUM_WORKERS="${NUM_WORKERS:-}"
@@ -54,6 +55,7 @@ echo "Job ID: ${SLURM_JOB_ID:-local}"
 echo "Node: $(hostname)"
 echo "Date: $(date)"
 echo "Config: ${CONFIG}"
+echo "Backend: ${BACKEND}"
 echo "Project: ${PROJECT_NAME}"
 echo "Repo: ${REPO_DIR}"
 echo "Experiment: ${EXPERIMENT_DIR}"
@@ -81,20 +83,27 @@ uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
 # Install the user package (includes all dependencies from pyproject.toml)
-echo "  Installing dependencies..."
-uv pip install -e "$EXPERIMENT_DIR"
+# For adapters backend, install the [adapters] extra which pulls in adapter-transformers
+if [[ "${BACKEND}" == "adapters" ]]; then
+    echo "  Installing dependencies (adapters backend)..."
+    uv pip install -e "$EXPERIMENT_DIR[adapters]"
+else
+    echo "  Installing dependencies (peft backend)..."
+    uv pip install -e "$EXPERIMENT_DIR"
+fi
 
 # Install PyTorch with CUDA support
 echo "  Installing PyTorch with CUDA..."
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install transformers for EAT model loading
-echo "  Installing transformers..."
-uv pip install "transformers>=4.30.0"
+# Install transformers for EAT model loading (peft backend only — adapters bundles its own)
+if [[ "${BACKEND}" == "peft" ]]; then
+    echo "  Installing transformers..."
+    uv pip install "transformers>=4.30.0"
 
-# Install PEFT for LoRA
-echo "  Installing PEFT..."
-uv pip install "peft>=0.7.0"
+    echo "  Installing PEFT..."
+    uv pip install "peft>=0.7.0"
+fi
 
 echo "  Virtual environment ready!"
 echo ""
@@ -102,8 +111,12 @@ echo ""
 # Verify PyTorch CUDA
 python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}, Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else None}')"
 
-# Verify PEFT
-python -c "import peft; print(f'PEFT: {peft.__version__}')"
+# Verify backend
+if [[ "${BACKEND}" == "adapters" ]]; then
+    python -c "import adapters; print(f'Adapters: {adapters.__version__}')"
+else
+    python -c "import peft; print(f'PEFT: {peft.__version__}')"
+fi
 echo ""
 
 # ============================================================================
@@ -152,7 +165,14 @@ echo ""
 echo "Starting training..."
 echo ""
 
-TRAIN_CMD="python train.py --config ${CONFIG} --project-name ${PROJECT_NAME}"
+# Select training script based on backend
+if [[ "${BACKEND}" == "adapters" ]]; then
+    TRAIN_SCRIPT="train_adapters.py"
+else
+    TRAIN_SCRIPT="train.py"
+fi
+
+TRAIN_CMD="python ${TRAIN_SCRIPT} --config ${CONFIG} --project-name ${PROJECT_NAME}"
 if [[ "${FAST_DEV_RUN}" == "true" ]]; then
     TRAIN_CMD="${TRAIN_CMD} --fast-dev-run"
     echo "  (fast dev run: 5 batches, no W&B)"
