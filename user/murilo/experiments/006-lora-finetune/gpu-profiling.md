@@ -19,11 +19,16 @@ Two 1-epoch GPU checks using `--gpu-check 1` on the `eat_lora_attn` config:
 
 ### Why the data loading difference?
 
-The PEFT check ran on a **fresh SLURM node** — the audio data was read from NFS with
-a cold OS page cache (68ms per batch). The adapters check ran on an **interactive session**
-where the data was already cached in RAM from prior work (3ms per batch).
+Both checks ran on interactive SLURM sessions (`sacct` confirms `interactive` job type).
+The PEFT check ran on an earlier session (job 4233484, node atl1-1-03-007) and the
+adapters check on a later session (job 4282919, node atl1-1-02-004). The 20x data
+loading gap (68ms vs 3ms) is likely due to **OS page cache warmth** — the adapters
+session had more audio data cached in RAM from prior work on that node, while the PEFT
+session may have been run before the data was fully cached, or on a node with more I/O
+contention.
 
-This is NOT a PEFT vs adapters difference — it's cold NFS vs warm page cache.
+The takeaway: data loading from NFS varies widely (3-68ms) depending on page cache state.
+Copying data to `$TMPDIR` (local NVMe) eliminates this variability entirely.
 See `docs/references/pace-gpu-workflows.md` for details on PACE storage tiers.
 
 ### Why is adapters compute slower?
@@ -52,13 +57,18 @@ This matches the observed 9-11 hour training times across all runs.
 
 ## Where Time Is Spent
 
-On a cold SLURM node (worst case):
+Ranges reflect variability from NFS page cache state (cold vs warm):
 
-| Component | Time/epoch | % | Optimization |
-|-----------|-----------|---|--------------|
-| NFS data loading | ~6 min | 37% | Copy data to `$TMPDIR` |
-| Forward + backward | ~10.5 min | 58% | Increase batch_size |
-| Validation | ~1 min | 6% | — |
+| Component | Time/epoch (cold) | Time/epoch (warm) | Optimization |
+|-----------|------------------|-------------------|--------------|
+| Data loading | ~6 min (37%) | ~0.3 min (2%) | Copy data to `$TMPDIR` |
+| Forward + backward | ~10.5 min (58%) | ~16 min (89%) | Increase batch_size |
+| Validation | ~1 min (6%) | ~1 min (6%) | — |
+| **Total** | **~17.5 min** | **~17.3 min** | |
+
+Note: total per-epoch time is similar because the adapters backend is ~50% slower on
+compute, offsetting the data loading gains. For PEFT with warm cache, epochs would be
+~11 min (117ms compute + 3ms data = 120ms/step × 5411 = ~10.8 min + val).
 
 ## Batch Size vs Gradient Accumulation
 
