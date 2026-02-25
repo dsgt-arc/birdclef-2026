@@ -69,8 +69,13 @@ echo ""
 
 echo "Setting up per-job virtual environment..."
 
-# Fallback: ensure copy mode for cross-filesystem installs (set globally in ~/.bashrc)
-export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
+# Use a per-job uv cache on the same filesystem as the venv (TMPDIR = local NVMe).
+# The global uv cache lives on scratch (XDG_CACHE_HOME) which is a different
+# filesystem; uv's hardlink/copy from scratch → /tmp silently produces empty
+# directory stubs (e.g., tokenizers .so missing). A local cache avoids this and
+# is faster. The trade-off is re-downloading packages per job, but install time
+# is dominated by compilation, not downloads.
+export UV_CACHE_DIR="$TMPDIR/uv-cache"
 
 # Create job-specific venv in TMPDIR for fast local I/O
 JOB_VENV_DIR="$TMPDIR/birdclef-$SLURM_JOB_ID"
