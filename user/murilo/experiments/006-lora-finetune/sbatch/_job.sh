@@ -194,7 +194,7 @@ srun ${TRAIN_CMD}
 if [[ "${FAST_DEV_RUN}" != "true" && "${GPU_CHECK}" -eq 0 ]]; then
     echo ""
     echo "Saving structured metrics to artifacts/..."
-    python save_metrics.py --config "${CONFIG}"
+    python save_metrics.py --config "${CONFIG}" --backend "${BACKEND}"
 fi
 
 echo ""

@@ -7,6 +7,7 @@ artifacts directory.
 
 Usage:
     python save_metrics.py --config config/eat_lora_attn.yaml
+    python save_metrics.py --config config/eat_lora_attn.yaml --backend adapters
     python save_metrics.py --config config/eat_lora_all.yaml --artifacts-dir artifacts/training
 """
 
@@ -28,6 +29,13 @@ def main():
         help="Path to the config YAML used for training",
     )
     parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["peft", "adapters"],
+        default="peft",
+        help="LoRA backend used for this run (default: peft)",
+    )
+    parser.add_argument(
         "--artifacts-dir",
         type=str,
         default="artifacts/training",
@@ -42,9 +50,12 @@ def main():
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
+    # Adapters backend prefixes run_name with "adapters-" (matching train_adapters.py)
     run_name = config["run_name"]
+    if args.backend == "adapters":
+        run_name = f"adapters-{run_name}"
 
-    # Load raw test results from train.py
+    # Load raw test results from train.py / train_adapters.py
     results_file = experiment_dir / "outputs" / "test_results" / f"{run_name}.json"
     if not results_file.exists():
         print(f"Error: test results not found at {results_file}", file=sys.stderr)
@@ -56,8 +67,10 @@ def main():
 
     test_metrics = raw.get("test_metrics") or {}
 
-    # Derive variant name from config filename
+    # Derive variant name from config filename, prefixed for adapters
     variant_name = Path(args.config).stem
+    if args.backend == "adapters":
+        variant_name = f"adapters_{variant_name}"
 
     # Build structured metrics
     metrics = {
@@ -69,6 +82,8 @@ def main():
         "top1_accuracy": test_metrics.get("test/top1_acc"),
         "top5_accuracy": test_metrics.get("test/top5_acc"),
         "loss": test_metrics.get("test/loss"),
+        # Backend
+        "backend": args.backend,
         # Encoder info
         "encoder_type": config["encoder"]["type"],
         "encoder_model": config["encoder"].get("model_name", ""),
