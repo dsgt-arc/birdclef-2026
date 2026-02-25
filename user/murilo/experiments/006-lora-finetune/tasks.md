@@ -63,5 +63,5 @@
 
 ## Upstream Contributions (adapter-hub/adapters)
 
-- [ ] Open issue/PR: fix fused QKV LoRA shape mismatch (`LoRAMergedLinear.get_n_heads` counts "o")
-- [ ] Open PR: add EAT as a supported model via plugin interface (`AdapterModelInterface`)
+- [x] PR #830: fix fused QKV LoRA shape mismatch (`LoRAMergedLinear.get_n_heads` counts "o")
+- [x] PR #831: handle `NotImplementedError` from `get_input_embeddings()` for audio/vision models
