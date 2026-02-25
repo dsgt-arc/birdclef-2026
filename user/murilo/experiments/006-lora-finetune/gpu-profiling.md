@@ -91,20 +91,11 @@ the same effective batch size.
 
 ## Potential Optimizations (Ranked by Impact)
 
-### 1. Copy audio data to `$TMPDIR` (saves ~2.9 hours)
+### 1. Increase batch_size to 64, reduce accum to 4 (est. ~40% faster)
 
-Add to `sbatch/_job.sh` before training:
-
-```bash
-LOCAL_DATA="$TMPDIR/data/birdclef-2025"
-mkdir -p "$TMPDIR/data"
-cp -r ~/ps-clef2026_birdclef-0/data/birdclef-2025 "$LOCAL_DATA"
-# Override data_dir or pass --data-dir to training script
-```
-
-### 2. Increase batch_size to 64, reduce accum to 4 (saves ~30%)
-
-In YAML configs:
+The main bottleneck is 5,411 forward+backward passes per epoch. Doubling batch_size
+halves that to 2,706 — fewer DataLoader calls, fewer Python iterations, better GPU
+parallelism. Same effective batch size (256).
 
 ```yaml
 data:
@@ -113,16 +104,33 @@ training:
   accumulate_grad_batches: 4  # was 8
 ```
 
-Halves DataLoader calls and Python loop iterations. Same effective batch size (256).
-Needs a fast-dev-run to confirm no OOM.
+Needs a `--gpu-check 1` to confirm no OOM (~10 GB estimated reserved).
 
-### 3. Precompute fbank features (eliminates CPU transform overhead)
+### 2. Precompute fbank features (eliminates CPU transform overhead)
 
 The `waveform_to_fbank` transform runs on CPU workers every `__getitem__` call. Saving
 precomputed fbank tensors would eliminate both disk I/O and CPU transform cost. Bigger
 engineering effort but the most impactful for repeated experiments.
 
+### 3. Copy audio data to `$TMPDIR` (helps on cold nodes only)
+
+The BirdCLEF 2025 dataset is ~7GB — small enough that the OS page cache absorbs it
+after the first epoch. On a warm node, NFS data loading is already ~3ms/step (1.9% of
+step time), so the copy would have negligible impact.
+
+However, on a **cold SLURM node** (first job on that machine, or evicted page cache),
+data loading jumps to ~68ms/step (35% of step time). Copying to `$TMPDIR` guarantees
+consistently fast reads regardless of cache state:
+
+```bash
+LOCAL_DATA="$TMPDIR/data/birdclef-2025"
+mkdir -p "$TMPDIR/data"
+cp -r ~/ps-clef2026_birdclef-0/data/birdclef-2025 "$LOCAL_DATA"
+```
+
+Worth doing for robustness, but not the primary bottleneck for this experiment.
+
 ## Outputs
 
-- `outputs/gpu_check/eat-lora-attn_4233484.{txt,png}` — PEFT on fresh SLURM node
-- `outputs/gpu_check/adapters-eat-lora-attn_4282919.{txt,png}` — Adapters on interactive session
+- `outputs/gpu_check/eat-lora-attn_4233484.{txt,png}` — PEFT (interactive session, cold page cache)
+- `outputs/gpu_check/adapters-eat-lora-attn_4282919.{txt,png}` — Adapters (interactive session, warm page cache)
