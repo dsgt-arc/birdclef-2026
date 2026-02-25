@@ -36,9 +36,13 @@
 - [x] Pass dropout config to adapters LoRAConfig
 - [x] Add --all flag to run.sh for batch submission
 - [ ] GPU check: confirm equivalent memory usage to PEFT
-- [ ] Submit all 3 adapters runs (`bash sbatch/run.sh --all --backend adapters`)
-- [ ] (Optional) Open PR / issue on adapter-hub/adapters with fused QKV bug report
+- [x] Submit all 3 adapters runs (`bash sbatch/run.sh --all --backend adapters`)
 - [x] Write reference doc for upstream contribution (docs/references/adapters-lora-eat.md)
+
+## Upstream Contributions (adapter-hub/adapters)
+
+- [ ] Open issue/PR: fix fused QKV LoRA shape mismatch (`LoRAMergedLinear.get_n_heads` counts "o")
+- [ ] Open PR: add EAT as a supported model via plugin interface (`AdapterModelInterface`)
 
 ## Analysis
 
