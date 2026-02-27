@@ -23,9 +23,7 @@ _user_dir = Path(__file__).parent.parent.parent
 load_dotenv(_user_dir / ".env")
 
 import pytorch_lightning as pl  # noqa: E402
-import timm  # noqa: E402
 import torch  # noqa: E402
-import torch.nn as nn  # noqa: E402
 import yaml  # noqa: E402
 from peft import LoraConfig, get_peft_model  # noqa: E402
 from pytorch_lightning.callbacks import (  # noqa: E402
@@ -41,6 +39,7 @@ repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root / "src"))
 
 from birdclef.data import BirdCLEF2025DataModule, build_species_list  # noqa: E402
+from birdclef.encoders.convnext import ConvNeXtEncoder  # noqa: E402
 from birdclef.lightning.lora_finetune import LoRAFinetuneModule  # noqa: E402
 from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram  # noqa: E402
 
@@ -54,59 +53,6 @@ logging.getLogger("transformers").setLevel(logging.WARNING)
 
 DEFAULT_PROJECT_NAME = "ps-dsgt_clef2026-0"
 EXPERIMENT_NAME = "007-convnext-finetune"
-
-
-# ============================================================================
-# ConvNeXt Encoder
-# ============================================================================
-
-
-class ConvNeXtEncoder(nn.Module):
-    """Timm ConvNeXt backbone adapted for 1-channel mel-spectrogram input.
-
-    Creates a ConvNeXt model from timm with num_classes=0 (feature extractor only),
-    then adapts the stem conv from 3 channels to 1 channel by averaging pretrained
-    weights across the input channel dimension.
-    """
-
-    def __init__(self, model_name: str, pretrained: bool = True):
-        super().__init__()
-        self.backbone = timm.create_model(model_name, pretrained=pretrained, num_classes=0)
-        self.embed_dim = self.backbone.num_features  # 1024 for ConvNeXt-Base
-        self._adapt_input_channels(pretrained)
-
-    def _adapt_input_channels(self, pretrained: bool):
-        """Replace 3-channel stem conv with 1-channel variant.
-
-        ConvNeXt stem[0] is the input Conv2d. If using pretrained weights,
-        average the 3-channel weights into 1 channel to preserve learned features.
-        """
-        old_conv = self.backbone.stem[0]
-        new_conv = nn.Conv2d(
-            in_channels=1,
-            out_channels=old_conv.out_channels,
-            kernel_size=old_conv.kernel_size,
-            stride=old_conv.stride,
-            padding=old_conv.padding,
-            bias=old_conv.bias is not None,
-        )
-        if pretrained:
-            with torch.no_grad():
-                new_conv.weight[:] = old_conv.weight.mean(dim=1, keepdim=True)
-                if old_conv.bias is not None:
-                    new_conv.bias[:] = old_conv.bias
-        self.backbone.stem[0] = new_conv
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass: mel spectrogram -> feature vector.
-
-        Args:
-            x: Input tensor, shape (batch, 1, 128, 500)
-
-        Returns:
-            Feature vector, shape (batch, embed_dim)
-        """
-        return self.backbone(x)
 
 
 # ============================================================================
