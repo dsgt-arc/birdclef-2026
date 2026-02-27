@@ -1,6 +1,6 @@
 # Experiment 007: ConvNeXt-Base LoRA Fine-Tuning on BirdCLEF 2025
 
-**Status**: Proposed
+**Status**: In-progress
 **Created**: 2026-02-26
 **Author**: Murilo Gustineli
 
@@ -59,11 +59,26 @@ Estimated LoRA params: ~1.4M across 36 blocks (compare: EAT attn-only ~451K, EAT
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| batch_size | 32 | Same as exp 006 |
+| batch_size | 128 | CNN allows larger batches than transformer (no O(n²) attention maps) |
 | lr | 3e-4 | Standard LoRA LR |
 | hidden_dim | 0 | Linear head (primary) |
 | max_epochs | 50 | With early stopping patience=10 |
-| accumulate_grad_batches | 8 | effective batch_size = 32 * 8 = 256 |
+| accumulate_grad_batches | 2 | effective batch_size = 128 * 2 = 256 |
+
+### Batch Size Tuning
+
+Exp 006 used `bs=32, accum=8` because EAT's transformer attention stores O(n²) activation
+maps per layer, causing OOM at larger batch sizes. ConvNeXt is a CNN with no attention, so
+activation memory is much lower per sample.
+
+| Config | GPU Utilization | VRAM Usage | Notes |
+|--------|-----------------|------------|-------|
+| bs=32, accum=8 | ~45-50% (spiky) | ~8 GB | GPU starving for data |
+| bs=128, accum=2 | ~60-70% (stable) | 22.8/24 GB | Near VRAM ceiling |
+| bs=128, workers=12 vs 8 | No meaningful difference | 22.8/24 GB | Compute-bound, not data-bound |
+
+Settled on `bs=128, accum=2` — uses available VRAM efficiently while keeping 256 effective
+batch size for fair comparison with exp 006.
 
 ### Run Comparison
 
