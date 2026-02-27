@@ -1,0 +1,61 @@
+# Experiment 007: ConvNeXt-Base LoRA — MLP + MLP Head (Ablation)
+#
+# LoRA on MLP layers (fc1, fc2) of ConvNeXt-Base + MLP classification head.
+# ~1.4M LoRA params + ~630K head params = ~2.0M trainable (~2.3% of model).
+# Tests whether a richer head compensates for the ImageNet→audio domain gap.
+
+run_name: "convnext-lora-mlp-mlphead"
+
+encoder:
+  type: "convnext"
+  model_name: "convnext_base.fb_in22k_ft_in1k"
+  embed_dim: 1024
+  pretrained: true
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+  target_modules: ["fc1", "fc2"]
+
+data:
+  data_dir: "~/ps-clef2026_birdclef-0/data/birdclef-2025"
+  sample_rate: 32000
+  chunk_duration: 5.0
+  batch_size: 32
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.1
+  seed: 42
+
+training:
+  max_epochs: 50
+  lr: 3.0e-4
+  weight_decay: 0.01
+  warmup_epochs: 5
+  threshold: 0.5
+  hidden_dim: 512              # MLP head: 1024 -> 512 -> 206
+  dropout: 0.1
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 8   # effective batch_size = 32 * 8 = 256
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/cmap"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/cmap"
+    mode: "max"
+    patience: 10
+    min_delta: 0.001
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-convnext-finetune"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

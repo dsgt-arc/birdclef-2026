@@ -6,7 +6,7 @@
 
 ## Hypothesis
 
-Training ConvNeXT-Tiny and ViT-Small from scratch on HSN will produce substantially lower cmAP than pretrained variants, quantifying the pretrain advantage. ConvNeXT-Tiny pretrained should approach exp001's cmAP=0.480, and both scratch models will underperform exp002's ViT-Base pretrained (cmAP=0.164).
+Training ConvNeXT-Tiny and ViT-Small from scratch on HSN will produce substantially lower cmAP than ImageNet-pretrained variants, quantifying the pretrain advantage. ConvNeXT-Tiny pretrained should approach exp001's cmAP=0.480, and both scratch models will underperform exp002's ViT-Base pretrained (cmAP=0.164).
 
 ## Background
 
@@ -16,7 +16,7 @@ Experiment 002 trained ViT-Base (85.5M params) with ImageNet pretrained weights 
 
 ### Approach
 
-Train 4 models in a 2x2 matrix: {ConvNeXT-Tiny, ViT-Small} x {scratch, pretrained}. Use a generic `AudioClassifier` class that handles 1-channel input adaptation for both model families.
+Train 4 models in a 2x2 matrix: {ConvNeXT-Tiny, ViT-Small} x {scratch, ImageNet-pretrained}. Use a generic `AudioClassifier` class that handles 1-channel input adaptation for both model families.
 
 ### Design Rationale: Model Size Parity
 
@@ -47,7 +47,7 @@ Exp 002 used ViT-Base (85.5M params), making any comparison with ConvNeXT unfair
 
 ### Variables
 
-- **Independent**: Architecture (ConvNeXT-Tiny vs ViT-Small), initialization (scratch vs pretrained)
+- **Independent**: Architecture (ConvNeXT-Tiny vs ViT-Small), initialization (scratch vs ImageNet-pretrained)
 - **Dependent**: cmAP, training curves, convergence speed
 - **Controlled**: Dataset (HSN), input size (128x500), training infrastructure
 
