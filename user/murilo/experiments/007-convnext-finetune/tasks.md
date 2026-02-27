@@ -16,15 +16,15 @@
 - [x] GPU check (interactive): bs=32 → ~50% util, bs=128 → ~65% util, 22.8/24GB VRAM
 - [x] Tuned batch size: bs=128, accum=2 (CNN needs larger batches than EAT transformer)
 - [x] Tested num_workers=12 vs 8 — no meaningful improvement (compute-bound, not data-bound)
-- [ ] GPU check (sbatch, 2 epochs): review `outputs/gpu_check/convnext-lora-mlp_*.txt`
+- [x] GPU check (sbatch, 2 epochs): 100% avg GPU util, ~113 samples/s, compute-bound at bs=128
 
 ## Training
 
-- [ ] Submit primary run: `convnext_lora_mlp.yaml` (submitted)
-- [ ] Submit ablation: `convnext_lora_mlp_mlphead.yaml` (submitted)
+- [x] Submit primary run: `convnext_lora_mlp.yaml` — cmAP=0.527, stopped epoch 26 (best at 15)
+- [x] Submit ablation: `convnext_lora_mlp_mlphead.yaml` — cmAP=0.525, stopped epoch 23 (best at 12)
 
 ## Analysis
 
-- [ ] Compare test cmAP across variants
-- [ ] Compare with Exp 006 EAT baselines (cmAP=0.470–0.536)
-- [ ] Document results in results.md
+- [x] Compare test cmAP across variants: linear head (0.527) ≈ MLP head (0.525), no benefit from richer head
+- [x] Compare with Exp 006 EAT baselines: ConvNeXt 0.527 vs EAT best 0.536 (only 1.7% gap)
+- [x] Document results in results.md

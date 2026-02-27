@@ -1,6 +1,6 @@
 # Experiment 007: ConvNeXt-Base LoRA Fine-Tuning on BirdCLEF 2025
 
-**Status**: In-progress
+**Status**: Completed
 **Created**: 2026-02-26
 **Author**: Murilo Gustineli
 
