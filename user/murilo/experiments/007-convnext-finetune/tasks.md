@@ -16,7 +16,7 @@
 - [x] GPU check (interactive): bs=32 → ~50% util, bs=128 → ~65% util, 22.8/24GB VRAM
 - [x] Tuned batch size: bs=128, accum=2 (CNN needs larger batches than EAT transformer)
 - [x] Tested num_workers=12 vs 8 — no meaningful improvement (compute-bound, not data-bound)
-- [ ] GPU check (sbatch, 2 epochs): awaiting results
+- [ ] GPU check (sbatch, 2 epochs): review `outputs/gpu_check/convnext-lora-mlp_*.txt`
 
 ## Training
 
