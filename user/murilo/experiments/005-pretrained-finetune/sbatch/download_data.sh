@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=exp005-download
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH --partition=cpu-small
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G

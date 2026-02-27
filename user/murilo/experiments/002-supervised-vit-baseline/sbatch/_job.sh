@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=exp002-vit-baseline
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH --partition=gpu-rtx6000
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
