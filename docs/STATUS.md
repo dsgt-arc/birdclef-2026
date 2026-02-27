@@ -1,6 +1,6 @@
 # Project Status
 
-> **Last Updated**: 2026-02-17
+> **Last Updated**: 2026-02-27
 
 ## Research Thesis
 
@@ -27,6 +27,10 @@ Pre-training closed the gap from 0.086 to 0.18 cmAP, but a large gap remains to 
 | BEATs 95.8% on ESC-50 (linear probe) | Exp 001 | Best frozen feature extractor |
 | Static embeddings lose 48% accuracy | Exp 002 | Model2vec approach fails for transformers |
 | ConvNeXT achieves 0.48 cmAP on HSN | murilo/Exp 001 | Strong baseline from pre-trained convolutions |
+| Vertical tokenization +37% over 16×16 | murilo/Exp 004 | 128×4 tokens: cmAP=0.118, frequency axis matters |
+| EAT frozen linear probe: 0.301 cmAP | murilo/Exp 005 | AudioSet pretraining provides strong frozen features |
+| EAT LoRA fine-tuning: **0.536 cmAP** | murilo/Exp 006 | 78% improvement over frozen probe; MLP head > LoRA scope |
+| ConvNeXt LoRA: **0.527 cmAP** | murilo/Exp 007 | ImageNet features nearly match AudioSet (only 1.7% gap) |
 | SSAMBA from scratch: 0.086 cmAP on HSN | Exp 006 | Far below baselines — backbone needs pre-training |
 | SSAMBA pre-trained: **0.18 cmAP** on HSN | Exp 007 | Pre-training doubles performance; Mamba-only transfer works |
 | SED attention pooling: no improvement | Exp 008 | Bottleneck is representation quality, not pooling |
@@ -53,6 +57,10 @@ Pre-training closed the gap from 0.086 to 0.18 cmAP, but a large gap remains to 
 | murilo/001 | BirdSet Benchmark | Complete | ConvNeXT 0.48, EfficientNet 0.38 on HSN |
 | murilo/002 | Supervised ViT Baseline | Complete | 0.164 cmAP on HSN |
 | murilo/003 | Model Training | Complete | ConvNeXT-Tiny pretrained best (cmAP=0.180) |
+| murilo/004 | Frame-Based Tokenization | Complete | 128×4 vertical tokens: cmAP=0.118 (+37%) |
+| murilo/005 | Pretrained Audio Fine-Tuning | Complete | EAT frozen probe: cmAP=0.301 |
+| murilo/006 | LoRA Fine-Tuning EAT | **Complete** | **Best: cmAP=0.536** (adapters + attn LoRA + MLP head) |
+| murilo/007 | ConvNeXt-Base LoRA | **Complete** | cmAP=0.527, ImageNet nearly matches AudioSet |
 
 ## Concept Docs
 
