@@ -12,14 +12,16 @@
 
 ## Validation
 
-- [ ] Fast-dev-run: verify PEFT wraps correctly, check trainable param count (~1.6M)
-- [ ] Fast-dev-run: forward pass works with mel transform pipeline
-- [ ] GPU check (2 epochs): verify GPU utilization and memory fit on RTX 6000
+- [x] Fast-dev-run: verify PEFT wraps correctly, forward pass works with mel transform
+- [x] GPU check (interactive): bs=32 → ~50% util, bs=128 → ~65% util, 22.8/24GB VRAM
+- [x] Tuned batch size: bs=128, accum=2 (CNN needs larger batches than EAT transformer)
+- [x] Tested num_workers=12 vs 8 — no meaningful improvement (compute-bound, not data-bound)
+- [ ] GPU check (sbatch, 2 epochs): awaiting results
 
 ## Training
 
-- [ ] Submit primary run: `convnext_lora_mlp.yaml`
-- [ ] Submit ablation: `convnext_lora_mlp_mlphead.yaml`
+- [ ] Submit primary run: `convnext_lora_mlp.yaml` (submitted)
+- [ ] Submit ablation: `convnext_lora_mlp_mlphead.yaml` (submitted)
 
 ## Analysis
 
