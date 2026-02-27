@@ -38,6 +38,7 @@ repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root / "src"))
 
 from birdclef.data import BirdCLEF2025DataModule, build_species_list  # noqa: E402
+from birdclef.encoders.eat import EATEncoder  # noqa: E402
 from birdclef.lightning.lora_finetune import LoRAFinetuneModule  # noqa: E402
 from birdclef.lora.peft import apply_lora  # noqa: E402
 
@@ -66,19 +67,12 @@ def load_config(config_path: str) -> dict:
 
 
 def build_encoder(config: dict, precomputed_features: bool = False):
-    """Build encoder based on config."""
-    encoder_type = config["encoder"]["type"]
-
-    if encoder_type == "eat":
-        from birdclef.encoders.eat import EATEncoder
-
-        return EATEncoder(
-            model_name=config["encoder"].get("model_name", "worstchan/EAT-base_epoch30_pretrain"),
-            target_length=config["encoder"].get("target_length", 512),
-            precomputed_features=precomputed_features,
-        )
-    else:
-        raise ValueError(f"Unknown encoder type: {encoder_type}")
+    """Build EAT encoder from config."""
+    return EATEncoder(
+        model_name=config["encoder"].get("model_name", "worstchan/EAT-base_epoch30_pretrain"),
+        target_length=config["encoder"].get("target_length", 512),
+        precomputed_features=precomputed_features,
+    )
 
 
 # ============================================================================
