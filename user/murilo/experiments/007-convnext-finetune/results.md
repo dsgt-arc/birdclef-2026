@@ -48,16 +48,21 @@ Both runs vs. Exp 006 baselines and Exp 005 frozen probe:
   1024-dim features may already be linearly separable for this task, or the MLP head
   overfits with the slightly higher parameter count.
 
-- **ConvNeXt trains faster per epoch**: With bs=128 (vs EAT's bs=32), ConvNeXt completes
-  training in fewer wall-clock hours despite CNN forward passes. No O(n^2) attention maps
-  means much lower activation memory per sample.
+- **EAT is faster per sample despite smaller batches**: EAT at bs=32 achieves 182 samples/s
+  (3.6 ms/sample) vs ConvNeXt at bs=128 with 113 samples/s (8.5 ms/sample). EAT's dense
+  attention is more compute-efficient (higher FLOPs/byte) than ConvNeXt's memory-bandwidth-bound
+  depthwise convolutions. ConvNeXt fits larger batches in VRAM (no O(n²) activation maps) but
+  this doesn't translate to faster training — just fewer accumulation steps with slower per-step
+  compute.
 
 - **Earlier convergence**: Both ConvNeXt runs reach their best epoch earlier (12-15) and
   stop earlier (23-26) than EAT runs (27-36), suggesting ConvNeXt's LoRA adapts more
   quickly or has less capacity to improve beyond a certain point.
 
-- **VRAM efficiency**: ConvNeXt at bs=128 uses ~22.8/24 GB — near ceiling but stable. GPU
-  utilization averaged 100% (compute-bound), vs EAT's spikier 45-50% at bs=32.
+- **VRAM usage**: ConvNeXt at bs=128 uses ~9.7 GB reserved (22.8 GB in interactive session
+  with full pipeline). EAT at bs=32 uses ~5.4 GB reserved. ConvNeXt's lower per-sample
+  activation memory allows larger batch sizes, but OOM still occurs at bs=256 because
+  backprop through 89M params dominates memory regardless of architecture.
 
 ## Analysis
 
