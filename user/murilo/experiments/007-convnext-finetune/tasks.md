@@ -28,3 +28,13 @@
 - [x] Compare test cmAP across variants: linear head (0.527) ≈ MLP head (0.525), no benefit from richer head
 - [x] Compare with Exp 006 EAT baselines: ConvNeXt 0.527 vs EAT best 0.536 (only 1.7% gap)
 - [x] Document results in results.md
+
+## Upstream Contributions (adapter-hub/adapters)
+
+See `upstream-prs.md` for full context, challenges, and implementation plan.
+
+- [~] Prerequisite: [PR #831](https://github.com/adapter-hub/adapters/pull/831) — `get_input_embeddings()` fix for vision models (awaiting review)
+- [ ] File issue proposing nested stage support for stage-based architectures (ConvNeXt, Swin, EfficientNet)
+- [ ] Implement ConvNeXt `CUSTOM_INTERFACES` entry (after #831 merges + issue discussed)
+- [ ] Add tests using `VisionAdapterTestBase` + tiny `ConvNextConfig`
+- [ ] Submit PR: add ConvNeXt to supported models
