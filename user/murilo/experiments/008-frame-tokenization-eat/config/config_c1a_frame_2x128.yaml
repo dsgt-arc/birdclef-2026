@@ -1,0 +1,69 @@
+# Experiment 008 — Config C1a: Frame 2x128
+#
+# Random 2x128 frame patch embedding (trainable) + LoRA r=8 on attention layers.
+# Full-frequency vertical frame tokenization, 20ms time resolution.
+# 256 tokens (256x1 grid).
+
+run_name: "config-c1a-frame-2x128"
+
+encoder:
+  type: "eat"
+  model_name: "worstchan/EAT-base_epoch30_pretrain"
+  embed_dim: 768
+  target_length: 512  # 5s at 16kHz with 10ms hop
+
+patch_embed:
+  type: "frame"
+  patch_size: [2, 128]   # (time, freq) — 2 time frames x 128 freq bins
+  freeze: false
+
+model:
+  partial_unfreeze_blocks: []
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+  target_modules: ["qkv", "proj"]
+
+data:
+  data_dir: "~/ps-clef2026_birdclef-0/data/birdclef-2025"
+  sample_rate: 16000
+  chunk_duration: 5.0
+  batch_size: 32
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.1
+  seed: 42
+
+training:
+  max_epochs: 100
+  lr: 3.0e-4
+  weight_decay: 0.01
+  warmup_epochs: 5
+  threshold: 0.5
+  hidden_dim: 0                # linear head
+  dropout: 0.0
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 8   # effective batch_size = 32 * 8 = 256
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/cmap"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/cmap"
+    mode: "max"
+    patience: 15
+    min_delta: 0.001
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-frame-tokenization-eat"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50
