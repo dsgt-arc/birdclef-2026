@@ -22,16 +22,16 @@
 
 - [ ] 3.1 Fast-dev-run: Config A (pretrained 16×16 baseline)
 - [ ] 3.2 Fast-dev-run: Config B (random 16×16 control)
-- [ ] 3.3 Fast-dev-run: Config C1a (128×2 frame)
-- [ ] 3.4 Fast-dev-run: Config C1b (128×4 frame)
+- [ ] 3.3 Fast-dev-run: Config C1a (2×128 frame)
+- [ ] 3.4 Fast-dev-run: Config C1b (4×128 frame)
 - [ ] 3.5 GPU utilization check (interactive session, 2 epochs)
 
 ## 4. Phase 1 — Core Question
 
 - [ ] 4.1 Submit Config A: pretrained 16×16 baseline
 - [ ] 4.2 Submit Config B: random 16×16 control
-- [ ] 4.3 Submit Config C1a: frame 128×2
-- [ ] 4.4 Submit Config C1b: frame 128×4
+- [ ] 4.3 Submit Config C1a: frame 2×128
+- [ ] 4.4 Submit Config C1b: frame 4×128
 - [ ] 4.5 Analyze Phase 1 results, select best frame size
 
 ## 5. Phase 2 — Capacity Exploration

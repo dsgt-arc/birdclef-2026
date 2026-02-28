@@ -49,9 +49,21 @@ EATModel (PreTrainedModel)
         └── .mlp: fc1 Linear(768, 3072), fc2 Linear(3072, 768)
 ```
 
+## Axis Convention (from official EAT repo)
+- EAT input: `(B, 1, time, freq)` = `(B, 1, 512, 128)` — confirmed by `images.py`:
+  ```python
+  img_size = (modality_cfg.target_length, 128)  # (time, freq)
+  self.H = img_size[0] // patch_size[0]  # time patches (comment says "64" for 10s)
+  self.W = img_size[1] // patch_size[1]  # freq patches (comment says "8")
+  ```
+- Positional encoding grid: `(max_length, self.W)` = `(time_positions, freq_positions)`
+- Standard 16×16 kernel: `(16_time, 16_freq)` → 32×8 grid for 512×128 input
+- This differs from exp 004 FrameViT which uses `(freq, time)` layout
+
 ## Key Insight for Frame Tokenization
-- Changing patch_size from 16×16 to 128×W changes Conv2d kernel shape
-- Pretrained weights (768, 1, 16, 16) CANNOT be reused for (768, 1, 128, W)
+- For full-frequency frames, kernel must be `(W, 128)` = `(W_time, 128_freq)` in EAT's (time, freq) order
+- Pretrained weights (768, 1, 16, 16) CANNOT be reused for (768, 1, W, 128)
 - Patch embedding must be randomly initialized and fully trained
-- Positional encoding must be regenerated for new grid (1×256 for 128×2, 1×128 for 128×4)
+- Positional encoding must be regenerated for new grid (256×1 for W=2, 128×1 for W=4) in (time, freq) order
 - Transformer blocks are shape-agnostic (process any sequence length of 768-dim tokens)
+- With grid (N, 1), the 2D sincos encoding wastes 384 dims on a constant freq position — consider 1D sincos

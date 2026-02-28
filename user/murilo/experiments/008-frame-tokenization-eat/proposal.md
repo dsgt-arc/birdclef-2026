@@ -7,14 +7,16 @@
 ## Hypothesis
 
 Replacing EAT's standard 16×16 square patch embedding with full-frequency vertical frame
-tokenization (128×W, where W ∈ {2, 4}) will produce comparable or higher cmAP than the
-pretrained 16×16 tokenization, despite requiring a randomly initialized patch embedding,
-because full-band spectral tokens better capture the harmonic structure of bird vocalizations.
+tokenization (W×128, where W ∈ {2, 4} time frames × 128 freq bins) will produce comparable
+or higher cmAP than the pretrained 16×16 tokenization, despite requiring a randomly
+initialized patch embedding, because full-band spectral tokens better capture the harmonic
+structure of bird vocalizations.
 
 ## Background
 
-Exp 004 demonstrated that vertical frame tokenization (128×2, 128×4) consistently outperforms
-square 16×16 patches when training ViT from scratch on spectrograms (+34-37% cmAP). The
+Exp 004 demonstrated that vertical frame tokenization (128×2, 128×4 in exp 004's `(freq, time)`
+axis order) consistently outperforms square 16×16 patches when training ViT from scratch on
+spectrograms (+34-37% cmAP). The
 intuition is that spectrograms are anisotropic: the frequency axis encodes harmonic structure
 while the time axis encodes temporal dynamics. Square patches fragment both axes, while vertical
 frames preserve the full frequency band per token.
@@ -22,8 +24,8 @@ frames preserve the full frequency band per token.
 However, exp 004 trained from scratch — no pretrained weights to preserve. EAT's value comes
 from its AudioSet self-supervised pretraining, and the pretrained patch embedding
 (`PatchEmbed_new`: `Conv2d(1, 768, 16, 16)`) was trained with 16×16 patches. Changing the
-patch shape to (128, W) requires a randomly initialized Conv2d, breaking compatibility with
-pretrained patch embeddings. The transformer blocks, however, can be preserved via LoRA.
+patch shape to (W, 128) — W time frames × 128 freq bins in EAT's `(time, freq)` layout —
+requires a randomly initialized Conv2d, breaking compatibility with pretrained patch embeddings. The transformer blocks, however, can be preserved via LoRA.
 
 Exp 006 established that LoRA fine-tuning EAT achieves cmAP=0.536 (best config, adapters
 backend) and cmAP=0.482 (best PEFT config with all-layer LoRA) on BirdCLEF 2025. Exp 007
@@ -40,8 +42,8 @@ weak supervision experiment.
 ### Approach
 
 Replace EAT's `PatchEmbed_new` with a new Conv2d using vertical frame kernel/stride
-(128×2 or 128×4). Fully train the new patch embedding from scratch while LoRA fine-tuning
-the pretrained transformer blocks. Use a phased experiment design with a proper control
+(2×128 or 4×128, in EAT's `(time, freq)` axis order). Fully train the new patch embedding
+from scratch while LoRA fine-tuning the pretrained transformer blocks. Use a phased experiment design with a proper control
 to isolate the tokenization effect from the pretraining loss.
 
 ### Data Flow
@@ -49,13 +51,19 @@ to isolate the tokenization effect from the pretraining loss.
 ```
 BirdCLEF2025DataModule (16kHz waveforms, 5s chunks)
   → fbank transform (128 mel bins, 512 time frames)
-  → (B, 1, 512, 128) spectrograms
-  → PatchEmbed: Conv2d(1, 768, (128, W), (128, W))   — W ∈ {2, 4}
+  → (B, 1, 512, 128) spectrograms                     — (B, C, time, freq)
+  → PatchEmbed: Conv2d(1, 768, (W, 128), (W, 128))   — W ∈ {2, 4}
   → (B, 512/W, 768) frame tokens                      — 256 or 128 tokens
   → EAT transformer (12 blocks, pretrained + LoRA)
   → mean pool → classification head
   → (B, 206) logits
 ```
+
+**Axis convention note**: EAT uses `(B, 1, time, freq)` layout. The standard
+16×16 patch kernel is `(16, 16)` = `(16_time, 16_freq)`. For full-frequency
+vertical frame tokenization, the kernel is `(W, 128)` = `(W_time, 128_freq)`,
+so each token spans the full 128 mel bins and W time frames. This differs from
+exp 004's FrameViT which uses `(freq, time)` layout with kernel `(128, W)`.
 
 ### Run Matrix
 
@@ -65,22 +73,24 @@ BirdCLEF2025DataModule (16kHz waveforms, 5s chunks)
 |--------|-------------|-------------|--------|---------|
 | **A: baseline** | Pretrained 16×16 (frozen) | LoRA r=8 | 256 | Reproduces exp 006 PEFT baseline |
 | **B: control** | Random 16×16 (full train) | LoRA r=8 | 256 | Isolates pretraining loss |
-| **C1a: frame-128×2** | Random 128×2 (full train) | LoRA r=8 | 256 | Frame tokenization, 20ms resolution |
-| **C1b: frame-128×4** | Random 128×4 (full train) | LoRA r=8 | 128 | Frame tokenization, 40ms resolution |
+| **C1a: frame-2×128** | Random 2×128 (full train) | LoRA r=8 | 256 | Frame tokenization, 20ms resolution |
+| **C1b: frame-4×128** | Random 4×128 (full train) | LoRA r=8 | 128 | Frame tokenization, 40ms resolution |
 
 **Phase 2** — Capacity exploration (2 runs, uses best frame size from Phase 1):
 
 | Config | Patch Embed | Transformer | Tokens | Purpose |
 |--------|-------------|-------------|--------|---------|
-| **C2: frame + higher rank** | Random 128×? (full train) | LoRA r=16 | ? | More adapter capacity |
-| **C3: frame + partial unfreeze** | Random 128×? (full train) | LoRA r=8 + blocks 0-1 fully trained | ? | Bridge layers for new tokenization |
+| **C2: frame + higher rank** | Random ?×128 (full train) | LoRA r=16 | ? | More adapter capacity |
+| **C3: frame + partial unfreeze** | Random ?×128 (full train) | LoRA r=8 + blocks 0-1 fully trained | ? | Bridge layers for new tokenization |
 
 ### Key Implementation Details
 
-- **Patch embedding**: Fully trained (not LoRA, not frozen) in all B and C configs. Only ~196K
-  params for 128×2, ~98K for 128×4. Config A keeps pretrained patch embedding frozen.
+- **Patch embedding**: Fully trained (not LoRA, not frozen) in all B and C configs. The Conv2d
+  kernel uses EAT's `(time, freq)` axis order: `Conv2d(1, 768, (W, 128), (W, 128))` where
+  W∈{2,4}. Param counts: ~196K for 2×128, ~393K for 4×128. Config A keeps pretrained 16×16 frozen.
 - **Positional encoding**: New sincos 2D encoding computed for the frame token grid
-  (1×256 for 128×2, 1×128 for 128×4). Config A/B use original 32×8 grid encoding.
+  (256×1 for 2×128, 128×1 for 4×128) in EAT's `(time, freq)` grid order. Config A/B use
+  original 32×8 grid encoding.
 - **LoRA targets**: attention layers `["qkv", "proj"]` via PEFT (same as exp 006).
 - **C3 partial unfreeze**: First 2 transformer blocks fully trained (no LoRA), remaining
   10 blocks use LoRA. Provides a "bridge" between new patch embedding and deeper layers.
@@ -132,7 +142,7 @@ BirdCLEF2025DataModule (16kHz waveforms, 5s chunks)
 
 ### Variables
 
-- **Independent**: patch embedding shape (16×16 vs 128×2 vs 128×4), patch embedding
+- **Independent**: patch embedding shape (16×16 vs 2×128 vs 4×128), patch embedding
   initialization (pretrained vs random), LoRA rank (8 vs 16), transformer layer freezing
   (all LoRA vs partial unfreeze)
 - **Dependent**: test cmAP, AUROC, F1, training time, convergence speed (best epoch)
@@ -189,7 +199,7 @@ BirdCLEF2025DataModule (16kHz waveforms, 5s chunks)
 - **Single seed**: All runs use seed=42. Small cmAP differences (<0.01) may not be significant.
 - **PEFT only**: Exp 006 showed adapters outperform PEFT by +0.01-0.025 cmAP. We use PEFT
   for simplicity; the winning config could be re-run with adapters later.
-- **Token count varies**: 128×2 produces 256 tokens (same as 16×16), but 128×4 produces
+- **Token count varies**: 2×128 produces 256 tokens (same as 16×16), but 4×128 produces
   128 tokens. Sequence length affects transformer compute and attention patterns.
 - **No data augmentation**: SpecAugment, mixup, etc. are not used. These could interact
   differently with frame vs square tokenization.
