@@ -6,25 +6,25 @@
 - [x] 1.2 Write proposal.md
 - [x] 1.3 Create pyproject.toml
 - [x] 1.4 Create src symlink to shared `user/murilo/src/`
-- [ ] 1.5 Create SLURM scripts (sbatch/_job.sh, sbatch/run.sh)
-- [ ] 1.6 Create save_metrics.py
+- [x] 1.5 Create SLURM scripts (sbatch/_job.sh, sbatch/run.sh)
+- [x] 1.6 Create save_metrics.py
 
 ## 2. Implementation
 
-- [ ] 2.1 Implement `FramePatchEmbed` — Conv2d with configurable (H, W) kernel/stride
-- [ ] 2.2 Implement positional encoding regeneration for non-square grids (1×256, 1×128)
-- [ ] 2.3 Implement `build_eat_frame_model()` — swap PatchEmbed_new with FramePatchEmbed, configure freeze/train
-- [ ] 2.4 Implement partial unfreeze logic for C3 config (first 2 blocks fully trained, rest LoRA)
-- [ ] 2.5 Create train.py integrating frame patch embed + PEFT LoRA + existing data pipeline
-- [ ] 2.6 Create YAML configs for all 6 runs (A, B, C1a, C1b, C2, C3)
+- [x] 2.1 Implement `FramePatchEmbed` — Conv2d with configurable (H, W) kernel/stride
+- [x] 2.2 Implement positional encoding regeneration for non-square grids (1×256, 1×128)
+- [x] 2.3 Implement `build_eat_frame_model()` — swap PatchEmbed_new with FramePatchEmbed, configure freeze/train
+- [x] 2.4 Implement partial unfreeze logic for C3 config (first 2 blocks fully trained, rest LoRA)
+- [x] 2.5 Create train.py integrating frame patch embed + PEFT LoRA + existing data pipeline
+- [x] 2.6 Create YAML configs for all 6 runs (A, B, C1a, C1b, C2, C3)
 
 ## 3. Validation
 
-- [ ] 3.1 Fast-dev-run: Config A (pretrained 16×16 baseline)
-- [ ] 3.2 Fast-dev-run: Config B (random 16×16 control)
-- [ ] 3.3 Fast-dev-run: Config C1a (2×128 frame)
-- [ ] 3.4 Fast-dev-run: Config C1b (4×128 frame)
-- [ ] 3.5 GPU utilization check (interactive session, 2 epochs)
+- [x] 3.1 Fast-dev-run: Config A (pretrained 16×16 baseline)
+- [x] 3.2 Fast-dev-run: Config B (random 16×16 control) — job 4422202, 5 batches OK
+- [x] 3.3 Fast-dev-run: Config C1a (2×128 frame) — job 4422203, 5 batches OK
+- [x] 3.4 Fast-dev-run: Config C1b (4×128 frame) — job 4422204, 5 batches OK
+- [x] 3.5 GPU utilization check (2 epochs, all 4 configs) — see `gpu-profiling.md`
 
 ## 4. Phase 1 — Core Question
 
