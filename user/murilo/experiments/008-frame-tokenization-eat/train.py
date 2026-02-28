@@ -128,11 +128,14 @@ def get_2d_sincos_pos_embed_flexible(embed_dim, grid_size, cls_token=False):
 
 
 class FixedPositionalEncoder(nn.Module):
-    """Wrapper that returns a fixed positional encoding tensor."""
+    """Wrapper that returns a fixed positional encoding tensor.
+
+    Uses register_buffer so the tensor moves to GPU with the model.
+    """
 
     def __init__(self, pos_embed):
         super().__init__()
-        self.positions = pos_embed
+        self.register_buffer("positions", pos_embed)
 
     def forward(self, x, padding_mask):
         return self.positions
