@@ -54,18 +54,22 @@ strategy issue (as also shown by exp 008).
 
 Relative to known benchmarks:
 
-| Model | cmAP | Context |
-|-------|------|---------|
-| SSAMBA-Tiny from scratch (exp 006) | 0.086 | No pretraining |
-| SSAMBA-Tiny pretrained (exp 007) | 0.179 | AudioSet init |
-| **EfficientNet-B1 linear probe (exp 012)** | **0.315** | **BirdSet-XCL frozen** |
-| BirdSet HSN benchmark (EfficientNet) | 0.35–0.38 | Full finetune, n_mels=256 |
-| ConvNeXt (murilo/exp 001) | 0.48 | ImageNet pretrained |
-| BirdSet HSN SOTA (Bird-MAE ViT-L) | ~0.55 | Foundation model |
+| Model | val/cmap | Kaggle public | Kaggle private | Context |
+|-------|----------|---------------|----------------|---------|
+| SSAMBA-Tiny from scratch (exp 006) | 0.086 | — | — | No pretraining |
+| SSAMBA-Tiny pretrained (exp 007) | 0.179 | — | — | AudioSet init |
+| SSAMBA SSL pipeline (exp 009) | 0.425 | 0.484 | 0.476 | SSL pretrain + finetune |
+| EfficientNet-B1 v1 (exp 012, n_mels=128) | 0.315 | 0.590 | 0.583 | BirdSet-XCL frozen |
+| **EfficientNet-B1 v2 (exp 012, n_mels=256)** | **0.336** | **0.615** | **0.649** | **BirdSet-XCL frozen, native mel** |
+| BirdSet HSN benchmark (EfficientNet) | 0.35–0.38 | — | — | Full finetune, n_mels=256 |
+| ConvNeXt (murilo/exp 001) | 0.48 | — | — | ImageNet pretrained |
+| HawkEars baseline | — | 0.778 | 0.810 | Reference |
+| BirdSet HSN SOTA (Bird-MAE ViT-L) | ~0.55 | — | — | Foundation model |
 
-The 0.315 result uses n_mels=128 (BirdSet used 256) and only a linear probe.
-Full finetuning and mel resolution increase could push closer to the 0.35–0.38
-benchmark range.
+The v2 result (n_mels=256, matching BirdSet training resolution) scores 0.649 private
+on Kaggle — a +6.6pp improvement over v1 (0.583). The mel resolution fix accounts for
+most of this gap, confirming the n_mels mismatch was a meaningful confounder.
+Full finetuning could push closer to the 0.35–0.38 val/cmap benchmark range.
 
 ### Confounders
 
@@ -92,8 +96,8 @@ benchmark range.
 ## Next Steps
 
 - [ ] Full finetuning (unfreeze backbone) to measure ceiling vs linear probe
-- [ ] Test n_mels=256 to match BirdSet training resolution
+- [x] Test n_mels=256 to match BirdSet training resolution (v2: val/cmap=0.336, +2.1pp over v1)
 - [ ] Use as teacher/baseline for distillation into SSAMBA or lighter architectures
-- [ ] Kaggle submission with EfficientNet to establish leaderboard baseline
+- [x] Kaggle submission with EfficientNet to establish leaderboard baseline (v2: 0.615 public / 0.649 private)
 
 **Leads to**: potential exp 013 (EfficientNet full finetune), distillation concept
