@@ -64,25 +64,25 @@ BirdCLEF2025DataModule (16kHz waveforms, 5s chunks)
 | Config | Patch Embed | Transformer | Tokens | Purpose |
 |--------|-------------|-------------|--------|---------|
 | **A: baseline** | Pretrained 16×16 (frozen) | LoRA r=8 | 256 | Reproduces exp 006 PEFT baseline |
-| **C: control** | Random 16×16 (full train) | LoRA r=8 | 256 | Isolates pretraining loss |
-| **B1a: frame-128×2** | Random 128×2 (full train) | LoRA r=8 | 256 | Frame tokenization, 20ms resolution |
-| **B1b: frame-128×4** | Random 128×4 (full train) | LoRA r=8 | 128 | Frame tokenization, 40ms resolution |
+| **B: control** | Random 16×16 (full train) | LoRA r=8 | 256 | Isolates pretraining loss |
+| **C1a: frame-128×2** | Random 128×2 (full train) | LoRA r=8 | 256 | Frame tokenization, 20ms resolution |
+| **C1b: frame-128×4** | Random 128×4 (full train) | LoRA r=8 | 128 | Frame tokenization, 40ms resolution |
 
 **Phase 2** — Capacity exploration (2 runs, uses best frame size from Phase 1):
 
 | Config | Patch Embed | Transformer | Tokens | Purpose |
 |--------|-------------|-------------|--------|---------|
-| **B2: frame + higher rank** | Random 128×? (full train) | LoRA r=16 | ? | More adapter capacity |
-| **B3: frame + partial unfreeze** | Random 128×? (full train) | LoRA r=8 + blocks 0-1 fully trained | ? | Bridge layers for new tokenization |
+| **C2: frame + higher rank** | Random 128×? (full train) | LoRA r=16 | ? | More adapter capacity |
+| **C3: frame + partial unfreeze** | Random 128×? (full train) | LoRA r=8 + blocks 0-1 fully trained | ? | Bridge layers for new tokenization |
 
 ### Key Implementation Details
 
 - **Patch embedding**: Fully trained (not LoRA, not frozen) in all B and C configs. Only ~196K
   params for 128×2, ~98K for 128×4. Config A keeps pretrained patch embedding frozen.
 - **Positional encoding**: New sincos 2D encoding computed for the frame token grid
-  (1×256 for 128×2, 1×128 for 128×4). Config A/C use original 32×8 grid encoding.
+  (1×256 for 128×2, 1×128 for 128×4). Config A/B use original 32×8 grid encoding.
 - **LoRA targets**: attention layers `["qkv", "proj"]` via PEFT (same as exp 006).
-- **B3 partial unfreeze**: First 2 transformer blocks fully trained (no LoRA), remaining
+- **C3 partial unfreeze**: First 2 transformer blocks fully trained (no LoRA), remaining
   10 blocks use LoRA. Provides a "bridge" between new patch embedding and deeper layers.
 
 ### Setup
@@ -102,9 +102,9 @@ BirdCLEF2025DataModule (16kHz waveforms, 5s chunks)
 3. Implement positional encoding regeneration for non-square grids
 4. Implement partial unfreeze logic for B3 config
 5. Validate with fast-dev-run (all configs)
-6. **Phase 1**: Submit configs A, C, B1a, B1b
+6. **Phase 1**: Submit configs A, B, C1a, C1b
 7. Analyze Phase 1 results, select best frame size
-8. **Phase 2**: Submit configs B2, B3 with winning frame size
+8. **Phase 2**: Submit configs C2, C3 with winning frame size
 9. Analyze all results, document findings
 
 ### Training Configuration
@@ -122,7 +122,7 @@ BirdCLEF2025DataModule (16kHz waveforms, 5s chunks)
 
 ### LoRA Configuration
 
-| Parameter | Value (default) | Value (B2) |
+| Parameter | Value (default) | Value (C2) |
 |-----------|-----------------|------------|
 | rank (r) | 8 | 16 |
 | alpha | 16 | 32 |
@@ -164,26 +164,28 @@ BirdCLEF2025DataModule (16kHz waveforms, 5s chunks)
 
 ### Success Criteria
 
-- **Confirm if**: Best frame config (B1a or B1b) achieves cmAP > Config C (random 16×16 control),
+- **Confirm if**: Best frame config (C1a or C1b) achieves cmAP > Config B (random 16×16 control),
   demonstrating that frame tokenization provides a benefit beyond just retraining the patch embedding
-- **Reject if**: Best frame config cmAP ≤ Config C, meaning the frame shape provides no advantage
+- **Reject if**: Best frame config cmAP ≤ Config B, meaning the frame shape provides no advantage
   over standard square patches when both start from random initialization
-- **Bonus finding**: Any B config achieves cmAP > Config A (pretrained baseline), meaning frame
+- **Bonus finding**: Any C config achieves cmAP > Config A (pretrained baseline), meaning frame
   tokenization overcomes the pretraining loss entirely
 
 ### Interpretation Guide
 
 | Outcome | Meaning |
 |---------|---------|
-| B > C > A | Frame tokenization is powerful enough to beat even pretrained patches |
-| A > B > C | Frame helps vs random squares, but pretrained patches still win |
-| A > C ≈ B | Frame shape doesn't matter; pretraining is what counts |
-| A > C > B | Frame tokenization actively hurts with pretrained transformers |
+| C > B > A | Frame tokenization is powerful enough to beat even pretrained patches |
+| A > C > B | Frame helps vs random squares, but pretrained patches still win |
+| A > B ≈ C | Frame shape doesn't matter; pretraining is what counts |
+| A > B > C | Frame tokenization actively hurts with pretrained transformers |
 
 ## Limitations
 
 - **Asymmetric comparison**: Config A uses pretrained patch embedding (frozen), while B/C
   configs fully train theirs. Different optimization regimes for the same component.
+- **Control config B retrains from random**: Isolates pretraining loss, but training a 16×16
+  patch embedding from scratch on BirdCLEF alone may underperform simply due to insufficient data.
 - **Single seed**: All runs use seed=42. Small cmAP differences (<0.01) may not be significant.
 - **PEFT only**: Exp 006 showed adapters outperform PEFT by +0.01-0.025 cmAP. We use PEFT
   for simplicity; the winning config could be re-run with adapters later.
