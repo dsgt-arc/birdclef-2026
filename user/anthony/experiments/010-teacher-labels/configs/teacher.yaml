@@ -24,5 +24,10 @@ models:
     tflite_path: ~/scratch/birdclef-2026/outputs/exp010/perch.tflite
     clip_step: 5.0  # seconds between clip starts
 
+  indices:
+    target_sr: 48000
+    window_sec: 3.0
+    window_step: 1.0
+
 benchmark:
   num_files: 5  # files per model for benchmarking

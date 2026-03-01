@@ -40,6 +40,7 @@ teacher-perch = "teacher_labels.perch_runner:main"
 teacher-compile-perch = "teacher_labels.compile_perch:main"
 teacher-benchmark = "teacher_labels.benchmark:main"
 teacher-stats = "teacher_labels.stats:main"
+teacher-indices = "teacher_labels.indices_runner:main"
 
 [tool.uv]
 # docopt 0.6.2 sdist is broken (no setup.py); use the maintained fork
