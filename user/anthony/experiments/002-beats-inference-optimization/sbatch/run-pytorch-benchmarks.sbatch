@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=beats-bench-002
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH --partition=gpu-l40s
 #SBATCH --gres=gpu:L40s
 #SBATCH --cpus-per-task=4

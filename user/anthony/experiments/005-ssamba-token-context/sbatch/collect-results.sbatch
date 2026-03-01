@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ssamba-token-collect
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=2 --mem=4G
 #SBATCH -t5 -qinferno
 #SBATCH --output=logs/token-collect-%j.out

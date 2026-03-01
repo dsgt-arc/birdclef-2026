@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=full-ssamba
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH --gres=gpu:v100:1
 #SBATCH -t480 -qembers

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=010-stats
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=32G
 #SBATCH -t120 -qinferno
 #SBATCH --output=logs/stats-%j.out

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=dl-audioset-500k
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=8G
 #SBATCH -t360 -qembers
 #SBATCH --output=logs/download-audioset-500k-%j.out

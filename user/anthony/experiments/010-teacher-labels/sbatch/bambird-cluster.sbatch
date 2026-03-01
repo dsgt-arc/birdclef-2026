@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=010-bambird-cluster
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH -t60 -qinferno
 #SBATCH --output=logs/bambird-cluster-%j.out

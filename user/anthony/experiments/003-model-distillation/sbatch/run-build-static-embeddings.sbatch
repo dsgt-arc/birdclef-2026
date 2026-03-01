@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=build-static-emb
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=24G
 #SBATCH -t60 -qembers
 #SBATCH --output=logs/build-static-embeddings-%j.out

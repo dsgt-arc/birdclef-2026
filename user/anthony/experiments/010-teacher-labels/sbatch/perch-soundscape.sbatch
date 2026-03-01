@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=010-perch-soundscape
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH --array=0-19
 #SBATCH -t360 -qinferno

@@ -27,7 +27,7 @@ Comprehensive guide for writing and reviewing SLURM sbatch scripts on Georgia Te
 
 All sbatch scripts should use the project account:
 ```bash
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 ```
 
 ## GPU Partitions
@@ -72,7 +72,7 @@ All sbatch scripts should use the project account:
 ```bash
 #!/bin/bash
 #SBATCH --job-name=descriptive-name
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH --gres=gpu:1
 #SBATCH -p gpu-rtx6000

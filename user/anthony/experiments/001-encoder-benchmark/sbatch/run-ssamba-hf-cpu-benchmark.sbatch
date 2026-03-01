@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=bench-ssamba-hf-cpu
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=16 --mem-per-cpu=4G
 #SBATCH -t720 -qinferno
 #SBATCH --output=logs/benchmark-ssamba-hf-cpu-%j.out

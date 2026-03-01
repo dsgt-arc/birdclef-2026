@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=cnn-attn-002
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=8G
 #SBATCH -t60 -qembers
 #SBATCH --output=logs/cnn-attention-pooler-%j.out

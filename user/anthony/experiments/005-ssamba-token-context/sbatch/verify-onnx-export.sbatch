@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=verify-onnx
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=4 --mem=16G
 #SBATCH -t15 -qinferno
 #SBATCH --output=logs/verify-onnx-%j.out

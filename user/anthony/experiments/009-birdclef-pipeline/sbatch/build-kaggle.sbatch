@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=009-build-kaggle
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=4G
 #SBATCH -t60 -qinferno
 #SBATCH --output=logs/build-kaggle-%j.out

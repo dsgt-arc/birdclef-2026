@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ssamba-onnx-bench
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem=32G
 #SBATCH -t60 -qinferno
 #SBATCH --array=0-10

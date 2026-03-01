@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=010-setup-test
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH -t120 -qinferno
 #SBATCH --output=logs/setup-and-test-%j.out

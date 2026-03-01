@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=009-predict
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH --gres=gpu:1
 #SBATCH -p gpu-rtx6000

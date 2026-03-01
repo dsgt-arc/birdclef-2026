@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ssamba-mamba-setup
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=6 --mem=32G
 #SBATCH --gres=gpu:RTX_6000:1
 #SBATCH -t60 -qinferno

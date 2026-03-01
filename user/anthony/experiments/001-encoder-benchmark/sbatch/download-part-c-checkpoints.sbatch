@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=dl-ckpts-c
-#SBATCH --account=paceship-dsgt_clef2026
+#SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=4G
 #SBATCH -t120 -qinferno
 #SBATCH --output=logs/download-part-c-%j.out
