@@ -65,7 +65,8 @@
 
 See `upstream-prs.md` for full context, blockers, and implementation plan.
 
-- [x] PR #830: fix fused QKV LoRA shape mismatch (`LoRAMergedLinear.get_n_heads` counts "o") — CI passing, awaiting review
-- [x] PR #831: handle `NotImplementedError` from `get_input_embeddings()` for audio/vision models — CI passing, awaiting review
+- [x] PR #830: fix fused QKV LoRA shape mismatch (`LoRAMergedLinear.get_n_heads` counts "o") — merged
+- [x] PR #831: handle `NotImplementedError` from `get_input_embeddings()` for audio/vision models — merged
 - [x] Ping maintainers (@calpt, @lenglaender, @TimoImhof) on PRs #830 and #831 for review
-- [ ] After PRs merge: add EAT to `CUSTOM_INTERFACES` for auto-detection (see `upstream-prs.md` § "Next PR")
+- [x] Remove local workarounds from `birdclef.lora.adapters` (monkey-patches, manual interface)
+- [ ] PR #832: add EAT to `CUSTOM_INTERFACES` for auto-detection — CI passing, awaiting review
