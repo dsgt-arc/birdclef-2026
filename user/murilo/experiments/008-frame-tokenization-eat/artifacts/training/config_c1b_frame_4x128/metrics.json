@@ -1,0 +1,55 @@
+{
+  "cmap": 0.28389501571655273,
+  "auroc": 0.8733858466148376,
+  "f1_macro": 0.2296392321586609,
+  "f1_micro": 0.3315858244895935,
+  "top1_accuracy": 0.3788115382194519,
+  "top5_accuracy": 0.5935892462730408,
+  "loss": 0.028689537197351456,
+  "encoder_type": "eat",
+  "encoder_model": "worstchan/EAT-base_epoch30_pretrain",
+  "embed_dim": 768,
+  "patch_embed": {
+    "type": "frame",
+    "patch_size": [
+      4,
+      128
+    ],
+    "freeze": false
+  },
+  "lora": {
+    "rank": 8,
+    "alpha": 16,
+    "dropout": 0.1,
+    "target_modules": [
+      "qkv",
+      "proj"
+    ]
+  },
+  "partial_unfreeze_blocks": [],
+  "dataset": "birdclef-2025",
+  "split": "test",
+  "num_classes": 206,
+  "best_val_cmap": 0.2119678258895874,
+  "best_checkpoint_path": "/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/008-frame-tokenization-eat/checkpoints/config-c1b-frame-4x128/best-epochepoch=28.ckpt",
+  "stopped_epoch": 44,
+  "training": {
+    "max_epochs": 100,
+    "lr": 0.0003,
+    "weight_decay": 0.01,
+    "warmup_epochs": 5,
+    "batch_size": 32,
+    "num_workers": 8,
+    "precision": "16-mixed",
+    "early_stopping_patience": 15,
+    "hidden_dim": 0,
+    "dropout": 0.0,
+    "grad_clip_val": 1.0
+  },
+  "compute": {
+    "gpu": "2",
+    "slurm_job_id": 4470746,
+    "node": "atl1-1-02-004-35-0",
+    "cpus_per_task": "8"
+  }
+}
