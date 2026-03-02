@@ -73,11 +73,11 @@ class ProtoCLRMelSpectrogram(nn.Module):
 
         # Min-max normalization (per-sample)
         B = mel.shape[0]
-        mel_flat = mel.view(B, -1)
+        mel_flat = mel.reshape(B, -1)
         mel_min = mel_flat.min(dim=-1, keepdim=True).values
         mel_max = mel_flat.max(dim=-1, keepdim=True).values
         mel_flat = (mel_flat - mel_min) / (mel_max - mel_min + 1e-8)
-        mel = mel_flat.view_as(mel)
+        mel = mel_flat.reshape(mel.shape)
 
         # Standardize with ProtoCLR training set stats
         mel = (mel - PROTOCLR_MEAN) / PROTOCLR_STD
