@@ -73,3 +73,9 @@
 [submodule "vendor/scikit-maad"]
 	path = vendor/scikit-maad
 	url = https://github.com/scikit-maad/scikit-maad.git
+[submodule "vendor/flyingsquid"]
+	path = vendor/flyingsquid
+	url = https://github.com/HazyResearch/flyingsquid.git
+[submodule "vendor/scaling-verification"]
+	path = vendor/scaling-verification
+	url = https://github.com/HazyResearch/scaling-verification.git
