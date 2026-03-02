@@ -8,7 +8,7 @@
 
 **URL**: https://github.com/adapter-hub/adapters/pull/830
 **Branch**: `fix/lora-merged-linear-get-n-heads`
-**Status**: CI passing, awaiting reviewer approval
+**Status**: Merged
 
 **What it fixes**: `LoRAMergedLinear.get_n_heads()` counts `"o"` in `attn_matrices`,
 but the fused QKV layer only has Q/K/V. This causes a shape mismatch in the grouped
@@ -25,7 +25,7 @@ but the fused QKV layer only has Q/K/V. This causes a shape mismatch in the grou
 
 **URL**: https://github.com/adapter-hub/adapters/pull/831
 **Branch**: `fix/embedding-mixin-notimplemented`
-**Status**: CI passing, awaiting reviewer approval
+**Status**: Merged
 
 **What it fixes**: `init_adapters()` unconditionally calls `self.get_input_embeddings()`
 to cache the default token embedding. Audio/vision models raise `NotImplementedError`
@@ -38,7 +38,11 @@ since they have no token vocabulary, crashing `adapters.init()` even for LoRA-on
 `user/murilo/src/birdclef/lora/adapters.py` lines 88-92 — monkey-patches
 `get_input_embeddings()` to return `model.model.local_encoder`.
 
-## Next PR — Add EAT to CUSTOM_INTERFACES (blocked on #830 + #831)
+## PR #832 — Add EAT to CUSTOM_INTERFACES (depends on #830 + #831)
+
+**URL**: https://github.com/adapter-hub/adapters/pull/832
+**Branch**: `feat/eat-custom-interface`
+**Status**: CI passing, awaiting review
 
 **Goal**: Add `"eat"` to the `CUSTOM_INTERFACES` dict so `adapters.init(model)` auto-detects
 EAT models without requiring a manual `interface=` argument.
@@ -174,14 +178,15 @@ Recent model additions (#810 Qwen3, #807 Gemma3, #803 Phi, #802 Qwen2) follow th
 For EAT, the non-standard config and trust_remote_code requirement make it more complex
 than the typical PR. Discuss with maintainers before implementing.
 
-### Our current workarounds (all in `user/murilo/src/birdclef/lora/adapters.py`)
+### Workaround status (all were in `user/murilo/src/birdclef/lora/adapters.py`)
 
-| Lines | Workaround | Upstream fix |
-|-------|-----------|-------------|
-| 14-26 | Monkey-patch `get_n_heads()` to exclude "o" | PR #830 |
-| 82-84 | Patch config: `hidden_size = embed_dim`, `num_attention_heads = num_heads` | Needs config aliasing or EAT config fix |
-| 88-92 | Monkey-patch `get_input_embeddings()` to return patch embedding | PR #831 |
-| 43-57 | Interface definition with dotted paths (not a workaround, correct usage) | Add to `CUSTOM_INTERFACES` |
+| Workaround | Upstream fix | Status |
+|-----------|-------------|--------|
+| Monkey-patch `get_n_heads()` to exclude "o" | PR #830 | Removed (merged upstream) |
+| Monkey-patch `get_input_embeddings()` to return patch embedding | PR #831 | Removed (merged upstream) |
+| Patch config: `hidden_size = embed_dim`, `num_attention_heads = num_heads` | Not needed for LoRA-only | Removed |
+| Manual `EAT_ADAPTER_INTERFACE` definition + `interface=` arg | PR #832 | Removed (auto-detected via fork) |
 
-After PRs #830 and #831 merge, lines 14-26 and 88-92 can be removed. Lines 82-84
-(config patching) will still be needed until config aliasing is addressed.
+All workarounds have been removed. The adapters backend now uses `adapters.init(model)`
+with no manual interface or monkey-patches. This depends on our fork which includes
+PRs #830, #831, and #832. Once #832 is merged upstream, no fork dependency is needed.
