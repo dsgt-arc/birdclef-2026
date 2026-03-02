@@ -28,22 +28,27 @@
 
 ## 4. Phase 1 — Core Question
 
-- [x] 4.1 Submit Config A: pretrained 16×16 baseline — job 4470738, RUNNING
-- [x] 4.2 Submit Config B: random 16×16 control — job 4470740, RUNNING
-- [x] 4.3 Submit Config C1a: frame 2×128 — job 4470744, RUNNING
-- [x] 4.4 Submit Config C1b: frame 4×128 — job 4470746, RUNNING
-- [ ] 4.5 Analyze Phase 1 results, select best frame size
+- [x] 4.1 Submit Config A: pretrained 16×16 baseline — job 4470738, cmAP=0.494
+- [x] 4.2 Submit Config B: random 16×16 control — job 4470740, cmAP=0.360
+- [x] 4.3 Submit Config C1a: frame 2×128 — job 4470744, cmAP=0.260
+- [x] 4.4 Submit Config C1b: frame 4×128 — job 4470746, cmAP=0.284
+- [x] 4.5 Analyze Phase 1 results — see `results.md`
 
-## 5. Phase 2 — Capacity Exploration
+## 5. Phase 2 — Capacity Exploration (**CANCELLED**)
 
-- [ ] 5.1 Submit Config C2: best frame size + LoRA r=16
-- [ ] 5.2 Submit Config C3: best frame size + partial unfreeze (blocks 0-1)
-- [ ] 5.3 Analyze Phase 2 results
+Phase 2 cancelled: frame configs lost to both the baseline (A) and the random square control (B).
+The gap is too large (+0.210 cmAP, 74%) to close with higher LoRA rank or partial unfreeze.
+The frame shape itself is the problem — pretrained attention layers expect 2D spatial structure
+(32×8 grid) that 1D frame tokens cannot provide.
+
+- [~] 5.1 ~~Submit Config C2: best frame size + LoRA r=16~~
+- [~] 5.2 ~~Submit Config C3: best frame size + partial unfreeze (blocks 0-1)~~
+- [~] 5.3 ~~Analyze Phase 2 results~~
 
 ## 6. Analysis
 
-- [ ] 6.1 Compare all configs: A vs B vs C variants
-- [ ] 6.2 Interpret results using the interpretation guide from proposal
-- [ ] 6.3 Compare with exp 006/007 baselines
-- [ ] 6.4 Document results in results.md
-- [ ] 6.5 Determine best teacher model candidate for pseudo-label generation
+- [x] 6.1 Compare all configs: A vs B vs C variants
+- [x] 6.2 Interpret results using the interpretation guide from proposal — outcome: A >> B > C (worst case)
+- [x] 6.3 Compare with exp 006/007 baselines
+- [x] 6.4 Document results in results.md
+- [x] 6.5 Determine best teacher model candidate — frame tokenization not viable; use pretrained 16×16
