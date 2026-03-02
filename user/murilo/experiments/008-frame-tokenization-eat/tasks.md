@@ -28,10 +28,10 @@
 
 ## 4. Phase 1 — Core Question
 
-- [x] 4.1 Submit Config A: pretrained 16×16 baseline
-- [x] 4.2 Submit Config B: random 16×16 control
-- [x] 4.3 Submit Config C1a: frame 2×128
-- [x] 4.4 Submit Config C1b: frame 4×128
+- [x] 4.1 Submit Config A: pretrained 16×16 baseline — job 4470738, RUNNING
+- [x] 4.2 Submit Config B: random 16×16 control — job 4470740, RUNNING
+- [x] 4.3 Submit Config C1a: frame 2×128 — job 4470744, RUNNING
+- [x] 4.4 Submit Config C1b: frame 4×128 — job 4470746, RUNNING
 - [ ] 4.5 Analyze Phase 1 results, select best frame size
 
 ## 5. Phase 2 — Capacity Exploration
