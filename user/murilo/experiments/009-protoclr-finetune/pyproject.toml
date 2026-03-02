@@ -9,6 +9,7 @@ dependencies = [
     "torchmetrics",
     "timm",
     "einops",
+    "torchinfo",
     "wandb",
     "peft>=0.7.0",
     "huggingface-hub",
