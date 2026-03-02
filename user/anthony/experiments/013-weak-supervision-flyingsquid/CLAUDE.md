@@ -147,9 +147,11 @@ typer>=0.9, rich>=13.0
   more than it helps rare ones. Sampling is correct mechanism for taxa (4-class multiclass)
   but wrong for 206 independent binary heads.
 
-### v6: Alpha-only species + balanced taxa + batch 16384 (CURRENT)
+### v6: Alpha-only species + balanced taxa + batch 16384 (BEST)
 - Species: focal alpha only, no sampling, batch_size=16384 (4x larger)
 - Taxa: `WeightedRandomSampler(1/count)`, focal alpha with inv freq weights
+- **BirdNET species AUROC: 0.785** (+0.024 vs v4), Perch species AUROC: 0.784 (+0.014 vs v4)
+- BirdNET taxa F1: 0.146, Perch taxa F1: 0.017
 - Rationale: alpha provides per-head correction (granular). Larger batch raises expected
   positives per batch for rarest species from ~0.3 to ~1.1, letting alpha work as designed.
   Taxa uses sampling because it's a single 4-class multiclass problem where sampling balance
@@ -157,6 +159,23 @@ typer>=0.9, rich>=13.0
 - Added per-species AUROC bucket logging: `val/auroc_top20` (common) and `val/auroc_bot20` (rare)
 - Added `--balance none/sqrt/inverse` and `--no-alpha` CLI flags
 - Fixed all-zeros edge case: unlabeled clips now filtered in `load_embeddings()`
+
+### Results summary
+
+| Source | Metric | v4 (alpha, bs=4096) | v5 (inverse+alpha) | v6 (alpha, bs=16384) |
+|--------|--------|--------------------|--------------------|---------------------|
+| BirdNET | species AUROC | 0.761 | 0.740 | **0.785** |
+| BirdNET | taxa F1 | — | 0.164 | 0.146 |
+| Perch | species AUROC | 0.770 | 0.780 | **0.784** |
+| Perch | taxa F1 | 0.042 | 0.009 | 0.017 |
+
+**Species probes pass quality gate** (AUROC > 0.7). Both BirdNET and Perch are viable LFs.
+
+**Taxa probes are not useful as standalone LFs.** BirdNET/Perch embeddings organize by acoustic
+similarity, not taxonomy — insect/frog species scatter across the space interspersed with birds.
+Individual species form compact clusters (hence good species AUROC), but taxa classes are
+non-convex regions a linear probe can't separate. For Phase 2, derive taxa signal from species
+probe predictions instead of training a separate taxa probe (species deterministically implies taxa).
 
 ### Key insight: alpha vs sampling for multi-label
 - **Alpha** (loss-level): per-head granularity, each binary classifier gets its own correction.
@@ -169,7 +188,7 @@ typer>=0.9, rich>=13.0
 
 | Phase | What | Status | Output |
 |-------|------|--------|--------|
-| 1 | Train linear probes on embeddings | TUNING (v6) | `probes/*.npz` |
+| 1 | Train linear probes on embeddings | DONE (v6) | `probes/*.npz` |
 | 2 | Build label matrix + FlyingSquid | TODO | `fused/soft_labels.parquet` |
 | 3 | Evaluate consistency + calibration | TODO | diagnostic report |
 
