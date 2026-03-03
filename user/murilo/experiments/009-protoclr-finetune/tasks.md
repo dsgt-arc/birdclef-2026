@@ -27,16 +27,22 @@
 
 ## 3. GPU Utilization Debugging
 
-- [ ] Profile dataloader: check if mel transform on CPU is the bottleneck (ProtoCLR mel is heavier than NNAudio -- 16kHz, n_fft=1024, 128 mels, per-sample normalization + standardization)
-- [ ] Try increasing batch_size (currently 128) -- CvT-13 is only 19M params, GPU memory may be underutilized
-- [ ] Try increasing num_workers (currently 8) to keep GPU fed
-- [ ] Consider pre-computing mel spectrograms offline to eliminate CPU bottleneck
-- [ ] Re-run gpu-check after tuning, confirm stable utilization before submitting full runs
+- [x] Profile dataloader: CPU mel transform confirmed as bottleneck (data spikes up to 4651ms)
+- [x] Try increasing batch_size -- tested bs=512 (accum=1, lr=6e-4), throughput unchanged (503→511 samples/s), confirming CPU-bound bottleneck
+- [x] Try increasing num_workers -- using 12 workers for full run (SLURM max CPU:GPU = 12:1)
+- [~] Consider pre-computing mel spectrograms offline to eliminate CPU bottleneck
+  - Mel caching not viable for BirdCLEF 2025 (~135K recordings, would need ~50-65 GB RAM)
+  - Streaming data module with GPU-based nnAudio mel (as in exp 003) is the right long-term fix
+  - Deferred: one-off training run, not worth the refactor
+- [x] Re-run gpu-check after tuning, confirm stable utilization before submitting full runs
+  - GPU check run 1 (bs=128, accum=2): avg GPU util 71.1%, avg throughput 503 samples/s
+  - GPU check run 2 (bs=512, accum=1): avg GPU util 99.8% (misleading — NVML 1s averaging), avg throughput 511 samples/s
+  - Conclusion: throughput is CPU-bound regardless of batch size; settled on bs=256, accum=1, lr=3e-4
 
 ## 4. Training
 
-- [ ] Submit primary run: `protoclr_lora_attn.yaml`
-- [ ] Submit ablation: `protoclr_lora_all.yaml`
+- [x] Submit primary run: `protoclr_lora_attn.yaml` (bs=256, accum=1, lr=3e-4, 12 workers, 24h wall time)
+- [x] Submit ablation: `protoclr_lora_all.yaml` (same settings)
 
 ## 5. Analysis
 
