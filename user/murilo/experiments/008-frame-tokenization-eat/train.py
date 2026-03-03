@@ -53,7 +53,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.WARNING)
 
-DEFAULT_PROJECT_NAME = "ps-dsgt_clef2026-0"
+DEFAULT_PROJECT_NAME = "ps-clef2026_birdclef-0"
 EXPERIMENT_NAME = "008-frame-tokenization-eat"
 
 
@@ -337,7 +337,7 @@ def main():
     gpu_check_mode = args.gpu_check > 0
 
     # Derive project directory from project name
-    project_dir = Path(f"/storage/project/{args.project_name}/shared/birdclef-2026")
+    project_dir = Path(f"/storage/project/{args.project_name}/shared/murilo")
 
     # Load configuration
     config_path = Path(__file__).parent / args.config

@@ -24,7 +24,7 @@ FAST_DEV_RUN=false
 GPU_CHECK=0
 NUM_WORKERS=""
 CONFIG=""
-PROJECT_NAME="ps-dsgt_clef2026-0"
+PROJECT_NAME="ps-clef2026_birdclef-0"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -55,7 +55,7 @@ while [[ $# -gt 0 ]]; do
             echo "  CONFIG_PATH       Path to config file (e.g., config/eat_frozen.yaml)"
             echo ""
             echo "Options:"
-            echo "  --project-name    PACE project allocation name (default: ps-dsgt_clef2026-0)"
+            echo "  --project-name    PACE project allocation name (default: ps-clef2026_birdclef-0)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
             echo "  --gpu-check N     Run N epochs for GPU utilization check, then exit"
             echo "  --num-workers N   Override num_workers from config"

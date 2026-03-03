@@ -23,7 +23,7 @@ set -eu
 
 # Config file and project name (passed via environment variables from run.sh)
 CONFIG="${CONFIG:-config/vertical_128x2.yaml}"
-PROJECT_NAME="${PROJECT_NAME:-ps-dsgt_clef2026-0}"
+PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 
 # ============================================================================

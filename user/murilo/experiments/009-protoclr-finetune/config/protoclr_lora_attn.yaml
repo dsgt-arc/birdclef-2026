@@ -1,0 +1,55 @@
+run_name: "protoclr-lora-attn"
+
+encoder:
+  type: "protoclr"
+  model_name: "ilyassmoummad/ProtoCLR"
+  checkpoint: "protoclr.pth"
+  embed_dim: 384
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+  target_modules: ["attn.proj_q", "attn.proj_k", "attn.proj_v", "attn.proj"]
+
+data:
+  data_dir: "~/ps-clef2026_birdclef-0/data/birdclef-2025"
+  sample_rate: 16000
+  chunk_duration: 5.0
+  batch_size: 256
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.1
+  seed: 42
+
+training:
+  max_epochs: 50
+  lr: 3.0e-4
+  weight_decay: 0.01
+  warmup_epochs: 5
+  threshold: 0.5
+  hidden_dim: 0
+  dropout: 0.0
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/cmap"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/cmap"
+    mode: "max"
+    patience: 10
+    min_delta: 0.001
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-protoclr-finetune"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

@@ -31,7 +31,7 @@ DRY_RUN=false
 FAST_DEV_RUN=false
 RUN_ALL=false
 CONFIG=""
-PROJECT_NAME="ps-dsgt_clef2026-0"
+PROJECT_NAME="ps-clef2026_birdclef-0"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --all             Submit all 4 configurations"
-            echo "  --project-name    PACE project allocation name (default: ps-dsgt_clef2026-0)"
+            echo "  --project-name    PACE project allocation name (default: ps-clef2026_birdclef-0)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
             echo "  --dry-run         Preview command without submitting job"
             echo "  -h, --help        Show this help message"

@@ -48,7 +48,7 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 # =============================================================================
 # Constants
 # =============================================================================
-DEFAULT_PROJECT_NAME = "ps-dsgt_clef2026-0"  # PACE project allocation name
+DEFAULT_PROJECT_NAME = "ps-clef2026_birdclef-0"  # PACE project allocation name
 EXPERIMENT_NAME = "004-frame-tokenization"
 
 
@@ -99,7 +99,7 @@ def main():
     args = parser.parse_args()
 
     # Derive project directory from project name
-    project_dir = Path(f"/storage/project/{args.project_name}/shared/birdclef-2026")
+    project_dir = Path(f"/storage/project/{args.project_name}/shared/murilo")
 
     # Load configuration
     config_path = Path(__file__).parent / args.config

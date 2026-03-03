@@ -23,7 +23,7 @@ set -eu
 
 # Config file and project name (passed via environment variables from run.sh)
 CONFIG="${CONFIG:-config/config_a_baseline.yaml}"
-PROJECT_NAME="${PROJECT_NAME:-ps-dsgt_clef2026-0}"
+PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 GPU_CHECK="${GPU_CHECK:-0}"
 NUM_WORKERS="${NUM_WORKERS:-}"
@@ -123,7 +123,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 # HuggingFace model cache — use project storage to avoid re-downloading per job
-export HF_HOME="/storage/project/${PROJECT_NAME}/shared/birdclef-2026/cache/huggingface"
+export HF_HOME="/storage/project/${PROJECT_NAME}/shared/murilo/cache/huggingface"
 mkdir -p "$HF_HOME"
 echo "HF_HOME: $HF_HOME"
 

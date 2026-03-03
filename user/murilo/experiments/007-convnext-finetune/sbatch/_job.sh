@@ -23,7 +23,7 @@ set -eu
 
 # Config file and project name (passed via environment variables from run.sh)
 CONFIG="${CONFIG:-config/convnext_lora_mlp.yaml}"
-PROJECT_NAME="${PROJECT_NAME:-ps-dsgt_clef2026-0}"
+PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 GPU_CHECK="${GPU_CHECK:-0}"
 NUM_WORKERS="${NUM_WORKERS:-}"
@@ -126,7 +126,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 # timm model cache — use project storage to avoid re-downloading per job
-export TORCH_HOME="/storage/project/${PROJECT_NAME}/shared/birdclef-2026/cache/torch"
+export TORCH_HOME="/storage/project/${PROJECT_NAME}/shared/murilo/cache/torch"
 mkdir -p "$TORCH_HOME"
 echo "TORCH_HOME: $TORCH_HOME"
 
