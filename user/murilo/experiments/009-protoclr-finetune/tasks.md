@@ -50,12 +50,12 @@
 - [x] Update `project_dir` path from `.../shared/birdclef-2026` to `.../shared/murilo`
 - [x] Update `HF_HOME`/`TORCH_HOME` cache paths in all sbatch scripts
 - [x] Move `cache/` and experiments 002-008 checkpoints to `/storage/project/ps-clef2026_birdclef-0/shared/murilo/`
-- [ ] Move exp 009 checkpoints from old dir after training jobs complete
+- [x] Move exp 009 checkpoints from old dir after training jobs complete
   - Source: `/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/009-protoclr-finetune/`
   - Dest: `/storage/project/ps-clef2026_birdclef-0/shared/murilo/experiments/009-protoclr-finetune/`
 
 ## 5. Analysis
 
-- [ ] Compare test cmAP across both configs
-- [ ] Compare with Exp 006 EAT (cmAP=0.536) and Exp 007 ConvNeXt (cmAP=0.527)
-- [ ] Document results in results.md
+- [x] Compare test cmAP across both configs
+- [x] Compare with Exp 006 EAT (cmAP=0.536) and Exp 007 ConvNeXt (cmAP=0.527)
+- [x] Document results in results.md

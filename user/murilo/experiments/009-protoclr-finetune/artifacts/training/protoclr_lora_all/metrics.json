@@ -1,0 +1,50 @@
+{
+  "cmap": 0.5366271734237671,
+  "auroc": 0.9390410780906677,
+  "f1_macro": 0.5035579800605774,
+  "f1_micro": 0.591626763343811,
+  "top1_accuracy": 0.6682586073875427,
+  "top5_accuracy": 0.8032696843147278,
+  "loss": 0.021642467007040977,
+  "encoder_type": "protoclr",
+  "encoder_model": "ilyassmoummad/ProtoCLR",
+  "embed_dim": 384,
+  "lora": {
+    "rank": 8,
+    "alpha": 16,
+    "dropout": 0.1,
+    "target_modules": [
+      "attn.proj_q",
+      "attn.proj_k",
+      "attn.proj_v",
+      "attn.proj",
+      "mlp.fc1",
+      "mlp.fc2"
+    ]
+  },
+  "dataset": "birdclef-2025",
+  "split": "test",
+  "num_classes": 206,
+  "best_val_cmap": 0.4976658225059509,
+  "best_checkpoint_path": "/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/009-protoclr-finetune/checkpoints/protoclr-lora-all/best-epochepoch=28.ckpt",
+  "stopped_epoch": 30,
+  "training": {
+    "max_epochs": 50,
+    "lr": 0.0003,
+    "weight_decay": 0.01,
+    "warmup_epochs": 5,
+    "batch_size": 256,
+    "num_workers": 8,
+    "precision": "16-mixed",
+    "early_stopping_patience": 10,
+    "hidden_dim": 0,
+    "dropout": 0.0,
+    "grad_clip_val": 1.0
+  },
+  "compute": {
+    "gpu": "0",
+    "slurm_job_id": 4568958,
+    "node": "atl1-1-03-003-19-0",
+    "cpus_per_task": "12"
+  }
+}
