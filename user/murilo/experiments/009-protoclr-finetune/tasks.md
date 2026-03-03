@@ -54,6 +54,16 @@
   - Source: `/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/009-protoclr-finetune/`
   - Dest: `/storage/project/ps-clef2026_birdclef-0/shared/murilo/experiments/009-protoclr-finetune/`
 
+## 4c. User Directory Migration (shared/murilo → mgustineli3)
+
+- [x] Update `project_dir` path from `.../shared/murilo` to `.../mgustineli3` in all train.py files (002-009)
+- [x] Update `HF_HOME`/`TORCH_HOME` cache paths from `.../shared/murilo/cache` to `.../mgustineli3/cache` in all sbatch scripts
+- [x] Update checkpoint path in results.md
+- [x] Move repo, cache, and experiments 001-008 to `/storage/project/ps-clef2026_birdclef-0/mgustineli3/`
+- [ ] Move exp 009 outputs after full fine-tuning SLURM job completes
+  - Source: `/storage/project/ps-clef2026_birdclef-0/shared/murilo/experiments/009-protoclr-finetune/`
+  - Dest: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/009-protoclr-finetune/`
+
 ## 5. Analysis (LoRA runs)
 
 - [x] Compare test AUROC/cmAP across both LoRA configs

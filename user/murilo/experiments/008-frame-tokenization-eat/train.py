@@ -337,7 +337,7 @@ def main():
     gpu_check_mode = args.gpu_check > 0
 
     # Derive project directory from project name
-    project_dir = Path(f"/storage/project/{args.project_name}/shared/murilo")
+    project_dir = Path(f"/storage/project/{args.project_name}/mgustineli3")
 
     # Load configuration
     config_path = Path(__file__).parent / args.config

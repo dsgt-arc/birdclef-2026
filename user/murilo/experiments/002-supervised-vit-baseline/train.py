@@ -47,7 +47,7 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 # Project paths - update PROJECT_NAME when switching projects
 # =============================================================================
 PROJECT_NAME = "ps-clef2026_birdclef-0"  # PACE project allocation name
-PROJECT_DIR = Path(f"/storage/project/{PROJECT_NAME}/shared/murilo")
+PROJECT_DIR = Path(f"/storage/project/{PROJECT_NAME}/mgustineli3")
 EXPERIMENT_NAME = "002-supervised-vit-baseline"
 
 

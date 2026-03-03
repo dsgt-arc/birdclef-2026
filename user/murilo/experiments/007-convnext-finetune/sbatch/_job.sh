@@ -126,7 +126,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 # timm model cache — use project storage to avoid re-downloading per job
-export TORCH_HOME="/storage/project/${PROJECT_NAME}/shared/murilo/cache/torch"
+export TORCH_HOME="/storage/project/${PROJECT_NAME}/mgustineli3/cache/torch"
 mkdir -p "$TORCH_HOME"
 echo "TORCH_HOME: $TORCH_HOME"
 

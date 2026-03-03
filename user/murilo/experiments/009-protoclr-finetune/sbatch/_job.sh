@@ -126,7 +126,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 # HuggingFace cache -- use project storage for ProtoCLR model download
-export HF_HOME="/storage/project/${PROJECT_NAME}/shared/murilo/cache/huggingface"
+export HF_HOME="/storage/project/${PROJECT_NAME}/mgustineli3/cache/huggingface"
 mkdir -p "$HF_HOME"
 echo "HF_HOME: $HF_HOME"
 

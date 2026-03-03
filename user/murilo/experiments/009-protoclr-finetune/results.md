@@ -128,7 +128,7 @@ three strong candidates for a teacher ensemble.
 |------|----------|
 | Metrics | `artifacts/training/{protoclr_lora_attn,protoclr_lora_all}/metrics.json` |
 | Test results | `outputs/test_results/{protoclr-lora-attn,protoclr-lora-all}.json` |
-| Checkpoints | `/storage/project/ps-clef2026_birdclef-0/shared/murilo/experiments/009-protoclr-finetune/checkpoints/` |
+| Checkpoints | `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/009-protoclr-finetune/checkpoints/` |
 | TensorBoard | `outputs/tensorboard/exp009-{protoclr-lora-attn,protoclr-lora-all}/` |
 | W&B | `outputs/wandb/wandb/run-20260302-*/` |
 | GPU profiling | `outputs/gpu_check/protoclr-lora-attn_*.{txt,png}` |
