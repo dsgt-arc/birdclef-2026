@@ -2,15 +2,24 @@
 #SBATCH --job-name=013-fuse
 #SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
-#SBATCH -t360 -qinferno
-#SBATCH --output=logs/fuse-%j.out
+#SBATCH -t240 -qinferno
+#SBATCH --array=0-1
+#SBATCH --output=logs/fuse-%A_%a.out
 
-# CPU-only: Train indices probe, build label matrices for focal + soundscape,
-# run FlyingSquid per species, and evaluate results.
+# Fuse labels for focal (task 0) and soundscape (task 1) in parallel.
+# CPU-only. Each task runs independently.
 # Usage:
 #   sbatch sbatch/fuse.sbatch
+#
+# Submission workflow with dependencies:
+#   JOB_PROBE=$(sbatch sbatch/probe-indices.sbatch | awk '{print $4}')
+#   JOB_FUSE=$(sbatch --dependency=afterok:$JOB_PROBE sbatch/fuse.sbatch | awk '{print $4}')
+#   sbatch --dependency=afterok:$JOB_FUSE sbatch/evaluate.sbatch
 
 set -euo pipefail
+
+SPLITS=(focal soundscape)
+SPLIT="${SPLITS[$SLURM_ARRAY_TASK_ID]}"
 
 scratch_dir=$(realpath ~/scratch/birdclef-2026)
 repo_dir=$(realpath ~/arc/birdclef-2026)
@@ -20,75 +29,23 @@ venv="$scratch_dir/.venv"
 cd "$exp_dir"
 mkdir -p logs
 
-echo "=== Phase 2: Label Fusion ==="
-echo "Job ID: $SLURM_JOB_ID"
+echo "=== Fusing $SPLIT ==="
+echo "Job ID: ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 echo "Node: $(hostname)"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
 echo "Time: $(date)"
 echo ""
 
-# Install/update the package
 source "$venv/bin/activate"
 uv pip install -e "$exp_dir" --quiet
 
-probe_dir="$scratch_dir/outputs/exp013/probes"
-data_dir="$scratch_dir/data/birdclef-2025"
-exp010_dir="$scratch_dir/outputs/exp010/labels"
-output_dir="$scratch_dir/outputs/exp013/fused"
-eval_dir="$scratch_dir/outputs/exp013/eval"
-
-# 1. Train indices probe (fast, ~minutes on CPU)
-echo "=== Training indices probe ==="
-"$venv/bin/weaksup-probe" species indices \
-    --gamma 2.0 \
-    --epochs 50 \
-    --batch-size 16384 \
-    --data-dir "$data_dir" \
-    --output-dir "$probe_dir"
-
-echo ""
-
-# 2. Fuse focal (4 species-specific LFs: BirdNET, Perch, indices, recording label)
-echo "=== Fusing focal ==="
 "$venv/bin/weaksup-fuse" \
-    --split focal \
-    --probe-dir "$probe_dir" \
-    --data-dir "$data_dir" \
-    --exp010-dir "$exp010_dir" \
-    --output-dir "$output_dir" \
-    --n-workers 4
+    --split "$SPLIT" \
+    --probe-dir "$scratch_dir/outputs/exp013/probes" \
+    --data-dir "$scratch_dir/data/birdclef-2025" \
+    --exp010-dir "$scratch_dir/outputs/exp010/labels" \
+    --output-dir "$scratch_dir/outputs/exp013/fused" \
+    --n-workers 8
 
 echo ""
-
-# 3. Fuse soundscape (3 species-specific LFs: BirdNET, Perch, indices)
-echo "=== Fusing soundscape ==="
-"$venv/bin/weaksup-fuse" \
-    --split soundscape \
-    --probe-dir "$probe_dir" \
-    --data-dir "$data_dir" \
-    --exp010-dir "$exp010_dir" \
-    --output-dir "$output_dir" \
-    --n-workers 4
-
-echo ""
-
-# 4. Evaluate focal
-echo "=== Evaluating focal ==="
-"$venv/bin/weaksup-evaluate" \
-    --split focal \
-    --fused-dir "$output_dir" \
-    --data-dir "$data_dir" \
-    --output-dir "$eval_dir"
-
-echo ""
-
-# 5. Evaluate soundscape
-echo "=== Evaluating soundscape ==="
-"$venv/bin/weaksup-evaluate" \
-    --split soundscape \
-    --fused-dir "$output_dir" \
-    --data-dir "$data_dir" \
-    --output-dir "$eval_dir"
-
-echo ""
-echo "=== Done: $(date) ==="
+echo "=== Done $SPLIT: $(date) ==="
