@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
-"""Training script for Experiment 009: ProtoCLR (CvT-13) LoRA Fine-Tuning on BirdCLEF 2025.
+"""Training script for Experiment 009: ProtoCLR (CvT-13) Fine-Tuning on BirdCLEF 2025.
 
-Applies PEFT LoRA adapters to ProtoCLR's attention and/or MLP layers,
-training a small fraction of the 19M parameters.
+Supports two fine-tuning modes, determined by the config file:
+  - LoRA: Applies PEFT LoRA adapters to attention and/or MLP layers (<1% params).
+  - Full: Trains all 19M parameters end-to-end.
+
+If the config contains a `lora:` section, LoRA mode is used. Otherwise, full fine-tuning.
 
 Usage:
+    # LoRA fine-tuning
     python train.py --config config/protoclr_lora_attn.yaml [--fast-dev-run]
     python train.py --config config/protoclr_lora_all.yaml [--fast-dev-run]
+
+    # Full fine-tuning
+    python train.py --config config/protoclr_full_finetune.yaml [--fast-dev-run]
+
+    # GPU check
     python train.py --config config/protoclr_lora_attn.yaml --gpu-check 3
 """
 
@@ -25,7 +34,6 @@ load_dotenv(_user_dir / ".env")
 import pytorch_lightning as pl  # noqa: E402
 import torch  # noqa: E402
 import yaml  # noqa: E402
-from peft import LoraConfig, get_peft_model  # noqa: E402
 from pytorch_lightning.callbacks import (  # noqa: E402
     DeviceStatsMonitor,
     EarlyStopping,
@@ -80,6 +88,8 @@ def apply_lora(encoder: ProtoCLREncoder, config: dict) -> ProtoCLREncoder:
 
     Wraps encoder.model with LoRA adapters targeting attention and/or MLP layers.
     """
+    from peft import LoraConfig, get_peft_model
+
     lora_cfg = config["lora"]
 
     lora_config = LoraConfig(
@@ -103,7 +113,7 @@ def apply_lora(encoder: ProtoCLREncoder, config: dict) -> ProtoCLREncoder:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="LoRA fine-tune ProtoCLR (CvT-13) encoder on BirdCLEF 2025"
+        description="Fine-tune ProtoCLR (CvT-13) encoder on BirdCLEF 2025 (LoRA or full)"
     )
     parser.add_argument(
         "--config",
@@ -191,14 +201,25 @@ def main():
     encoder = build_encoder(config)
     logger.info(f"Encoder embed_dim: {encoder.embed_dim}")
 
-    # Apply LoRA adapters
-    logger.info("Applying LoRA adapters...")
-    lora_cfg = config["lora"]
-    logger.info(
-        f"  rank={lora_cfg['rank']}, alpha={lora_cfg['alpha']}, " f"dropout={lora_cfg['dropout']}"
-    )
-    logger.info(f"  target_modules={lora_cfg['target_modules']}")
-    encoder = apply_lora(encoder, config)
+    # Determine fine-tuning mode from config
+    use_lora = "lora" in config
+    lora_cfg = config.get("lora")
+
+    if use_lora:
+        # LoRA fine-tuning: apply PEFT adapters
+        logger.info("Fine-tuning mode: LoRA")
+        logger.info(
+            f"  rank={lora_cfg['rank']}, alpha={lora_cfg['alpha']}, "
+            f"dropout={lora_cfg['dropout']}"
+        )
+        logger.info(f"  target_modules={lora_cfg['target_modules']}")
+        encoder = apply_lora(encoder, config)
+    else:
+        # Full fine-tuning: all parameters trainable (default for nn.Module)
+        total_params = sum(p.numel() for p in encoder.parameters())
+        trainable_params = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
+        logger.info("Fine-tuning mode: full (all parameters trainable)")
+        logger.info(f"  trainable params: {trainable_params:,} / {total_params:,}")
 
     # Initialize Lightning module
     logger.info("Initializing LoRAFinetuneModule...")
@@ -308,16 +329,18 @@ def main():
             save_dir=Path(__file__).parent / config["logging"]["save_dir"],
             log_model=config["logging"]["log_model"],
         )
-        # Log full config + LoRA details
+        # Log full config + fine-tuning details
         wandb_logger.experiment.config.update(config)
-        wandb_logger.experiment.config.update(
-            {
-                "lora/rank": lora_cfg["rank"],
-                "lora/alpha": lora_cfg["alpha"],
-                "lora/dropout": lora_cfg["dropout"],
-                "lora/target_modules": lora_cfg["target_modules"],
-            }
-        )
+        wandb_logger.experiment.config.update({"finetune_mode": "lora" if use_lora else "full"})
+        if use_lora:
+            wandb_logger.experiment.config.update(
+                {
+                    "lora/rank": lora_cfg["rank"],
+                    "lora/alpha": lora_cfg["alpha"],
+                    "lora/dropout": lora_cfg["dropout"],
+                    "lora/target_modules": lora_cfg["target_modules"],
+                }
+            )
         loggers.append(wandb_logger)
 
     # Initialize trainer
@@ -375,6 +398,7 @@ def main():
         raw_results = {
             "config_path": str(config_path),
             "run_name": run_name,
+            "finetune_mode": "lora" if use_lora else "full",
             "best_val_cmap": float(checkpoint_callback.best_model_score)
             if checkpoint_callback.best_model_score is not None
             else None,
@@ -382,14 +406,15 @@ def main():
             "stopped_epoch": trainer.current_epoch,
             "num_classes": num_classes,
             "encoder_type": config["encoder"]["type"],
-            "lora": {
+            "test_metrics": test_results[0] if test_results else None,
+        }
+        if use_lora:
+            raw_results["lora"] = {
                 "rank": lora_cfg["rank"],
                 "alpha": lora_cfg["alpha"],
                 "dropout": lora_cfg["dropout"],
                 "target_modules": lora_cfg["target_modules"],
-            },
-            "test_metrics": test_results[0] if test_results else None,
-        }
+            }
         with open(results_file, "w") as f:
             json.dump(raw_results, f, indent=2)
         logger.info(f"Results saved to {results_file}")

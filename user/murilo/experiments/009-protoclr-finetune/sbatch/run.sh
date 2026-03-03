@@ -1,20 +1,40 @@
 #!/bin/bash
-# Launcher script for Experiment 009 ProtoCLR LoRA fine-tuning jobs.
+# Launcher script for Experiment 009 ProtoCLR fine-tuning jobs (LoRA or full).
+#
+# Configs:
+#   config/protoclr_lora_attn.yaml       LoRA on attention layers
+#   config/protoclr_lora_all.yaml        LoRA on attention + MLP layers
+#   config/protoclr_full_finetune.yaml   Full fine-tuning (all 19M params)
 #
 # Usage:
 #   cd user/murilo/experiments/009-protoclr-finetune
-#   bash sbatch/run.sh config/protoclr_lora_attn.yaml
-#   bash sbatch/run.sh config/protoclr_lora_all.yaml
+#
+#   # Submit a single config
+#   bash sbatch/run.sh config/protoclr_full_finetune.yaml
+#   bash sbatch/run.sh config/protoclr_full_finetune.yaml --num-workers 12
+#
+#   # Submit all configs at once
+#   bash sbatch/run.sh --all
+#   bash sbatch/run.sh --all --num-workers 12
+#
+#   # Dry run (preview sbatch command without submitting)
+#   bash sbatch/run.sh config/protoclr_full_finetune.yaml --dry-run
+#   bash sbatch/run.sh --all --dry-run
 #
 #   # Fast dev run (5 batches, no W&B logging)
 #   bash sbatch/run.sh config/protoclr_lora_attn.yaml --fast-dev-run
 #
-#   # Submit all configs at once
-#   bash sbatch/run.sh --all
-#   bash sbatch/run.sh --all --dry-run
+#   # GPU check (N epochs, prints utilization report, no W&B)
+#   bash sbatch/run.sh config/protoclr_full_finetune.yaml --gpu-check 3
 #
-#   # Dry run (preview command without submitting)
-#   bash sbatch/run.sh config/protoclr_lora_attn.yaml --dry-run
+# Flags:
+#   CONFIG_PATH          Path to config YAML (required unless --all)
+#   --all                Submit one job per config in config/
+#   --dry-run            Print the sbatch command without submitting
+#   --fast-dev-run       Run 5 batches only for pipeline validation
+#   --gpu-check N        Run N epochs for GPU utilization profiling
+#   --num-workers N      Override num_workers from config (also sets --cpus-per-task)
+#   --project-name NAME  PACE project allocation (default: ps-clef2026_birdclef-0)
 #
 
 set -eu
@@ -73,8 +93,9 @@ while [[ $# -gt 0 ]]; do
             echo "  -h, --help        Show this help message"
             echo ""
             echo "Available configs:"
-            echo "  config/protoclr_lora_attn.yaml  LoRA on attention layers (primary)"
-            echo "  config/protoclr_lora_all.yaml   LoRA on attention + MLP layers"
+            echo "  config/protoclr_lora_attn.yaml       LoRA on attention layers"
+            echo "  config/protoclr_lora_all.yaml        LoRA on attention + MLP layers"
+            echo "  config/protoclr_full_finetune.yaml   Full fine-tuning (all 19M params)"
             exit 0
             ;;
         *)
@@ -116,8 +137,9 @@ if [[ -z "$CONFIG" ]]; then
     echo "Usage: $0 [CONFIG_PATH | --all] [--fast-dev-run] [--dry-run]"
     echo ""
     echo "Available configs:"
-    echo "  config/protoclr_lora_attn.yaml  LoRA on attention layers (primary)"
-    echo "  config/protoclr_lora_all.yaml   LoRA on attention + MLP layers"
+    echo "  config/protoclr_lora_attn.yaml       LoRA on attention layers"
+    echo "  config/protoclr_lora_all.yaml        LoRA on attention + MLP layers"
+    echo "  config/protoclr_full_finetune.yaml   Full fine-tuning (all 19M params)"
     exit 1
 fi
 
@@ -136,7 +158,7 @@ EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 RUN_NAME="$(basename "$CONFIG" .yaml)"
 
 echo "=============================================="
-echo "Experiment 009: ProtoCLR LoRA Fine-Tuning"
+echo "Experiment 009: ProtoCLR Fine-Tuning"
 echo "=============================================="
 echo "Experiment dir: ${EXPERIMENT_DIR}"
 echo "Config: ${CONFIG}"

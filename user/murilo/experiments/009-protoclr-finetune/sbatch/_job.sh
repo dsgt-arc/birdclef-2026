@@ -10,12 +10,13 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=mgustineli3@gatech.edu
 #
-# Experiment 009: ProtoCLR (CvT-13) LoRA Fine-Tuning on BirdCLEF 2025
-# Purpose: Apply PEFT LoRA to ProtoCLR attention/MLP layers
+# Experiment 009: ProtoCLR (CvT-13) Fine-Tuning on BirdCLEF 2025
+# Purpose: Fine-tune ProtoCLR via LoRA adapters or full parameter training
 #
 # Usage:
 #   cd user/murilo/experiments/009-protoclr-finetune
 #   bash sbatch/run.sh config/protoclr_lora_attn.yaml
+#   bash sbatch/run.sh config/protoclr_full_finetune.yaml
 #   bash sbatch/run.sh config/protoclr_lora_all.yaml --fast-dev-run
 #
 
@@ -48,7 +49,7 @@ REPO_DIR="$(dirname "$(dirname "$USER_DIR")")"
 # ============================================================================
 
 echo "=============================================="
-echo "Job: Experiment 009 - ProtoCLR LoRA Fine-Tuning"
+echo "Job: Experiment 009 - ProtoCLR Fine-Tuning"
 echo "=============================================="
 echo "Job ID: ${SLURM_JOB_ID:-local}"
 echo "Node: $(hostname)"
@@ -97,8 +98,12 @@ echo ""
 # Verify PyTorch CUDA
 python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}, Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else None}')"
 
-# Verify PEFT
-python -c "import peft; print(f'PEFT: {peft.__version__}')"
+# Verify PEFT (only needed for LoRA configs)
+if grep -q "^lora:" "${CONFIG}"; then
+    python -c "import peft; print(f'PEFT: {peft.__version__}')"
+else
+    echo "Full fine-tuning mode (no PEFT needed)"
+fi
 
 # Verify einops (needed by CvT)
 python -c "import einops; print(f'einops: {einops.__version__}')"
