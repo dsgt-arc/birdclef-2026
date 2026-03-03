@@ -44,6 +44,16 @@
 - [x] Submit primary run: `protoclr_lora_attn.yaml` (bs=256, accum=1, lr=3e-4, 12 workers, 24h wall time)
 - [x] Submit ablation: `protoclr_lora_all.yaml` (same settings)
 
+## 4b. Project Storage Migration
+
+- [x] Update `DEFAULT_PROJECT_NAME` across all experiments (002-009) from `ps-dsgt_clef2026-0` to `ps-clef2026_birdclef-0`
+- [x] Update `project_dir` path from `.../shared/birdclef-2026` to `.../shared/murilo`
+- [x] Update `HF_HOME`/`TORCH_HOME` cache paths in all sbatch scripts
+- [x] Move `cache/` and experiments 002-008 checkpoints to `/storage/project/ps-clef2026_birdclef-0/shared/murilo/`
+- [ ] Move exp 009 checkpoints from old dir after training jobs complete
+  - Source: `/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/009-protoclr-finetune/`
+  - Dest: `/storage/project/ps-clef2026_birdclef-0/shared/murilo/experiments/009-protoclr-finetune/`
+
 ## 5. Analysis
 
 - [ ] Compare test cmAP across both configs

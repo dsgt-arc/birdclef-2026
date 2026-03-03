@@ -35,7 +35,7 @@ NUM_WORKERS=""
 CONFIG=""
 ALL=false
 BACKEND="peft"
-PROJECT_NAME="ps-dsgt_clef2026-0"
+PROJECT_NAME="ps-clef2026_birdclef-0"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -80,7 +80,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --backend B       PEFT backend: 'peft' (default) or 'adapters'"
-            echo "  --project-name    PACE project allocation name (default: ps-dsgt_clef2026-0)"
+            echo "  --project-name    PACE project allocation name (default: ps-clef2026_birdclef-0)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
             echo "  --gpu-check N     Run N epochs for GPU utilization check, then exit"
             echo "  --num-workers N   Override num_workers from config"
@@ -117,7 +117,7 @@ if [[ "${ALL}" == "true" ]]; then
     [[ "${FAST_DEV_RUN}" == "true" ]] && EXTRA_ARGS+=(--fast-dev-run)
     [[ "${GPU_CHECK}" -gt 0 ]] && EXTRA_ARGS+=(--gpu-check "${GPU_CHECK}")
     [[ -n "${NUM_WORKERS}" ]] && EXTRA_ARGS+=(--num-workers "${NUM_WORKERS}")
-    [[ "${PROJECT_NAME}" != "ps-dsgt_clef2026-0" ]] && EXTRA_ARGS+=(--project-name "${PROJECT_NAME}")
+    [[ "${PROJECT_NAME}" != "ps-clef2026_birdclef-0" ]] && EXTRA_ARGS+=(--project-name "${PROJECT_NAME}")
 
     for cfg in "${EXPERIMENT_DIR}"/config/*.yaml; do
         cfg_rel="config/$(basename "$cfg")"
