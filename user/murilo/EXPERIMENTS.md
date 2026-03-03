@@ -4,19 +4,19 @@ Consolidated findings from experiments 001–009, covering BirdSet benchmarks, a
 
 ## 1. Quick Reference
 
-| Exp | Name | Question | Best cmAP | Key Finding | Verdict |
-|-----|------|----------|-----------|-------------|---------|
-| 001 | BirdSet Benchmark | Do BirdSet checkpoints reproduce published baselines? | 0.480† | cmAP validated within ±0.02 of paper; audio pretraining baseline set | Confirmed |
-| 002 | Supervised ViT Baseline | Can ImageNet-pretrained ViT compete on spectrograms? | 0.186 | 39% of audio-pretrained baseline; training infrastructure validated | Confirmed |
-| 003 | Architecture Comparison | How do architecture and pretraining interact? | 0.191 | Pretraining gives 2× lift; audio pretraining 2.5× better than ImageNet | Confirmed |
-| 004 | Frame Tokenization | Do vertical frame patches improve ViT from scratch? | 0.118 | +37% over 16×16 baseline; overfitting is the primary bottleneck | Confirmed |
-| 005 | EAT Pretrained Fine-Tune | Does AudioSet pretraining transfer to bird classification? | 0.301 | Frozen probe establishes strong first BirdCLEF 2025 baseline | Inconclusive |
-| 006 | EAT LoRA Fine-Tune | Can LoRA beat a frozen probe with <1% of parameters? | 0.536 | +78% over frozen probe; MLP head matters more than LoRA scope | Confirmed |
-| 007 | ConvNeXt LoRA Fine-Tune | Does an ImageNet CNN compete with an AudioSet transformer? | 0.527 | Only 1.7% below EAT; ImageNet features transfer surprisingly well | Confirmed |
-| 008 | Frame Tokenization (EAT) | Do frame tokens help a pretrained transformer? | 0.494 | Frame tokens hurt pretrained models (−43%); pretrained patches are critical | Rejected |
-| 009 | ProtoCLR LoRA Fine-Tune | Does bird-specific pretraining add ensemble value? | 0.537 | 5× smaller model matches EAT/ConvNeXt at cmAP parity | Confirmed |
+| Exp | Name | Dataset | Question | Best cmAP | Key Finding | Verdict |
+|-----|------|---------|----------|-----------|-------------|---------|
+| 001 | BirdSet Benchmark | BirdSet (8 datasets)† | Do BirdSet checkpoints reproduce published baselines? | 0.36† | cmAP validated within ±0.02 of paper; audio pretraining baseline set | Confirmed |
+| 002 | Supervised ViT Baseline | BirdSet HSN (21 cls) | Can ImageNet-pretrained ViT compete on spectrograms? | 0.186 | 39% of audio-pretrained baseline; training infrastructure validated | Confirmed |
+| 003 | Architecture Comparison | BirdSet HSN (21 cls) | How do architecture and pretraining interact? | 0.191 | Pretraining gives 2× lift; audio pretraining 2.5× better than ImageNet | Confirmed |
+| 004 | Frame Tokenization | BirdSet HSN (21 cls) | Do vertical frame patches improve ViT from scratch? | 0.118 | +37% over 16×16 baseline; overfitting is the primary bottleneck | Confirmed |
+| 005 | EAT Pretrained Fine-Tune | BirdCLEF 2025 (206 cls) | Does AudioSet pretraining transfer to bird classification? | 0.301 | Frozen probe establishes strong first BirdCLEF 2025 baseline | Inconclusive |
+| 006 | EAT LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Can LoRA beat a frozen probe with <1% of parameters? | 0.536 | +78% over frozen probe; MLP head matters more than LoRA scope | Confirmed |
+| 007 | ConvNeXt LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Does an ImageNet CNN compete with an AudioSet transformer? | 0.527 | Only 1.7% below EAT; ImageNet features transfer surprisingly well | Confirmed |
+| 008 | Frame Tokenization (EAT) | BirdCLEF 2025 (206 cls) | Do frame tokens help a pretrained transformer? | 0.494 | Frame tokens hurt pretrained models (−43%); pretrained patches are critical | Rejected |
+| 009 | ProtoCLR LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Does bird-specific pretraining add ensemble value? | 0.537 | 5× smaller model matches EAT/ConvNeXt at cmAP parity | Confirmed |
 
-† Exps 001–004 evaluate on BirdSet HSN (21 classes). Exp 001 evaluated all 8 BirdSet datasets; HSN cmAP shown for comparability (mean cmAP across all 8 datasets: 0.36). Exps 005–009 evaluate on BirdCLEF 2025 (206 classes).
+† Exp 001 evaluated all 8 BirdSet datasets (HSN, PER, NES, UHH, POW, SSW, SNE, NBP); best cmAP shown is the mean across all 8 (HSN alone: 0.480 ConvNeXT, 0.380 EfficientNetB1).
 
 ## 2. Research Progression
 
