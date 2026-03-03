@@ -31,7 +31,7 @@ from torchmetrics.classification import (
     MulticlassF1Score,
 )
 
-from weaksup.data import EmbeddingDataModule
+from weaksup.data import EmbeddingDataModule, IndicesDataModule
 from weaksup.focal import FocalBCELoss, FocalCELoss
 
 app = typer.Typer(pretty_exceptions_enable=False)
@@ -43,6 +43,8 @@ DEFAULT_PROBE_DIR = Path("~/scratch/birdclef-2026/outputs/exp013/probes").expand
 
 
 def _embed_dir(source: str) -> Path:
+    if source == "indices":
+        return DEFAULT_OUTPUT_ROOT / "indices" / "train_audio" / "parts"
     return DEFAULT_OUTPUT_ROOT / source / "train_audio" / "parts" / "embed"
 
 
@@ -229,7 +231,7 @@ def _build_trainer(
 def _save_probe_results(
     module: L.LightningModule,
     best_ckpt_path: str | Path | None,
-    dm: EmbeddingDataModule,
+    dm: EmbeddingDataModule | IndicesDataModule,
     output_path: Path,
     probe_type: str,
 ) -> None:
@@ -259,6 +261,12 @@ def _save_probe_results(
             if isinstance(alpha, Tensor):
                 alpha = alpha.numpy()
             save_dict["alpha"] = alpha
+        # Save feature normalization stats for indices probes
+        if isinstance(dm, IndicesDataModule):
+            from weaksup.data import INDICES_FEATURES
+            save_dict["feature_mean"] = dm.feature_mean
+            save_dict["feature_std"] = dm.feature_std
+            save_dict["feature_names"] = np.array(INDICES_FEATURES)
     elif probe_type == "taxa":
         save_dict["taxa_list"] = np.array(dm.taxa_list)
         if module.criterion.alpha is not None:
@@ -273,7 +281,7 @@ def _save_probe_results(
 
 @app.command()
 def species(
-    source: Annotated[str, typer.Argument(help="Embedding source: birdnet or perch")],
+    source: Annotated[str, typer.Argument(help="Embedding source: birdnet, perch, or indices")],
     gamma: Annotated[float, typer.Option(help="Focal loss gamma")] = 2.0,
     lr: Annotated[float, typer.Option(help="Learning rate")] = 1e-3,
     epochs: Annotated[int, typer.Option(help="Max training epochs")] = 50,
@@ -289,12 +297,20 @@ def species(
     L.seed_everything(seed)
 
     embed_dir = _embed_dir(source)
-    dm = EmbeddingDataModule(
-        embed_dir=embed_dir,
-        data_dir=data_dir,
-        batch_size=batch_size,
-        seed=seed,
-    )
+    if source == "indices":
+        dm = IndicesDataModule(
+            indices_dir=embed_dir,
+            data_dir=data_dir,
+            batch_size=batch_size,
+            seed=seed,
+        )
+    else:
+        dm = EmbeddingDataModule(
+            embed_dir=embed_dir,
+            data_dir=data_dir,
+            batch_size=batch_size,
+            seed=seed,
+        )
     dm.setup()
 
     alpha = None if no_alpha else torch.from_numpy(dm.species_pos_weight)
