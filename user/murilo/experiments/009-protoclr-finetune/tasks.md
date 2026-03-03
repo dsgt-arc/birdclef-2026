@@ -54,8 +54,24 @@
   - Source: `/storage/project/ps-dsgt_clef2026-0/shared/birdclef-2026/experiments/009-protoclr-finetune/`
   - Dest: `/storage/project/ps-clef2026_birdclef-0/shared/murilo/experiments/009-protoclr-finetune/`
 
-## 5. Analysis
+## 5. Analysis (LoRA runs)
 
-- [x] Compare test cmAP across both configs
-- [x] Compare with Exp 006 EAT (cmAP=0.536) and Exp 007 ConvNeXt (cmAP=0.527)
+- [x] Compare test AUROC/cmAP across both LoRA configs
+- [x] Compare with Exp 006 EAT (AUROC=0.945) and Exp 007 ConvNeXt (AUROC=0.941)
 - [x] Document results in results.md
+
+## 6. Full Fine-Tuning
+
+- [x] Add full fine-tuning support to train.py (config-driven: no `lora:` section → full FT)
+- [x] Create `config/protoclr_full_finetune.yaml` (lr=1e-4, all 19M params trainable)
+- [x] Update sbatch scripts for both modes (conditional PEFT verification, generalized headers)
+- [x] Fast-dev-run: verify full FT pipeline works end-to-end
+- [x] GPU check: verify memory usage with all 19M params trainable
+- [ ] Submit full fine-tuning run: `protoclr_full_finetune.yaml` (bs=256, lr=1e-4, 12 workers, 24h wall time)
+
+## 7. Analysis (Full Fine-Tuning)
+
+- [ ] Collect test metrics (AUROC, cmAP, F1 macro, training time, memory)
+- [ ] Compare full FT vs LoRA configs — does training all 19M params beat LoRA (<1%)?
+- [ ] Update results.md with full fine-tuning results and LoRA vs full FT comparison
+- [ ] Update EXPERIMENTS.md (Quick Reference, Section 3.9, master table, key insights)
