@@ -6,9 +6,10 @@
 ## Summary
 
 LoRA fine-tuning dramatically outperforms the frozen linear probe baseline from Exp 005,
-with the best config (adapters + attn LoRA + MLP head) reaching cmAP=0.536 — a 78%
-improvement over the Exp 005 frozen baseline of 0.301. The MLP classification head matters
-more than LoRA scope, and the adapters library slightly outperforms PEFT on equivalent configs.
+with the best config (adapters + attn LoRA + MLP head) reaching AUROC=0.945 (cmAP=0.536) —
+a +6.2% AUROC improvement over the Exp 005 frozen baseline of 0.890. The MLP classification
+head matters more than LoRA scope, and the adapters library slightly outperforms PEFT on
+equivalent configs.
 
 **Verdict**: confirmed
 
@@ -16,15 +17,15 @@ more than LoRA scope, and the adapters library slightly outperforms PEFT on equi
 
 ### Quantitative
 
-All 5 completed runs vs. Exp 005 frozen linear probe baseline (cmAP=0.301):
+All 5 completed runs vs. Exp 005 frozen linear probe baseline (AUROC=0.890, cmAP=0.301):
 
-| Run | Backend | LoRA Targets | Head | test cmAP | Delta | AUROC | F1 macro | Stopped Epoch | Walltime |
-|-----|---------|-------------|------|-----------|-------|-------|----------|---------------|----------|
-| `eat-lora-attn` | PEFT | qkv, proj | Linear | 0.469 | +0.168 (+56%) | 0.927 | 0.409 | 36 | 11h 29m |
-| `eat-lora-all` | PEFT | qkv, proj, fc1, fc2 | Linear | 0.482 | +0.181 (+60%) | 0.923 | 0.403 | 32 | 11h 16m |
-| `eat-lora-attn-mlphead` | PEFT | qkv, proj | MLP 512 | 0.511 | +0.210 (+70%) | 0.942 | 0.441 | 27 | 8h 17m |
-| `adapters-eat-lora-attn` | adapters | qkv, proj | Linear | 0.485 | +0.184 (+61%) | 0.938 | 0.424 | 31 | 9h 23m |
-| **`adapters-eat-lora-attn-mlphead`** | **adapters** | **qkv, proj** | **MLP 512** | **0.536** | **+0.235 (+78%)** | **0.945** | **0.475** | **31** | **11h 00m** |
+| Run | Backend | LoRA Targets | Head | AUROC | Δ AUROC | cmAP | F1 macro | Stopped Epoch | Walltime |
+|-----|---------|-------------|------|-------|---------|------|----------|---------------|----------|
+| **`adapters-eat-lora-attn-mlphead`** | **adapters** | **qkv, proj** | **MLP 512** | **0.945** | **+0.055 (+6.2%)** | **0.536** | **0.475** | **31** | **11h 00m** |
+| `eat-lora-attn-mlphead` | PEFT | qkv, proj | MLP 512 | 0.942 | +0.052 (+5.8%) | 0.511 | 0.441 | 27 | 8h 17m |
+| `adapters-eat-lora-attn` | adapters | qkv, proj | Linear | 0.938 | +0.048 (+5.4%) | 0.485 | 0.424 | 31 | 9h 23m |
+| `eat-lora-attn` | PEFT | qkv, proj | Linear | 0.927 | +0.037 (+4.2%) | 0.469 | 0.409 | 36 | 11h 29m |
+| `eat-lora-all` | PEFT | qkv, proj, fc1, fc2 | Linear | 0.923 | +0.033 (+3.7%) | 0.482 | 0.403 | 32 | 11h 16m |
 | `adapters-eat-lora-all` | adapters | qkv, proj, fc1, fc2 | Linear | — | — | — | — | — | >12h (timed out) |
 
 All runs used a single RTX 6000 GPU with batch_size=32, accumulate_grad_batches=8
@@ -34,11 +35,11 @@ All runs used a single RTX 6000 GPU with batch_size=32, accumulate_grad_batches=
 
 - **MLP head > LoRA scope**: Adding an MLP classification head (768->512->206) consistently
   outperforms expanding LoRA to MLP layers (fc1, fc2). `attn + MLP head` beats `attn+mlp LoRA
-  + linear head` by ~0.03-0.05 cmAP on both backends. Investing parameters in the head is
+  + linear head` by +0.004–0.019 AUROC on both backends. Investing parameters in the head is
   more cost-effective than adapting more encoder layers.
 
-- **Adapters slightly outperforms PEFT**: On equivalent configs, adapters produces ~0.01-0.025
-  higher cmAP than PEFT. This is likely due to differences in how the two libraries handle
+- **Adapters slightly outperforms PEFT**: On equivalent configs, adapters produces higher
+  AUROC than PEFT (e.g., 0.945 vs 0.942 for attn+MLP head). This is likely due to differences in how the two libraries handle
   fused QKV layers — adapters uses `LoRAMergedLinear` with separate enable flags per Q/K/V,
   while PEFT treats the fused layer as a single target.
 
@@ -57,7 +58,7 @@ All runs used a single RTX 6000 GPU with batch_size=32, accumulate_grad_batches=
 
 ## Analysis
 
-The frozen linear probe baseline from Exp 005 (cmAP=0.301) only trains the classification
+The frozen linear probe baseline from Exp 005 (AUROC=0.890, cmAP=0.301) only trains the classification
 head on top of fixed EAT features. LoRA allows the encoder to adapt its attention
 representations to the BirdCLEF domain while keeping the parameter budget small. The
 consistent improvement across all configs confirms that EAT's pretrained features benefit
@@ -106,6 +107,6 @@ what gets adapted.
 - [ ] Try combining MLP head with expanded LoRA targets (`eat_lora_all` + `hidden_dim: 512`)
 - [ ] Open upstream PRs for adapter-hub/adapters (fused QKV fix, EAT model support)
 
-**Leads to**: The best config (`adapters-eat-lora-attn-mlphead`, cmAP=0.536) becomes the
-new baseline for downstream experiments. Consider exploring domain-specific pretraining
-(BirdNET weights) or data augmentation strategies to push cmAP further.
+**Leads to**: The best config (`adapters-eat-lora-attn-mlphead`, AUROC=0.945, cmAP=0.536)
+becomes the new baseline for downstream experiments. Consider exploring domain-specific
+pretraining (BirdNET weights) or data augmentation strategies to push AUROC further.

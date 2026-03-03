@@ -5,7 +5,7 @@
 
 ## Summary
 
-EAT frozen linear probe establishes a strong first baseline on BirdCLEF 2025 (cmAP=0.301 on held-out test), validating that AudioSet self-supervised pretraining produces useful representations for bird species classification. Full fine-tuning shows promising val cmAP (0.291) but timed out before test evaluation.
+EAT frozen linear probe establishes a strong first baseline on BirdCLEF 2025 (test AUROC=0.890, cmAP=0.301), validating that AudioSet self-supervised pretraining produces useful representations for bird species classification. Full fine-tuning shows promising val cmAP (0.291) but timed out before test evaluation.
 
 **Verdict**: inconclusive (frozen baseline confirmed; frozen vs fine-tune comparison pending)
 
@@ -19,8 +19,8 @@ Best checkpoint: epoch 29/30 | SLURM job: 4114048 | ~9h on 1x RTX 6000
 
 | Metric | Val (best) | Test | Notes |
 |--------|-----------|------|-------|
-| cmAP | 0.238 | **0.301** | Primary metric; test > val suggests no overfitting |
-| AUROC | — | 0.890 | Strong ranking performance |
+| AUROC | — | **0.890** | Primary metric (Kaggle competition metric) |
+| cmAP | 0.238 | 0.301 | Test > val suggests no overfitting |
 | F1 macro | — | 0.115 | Low — threshold=0.5 likely too aggressive for rare species |
 | F1 micro | — | 0.186 | |
 | Top-1 Acc | — | 37.9% | |
@@ -81,7 +81,7 @@ Epoch   Frozen    Finetune
 
 ## Analysis
 
-EAT's AudioSet pretraining transfers well to bird species classification. The frozen linear probe's cmAP=0.301 on a 206-class problem is a strong first baseline, confirming that the pretrained features contain species-discriminative information without any encoder adaptation.
+EAT's AudioSet pretraining transfers well to bird species classification. The frozen linear probe's AUROC=0.890 (cmAP=0.301) on a 206-class problem is a strong first baseline, confirming that the pretrained features contain species-discriminative information without any encoder adaptation.
 
 The fine-tune run's val cmAP (0.291) already surpasses the frozen val cmAP (0.238) by 22%, and the gap would likely widen further on the test set. However, the run was killed by the 12-hour SLURM time limit before completing test evaluation. The training curve shows:
 

@@ -5,8 +5,8 @@
 
 ## Summary
 
-ProtoCLR with LoRA fine-tuning reaches cmAP=0.537 (all-layers config), matching EAT's best
-(0.536) and surpassing ConvNeXt (0.527) despite having only 19M parameters (~5x smaller).
+ProtoCLR with LoRA fine-tuning reaches AUROC=0.942 (attn-only config), matching EAT's best
+(0.945) and ConvNeXt (0.941) despite having only 19M parameters (~5x smaller).
 Domain-invariant prototypical contrastive pretraining on Xeno-Canto transfers remarkably well
 to BirdCLEF, confirming ProtoCLR as a viable teacher model for pseudo-labeling.
 
@@ -18,21 +18,21 @@ to BirdCLEF, confirming ProtoCLR as a viable teacher model for pseudo-labeling.
 
 Both LoRA configs vs. Exp 006 (EAT) and Exp 007 (ConvNeXt) baselines:
 
-| Run | LoRA Targets | LoRA Params | Head | test cmAP | AUROC | F1 macro | F1 micro | Top-1 | Top-5 | Best Epoch | Stopped | Walltime |
-|-----|-------------|-------------|------|-----------|-------|----------|----------|-------|-------|------------|---------|----------|
-| `protoclr-lora-attn` | Q/K/V/proj | ~148K | Linear | 0.531 | 0.942 | 0.463 | 0.581 | 0.659 | 0.808 | 20 | 31 | 2h 41m |
-| `protoclr-lora-all` | Q/K/V/proj + MLP | ~247K | Linear | **0.537** | 0.939 | 0.504 | 0.592 | 0.668 | 0.803 | 28 | 30 | 3h 24m |
+| Run | LoRA Targets | LoRA Params | Head | AUROC | cmAP | F1 macro | F1 micro | Top-1 | Top-5 | Best Epoch | Stopped | Walltime |
+|-----|-------------|-------------|------|-------|------|----------|----------|-------|-------|------------|---------|----------|
+| `protoclr-lora-attn` | Q/K/V/proj | ~148K | Linear | **0.942** | 0.531 | 0.463 | 0.581 | 0.659 | 0.808 | 20 | 31 | 2h 41m |
+| `protoclr-lora-all` | Q/K/V/proj + MLP | ~247K | Linear | 0.939 | 0.537 | 0.504 | 0.592 | 0.668 | 0.803 | 28 | 30 | 3h 24m |
 
-**Cross-experiment comparison (best configs, test cmAP):**
+**Cross-experiment comparison (best configs, sorted by AUROC):**
 
-| Method | Encoder | Params | Pretraining | test cmAP | Delta vs ProtoCLR best |
-|--------|---------|--------|-------------|-----------|------------------------|
-| **ProtoCLR LoRA all (PEFT)** | **CvT-13** | **19M** | **Xeno-Canto (ProtoCLR)** | **0.537** | **—** |
-| EAT LoRA attn+MLP head (adapters) | EAT-base | ~90M | AudioSet | 0.536 | -0.001 |
-| ConvNeXt LoRA MLP (PEFT) | ConvNeXt-Base | ~89M | ImageNet-22K+1K | 0.527 | -0.010 |
-| EAT LoRA attn+MLP head (PEFT) | EAT-base | ~90M | AudioSet | 0.511 | -0.026 |
-| EAT LoRA all (PEFT) | EAT-base | ~90M | AudioSet | 0.482 | -0.055 |
-| Frozen linear probe (Exp 005) | EAT-base | ~90M | AudioSet | 0.301 | -0.236 |
+| Method | Encoder | Params | Pretraining | AUROC | cmAP | Δ AUROC vs ProtoCLR best |
+|--------|---------|--------|-------------|-------|------|--------------------------|
+| EAT LoRA attn+MLP head (adapters) | EAT-base | ~90M | AudioSet | **0.945** | 0.536 | +0.003 |
+| **ProtoCLR LoRA attn (PEFT)** | **CvT-13** | **19M** | **Xeno-Canto (ProtoCLR)** | **0.942** | **0.531** | **—** |
+| EAT LoRA attn+MLP head (PEFT) | EAT-base | ~90M | AudioSet | 0.942 | 0.511 | 0.000 |
+| ConvNeXt LoRA MLP+MLP head (PEFT) | ConvNeXt-Base | ~89M | ImageNet-22K+1K | 0.941 | 0.525 | -0.001 |
+| ProtoCLR LoRA all (PEFT) | CvT-13 | 19M | Xeno-Canto (ProtoCLR) | 0.939 | 0.537 | -0.003 |
+| Frozen linear probe (Exp 005) | EAT-base | ~90M | AudioSet | 0.890 | 0.301 | -0.052 |
 
 ### Qualitative
 
@@ -42,12 +42,14 @@ Both LoRA configs vs. Exp 006 (EAT) and Exp 007 (ConvNeXt) baselines:
   pretraining directly targets the focal-to-soundscape domain shift that BirdCLEF tests.
 
 - **Remarkable parameter efficiency**: At 19M parameters, ProtoCLR is ~5x smaller than EAT
-  (~90M) and ConvNeXt (~89M), yet achieves equivalent or better cmAP. The CvT-13 architecture
-  with convolutional tokenization and progressive downsampling is compact but expressive.
+  (~90M) and ConvNeXt (~89M), yet achieves equivalent AUROC (0.942 vs 0.945 and 0.941). The
+  CvT-13 architecture with convolutional tokenization and progressive downsampling is compact
+  but expressive.
 
-- **All-layers LoRA slightly better than attention-only**: Adding MLP targets (fc1, fc2) gives
-  a modest +0.006 cmAP boost (0.537 vs 0.531) but a substantial F1 macro improvement (0.504 vs
-  0.463, +8.8%). The MLP LoRA helps the model better discriminate underrepresented classes.
+- **Attention-only LoRA slightly better by AUROC; all-layers better by F1**: The attn-only
+  config achieves higher AUROC (0.942 vs 0.939) while the all-layers config achieves higher
+  F1 macro (0.504 vs 0.463, +8.8%). Adding MLP targets helps discriminate underrepresented
+  classes at some cost to overall ranking quality.
 
 - **Both configs converge smoothly**: lora_attn peaks at epoch 20 (stopped 31), lora_all peaks
   at epoch 28 (stopped 30). Early stopping patience of 10 was well-calibrated — neither run hit
@@ -66,8 +68,8 @@ Both LoRA configs vs. Exp 006 (EAT) and Exp 007 (ConvNeXt) baselines:
 ## Analysis
 
 The hypothesis is confirmed: ProtoCLR provides viable, complementary features for BirdCLEF
-teacher model ensembles. The result is stronger than expected — ProtoCLR doesn't just exceed
-the cmAP>0.4 viability threshold, it matches the best model from prior experiments.
+teacher model ensembles. The result is stronger than expected — ProtoCLR achieves AUROC=0.942,
+nearly matching EAT's best (0.945) despite being 5x smaller.
 
 **Why does ProtoCLR punch above its weight?**
 
@@ -86,9 +88,9 @@ the cmAP>0.4 viability threshold, it matches the best model from prior experimen
    This suggests the bottleneck in prior experiments was not embedding dimensionality.
 
 **The MLP LoRA effect**: Adding LoRA to MLP layers (fc1, fc2) improves F1 macro significantly
-(+8.8%) with only a modest cmAP gain (+0.006). This suggests the MLP LoRA helps adapt
-per-class decision boundaries, improving tail-class performance. The cmAP metric, which averages
-over classes, benefits less because it's dominated by well-represented classes.
+(+8.8%) but slightly lowers AUROC (0.939 vs 0.942). This suggests the MLP LoRA helps adapt
+per-class decision boundaries, improving tail-class performance at a slight cost to ranking
+quality. For the Kaggle competition (AUROC metric), the attention-only config is preferable.
 
 **Ensemble value**: ProtoCLR, EAT, and ConvNeXt use fundamentally different architectures and
 pretraining objectives:
@@ -101,8 +103,8 @@ three strong candidates for a teacher ensemble.
 
 ### Confounders
 
-- **Single seed**: All runs use seed=42. The 0.001 cmAP gap between ProtoCLR (0.537) and EAT
-  (0.536) is within typical seed-to-seed variance. The key finding is parity, not superiority.
+- **Single seed**: All runs use seed=42. The 0.003 AUROC gap between ProtoCLR (0.942) and EAT
+  (0.945) is within typical seed-to-seed variance. The key finding is parity, not superiority.
 
 - **Different LoRA backends**: ProtoCLR uses PEFT while EAT's best config uses the adapters
   library. Exp 006 showed adapters gives ~0.01-0.025 cmAP improvement over PEFT on EAT,
@@ -135,12 +137,12 @@ three strong candidates for a teacher ensemble.
 
 ## Next Steps
 
-- [ ] Test ProtoCLR with MLP classification head (384->256->206) to match Exp 006 methodology
+- [ ] Test ProtoCLR with MLP classification head (384->256->206) to push beyond AUROC=0.942
 - [ ] Test ProtoCLR with adapters backend instead of PEFT for apples-to-apples EAT comparison
 - [ ] Build 3-model teacher ensemble (ProtoCLR + EAT + ConvNeXt) for pseudo-labeling
 - [ ] Evaluate ensemble diversity: correlation between per-sample predictions across models
 
-**Leads to**: ProtoCLR (cmAP=0.537) joins EAT (cmAP=0.536) and ConvNeXt (cmAP=0.527) as the
+**Leads to**: ProtoCLR (AUROC=0.942) joins EAT (AUROC=0.945) and ConvNeXt (AUROC=0.941) as the
 third teacher model. The three models cover distinct inductive biases (conv tokenization vs
 patch tokenization vs pure CNN) and pretraining domains (bird audio vs general audio vs
 vision). Next priority is building the teacher ensemble for pseudo-labeling unlabeled

@@ -6,11 +6,12 @@
 ## Summary
 
 Frame tokenization does not compensate for losing pretrained patch embeddings in EAT. The
-pretrained 16x16 baseline (cmAP=0.494) dominates all configs with randomly initialized patch
-embeddings, and frame-shaped patches (128x2, 128x4) perform *worse* than random square 16x16
-patches (cmAP=0.260-0.284 vs 0.360). The +34-37% advantage of frame tokenization observed in
-Exp 004 (training from scratch) disappears entirely when using pretrained transformers — EAT's
-attention layers are tuned to 16x16-shaped token distributions and cannot adapt via LoRA alone.
+pretrained 16x16 baseline (AUROC=0.933, cmAP=0.494) dominates all configs with randomly
+initialized patch embeddings, and frame-shaped patches (128x2, 128x4) perform *worse* than
+random square 16x16 patches (AUROC=0.864–0.873 vs 0.899). The advantage of frame tokenization
+observed in Exp 004 (training from scratch) disappears entirely when using pretrained
+transformers — EAT's attention layers are tuned to 16x16-shaped token distributions and cannot
+adapt via LoRA alone.
 
 **Verdict**: rejected — frame tokenization actively hurts when paired with pretrained EAT transformers
 
@@ -20,24 +21,24 @@ attention layers are tuned to 16x16-shaped token distributions and cannot adapt 
 
 Phase 1 test results (4 runs, BirdCLEF 2025, 206 species):
 
-| Config | Patch Embed | Patch Size | Tokens | test cmAP | AUROC | F1 macro | F1 micro | Top-1 | Top-5 | Best Epoch | Stopped | Walltime |
-|--------|-------------|------------|--------|-----------|-------|----------|----------|-------|-------|------------|---------|----------|
-| **A: baseline** | Pretrained (frozen) | 16x16 | 256 | **0.494** | **0.933** | **0.420** | **0.539** | **0.602** | **0.777** | 25 | 41 | 11h 11m |
-| B: control | Random (trained) | 16x16 | 256 | 0.360 | 0.899 | 0.309 | 0.430 | 0.481 | 0.681 | 29 | 45 | 12h 07m |
-| C1b: frame 4x128 | Random (trained) | 4x128 | 128 | 0.284 | 0.873 | 0.230 | 0.332 | 0.379 | 0.594 | 28 | 44 | 6h 56m |
-| C1a: frame 2x128 | Random (trained) | 2x128 | 256 | 0.260 | 0.864 | 0.231 | 0.315 | 0.357 | 0.575 | 38 | 50 | 13h 45m |
+| Config | Patch Embed | Patch Size | Tokens | AUROC | cmAP | F1 macro | F1 micro | Top-1 | Top-5 | Best Epoch | Stopped | Walltime |
+|--------|-------------|------------|--------|-------|------|----------|----------|-------|-------|------------|---------|----------|
+| **A: baseline** | Pretrained (frozen) | 16x16 | 256 | **0.933** | **0.494** | **0.420** | **0.539** | **0.602** | **0.777** | 25 | 41 | 11h 11m |
+| B: control | Random (trained) | 16x16 | 256 | 0.899 | 0.360 | 0.309 | 0.430 | 0.481 | 0.681 | 29 | 45 | 12h 07m |
+| C1b: frame 4x128 | Random (trained) | 4x128 | 128 | 0.873 | 0.284 | 0.230 | 0.332 | 0.379 | 0.594 | 28 | 44 | 6h 56m |
+| C1a: frame 2x128 | Random (trained) | 2x128 | 256 | 0.864 | 0.260 | 0.231 | 0.315 | 0.357 | 0.575 | 38 | 50 | 13h 45m |
 
 All configs: EAT-base (`worstchan/EAT-base_epoch30_pretrain`), LoRA r=8 (qkv+proj), linear
 head, batch_size=32, accum=8 (effective=256), lr=3e-4, early_stopping patience=15, 1x RTX 6000.
 
-**Relative performance (cmAP deltas vs baseline A):**
+**Relative performance (AUROC deltas vs baseline A):**
 
-| Config | test cmAP | Delta vs A | Delta vs B (control) |
-|--------|-----------|------------|----------------------|
-| A: baseline (pretrained 16x16) | 0.494 | — | +0.134 (+37%) |
-| B: control (random 16x16) | 0.360 | -0.134 (-27%) | — |
-| C1b: frame 4x128 | 0.284 | -0.210 (-43%) | -0.076 (-21%) |
-| C1a: frame 2x128 | 0.260 | -0.234 (-47%) | -0.100 (-28%) |
+| Config | AUROC | Δ vs A | cmAP | Δ cmAP vs A |
+|--------|-------|--------|------|-------------|
+| A: baseline (pretrained 16x16) | 0.933 | — | 0.494 | — |
+| B: control (random 16x16) | 0.899 | -0.034 (-3.6%) | 0.360 | -0.134 (-27%) |
+| C1b: frame 4x128 | 0.873 | -0.060 (-6.4%) | 0.284 | -0.210 (-43%) |
+| C1a: frame 2x128 | 0.864 | -0.069 (-7.4%) | 0.260 | -0.234 (-47%) |
 
 **Cross-experiment comparison (frame tokenization):**
 
@@ -52,20 +53,20 @@ head, batch_size=32, accum=8 (effective=256), lr=3e-4, early_stopping patience=1
 
 ### Qualitative
 
-- **Pretrained patches are essential**: Config A (pretrained, frozen 16x16) scores 37% higher
-  cmAP than Config B (random, trained 16x16), despite Config A's patch embedding being completely
-  frozen. The pretrained Conv2d(1, 768, 16, 16) learned discriminative spectral features during
-  AudioSet self-supervised training that cannot be recovered by training a random patch embed
-  alongside LoRA-adapted transformer blocks.
+- **Pretrained patches are essential**: Config A (pretrained, frozen 16x16) scores +3.8% higher
+  AUROC than Config B (random, trained 16x16), despite Config A's patch embedding being
+  completely frozen. The pretrained Conv2d(1, 768, 16, 16) learned discriminative spectral
+  features during AudioSet self-supervised training that cannot be recovered by training a
+  random patch embed alongside LoRA-adapted transformer blocks.
 
 - **Frame tokenization hurts with pretrained transformers**: Both frame configs score worse than
-  the random square control (C1a: -28%, C1b: -21% vs B). This is the opposite of Exp 004, where
-  frames beat squares by +34-37%. The pretrained transformer's position embeddings, attention
+  the random square control in AUROC (C1a: -3.9%, C1b: -2.9% vs B). This is the opposite of
+  Exp 004, where frames beat squares from scratch. The pretrained transformer's position embeddings, attention
   patterns, and layer norms were all calibrated for a 32x8 grid of 16x16 patches. Frame tokens
   produce a 1x128 or 1x256 grid that is fundamentally incompatible with these learned patterns.
 
 - **4x128 > 2x128**: Config C1b (4x128, 128 tokens) outperforms C1a (2x128, 256 tokens) by
-  +0.024 cmAP. This mirrors Exp 004's finding that shorter sequences are better, but the advantage
+  +0.009 AUROC (0.873 vs 0.864). This mirrors Exp 004's finding that shorter sequences are better, but the advantage
   is smaller here (+9% vs +3% in Exp 004). With only 128 tokens, C1b's self-attention is more
   efficient and trains 2x faster (6h 56m vs 13h 45m).
 
@@ -164,6 +165,6 @@ frames score significantly below even the random square control.
 **Leads to**: Pretrained patch embeddings are a key component of EAT's performance, not just the
 transformer weights. Future work should preserve the pretrained tokenization scheme and focus on
 representation quality via SSL pretraining (Exp 009) or teacher-guided training (Exp 011) rather
-than modifying the tokenization. Config A (cmAP=0.494) is slightly below Exp 006's best
-(cmAP=0.536) due to using PEFT instead of adapters and a linear head instead of MLP, confirming
-those earlier findings still hold.
+than modifying the tokenization. Config A (AUROC=0.933) is below Exp 006's best (AUROC=0.945)
+due to using PEFT instead of adapters and a linear head instead of MLP, confirming those earlier
+findings still hold.

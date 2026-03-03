@@ -5,10 +5,10 @@
 
 ## Summary
 
-ConvNeXt-Base with ImageNet pretraining and MLP-only LoRA reaches cmAP=0.527, only 1.7%
-below EAT's best (cmAP=0.536 from Exp 006). ImageNet visual features transfer surprisingly
+ConvNeXt-Base with ImageNet pretraining and MLP-only LoRA reaches AUROC=0.941, only 0.4%
+below EAT's best (AUROC=0.945 from Exp 006). ImageNet visual features transfer surprisingly
 well to mel spectrogram bird classification, nearly matching AudioSet audio-specific pretraining
-despite the domain gap. The MLP head ablation provides no benefit (0.525 vs 0.527).
+despite the domain gap. The MLP head provides a marginal AUROC edge (0.941 vs 0.939).
 
 **Verdict**: confirmed (ConvNeXt < EAT, but the gap is much smaller than expected)
 
@@ -18,35 +18,33 @@ despite the domain gap. The MLP head ablation provides no benefit (0.525 vs 0.52
 
 Both runs vs. Exp 006 baselines and Exp 005 frozen probe:
 
-| Run | Head | LoRA Params | test cmAP | AUROC | F1 macro | F1 micro | Top-1 | Top-5 | Best Epoch | Stopped |
-|-----|------|-------------|-----------|-------|----------|----------|-------|-------|------------|---------|
-| `convnext_lora_mlp` | Linear | ~1.4M | **0.527** | 0.939 | 0.467 | 0.568 | 0.638 | 0.786 | 15 | 26 |
-| `convnext_lora_mlp_mlphead` | MLP 512 | ~1.4M | 0.525 | 0.941 | 0.455 | 0.569 | 0.640 | 0.786 | 12 | 23 |
+| Run | Head | LoRA Params | AUROC | cmAP | F1 macro | F1 micro | Top-1 | Top-5 | Best Epoch | Stopped |
+|-----|------|-------------|-------|------|----------|----------|-------|-------|------------|---------|
+| `convnext_lora_mlp_mlphead` | MLP 512 | ~1.4M | **0.941** | 0.525 | 0.455 | 0.569 | 0.640 | 0.786 | 12 | 23 |
+| `convnext_lora_mlp` | Linear | ~1.4M | 0.939 | 0.527 | 0.467 | 0.568 | 0.638 | 0.786 | 15 | 26 |
 
-**Cross-experiment comparison (all LoRA, test cmAP):**
+**Cross-experiment comparison (all LoRA, sorted by AUROC):**
 
-| Method | Encoder | Pretraining | test cmAP | Delta vs ConvNeXt best |
-|--------|---------|-------------|-----------|------------------------|
-| EAT LoRA attn+MLP head (adapters) | EAT-base | AudioSet | **0.536** | +0.009 |
-| EAT LoRA attn+MLP head (PEFT) | EAT-base | AudioSet | 0.511 | -0.016 |
-| EAT LoRA all (PEFT) | EAT-base | AudioSet | 0.482 | -0.045 |
-| EAT LoRA attn (adapters) | EAT-base | AudioSet | 0.485 | -0.042 |
-| EAT LoRA attn (PEFT) | EAT-base | AudioSet | 0.469 | -0.058 |
-| **ConvNeXt LoRA MLP (PEFT)** | **ConvNeXt-Base** | **ImageNet** | **0.527** | **—** |
-| ConvNeXt LoRA MLP + MLP head (PEFT) | ConvNeXt-Base | ImageNet | 0.525 | -0.002 |
-| Frozen linear probe | EAT-base | AudioSet | 0.301 | -0.226 |
+| Method | Encoder | Pretraining | AUROC | cmAP | Delta AUROC vs ConvNeXt best |
+|--------|---------|-------------|-------|------|------------------------------|
+| EAT LoRA attn+MLP head (adapters) | EAT-base | AudioSet | **0.945** | 0.536 | +0.004 |
+| EAT LoRA attn+MLP head (PEFT) | EAT-base | AudioSet | 0.942 | 0.511 | +0.001 |
+| **ConvNeXt LoRA MLP + MLP head (PEFT)** | **ConvNeXt-Base** | **ImageNet** | **0.941** | **0.525** | **—** |
+| ConvNeXt LoRA MLP (PEFT) | ConvNeXt-Base | ImageNet | 0.939 | 0.527 | -0.002 |
+| EAT LoRA attn (adapters) | EAT-base | AudioSet | 0.938 | 0.485 | -0.003 |
+| EAT LoRA attn (PEFT) | EAT-base | AudioSet | 0.927 | 0.469 | -0.014 |
+| EAT LoRA all (PEFT) | EAT-base | AudioSet | 0.923 | 0.482 | -0.018 |
+| Frozen linear probe | EAT-base | AudioSet | 0.890 | 0.301 | -0.051 |
 
 ### Qualitative
 
-- **ImageNet features transfer well to audio**: ConvNeXt-Base (cmAP=0.527) falls in the
-  "interesting" range (>0.4) defined in the proposal. The 1.7% gap vs EAT's best is far
-  smaller than expected. ImageNet-pretrained CNNs learn generic hierarchical features
-  (edges, textures, frequency patterns) that apply to mel spectrograms.
+- **ImageNet features transfer well to audio**: ConvNeXt-Base (AUROC=0.941) is within 0.4%
+  of EAT's best (0.945), far closer than expected. ImageNet-pretrained CNNs learn generic
+  hierarchical features (edges, textures, frequency patterns) that apply to mel spectrograms.
 
-- **MLP head does NOT help ConvNeXt**: Unlike Exp 006 where the MLP head gave EAT a +0.03-0.05
-  cmAP boost, ConvNeXt sees no benefit from a richer head (0.525 vs 0.527). ConvNeXt's
-  1024-dim features may already be linearly separable for this task, or the MLP head
-  overfits with the slightly higher parameter count.
+- **MLP head provides marginal AUROC benefit**: The MLP head gives a slight AUROC edge (0.941
+  vs 0.939) but a slight cmAP deficit (0.525 vs 0.527). Since LoRA already targets the MLP
+  layers (fc1, fc2), head architecture has minimal impact on the competition metric.
 
 - **EAT is faster per sample despite smaller batches**: EAT at bs=32 achieves 182 samples/s
   (3.6 ms/sample) vs ConvNeXt at bs=128 with 113 samples/s (8.5 ms/sample). EAT's dense
@@ -66,8 +64,8 @@ Both runs vs. Exp 006 baselines and Exp 005 frozen probe:
 
 ## Analysis
 
-The hypothesis is confirmed: ConvNeXt produces lower cmAP than EAT's best. However, the
-margin (0.527 vs 0.536) is much narrower than expected, challenging the assumption that
+The hypothesis is confirmed: ConvNeXt produces lower AUROC than EAT's best. However, the
+margin (0.941 vs 0.945) is much narrower than expected, challenging the assumption that
 audio-specific pretraining is essential for competitive bird sound classification.
 
 **Why is the gap so small?**
@@ -95,12 +93,11 @@ features are already well-adapted.
   (fc1, fc2). EAT's best config uses attention-only LoRA + MLP head. The architectures are
   adapted in fundamentally different ways, making direct comparison imperfect.
 
-- **Only PEFT backend**: Exp 006 showed adapters slightly outperforms PEFT (+0.01-0.025 cmAP).
-  ConvNeXt was only tested with PEFT, so the comparison is against EAT's best (adapters).
-  Against PEFT-only EAT configs, ConvNeXt (0.527) beats all except `eat_lora_attn_mlphead`
-  (0.511) — wait, it beats that too. ConvNeXt actually outperforms every PEFT EAT config.
+- **Only PEFT backend**: Exp 006 showed adapters slightly outperforms PEFT. ConvNeXt was only
+  tested with PEFT, so the comparison is against EAT's best (adapters). Against PEFT-only
+  EAT configs, ConvNeXt (AUROC=0.941) matches or beats all of them.
 
-- **Single seed**: All runs use seed=42. The small gap (0.009 cmAP) is within typical
+- **Single seed**: All runs use seed=42. The small gap (0.004 AUROC) is within typical
   seed-to-seed variance.
 
 - **Batch size difference**: ConvNeXt uses bs=128 (accum=2, effective=256) while EAT uses
@@ -127,7 +124,7 @@ features are already well-adapted.
 - [ ] Ensemble ConvNeXt + EAT predictions (CNN + Transformer diversity could boost cmAP)
 - [ ] Test ConvNeXt-Large or ConvNeXt-XL to see if scaling helps close the gap further
 
-**Leads to**: ConvNeXt-Base (cmAP=0.527) is a viable alternative to EAT for spectrogram
+**Leads to**: ConvNeXt-Base (AUROC=0.941) is a viable alternative to EAT for spectrogram
 classification. The near-parity with EAT suggests that architecture diversity (CNN + Transformer
 ensembles) could be a fruitful direction. The best single model remains EAT LoRA
-(adapters, cmAP=0.536).
+(adapters, AUROC=0.945).

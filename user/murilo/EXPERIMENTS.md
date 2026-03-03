@@ -4,19 +4,20 @@ Consolidated findings from experiments 001–009, covering BirdSet benchmarks, a
 
 ## 1. Quick Reference
 
-| Exp | Name | Dataset | Question | Best cmAP | Key Finding | Verdict |
-|-----|------|---------|----------|-----------|-------------|---------|
+| Exp | Name | Dataset | Question | Best Score‡ | Key Finding | Verdict |
+|-----|------|---------|----------|-------------|-------------|---------|
 | 001 | BirdSet Benchmark | BirdSet (8 datasets)† | Do BirdSet checkpoints reproduce published baselines? | 0.36† | cmAP validated within ±0.02 of paper; audio pretraining baseline set | Confirmed |
 | 002 | Supervised ViT Baseline | BirdSet HSN (21 cls) | Can ImageNet-pretrained ViT compete on spectrograms? | 0.186 | 39% of audio-pretrained baseline; training infrastructure validated | Confirmed |
 | 003 | Architecture Comparison | BirdSet HSN (21 cls) | How do architecture and pretraining interact? | 0.191 | Pretraining gives 2× lift; audio pretraining 2.5× better than ImageNet | Confirmed |
 | 004 | Frame Tokenization | BirdSet HSN (21 cls) | Do vertical frame patches improve ViT from scratch? | 0.118 | +37% over 16×16 baseline; overfitting is the primary bottleneck | Confirmed |
-| 005 | EAT Pretrained Fine-Tune | BirdCLEF 2025 (206 cls) | Does AudioSet pretraining transfer to bird classification? | 0.301 | Frozen probe establishes strong first BirdCLEF 2025 baseline | Inconclusive |
-| 006 | EAT LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Can LoRA beat a frozen probe with <1% of parameters? | 0.536 | +78% over frozen probe; MLP head matters more than LoRA scope | Confirmed |
-| 007 | ConvNeXt LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Does an ImageNet CNN compete with an AudioSet transformer? | 0.527 | Only 1.7% below EAT; ImageNet features transfer surprisingly well | Confirmed |
-| 008 | Frame Tokenization (EAT) | BirdCLEF 2025 (206 cls) | Do frame tokens help a pretrained transformer? | 0.494 | Frame tokens hurt pretrained models (−43%); pretrained patches are critical | Rejected |
-| 009 | ProtoCLR LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Does bird-specific pretraining add ensemble value? | 0.537 | 5× smaller model matches EAT/ConvNeXt at cmAP parity | Confirmed |
+| 005 | EAT Pretrained Fine-Tune | BirdCLEF 2025 (206 cls) | Does AudioSet pretraining transfer to bird classification? | 0.890 | Frozen probe establishes strong first BirdCLEF 2025 baseline | Inconclusive |
+| 006 | EAT LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Can LoRA beat a frozen probe with <1% of parameters? | 0.945 | +6% AUROC over frozen probe; MLP head matters more than LoRA scope | Confirmed |
+| 007 | ConvNeXt LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Does an ImageNet CNN compete with an AudioSet transformer? | 0.941 | Within 0.4% AUROC of EAT; ImageNet features transfer surprisingly well | Confirmed |
+| 008 | Frame Tokenization (EAT) | BirdCLEF 2025 (206 cls) | Do frame tokens help a pretrained transformer? | 0.933 | Frame tokens hurt pretrained models; pretrained patches are critical | Rejected |
+| 009 | ProtoCLR LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Does bird-specific pretraining add ensemble value? | 0.942 | 5× smaller model matches EAT/ConvNeXt at AUROC parity | Confirmed |
 
 † Exp 001 evaluated all 8 BirdSet datasets (HSN, PER, NES, UHH, POW, SSW, SNE, NBP); best cmAP shown is the mean across all 8 (HSN alone: 0.480 ConvNeXT, 0.380 EfficientNetB1).
+‡ BirdSet experiments (001–004) report cmAP; BirdCLEF 2025 experiments (005–009) report ROC-AUC (the Kaggle competition metric).
 
 ## 2. Research Progression
 
@@ -24,7 +25,7 @@ The first three experiments established foundations. Experiment 001 validated th
 
 Two tokenization experiments explored whether better patch design could compensate for weaker representations. Experiment 004 showed that vertical frame patches (128×4, spanning the full frequency axis) improve ViT from scratch by +37% over standard 16×16 patches on HSN, confirming that spectrogram-aware tokenization provides a better inductive bias. Experiment 008 then tested the same idea on EAT with AudioSet-pretrained transformer blocks — and found the opposite: frame tokens degraded performance by 43% relative to pretrained 16×16 patches. The conclusion is that tokenization shape matters when training from scratch, but pretrained representations are so strongly coupled to their original patch structure that changing it destroys more value than the better inductive bias recovers.
 
-The LoRA fine-tuning arc (experiments 005–009) produced the most actionable results. Starting from a frozen EAT linear probe baseline of cmAP=0.301, LoRA fine-tuning of less than 1% of parameters dramatically improved all three encoder families: EAT reached 0.536, ConvNeXt-Base 0.527, and ProtoCLR 0.537. The convergence of three architecturally diverse models — a self-supervised audio transformer (90M params), an ImageNet-pretrained CNN (89M params), and a compact bird-specific contrastive model (19M params) — to within 0.01 cmAP of each other suggests a performance ceiling at the current data scale. Their architectural and pretraining diversity makes them natural candidates for ensemble-based pseudo-labeling.
+The LoRA fine-tuning arc (experiments 005–009) produced the most actionable results. Starting from a frozen EAT linear probe baseline of AUROC=0.890, LoRA fine-tuning of less than 1% of parameters improved all three encoder families: EAT reached AUROC=0.945, ConvNeXt-Base 0.941, and ProtoCLR 0.942. The convergence of three architecturally diverse models — a self-supervised audio transformer (90M params), an ImageNet-pretrained CNN (89M params), and a compact bird-specific contrastive model (19M params) — to within 0.004 AUROC of each other suggests a performance ceiling at the current data scale. Their architectural and pretraining diversity makes them natural candidates for ensemble-based pseudo-labeling.
 
 ## 3. Detailed Findings
 
@@ -132,12 +133,12 @@ Full results: [results.md](experiments/004-frame-tokenization/results.md)
 
 **Models**: EAT-base (90M params, AudioSet self-supervised pretraining).
 
-| Variant | Trainable Params | Val cmAP | Test cmAP | Training Time |
-|---------|-----------------|----------|-----------|---------------|
-| Frozen linear probe | 158K | 0.238 | 0.301 | ~9h |
-| Full fine-tune (staged) | 90.5M | 0.291 | pending | >12h (timed out) |
+| Variant | Trainable Params | Test AUROC | Test cmAP | Val cmAP | Training Time |
+|---------|-----------------|------------|-----------|----------|---------------|
+| Frozen linear probe | 158K | **0.890** | 0.301 | 0.238 | ~9h |
+| Full fine-tune (staged) | 90.5M | pending | pending | 0.291 | >12h (timed out) |
 
-- The frozen linear probe establishes a strong first baseline on BirdCLEF 2025 (test cmAP=0.301), validating that AudioSet self-supervised features contain species-discriminative information without any encoder adaptation.
+- The frozen linear probe establishes a strong first baseline on BirdCLEF 2025 (test AUROC=0.890, cmAP=0.301), validating that AudioSet self-supervised features contain species-discriminative information without any encoder adaptation.
 - Test cmAP (0.301) exceeds val cmAP (0.238) by 26%, indicating no overfitting in the frozen regime.
 - Full fine-tuning showed promising val cmAP (0.291, surpassing frozen val) but timed out before test evaluation, leaving the frozen-vs-finetune comparison incomplete.
 
@@ -149,23 +150,23 @@ Full results: [results.md](experiments/005-pretrained-finetune/results.md)
 
 ### 3.6 Exp 006: EAT LoRA Fine-Tune
 
-**Hypothesis**: LoRA fine-tuning of EAT-base (~0.67% of parameters trainable) will outperform the frozen linear probe baseline (cmAP=0.301) while fitting within single-GPU time and memory constraints.
+**Hypothesis**: LoRA fine-tuning of EAT-base (~0.67% of parameters trainable) will outperform the frozen linear probe baseline (AUROC=0.890) while fitting within single-GPU time and memory constraints.
 
 **Dataset**: BirdCLEF 2025 — same 80/10/10 split as exp 005, 206 species.
 
 **Models**: EAT-base with PEFT and adapters LoRA backends, varying LoRA targets and head architecture.
 
-| Config | Backend | LoRA Targets | Head | test cmAP | AUROC |
-|--------|---------|-------------|------|-----------|-------|
-| attn + MLP head | adapters | qkv, proj | MLP 512 | **0.536** | 0.945 |
-| attn + MLP head | PEFT | qkv, proj | MLP 512 | 0.511 | 0.942 |
-| attn | adapters | qkv, proj | Linear | 0.485 | 0.938 |
-| all layers | PEFT | qkv, proj, fc1, fc2 | Linear | 0.482 | 0.923 |
-| attn | PEFT | qkv, proj | Linear | 0.469 | 0.927 |
+| Config | Backend | LoRA Targets | Head | AUROC | cmAP |
+|--------|---------|-------------|------|-------|------|
+| attn + MLP head | adapters | qkv, proj | MLP 512 | **0.945** | 0.536 |
+| attn + MLP head | PEFT | qkv, proj | MLP 512 | 0.942 | 0.511 |
+| attn | adapters | qkv, proj | Linear | 0.938 | 0.485 |
+| attn | PEFT | qkv, proj | Linear | 0.927 | 0.469 |
+| all layers | PEFT | qkv, proj, fc1, fc2 | Linear | 0.923 | 0.482 |
 
-- LoRA fine-tuning dramatically outperforms frozen probing: the best config (adapters, attn LoRA, MLP head) reaches cmAP=0.536, a +78% improvement over exp 005's 0.301 baseline.
-- The MLP classification head (768→512→206) matters more than LoRA scope: adding an MLP head gives +0.03–0.05 cmAP, while expanding LoRA from attention to all layers gives only +0.01.
-- The adapters library slightly outperforms PEFT (+0.01–0.025 cmAP) on equivalent configs, likely due to finer-grained handling of fused QKV layers.
+- LoRA fine-tuning dramatically outperforms frozen probing: the best config (adapters, attn LoRA, MLP head) reaches AUROC=0.945, a +6.2% improvement over exp 005's 0.890 baseline (cmAP improves +78%, from 0.301 to 0.536).
+- The MLP classification head (768→512→206) matters more than LoRA scope: adding an MLP head gives +0.004–0.015 AUROC, while expanding LoRA from attention to all layers can hurt AUROC.
+- The adapters library slightly outperforms PEFT on equivalent configs, likely due to finer-grained handling of fused QKV layers.
 
 **Limitation**: Single seed (seed=42); one adapters config timed out (adapters-eat-lora-all, >12h).
 
@@ -175,19 +176,19 @@ Full results: [results.md](experiments/006-lora-finetune/results.md)
 
 ### 3.7 Exp 007: ConvNeXt-Base LoRA Fine-Tune
 
-**Hypothesis**: ConvNeXt-Base with ImageNet pretraining and LoRA will produce comparable or lower cmAP than EAT (0.536), since ImageNet captures visual features while AudioSet captures audio-specific features.
+**Hypothesis**: ConvNeXt-Base with ImageNet pretraining and LoRA will produce comparable or lower AUROC than EAT (0.945), since ImageNet captures visual features while AudioSet captures audio-specific features.
 
 **Dataset**: BirdCLEF 2025 — same split as exps 005–006, 206 species.
 
 **Models**: ConvNeXt-Base (~89M params, ImageNet-22K+1K pretrained) with PEFT LoRA on MLP layers.
 
-| Config | Head | LoRA Params | test cmAP | AUROC | F1 Macro |
-|--------|------|-------------|-----------|-------|----------|
-| MLP LoRA + Linear head | Linear | ~1.4M | **0.527** | 0.939 | 0.467 |
-| MLP LoRA + MLP head | MLP 512 | ~1.4M | 0.525 | 0.941 | 0.455 |
+| Config | Head | LoRA Params | AUROC | cmAP | F1 Macro |
+|--------|------|-------------|-------|------|----------|
+| MLP LoRA + MLP head | MLP 512 | ~1.4M | **0.941** | 0.525 | 0.455 |
+| MLP LoRA + Linear head | Linear | ~1.4M | 0.939 | 0.527 | 0.467 |
 
-- ConvNeXt-Base (cmAP=0.527) falls only 1.7% below EAT's best (0.536), far closer than expected. ImageNet-pretrained CNNs learn generic hierarchical features (edges, textures, frequency patterns) that transfer well to mel spectrograms.
-- Unlike EAT (exp 006), the MLP head provides no benefit for ConvNeXt (0.525 vs 0.527). Since LoRA already targets the MLP layers (fc1, fc2), the encoder features are well-adapted and a linear head suffices.
+- ConvNeXt-Base (AUROC=0.941) falls only 0.4% below EAT's best (0.945), far closer than expected. ImageNet-pretrained CNNs learn generic hierarchical features (edges, textures, frequency patterns) that transfer well to mel spectrograms.
+- The MLP head gives a slight AUROC edge (0.941 vs 0.939) but a slight cmAP deficit (0.525 vs 0.527). Since LoRA already targets the MLP layers (fc1, fc2), the head architecture has minimal impact.
 - ConvNeXt converges faster (best epoch 12–15, stopped 23–26) than EAT (best epoch 27–36), suggesting quicker LoRA adaptation but less room for continued improvement.
 
 **Limitation**: Only PEFT backend tested (no adapters comparison); LoRA can only target MLP layers in ConvNeXt (no attention to adapt).
@@ -198,21 +199,21 @@ Full results: [results.md](experiments/007-convnext-finetune/results.md)
 
 ### 3.8 Exp 008: Frame Tokenization for EAT
 
-**Hypothesis**: Replacing EAT's 16×16 patch embedding with full-frequency frame tokens (2×128 or 4×128) will produce comparable or higher cmAP despite requiring a randomly initialized patch embedding, because full-band tokens better capture harmonic structure.
+**Hypothesis**: Replacing EAT's 16×16 patch embedding with full-frequency frame tokens (2×128 or 4×128) will produce comparable or higher performance despite requiring a randomly initialized patch embedding, because full-band tokens better capture harmonic structure.
 
 **Dataset**: BirdCLEF 2025 — same split, 206 species.
 
 **Models**: EAT-base with PEFT LoRA (attn, r=8), four patch configurations.
 
-| Config | Patch Embed | Patch Size | Tokens | test cmAP | Δ vs Baseline |
-|--------|-------------|------------|--------|-----------|---------------|
-| A: baseline | Pretrained (frozen) | 16×16 | 256 | **0.494** | — |
-| B: control | Random (trained) | 16×16 | 256 | 0.360 | −27% |
-| C1b: frame | Random (trained) | 4×128 | 128 | 0.284 | −43% |
-| C1a: frame | Random (trained) | 2×128 | 256 | 0.260 | −47% |
+| Config | Patch Embed | Patch Size | Tokens | AUROC | cmAP | Δ AUROC vs Baseline |
+|--------|-------------|------------|--------|-------|------|---------------------|
+| A: baseline | Pretrained (frozen) | 16×16 | 256 | **0.933** | 0.494 | — |
+| B: control | Random (trained) | 16×16 | 256 | 0.899 | 0.360 | −3.6% |
+| C1b: frame | Random (trained) | 4×128 | 128 | 0.873 | 0.284 | −6.4% |
+| C1a: frame | Random (trained) | 2×128 | 256 | 0.864 | 0.260 | −7.4% |
 
-- Pretrained 16×16 patches dominate: the frozen pretrained patch embedding (config A) outperforms a fully trained random one (config B) by +37% cmAP, confirming the patch embedding is a learned feature extractor, not just a projection.
-- Frame tokenization actively hurts with pretrained transformers: both frame configs score 21–28% below even the random square control, the opposite of exp 004's +37% improvement from scratch.
+- Pretrained 16×16 patches dominate: the frozen pretrained patch embedding (config A) outperforms a fully trained random one (config B) by +3.8% AUROC (0.933 vs 0.899), confirming the patch embedding is a learned feature extractor, not just a projection.
+- Frame tokenization actively hurts with pretrained transformers: both frame configs score below even the random square control in AUROC, the opposite of exp 004's improvement from scratch.
 - The pretrained transformer's attention patterns, position embeddings, and layer norms are calibrated for a 32×8 grid of 16×16 patches. Frame tokens produce a fundamentally incompatible 1×N grid that LoRA alone cannot bridge.
 
 **Limitation**: Phase 2 (higher LoRA rank, partial unfreeze) was cancelled given the magnitude of the deficit; PEFT only (no adapters).
@@ -229,13 +230,13 @@ Full results: [results.md](experiments/008-frame-tokenization-eat/results.md)
 
 **Models**: ProtoCLR CvT-13 (19M params, Xeno-Canto pretrained) with PEFT LoRA.
 
-| Config | LoRA Targets | LoRA Params | test cmAP | AUROC | F1 Macro | Walltime |
-|--------|-------------|-------------|-----------|-------|----------|----------|
-| All layers | attn + MLP | ~247K | **0.537** | 0.939 | 0.504 | 3h 24m |
-| Attention only | attn | ~148K | 0.531 | 0.942 | 0.463 | 2h 41m |
+| Config | LoRA Targets | LoRA Params | AUROC | cmAP | F1 Macro | Walltime |
+|--------|-------------|-------------|-------|------|----------|----------|
+| Attention only | attn | ~148K | **0.942** | 0.531 | 0.463 | 2h 41m |
+| All layers | attn + MLP | ~247K | 0.939 | 0.537 | 0.504 | 3h 24m |
 
-- ProtoCLR matches EAT's best (0.537 vs 0.536) and surpasses ConvNeXt (0.527) despite being 5× smaller (19M vs ~90M params). Domain-specific bird audio pretraining on Xeno-Canto is remarkably effective.
-- Adding MLP LoRA targets gives a modest cmAP gain (+0.006) but a substantial F1 macro improvement (+8.8%, from 0.463 to 0.504), suggesting MLP adaptation helps with underrepresented classes.
+- ProtoCLR matches EAT's best AUROC (0.942 vs 0.945) and ConvNeXt (0.941) despite being 5× smaller (19M vs ~90M params). Domain-specific bird audio pretraining on Xeno-Canto is remarkably effective.
+- Adding MLP LoRA targets slightly lowers AUROC (0.939 vs 0.942) but gives a substantial F1 macro improvement (+8.8%, from 0.463 to 0.504), suggesting MLP adaptation helps with underrepresented classes at some cost to ranking quality.
 - Training completes in 2.7–3.4 hours — 3–4× faster than EAT and 2× faster than ConvNeXt — thanks to the compact architecture, though the CPU mel transform is the throughput bottleneck.
 
 **Limitation**: Only PEFT backend tested; no MLP classification head tested (exp 006 showed heads help EAT); single seed.
@@ -268,47 +269,47 @@ All configurations evaluated on HSN `test_5s` (12,000 samples), sorted by cmAP d
 
 #### BirdCLEF 2025 (206 classes)
 
-All configurations evaluated on held-out test set (2,803 samples), sorted by cmAP descending.
+All configurations evaluated on held-out test set (2,803 samples), sorted by ROC-AUC descending (the Kaggle competition metric).
 
-| Model | Exp | Encoder | Pretraining | LoRA Targets | Head | Backend | test cmAP |
-|-------|-----|---------|-------------|-------------|------|---------|-----------|
-| ProtoCLR LoRA all | 009 | CvT-13 (19M) | Xeno-Canto | attn + MLP | Linear | PEFT | 0.537 |
-| EAT LoRA attn + MLP head | 006 | EAT-base (90M) | AudioSet | attn | MLP 512 | adapters | 0.536 |
-| ProtoCLR LoRA attn | 009 | CvT-13 (19M) | Xeno-Canto | attn | Linear | PEFT | 0.531 |
-| ConvNeXt LoRA MLP | 007 | ConvNeXt-Base (89M) | ImageNet-22K | MLP | Linear | PEFT | 0.527 |
-| ConvNeXt LoRA MLP + MLP head | 007 | ConvNeXt-Base (89M) | ImageNet-22K | MLP | MLP 512 | PEFT | 0.525 |
-| EAT LoRA attn + MLP head | 006 | EAT-base (90M) | AudioSet | attn | MLP 512 | PEFT | 0.511 |
-| EAT pretrained 16×16 baseline | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.494 |
-| EAT LoRA attn | 006 | EAT-base (90M) | AudioSet | attn | Linear | adapters | 0.485 |
-| EAT LoRA all | 006 | EAT-base (90M) | AudioSet | attn + MLP | Linear | PEFT | 0.482 |
-| EAT LoRA attn | 006 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.469 |
-| EAT random 16×16 control | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.360 |
-| EAT frozen linear probe | 005 | EAT-base (90M) | AudioSet | — | Linear | — | 0.301 |
-| EAT frame 4×128 | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.284 |
-| EAT frame 2×128 | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.260 |
+| Model | Exp | Encoder | Pretraining | LoRA Targets | Head | Backend | AUROC | cmAP |
+|-------|-----|---------|-------------|-------------|------|---------|-------|------|
+| EAT LoRA attn + MLP head | 006 | EAT-base (90M) | AudioSet | attn | MLP 512 | adapters | **0.945** | 0.536 |
+| ProtoCLR LoRA attn | 009 | CvT-13 (19M) | Xeno-Canto | attn | Linear | PEFT | 0.942 | 0.531 |
+| EAT LoRA attn + MLP head | 006 | EAT-base (90M) | AudioSet | attn | MLP 512 | PEFT | 0.942 | 0.511 |
+| ConvNeXt LoRA MLP + MLP head | 007 | ConvNeXt-Base (89M) | ImageNet-22K | MLP | MLP 512 | PEFT | 0.941 | 0.525 |
+| ConvNeXt LoRA MLP | 007 | ConvNeXt-Base (89M) | ImageNet-22K | MLP | Linear | PEFT | 0.939 | 0.527 |
+| ProtoCLR LoRA all | 009 | CvT-13 (19M) | Xeno-Canto | attn + MLP | Linear | PEFT | 0.939 | 0.537 |
+| EAT LoRA attn | 006 | EAT-base (90M) | AudioSet | attn | Linear | adapters | 0.938 | 0.485 |
+| EAT pretrained 16×16 baseline | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.933 | 0.494 |
+| EAT LoRA attn | 006 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.927 | 0.469 |
+| EAT LoRA all | 006 | EAT-base (90M) | AudioSet | attn + MLP | Linear | PEFT | 0.923 | 0.482 |
+| EAT random 16×16 control | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.899 | 0.360 |
+| EAT frozen linear probe | 005 | EAT-base (90M) | AudioSet | — | Linear | — | 0.890 | 0.301 |
+| EAT frame 4×128 | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.873 | 0.284 |
+| EAT frame 2×128 | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.864 | 0.260 |
 
 ### 4.2 Key Insights
 
-1. **Pretraining domain matters, but less than expected for LoRA.** On HSN, audio-pretrained models (0.480 cmAP) outperform ImageNet-pretrained models (0.174–0.191) by 2.5×. On BirdCLEF 2025 with LoRA, however, the gap narrows dramatically: ImageNet-pretrained ConvNeXt (0.527) nearly matches AudioSet-pretrained EAT (0.536), and Xeno-Canto-pretrained ProtoCLR (0.537) matches both despite being 5× smaller. LoRA appears to equalize pretraining domains when sufficient task-specific data is available.
+1. **Pretraining domain matters, but less than expected for LoRA.** On HSN, audio-pretrained models (0.480 cmAP) outperform ImageNet-pretrained models (0.174–0.191) by 2.5×. On BirdCLEF 2025 with LoRA, however, the gap narrows dramatically: ImageNet-pretrained ConvNeXt (AUROC=0.941) nearly matches AudioSet-pretrained EAT (0.945), and Xeno-Canto-pretrained ProtoCLR (0.942) matches both despite being 5× smaller. LoRA appears to equalize pretraining domains when sufficient task-specific data is available.
 
-2. **LoRA sufficiency.** Adapting <1% of EAT's parameters via LoRA produces a +78% improvement over frozen probing (0.536 vs 0.301). Full fine-tuning (exp 005) was impractical — it required batch_size=32 with 8× gradient accumulation and still timed out at 12 hours. LoRA achieves comparable or better results within standard SLURM time limits.
+2. **LoRA sufficiency.** Adapting <1% of EAT's parameters via LoRA produces AUROC=0.945, up from 0.890 with frozen probing (+6.2%). Full fine-tuning (exp 005) was impractical — it required batch_size=32 with 8× gradient accumulation and still timed out at 12 hours. LoRA achieves comparable or better results within standard SLURM time limits.
 
-3. **Head–LoRA interaction.** For EAT, where LoRA targets only attention layers (qkv, proj), adding an MLP classification head compensates for the unadapted MLP layers and adds +0.03–0.05 cmAP. For ConvNeXt, where LoRA targets the MLP layers (fc1, fc2) directly, the MLP head provides no benefit (0.525 vs 0.527). The head compensates for whatever LoRA does not adapt.
+3. **Head–LoRA interaction.** For EAT, where LoRA targets only attention layers (qkv, proj), adding an MLP classification head compensates for the unadapted MLP layers and adds +0.004–0.015 AUROC. For ConvNeXt, where LoRA targets the MLP layers (fc1, fc2) directly, the MLP head provides a marginal AUROC gain (0.941 vs 0.939). The head compensates for whatever LoRA does not adapt.
 
-4. **Pretrained patch embeddings are critical.** Freezing EAT's pretrained 16×16 patch embedding outperforms randomly initializing and fully training a new one by +37% cmAP (0.494 vs 0.360 in exp 008). The pretrained Conv2d is a learned spectro-temporal feature extractor, not merely a projection layer. Preserving the native tokenization scheme of pretrained models is essential.
+4. **Pretrained patch embeddings are critical.** Freezing EAT's pretrained 16×16 patch embedding outperforms randomly initializing and fully training a new one by +3.8% AUROC (0.933 vs 0.899 in exp 008). The pretrained Conv2d is a learned spectro-temporal feature extractor, not merely a projection layer. Preserving the native tokenization scheme of pretrained models is essential.
 
-5. **Frame tokenization paradox.** Vertical frame patches improve ViT from scratch by +37% (exp 004) but degrade pretrained EAT by −43% (exp 008). The pretrained transformer's position embeddings, attention patterns, and layer norms are calibrated for a 2D patch grid. Frame tokens produce an incompatible 1D sequence that LoRA alone cannot remap. Tokenization improvements are secondary to representation quality.
+5. **Frame tokenization paradox.** Vertical frame patches improve ViT from scratch by +37% cmAP (exp 004) but degrade pretrained EAT by −6.4% to −7.4% AUROC (exp 008). The pretrained transformer's position embeddings, attention patterns, and layer norms are calibrated for a 2D patch grid. Frame tokens produce an incompatible 1D sequence that LoRA alone cannot remap. Tokenization improvements are secondary to representation quality.
 
-6. **Overfitting is pervasive.** On HSN, all models show severe train-test gaps (train cmAP ~0.94 vs test ~0.12 in exp 004). On BirdCLEF 2025, gaps are moderate (train ~0.85–0.90 vs test ~0.53). No experiment applied data augmentation (SpecAugment, mixup, time masking). This remains the largest unexplored axis of improvement.
+6. **Overfitting is pervasive.** On HSN, all models show severe train-test gaps (train cmAP ~0.94 vs test ~0.12 in exp 004). On BirdCLEF 2025, gaps are moderate (train ~0.85–0.90 vs test ~0.53 cmAP). No experiment applied data augmentation (SpecAugment, mixup, time masking). This remains the largest unexplored axis of improvement.
 
-7. **Ensemble readiness.** Three architecturally diverse models reach cmAP parity (0.527–0.537) on BirdCLEF 2025: EAT (transformer, AudioSet pretraining), ConvNeXt (CNN, ImageNet pretraining), and ProtoCLR (CvT with convolutional tokenization, Xeno-Canto contrastive pretraining). Their different architectures, patch strategies, and pretraining domains should produce complementary error patterns, making them strong candidates for teacher ensemble pseudo-labeling.
+7. **Ensemble readiness.** Three architecturally diverse models reach AUROC parity (0.939–0.945) on BirdCLEF 2025: EAT (transformer, AudioSet pretraining), ConvNeXt (CNN, ImageNet pretraining), and ProtoCLR (CvT with convolutional tokenization, Xeno-Canto contrastive pretraining). Their different architectures, patch strategies, and pretraining domains should produce complementary error patterns, making them strong candidates for teacher ensemble pseudo-labeling.
 
 ### 4.3 Open Questions
 
 **Representation Quality**
 - Would higher LoRA rank (r=16, r=32) or the adapters backend improve ProtoCLR and ConvNeXt, which were only tested with PEFT at r=8?
-- Can an MLP classification head on ProtoCLR (384→256→206) push beyond 0.537, as it did for EAT in exp 006?
-- Is the ~0.53 cmAP ceiling a data-scale limitation (28K focal recordings, 206 species) or a representation quality plateau?
+- Can an MLP classification head on ProtoCLR (384→256→206) push beyond AUROC=0.942, as it did for EAT in exp 006?
+- Is the ~0.94 AUROC ceiling a data-scale limitation (28K focal recordings, 206 species) or a representation quality plateau?
 
 **Data and Augmentation**
 - How much would SpecAugment, mixup, or time-frequency masking improve generalization, given the pervasive overfitting observed in all experiments?
