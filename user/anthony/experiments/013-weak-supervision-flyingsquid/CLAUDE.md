@@ -4,9 +4,9 @@
 
 ## What This Experiment Does
 
-Fuses multiple noisy label sources into calibrated per-frame soft labels using FlyingSquid's triplet method. Phase 1 uses PyTorch Lightning for probe training (CPU).
+Fuses multiple noisy label sources into calibrated per-frame soft labels using the triplet method (pure numpy, no external deps). Phase 1 uses PyTorch Lightning for probe training (CPU).
 
-**Pipeline**: exp 010 pre-computed outputs → linear probes on embeddings → multi-resolution label matrix → FlyingSquid per species → fused soft labels for downstream training (exp 009/012).
+**Pipeline**: exp 010 pre-computed outputs → linear probes on embeddings → multi-resolution label matrix → triplet method per species → fused soft labels for downstream training (exp 009/012).
 
 ## Data Dependencies (all from exp 010 — COMPLETE)
 
@@ -135,8 +135,10 @@ Soundscape (3 LFs — no recording labels available):
 - **LF2**: Indices species probe — provides the 3rd LF needed for the triplet method minimum
 
 **Tier 2: Per-species prevalence prior (in log-odds space)**
-- `prevalence = (n_recordings / total) × 0.3`, clipped [0.001, 0.1]
-- Without this, the flat 50/50 prior inflates all soft labels
+- `prevalence = n_recordings / total`, clipped [1e-4, 0.5]
+- The `× 0.3` shrinkage factor was removed — the raw fraction is the correct prevalence
+  estimate, and the triplet method's accuracy estimation is independent of class balance
+- Without a prevalence prior, the flat 50/50 default inflates all soft labels
 
 **Tier 3: Activity modulation from acoustic indices (negative-only)**
 - NDSI: < -0.2 → -1 (anthropophony), else abstain
@@ -292,7 +294,7 @@ weaksup-evaluate --split soundscape \
 | Phase | What | Status | Output |
 |-------|------|--------|--------|
 | 1 | Train linear probes on embeddings | DONE (v6) | `probes/*.npz` |
-| 2 | Build label matrix + FlyingSquid fusion | IMPLEMENTED | `fused/soft_labels.parquet` |
+| 2 | Build label matrix + triplet method fusion | IMPLEMENTED | `fused/soft_labels.parquet` |
 | 3 | Evaluate consistency + calibration | IMPLEMENTED | `eval/report.txt` |
 
 ## Soundscape Support (IMPLEMENTED)

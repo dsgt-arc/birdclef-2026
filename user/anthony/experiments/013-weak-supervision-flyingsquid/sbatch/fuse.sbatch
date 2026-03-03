@@ -10,7 +10,7 @@
 # Usage:
 #   sbatch sbatch/fuse.sbatch
 
-set -eu
+set -euo pipefail
 
 scratch_dir=$(realpath ~/scratch/birdclef-2026)
 repo_dir=$(realpath ~/arc/birdclef-2026)
@@ -18,6 +18,7 @@ exp_dir="$repo_dir/user/anthony/experiments/013-weak-supervision-flyingsquid"
 venv="$scratch_dir/.venv"
 
 cd "$exp_dir"
+mkdir -p logs
 
 echo "=== Phase 2: Label Fusion ==="
 echo "Job ID: $SLURM_JOB_ID"
@@ -27,7 +28,8 @@ echo "Time: $(date)"
 echo ""
 
 # Install/update the package
-"$venv/bin/uv" pip install -e "$exp_dir" --quiet
+source "$venv/bin/activate"
+uv pip install -e "$exp_dir" --quiet
 
 probe_dir="$scratch_dir/outputs/exp013/probes"
 data_dir="$scratch_dir/data/birdclef-2025"

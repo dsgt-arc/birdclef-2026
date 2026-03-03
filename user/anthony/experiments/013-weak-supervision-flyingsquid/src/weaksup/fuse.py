@@ -388,49 +388,67 @@ def build_indices_lookup(
 
 
 # ---------------------------------------------------------------------------
-# Triplet method (FlyingSquid)
+# Triplet method
 # ---------------------------------------------------------------------------
 
 
-def flying_squid(L: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Triplet method for label fusion.
+def triplet_method(L: np.ndarray) -> np.ndarray:
+    """Estimate LF accuracies via the triplet method (no ground truth needed).
+
+    For m conditionally-independent LFs with a single latent Y:
+        E[λ_i·λ_j] = E[λ_i·Y] · E[λ_j·Y]
+    So for any triplet (i, j, k):
+        E[λ_k·Y]² = E[λ_i·λ_k] · E[λ_j·λ_k] / E[λ_i·λ_j]
+    And accuracy P(λ_k = Y) = (E[λ_k·Y] + 1) / 2.
+
+    Uses three pairwise moments (not the triple product, which vanishes
+    for balanced classes). Takes the median over all valid triplets.
+    Handles abstentions (0) by masking non-voting tokens per pair.
+
+    Reference: FlyingSquid (Fu et al., 2020), Data Programming with
+    Weak Supervision (Ratner et al., 2016).
 
     Args:
         L: (n_tokens, m_lfs) array of {-1, 0, +1}
 
     Returns:
-        soft_labels: (n_tokens,) probabilities in [0, 1]
-        accuracies: (m_lfs,) estimated accuracy per LF
+        accuracies: (m_lfs,) estimated accuracy per LF in [0.05, 0.95]
     """
     n, m = L.shape
-    accuracies = np.zeros(m)
 
+    # Precompute pairwise moments E[λ_i·λ_j] for all pairs
+    pairwise = np.full((m, m), np.nan)
+    for i, j in combinations(range(m), 2):
+        mask = (L[:, i] != 0) & (L[:, j] != 0)
+        if mask.sum() >= 10:
+            pairwise[i, j] = (L[mask, i].astype(np.float64) * L[mask, j]).mean()
+            pairwise[j, i] = pairwise[i, j]
+
+    accuracies = np.zeros(m)
     for k in range(m):
         estimates = []
         others = [j for j in range(m) if j != k]
         for i, j in combinations(others, 2):
-            mask = (L[:, i] != 0) & (L[:, j] != 0) & (L[:, k] != 0)
-            if mask.sum() < 10:
+            mu_ij = pairwise[i, j]
+            mu_ik = pairwise[i, k]
+            mu_jk = pairwise[j, k]
+            if np.isnan(mu_ij) or np.isnan(mu_ik) or np.isnan(mu_jk):
                 continue
-            Lm = L[mask]
-            mu_ij = (Lm[:, i] * Lm[:, j]).mean()
-            mu_ijk = (Lm[:, i] * Lm[:, j] * Lm[:, k]).mean()
-            if abs(mu_ij) > 1e-6:
-                estimates.append(mu_ijk / mu_ij)
+            if abs(mu_ij) < 1e-6:
+                continue
+            # E[λ_k·Y]² = E[λ_i·λ_k] · E[λ_j·λ_k] / E[λ_i·λ_j]
+            a_k_sq = mu_ik * mu_jk / mu_ij
+            if a_k_sq >= 0:
+                estimates.append(np.sqrt(a_k_sq))
         if estimates:
-            accuracies[k] = np.clip((np.median(estimates) + 1) / 2, 0.05, 0.95)
+            a_k = np.median(estimates)
+            # E[λ_k·Y] -> P(λ_k = Y) = (E[λ_k·Y] + 1) / 2
+            # Assume all LFs are positively correlated with Y (sign recovery)
+            accuracies[k] = np.clip((a_k + 1) / 2, 0.05, 0.95)
         else:
             accuracies[k] = 0.5
 
-    # Bayes rule: combine LF votes weighted by log-odds accuracy
-    log_odds = np.zeros(n)
-    for k in range(m):
-        a = accuracies[k]
-        log_ratio = np.log(a / (1 - a))
-        log_odds += L[:, k] * log_ratio
-
-    soft_labels = _sigmoid(log_odds)
-    return soft_labels, accuracies
+    return accuracies
 
 
 def apply_accuracies(
@@ -515,7 +533,7 @@ def _fuse_one_species(args: tuple) -> tuple[int, str, np.ndarray, np.ndarray]:
         sample_mask = np.ones(n_tokens, dtype=bool)
 
     L_sample = label_matrix[sample_mask]
-    _, accuracies = flying_squid(L_sample)
+    accuracies = triplet_method(L_sample)
 
     soft_labels = apply_accuracies(
         label_matrix, accuracies,
@@ -709,7 +727,7 @@ def fuse(
     species_prevalence = {}
     for s_code in species_list:
         frac = species_rec_counts.get(s_code, 0) / max(total_recordings, 1)
-        species_prevalence[s_code] = np.clip(frac * 0.3, 0.001, 0.1)
+        species_prevalence[s_code] = np.clip(frac, 1e-4, 0.5)
     prev_vals = list(species_prevalence.values())
     console.print(
         f"Prevalence: mean={np.mean(prev_vals):.4f}, "
