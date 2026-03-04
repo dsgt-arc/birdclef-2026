@@ -18,8 +18,12 @@ cd $repo_dir/user/anthony/experiments/014-efficientnet-soft-labels
 
 module load cuda/12.1.1
 
+# Default run name; override with: sbatch finetune.sbatch --run-name focal-soundscape
+RUN_NAME=${RUN_NAME:-finetune}
+
 echo "=== EfficientNet-B1 Soft Labels ==="
 echo "Config: configs/finetune-soft.yaml"
+echo "Run name: $RUN_NAME"
 
 uv run --project $repo_dir/user/anthony birdclef-efficientnet-soft \
-    --config configs/finetune-soft.yaml "$@"
+    --config configs/finetune-soft.yaml --run-name "$RUN_NAME" "$@"

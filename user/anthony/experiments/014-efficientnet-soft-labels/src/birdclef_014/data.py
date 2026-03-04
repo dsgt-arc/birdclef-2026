@@ -198,6 +198,9 @@ class SoftLabelDataModule(ptl.LightningDataModule):
         self.train_dataset = None
         self.val_dataset = None
 
+        if self.include_soundscape and not self.soundscape_audio_dir:
+            raise ValueError("soundscape_audio_dir must be set when include_soundscape=True")
+
     def setup(self, stage=None):
         if stage == "fit" or stage is None:
             # --- Val split: same stratified split as exp 012 ---

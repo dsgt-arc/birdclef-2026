@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--ckpt-path", type=str, default=None, help="Resume from Lightning checkpoint")
     parser.add_argument("--overfit-batches", type=int, default=0)
     parser.add_argument("--include-soundscape", action="store_true", help="Include soundscape training data")
+    parser.add_argument("--run-name", type=str, default="finetune", help="Run name for log subdirectory")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -106,6 +107,8 @@ def main():
         pl.callbacks.LearningRateMonitor(logging_interval="step"),
     ]
 
+    log_dir = f"logs/{args.run_name}"
+
     if not args.overfit_batches and not args.fast_dev_run:
         es_cfg = cb_cfg.get("early_stopping")
         if es_cfg:
@@ -114,7 +117,7 @@ def main():
         mc_cfg = cb_cfg.get("model_checkpoint")
         if mc_cfg:
             callbacks.append(pl.callbacks.ModelCheckpoint(
-                dirpath="logs/finetune/checkpoints",
+                dirpath=f"{log_dir}/checkpoints",
                 filename="finetune-{epoch:02d}-{val/cmap:.4f}",
                 save_last=True,
                 **mc_cfg,
@@ -129,7 +132,7 @@ def main():
         accelerator="auto",
         devices=1,
         callbacks=callbacks,
-        default_root_dir="logs/finetune",
+        default_root_dir=log_dir,
         log_every_n_steps=10,
         gradient_clip_val=1.0,
         fast_dev_run=args.fast_dev_run,

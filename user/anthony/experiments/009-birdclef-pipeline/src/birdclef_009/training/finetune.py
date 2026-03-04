@@ -118,7 +118,7 @@ class FinetuneLightningModule(pl.LightningModule):
         loss = self.clip_loss(clip_logits, clip_labels)
 
         clip_probs = torch.sigmoid(clip_logits)
-        self.train_cmap.update(clip_probs, clip_labels.int())
+        self.train_cmap.update(clip_probs, clip_labels.round().int())
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
