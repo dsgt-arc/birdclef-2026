@@ -58,6 +58,7 @@ members = [
     "experiments/012-efficientnet-linear-probe",
     "experiments/013-weak-supervision-flyingsquid",
     "experiments/014-efficientnet-soft-labels",
+    "experiments/015-efficientnet-sed",
 ]
 
 # Use PyTorch cu121 index for CUDA 12.1 compatibility (matches PACE's cuda/12.1.1 module)

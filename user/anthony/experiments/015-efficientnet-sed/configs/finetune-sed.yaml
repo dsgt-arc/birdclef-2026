@@ -1,0 +1,38 @@
+model:
+  model_name: "DBD-research-group/EfficientNet-B1-BirdSet-XCL"
+  head_dropout: 0.3
+
+data:
+  audio_dir: ~/scratch/birdclef-2026/data/birdclef-2025/train_audio/
+  metadata_csv: ~/scratch/birdclef-2026/data/birdclef-2025/train.csv
+  soft_labels_dir: ~/scratch/birdclef-2026/outputs/exp013/fused-v2/
+  soundscape_audio_dir: ~/scratch/birdclef-2026/data/birdclef-2025/train_soundscapes/
+  include_soundscape: false
+  sample_rate: 32000
+  chunk_duration: 5.0
+  n_mels: 256
+  n_fft: 2048
+  hop_length: 256
+  target_frames: 625  # 5s * 32000 / 256 = 625
+  batch_size: 256
+  num_workers: 8
+  val_fraction: 0.1
+
+training:
+  max_epochs: 30
+  lr: 1.0e-3
+  weight_decay: 0.01
+  warmup_epochs: 0
+  precision: bf16-mixed
+  alpha: 1.0        # frame loss weight
+  gamma_clip: 2.0   # focal gamma for clip loss
+  gamma_frame: 2.0  # focal gamma for frame loss
+  augmentation:
+    freq_mask_param: 40
+    time_mask_param: 50
+    num_freq_masks: 2
+    num_time_masks: 2
+
+callbacks:
+  early_stopping: { monitor: val/auroc, mode: max, patience: 10 }
+  model_checkpoint: { monitor: val/auroc, mode: max, save_top_k: 1 }
