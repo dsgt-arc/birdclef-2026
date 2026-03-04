@@ -233,6 +233,158 @@ def load_indices(
     return X, y_species, y_taxa, recording_ids, feature_mean, feature_std
 
 
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-np.clip(x, -50, 50)))
+
+
+def load_embeddings_with_energy(
+    embed_dir: Path,
+    indices_dir: Path,
+    file_to_species: dict[str, str],
+    species_list: list[str],
+    species_to_taxa: dict[str, str],
+    taxa_list: list[str] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Load embeddings and attenuate species labels by per-clip acoustic energy.
+
+    Instead of y[clip] = 1.0 for all clips of a recording, computes
+    y[clip] = energy_weight(clip) where energy_weight is derived from
+    bioacoustic_index via per-recording normalization.
+
+    Clips in quiet portions of a recording get weight near 0, while
+    clips with vocalization activity get weight near 1.
+
+    Args:
+        embed_dir: directory with embedding parquets (BirdNET/Perch).
+        indices_dir: directory with acoustic index parquets (exp 010).
+        file_to_species: filename -> primary_label mapping.
+        species_list: ordered species labels.
+        species_to_taxa: species -> taxa class mapping.
+        taxa_list: ordered taxa labels.
+
+    Returns:
+        X: (N, D) embedding matrix.
+        y_species: (N, n_species) energy-attenuated species labels in [0, 1].
+        y_taxa: (N,) integer taxa labels.
+        recording_ids: (N,) integer recording group IDs.
+    """
+    if taxa_list is None:
+        taxa_list = sorted(set(species_to_taxa.values()))
+
+    species_to_idx = {s: i for i, s in enumerate(species_list)}
+    taxa_to_idx = {t: i for i, t in enumerate(taxa_list)}
+
+    # --- Load embeddings ---
+    parquet_files = sorted(embed_dir.glob("part_*.parquet"))
+    if not parquet_files:
+        raise FileNotFoundError(f"No parquet files found in {embed_dir}")
+
+    df = pl.concat([pl.read_parquet(p) for p in parquet_files])
+    file_col = df["file"].to_list()
+    start_times = df["start_time"].to_numpy().astype(np.float32)
+    meta_cols = {"file", "start_time", "end_time"}
+    embed_cols = [c for c in df.columns if c not in meta_cols]
+    X = df.select(embed_cols).to_numpy().astype(np.float32)
+
+    # --- Load acoustic indices for energy weights ---
+    idx_files = sorted(indices_dir.glob("part_*.parquet"))
+    if not idx_files:
+        raise FileNotFoundError(f"No parquet files found in {indices_dir}")
+    idx_df = pl.concat([pl.read_parquet(p) for p in idx_files])
+
+    # Build lookup: (relative_file, window_start) -> bioacoustic_index
+    bi_lookup: dict[tuple[str, int], float] = {}
+    idx_file_col = idx_df["file"].to_list()
+    idx_start_col = idx_df["window_start"].to_numpy()
+    idx_bi_col = idx_df["bioacoustic_index"].to_numpy()
+    for j in range(len(idx_file_col)):
+        bi_lookup[(idx_file_col[j], int(idx_start_col[j]))] = float(idx_bi_col[j])
+
+    # --- Compute per-clip energy weights ---
+    n_samples = len(file_col)
+    n_species = len(species_list)
+
+    # Extract relative paths and get BI values
+    rel_paths = [_extract_relative_path(p) for p in file_col]
+    bi_values = np.zeros(n_samples, dtype=np.float64)
+    bi_matched = np.zeros(n_samples, dtype=bool)
+    for i in range(n_samples):
+        key = (rel_paths[i], int(start_times[i]))
+        if key in bi_lookup:
+            bi_values[i] = bi_lookup[key]
+            bi_matched[i] = True
+
+    print(f"  Energy: matched {bi_matched.sum()}/{n_samples} clips to indices "
+          f"({100 * bi_matched.mean():.1f}%)")
+
+    # Per-recording energy normalization
+    rec_to_clips: dict[str, list[int]] = {}
+    for i, rp in enumerate(rel_paths):
+        rec_to_clips.setdefault(rp, []).append(i)
+
+    energy = np.full(n_samples, 0.5, dtype=np.float64)  # default for unmatched
+    for rec, clip_indices in rec_to_clips.items():
+        mask = np.array(clip_indices)
+        matched_mask = bi_matched[mask]
+        if matched_mask.sum() < 2:
+            # Not enough data for normalization, use uniform weight
+            energy[mask] = 0.5
+            continue
+        bi_rec = bi_values[mask[matched_mask]]
+        bi_median = np.median(bi_rec)
+        bi_iqr = np.percentile(bi_rec, 75) - np.percentile(bi_rec, 25)
+        scale = max(bi_iqr, 1.0)
+        # Apply to all clips in this recording (matched get normalized, unmatched get 0.5)
+        for idx in mask[matched_mask]:
+            energy[idx] = _sigmoid((bi_values[idx] - bi_median) / scale)
+
+    # --- Build labels ---
+    y_species = np.zeros((n_samples, n_species), dtype=np.float32)
+    y_taxa = np.zeros(n_samples, dtype=np.int64)
+    recording_map: dict[str, int] = {}
+    recording_ids = np.zeros(n_samples, dtype=np.int64)
+
+    skipped = 0
+    for i, rel_path in enumerate(rel_paths):
+        species = file_to_species.get(rel_path)
+        if species is None:
+            skipped += 1
+            continue
+
+        if species in species_to_idx:
+            y_species[i, species_to_idx[species]] = float(energy[i])
+
+        taxa = species_to_taxa.get(species)
+        if taxa and taxa in taxa_to_idx:
+            y_taxa[i] = taxa_to_idx[taxa]
+
+        if rel_path not in recording_map:
+            recording_map[rel_path] = len(recording_map)
+        recording_ids[i] = recording_map[rel_path]
+
+    if skipped > 0:
+        print(f"  Warning: {skipped}/{n_samples} clips had no matching species in train.csv")
+
+    # Filter clips with no species label
+    labeled = y_species.sum(axis=1) > 0
+    n_unlabeled = n_samples - labeled.sum()
+    if n_unlabeled > 0:
+        print(f"  Filtering {n_unlabeled} unlabeled clips")
+        X = X[labeled]
+        y_species = y_species[labeled]
+        y_taxa = y_taxa[labeled]
+        recording_ids = recording_ids[labeled]
+
+    # Report energy distribution
+    pos_labels = y_species[y_species > 0]
+    print(f"  Energy-attenuated labels: mean={pos_labels.mean():.3f}, "
+          f"median={np.median(pos_labels):.3f}, "
+          f"near-zero (<0.1)={100 * (pos_labels < 0.1).mean():.1f}%, "
+          f"near-one (>0.9)={100 * (pos_labels > 0.9).mean():.1f}%")
+
+    return X, y_species, y_taxa, recording_ids
+
+
 class IndicesDataModule(L.LightningDataModule):
     """DataModule for acoustic index features + labels.
 

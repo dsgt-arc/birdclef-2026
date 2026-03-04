@@ -31,7 +31,7 @@ from torchmetrics.classification import (
     MulticlassF1Score,
 )
 
-from weaksup.data import EmbeddingDataModule, IndicesDataModule
+from weaksup.data import EmbeddingDataModule, IndicesDataModule, load_embeddings_with_energy, load_metadata
 from weaksup.focal import FocalBCELoss, FocalCELoss
 
 app = typer.Typer(pretty_exceptions_enable=False)
@@ -279,6 +279,11 @@ def _save_probe_results(
 # --- CLI ---
 
 
+def _indices_dir_for_energy() -> Path:
+    """Return the acoustic indices directory for energy attenuation."""
+    return DEFAULT_OUTPUT_ROOT / "indices" / "train_audio" / "parts"
+
+
 @app.command()
 def species(
     source: Annotated[str, typer.Argument(help="Embedding source: birdnet, perch, or indices")],
@@ -289,6 +294,7 @@ def species(
     C: Annotated[float, typer.Option(help="Inverse L2 regularization")] = 1.0,
     balance: Annotated[str, typer.Option(help="Sampling balance: none/sqrt/inverse")] = "none",
     no_alpha: Annotated[bool, typer.Option("--no-alpha", help="Disable focal alpha (use with balanced sampling)")] = False,
+    energy_attenuate: Annotated[bool, typer.Option("--energy-attenuate", help="Attenuate labels by acoustic energy")] = False,
     data_dir: Annotated[Path, typer.Option(help="BirdCLEF data dir")] = DEFAULT_DATA_DIR,
     output_dir: Annotated[Path, typer.Option(help="Output dir for probes")] = DEFAULT_PROBE_DIR,
     seed: Annotated[int, typer.Option(help="Random seed")] = 42,
@@ -311,7 +317,56 @@ def species(
             batch_size=batch_size,
             seed=seed,
         )
-    dm.setup()
+
+    if energy_attenuate and source != "indices":
+        # Override the data module setup to use energy-attenuated labels
+        print("Using energy-attenuated labels (bioacoustic_index normalization)")
+        file_to_species, species_to_taxa, dm.species_list = load_metadata(data_dir)
+        dm.taxa_list = sorted(set(species_to_taxa.values()))
+        dm.n_species = len(dm.species_list)
+        dm.n_taxa = len(dm.taxa_list)
+
+        indices_dir = _indices_dir_for_energy()
+        X, y_species, y_taxa, recording_ids = load_embeddings_with_energy(
+            embed_dir, indices_dir,
+            file_to_species, dm.species_list, species_to_taxa, dm.taxa_list,
+        )
+        dm.n_features = X.shape[1]
+
+        # Compute weights using effective positive mass (sum of energy weights)
+        pos_mass = y_species.sum(axis=0)
+        neg_counts = len(y_species) - (y_species > 0).sum(axis=0)
+        total = len(y_species)
+        dm.species_pos_weight = (neg_counts / total).astype(np.float32)
+        dm.species_counts = pos_mass.astype(np.float32)
+
+        taxa_counts = np.bincount(y_taxa, minlength=dm.n_taxa).astype(np.float32)
+        inv_freq = 1.0 / np.maximum(taxa_counts, 1)
+        dm.taxa_class_weight = (inv_freq / inv_freq.sum() * dm.n_taxa).astype(np.float32)
+
+        # Split by recording
+        rng = np.random.RandomState(seed)
+        unique_recordings = np.unique(recording_ids)
+        n_val_recs = max(1, int(len(unique_recordings) * 0.1))
+        val_rec_set = set(rng.choice(unique_recordings, size=n_val_recs, replace=False))
+        val_mask = np.array([r in val_rec_set for r in recording_ids])
+        train_mask = ~val_mask
+
+        from torch.utils.data import TensorDataset
+        dm.train_dataset = TensorDataset(
+            torch.from_numpy(X[train_mask]),
+            torch.from_numpy(y_species[train_mask]),
+            torch.from_numpy(y_taxa[train_mask]),
+        )
+        dm.val_dataset = TensorDataset(
+            torch.from_numpy(X[val_mask]),
+            torch.from_numpy(y_species[val_mask]),
+            torch.from_numpy(y_taxa[val_mask]),
+        )
+        print(f"  Train: {len(dm.train_dataset)}, Val: {len(dm.val_dataset)} "
+              f"({len(val_rec_set)} recordings held out)")
+    else:
+        dm.setup()
 
     alpha = None if no_alpha else torch.from_numpy(dm.species_pos_weight)
     n_train = len(dm.train_dataset)

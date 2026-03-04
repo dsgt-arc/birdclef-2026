@@ -45,8 +45,9 @@ DEFAULT_PROBE_DIR = Path("~/scratch/birdclef-2026/outputs/exp013/probes").expand
 DEFAULT_DATA_DIR = Path("~/scratch/birdclef-2026/data/birdclef-2025").expanduser()
 DEFAULT_EXP010_DIR = Path("~/scratch/birdclef-2026/outputs/exp010/labels").expanduser()
 DEFAULT_OUTPUT_DIR = Path("~/scratch/birdclef-2026/outputs/exp013/fused").expanduser()
+DEFAULT_MAPPING_PATH = Path("~/scratch/birdclef-2026/outputs/exp013/mappings/species_mapping.json").expanduser()
 
-# Species-specific LF names per split
+# Species-specific LF names per split (base — without raw logits)
 FOCAL_LF_NAMES = [
     "lf0_birdnet",
     "lf1_perch",
@@ -57,6 +58,12 @@ SOUNDSCAPE_LF_NAMES = [
     "lf0_birdnet",
     "lf1_perch",
     "lf2_indices",
+]
+
+# Raw logit LF names (appended for bird species that have mappings)
+RAW_LOGIT_LF_NAMES = [
+    "lf_birdnet_raw",
+    "lf_perch_raw",
 ]
 
 # Species-agnostic LFs for activity modulation (negative-only)
@@ -102,7 +109,9 @@ def _data_paths(exp010_dir: Path, split: str) -> dict[str, Path]:
     audio_dir = "train_audio" if split == "focal" else "train_soundscapes"
     return {
         "birdnet_embed": exp010_dir / "birdnet" / audio_dir / "parts" / "embed",
+        "birdnet_predict": exp010_dir / "birdnet" / audio_dir / "parts" / "predict",
         "perch_embed": exp010_dir / "perch" / audio_dir / "parts" / "embed",
+        "perch_predict": exp010_dir / "perch" / audio_dir / "parts" / "predict",
         "indices": exp010_dir / "indices" / audio_dir / "parts",
     }
 
@@ -257,6 +266,106 @@ def load_file_to_species(data_dir: Path) -> dict[str, str]:
         for row in csv.DictReader(f):
             mapping[row["filename"]] = row["primary_label"]
     return mapping
+
+
+def load_species_mapping(mapping_path: Path) -> dict:
+    """Load species_mapping.json with BirdNET/Perch column index maps."""
+    import json
+
+    with open(mapping_path) as f:
+        return json.load(f)
+
+
+def score_raw_logits(
+    predict_dir: Path,
+    species_mapping: dict[str, int],
+    species_list: list[str],
+    split: str,
+) -> tuple[np.ndarray, list[str], np.ndarray]:
+    """Load predict parquets and extract logits for mapped BirdCLEF species.
+
+    Only reads the mapped columns (not all 6522/10932) for efficiency.
+    Unmapped species get NaN (treated as abstain in downstream thresholding).
+
+    Args:
+        predict_dir: directory with predict parquet shards
+        species_mapping: {birdclef_species_code: column_index} from species_mapping.json
+        species_list: ordered 206-species list
+        split: "focal" or "soundscape"
+
+    Returns:
+        logits: (N, 206) raw logits — NaN for unmapped species
+        file_keys: normalized file keys
+        start_times: (N,) start times
+    """
+    parquet_files = sorted(predict_dir.glob("part_*.parquet"))
+    if not parquet_files:
+        raise FileNotFoundError(f"No parquets in {predict_dir}")
+
+    # Build column selection: only mapped species columns + metadata
+    mapped_cols = set()
+    for sp in species_list:
+        if sp in species_mapping:
+            mapped_cols.add(str(species_mapping[sp]))
+
+    label = predict_dir.parts[-4]  # "birdnet" or "perch"
+    n_species = len(species_list)
+    species_to_idx = {s: i for i, s in enumerate(species_list)}
+
+    all_logits: list[np.ndarray] = []
+    all_files: list[str] = []
+    all_starts: list[np.ndarray] = []
+
+    for pf in track(parquet_files, description=f"Loading {label} raw logits"):
+        # Read only needed columns for memory efficiency
+        df = pl.read_parquet(pf, columns=["file", "start_time"] + sorted(mapped_cols))
+        files_raw = df["file"].to_list()
+        starts = df["start_time"].to_numpy().astype(np.float32)
+        n_chunk = len(files_raw)
+
+        chunk_logits = np.full((n_chunk, n_species), np.nan, dtype=np.float32)
+        for sp, col_idx in species_mapping.items():
+            if sp in species_to_idx:
+                col_name = str(col_idx)
+                if col_name in df.columns:
+                    chunk_logits[:, species_to_idx[sp]] = (
+                        df[col_name].to_numpy().astype(np.float32)
+                    )
+
+        all_logits.append(chunk_logits)
+        all_files.extend(_normalize_file_key(f, split) for f in files_raw)
+        all_starts.append(starts)
+
+    return (
+        np.concatenate(all_logits, axis=0),
+        all_files,
+        np.concatenate(all_starts, axis=0),
+    )
+
+
+def threshold_raw_logits_percentile(
+    logits: np.ndarray,
+    pos_pct: float = 95.0,
+    neg_pct: float = 50.0,
+) -> np.ndarray:
+    """Percentile threshold on raw logits -> {-1, 0, +1}, NaN-aware.
+
+    Like threshold_votes_percentile() but handles NaN columns (unmapped species)
+    by leaving them as 0 (abstain).
+    """
+    votes = np.zeros(logits.shape, dtype=np.int8)
+    n_species = logits.shape[1]
+    for s in range(n_species):
+        col = logits[:, s]
+        valid = ~np.isnan(col)
+        if valid.sum() < 10:
+            continue  # not enough data, abstain
+        valid_vals = col[valid]
+        pos_thresh = np.percentile(valid_vals, pos_pct)
+        neg_thresh = np.percentile(valid_vals, neg_pct)
+        votes[valid & (col > pos_thresh), s] = 1
+        votes[valid & (col < neg_thresh), s] = -1
+    return votes
 
 
 # ---------------------------------------------------------------------------
@@ -566,6 +675,9 @@ def fuse(
     output_dir: Annotated[
         Path, typer.Option(help="Output dir for fused labels")
     ] = DEFAULT_OUTPUT_DIR,
+    mapping_path: Annotated[
+        Path | None, typer.Option(help="Path to species_mapping.json for raw logit LFs")
+    ] = None,
     n_workers: Annotated[
         int, typer.Option(help="Parallel workers for per-species fusion")
     ] = 4,
@@ -590,15 +702,35 @@ def fuse(
         raise typer.BadParameter(f"split must be 'focal' or 'soundscape', got {split!r}")
 
     is_focal = split == "focal"
-    lf_names = FOCAL_LF_NAMES if is_focal else SOUNDSCAPE_LF_NAMES
-    n_species_lfs = len(lf_names)
+    base_lf_names = list(FOCAL_LF_NAMES if is_focal else SOUNDSCAPE_LF_NAMES)
+    n_base_lfs = len(base_lf_names)
 
     split_output_dir = output_dir / split
     split_output_dir.mkdir(parents=True, exist_ok=True)
     paths = _data_paths(exp010_dir, split)
 
-    console.rule(f"[bold]Label Fusion — {split}")
-    console.print(f"Species-specific LFs: {n_species_lfs} ({', '.join(lf_names)})")
+    # ── 0. Load species mapping for raw logit LFs ──
+    use_raw_logits = mapping_path is not None and mapping_path.exists()
+    species_mapping_data: dict | None = None
+    bn_raw_map: dict[str, int] = {}
+    pc_raw_map: dict[str, int] = {}
+    if use_raw_logits:
+        species_mapping_data = load_species_mapping(mapping_path)
+        bn_raw_map = species_mapping_data.get("birdnet", {})
+        pc_raw_map = species_mapping_data.get("perch", {})
+        console.rule(f"[bold]Label Fusion — {split} (with raw logit LFs)")
+        console.print(
+            f"Raw logit mappings: BirdNET {len(bn_raw_map)} birds, "
+            f"Perch {len(pc_raw_map)} birds"
+        )
+    else:
+        console.rule(f"[bold]Label Fusion — {split}")
+        if mapping_path is not None:
+            console.print(f"[yellow]Warning: mapping_path {mapping_path} not found, skipping raw logits[/yellow]")
+
+    console.print(f"Base LFs: {n_base_lfs} ({', '.join(base_lf_names)})")
+    if use_raw_logits:
+        console.print(f"Raw logit LFs: {', '.join(RAW_LOGIT_LF_NAMES)} (for mapped birds only)")
 
     # ── 1. Load metadata ──
     console.rule("[bold]Loading metadata")
@@ -660,6 +792,46 @@ def fuse(
         f"  Logit range: [{idx_logits.min():.4f}, {idx_logits.max():.4f}], "
         f"std={idx_logits.std():.4f}"
     )
+
+    # ── 5b. Load raw logit LFs (if mapping provided) ──
+    bn_raw_votes: np.ndarray | None = None
+    pc_raw_votes_lookup: dict[tuple[str, int], np.ndarray] | None = None
+    if use_raw_logits:
+        console.rule("[bold]Loading BirdNET raw logits")
+        bn_raw_logits, bn_raw_files, bn_raw_starts = score_raw_logits(
+            paths["birdnet_predict"], bn_raw_map, species_list, split
+        )
+        console.print(f"BirdNET raw: {len(bn_raw_files)} tokens, "
+                       f"{len(bn_raw_map)} mapped species")
+        bn_raw_votes = threshold_raw_logits_percentile(
+            bn_raw_logits, pos_pct, neg_pct
+        )
+        del bn_raw_logits
+        n_bn_raw_voting = (bn_raw_votes != 0).any(axis=1).sum()
+        console.print(f"  Voting tokens: {n_bn_raw_voting}/{len(bn_raw_files)} "
+                       f"({100 * n_bn_raw_voting / len(bn_raw_files):.1f}%)")
+
+        console.rule("[bold]Loading Perch raw logits")
+        pc_raw_logits, pc_raw_files, pc_raw_starts = score_raw_logits(
+            paths["perch_predict"], pc_raw_map, species_list, split
+        )
+        console.print(f"Perch raw: {len(pc_raw_files)} tokens, "
+                       f"{len(pc_raw_map)} mapped species")
+        pc_raw_votes_all = threshold_raw_logits_percentile(
+            pc_raw_logits, pos_pct, neg_pct
+        )
+        del pc_raw_logits
+
+        # Build Perch raw lookup (forward-fill 5s → 1s)
+        pc_raw_votes_lookup = {}
+        for i in range(len(pc_raw_files)):
+            rel_file = pc_raw_files[i]
+            t_start = int(pc_raw_starts[i])
+            votes = pc_raw_votes_all[i]
+            for t in range(t_start, t_start + 5):
+                pc_raw_votes_lookup[(rel_file, t)] = votes
+        del pc_raw_votes_all
+        console.print(f"  Perch raw lookup: {len(pc_raw_votes_lookup)} 1s bins")
 
     # ── 6. Build vote lookups ──
     console.rule("[bold]Building vote lookups")
@@ -779,31 +951,95 @@ def fuse(
         f"({100*n_idx_matched/n_tokens:.1f}%)"
     )
 
-    # Build task list
+    # Pre-build raw logit vote matrices (if enabled)
+    bn_raw_votes_all: np.ndarray | None = None
+    pc_raw_votes_all: np.ndarray | None = None
+    if use_raw_logits:
+        console.print("Filling raw logit votes...")
+        # BirdNET raw: same alignment as BirdNET embeddings (1:1)
+        # Both glob the same partition shards in sorted order from the same pipeline run.
+        assert bn_raw_votes.shape[0] == n_tokens, (
+            f"BirdNET predict/embed row count mismatch: "
+            f"{bn_raw_votes.shape[0]} predict vs {n_tokens} embed tokens. "
+            f"Predict and embed parquets must come from the same exp 010 run."
+        )
+        bn_raw_votes_all = bn_raw_votes  # (n_tokens, n_species)
+        del bn_raw_votes
+
+        # Perch raw: forward-fill lookup
+        pc_raw_votes_all = np.zeros((n_tokens, n_species), dtype=np.int8)
+        for i in range(n_tokens):
+            key = (bn_files[i], int(bn_starts[i]))
+            pv = pc_raw_votes_lookup.get(key)
+            if pv is not None:
+                pc_raw_votes_all[i] = pv
+        del pc_raw_votes_lookup
+        n_pc_raw_matched = (pc_raw_votes_all != 0).any(axis=1).sum()
+        console.print(
+            f"  Perch raw coverage: {n_pc_raw_matched}/{n_tokens} tokens "
+            f"({100 * n_pc_raw_matched / n_tokens:.1f}%)"
+        )
+
+    # Determine per-species LF count and names
+    # Birds with raw logit mapping get extra LFs
+    has_bn_raw = set(bn_raw_map.keys()) if use_raw_logits else set()
+    has_pc_raw = set(pc_raw_map.keys()) if use_raw_logits else set()
+
+    # Build task list with variable-width label matrices
     tasks = []
+    species_n_lfs = []  # track per-species LF count
     for s_idx, s_code in enumerate(species_list):
-        L = np.zeros((n_tokens, n_species_lfs), dtype=np.int8)
-        L[:, 0] = bn_votes[:, s_idx]          # LF0: BirdNET
-        L[:, 1] = perch_votes_all[:, s_idx]    # LF1: Perch
+        # Determine LFs for this species
+        extra_lfs = []
+        if s_code in has_bn_raw:
+            extra_lfs.append("bn_raw")
+        if s_code in has_pc_raw:
+            extra_lfs.append("pc_raw")
+        n_lfs = n_base_lfs + len(extra_lfs)
+        species_n_lfs.append(n_lfs)
+
+        L = np.zeros((n_tokens, n_lfs), dtype=np.int8)
+        L[:, 0] = bn_votes[:, s_idx]          # LF0: BirdNET probe
+        L[:, 1] = perch_votes_all[:, s_idx]    # LF1: Perch probe
         L[:, 2] = indices_votes_all[:, s_idx]  # LF2: indices probe
         if is_focal:
             L[token_primary_species == s_idx, 3] = 1  # LF3: recording label
+
+        # Append raw logit LFs
+        col = n_base_lfs
+        if "bn_raw" in extra_lfs:
+            L[:, col] = bn_raw_votes_all[:, s_idx]
+            col += 1
+        if "pc_raw" in extra_lfs:
+            L[:, col] = pc_raw_votes_all[:, s_idx]
+            col += 1
+
         tasks.append((
             s_idx, s_code, L, activity_log_odds,
             species_prevalence[s_code], neg_ratio,
         ))
 
     del bn_votes, perch_votes_all, indices_votes_all
+    if bn_raw_votes_all is not None:
+        del bn_raw_votes_all
+    if pc_raw_votes_all is not None:
+        del pc_raw_votes_all
 
-    console.print(f"Fusing {n_species} species with {n_workers} workers...")
+    max_n_lfs = max(species_n_lfs)
+    n_with_raw = sum(1 for n in species_n_lfs if n > n_base_lfs)
+    console.print(
+        f"Fusing {n_species} species with {n_workers} workers... "
+        f"({n_with_raw} species have raw logit LFs, max {max_n_lfs} LFs)"
+    )
+
     all_soft_labels = np.zeros((n_tokens, n_species), dtype=np.float32)
-    all_accuracies = np.zeros((n_species, n_species_lfs), dtype=np.float64)
+    all_accuracies = np.full((n_species, max_n_lfs), np.nan, dtype=np.float64)
 
     if n_workers <= 1:
         for task in track(tasks, description="Fusing species"):
             s_idx, s_code, soft, acc = _fuse_one_species(task)
             all_soft_labels[:, s_idx] = soft
-            all_accuracies[s_idx] = acc
+            all_accuracies[s_idx, :len(acc)] = acc
     else:
         with ProcessPoolExecutor(max_workers=n_workers) as pool:
             for s_idx, s_code, soft, acc in track(
@@ -812,7 +1048,7 @@ def fuse(
                 description="Fusing species",
             ):
                 all_soft_labels[:, s_idx] = soft
-                all_accuracies[s_idx] = acc
+                all_accuracies[s_idx, :len(acc)] = acc
 
     # ── 13. Save outputs ──
     console.rule("[bold]Saving outputs")
@@ -829,10 +1065,18 @@ def fuse(
     label_df.write_parquet(soft_labels_path, compression="zstd")
     console.print(f"Soft labels: {soft_labels_path} ({label_df.shape})")
 
+    # Build LF names for accuracy output
+    all_lf_names = list(base_lf_names)
+    if use_raw_logits:
+        all_lf_names.extend(RAW_LOGIT_LF_NAMES)
+    # Pad names to max_n_lfs
+    while len(all_lf_names) < max_n_lfs:
+        all_lf_names.append(f"lf_extra_{len(all_lf_names)}")
+
     acc_df = pl.DataFrame({"species": species_list}).with_columns(
         [
-            pl.Series(name=lf_names[k], values=all_accuracies[:, k])
-            for k in range(n_species_lfs)
+            pl.Series(name=all_lf_names[k], values=all_accuracies[:, k])
+            for k in range(max_n_lfs)
         ]
     )
     acc_path = split_output_dir / "lf_accuracies.parquet"
@@ -844,6 +1088,8 @@ def fuse(
     console.print(f"Split: {split}")
     console.print(f"Tokens: {n_tokens}")
     console.print(f"Species: {n_species}")
+    if use_raw_logits:
+        console.print(f"Species with raw logit LFs: {n_with_raw}/{n_species}")
     console.print(f"Soft label stats:")
     console.print(f"  mean: {all_soft_labels.mean():.4f}")
     console.print(f"  near 0 (<0.1): {(all_soft_labels < 0.1).mean()*100:.1f}%")
@@ -851,13 +1097,18 @@ def fuse(
     console.print(f"  ambiguous (0.3-0.7): {((all_soft_labels > 0.3) & (all_soft_labels < 0.7)).mean()*100:.1f}%")
     console.print()
     console.print("Mean LF accuracies across species:")
-    for k in range(n_species_lfs):
+    for k in range(max_n_lfs):
         acc_vals = all_accuracies[:, k]
+        valid = ~np.isnan(acc_vals)
+        if valid.sum() == 0:
+            continue
+        vals = acc_vals[valid]
         console.print(
-            f"  {lf_names[k]:30s}: "
-            f"mean={acc_vals.mean():.3f}, "
-            f"std={acc_vals.std():.3f}, "
-            f"range=[{acc_vals.min():.3f}, {acc_vals.max():.3f}]"
+            f"  {all_lf_names[k]:30s}: "
+            f"mean={vals.mean():.3f}, "
+            f"std={vals.std():.3f}, "
+            f"range=[{vals.min():.3f}, {vals.max():.3f}] "
+            f"(n={valid.sum()})"
         )
 
 
