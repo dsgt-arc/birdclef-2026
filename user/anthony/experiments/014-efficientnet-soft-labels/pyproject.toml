@@ -1,0 +1,27 @@
+[project]
+name = "exp014-efficientnet-soft-labels"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "exp009-birdclef-pipeline",
+    "transformers>=4.40",
+    "nnAudio>=0.3",
+    "pytorch-lightning>=2.0",
+    "torch>=2.1",
+    "pyyaml>=6.0",
+    "pynvml>=11.5",
+    "polars>=0.20",
+]
+
+[project.scripts]
+birdclef-efficientnet-soft = "birdclef_014.cli:main"
+
+[tool.uv.sources]
+exp009-birdclef-pipeline = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/birdclef_014"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
