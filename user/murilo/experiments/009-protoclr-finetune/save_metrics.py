@@ -8,6 +8,7 @@ artifacts directory.
 Usage:
     python save_metrics.py --config config/protoclr_lora_attn.yaml
     python save_metrics.py --config config/protoclr_lora_all.yaml --artifacts-dir artifacts/training
+    python save_metrics.py --config config/protoclr_full_finetune.yaml
 """
 
 import argparse
@@ -73,13 +74,17 @@ def main():
         "encoder_type": config["encoder"]["type"],
         "encoder_model": config["encoder"].get("model_name", ""),
         "embed_dim": config["encoder"].get("embed_dim"),
-        # LoRA info
+        # LoRA info (None when full fine-tuning)
         "lora": {
             "rank": config["lora"]["rank"],
             "alpha": config["lora"]["alpha"],
             "dropout": config["lora"]["dropout"],
             "target_modules": config["lora"]["target_modules"],
-        },
+        }
+        if "lora" in config
+        else None,
+        # Fine-tuning mode
+        "finetune_mode": "lora" if "lora" in config else "full",
         # Dataset info
         "dataset": "birdclef-2025",
         "split": "test",

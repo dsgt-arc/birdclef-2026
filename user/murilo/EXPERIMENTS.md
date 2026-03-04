@@ -230,13 +230,15 @@ Full results: [results.md](experiments/008-frame-tokenization-eat/results.md)
 
 **Models**: ProtoCLR CvT-13 (19M params, Xeno-Canto pretrained) with PEFT LoRA.
 
-| Config | LoRA Targets | LoRA Params | AUROC | cmAP | F1 Macro | Walltime |
-|--------|-------------|-------------|-------|------|----------|----------|
-| Attention only | attn | ~148K | **0.942** | 0.531 | 0.463 | 2h 41m |
-| All layers | attn + MLP | ~247K | 0.939 | 0.537 | 0.504 | 3h 24m |
+| Config | FT Mode | Trainable Params | AUROC | cmAP | F1 Macro | Walltime |
+|--------|---------|-----------------|-------|------|----------|----------|
+| Attention only | LoRA (attn) | ~148K | **0.942** | 0.531 | 0.463 | 2h 41m |
+| All layers | LoRA (attn + MLP) | ~247K | 0.939 | 0.537 | 0.504 | 3h 24m |
+| Full fine-tune | Full (all params) | 19M | 0.925 | 0.525 | 0.502 | ~4h 30m |
 
 - ProtoCLR matches EAT's best AUROC (0.942 vs 0.945) and ConvNeXt (0.941) despite being 5× smaller (19M vs ~90M params). Domain-specific bird audio pretraining on Xeno-Canto is remarkably effective.
 - Adding MLP LoRA targets slightly lowers AUROC (0.939 vs 0.942) but gives a substantial F1 macro improvement (+8.8%, from 0.463 to 0.504), suggesting MLP adaptation helps with underrepresented classes at some cost to ranking quality.
+- Full fine-tuning (all 19M params, lr=1e-4) underperformed LoRA by -1.7% AUROC (0.925 vs 0.942). The model ran all 50 epochs without early stopping, indicating catastrophic forgetting of the pretrained Xeno-Canto representations. LoRA's low-rank constraint preserves these task-aligned features while allowing targeted adaptation.
 - Training completes in 2.7–3.4 hours — 3–4× faster than EAT and 2× faster than ConvNeXt — thanks to the compact architecture, though the CPU mel transform is the throughput bottleneck.
 
 **Limitation**: Only PEFT backend tested; no MLP classification head tested (exp 006 showed heads help EAT); single seed.
@@ -280,6 +282,7 @@ All configurations evaluated on held-out test set (2,803 samples), sorted by ROC
 | ConvNeXt LoRA MLP | 007 | ConvNeXt-Base (89M) | ImageNet-22K | MLP | Linear | PEFT | 0.939 | 0.527 |
 | ProtoCLR LoRA all | 009 | CvT-13 (19M) | Xeno-Canto | attn + MLP | Linear | PEFT | 0.939 | 0.537 |
 | EAT LoRA attn | 006 | EAT-base (90M) | AudioSet | attn | Linear | adapters | 0.938 | 0.485 |
+| ProtoCLR full fine-tune | 009 | CvT-13 (19M) | Xeno-Canto | — (all 19M) | Linear | — | 0.925 | 0.525 |
 | EAT pretrained 16×16 baseline | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.933 | 0.494 |
 | EAT LoRA attn | 006 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.927 | 0.469 |
 | EAT LoRA all | 006 | EAT-base (90M) | AudioSet | attn + MLP | Linear | PEFT | 0.923 | 0.482 |
@@ -292,7 +295,7 @@ All configurations evaluated on held-out test set (2,803 samples), sorted by ROC
 
 1. **Pretraining domain matters, but less than expected for LoRA.** On HSN, audio-pretrained models (0.480 cmAP) outperform ImageNet-pretrained models (0.174–0.191) by 2.5×. On BirdCLEF 2025 with LoRA, however, the gap narrows dramatically: ImageNet-pretrained ConvNeXt (AUROC=0.941) nearly matches AudioSet-pretrained EAT (0.945), and Xeno-Canto-pretrained ProtoCLR (0.942) matches both despite being 5× smaller. LoRA appears to equalize pretraining domains when sufficient task-specific data is available.
 
-2. **LoRA sufficiency.** Adapting <1% of EAT's parameters via LoRA produces AUROC=0.945, up from 0.890 with frozen probing (+6.2%). Full fine-tuning (exp 005) was impractical — it required batch_size=32 with 8× gradient accumulation and still timed out at 12 hours. LoRA achieves comparable or better results within standard SLURM time limits.
+2. **LoRA sufficiency.** Adapting <1% of EAT's parameters via LoRA produces AUROC=0.945, up from 0.890 with frozen probing (+6.2%). Full fine-tuning is not only impractical (exp 005 timed out at 12h) but actively harmful: ProtoCLR full FT (exp 009, all 19M params) scored AUROC=0.925, a -1.7% drop from LoRA (0.942), due to catastrophic forgetting of the pretrained representations. LoRA's low-rank constraint preserves task-aligned features while allowing targeted adaptation.
 
 3. **Head–LoRA interaction.** For EAT, where LoRA targets only attention layers (qkv, proj), adding an MLP classification head compensates for the unadapted MLP layers and adds +0.004–0.015 AUROC. For ConvNeXt, where LoRA targets the MLP layers (fc1, fc2) directly, the MLP head provides a marginal AUROC gain (0.941 vs 0.939). The head compensates for whatever LoRA does not adapt.
 

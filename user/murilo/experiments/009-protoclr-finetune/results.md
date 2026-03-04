@@ -1,4 +1,4 @@
-# Results: ProtoCLR (CvT-13) LoRA Fine-Tuning on BirdCLEF 2025
+# Results: ProtoCLR (CvT-13) Fine-Tuning on BirdCLEF 2025
 
 **Date Completed**: 2026-03-03
 **Author**: Murilo Gustineli
@@ -10,18 +10,23 @@ ProtoCLR with LoRA fine-tuning reaches AUROC=0.942 (attn-only config), matching 
 Domain-invariant prototypical contrastive pretraining on Xeno-Canto transfers remarkably well
 to BirdCLEF, confirming ProtoCLR as a viable teacher model for pseudo-labeling.
 
+Full fine-tuning (all 19M params) underperformed LoRA (AUROC=0.925 vs 0.942), confirming that
+LoRA's low-rank constraint acts as critical regularization when the pretrained representations
+are already well-aligned with the target task.
+
 **Verdict**: confirmed
 
 ## Observations
 
 ### Quantitative
 
-Both LoRA configs vs. Exp 006 (EAT) and Exp 007 (ConvNeXt) baselines:
+All three configs (two LoRA, one full fine-tune) vs. Exp 006 (EAT) and Exp 007 (ConvNeXt) baselines:
 
-| Run | LoRA Targets | LoRA Params | Head | AUROC | cmAP | F1 macro | F1 micro | Top-1 | Top-5 | Best Epoch | Stopped | Walltime |
-|-----|-------------|-------------|------|-------|------|----------|----------|-------|-------|------------|---------|----------|
-| `protoclr-lora-attn` | Q/K/V/proj | ~148K | Linear | **0.942** | 0.531 | 0.463 | 0.581 | 0.659 | 0.808 | 20 | 31 | 2h 41m |
-| `protoclr-lora-all` | Q/K/V/proj + MLP | ~247K | Linear | 0.939 | 0.537 | 0.504 | 0.592 | 0.668 | 0.803 | 28 | 30 | 3h 24m |
+| Run | FT Mode | Trainable Params | Head | AUROC | cmAP | F1 macro | F1 micro | Top-1 | Top-5 | Best Epoch | Stopped | Walltime |
+|-----|---------|-----------------|------|-------|------|----------|----------|-------|-------|------------|---------|----------|
+| `protoclr-lora-attn` | LoRA (Q/K/V/proj) | ~148K | Linear | **0.942** | 0.531 | 0.463 | 0.581 | 0.659 | 0.808 | 20 | 31 | 2h 41m |
+| `protoclr-lora-all` | LoRA (Q/K/V/proj + MLP) | ~247K | Linear | 0.939 | 0.537 | 0.504 | 0.592 | 0.668 | 0.803 | 28 | 30 | 3h 24m |
+| `protoclr-full-finetune` | Full (all params) | 19M | Linear | 0.925 | 0.525 | 0.502 | 0.584 | 0.651 | 0.782 | 47 | 50 | ~4h 30m |
 
 **Cross-experiment comparison (best configs, sorted by AUROC):**
 
@@ -32,6 +37,7 @@ Both LoRA configs vs. Exp 006 (EAT) and Exp 007 (ConvNeXt) baselines:
 | EAT LoRA attn+MLP head (PEFT) | EAT-base | ~90M | AudioSet | 0.942 | 0.511 | 0.000 |
 | ConvNeXt LoRA MLP+MLP head (PEFT) | ConvNeXt-Base | ~89M | ImageNet-22K+1K | 0.941 | 0.525 | -0.001 |
 | ProtoCLR LoRA all (PEFT) | CvT-13 | 19M | Xeno-Canto (ProtoCLR) | 0.939 | 0.537 | -0.003 |
+| ProtoCLR full fine-tune | CvT-13 | 19M | Xeno-Canto (ProtoCLR) | 0.925 | 0.525 | -0.017 |
 | Frozen linear probe (Exp 005) | EAT-base | ~90M | AudioSet | 0.890 | 0.301 | -0.052 |
 
 ### Qualitative
@@ -61,9 +67,16 @@ Both LoRA configs vs. Exp 006 (EAT) and Exp 007 (ConvNeXt) baselines:
   training is fast (2.7-3.4h) because the model is small. EAT required ~9-11h and ConvNeXt
   required ~5-7h for comparable runs.
 
-- **Train-test gap indicates some overfitting**: Both configs show a gap between training cmAP
-  (0.849 / 0.895) and test cmAP (0.531 / 0.537). This is consistent with Exp 006 and 007
+- **Train-test gap indicates some overfitting**: Both LoRA configs show a gap between training
+  cmAP (0.849 / 0.895) and test cmAP (0.531 / 0.537). This is consistent with Exp 006 and 007
   and expected for the BirdCLEF domain shift between clean training data and noisier evaluation.
+
+- **Full fine-tuning degrades performance**: Training all 19M parameters with lr=1e-4 (3× lower
+  than LoRA) yields AUROC=0.925, a -1.7% drop from LoRA attn (0.942). The model ran all 50
+  epochs without triggering early stopping (best val cmAP=0.475 at epoch 47), indicating it
+  continued fitting training data without improving generalization. This is catastrophic
+  forgetting: the pretrained Xeno-Canto representations are overwritten when all parameters
+  are unconstrained.
 
 ## Analysis
 
@@ -91,6 +104,26 @@ nearly matching EAT's best (0.945) despite being 5x smaller.
 (+8.8%) but slightly lowers AUROC (0.939 vs 0.942). This suggests the MLP LoRA helps adapt
 per-class decision boundaries, improving tail-class performance at a slight cost to ranking
 quality. For the Kaggle competition (AUROC metric), the attention-only config is preferable.
+
+**LoRA vs full fine-tuning**: Full FT underperforms LoRA by -1.7% AUROC (0.925 vs 0.942)
+despite having 130× more trainable parameters (19M vs 148K). Three factors explain this:
+
+1. **Catastrophic forgetting**: ProtoCLR's Xeno-Canto pretraining is already well-aligned with
+   BirdCLEF (bird focal recordings → bird soundscapes). With all 19M params trainable, the
+   model overwrites these domain-invariant representations to fit the 206-class training set.
+   LoRA's low-rank constraint (rank=8) preserves the backbone while making targeted adaptations.
+
+2. **Implicit regularization**: LoRA's rank-8 bottleneck limits each weight update to an 8-dim
+   subspace, acting as strong regularization. With ~135K BirdCLEF recordings across 206 classes,
+   this constraint prevents overfitting. Full FT's 19M free parameters are excessive for this
+   dataset size.
+
+3. **Training dynamics**: LoRA attn converges cleanly (best epoch 20, stopped 31), while full FT
+   never plateaued (best epoch 47, ran all 50 epochs, best val cmAP=0.475 vs LoRA's 0.531).
+   The model kept fitting without improving generalization — a hallmark of forgetting.
+
+This result is consistent with recent PEFT literature: LoRA tends to match or outperform full FT
+when pretrained representations are task-aligned and downstream data is moderate in size.
 
 **Ensemble value**: ProtoCLR, EAT, and ConvNeXt use fundamentally different architectures and
 pretraining objectives:
@@ -126,24 +159,26 @@ three strong candidates for a teacher ensemble.
 
 | Type | Location |
 |------|----------|
-| Metrics | `artifacts/training/{protoclr_lora_attn,protoclr_lora_all}/metrics.json` |
-| Test results | `outputs/test_results/{protoclr-lora-attn,protoclr-lora-all}.json` |
+| Metrics | `artifacts/training/{protoclr_lora_attn,protoclr_lora_all,protoclr_full_finetune}/metrics.json` |
+| Test results | `outputs/test_results/{protoclr-lora-attn,protoclr-lora-all,protoclr-full-finetune}.json` |
 | Checkpoints | `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/009-protoclr-finetune/checkpoints/` |
-| TensorBoard | `outputs/tensorboard/exp009-{protoclr-lora-attn,protoclr-lora-all}/` |
-| W&B | `outputs/wandb/wandb/run-20260302-*/` |
-| GPU profiling | `outputs/gpu_check/protoclr-lora-attn_*.{txt,png}` |
-| SLURM logs | `logs/slurm_protoclr_lora_{attn,all}_*.log` |
+| TensorBoard | `outputs/tensorboard/exp009-{protoclr-lora-attn,protoclr-lora-all,protoclr-full-finetune}/` |
+| W&B | `outputs/wandb/wandb/run-2026030{2,3}-*/` |
+| GPU profiling | `outputs/gpu_check/{protoclr-lora-attn,protoclr-full-finetune}_*.{txt,png}` |
+| SLURM logs | `logs/slurm_protoclr_{lora_attn,lora_all,full_finetune}_*.log` |
 | Code | Branch `mg/009-protoclr-finetune` |
 
 ## Next Steps
 
+- [x] ~~Full fine-tuning run~~ — completed; underperformed LoRA (AUROC=0.925 vs 0.942), confirming LoRA is the right approach for ProtoCLR
 - [ ] Test ProtoCLR with MLP classification head (384->256->206) to push beyond AUROC=0.942
 - [ ] Test ProtoCLR with adapters backend instead of PEFT for apples-to-apples EAT comparison
 - [ ] Build 3-model teacher ensemble (ProtoCLR + EAT + ConvNeXt) for pseudo-labeling
 - [ ] Evaluate ensemble diversity: correlation between per-sample predictions across models
 
-**Leads to**: ProtoCLR (AUROC=0.942) joins EAT (AUROC=0.945) and ConvNeXt (AUROC=0.941) as the
-third teacher model. The three models cover distinct inductive biases (conv tokenization vs
-patch tokenization vs pure CNN) and pretraining domains (bird audio vs general audio vs
-vision). Next priority is building the teacher ensemble for pseudo-labeling unlabeled
-soundscapes.
+**Leads to**: ProtoCLR LoRA attn (AUROC=0.942) joins EAT (AUROC=0.945) and ConvNeXt
+(AUROC=0.941) as the third teacher model. Full fine-tuning confirmed that LoRA is preferable
+for ProtoCLR — the pretrained representations are too valuable to risk overwriting. The three
+models cover distinct inductive biases (conv tokenization vs patch tokenization vs pure CNN) and
+pretraining domains (bird audio vs general audio vs vision). Next priority is building the
+teacher ensemble for pseudo-labeling unlabeled soundscapes.

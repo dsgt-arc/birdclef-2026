@@ -1,0 +1,39 @@
+{
+  "cmap": 0.5247548818588257,
+  "auroc": 0.9249156713485718,
+  "f1_macro": 0.5019760131835938,
+  "f1_micro": 0.5837374329566956,
+  "top1_accuracy": 0.6507163643836975,
+  "top5_accuracy": 0.7822832465171814,
+  "loss": 0.03343167155981064,
+  "encoder_type": "protoclr",
+  "encoder_model": "ilyassmoummad/ProtoCLR",
+  "embed_dim": 384,
+  "lora": null,
+  "finetune_mode": "full",
+  "dataset": "birdclef-2025",
+  "split": "test",
+  "num_classes": 206,
+  "best_val_cmap": 0.4748779237270355,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/009-protoclr-finetune/checkpoints/protoclr-full-finetune/best-epochepoch=47.ckpt",
+  "stopped_epoch": 50,
+  "training": {
+    "max_epochs": 50,
+    "lr": 0.0001,
+    "weight_decay": 0.01,
+    "warmup_epochs": 5,
+    "batch_size": 256,
+    "num_workers": 8,
+    "precision": "16-mixed",
+    "early_stopping_patience": 10,
+    "hidden_dim": 0,
+    "dropout": 0.0,
+    "grad_clip_val": 1.0
+  },
+  "compute": {
+    "gpu": "unknown",
+    "slurm_job_id": null,
+    "node": null,
+    "cpus_per_task": null
+  }
+}
