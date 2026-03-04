@@ -9,6 +9,12 @@ Usage:
     python infer.py --config config/protoclr_lora_attn.yaml --source train_soundscapes
     python infer.py --config config/protoclr_lora_attn.yaml --source all
     python infer.py --config config/protoclr_lora_attn.yaml --source train_audio --max-files 10
+
+    # GPU profiling (quick check with a few files)
+    python infer.py --config config/protoclr_lora_attn.yaml --source train_audio --max-files 10 --gpu-check
+
+    # Overwrite existing output
+    python infer.py --config config/protoclr_lora_attn.yaml --source train_audio --overwrite
 """
 
 import argparse
@@ -368,8 +374,12 @@ def main():
     for source in sources:
         output_dir = output_base / source
 
-        # Skip if output already exists (unless --overwrite)
-        if not args.overwrite and (output_dir / "embeddings.parquet").exists():
+        # Skip if output already exists (unless --overwrite or --gpu-check)
+        if (
+            not args.overwrite
+            and not args.gpu_check
+            and (output_dir / "embeddings.parquet").exists()
+        ):
             logger.info(f"Skipping {source}: output already exists at {output_dir}")
             logger.info("  Use --overwrite to re-run and replace existing results")
             continue
@@ -419,14 +429,15 @@ def main():
         elapsed = time.time() - t0
         logger.info(f"Inference time: {elapsed:.1f}s ({len(dataset)/elapsed:.1f} chunks/s)")
 
-        # Save results
-        save_results(
-            embeddings=embeddings,
-            probabilities=probabilities,
-            metadata=metadata,
-            species_list=species_list,
-            output_dir=output_dir,
-        )
+        # Save results (skip when only profiling GPU)
+        if not args.gpu_check or args.overwrite:
+            save_results(
+                embeddings=embeddings,
+                probabilities=probabilities,
+                metadata=metadata,
+                species_list=species_list,
+                output_dir=output_dir,
+            )
 
     # Print GPU profiling summary
     if gpu_monitor:
