@@ -1,4 +1,5 @@
 run_name: "protoclr-lora-attn"
+dataset_name: "birdclef-2025"
 
 encoder:
   type: "protoclr"

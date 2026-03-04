@@ -241,9 +241,8 @@ def save_results(
     logger.info(f"Saved embeddings: {emb_path} ({n} rows, dim={embeddings.shape[1]})")
 
     # Predictions parquet: one column per species
-    pred_df = base_df.copy()
-    for i, species in enumerate(species_list):
-        pred_df[species] = probabilities[:, i].astype(np.float32)
+    species_df = pd.DataFrame(probabilities.astype(np.float32), columns=species_list)
+    pred_df = pd.concat([base_df, species_df], axis=1)
 
     pred_path = output_dir / "predictions.parquet"
     pred_df.to_parquet(pred_path, index=False, engine="pyarrow")
@@ -323,8 +322,12 @@ def main():
     logger.info(f"Device: {device}")
     module = load_model(config)
 
-    # Output base directory
-    output_base = Path(__file__).parent / "outputs" / run_name
+    # Output base directory: /storage/project/<project>/shared/inference/<dataset>/<run_name>/
+    dataset_name = config["dataset_name"]
+    output_base = (
+        Path("/storage/project/ps-clef2026_birdclef-0/shared/inference") / dataset_name / run_name
+    )
+    logger.info(f"Output: {output_base}")
 
     # Process each source
     for source in sources:
