@@ -26,6 +26,8 @@ PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
 SOURCE="${SOURCE:-all}"
 MAX_FILES="${MAX_FILES:-}"
 NUM_WORKERS="${NUM_WORKERS:-}"
+GPU_CHECK="${GPU_CHECK:-false}"
+OVERWRITE="${OVERWRITE:-false}"
 
 # ============================================================================
 # Determine paths
@@ -151,6 +153,14 @@ fi
 if [[ -n "${NUM_WORKERS}" ]]; then
     INFER_CMD="${INFER_CMD} --num-workers ${NUM_WORKERS}"
     echo "  (num_workers override: ${NUM_WORKERS})"
+fi
+if [[ "${OVERWRITE}" == "true" ]]; then
+    INFER_CMD="${INFER_CMD} --overwrite"
+    echo "  (overwrite enabled)"
+fi
+if [[ "${GPU_CHECK}" == "true" ]]; then
+    INFER_CMD="${INFER_CMD} --gpu-check"
+    echo "  (GPU profiling enabled)"
 fi
 
 srun ${INFER_CMD}

@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -148,8 +149,15 @@ def run_inference(
     module: LoRAFinetuneModule,
     dataloader: DataLoader,
     device: torch.device,
+    gpu_monitor=None,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
     """Run inference, extracting embeddings and predictions.
+
+    Args:
+        module: Fine-tuned model module.
+        dataloader: DataLoader yielding (mel, metadata) tuples.
+        device: Device to run inference on.
+        gpu_monitor: Optional InferenceGPUMonitor for GPU profiling.
 
     Returns:
         embeddings: (N, embed_dim) float32 numpy array
@@ -169,6 +177,9 @@ def run_inference(
     }
 
     for mel, metadata in tqdm(dataloader, desc="Inference"):
+        if gpu_monitor:
+            gpu_monitor.batch_start()
+
         mel = mel.to(device)
 
         with torch.amp.autocast("cuda"):
@@ -180,6 +191,9 @@ def run_inference(
         # Store as float32 on CPU
         all_embeddings.append(embeddings.float().cpu().numpy())
         all_probs.append(probs.float().cpu().numpy())
+
+        if gpu_monitor:
+            gpu_monitor.batch_end(batch_size=mel.shape[0])
 
         for key in all_metadata:
             all_metadata[key].extend(metadata[key])
@@ -283,6 +297,16 @@ def main():
         default=None,
         help="Override num_workers from config",
     )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing output files (default: skip sources with existing results)",
+    )
+    parser.add_argument(
+        "--gpu-check",
+        action="store_true",
+        help="Enable GPU utilization profiling (use with --max-files for quick check)",
+    )
     args = parser.parse_args()
 
     # Load config
@@ -317,6 +341,17 @@ def main():
         sample_rate=config["data"]["sample_rate"],
     )
 
+    # GPU monitor (optional)
+    gpu_monitor = None
+    if args.gpu_check:
+        from birdclef.callbacks.gpu_monitor import InferenceGPUMonitor
+
+        gpu_monitor = InferenceGPUMonitor(
+            batch_size=config["data"]["batch_size"],
+            num_workers=num_workers,
+        )
+        logger.info("GPU profiling enabled (--gpu-check)")
+
     # Load model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Device: {device}")
@@ -331,6 +366,14 @@ def main():
 
     # Process each source
     for source in sources:
+        output_dir = output_base / source
+
+        # Skip if output already exists (unless --overwrite)
+        if not args.overwrite and (output_dir / "embeddings.parquet").exists():
+            logger.info(f"Skipping {source}: output already exists at {output_dir}")
+            logger.info("  Use --overwrite to re-run and replace existing results")
+            continue
+
         logger.info(f"\n{'='*60}")
         logger.info(f"Processing: {source}")
         logger.info(f"{'='*60}")
@@ -367,12 +410,16 @@ def main():
 
         # Run inference
         t0 = time.time()
-        embeddings, probabilities, metadata = run_inference(module, dataloader, device)
+        embeddings, probabilities, metadata = run_inference(
+            module,
+            dataloader,
+            device,
+            gpu_monitor=gpu_monitor,
+        )
         elapsed = time.time() - t0
         logger.info(f"Inference time: {elapsed:.1f}s ({len(dataset)/elapsed:.1f} chunks/s)")
 
         # Save results
-        output_dir = output_base / source
         save_results(
             embeddings=embeddings,
             probabilities=probabilities,
@@ -380,6 +427,14 @@ def main():
             species_list=species_list,
             output_dir=output_dir,
         )
+
+    # Print GPU profiling summary
+    if gpu_monitor:
+        summary_dir = Path(__file__).parent / "outputs" / "gpu_check"
+        job_id = os.environ.get("SLURM_JOB_ID", "local")
+        summary_file = summary_dir / f"{run_name}_{job_id}.txt"
+        gpu_monitor.print_summary(save_path=summary_file)
+        gpu_monitor.shutdown()
 
     logger.info("\nDone!")
 

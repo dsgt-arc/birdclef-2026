@@ -21,6 +21,8 @@
 #   --source SOURCE      Data source: train_audio, train_soundscapes, all (required)
 #   --max-files N        Limit number of files (for debugging)
 #   --num-workers N      Override num_workers from config
+#   --overwrite          Overwrite existing output files
+#   --gpu-check          Enable GPU utilization profiling
 #   --dry-run            Preview command without submitting job
 #   --project-name NAME  PACE project allocation (default: ps-clef2026_birdclef-0)
 #
@@ -36,6 +38,8 @@ CONFIG=""
 SOURCE=""
 MAX_FILES=""
 NUM_WORKERS=""
+GPU_CHECK=false
+OVERWRITE=false
 PROJECT_NAME="ps-clef2026_birdclef-0"
 
 while [[ $# -gt 0 ]]; do
@@ -51,6 +55,14 @@ while [[ $# -gt 0 ]]; do
         --num-workers)
             NUM_WORKERS="$2"
             shift 2
+            ;;
+        --overwrite)
+            OVERWRITE=true
+            shift
+            ;;
+        --gpu-check)
+            GPU_CHECK=true
+            shift
             ;;
         --dry-run)
             DRY_RUN=true
@@ -70,6 +82,8 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --max-files N     Limit number of files (for debugging)"
             echo "  --num-workers N   Override num_workers from config"
+            echo "  --overwrite       Overwrite existing output files"
+            echo "  --gpu-check       Enable GPU utilization profiling"
             echo "  --project-name    PACE project allocation name (default: ps-clef2026_birdclef-0)"
             echo "  --dry-run         Preview command without submitting job"
             echo "  -h, --help        Show this help message"
@@ -110,8 +124,8 @@ EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 # Setup
 # ============================================================================
 
-# Extract run name from config filename
-RUN_NAME="$(basename "$CONFIG" .yaml)"
+# Extract run name from config YAML (used for output path and job name)
+RUN_NAME=$(grep '^run_name:' "${EXPERIMENT_DIR}/${CONFIG}" | awk '{print $2}' | tr -d '"')
 
 echo "=============================================="
 echo "Inference: Embedding & Prediction Extraction"
@@ -121,6 +135,7 @@ echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
 echo "Source: ${SOURCE}"
 echo "Max files: ${MAX_FILES:-all}"
+echo "GPU check: ${GPU_CHECK}"
 echo "Project: ${PROJECT_NAME}"
 echo "Num workers: ${NUM_WORKERS:-config default}"
 echo ""
@@ -129,6 +144,35 @@ echo ""
 if [[ ! -f "${EXPERIMENT_DIR}/${CONFIG}" ]]; then
     echo "Error: Config file not found: ${EXPERIMENT_DIR}/${CONFIG}"
     exit 1
+fi
+
+# Check if output already exists (unless --overwrite)
+if [[ "${OVERWRITE}" == "false" ]]; then
+    CONFIG_FILE="${EXPERIMENT_DIR}/${CONFIG}"
+    DATASET_NAME=$(grep '^dataset_name:' "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
+    OUTPUT_BASE="/storage/project/${PROJECT_NAME}/shared/inference/${DATASET_NAME}/${RUN_NAME}"
+
+    # Build list of sources to check
+    if [[ "$SOURCE" == "all" ]]; then
+        CHECK_SOURCES="train_audio train_soundscapes"
+    else
+        CHECK_SOURCES="$SOURCE"
+    fi
+
+    EXISTING=""
+    for src in $CHECK_SOURCES; do
+        if [[ -f "${OUTPUT_BASE}/${src}/embeddings.parquet" ]]; then
+            EXISTING="${EXISTING} ${src}"
+        fi
+    done
+
+    if [[ -n "$EXISTING" ]]; then
+        echo "Error: Output already exists for:${EXISTING}"
+        echo "  ${OUTPUT_BASE}/"
+        echo ""
+        echo "Use --overwrite to replace existing results."
+        exit 1
+    fi
 fi
 
 # Create log directory
@@ -150,7 +194,7 @@ fi
 
 CMD="sbatch \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_${SOURCE}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},SOURCE=${SOURCE},MAX_FILES=${MAX_FILES},NUM_WORKERS=${NUM_WORKERS} \
+    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},SOURCE=${SOURCE},MAX_FILES=${MAX_FILES},NUM_WORKERS=${NUM_WORKERS},GPU_CHECK=${GPU_CHECK},OVERWRITE=${OVERWRITE} \
     --job-name=infer-${RUN_NAME} \
     ${CPUS_OVERRIDE} \
     ${JOB_SCRIPT}"

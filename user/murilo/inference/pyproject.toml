@@ -18,6 +18,8 @@ dependencies = [
     "torchinfo",
     "pyyaml",
     "tqdm",
+    "nvidia-ml-py",
+    "matplotlib>=3.7.0",
 ]
 
 [build-system]
