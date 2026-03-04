@@ -30,11 +30,17 @@ class FocalBCELoss(nn.Module):
         else:
             self.alpha = alpha
 
-    def forward(self, logits: Tensor, targets: Tensor) -> Tensor:
+    def forward(
+        self,
+        logits: Tensor,
+        targets: Tensor,
+        sample_weight: Tensor | None = None,
+    ) -> Tensor:
         """
         Args:
             logits: (N, C) raw logits.
             targets: (N, C) binary targets in {0, 1}.
+            sample_weight: (N,) optional per-sample weight in [0, 1].
 
         Returns:
             Scalar focal BCE loss averaged over samples and classes.
@@ -49,7 +55,10 @@ class FocalBCELoss(nn.Module):
             alpha_t = targets * alpha + (1 - targets) * (1 - alpha)
             focal_weight = alpha_t * focal_weight
 
-        return (focal_weight * bce).mean()
+        loss = focal_weight * bce
+        if sample_weight is not None:
+            loss = loss * sample_weight.unsqueeze(1)
+        return loss.mean()
 
 
 class FocalCELoss(nn.Module):

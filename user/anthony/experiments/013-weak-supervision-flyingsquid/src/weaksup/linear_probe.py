@@ -87,15 +87,16 @@ class SpeciesProbeModule(L.LightningModule):
         return self.linear(x)
 
     def training_step(self, batch: tuple[Tensor, ...], batch_idx: int) -> Tensor:
-        x, y_species, _y_taxa = batch
+        x, y_species, _y_taxa = batch[:3]
+        sample_weight = batch[3] if len(batch) > 3 else None
         logits = self(x)
-        loss = self.criterion(logits, y_species)
+        loss = self.criterion(logits, y_species, sample_weight=sample_weight)
         loss = loss + (0.5 / self.C) * self.linear.weight.pow(2).sum()
         self.log("train/loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch: tuple[Tensor, ...], batch_idx: int) -> None:
-        x, y_species, _y_taxa = batch
+        x, y_species, _y_taxa = batch[:3]
         logits = self(x)
         loss = self.criterion(logits, y_species)
         self.log("val/loss", loss, prog_bar=True)
@@ -319,26 +320,26 @@ def species(
         )
 
     if energy_attenuate and source != "indices":
-        # Override the data module setup to use energy-attenuated labels
-        print("Using energy-attenuated labels (bioacoustic_index normalization)")
+        # Override the data module setup to use energy sample weights
+        print("Using energy sample weights (bioacoustic_index normalization)")
         file_to_species, species_to_taxa, dm.species_list = load_metadata(data_dir)
         dm.taxa_list = sorted(set(species_to_taxa.values()))
         dm.n_species = len(dm.species_list)
         dm.n_taxa = len(dm.taxa_list)
 
         indices_dir = _indices_dir_for_energy()
-        X, y_species, y_taxa, recording_ids = load_embeddings_with_energy(
+        X, y_species, y_taxa, recording_ids, energy_weights = load_embeddings_with_energy(
             embed_dir, indices_dir,
             file_to_species, dm.species_list, species_to_taxa, dm.taxa_list,
         )
         dm.n_features = X.shape[1]
 
-        # Compute weights using effective positive mass (sum of energy weights)
-        pos_mass = y_species.sum(axis=0)
-        neg_counts = len(y_species) - (y_species > 0).sum(axis=0)
+        # Alpha from binary label counts (same as non-energy path)
+        pos_counts = y_species.sum(axis=0)
+        neg_counts = len(y_species) - pos_counts
         total = len(y_species)
         dm.species_pos_weight = (neg_counts / total).astype(np.float32)
-        dm.species_counts = pos_mass.astype(np.float32)
+        dm.species_counts = pos_counts.astype(np.float32)
 
         taxa_counts = np.bincount(y_taxa, minlength=dm.n_taxa).astype(np.float32)
         inv_freq = 1.0 / np.maximum(taxa_counts, 1)
@@ -357,11 +358,13 @@ def species(
             torch.from_numpy(X[train_mask]),
             torch.from_numpy(y_species[train_mask]),
             torch.from_numpy(y_taxa[train_mask]),
+            torch.from_numpy(energy_weights[train_mask]),
         )
         dm.val_dataset = TensorDataset(
             torch.from_numpy(X[val_mask]),
             torch.from_numpy(y_species[val_mask]),
             torch.from_numpy(y_taxa[val_mask]),
+            # No energy weights for val — evaluate with uniform weight
         )
         print(f"  Train: {len(dm.train_dataset)}, Val: {len(dm.val_dataset)} "
               f"({len(val_rec_set)} recordings held out)")

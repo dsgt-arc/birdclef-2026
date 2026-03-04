@@ -31,7 +31,8 @@ uv pip install -e "$exp_dir" --quiet
 
 "$venv/bin/weaksup-build-mapping" \
     --taxonomy-csv "$scratch_dir/data/birdclef-2025/taxonomy.csv" \
-    --perch-label-csv /tmp/tfhub_modules/50cbe9e746f7b3e38819b8f3dc1f73e682ceca90/assets/label.csv \
+    --perch-label-csv "$scratch_dir/outputs/exp013/mappings/perch_labels.csv" \
+    --birdnet-label-url "$scratch_dir/outputs/exp013/mappings/birdnet_labels.txt" \
     --output-dir "$scratch_dir/outputs/exp013/mappings"
 
 echo ""

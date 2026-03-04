@@ -29,7 +29,7 @@ echo ""
 source "$venv/bin/activate"
 uv pip install -e "$exp_dir" --quiet
 
-fused_dir="$scratch_dir/outputs/exp013/fused"
+fused_dir="$scratch_dir/outputs/exp013/fused-v2"
 data_dir="$scratch_dir/data/birdclef-2025"
 eval_dir="$scratch_dir/outputs/exp013/eval"
 

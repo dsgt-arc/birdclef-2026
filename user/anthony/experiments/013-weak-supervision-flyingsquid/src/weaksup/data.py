@@ -244,15 +244,13 @@ def load_embeddings_with_energy(
     species_list: list[str],
     species_to_taxa: dict[str, str],
     taxa_list: list[str] | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Load embeddings and attenuate species labels by per-clip acoustic energy.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Load embeddings with per-clip energy weights for sample weighting.
 
-    Instead of y[clip] = 1.0 for all clips of a recording, computes
-    y[clip] = energy_weight(clip) where energy_weight is derived from
-    bioacoustic_index via per-recording normalization.
-
-    Clips in quiet portions of a recording get weight near 0, while
-    clips with vocalization activity get weight near 1.
+    Returns binary species labels (0/1) and separate energy weights derived
+    from bioacoustic_index via per-recording sigmoid normalization. Silent
+    clips get weight near 0, vocal clips get weight near 1. Use energy
+    weights as sample_weight in the loss (not as label values).
 
     Args:
         embed_dir: directory with embedding parquets (BirdNET/Perch).
@@ -264,9 +262,10 @@ def load_embeddings_with_energy(
 
     Returns:
         X: (N, D) embedding matrix.
-        y_species: (N, n_species) energy-attenuated species labels in [0, 1].
+        y_species: (N, n_species) binary species labels in {0, 1}.
         y_taxa: (N,) integer taxa labels.
         recording_ids: (N,) integer recording group IDs.
+        energy_weights: (N,) per-clip energy weights in [0, 1].
     """
     if taxa_list is None:
         taxa_list = sorted(set(species_to_taxa.values()))
@@ -338,9 +337,10 @@ def load_embeddings_with_energy(
         for idx in mask[matched_mask]:
             energy[idx] = _sigmoid((bi_values[idx] - bi_median) / scale)
 
-    # --- Build labels ---
+    # --- Build labels (binary) and energy weights (separate) ---
     y_species = np.zeros((n_samples, n_species), dtype=np.float32)
     y_taxa = np.zeros(n_samples, dtype=np.int64)
+    energy_weights = energy.astype(np.float32)
     recording_map: dict[str, int] = {}
     recording_ids = np.zeros(n_samples, dtype=np.int64)
 
@@ -352,7 +352,7 @@ def load_embeddings_with_energy(
             continue
 
         if species in species_to_idx:
-            y_species[i, species_to_idx[species]] = float(energy[i])
+            y_species[i, species_to_idx[species]] = 1.0  # binary label
 
         taxa = species_to_taxa.get(species)
         if taxa and taxa in taxa_to_idx:
@@ -374,15 +374,15 @@ def load_embeddings_with_energy(
         y_species = y_species[labeled]
         y_taxa = y_taxa[labeled]
         recording_ids = recording_ids[labeled]
+        energy_weights = energy_weights[labeled]
 
-    # Report energy distribution
-    pos_labels = y_species[y_species > 0]
-    print(f"  Energy-attenuated labels: mean={pos_labels.mean():.3f}, "
-          f"median={np.median(pos_labels):.3f}, "
-          f"near-zero (<0.1)={100 * (pos_labels < 0.1).mean():.1f}%, "
-          f"near-one (>0.9)={100 * (pos_labels > 0.9).mean():.1f}%")
+    # Report energy weight distribution
+    print(f"  Energy weights: mean={energy_weights.mean():.3f}, "
+          f"median={np.median(energy_weights):.3f}, "
+          f"near-zero (<0.1)={100 * (energy_weights < 0.1).mean():.1f}%, "
+          f"near-one (>0.9)={100 * (energy_weights > 0.9).mean():.1f}%")
 
-    return X, y_species, y_taxa, recording_ids
+    return X, y_species, y_taxa, recording_ids, energy_weights
 
 
 class IndicesDataModule(L.LightningDataModule):
