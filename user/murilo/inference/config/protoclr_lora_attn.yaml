@@ -1,0 +1,28 @@
+run_name: "protoclr-lora-attn"
+dataset_name: "birdclef-2025"
+
+encoder:
+  type: "protoclr"
+  model_name: "ilyassmoummad/ProtoCLR"
+  checkpoint: "protoclr.pth"
+  embed_dim: 384
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+  target_modules: ["attn.proj_q", "attn.proj_k", "attn.proj_v", "attn.proj"]
+
+model:
+  checkpoint_path: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/009-protoclr-finetune/checkpoints/protoclr-lora-attn/best-epochepoch=20.ckpt"
+  num_classes: 206
+  hidden_dim: 0
+  threshold: 0.5
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2025"
+  sample_rate: 16000
+  chunk_duration: 5.0
+  batch_size: 256
+  num_workers: 8
+  seed: 42

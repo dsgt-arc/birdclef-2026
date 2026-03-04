@@ -19,6 +19,21 @@ Consolidated findings from experiments 001–009, covering BirdSet benchmarks, a
 † Exp 001 evaluated all 8 BirdSet datasets (HSN, PER, NES, UHH, POW, SSW, SNE, NBP); best cmAP shown is the mean across all 8 (HSN alone: 0.480 ConvNeXT, 0.380 EfficientNetB1).
 ‡ BirdSet experiments (001–004) report cmAP; BirdCLEF 2025 experiments (005–009) report ROC-AUC (the Kaggle competition metric).
 
+### Data Splits
+
+**BirdSet experiments (001–004)** use the BirdSet-provided train/test splits directly — no custom splitting is performed.
+
+**BirdCLEF 2025 experiments (005–009)** use only the `train_audio/` focal recordings (28,564 files from `train.csv`). Since BirdCLEF 2025 provides no labeled validation or test set (the Kaggle `test_soundscapes/` is hidden), we create our own **80/10/10 stratified train/val/test split** of the focal recordings:
+
+- **Stratification**: by `primary_label`, so every species appears in every split.
+- **Seed**: `seed=42` via `np.random.RandomState(42)` — the split is fully deterministic and reproducible.
+- **Edge cases**: species with <3 samples are duplicated across splits to ensure presence in all three.
+- **Result**: ~22,973 train / ~2,803 val / ~2,803 test recordings.
+
+The `train_soundscapes/` (9,726 unlabeled soundscape files) and `test_soundscapes/` (hidden, contains only a readme) are **not used** in any experiment. The "test" set in experiment results refers to the held-out 10% of focal recordings, not the Kaggle test soundscapes.
+
+Implementation: `src/birdclef/data/birdclef2025.py` → `BirdCLEF2025DataModule._split_dataframe()`.
+
 ## 2. Research Progression
 
 The first three experiments established foundations. Experiment 001 validated the BirdSet benchmark pipeline by reproducing published ConvNeXT and EfficientNetB1 baselines within ±0.02 cmAP across all 8 evaluation datasets, setting the audio-pretrained reference at 0.480 cmAP on HSN. Experiments 002 and 003 then tested whether ImageNet-pretrained vision models could close this gap: ConvNeXT-Tiny and ViT-Small with ImageNet weights reached only 0.17–0.19 cmAP, while training from scratch yielded 0.087–0.098. The clear takeaway was that pretraining is essential and audio-domain pretraining is far more valuable than ImageNet pretraining for bird sound classification.

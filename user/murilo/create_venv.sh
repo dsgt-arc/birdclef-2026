@@ -15,10 +15,14 @@
 # Usage:
 #   salloc -p gpu-rtx6000 --gres=gpu:1 -c 4 --mem=32G -t 2:00:00
 #   bash create_venv.sh --exp-num 4
+#   bash create_venv.sh --dir inference
 #
 # Options:
-#   --exp-num NUM  Experiment number (e.g., 1, 2, 3, 4) - required
+#   --exp-num NUM  Experiment number (e.g., 1, 2, 3, 4)
+#   --dir NAME     Directory name relative to user/murilo/ (e.g., inference)
 #   -h, --help     Show this help message
+#
+# One of --exp-num or --dir is required.
 #
 
 set -e  # Exit on error
@@ -29,14 +33,16 @@ set -u  # Exit on undefined variable
 # ============================================================================
 
 EXP_NUM=""
+DIR_NAME=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
-    echo "Usage: bash create_venv.sh --exp-num NUM"
+    echo "Usage: bash create_venv.sh [--exp-num NUM | --dir NAME]"
     echo ""
     echo "Options:"
     echo "  --exp-num NUM  Experiment number (e.g., 1, 2, 3, 4)"
+    echo "  --dir NAME     Directory name relative to user/murilo/ (e.g., inference)"
     echo "  -h, --help     Show this help message"
     echo ""
     echo "Available experiments:"
@@ -56,6 +62,14 @@ while [[ $# -gt 0 ]]; do
             EXP_NUM="$2"
             shift 2
             ;;
+        --dir)
+            if [[ -z "${2:-}" ]]; then
+                echo "ERROR: --dir requires a value"
+                usage 1
+            fi
+            DIR_NAME="$2"
+            shift 2
+            ;;
         -h|--help)
             usage 0
             ;;
@@ -66,35 +80,49 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$EXP_NUM" ]]; then
-    echo "ERROR: --exp-num is required"
+if [[ -z "$EXP_NUM" && -z "$DIR_NAME" ]]; then
+    echo "ERROR: --exp-num or --dir is required"
     usage 1
 fi
 
-# Map experiment number to directory name dynamically
-# Zero-pad to 3 digits (e.g., 4 -> 004) and glob for matching directory
-EXP_NUM_PADDED=$(printf "%03d" "$EXP_NUM")
-EXP_DIR_MATCH=("$SCRIPT_DIR"/experiments/${EXP_NUM_PADDED}-*/)
-
-if [[ ! -d "${EXP_DIR_MATCH[0]}" ]]; then
-    echo "ERROR: No experiment directory found matching ${EXP_NUM_PADDED}-*"
-    echo ""
-    echo "Available experiments:"
-    for d in "$SCRIPT_DIR"/experiments/[0-9][0-9][0-9]-*/; do
-        [ -d "$d" ] && echo "  $(basename "$d")"
-    done
-    exit 1
+if [[ -n "$EXP_NUM" && -n "$DIR_NAME" ]]; then
+    echo "ERROR: --exp-num and --dir are mutually exclusive"
+    usage 1
 fi
 
-if [[ ${#EXP_DIR_MATCH[@]} -gt 1 ]]; then
-    echo "ERROR: Multiple directories match ${EXP_NUM_PADDED}-*:"
-    for d in "${EXP_DIR_MATCH[@]}"; do
-        echo "  $(basename "$d")"
-    done
-    exit 1
-fi
+# Resolve target directory
+if [[ -n "$DIR_NAME" ]]; then
+    # --dir: use directory directly under user/murilo/
+    if [[ ! -d "$SCRIPT_DIR/$DIR_NAME" ]]; then
+        echo "ERROR: Directory not found: $SCRIPT_DIR/$DIR_NAME"
+        exit 1
+    fi
+    EXP_DIR_NAME="$DIR_NAME"
+else
+    # --exp-num: map to experiments/NNN-*/
+    EXP_NUM_PADDED=$(printf "%03d" "$EXP_NUM")
+    EXP_DIR_MATCH=("$SCRIPT_DIR"/experiments/${EXP_NUM_PADDED}-*/)
 
-EXP_DIR_NAME="$(basename "${EXP_DIR_MATCH[0]}")"
+    if [[ ! -d "${EXP_DIR_MATCH[0]}" ]]; then
+        echo "ERROR: No experiment directory found matching ${EXP_NUM_PADDED}-*"
+        echo ""
+        echo "Available experiments:"
+        for d in "$SCRIPT_DIR"/experiments/[0-9][0-9][0-9]-*/; do
+            [ -d "$d" ] && echo "  $(basename "$d")"
+        done
+        exit 1
+    fi
+
+    if [[ ${#EXP_DIR_MATCH[@]} -gt 1 ]]; then
+        echo "ERROR: Multiple directories match ${EXP_NUM_PADDED}-*:"
+        for d in "${EXP_DIR_MATCH[@]}"; do
+            echo "  $(basename "$d")"
+        done
+        exit 1
+    fi
+
+    EXP_DIR_NAME="experiments/$(basename "${EXP_DIR_MATCH[0]}")"
+fi
 
 echo "=========================================="
 echo "BirdSet Benchmark - Environment Setup"
@@ -131,7 +159,7 @@ echo ""
 # Step 2: Set up environment variables
 echo "Step 2: Setting up environment variables..."
 export PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-EXPERIMENT_DIR="$SCRIPT_DIR/experiments/$EXP_DIR_NAME"
+EXPERIMENT_DIR="$SCRIPT_DIR/$EXP_DIR_NAME"
 
 if [[ ! -d "$EXPERIMENT_DIR" ]]; then
     echo -e "${RED}✗ Experiment directory not found: $EXPERIMENT_DIR${NC}"
