@@ -97,6 +97,7 @@ logs/
 *.pickle
 
 # Model weights
+*.onnx
 weights/
 /models/
 
