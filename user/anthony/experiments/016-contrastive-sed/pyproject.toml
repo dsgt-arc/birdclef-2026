@@ -1,0 +1,15 @@
+[project]
+name = "birdclef-016"
+version = "0.0.1"
+description = "Exp 016: Contrastive SED with prototypical classification"
+requires-python = ">=3.11"
+dependencies = [
+    "torch",
+    "transformers",
+    "nnAudio",
+    "soundfile",
+    "scikit-learn",
+    "pandas",
+    "numpy",
+    "pytorch-lightning",
+]
