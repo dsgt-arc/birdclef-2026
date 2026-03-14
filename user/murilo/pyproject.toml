@@ -1,7 +1,7 @@
 [project]
 name = "birdclef"
 version = "0.1.0"
-description = "BirdSet bioacoustics model benchmarking"
+description = "BirdCLEF 2026 — bird species recognition from soundscapes"
 authors = [
     {name = "Murilo Gustineli", email = "mgustineli3@gatech.edu"}
 ]
@@ -9,48 +9,50 @@ requires-python = ">=3.11"
 dependencies = [
     # Core ML/DL
     "torch>=2.0.0",
-    "torchaudio>=2.0.0",     # Required by BirdSet models
-    "torchvision>=0.15.0",   # Required by BirdSet models
+    "torchaudio>=2.0.0",
+    "torchvision>=0.15.0",
     "pytorch-lightning>=2.0.0",
     "torchmetrics>=1.0.0",
-    "transformers>=4.30.0",  # Required by BirdSet models (Hugging Face transformers)
-    "tensorflow==2.17",      # For Perch and other TF-based models
-    "tensorflow-hub",        # TensorFlow Hub for pretrained models
+    "transformers>=4.30.0",
     "numpy>=1.24.0",
-    "timm>=0.9.0",           # Vision Transformer models
-    "wandb>=0.16.0",         # Weights & Biases logging
-    "einops>=0.7.0",         # Tensor operations (for MAE)
+    "timm>=0.9.0",
+    "wandb>=0.16.0",
+    "einops>=0.7.0",
+
+    # Fine-tuning & model adaptation
+    "peft>=0.7.0",           # LoRA and parameter-efficient fine-tuning
+    "huggingface-hub",       # Model downloads
 
     # Data handling
-    "datasets==3.6.0",   # Upgraded to 3.6.0 for trust_remote_code support (required by BirdSet)
-    "pyarrow>=15.0.0",   # Required by `datasets` for full feature support
-    "polars>=0.19.0",    # Fast dataframes (preferred over pandas)
-    "pandas>=2.0.0",     # Fallback if needed
+    "datasets>=3.6.0",
+    "pyarrow>=15.0.0",
+    "polars>=0.19.0",
+    "pandas>=2.0.0",
 
     # Audio processing
     "librosa>=0.10.0",
-    "resampy>=0.4.0",    # Required by librosa for resampling
+    "resampy>=0.4.0",
     "soundfile>=0.12.0",
     "audioread>=3.0.0",
-
-    # Bioacoustics models
-    "bioacoustics-model-zoo",
-    "opensoundscape>=0.10.0",
-    "ai-edge-litert>=1.0.0",  # TensorFlow Lite for BirdNET
+    "nnAudio>=0.3",          # GPU-accelerated mel-spectrograms
 
     # Machine learning
     "scikit-learn>=1.3.0",
 
+    # Kaggle
+    "kaggle>=1.6.0",         # Competition data download
+
     # Utilities
     "tqdm>=4.65.0",
     "pyyaml>=6.0",
-    "typer>=0.9.0",     # CLI framework
-    "rich>=13.0.0",     # Beautiful terminal output
-    "python-dotenv>=1.0.0",  # Load .env files
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+    "nvidia-ml-py>=12.0.0",  # GPU monitoring
 
-    # Testing (required for pytest configuration)
+    # Testing
     "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",  # Required by pytest.ini addopts
+    "pytest-cov>=4.1.0",
 
     # Visualization
     "matplotlib>=3.7.0",
@@ -110,6 +112,3 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
 addopts = "-v --cov=birdclef --cov-report=term-missing"
-
-[tool.uv.sources]
-bioacoustics-model-zoo = { git = "https://github.com/kitzeslab/bioacoustics-model-zoo.git", branch = "main" }
