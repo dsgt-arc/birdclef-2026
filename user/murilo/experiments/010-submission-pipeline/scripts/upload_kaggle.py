@@ -82,7 +82,10 @@ def run_cmd(cmd: list[str], dry_run: bool = False) -> bool:
         combined = e.stdout + e.stderr
         if "already exists" in combined or "403" in combined:
             return False
-        print(f"  Error: {e.stderr}")
+        if e.stdout:
+            print(f"  stdout: {e.stdout.strip()}")
+        if e.stderr:
+            print(f"  stderr: {e.stderr.strip()}")
         raise
 
 

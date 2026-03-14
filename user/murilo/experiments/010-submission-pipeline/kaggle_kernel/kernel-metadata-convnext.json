@@ -1,5 +1,5 @@
 {
-  "id": "murilogustineli/birdclef-2026-convnext-baseline-2025",
+  "id": "murilogustineli/birdclef-2026-convnext-baseline-trained-on-2025",
   "title": "BirdCLEF 2026 ConvNeXt Baseline (trained on 2025)",
   "code_file": "submission.py",
   "language": "python",
