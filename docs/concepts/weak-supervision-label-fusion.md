@@ -1,8 +1,8 @@
 # Concept: Weak Supervision Label Fusion for Token-Level SED
 
-**Status**: nascent
+**Status**: developing
 **Created**: 2026-02-08
-**Updated**: 2026-02-08
+**Updated**: 2026-03-14
 
 ## Idea
 
@@ -577,6 +577,74 @@ That's it. No model architecture changes, no new dependencies at training time, 
 - All levels produce the same output format (soft labels in [0, 1] per token), so the training code doesn't change between levels — only the pre-computation step.
 - Cleanlab (Level 2) is the only approach that requires a trained model. Levels 0-1 and 3 are pure pre-computation before any training.
 - For the BirdCLEF competition, the LF pre-computation is a one-time cost per dataset. Once cached, switching between label fusion methods only requires re-running the fusion step, not re-computing the individual LFs.
+
+## Lessons Learned (exp 013, 014, 015)
+
+Exp 013 implemented the triplet method and produced fused soft labels. Exp 014/015 tested them as training targets. Key outcomes:
+
+### What worked
+- **Triplet method is sound**: pure numpy, no dependencies, estimated LF accuracies match intuition (BirdNET 0.785, Perch 0.784, recording label 0.932)
+- **Focal soft labels are well-calibrated**: present species ~0.575, absent ~0.001, strongly bimodal
+- **v2 raw logit LFs**: adding BirdNET/Perch raw logits as extra LFs for bird species improved estimated accuracy to 0.920/0.912
+
+### What failed
+- **Soft labels as direct training targets hurt linear probes**: exp 014 (0.238 cmAP) vs exp 012 hard-label baseline (0.336 cmAP). Adding soundscape data (+65%) had zero effect. Don't replace ground-truth hard labels with teacher soft labels.
+- **SED head on frozen backbone didn't help**: exp 015 (0.237 cmAP) ≈ exp 014. Bottleneck is representation quality, not head architecture.
+- **Energy-attenuated probe labels rejected**: BI normalization produces weights clustered at ~0.5, not enough contrast.
+
+### Soundscape fusion is weak
+- LF accuracy drops: BirdNET 0.735 (vs 0.788 focal), Perch 0.695 (vs 0.779)
+- **High LF correlation on soundscapes: ~0.6** (vs ~0.2 focal) — violates conditional independence, inflates accuracy estimates
+- Only 142/206 species have learnable soundscape signal; 64 stuck at coin-flip
+- **No recording label LF** for soundscapes (biggest loss — it's the strongest LF at 0.932 on focal)
+
+### Implication for the pipeline
+Soft labels are useful for **pseudo-labeling** (generating labels for unlabeled data) but should **not replace** hard labels where they exist. The right role is:
+1. Use hard labels for the 35,549 focal recordings (ground truth)
+2. Use soft labels to pseudo-label the 176.5h unlabeled soundscapes
+3. Train on hard + pseudo-labeled data together, with confidence weighting on pseudo-labels
+
+## Soundscape Ground-Truth Labels: Integration Strategy
+
+Exp 100 EDA revealed that **66 soundscapes have ground-truth labels** (739 unique windows, 75 species, 5s resolution). These are sparse but high-quality — and currently unused by the weak supervision pipeline.
+
+### How they can help
+
+**1. Evaluation oracle (highest priority, zero engineering)**
+
+The triplet method estimates LF accuracies without ground truth, but high LF correlation on soundscapes (~0.6) means those estimates are likely inflated. The 739 labeled windows provide actual ground truth to compute real precision/recall/AUROC on soundscape soft labels.
+
+This directly answers: **are the current soundscape pseudo-labels any good?** If they score poorly, the pipeline needs fixing before scaling to 176.5h unlabeled.
+
+**2. Probe calibration / domain-adapted probes**
+
+BirdNET/Perch probes were trained on focal embeddings and degrade on soundscapes. The 739 labeled windows could:
+- **Recalibrate thresholds**: the top-5%/bottom-50% percentile thresholds tuned on focal may be wrong for soundscape embedding distributions
+- **Train soundscape-specific probes**: small linear heads on BirdNET/Perch embeddings supervised on the 739 windows. Even 739 samples across 75 species is thin, but per-species binary classification only needs ~10+ positive examples per species, and 42 species appear in all 12 available windows.
+
+**3. Soundscape recording label LF (limited scope)**
+
+For the 66 labeled soundscapes, add a per-window label LF analogous to focal LF3: +1 for species present in that window, -1 for absent. Accuracy ~1.0 (ground truth). But this only helps fuse labels on those 66 files — the 10,592 unlabeled soundscapes still lack this LF.
+
+**4. Soundscape-specific prevalence prior**
+
+Current prevalence prior is focal-dominated. The labeled soundscapes reveal the real test-domain distribution: **76.6% amphibian, 28.7% bird**. A soundscape-specific prior could shift soft labels toward amphibians where the evidence is ambiguous — matching the actual test domain.
+
+### Falsifiable validation ladder
+
+**Step 1**: Evaluate current soundscape soft labels against the 739 ground-truth windows. Compute per-species AUROC and calibration. This tells us the current quality baseline.
+
+**Step 2**: Recalibrate probe thresholds using ground-truth windows. Re-run fusion. Compare AUROC against Step 1.
+
+**Step 3**: Train soundscape-domain probes on the labeled windows. Add as new LFs or replace focal probes for soundscape fusion. Compare AUROC against Step 2.
+
+**Step 4**: Use the best fusion variant to pseudo-label all 10,592 unlabeled soundscapes. Train downstream classifier on hard labels + pseudo-labeled soundscapes. Compare cmAP against hard-label-only baseline.
+
+Each step gates the next. If Step 1 shows current soft labels already have >0.8 AUROC on soundscapes, the calibration work may not be necessary. If Step 1 shows <0.6 AUROC, the probes need domain adaptation before pseudo-labeling is viable.
+
+### Connection to source separation
+
+Source separation (biodenoising) could improve pseudo-labels via max-channel classification — see [source-separation-training.md](source-separation-training.md) validation ladder. This is orthogonal to probe calibration: separation improves the *input* to the classifiers, while calibration improves the *thresholds*. Both could help independently.
 
 ## References
 
