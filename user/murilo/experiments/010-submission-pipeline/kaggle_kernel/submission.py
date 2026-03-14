@@ -21,75 +21,57 @@ Supports three mel types:
 """
 
 # ---------------------------------------------------------------------------
-# Install missing dependencies from bundled wheels (no internet on Kaggle)
+# Offline dependency installation (runs on Kaggle before imports)
+# Wheels are in a separate Kaggle dataset: birdclef-2025-deps
 # ---------------------------------------------------------------------------
 import os
 import subprocess
 import sys
 
-try:
-    import onnxruntime  # noqa: F401
-except ImportError:
-    # Look for bundled wheels in the deps/ subdirectory of the weights dataset
-    KAGGLE_USER = "murilogustineli"
-    DEPS_CANDIDATES = [
-        # Kaggle input paths (old and new layout) for each model
-        "/kaggle/input/birdclef-2025-protoclr-weights/deps",
-        "/kaggle/input/birdclef-2025-eat-weights/deps",
-        "/kaggle/input/birdclef-2025-convnext-weights/deps",
-        f"/kaggle/input/datasets/{KAGGLE_USER}/birdclef-2025-protoclr-weights/deps",
-        f"/kaggle/input/datasets/{KAGGLE_USER}/birdclef-2025-eat-weights/deps",
-        f"/kaggle/input/datasets/{KAGGLE_USER}/birdclef-2025-convnext-weights/deps",
-        # Local testing fallback
-        "artifacts/weights/protoclr/deps",
-        "artifacts/weights/eat/deps",
-        "artifacts/weights/convnext/deps",
+KAGGLE_USER = "murilogustineli"
+
+
+def _find_input(slug: str) -> str:
+    """Resolve Kaggle input path, supporting both old and new directory layouts."""
+    candidates = [
+        f"/kaggle/input/{slug}",
+        f"/kaggle/input/datasets/{KAGGLE_USER}/{slug}",
     ]
-    deps_dir = None
-    for d in DEPS_CANDIDATES:
-        if os.path.isdir(d):
-            deps_dir = d
-            break
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[0]  # fallback to old-style
 
-    if deps_dir:
-        print(f"Installing onnxruntime from bundled wheels: {deps_dir}")
-        subprocess.check_call(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--no-index",
-                "--find-links",
-                deps_dir,
-                "onnxruntime",
-            ]
-        )
-    else:
-        print("WARNING: No bundled wheels found, trying pip install...")
-        subprocess.check_call(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "onnxruntime",
-                "-q",
-            ]
-        )
+
+DEPS_DIR = _find_input("birdclef-2025-deps")
+
+if os.path.exists(DEPS_DIR):
+    print(f"Installing deps from {DEPS_DIR}")
+    subprocess.check_call(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--no-index",
+            "--find-links",
+            DEPS_DIR,
+            "onnxruntime",
+        ]
+    )
 
 # ---------------------------------------------------------------------------
-# Imports
+# Imports (after offline install, must use noqa: E402)
 # ---------------------------------------------------------------------------
-import json
-import time
-from pathlib import Path
+import json  # noqa: E402
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
 
-import librosa
-import numpy as np
-import onnxruntime as ort
-import pandas as pd
-import soundfile as sf
+import librosa  # noqa: E402
+import numpy as np  # noqa: E402
+import onnxruntime as ort  # noqa: E402
+import pandas as pd  # noqa: E402
+import soundfile as sf  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Kaggle path resolution

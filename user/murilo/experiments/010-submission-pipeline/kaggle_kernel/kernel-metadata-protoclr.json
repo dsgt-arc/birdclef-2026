@@ -7,7 +7,10 @@
   "is_private": true,
   "enable_gpu": false,
   "enable_internet": false,
-  "dataset_sources": ["murilogustineli/birdclef-2025-protoclr-weights"],
+  "dataset_sources": [
+    "murilogustineli/birdclef-2025-deps",
+    "murilogustineli/birdclef-2025-protoclr-weights"
+  ],
   "competition_sources": ["birdclef-2026"],
   "kernel_sources": []
 }

@@ -29,6 +29,10 @@ from pathlib import Path
 
 DEFAULT_KAGGLE_USER = "murilogustineli"
 
+# Separate deps dataset (onnxruntime wheels for offline Kaggle install)
+DEPS_SLUG = "birdclef-2025-deps"
+DEPS_DIR = "artifacts/dist/dependencies"
+
 MODELS = {
     "eat": {
         "slug": "birdclef-2025-eat-weights",
@@ -89,42 +93,30 @@ def run_cmd(cmd: list[str], dry_run: bool = False) -> bool:
         raise
 
 
-def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> None:
-    """Upload model weights to Kaggle dataset."""
-    model_cfg = MODELS[model_name]
-    experiment_dir = get_experiment_dir()
-    weights_dir = experiment_dir / model_cfg["weights_dir"]
-    slug = model_cfg["slug"]
-
-    if not weights_dir.exists():
-        print(f"  WARNING: {weights_dir} does not exist. Run export first.")
+def upload_dataset(slug: str, path: Path, kaggle_user: str, dry_run: bool = False) -> None:
+    """Upload or update a single Kaggle dataset."""
+    if not path.exists():
+        print(f"  WARNING: {path} does not exist, skipping")
         return
 
-    # Copy species_mapping.json into model weights dir
-    mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping.json"
-    mapping_dst = weights_dir / "species_mapping.json"
-    if mapping_src.exists() and not mapping_dst.exists():
-        shutil.copy2(mapping_src, mapping_dst)
-        print(f"  Copied species_mapping.json to {weights_dir}")
-
-    files = [f for f in weights_dir.glob("*") if f.name != "dataset-metadata.json"]
+    files = [f for f in path.glob("*") if f.name != "dataset-metadata.json"]
     if not files:
-        print(f"  WARNING: {weights_dir} is empty. Run export first.")
+        print(f"  WARNING: {path} is empty, skipping")
         return
 
     print(f"\n{'='*50}")
     print(f"Uploading: {kaggle_user}/{slug}")
-    print(f"  Source: {weights_dir}")
+    print(f"  Source: {path}")
     print("  Files:")
     for f in sorted(files):
         size_mb = f.stat().st_size / 1e6
         print(f"    {f.name} ({size_mb:.1f} MB)")
 
-    create_metadata(slug, kaggle_user, weights_dir)
+    create_metadata(slug, kaggle_user, path)
 
     # Try create, then version
     try:
-        if run_cmd(["kaggle", "datasets", "create", "-p", str(weights_dir), "-r", "zip"], dry_run):
+        if run_cmd(["kaggle", "datasets", "create", "-p", str(path), "-r", "zip"], dry_run):
             print(f"  Created new dataset: {kaggle_user}/{slug}")
             return
     except subprocess.CalledProcessError:
@@ -137,7 +129,7 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
             "datasets",
             "version",
             "-p",
-            str(weights_dir),
+            str(path),
             "-m",
             "Auto-update from HPC export",
             "-r",
@@ -146,6 +138,26 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
         dry_run,
     )
     print(f"  Updated: {kaggle_user}/{slug}")
+
+
+def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> None:
+    """Upload model weights to Kaggle dataset."""
+    model_cfg = MODELS[model_name]
+    experiment_dir = get_experiment_dir()
+    weights_dir = experiment_dir / model_cfg["weights_dir"]
+
+    if not weights_dir.exists():
+        print(f"  WARNING: {weights_dir} does not exist. Run export first.")
+        return
+
+    # Copy species_mapping.json into model weights dir
+    mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping.json"
+    mapping_dst = weights_dir / "species_mapping.json"
+    if mapping_src.exists() and not mapping_dst.exists():
+        shutil.copy2(mapping_src, mapping_dst)
+        print(f"  Copied species_mapping.json to {weights_dir}")
+
+    upload_dataset(model_cfg["slug"], weights_dir, kaggle_user, dry_run)
 
 
 def push_kernel(model_name: str, dry_run: bool = False) -> None:
@@ -189,14 +201,20 @@ def main():
         print("ERROR: kaggle CLI not found or not configured")
         sys.exit(1)
 
+    experiment_dir = get_experiment_dir()
     models = list(MODELS.keys()) if args.model == "all" else [args.model]
 
+    # Upload deps dataset (shared across all models)
+    deps_path = experiment_dir / DEPS_DIR
+    upload_dataset(DEPS_SLUG, deps_path, args.kaggle_user, args.dry_run)
+
+    # Upload model weights + push kernels
     for model_name in models:
         upload_weights(model_name, args.kaggle_user, args.dry_run)
         if args.push_kernel:
             push_kernel(model_name, args.dry_run)
 
-    print(f"\nDone! Uploaded {len(models)} model(s).")
+    print(f"\nDone! Uploaded deps + {len(models)} model(s).")
 
 
 if __name__ == "__main__":
