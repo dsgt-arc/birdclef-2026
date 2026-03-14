@@ -65,7 +65,10 @@ Essential papers and resources for the BirdCLEF 2026 research. Organized by rele
 |-------|------|------------|----------------|
 | **Overview of BirdCLEF 2024** | 2024 | [CEUR-WS](https://ceur-ws.org/Vol-3740/paper-198.pdf) | Competition structure, evaluation metrics |
 | **Mind the Domain Gap: Bioacoustic Sound Event Detection** | 2024 | [2403.18638](https://arxiv.org/abs/2403.18638) | Focal→soundscape domain shift analysis |
-| **Improving Bird Classification with Unsupervised Sound Separation** | 2021 | [2110.03209](https://arxiv.org/abs/2110.03209) | MixIT for bird audio denoising |
+| **Improving Bird Classification with Unsupervised Sound Separation** | 2021 | [2110.03209](https://arxiv.org/abs/2110.03209) | Bird MixIT: TDCN++ separation, 10.5 dB SI-SNR, max-channel classification |
+| **Unsupervised Sound Separation Using MixIT** | 2020 | [2006.12701](https://arxiv.org/abs/2006.12701) | Original MixIT: mixture-of-mixtures unsupervised training |
+| **RemixIT: Continual Self-Training with Bootstrapped Remixing** | 2022 | [2202.08862](https://arxiv.org/abs/2202.08862) | Self-supervised domain adaptation for separation |
+| **Mixture of Mixups for Multi-Label Bioacoustics** | 2024 | [2403.09598](https://arxiv.org/abs/2403.09598) | Mix2 for anuran sounds, co-occurrence-aware mixing proposed |
 | **Transfer Learning with Pseudo Multi-Label Birdcall Classification** | 2024 | [2407.06291](https://arxiv.org/abs/2407.06291) | BirdCLEF 2024 approach with pseudo-labels |
 
 ## Production Systems

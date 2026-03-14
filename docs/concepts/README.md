@@ -23,13 +23,18 @@ Research ideas, hypotheses, and directions being explored for BirdCLEF 2026.
     ssamba-audio-mamba          weak-supervision-          soundscape-
          │                    label-fusion                domain-shift
     pretrained-mamba-              │                          │
-    transfer                  unsupervised-event-       prompted-sound-
-         │                    detection-labeling         event-detection ←──┐
-    cnn-mamba-hybrid-                                        │              │
-    frontend                                            (exp 011)          │
-                                                             │              │
-                                                        episode mixup ──────┘
-                                                        + metric learning
+    transfer                  unsupervised-event-       source-separation-
+         │                    detection-labeling         augmentation
+    cnn-mamba-hybrid-                │                       │
+    frontend                   co-occurrence ◄──── biodenoising + MixIT
+                               data (exp 010)            │
+                                                    prompted-sound-
+                                                    event-detection ←──┐
+                                                         │              │
+                                                    (exp 011)          │
+                                                         │              │
+                                                    episode mixup ──────┘
+                                                    + metric learning
 ```
 
 ## Index
@@ -55,6 +60,7 @@ Research ideas, hypotheses, and directions being explored for BirdCLEF 2026.
 | Concept | Status | Description |
 |---------|--------|-------------|
 | [soundscape-domain-shift](soundscape-domain-shift.md) | developing | Focal→soundscape gap: MixIT, ProtoCLR, augmentation, TTA strategies |
+| [source-separation-augmentation](source-separation-augmentation.md) | **developing** | Biodenoising + MixIT for smart augmentation: foreground/background remix, co-occurrence mixing, distance simulation |
 | [context-recovery](context-recovery.md) | developing | Decoupled representation + sequence model for long-form audio |
 | [temporal-resolution-sequence-length](temporal-resolution-sequence-length.md) | nascent | Token budget vs frame resolution trade-offs for transformers/Mamba/CNNs |
 
@@ -77,7 +83,8 @@ Research ideas, hypotheses, and directions being explored for BirdCLEF 2026.
 
 - **ssamba-audio-mamba** → **pretrained-mamba-transfer** → **prompted-sound-event-detection**: architecture → transfer mechanics → application
 - **prompted-sound-event-detection** depends on **weak-supervision-label-fusion** for training labels (BirdNET/Perch teacher pseudo-labels)
-- **soundscape-domain-shift** is the core problem; **prompted-sound-event-detection** is the proposed solution (reference conditioning bridges the gap)
+- **soundscape-domain-shift** is the core problem; **source-separation-augmentation** addresses it via data augmentation (biodenoising + MixIT for smart remixing)
+- **source-separation-augmentation** uses co-occurrence data from exp 010 teacher labels and connects to SSAMBA's sequence modeling (co-occurrence attention patterns)
 - **cnn-mamba-hybrid-frontend** is orthogonal — can be combined with any downstream approach
 
 ## Status Definitions
