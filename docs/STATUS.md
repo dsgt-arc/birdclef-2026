@@ -91,14 +91,14 @@ EfficientNet-B1 frozen probe (0.649 Kaggle) is well below top solutions (>0.85).
 
 ## Priority Stack
 
-1. **Train MixIT separator** — ConvTasNet + MixIT at 32 kHz, single sbatch job (6-24h). Enables both tracks.
-2. **Evaluate exp 016 step 0** — does frozen EfficientNet have metric structure? Informs pseudo-labeling strategy.
-3. **Track 1: Unfreeze EfficientNet + SED head** — fork exp 012, add AttBlockV2 with hard labels
-4. **Track 1: Iterative pseudo-labeling** — the dominant 2025 technique, optionally enhanced by separation
-5. **Track 2: Episode training prototype** — within-recording episodes on focal data, 30s windows, SSL backbone
-6. **Track 2: Soundscape adaptation** — focal ref + soundscape target episodes
+1. **Track 1: Unfreeze EfficientNet + SED + class weights** — fork exp 012, highest-impact proven change
+2. **Track 1: Pseudo-labeling round 1** — predict on 176.5h unlabeled soundscapes — highest-value single activity
+3. **Train MixIT separator** — ConvTasNet at 32 kHz + Demucs at 16 kHz in parallel (6-24h). Enables both tracks.
+4. **Track 1: Iterate pseudo-labeling** — rounds 2-3, separation-enhanced labels
+5. **Track 2: Episode training prototype** — within-recording episodes, 30-60s windows, SSL backbone
+6. **Track 2: Soundscape adaptation** — focal ref + soundscape target episodes, prioritize amphibians + zero-shot species
 
-See [STRATEGY.md](STRATEGY.md) for full sequencing and risk assessment.
+See [STRATEGY.md](STRATEGY.md) for full sequencing, risk assessment, and EDA-informed context.
 
 ## Quick Links
 
