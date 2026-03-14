@@ -51,5 +51,6 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-# Uses shared src from user/murilo/src/birdclef (via sys.path in scripts)
-packages = []
+# This experiment has no Python package — it's scripts-only.
+# Point to a minimal stub so hatchling doesn't error on editable install.
+packages = ["src/submission_pipeline"]
