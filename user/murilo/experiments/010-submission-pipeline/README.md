@@ -84,7 +84,7 @@ cd user/murilo/experiments/010-submission-pipeline
 The export job builds each model from its checkpoint, merges LoRA adapters, and traces to ONNX. It also builds the species mapping.
 
 ```bash
-# Export all 3 models (~2 hours)
+# Export all 3 models (~2 min with cached HF weights)
 bash sbatch/run.sh export
 
 # Export a single model
