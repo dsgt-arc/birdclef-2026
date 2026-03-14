@@ -379,6 +379,76 @@ class SoundscapeWindowStats(EDATask):
         )
 
 
+class SoundscapeTaxaSummary(EDATask):
+    """Per-taxa summary of soundscape label presence and species counts.
+
+    Output: artifacts/soundscape_taxa_summary.parquet
+    Columns: class_name, n_unique_species, n_windows_present, frac_windows,
+             mean_species_per_window (when present)
+    """
+
+    def requires(self):
+        return {
+            "labels": SoundscapeLabels(
+                data_dir=self.data_dir, artifacts_dir=self.artifacts_dir
+            ),
+            "window_stats": SoundscapeWindowStats(
+                data_dir=self.data_dir, artifacts_dir=self.artifacts_dir
+            ),
+        }
+
+    def output(self):
+        return self.artifact("soundscape_taxa_summary.parquet")
+
+    def run(self):
+        self.ensure_parent(self.output())
+        labels = pl.read_parquet(self.input()["labels"].path)
+        stats = pl.read_parquet(self.input()["window_stats"].path)
+
+        total_windows = stats.shape[0]
+
+        # per-taxa: unique species and window presence
+        taxa_col_map = {
+            "Aves": "n_aves",
+            "Amphibia": "n_amphibia",
+            "Insecta": "n_insecta",
+            "Mammalia": "n_mammalia",
+            "Reptilia": "n_reptilia",
+        }
+
+        rows = []
+        for class_name, col in taxa_col_map.items():
+            n_species = labels.filter(pl.col("class_name") == class_name).select("primary_label").n_unique()
+            present = stats.filter(pl.col(col) > 0)
+            n_windows = present.shape[0]
+            mean_per_window = present[col].mean() if n_windows > 0 else 0.0
+            rows.append({
+                "class_name": class_name,
+                "n_unique_species": n_species,
+                "n_windows_present": n_windows,
+                "frac_windows": n_windows / total_windows,
+                "mean_count_per_window": mean_per_window,
+            })
+
+        df = pl.DataFrame(rows).sort("n_windows_present", descending=True)
+
+        # also add overall density stats
+        quantiles = {
+            f"species_p{int(q*100)}": stats["n_species"].quantile(q)
+            for q in [0.25, 0.5, 0.75, 0.9, 1.0]
+        }
+
+        df.write_parquet(self.output().path)
+        print(f"SoundscapeTaxaSummary: {total_windows} windows, {labels.select('primary_label').n_unique()} species")
+        for row in df.iter_rows(named=True):
+            print(
+                f"  {row['class_name']}: {row['n_unique_species']} species, "
+                f"{row['n_windows_present']} windows ({row['frac_windows']*100:.1f}%)"
+            )
+        print(f"  Species/window: median={quantiles['species_p50']:.0f}, "
+              f"p90={quantiles['species_p90']:.0f}, max={quantiles['species_p100']:.0f}")
+
+
 class SoundscapeCoverage(EDATask):
     """Which species appear in soundscapes vs focal-only?
 
@@ -839,6 +909,7 @@ class AllEDA(EDATask):
             ClassWeights(**params),
             SoundscapeLabels(**params),
             SoundscapeWindowStats(**params),
+            SoundscapeTaxaSummary(**params),
             SoundscapeCoverage(**params),
             SoundscapeNegatives(**params),
             GeographicGap(**params),
