@@ -45,6 +45,11 @@ def _find_input(slug: str) -> str:
 
 DEPS_DIR = _find_input("birdclef-2025-deps")
 
+# Debug: show what we see in /kaggle/input
+if os.path.exists("/kaggle/input"):
+    print(f"Kaggle input contents: {os.listdir('/kaggle/input')}")
+print(f"DEPS_DIR resolved to: {DEPS_DIR} (exists={os.path.exists(DEPS_DIR)})")
+
 if os.path.exists(DEPS_DIR):
     print(f"Installing deps from {DEPS_DIR}")
     subprocess.check_call(
@@ -59,6 +64,8 @@ if os.path.exists(DEPS_DIR):
             "onnxruntime",
         ]
     )
+else:
+    print(f"WARNING: deps dir not found at {DEPS_DIR}, onnxruntime may not be available")
 
 # ---------------------------------------------------------------------------
 # Imports (after offline install, must use noqa: E402)
