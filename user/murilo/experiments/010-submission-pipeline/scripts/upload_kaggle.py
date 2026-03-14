@@ -27,7 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_KAGGLE_USER = "mgustineli3"
+DEFAULT_KAGGLE_USER = "murilogustineli"
 
 MODELS = {
     "eat": {

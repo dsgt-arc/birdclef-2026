@@ -34,7 +34,7 @@ import soundfile as sf
 # ---------------------------------------------------------------------------
 # Kaggle path resolution
 # ---------------------------------------------------------------------------
-KAGGLE_USER = "mgustineli3"
+KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
