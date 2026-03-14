@@ -152,7 +152,41 @@ Domain matching gave a 6.1 dB boost. A BirdCLEF-specific model trained on the ac
 - **Engineering**: Integrate SPMamba model with Asteroid's `MixITLossWrapper` (thin wrapper), handle input/output tensor formats
 - **Training estimate**: Unknown, likely **2-5 days** on 1x RTX 6000
 
-**Recommendation**: Run Paths A and B in parallel as a first experiment — they're both cheap (single sbatch jobs). Path A tests whether biodenoising priors accelerate convergence despite the 16 kHz limitation. Path B tests whether training from scratch at 32 kHz produces better separation across all taxa. The comparison directly answers H5 and determines the best foundation for the augmentation pipeline. Path C (SPMamba) is a stretch goal if A/B succeed.
+**Recommendation (revised)**: Before training any custom separator, validate whether source separation improves pseudo-labels at all using biodenoising (zero training cost). See "Validation Ladder" below.
+
+## Validation Ladder: Biodenoising-First Strategy
+
+**Key insight**: If the goal is foreground/background decomposition for augmentation, biodenoising already does this with zero training. MixIT's unique contribution is multi-channel max-pooling — but this must be validated before investing 6-24h of training.
+
+### Why not jump to MixIT?
+
+MixIT trains on mixture-of-mixtures (MoM): sum two recordings, separate back into originals. This works well when each recording has 1-3 species (focal recordings). But BirdCLEF 2026 soundscapes have a **median of 8 species and up to 20** per 5s window. Summing two such soundscapes creates 16-40 overlapping sources — far beyond a 4-channel model's capacity. The model degenerates to copying input to output.
+
+**Practical implication**: MoMs should be formed from **focal recordings only** (344.5h, typically 1-3 species). The trained model is then *applied* to soundscapes at inference, where it won't cleanly isolate 8 species into 4 channels but can still usefully group foreground vs background. This is the same thing biodenoising already does — raising the question of whether MixIT adds value over biodenoising for this use case.
+
+### The falsifiable ladder
+
+**Step 1 (free)**: Run biodenoising on soundscapes → 2 channels (foreground + background). Classify each channel + original with BirdNET/Perch, max-pool per species. Compare pseudo-label quality against raw-mixture predictions (already available from exp 010).
+
+- **Pass gate**: Biodenoising max-pool improves pseudo-label quality (higher teacher agreement, or downstream classifier cmAP gain >1%).
+- **If fail**: Source separation doesn't help for pseudo-labeling on dense soundscapes. Skip MixIT entirely. Focus augmentation efforts on simpler approaches (Strategy A: foreground remix at varied SNR).
+
+**Step 2 (6-24h)**: Only if Step 1 passes. Train ConvTasNet + MixIT at 32 kHz on focal MoMs. Apply to soundscapes → 4 channels + original. Compare 5-channel max-pool pseudo-labels against biodenoising's 3-channel max-pool.
+
+- **Pass gate**: 4-channel separation improves pseudo-label quality beyond biodenoising's 2-channel by >2% relative.
+- **If fail**: Biodenoising is sufficient. Use it for augmentation and pseudo-labeling; don't maintain a custom separator.
+
+**Step 3 (augmentation)**: Whichever separator passes, test foreground/background remix augmentation on the downstream classifier (exp 012 EfficientNet or equivalent). This tests H4 from the augmentation concept doc.
+
+### MixIT's unique value proposition (if any)
+
+The only scenario where MixIT clearly beats biodenoising:
+- A soundscape has species A (loud) and species B (quiet) co-occurring
+- Biodenoising puts both in "foreground" (it doesn't separate species)
+- MixIT might separate them into different channels, letting species B get a clean classification
+- Max-pool across channels catches species B
+
+But with 8+ species per soundscape, even MixIT's 4 channels will contain species mixtures. The marginal gain of 4 channels over 2 may be small. Step 2 tests exactly this.
 
 ## Open Questions
 
@@ -165,15 +199,17 @@ Domain matching gave a 6.1 dB boost. A BirdCLEF-specific model trained on the ac
 
 ## Testable Hypotheses
 
-1. **H1 (Warm start)**: Demucs initialized from biodenoising weights achieves >6 dB SI-SNR improvement on BirdCLEF MoMs within 20K training steps (3-8 hours). ConvTasNet from scratch requires >50K steps to reach the same quality. This tests whether the biodenoising prior provides meaningful acceleration.
+1. **H0 (Biodenoising baseline — free, test first)**: Biodenoising foreground/background separation + max-channel classification improves pseudo-label quality on BirdCLEF soundscapes compared to raw-mixture classification. This gates all further separation work. If biodenoising doesn't help, MixIT won't either.
 
-2. **H2 (Domain matching)**: A separator trained on BirdCLEF data achieves higher SI-SNR improvement on BirdCLEF soundscapes than Google's generic Bird MixIT (10.5 dB baseline), consistent with the domain-matching effect observed in the original paper.
+2. **H1 (Multi-channel value)**: MixIT 4-channel separation provides >2% relative improvement in pseudo-label quality over biodenoising 2-channel on dense soundscapes (median 8 species). This determines whether custom separator training is justified.
 
-3. **H3 (Multi-taxa)**: A model trained on all BirdCLEF+ taxa (birds + amphibians + insects + mammals) separates non-bird vocalizations at >4 dB SI-SNR improvement. Google's Bird MixIT, trained only on birds, fails on non-bird taxa (<2 dB).
+3. **H2 (Domain matching)**: A separator trained on BirdCLEF data achieves higher SI-SNR improvement on BirdCLEF soundscapes than Google's generic Bird MixIT (10.5 dB baseline), consistent with the domain-matching effect observed in the original paper.
 
-4. **H4 (Augmentation impact)**: Using the trained separator for foreground/background augmentation (per [source-separation-augmentation](source-separation-augmentation.md) Strategy A) improves EfficientNet (exp 012) cmAP on soundscape evaluation by >3% absolute over no-augmentation baseline.
+4. **H3 (Multi-taxa)**: A model trained on all BirdCLEF+ taxa (birds + amphibians + insects + mammals) separates non-bird vocalizations at >4 dB SI-SNR improvement. Google's Bird MixIT, trained only on birds, fails on non-bird taxa (<2 dB).
 
-5. **H5 (Architecture comparison)**: ConvTasNet + MixIT from scratch at 32 kHz outperforms Demucs + MixIT from biodenoising at 16 kHz on BirdCLEF data, because the sample rate advantage outweighs the pretrained weight advantage. (This determines whether Path A or B is better.)
+5. **H4 (Augmentation impact)**: Using the best available separator for foreground/background augmentation (per [source-separation-augmentation](source-separation-augmentation.md) Strategy A) improves EfficientNet (exp 012) cmAP on soundscape evaluation by >3% absolute over no-augmentation baseline.
+
+6. **H5 (Architecture comparison)**: ConvTasNet + MixIT from scratch at 32 kHz outperforms Demucs + MixIT from biodenoising at 16 kHz on BirdCLEF data, because the sample rate advantage outweighs the pretrained weight advantage. Only test if H1 passes.
 
 ## Connections
 
@@ -190,4 +226,4 @@ Domain matching gave a 6.1 dB boost. A BirdCLEF-specific model trained on the ac
 - For the **Mamba end-to-end vision**: SPMamba separator → SSAMBA classifier. Both use Mamba blocks with linear complexity. The separator decomposes the acoustic scene, the classifier identifies species in each channel. All CPU-viable at inference due to O(L) complexity.
 - **Evaluation without clean references**: Form MoMs from held-out focal recordings (where each recording is treated as a single-source "ground truth"). Measure whether the separator can reconstruct the two original recordings from their sum. This is the standard MixIT evaluation protocol (MoMi score).
 - A 2025 paper showed that even **correlated sources** (which violate MixIT's independence assumption) can be handled with large enough models and sufficient data. The "correlated sources" concern may be less severe than initially thought.
-- **Practical first milestone**: Get ConvTasNet + MixIT running on a small subset (1000 recordings) as a proof-of-concept. If it produces reasonable spectrograms (visible source isolation), scale up.
+- **Practical first milestone (revised)**: Run biodenoising on a sample of soundscapes, classify separated channels with BirdNET/Perch, compare pseudo-label quality to raw predictions. This is free (no training) and directly gates whether any custom separator training is warranted. Only proceed to ConvTasNet + MixIT if biodenoising max-pool shows measurable improvement.
