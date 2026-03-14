@@ -21,24 +21,67 @@ Supports three mel types:
 """
 
 # ---------------------------------------------------------------------------
-# Install missing dependencies (runs before any imports)
+# Install missing dependencies from bundled wheels (no internet on Kaggle)
 # ---------------------------------------------------------------------------
+import os
 import subprocess
 import sys
 
 try:
     import onnxruntime  # noqa: F401
 except ImportError:
-    print("Installing onnxruntime...")
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "onnxruntime", "-q"],
-    )
+    # Look for bundled wheels in the deps/ subdirectory of the weights dataset
+    KAGGLE_USER = "murilogustineli"
+    DEPS_CANDIDATES = [
+        # Kaggle input paths (old and new layout) for each model
+        "/kaggle/input/birdclef-2025-protoclr-weights/deps",
+        "/kaggle/input/birdclef-2025-eat-weights/deps",
+        "/kaggle/input/birdclef-2025-convnext-weights/deps",
+        f"/kaggle/input/datasets/{KAGGLE_USER}/birdclef-2025-protoclr-weights/deps",
+        f"/kaggle/input/datasets/{KAGGLE_USER}/birdclef-2025-eat-weights/deps",
+        f"/kaggle/input/datasets/{KAGGLE_USER}/birdclef-2025-convnext-weights/deps",
+        # Local testing fallback
+        "artifacts/weights/protoclr/deps",
+        "artifacts/weights/eat/deps",
+        "artifacts/weights/convnext/deps",
+    ]
+    deps_dir = None
+    for d in DEPS_CANDIDATES:
+        if os.path.isdir(d):
+            deps_dir = d
+            break
+
+    if deps_dir:
+        print(f"Installing onnxruntime from bundled wheels: {deps_dir}")
+        subprocess.check_call(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--no-index",
+                "--find-links",
+                deps_dir,
+                "onnxruntime",
+            ]
+        )
+    else:
+        print("WARNING: No bundled wheels found, trying pip install...")
+        subprocess.check_call(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "onnxruntime",
+                "-q",
+            ]
+        )
 
 # ---------------------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------------------
 import json
-import os
 import time
 from pathlib import Path
 
