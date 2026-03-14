@@ -26,8 +26,13 @@ Research ideas, hypotheses, and directions being explored for BirdCLEF 2026.
     transfer                  unsupervised-event-       source-separation-
          │                    detection-labeling         augmentation
     cnn-mamba-hybrid-                │                       │
-    frontend                   co-occurrence ◄──── biodenoising + MixIT
-                               data (exp 010)            │
+    frontend                   co-occurrence ◄──── source-separation-
+                               data (exp 010)      training (Demucs +
+                                                    MixIT loss, PyTorch)
+                                                         │
+                                                    source-separation-
+                                                    augmentation
+                                                         │
                                                     prompted-sound-
                                                     event-detection ←──┐
                                                          │              │
@@ -61,6 +66,7 @@ Research ideas, hypotheses, and directions being explored for BirdCLEF 2026.
 |---------|--------|-------------|
 | [soundscape-domain-shift](soundscape-domain-shift.md) | developing | Focal→soundscape gap: MixIT, ProtoCLR, augmentation, TTA strategies |
 | [source-separation-augmentation](source-separation-augmentation.md) | **developing** | Biodenoising + MixIT for smart augmentation: foreground/background remix, co-occurrence mixing, distance simulation |
+| [source-separation-training](source-separation-training.md) | **developing** | Train a PyTorch MixIT separator on BirdCLEF data, initialized from biodenoising Demucs weights |
 | [context-recovery](context-recovery.md) | developing | Decoupled representation + sequence model for long-form audio |
 | [temporal-resolution-sequence-length](temporal-resolution-sequence-length.md) | nascent | Token budget vs frame resolution trade-offs for transformers/Mamba/CNNs |
 

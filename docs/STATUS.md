@@ -4,23 +4,27 @@
 
 ## Research Thesis
 
-BirdCLEF 2025 requires CPU-only inference on soundscapes. This project explores two parallel tracks:
-1. **EfficientNet-B1** — frozen pre-trained backbone with trainable heads, currently the best Kaggle performer (0.649 private LB)
-2. **SSAMBA** — Mamba-based linear-time backbone for potential future gains via SSL pre-training and prototypical classification
+BirdCLEF 2026 requires CPU-only inference on soundscapes. The project pursues a **two-track strategy** (see [STRATEGY.md](STRATEGY.md)):
+
+1. **Track 1 (SOTA Baseline)**: EfficientNet-B1 + SED + iterative pseudo-labeling + source separation augmentation. Target: 0.85+ (competitive with 2025 top-5).
+2. **Track 2 (Novel Research)**: SSAMBA prompted SED with 30-60s long-context soundscape processing. A reference clip conditions Mamba to detect a specific species across an entire soundscape — few-shot, zero-shot capable, CPU-viable via O(n) complexity.
+
+Both tracks share the same data infrastructure: source separation, teacher labels, and the Kaggle submission pipeline.
 
 ## Current State
 
-**Phase**: EfficientNet refinement + Prototypical/Contrastive methods
+**Phase**: Source separation infrastructure + Track 1 unfreezing + Track 2 SSL pre-training
 
-The EfficientNet-B1 linear probe (exp 012) achieved **0.649 Kaggle private LB** with a frozen backbone — the project's best submission. Subsequent experiments showed that soft labels from weak supervision (exp 014) and SED heads (exp 015) did not improve over hard-label baselines. Current focus is on:
+The EfficientNet-B1 linear probe (exp 012) achieved **0.649 Kaggle private LB** with a frozen backbone — the project's best submission. The next steps are:
 
-1. **Contrastive SED / prototypical classification** (exp 016) — testing if frozen EfficientNet features have metric structure for few-shot species ID
-2. **Weak supervision pipeline** (exp 013) — completed FlyingSquid fusion of BirdNET + Perch + acoustic indices, available as soft labels but not yet beneficial
-3. **SSAMBA SSL pre-training** (exp 009) — MPG pre-training runs completed, finetune evaluation pending
+1. **Train MixIT separator** — PyTorch ConvTasNet + MixIT loss at 32 kHz (concept ready, enables both tracks)
+2. **Unfreeze EfficientNet + SED head** — the single highest-impact Track 1 change (exp 015 showed frozen+SED fails; need to unfreeze)
+3. **SSAMBA SSL pre-training** (exp 009) — MPG runs completed, finetune evaluation pending
+4. **Exp 016 step 0 results** — does frozen EfficientNet have metric structure? Informs both tracks.
 
 ### Honest Assessment
 
-EfficientNet-B1 frozen probe (0.649 Kaggle) is a strong baseline but well below top solutions (>0.85). The 2025 Kaggle landscape shows the dominant factor is **iterative pseudo-labeling** (3-4 rounds), not architecture. Soft labels from exp 013 hurt when used as training targets (exp 014/015), suggesting the bottleneck is label quality, not model capacity. The prototypical approach (exp 016) may unlock pseudo-labeling without needing soft labels as direct supervision.
+EfficientNet-B1 frozen probe (0.649 Kaggle) is well below top solutions (>0.85). The 2025 Kaggle landscape shows the dominant factor is **iterative pseudo-labeling** (3-4 rounds), not architecture. Soft labels from exp 013 hurt when used as training targets (exp 014/015) — the bottleneck is label quality, not model capacity. Track 1 focuses on proven techniques (pseudo-labeling, SED, ensemble). Track 2 bets on a novel approach (prompted SED + long context) that could leapfrog standard methods if it works, with Track 1 as fallback.
 
 ## Key Findings
 
@@ -76,23 +80,25 @@ EfficientNet-B1 frozen probe (0.649 Kaggle) is a strong baseline but well below 
 
 ## Concept Docs
 
-Research ideas explored but not yet validated:
-
 | Concept | Key Idea | Status |
 |---------|----------|--------|
-| [Prompted SED](concepts/prompted-sound-event-detection.md) | Reference audio as Mamba prefix for few-shot detection | Tested (exp 011) — inconclusive |
+| [Prompted SED](concepts/prompted-sound-event-detection.md) | Reference audio as Mamba prefix for few-shot SED (Track 2 core) | Developing — phase 0 inconclusive, redesigning |
+| [Source Separation Training](concepts/source-separation-training.md) | Train PyTorch MixIT separator on BirdCLEF data | Developing — concept ready, not started |
+| [Source Separation Augmentation](concepts/source-separation-augmentation.md) | Biodenoising + MixIT for smart augmentation (both tracks) | Developing — 4 strategies, 5 hypotheses |
 | [Weak Supervision Label Fusion](concepts/weak-supervision-label-fusion.md) | FlyingSquid triplet method to fuse noisy teacher signals | Done (exp 013) — labels generated |
-| [Unsupervised Event Detection](concepts/unsupervised-event-detection-labeling.md) | bambird for per-token temporal labels | Done (exp 010) — 660k ROIs |
-| [Soundscape Domain Shift](concepts/soundscape-domain-shift.md) | XenoCanto → soundscape gap analysis | Fundamental challenge |
-| [Context Recovery](concepts/context-recovery.md) | Using temporal context for predictions | Addressed by 30s windows |
+| [Soundscape Domain Shift](concepts/soundscape-domain-shift.md) | XenoCanto → soundscape gap analysis | Fundamental challenge — separation augmentation addresses it |
+| [SSAMBA Audio Mamba](concepts/ssamba-audio-mamba.md) | Mamba backbone for Track 2 | Mature — validated through exps 004-009 |
 
 ## Priority Stack
 
-1. **Evaluate exp 016 step 0** — does frozen EfficientNet have metric structure for prototypical classification?
-2. **Prototypical/contrastive training** (exp 016 steps 1+) — if step 0 passes decision gates
-3. **Iterative pseudo-labeling** — the dominant technique from 2025 top solutions, not yet attempted
-4. **SSAMBA finetune with SSL backbone** (exp 009) — compare SSL-pretrained vs AudioSet-pretrained
-5. **Kaggle submission refinement** — current best is 0.649 (exp 012), pipeline tested end-to-end
+1. **Train MixIT separator** — ConvTasNet + MixIT at 32 kHz, single sbatch job (6-24h). Enables both tracks.
+2. **Evaluate exp 016 step 0** — does frozen EfficientNet have metric structure? Informs pseudo-labeling strategy.
+3. **Track 1: Unfreeze EfficientNet + SED head** — fork exp 012, add AttBlockV2 with hard labels
+4. **Track 1: Iterative pseudo-labeling** — the dominant 2025 technique, optionally enhanced by separation
+5. **Track 2: Episode training prototype** — within-recording episodes on focal data, 30s windows, SSL backbone
+6. **Track 2: Soundscape adaptation** — focal ref + soundscape target episodes
+
+See [STRATEGY.md](STRATEGY.md) for full sequencing and risk assessment.
 
 ## Quick Links
 
