@@ -495,10 +495,329 @@ class AudioDurations(EDATask):
             print(f"  {errors.shape[0]} errors")
 
 
+class GeographicGap(EDATask):
+    """Analyze geographic overlap between focal training data and Pantanal test site.
+
+    Pantanal bounding box (from recording_location.txt):
+      lat: -21.6 to -16.5, lon: -57.6 to -55.9
+
+    Output: artifacts/geographic_gap.parquet
+    Columns: primary_label, class_name, n_total, n_with_location,
+             n_in_pantanal, frac_in_pantanal, mean_lat, mean_lon
+    """
+
+    # Pantanal bounding box from recording_location.txt
+    PANTANAL_LAT_MIN = -21.6
+    PANTANAL_LAT_MAX = -16.5
+    PANTANAL_LON_MIN = -57.6
+    PANTANAL_LON_MAX = -55.9
+
+    def requires(self):
+        return TrainMetadata(
+            data_dir=self.data_dir, artifacts_dir=self.artifacts_dir
+        )
+
+    def output(self):
+        return self.artifact("geographic_gap.parquet")
+
+    def run(self):
+        self.ensure_parent(self.output())
+        train = pl.read_parquet(self.input().path)
+
+        # flag recordings within Pantanal bounding box
+        train = train.with_columns(
+            (
+                pl.col("latitude").is_between(self.PANTANAL_LAT_MIN, self.PANTANAL_LAT_MAX)
+                & pl.col("longitude").is_between(self.PANTANAL_LON_MIN, self.PANTANAL_LON_MAX)
+            )
+            .fill_null(False)
+            .alias("in_pantanal"),
+        )
+
+        # per-species geographic summary
+        geo = (
+            train.group_by("primary_label", "class_name")
+            .agg(
+                pl.len().alias("n_total"),
+                pl.col("has_location").sum().alias("n_with_location"),
+                pl.col("in_pantanal").sum().alias("n_in_pantanal"),
+                pl.col("latitude").mean().alias("mean_lat"),
+                pl.col("longitude").mean().alias("mean_lon"),
+            )
+            .with_columns(
+                (pl.col("n_in_pantanal") / pl.col("n_with_location").cast(pl.Float64))
+                .fill_nan(0.0)
+                .fill_null(0.0)
+                .alias("frac_in_pantanal"),
+            )
+            .sort("frac_in_pantanal", descending=True)
+        )
+
+        geo.write_parquet(self.output().path)
+        total_with_loc = train.filter(pl.col("has_location")).shape[0]
+        total_pantanal = train.filter(pl.col("in_pantanal")).shape[0]
+        species_in_pantanal = geo.filter(pl.col("n_in_pantanal") > 0).shape[0]
+        print(
+            f"GeographicGap: {total_pantanal}/{total_with_loc} recordings in Pantanal "
+            f"({total_pantanal / max(total_with_loc, 1) * 100:.1f}%), "
+            f"{species_in_pantanal} species with Pantanal recordings"
+        )
+
+
+class TestSetStructure(EDATask):
+    """Parse sample_submission row IDs to extract test set structure.
+
+    Row ID format: BC2026_Test_{file_id}_{site}_{date}_{time}_{offset_sec}
+
+    Output: artifacts/test_set_structure.parquet
+    Columns: row_id, file_id, site, date, time, offset_sec, hour, file_key
+    """
+
+    def output(self):
+        return self.artifact("test_set_structure.parquet")
+
+    def run(self):
+        self.ensure_parent(self.output())
+        data = Path(self.data_dir)
+
+        submission = pl.read_csv(data / "sample_submission.csv", n_rows=0)
+        # read just row_id column (first col) — avoid loading all 234 target columns
+        sub = pl.read_csv(data / "sample_submission.csv").select("row_id")
+
+        # parse row_id: BC2026_Test_0001_S05_20250227_010002_5
+        df = sub.with_columns(
+            pl.col("row_id").str.extract(r"BC2026_Test_(\d+)_", 1).alias("file_id"),
+            pl.col("row_id").str.extract(r"_(S\d+)_", 1).alias("site"),
+            pl.col("row_id").str.extract(r"_S\d+_(\d{8})_", 1).alias("date"),
+            pl.col("row_id").str.extract(r"_(\d{6})_\d+$", 1).alias("time"),
+            pl.col("row_id").str.extract(r"_(\d+)$", 1).cast(pl.Int32).alias("offset_sec"),
+        ).with_columns(
+            pl.col("time").str.slice(0, 2).cast(pl.Int8).alias("hour"),
+            # unique file key (file_id + site + date + time)
+            (pl.col("file_id") + "_" + pl.col("site") + "_" + pl.col("date") + "_" + pl.col("time"))
+            .alias("file_key"),
+        )
+
+        df.write_parquet(self.output().path)
+        n_files = df.select("file_key").n_unique()
+        n_sites = df.select("site").n_unique()
+        dates = df.select("date").unique().sort("date")
+        hours = df.select("hour").unique().sort("hour")
+        print(
+            f"TestSetStructure: {df.shape[0]} windows across {n_files} files, "
+            f"{n_sites} sites, {dates.shape[0]} dates"
+        )
+        print(f"  Date range: {dates['date'][0]} to {dates['date'][-1]}")
+        print(f"  Hours: {sorted(hours['hour'].to_list())}")
+
+
+class SoundscapeNegatives(EDATask):
+    """Analyze whether unlabeled windows in labeled soundscape files can serve as negatives.
+
+    Compares the set of 5s windows that exist in labeled files against the
+    windows that actually have labels. Gaps are candidate hard negatives.
+
+    Output: artifacts/soundscape_negatives.parquet
+    Columns: filename, max_labeled_sec, n_labeled_windows, n_possible_windows,
+             n_unlabeled_windows, frac_labeled
+    """
+
+    def requires(self):
+        return SoundscapeLabels(
+            data_dir=self.data_dir, artifacts_dir=self.artifacts_dir
+        )
+
+    def output(self):
+        return self.artifact("soundscape_negatives.parquet")
+
+    def run(self):
+        self.ensure_parent(self.output())
+        data = Path(self.data_dir)
+        labels = pl.read_parquet(self.input().path)
+
+        # get labeled window counts per file
+        labeled = (
+            labels.group_by("filename")
+            .agg(
+                pl.col("start_sec").n_unique().alias("n_labeled_windows"),
+                pl.col("start_sec").max().alias("max_labeled_sec"),
+            )
+        )
+
+        # estimate total possible 5s windows per file from max labeled timestamp
+        # (actual file duration would be more accurate, but this gives a lower bound)
+        labeled = labeled.with_columns(
+            ((pl.col("max_labeled_sec") / 5) + 1).cast(pl.Int32).alias("n_possible_windows"),
+        ).with_columns(
+            (pl.col("n_possible_windows") - pl.col("n_labeled_windows")).alias("n_unlabeled_windows"),
+            (pl.col("n_labeled_windows") / pl.col("n_possible_windows").cast(pl.Float64))
+            .alias("frac_labeled"),
+        ).sort("frac_labeled")
+
+        labeled.write_parquet(self.output().path)
+        total_labeled = labeled["n_labeled_windows"].sum()
+        total_possible = labeled["n_possible_windows"].sum()
+        total_unlabeled = labeled["n_unlabeled_windows"].sum()
+        print(
+            f"SoundscapeNegatives: {labeled.shape[0]} labeled files, "
+            f"{total_labeled}/{total_possible} windows labeled "
+            f"({total_labeled / max(total_possible, 1) * 100:.1f}%), "
+            f"{total_unlabeled} candidate negative windows"
+        )
+
+
+class SpeciesOverlap2025(EDATask):
+    """Compare BirdCLEF 2026 species with 2025 to assess transfer learning viability.
+
+    Output: artifacts/species_overlap_2025.parquet
+    Columns: primary_label, class_name, in_2025, in_2026, label_2025, label_2026
+    """
+
+    birdclef_2025_csv = luigi.Parameter(
+        default="~/scratch/birdclef-2026/data/birdclef-2025/train.csv"
+    )
+
+    def output(self):
+        return self.artifact("species_overlap_2025.parquet")
+
+    def run(self):
+        self.ensure_parent(self.output())
+        data = Path(self.data_dir)
+
+        taxonomy_2026 = pl.read_csv(data / "taxonomy.csv")
+
+        csv_2025 = Path(self.birdclef_2025_csv).expanduser()
+        if not csv_2025.exists():
+            print(f"WARNING: BirdCLEF 2025 train.csv not found at {csv_2025}")
+            print("Producing 2026-only output.")
+            df = taxonomy_2026.select("primary_label", "class_name").with_columns(
+                pl.lit(False).alias("in_2025"),
+                pl.lit(True).alias("in_2026"),
+                pl.lit(None).cast(pl.Utf8).alias("scientific_name_2025"),
+            )
+            df.write_parquet(self.output().path)
+            return
+
+        train_2025 = pl.read_csv(csv_2025)
+        # 2025 uses primary_label (eBird codes or numeric IDs) and scientific_name
+        species_2025 = (
+            train_2025.select("primary_label", "scientific_name")
+            .unique()
+            .rename({"primary_label": "label_2025", "scientific_name": "sci_name_2025"})
+        )
+
+        # match by scientific_name (more robust than label which may change format)
+        taxonomy_2026 = taxonomy_2026.with_columns(
+            pl.lit(True).alias("in_2026"),
+        )
+        species_2025 = species_2025.with_columns(
+            pl.lit(True).alias("in_2025"),
+        )
+
+        # full outer join on scientific_name
+        merged = (
+            taxonomy_2026.select("primary_label", "class_name", "scientific_name", "in_2026")
+            .join(
+                species_2025,
+                left_on="scientific_name",
+                right_on="sci_name_2025",
+                how="full",
+                coalesce=True,
+            )
+            .with_columns(
+                pl.col("in_2025").fill_null(False),
+                pl.col("in_2026").fill_null(False),
+            )
+            .sort("primary_label")
+        )
+
+        merged.write_parquet(self.output().path)
+        both = merged.filter(pl.col("in_2025") & pl.col("in_2026")).shape[0]
+        only_2026 = merged.filter(~pl.col("in_2025") & pl.col("in_2026")).shape[0]
+        only_2025 = merged.filter(pl.col("in_2025") & ~pl.col("in_2026")).shape[0]
+        print(
+            f"SpeciesOverlap2025: {both} in both years, "
+            f"{only_2026} new in 2026, {only_2025} dropped from 2025"
+        )
+
+
+class ClassWeights(EDATask):
+    """Compute recommended class weights for cmAP-optimal training.
+
+    Produces inverse-frequency weights normalized so the mean weight = 1.0.
+    For cmAP (class-mean AP), rare species matter equally — these weights
+    can be used directly in a weighted sampler or loss function.
+
+    Output: artifacts/class_weights.json
+    Format: {primary_label: weight, ...}
+    """
+
+    def requires(self):
+        return TrainMetadata(
+            data_dir=self.data_dir, artifacts_dir=self.artifacts_dir
+        )
+
+    def output(self):
+        return self.artifact("class_weights.json")
+
+    def run(self):
+        self.ensure_parent(self.output())
+        data = Path(self.data_dir)
+        train = pl.read_parquet(self.input().path)
+
+        # count per species
+        counts = (
+            train.group_by("primary_label")
+            .agg(pl.len().alias("n"))
+        )
+
+        # inverse frequency, normalized so mean = 1.0
+        total = counts["n"].sum()
+        n_classes = counts.shape[0]
+        counts = counts.with_columns(
+            (total / (n_classes * pl.col("n").cast(pl.Float64))).alias("weight"),
+        )
+
+        # normalize so mean weight = 1.0
+        mean_w = counts["weight"].mean()
+        counts = counts.with_columns(
+            (pl.col("weight") / mean_w).alias("weight"),
+        )
+
+        weights = dict(zip(
+            counts["primary_label"].to_list(),
+            [round(w, 4) for w in counts["weight"].to_list()],
+        ))
+
+        # include summary stats
+        info = {
+            "weights": weights,
+            "n_classes": n_classes,
+            "min_count": int(counts["n"].min()),
+            "max_count": int(counts["n"].max()),
+            "median_count": int(counts["n"].median()),
+            "imbalance_ratio": round(int(counts["n"].max()) / max(int(counts["n"].min()), 1), 1),
+            "min_weight": round(float(counts["weight"].min()), 4),
+            "max_weight": round(float(counts["weight"].max()), 4),
+        }
+
+        with open(self.output().path, "w") as f:
+            json.dump(info, f, indent=2)
+
+        print(
+            f"ClassWeights: {n_classes} classes, "
+            f"imbalance ratio {info['imbalance_ratio']}x, "
+            f"weight range [{info['min_weight']}, {info['max_weight']}]"
+        )
+
+
 class AllEDA(EDATask):
     """Meta-task that runs all EDA tasks."""
 
     n_workers = luigi.IntParameter(default=8)
+    birdclef_2025_csv = luigi.Parameter(
+        default="~/scratch/birdclef-2026/data/birdclef-2025/train.csv"
+    )
 
     def requires(self):
         params = dict(data_dir=self.data_dir, artifacts_dir=self.artifacts_dir)
@@ -507,9 +826,14 @@ class AllEDA(EDATask):
             TrainMetadata(**params),
             TaxonomyCoverage(**params),
             ClassDistribution(**params),
+            ClassWeights(**params),
             SoundscapeLabels(**params),
             SoundscapeWindowStats(**params),
             SoundscapeCoverage(**params),
+            SoundscapeNegatives(**params),
+            GeographicGap(**params),
+            TestSetStructure(**params),
+            SpeciesOverlap2025(birdclef_2025_csv=self.birdclef_2025_csv, **params),
             AudioDurations(n_workers=self.n_workers, **params),
         ]
 
