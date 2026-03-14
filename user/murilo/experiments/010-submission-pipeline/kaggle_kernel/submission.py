@@ -20,6 +20,23 @@ Supports three mel types:
   - protoclr_mel (ProtoCLR): librosa mel + dB + min-max + ProtoCLR standardization
 """
 
+# ---------------------------------------------------------------------------
+# Install missing dependencies (runs before any imports)
+# ---------------------------------------------------------------------------
+import subprocess
+import sys
+
+try:
+    import onnxruntime  # noqa: F401
+except ImportError:
+    print("Installing onnxruntime...")
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "onnxruntime", "-q"],
+    )
+
+# ---------------------------------------------------------------------------
+# Imports
+# ---------------------------------------------------------------------------
 import json
 import os
 import time
