@@ -16,6 +16,8 @@ related_vendor: "docs/vendor/bird-mixit.md"
 
 **Blog post**: [Separating Birdsong in the Wild for Classification](https://research.google/blog/separating-birdsong-in-the-wild-for-classification/) (Google Research, Jan 2022)
 
+**Plain-language explainer**: See [bird-mixit-explained.md](bird-mixit-explained.md) for a step-by-step intuitive walkthrough.
+
 **Model & code**: See [docs/vendor/bird-mixit.md](../vendor/bird-mixit.md) for checkpoints, API, and PyTorch porting considerations.
 
 ## TL;DR
