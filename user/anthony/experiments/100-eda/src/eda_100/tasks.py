@@ -24,6 +24,16 @@ def _parse_time_to_seconds(time_str: str) -> int:
     return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
 
 
+# Schema override: primary_label is mixed numeric/alpha, force string
+_STR_OVERRIDES = {"primary_label": pl.Utf8, "secondary_labels": pl.Utf8}
+
+
+def _read_csv(path, **kwargs):
+    """Read CSV with primary_label forced to string (Polars infers i64 from leading numeric rows)."""
+    schema_overrides = {**_STR_OVERRIDES, **kwargs.pop("schema_overrides", {})}
+    return pl.read_csv(path, schema_overrides=schema_overrides, **kwargs)
+
+
 def _classify_label_format(col: pl.Expr) -> pl.Expr:
     """Classify a primary_label column into ebird|numeric|songtype."""
     return (
@@ -76,7 +86,7 @@ class LabelMapping(EDATask):
         mapping = {label: idx for idx, label in enumerate(target_cols)}
 
         # verify against taxonomy
-        taxonomy = pl.read_csv(data / "taxonomy.csv")
+        taxonomy = _read_csv(data / "taxonomy.csv")
         tax_labels = set(taxonomy["primary_label"].to_list())
         sub_labels = set(target_cols)
 
@@ -113,8 +123,8 @@ class TrainMetadata(EDATask):
         self.ensure_parent(self.output())
         data = Path(self.data_dir)
 
-        train = pl.read_csv(data / "train.csv")
-        taxonomy = pl.read_csv(data / "taxonomy.csv").select(
+        train = _read_csv(data / "train.csv")
+        taxonomy = _read_csv(data / "taxonomy.csv").select(
             "primary_label", "class_name"
         )
 
@@ -164,7 +174,7 @@ class TaxonomyCoverage(EDATask):
         self.ensure_parent(self.output())
         data = Path(self.data_dir)
 
-        taxonomy = pl.read_csv(data / "taxonomy.csv")
+        taxonomy = _read_csv(data / "taxonomy.csv")
         train_meta = pl.read_parquet(self.input().path)
 
         # count recordings per species from train metadata
@@ -270,8 +280,8 @@ class SoundscapeLabels(EDATask):
         self.ensure_parent(self.output())
         data = Path(self.data_dir)
 
-        raw = pl.read_csv(data / "train_soundscapes_labels.csv")
-        taxonomy = pl.read_csv(data / "taxonomy.csv").select(
+        raw = _read_csv(data / "train_soundscapes_labels.csv")
+        taxonomy = _read_csv(data / "taxonomy.csv").select(
             "primary_label", "class_name", "common_name"
         )
 
@@ -396,7 +406,7 @@ class SoundscapeCoverage(EDATask):
 
         train = pl.read_parquet(self.input()["train"].path)
         sc_labels = pl.read_parquet(self.input()["soundscape"].path)
-        taxonomy = pl.read_csv(data / "taxonomy.csv").select(
+        taxonomy = _read_csv(data / "taxonomy.csv").select(
             "primary_label", "class_name"
         )
 
@@ -684,7 +694,7 @@ class SpeciesOverlap2025(EDATask):
         self.ensure_parent(self.output())
         data = Path(self.data_dir)
 
-        taxonomy_2026 = pl.read_csv(data / "taxonomy.csv")
+        taxonomy_2026 = _read_csv(data / "taxonomy.csv")
 
         csv_2025 = Path(self.birdclef_2025_csv).expanduser()
         if not csv_2025.exists():
@@ -698,7 +708,7 @@ class SpeciesOverlap2025(EDATask):
             df.write_parquet(self.output().path)
             return
 
-        train_2025 = pl.read_csv(csv_2025)
+        train_2025 = _read_csv(csv_2025)
         # 2025 uses primary_label (eBird codes or numeric IDs) and scientific_name
         species_2025 = (
             train_2025.select("primary_label", "scientific_name")
