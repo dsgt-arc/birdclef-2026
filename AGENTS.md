@@ -56,22 +56,6 @@ See `user/murilo/create_venv.sh` and `user/murilo/experiments/003-model-training
 
 ---
 
-# OpenSpec (OPSX Workflow)
-
-This project uses [OpenSpec](https://github.com/Fission-AI/OpenSpec) for spec-driven change management. The OPSX workflow replaces the legacy phase-locked approach with fluid, iterative actions.
-
-When a request involves architecture changes, new capabilities, breaking changes, or big decisions:
-1. Use `/openspec:proposal` to create a change proposal
-2. Use `/openspec:apply` to implement approved changes
-3. Use `/openspec:archive` to finalize completed work
-
-Configuration: `openspec/project.md`
-Changes: `openspec/changes/<name>/`
-
-See `openspec/AGENTS.md` for the full workflow and spec format.
-
----
-
 # Documentation Guidelines
 
 ## Adding Documentation
@@ -89,6 +73,14 @@ Use slash commands to create properly structured documents:
 | `/experiment:result` | Experiment results | `docs/_templates/experiment-result.md` |
 | `/experiment:validate` | Validate experiment structure | - |
 | `/experiment:summary` | Experiment status summary for session context | - |
+
+## Tooling
+
+| Tool | Purpose |
+|------|---------|
+| `scripts/tb_metrics.py` | Read TensorBoard logs, query with DuckDB (`/tb:metrics`) |
+| `scripts/monitor-gpu.sh` | GPU utilization monitoring on compute nodes (`/gpu-monitor`) |
+| `scripts/upload_kaggle.py` | Upload deps + weights datasets to Kaggle |
 
 ## Documentation Structure
 
