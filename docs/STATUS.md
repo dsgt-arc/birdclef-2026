@@ -58,7 +58,7 @@ EfficientNet-B1 frozen probe (0.649 Kaggle) is well below top solutions (>0.85).
 | anthony/006 | SSAMBA BirdSet HSN | Complete | 0.086 cmAP from scratch |
 | anthony/007 | Pre-trained SSAMBA Transfer | Complete | 0.179 cmAP (16x16), 0.173 cmAP (128x1) |
 | anthony/008 | Attention-Pooled SED | **Rejected** | No improvement over mean pooling (0.164 vs 0.173) |
-| anthony/009 | BirdCLEF End-to-End Pipeline | **In Progress** | SSL pretrain (MPG) done, finetune pending |
+| anthony/009 | BirdCLEF End-to-End Pipeline | **In Progress** | SSL pretrain done, finetune pending, Kaggle 0.484 preliminary |
 | anthony/010 | Teacher Labels | **Complete** | BirdNET + Perch + BamBird + acoustic indices (88 GB) |
 | anthony/011 | Prompted SED | **Phase 0 Done** | Inconclusive — emerging signal but below pass gate |
 | anthony/012 | EfficientNet-B1 Linear Probe | **Complete** | **0.336 val/cmap, 0.649 Kaggle private** |

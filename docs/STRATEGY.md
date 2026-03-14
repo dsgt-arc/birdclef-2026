@@ -19,12 +19,32 @@ Target: 0.85+ (competitive)               Target: novel method + paper angle
 Proven, reproducible                       Unexplored in competition
 ```
 
-Both tracks share the same **data infrastructure**: source separation (biodenoising + custom MixIT), teacher labels (exp 010), and the Kaggle submission pipeline.
+Both tracks share the same **data infrastructure**: source separation (custom MixIT at 32 kHz), teacher labels (exp 010), and the Kaggle submission pipeline.
+
+## Competition Context: BirdCLEF 2026
+
+**Key changes from 2025**: BirdCLEF 2026 provides **soundscape recordings for training** (not just testing). This is a major opportunity — soundscapes can be used directly for pseudo-labeling, domain adaptation, and source separation training.
+
+**Multi-taxa scope**: 206 species = 146 Aves + 34 Amphibia + 17 Insecta + 9 Mammalia. The insect species are particularly relevant for tooling decisions: biodenoising operates at 16 kHz (Nyquist: 8 kHz), which makes insect vocalizations (often 8-20+ kHz) inaudible. The custom MixIT separator must train at 32 kHz to cover all taxa.
+
+**Source separation is unexplored in competition**: No top BirdCLEF solution (2021-2025) has used source separation for augmentation or inference. This is either an untapped advantage or a technique that top competitors tried and found not worth the complexity. We treat it as an opportunity but with appropriate caution.
 
 ## Track 1: Competitive Baseline
 
 ### Goal
 Close the gap from 0.649 (exp 012) to 0.85+ using techniques proven in 2025 top solutions.
+
+**Rough gap analysis** (estimated contributions, not additive):
+
+| Technique | Estimated gain | Basis |
+|---|---|---|
+| Backbone unfreezing + SED head | +0.05-0.10 | Exp 015 showed frozen+SED fails; unfreezing is prerequisite |
+| Iterative pseudo-labeling (3-4 rounds) | +0.10-0.15 | Dominant 2025 technique; 1st place attributed most gain here |
+| Source separation augmentation | +0.02-0.05 | Speculative — Bird MixIT paper showed +0.7-6.3% cmAP |
+| Temporal smoothing + power adjustment | +0.01-0.03 | Multiple 2025 top solutions |
+| Ensemble (3-5 models) | +0.03-0.05 | Standard competition technique |
+
+These estimates are rough and not strictly additive. The 0.85+ target requires most of these to deliver.
 
 ### Pipeline
 
@@ -56,7 +76,7 @@ BirdCLEF data ──→ source separation ──→ augmented training set
 | SED + AttBlockV2 | All top-5 used it, +0.03-0.05 gain | Not yet attempted (exp 015 used soft labels which confounded it) |
 | Iterative pseudo-labeling | 1st place used 3-4 rounds, temp 0.55-0.6 | Not yet attempted |
 | Backbone unfreezing | Required for SED to work (exp 015 showed frozen+SED fails) | Not yet attempted |
-| Source separation augmentation | Not used by any 2025 solution — potential edge | Concept ready, separator training needed |
+| Source separation augmentation | Not used by any 2025 solution — potential edge OR too expensive for marginal gain | Concept ready, separator training needed |
 | Temporal smoothing [0.2,0.6,0.2] | Multiple top solutions | Not yet attempted |
 | Power adjustment | Multiple top solutions | Not yet attempted |
 | Ensemble (3-5 models) | All top solutions | Not yet attempted |
@@ -71,6 +91,7 @@ BirdCLEF data ──→ source separation ──→ augmented training set
 2. **Source separation** → train MixIT separator (6-24 hours), pre-compute augmentations
 3. **Pseudo-labeling** → 3-4 rounds on soundscape data, optionally with separation for cleaner per-channel labels
 4. **Ensemble** → train 3-5 models with different seeds/augmentation, blend predictions
+5. **Optional: inference-time separation + max-pooling** → run separator on test soundscapes, classify each channel + original, take max per species. This is the lowest-effort proven approach from the Bird MixIT paper (+0.7-6.3% cmAP), but multiplies inference cost by 5x. Only if Kaggle time budget allows.
 
 ## Track 2: Prompted SED with Long-Context SSAMBA
 
@@ -161,7 +182,7 @@ Pre-compute separations on focal + soundscape recordings
 | Dependency | Status | Needed for |
 |---|---|---|
 | SSAMBA backbone (exp 004-005) | Complete | Architecture |
-| SSL pre-training (exp 009) | In progress (pretrain-full at epoch 35) | Stage 1 |
+| SSL pre-training (exp 009) | Pretrain done, finetune pending (Kaggle 0.484 preliminary) | Stage 1 |
 | Teacher labels (exp 010) | Complete (BirdNET + Perch on all data) | Stage 2-3 episode labels |
 | Prompted SED phase 0 (exp 011) | Inconclusive — emerging signal | Feasibility validation |
 | EfficientNet metric structure (exp 016) | Awaiting results | Informs prototypical approach |
@@ -183,7 +204,7 @@ Both tracks depend on common data and tooling:
 
 ### Near-term (next 2 weeks)
 
-1. **Train MixIT separator** — ConvTasNet + MixIT at 32 kHz, single sbatch job (6-24h). Enables both tracks.
+1. **Train MixIT separator** — run two paths in parallel (per [source-separation-training](concepts/source-separation-training.md)): Path A (Demucs from biodenoising weights, 16 kHz, 3-8h) and Path B (ConvTasNet from scratch, 32 kHz, 6-24h). Compare to determine best foundation. Enables both tracks.
 2. **Evaluate exp 016 step 0** — does frozen EfficientNet have metric structure? Informs Track 1 pseudo-labeling and Track 2 prototypical design.
 3. **Track 1: Unfreeze EfficientNet + SED** — fork exp 012, unfreeze backbone, add AttBlockV2 with hard labels. This is the single highest-impact change for Track 1.
 
@@ -204,15 +225,16 @@ Both tracks depend on common data and tooling:
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Track 2 doesn't converge | High | Track 1 provides competitive fallback |
+| Track 2 doesn't converge | High | Track 1 provides competitive fallback. Evidence base is thin: exp 011 (prompted SED phase 0) was inconclusive, exp 008 (attention-pooled SED) was rejected. |
+| Separation artifacts as training confound | Medium | Imperfect separation introduces spectral holes and fragments. If training data has these but test data doesn't, the model learns artifact-specific features. Mitigate by keeping original unaugmented data in training set. |
 | Pseudo-labeling doesn't improve over baseline | Medium | Source separation augmentation is independent |
-| MixIT separator quality insufficient | Low | Background-swap augmentation still works with biodenoising (proven tool) |
+| MixIT separator quality insufficient | Low | Background-swap augmentation still works with biodenoising (proven tool, but 16 kHz only — loses insect species) |
 | Kaggle CPU time limit too tight for prompted SED | Medium | Batch 206 species efficiently; fall back to Track 1 ensemble |
-| SSAMBA backbone too weak (0.17 cmAP on HSN) | High | Prompted SED may overcome this by leveraging reference conditioning rather than raw classification quality |
+| SSAMBA backbone too weak (0.173 cmAP on HSN) | High | Prompted SED may overcome this by leveraging reference conditioning rather than raw classification quality. Exp 009 preliminary Kaggle score (0.484) suggests SSL pretraining helps substantially. |
 
 ## Research Contribution
 
-If Track 2 succeeds, the contribution is:
+**Caveat**: Track 2's evidence base is currently thin — exp 011 (prompted SED phase 0) was inconclusive and exp 008 (attention-pooled SED) was rejected. The ideas are well-motivated but unproven. If Track 2 succeeds, the contribution is:
 
 1. **Prompted SED for bioacoustics** — reference-conditioned species detection, enabling few-shot and zero-shot scenarios
 2. **Long-context sequence modeling** — 30-60s full-soundscape processing with Mamba, exploiting temporal co-occurrence patterns
