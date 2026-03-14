@@ -10,6 +10,7 @@ data_path: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/"
 **Competition**: [BirdCLEF 2026](https://www.kaggle.com/competitions/birdclef-2026)
 **Data page**: [kaggle.com/competitions/birdclef-2026/data](https://www.kaggle.com/competitions/birdclef-2026/data)
 **Local data**: `/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/`
+**EDA analysis**: [birdclef-2026-eda-analysis.md](birdclef-2026-eda-analysis.md)
 
 ## Task
 
@@ -53,6 +54,8 @@ Identify which species (birds, amphibians, mammals, reptiles, insects) are calli
 
 You cannot build a classifier for these 28 species from focal recordings alone.
 
+**EDA finding**: All 28 species have at least some labeled soundscape data (none have zero). But the range is extreme: Southern Orange-legged Leaf Frog has 626 segments (40 files), while sonotype05 has only 6 segments (2 files). Most insect sonotypes have 10–96 segments from 1–4 files, and co-occur with an average of 12.9 other species — they are almost never heard in isolation. See [EDA analysis](birdclef-2026-eda-analysis.md) for per-species breakdown.
+
 ### 3. Reptilia
 
 New taxonomic class — 1 recording of a Southern Spectacled Caiman (116570). Minor addition but new.
@@ -73,16 +76,30 @@ Organized in subdirectories by species label. Filenames: `[collection][file_id].
 
 | Class | Recordings | Species | Notes |
 |---|---|---|---|
-| Aves | 34,799 (98%) | 162 | Dominates training data |
-| Amphibia | 451 (1.3%) | 27 | Frogs — many Pantanal species |
+| Aves | 34,799 (97.9%) | 162 | Dominates training data |
+| Amphibia | 451 (1.3%) | 32 | Frogs — many Pantanal species |
 | Insecta | 199 (0.6%) | 3 (named) | Giant Cicada, Guyalna cuta, Prionacris erosa |
-| Mammalia | 99 (0.3%) | 7 | Jaguar, monkeys, domestic animals |
+| Mammalia | 99 (0.3%) | 8 | Jaguar, monkeys, domestic animals |
 | Reptilia | 1 (<0.01%) | 1 | Southern Spectacled Caiman |
 
 Class imbalance is severe:
 - Top: 499 recordings (rubthr1 — Rufous-bellied Thrush)
-- Bottom: 1 recording (516975 — Hooded Capuchin)
-- 4 species with 2-3 recordings, 28 species with zero focal recordings
+- Bottom: 1 recording (116570 — Southern Spectacled Caiman)
+- 25 species with <10 recordings, 82 species with <100 recordings
+- 28 species with zero focal recordings (soundscape-only)
+- Mean 172.6 recordings/species, median 125
+
+**Collection bias by class** (from EDA):
+
+| Class | % iNaturalist | % Xeno-Canto |
+|---|---|---|
+| Insecta | 100% | 0% |
+| Reptilia | 100% | 0% |
+| Amphibia | 87.1% | 12.9% |
+| Mammalia | 66.7% | 33.3% |
+| Aves | 34.0% | 66.0% |
+
+All non-bird taxa are predominantly or exclusively iNaturalist. This creates a **metadata blind spot**: iNat provides zero secondary labels (0.0% vs 19.0% for XC) and no quality ratings. Non-bird taxa have no background species annotations and no quality signal.
 
 ### train_soundscapes/ — 10,658 files from 23 recording sites
 
@@ -133,11 +150,15 @@ Species breakdown in labeled soundscapes:
 
 Most frequent in labeled soundscapes: Dendropsophus nanus (65380, 666 segments), Southern Orange-legged Leaf Frog (517063, 626), Whistling Grass Frog (22973, 426).
 
+**Co-occurrence patterns** (from EDA): The top 15 co-occurring species pairs are all Amphibia–Amphibia (nocturnal frog choruses). Dwarf Tree Frog co-occurs with Chaco Tree Frog in 382 segments. Cross-class pairs (e.g., bird + insect) are 4× rarer, maxing at 96 co-occurrences. This confirms distinct nocturnal (frog-dominated) and diurnal (bird-dominated) acoustic regimes.
+
 ### train.csv — Focal recording metadata
 
 Columns: `primary_label`, `secondary_labels`, `type`, `latitude`, `longitude`, `scientific_name`, `common_name`, `class_name`, `inat_taxon_id`, `author`, `license`, `rating`, `url`, `filename`, `collection`.
 
-- 12.3% of recordings have secondary labels (background species)
+- 12.3% of recordings have secondary labels (4,372 files) — **XC only** (19.0% of XC, 0.0% of iNat)
+- 161 unique species appear as secondary labels, all within the 234 submission species
+- Most common background species: Great Kiskadee (624×), White-tipped Dove (468×), Undulated Tinamou (315×)
 - Ratings: mean 2.60 (scale 1-5), 12,849 recordings have no rating (iNat doesn't provide ratings)
 - Coordinates: lat -16.5 to -21.6, lon -55.9 to -57.6 (Pantanal region)
 
@@ -166,9 +187,13 @@ Labeled soundscape segments average 4.2 overlapping species per 5s segment. Soun
 - Improve pseudo-labeling of the 10,592 unlabeled soundscape files
 - Boost classifier confidence on low-SNR vocalizations in test soundscapes
 
+**EDA evidence**: The top 15 co-occurring pairs are all frog–frog with 282–382 co-occurrences each. These dense nocturnal choruses are exactly the scenario MixIT was designed for. MixIT's 4-source model is well-matched to the 4.2 average species per segment. Cross-class separation (bird from insect) should be easier than within-class (frog from frog) due to spectral dissimilarity.
+
 ### 3. Multi-taxa challenge
 
-Insect sonotypes are the hardest category: unnamed, no focal recordings, only appear in dense soundscape mixtures. Models pretrained on bird audio (EAT, ProtoCLR) may not transfer well to insects and frogs. ConvNeXt (ImageNet pretrained on spectrograms) may be more domain-agnostic.
+Insect sonotypes are the hardest category: unnamed, no focal recordings, only appear in dense soundscape mixtures (avg 12.9 co-occurring partners). Models pretrained on bird audio (EAT, ProtoCLR) may not transfer well to insects and frogs. ConvNeXt (ImageNet pretrained on spectrograms) may be more domain-agnostic.
+
+**EDA evidence**: Non-bird taxa are predominantly iNat-sourced (87–100%), which means zero secondary labels and zero quality ratings. The iNat metadata blind spot compounds the focal recording scarcity for these taxa.
 
 ### 4. Site/time metadata enables priors
 
@@ -176,6 +201,8 @@ Soundscape filenames give site ID, date, and UTC time. This enables:
 - Time-of-day priors (nocturnal frogs/insects vs diurnal birds)
 - Site-specific species pools (not all species occur at all sites)
 - Seasonal patterns (dates range across months)
+
+**EDA evidence**: The co-occurrence data shows clean separation between nocturnal frog choruses and diurnal bird activity. Nocturnal birds (Pauraque, Tropical Screech Owl) bridge the two regimes. Time-of-day priors could be very effective.
 
 ### 5. Our BirdCLEF 2025 models need retraining
 
