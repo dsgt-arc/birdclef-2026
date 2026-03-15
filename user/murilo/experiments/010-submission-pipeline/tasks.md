@@ -10,21 +10,21 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 - [x] 2.2 Create `scripts/export_convnext.py` — merge LoRA, wrap encoder+head, export to ONNX
 - [x] 2.3 Create `scripts/export_protoclr.py` — merge LoRA, wrap encoder+head, export to ONNX (with TorchScript fallback for einops)
 - [x] 2.4 Create `scripts/build_species_mapping.py` — map model output indices to 234 BirdCLEF 2026 columns
-- [x] 2.5 Export all 3 models (2025-trained) via `sbatch/run.sh export` — verified ONNX outputs match PyTorch (atol < 1e-4)
-- [x] 2.6 Add missing deps: einops, torchinfo, scipy, huggingface-hub for ProtoCLR CvT
-- [x] 2.7 Add 2026-trained export functions in `sbatch/export.sbatch` (exp 011 checkpoints)
+- [x] 2.5 Export 2025-trained models: `bash sbatch/run.sh export --model all-2025`
+- [x] 2.6 Export 2026-trained models: `bash sbatch/run.sh export --model all-2026`
+- [x] 2.7 Add missing deps: einops, torchinfo, scipy, huggingface-hub for ProtoCLR CvT
 
 ## 3. Local Validation
 
 - [x] 3.1 Create `scripts/local_validate.py` — timing test on train_soundscapes subset
-- [x] 3.2 Validate all 3 models via `sbatch/run.sh validate`
-- [x] 3.3 Confirm all models fit within 90-minute Kaggle CPU limit
+- [x] 3.2 Validate 2025-trained models: `bash sbatch/run.sh validate --model all-2025`
+- [x] 3.3 Validate 2026-trained models: `bash sbatch/run.sh validate --model all-2026`
 
 ## 4. Kaggle Kernel
 
 - [x] 4.1 Create unified `kaggle_kernel/submission.py` — auto-detects model, dispatches mel preprocessing
-- [x] 4.2 Create per-model `kernel-metadata-*.json` files (2025 and 2026 variants)
-- [x] 4.3 Create `scripts/upload_kaggle.py` — upload weights + push kernels (supports `--model protoclr-2026` etc.)
+- [x] 4.2 Create per-model `kernel-metadata-{model}-{year}.json` files
+- [x] 4.3 Create `scripts/upload_kaggle.py` — upload weights + push kernels
 - [x] 4.4 Implement 3 mel pipelines: kaldi_fbank (EAT), log-mel (ConvNeXt), protoclr_mel (ProtoCLR)
 
 ## 5. Kaggle Submission Debugging
@@ -44,18 +44,19 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 - [x] 6.1 Upload ProtoCLR weights to Kaggle (`birdclef-2025-protoclr-weights`)
 - [x] 6.2 Upload deps dataset to Kaggle (`birdclef-deps`)
 - [x] 6.3 Push ProtoCLR kernel — v10 had ONNX IndexError, v11 surfaced the bug via train fallback, v12 fixed with `flatten()`
-- [x] 6.4 ProtoCLR v12 scored successfully: **0.531 macro-AUROC** on public LB (2026-03-15)
-- [ ] 6.5 Upload and submit EAT model: `python scripts/upload_kaggle.py --model eat-2025 --push-kernel`
-- [ ] 6.6 Upload and submit ConvNeXt model: `python scripts/upload_kaggle.py --model convnext-2025 --push-kernel`
+- [x] 6.4 ProtoCLR-2025 scored **0.531 macro-AUROC** on public LB (2026-03-15)
+- [ ] 6.5 Upload and submit EAT-2025: `python scripts/upload_kaggle.py --model eat-2025 --push-kernel`
+- [ ] 6.6 Upload and submit ConvNeXt-2025: `python scripts/upload_kaggle.py --model convnext-2025 --push-kernel`
 
 ## 7. Kaggle Submissions — BirdCLEF 2026-Trained Models (exp 011)
 
-- [x] 7.1 Export ProtoCLR 2026 to ONNX: `bash sbatch/run.sh export --model protoclr-2026`
-- [ ] 7.2 Upload ProtoCLR 2026 weights: `python scripts/upload_kaggle.py --model protoclr-2026`
-- [ ] 7.3 Push ProtoCLR 2026 kernel: `python scripts/upload_kaggle.py --model protoclr-2026 --push-kernel`
-- [ ] 7.4 Verify ProtoCLR 2026 submission scores on leaderboard
-- [ ] 7.5 Export and submit EAT 2026
-- [ ] 7.6 Export and submit ConvNeXt 2026
+- [x] 7.1 Export all 2026 models to ONNX: `bash sbatch/run.sh export --model all-2026`
+- [x] 7.2 Upload + push ProtoCLR-2026: `python scripts/upload_kaggle.py --model protoclr-2026 --push-kernel`
+- [x] 7.3 ProtoCLR-2026 scored **0.721 macro-AUROC** on public LB (2026-03-15)
+- [x] 7.4 Upload + push ConvNeXt-2026: `python scripts/upload_kaggle.py --model convnext-2026 --push-kernel`
+- [x] 7.5 ConvNeXt-2026 scored **0.720 macro-AUROC** on public LB (2026-03-15)
+- [ ] 7.6 Upload + push EAT-2026: `python scripts/upload_kaggle.py --model eat-2026 --push-kernel`
+- [ ] 7.7 Verify EAT-2026 submission scores on leaderboard
 
 ## 8. Documentation
 
@@ -66,8 +67,9 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 
 ### Key context for next session:
 - **Model names always include training year**: `protoclr-2025`, `protoclr-2026`, `all-2025`, `all-2026`
-- **Submit ProtoCLR 2026**: export (done) → upload → push kernel (see section 7 commands)
-- **Upload command**: `source ~/clef/birdclef-2026/.venv/bin/activate && cd user/murilo/experiments/010-submission-pipeline && python scripts/upload_kaggle.py --model protoclr-2026 --push-kernel`
+- **Current LB scores**: ProtoCLR-2026 = 0.721, ConvNeXt-2026 = 0.720 (both trained on 80% of focal data)
+- **EAT-2026**: weights need to be uploaded before kernel push: `python scripts/upload_kaggle.py --model eat-2026 --push-kernel`
+- **Next priority**: retrain on 100% of focal data (no val/test split) for higher scores
 - **Check status**: `kaggle competitions submissions birdclef-2026`
 - **Species mapping**: 2025 models map 41/234 species; 2026 models map 206/234 species (28 soundscape-only insect sonotypes have no training data)
-- **Deps dataset is shared**: `birdclef-deps` works for both 2025 and 2026 model kernels
+- **Public LB uses ~34% of test data**; final standings use the remaining ~66%
