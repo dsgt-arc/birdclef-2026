@@ -5,9 +5,13 @@ Creates/updates Kaggle datasets with ONNX model weights and pushes the
 unified submission kernel with model-specific metadata. Supports both
 BirdCLEF 2025-trained and 2026-trained models.
 
+Model names always include the training data year for clarity:
+  - protoclr-2025, eat-2025, convnext-2025  (exps 006/007/009)
+  - protoclr-2026, eat-2026, convnext-2026  (exp 011)
+
 Usage:
     # Upload 2025-trained models
-    python scripts/upload_kaggle.py --model protoclr
+    python scripts/upload_kaggle.py --model protoclr-2025
     python scripts/upload_kaggle.py --model all-2025
 
     # Upload 2026-trained models (exp 011)
@@ -35,28 +39,23 @@ DEPS_SLUG = "birdclef-2025-deps"
 DEPS_DIR = "artifacts/dist/dependencies"
 
 MODELS = {
-    # Models trained on BirdCLEF 2025 data
-    "eat": {
+    # Models trained on BirdCLEF 2025 data (exps 006/007/009)
+    "eat-2025": {
         "slug": "birdclef-2025-eat-weights",
-        "weights_dir": "artifacts/weights/eat",
-        "kernel_metadata": "kaggle_kernel/kernel-metadata-eat.json",
+        "weights_dir": "artifacts/weights/eat-2025",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-eat-2025.json",
     },
-    "convnext": {
+    "convnext-2025": {
         "slug": "birdclef-2025-convnext-weights",
-        "weights_dir": "artifacts/weights/convnext",
-        "kernel_metadata": "kaggle_kernel/kernel-metadata-convnext.json",
+        "weights_dir": "artifacts/weights/convnext-2025",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-convnext-2025.json",
     },
-    "protoclr": {
+    "protoclr-2025": {
         "slug": "birdclef-2025-protoclr-weights",
-        "weights_dir": "artifacts/weights/protoclr",
-        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr.json",
+        "weights_dir": "artifacts/weights/protoclr-2025",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2025.json",
     },
     # Models trained on BirdCLEF 2026 focal data (exp 011)
-    "protoclr-2026": {
-        "slug": "birdclef-2026-protoclr-weights",
-        "weights_dir": "artifacts/weights/protoclr-2026",
-        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026.json",
-    },
     "eat-2026": {
         "slug": "birdclef-2026-eat-weights",
         "weights_dir": "artifacts/weights/eat-2026",
@@ -66,6 +65,11 @@ MODELS = {
         "slug": "birdclef-2026-convnext-weights",
         "weights_dir": "artifacts/weights/convnext-2026",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-convnext-2026.json",
+    },
+    "protoclr-2026": {
+        "slug": "birdclef-2026-protoclr-weights",
+        "weights_dir": "artifacts/weights/protoclr-2026",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026.json",
     },
 }
 
@@ -211,7 +215,7 @@ def main():
         type=str,
         required=True,
         choices=list(MODELS.keys()) + ["all", "all-2025", "all-2026"],
-        help="Model to upload (e.g., protoclr, protoclr-2026, all, all-2025, all-2026)",
+        help="Model to upload (e.g., protoclr-2025, protoclr-2026, all-2025, all-2026)",
     )
     parser.add_argument("--kaggle-user", type=str, default=DEFAULT_KAGGLE_USER)
     parser.add_argument("--push-kernel", action="store_true", help="Also push the Kaggle kernel")
@@ -229,7 +233,7 @@ def main():
     if args.model == "all":
         models = list(MODELS.keys())
     elif args.model == "all-2025":
-        models = [k for k in MODELS if not k.endswith("-2026")]
+        models = [k for k in MODELS if k.endswith("-2025")]
     elif args.model == "all-2026":
         models = [k for k in MODELS if k.endswith("-2026")]
     else:

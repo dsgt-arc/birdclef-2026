@@ -45,13 +45,13 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 - [x] 6.2 Upload deps dataset to Kaggle (`birdclef-2025-deps`)
 - [x] 6.3 Push ProtoCLR kernel — v10 had ONNX IndexError, v11 surfaced the bug via train fallback, v12 fixed with `flatten()`
 - [x] 6.4 ProtoCLR v12 scored successfully: **0.531 macro-AUROC** on public LB (2026-03-15)
-- [ ] 6.5 Upload and submit EAT model (2025-trained)
-- [ ] 6.6 Upload and submit ConvNeXt model (2025-trained)
+- [ ] 6.5 Upload and submit EAT model: `python scripts/upload_kaggle.py --model eat-2025 --push-kernel`
+- [ ] 6.6 Upload and submit ConvNeXt model: `python scripts/upload_kaggle.py --model convnext-2025 --push-kernel`
 
 ## 7. Kaggle Submissions — BirdCLEF 2026-Trained Models (exp 011)
 
-- [ ] 7.1 Export ProtoCLR 2026 to ONNX: `bash sbatch/run.sh export --model protoclr-2026`
-- [ ] 7.2 Upload ProtoCLR 2026 weights to Kaggle: `python scripts/upload_kaggle.py --model protoclr-2026`
+- [x] 7.1 Export ProtoCLR 2026 to ONNX: `bash sbatch/run.sh export --model protoclr-2026`
+- [ ] 7.2 Upload ProtoCLR 2026 weights: `python scripts/upload_kaggle.py --model protoclr-2026`
 - [ ] 7.3 Push ProtoCLR 2026 kernel: `python scripts/upload_kaggle.py --model protoclr-2026 --push-kernel`
 - [ ] 7.4 Verify ProtoCLR 2026 submission scores on leaderboard
 - [ ] 7.5 Export and submit EAT 2026
@@ -65,7 +65,8 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 - [x] 8.4 Write results.md with submission scores
 
 ### Key context for next session:
-- **Submit ProtoCLR 2026**: export → upload → push kernel (see section 7 commands)
+- **Model names always include training year**: `protoclr-2025`, `protoclr-2026`, `all-2025`, `all-2026`
+- **Submit ProtoCLR 2026**: export (done) → upload → push kernel (see section 7 commands)
 - **Upload command**: `source ~/clef/birdclef-2026/.venv/bin/activate && cd user/murilo/experiments/010-submission-pipeline && python scripts/upload_kaggle.py --model protoclr-2026 --push-kernel`
 - **Check status**: `kaggle competitions submissions birdclef-2026`
 - **Species mapping**: 2025 models map 41/234 species; 2026 models map 206/234 species (28 soundscape-only insect sonotypes have no training data)

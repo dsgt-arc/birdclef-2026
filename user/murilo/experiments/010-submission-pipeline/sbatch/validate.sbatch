@@ -76,11 +76,11 @@ validate_model() {
 }
 
 case "$MODEL" in
-    eat|convnext|protoclr|eat-2026|convnext-2026|protoclr-2026)
+    eat-2025|convnext-2025|protoclr-2025|eat-2026|convnext-2026|protoclr-2026)
         validate_model "$MODEL"
         ;;
-    all)
-        for m in eat convnext protoclr; do
+    all-2025)
+        for m in eat-2025 convnext-2025 protoclr-2025; do
             if [ -f "artifacts/weights/$m/model.onnx" ]; then
                 validate_model "$m"
             else
@@ -89,7 +89,7 @@ case "$MODEL" in
         done
         ;;
     all-2026)
-        for m in protoclr-2026 eat-2026 convnext-2026; do
+        for m in eat-2026 convnext-2026 protoclr-2026; do
             if [ -f "artifacts/weights/$m/model.onnx" ]; then
                 validate_model "$m"
             else

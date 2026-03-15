@@ -4,14 +4,16 @@
 # Usage:
 #   cd user/murilo/experiments/010-submission-pipeline
 #
-#   # ONNX export (GPU)
-#   bash sbatch/run.sh export                  # export all 3 models
-#   bash sbatch/run.sh export --model eat      # export specific model
-#   bash sbatch/run.sh export --dry-run        # preview without submitting
+#   # ONNX export (GPU) — model names always include training year
+#   bash sbatch/run.sh export --model protoclr-2025   # 2025-trained ProtoCLR (exp 009)
+#   bash sbatch/run.sh export --model protoclr-2026   # 2026-trained ProtoCLR (exp 011)
+#   bash sbatch/run.sh export --model all-2025        # all 3 models trained on 2025
+#   bash sbatch/run.sh export --model all-2026        # all 3 models trained on 2026
+#   bash sbatch/run.sh export --model all-2026 --dry-run
 #
 #   # Local validation (CPU)
-#   bash sbatch/run.sh validate                # validate all models
-#   bash sbatch/run.sh validate --model eat    # validate specific model
+#   bash sbatch/run.sh validate --model protoclr-2026
+#   bash sbatch/run.sh validate --model all-2025
 
 set -eu
 
@@ -31,8 +33,9 @@ if [[ $# -lt 1 ]]; then
     echo "  validate   CPU job: timing test on train_soundscapes"
     echo ""
     echo "Options:"
-    echo "  --model M   Model to process: eat, convnext, protoclr, protoclr-2026,"
-    echo "              eat-2026, convnext-2026, all, all-2026 (default: all)"
+    echo "  --model M   Model to process (always includes training year):"
+    echo "              eat-2025, convnext-2025, protoclr-2025, all-2025"
+    echo "              eat-2026, convnext-2026, protoclr-2026, all-2026"
     echo "  --dry-run   Preview sbatch command without submitting"
     exit 1
 fi

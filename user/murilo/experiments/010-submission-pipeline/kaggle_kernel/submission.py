@@ -123,7 +123,14 @@ def find_weights_dir() -> Path:
 
     # Local testing fallback
     local = Path("artifacts/weights")
-    for subdir in ["eat", "convnext", "protoclr"]:
+    for subdir in [
+        "protoclr-2026",
+        "eat-2026",
+        "convnext-2026",
+        "eat-2025",
+        "convnext-2025",
+        "protoclr-2025",
+    ]:
         if (local / subdir / "model.onnx").exists():
             return local / subdir
     if local.exists():

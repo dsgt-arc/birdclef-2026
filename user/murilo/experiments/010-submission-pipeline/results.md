@@ -59,10 +59,10 @@ have no focal training data and get 0.0 predictions.
 
 | Type | Location |
 |------|----------|
-| ONNX weights (2025) | `artifacts/weights/{eat,convnext,protoclr}/model.onnx` |
+| ONNX weights (2025) | `artifacts/weights/{eat,convnext,protoclr}-2025/model.onnx` |
 | Species mapping (2025→2026) | `artifacts/weights/species_mapping.json` (41 mapped) |
 | Kaggle kernel | `kaggle_kernel/submission.py` |
-| Kernel metadata | `kaggle_kernel/kernel-metadata-{model}[-2026].json` |
+| Kernel metadata | `kaggle_kernel/kernel-metadata-{model}-{2025,2026}.json` |
 | Export scripts | `scripts/export_{eat,convnext,protoclr}.py` |
 | Offline deps | `artifacts/dist/dependencies/` |
 | SLURM logs | `logs/slurm_{export,validate}_*.log` |

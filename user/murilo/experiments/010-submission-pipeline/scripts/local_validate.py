@@ -4,14 +4,13 @@
 Tests inference on BirdCLEF 2026 train_soundscapes, measures timing,
 validates submission format, and computes rough metrics on overlapping species.
 
-Usage:
-    python scripts/local_validate.py \
-        --model eat \
-        --soundscapes-dir /path/to/train_soundscapes \
-        --max-files 10
+Model names include the training data year:
+  - eat-2025, convnext-2025, protoclr-2025  (exps 006/007/009)
+  - eat-2026, convnext-2026, protoclr-2026  (exp 011)
 
-    python scripts/local_validate.py --model convnext
-    python scripts/local_validate.py --model protoclr
+Usage:
+    python scripts/local_validate.py --model protoclr-2025 --max-files 10
+    python scripts/local_validate.py --model protoclr-2026 --max-files 10
 """
 
 import argparse
@@ -156,7 +155,14 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=["eat", "convnext", "protoclr"],
+        choices=[
+            "eat-2025",
+            "convnext-2025",
+            "protoclr-2025",
+            "eat-2026",
+            "convnext-2026",
+            "protoclr-2026",
+        ],
     )
     parser.add_argument(
         "--soundscapes-dir",

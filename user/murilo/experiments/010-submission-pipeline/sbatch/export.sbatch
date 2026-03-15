@@ -85,28 +85,28 @@ cd "$EXPERIMENT_DIR"
 # Run exports
 # ============================================================================
 
-export_eat() {
-    echo "=== Exporting EAT ==="
+export_eat_2025() {
+    echo "=== Exporting EAT (2025-trained, exp 006) ==="
     local CKPT="${CHECKPOINTS_BASE}/006-lora-finetune/checkpoints/eat-lora-attn-mlphead/best-epochepoch=16.ckpt"
     python scripts/export_eat.py \
         --checkpoint "$CKPT" \
-        --output-dir artifacts/weights/eat/
+        --output-dir artifacts/weights/eat-2025/
 }
 
-export_convnext() {
-    echo "=== Exporting ConvNeXt ==="
+export_convnext_2025() {
+    echo "=== Exporting ConvNeXt (2025-trained, exp 007) ==="
     local CKPT="${CHECKPOINTS_BASE}/007-convnext-finetune/checkpoints/convnext-lora-mlp-mlphead/best-epochepoch=12.ckpt"
     python scripts/export_convnext.py \
         --checkpoint "$CKPT" \
-        --output-dir artifacts/weights/convnext/
+        --output-dir artifacts/weights/convnext-2025/
 }
 
-export_protoclr() {
-    echo "=== Exporting ProtoCLR ==="
+export_protoclr_2025() {
+    echo "=== Exporting ProtoCLR (2025-trained, exp 009) ==="
     local CKPT="${CHECKPOINTS_BASE}/009-protoclr-finetune/checkpoints/protoclr-lora-attn/best-epochepoch=20.ckpt"
     python scripts/export_protoclr.py \
         --checkpoint "$CKPT" \
-        --output-dir artifacts/weights/protoclr/
+        --output-dir artifacts/weights/protoclr-2025/
 }
 
 # ============================================================================
@@ -151,9 +151,8 @@ export_convnext_2026() {
 # ============================================================================
 
 case "$MODEL" in
-    # 2025-trained models
-    eat|convnext|protoclr|all)
-        echo "=== Building species mapping (2025→2026) ==="
+    eat-2025|convnext-2025|protoclr-2025|all-2025)
+        echo "=== Building species mapping (2025→2026, 41 overlap) ==="
         python scripts/build_species_mapping.py \
             --output artifacts/weights/species_mapping.json
         echo ""
@@ -161,9 +160,8 @@ case "$MODEL" in
 esac
 
 case "$MODEL" in
-    # 2026-trained models
-    protoclr-2026|eat-2026|convnext-2026|all-2026)
-        echo "=== Building species mapping (2026→2026) ==="
+    eat-2026|convnext-2026|protoclr-2026|all-2026)
+        echo "=== Building species mapping (2026→2026, 206 overlap) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TRAIN_CSV_2026" \
             --output artifacts/weights/species_mapping_2026.json
@@ -172,25 +170,25 @@ case "$MODEL" in
 esac
 
 case "$MODEL" in
-    eat)            export_eat ;;
-    convnext)       export_convnext ;;
-    protoclr)       export_protoclr ;;
-    protoclr-2026)  export_protoclr_2026 ;;
+    eat-2025)       export_eat_2025 ;;
+    convnext-2025)  export_convnext_2025 ;;
+    protoclr-2025)  export_protoclr_2025 ;;
     eat-2026)       export_eat_2026 ;;
     convnext-2026)  export_convnext_2026 ;;
-    all)
-        export_eat
+    protoclr-2026)  export_protoclr_2026 ;;
+    all-2025)
+        export_eat_2025
         echo ""
-        export_convnext
+        export_convnext_2025
         echo ""
-        export_protoclr
+        export_protoclr_2025
         ;;
     all-2026)
-        export_protoclr_2026
-        echo ""
         export_eat_2026
         echo ""
         export_convnext_2026
+        echo ""
+        export_protoclr_2026
         ;;
     *)
         echo "Unknown model: $MODEL"
