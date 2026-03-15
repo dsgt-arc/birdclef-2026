@@ -55,8 +55,8 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 - [x] 7.3 ProtoCLR-2026 scored **0.721 macro-AUROC** on public LB (2026-03-15)
 - [x] 7.4 Upload + push ConvNeXt-2026: `python scripts/upload_kaggle.py --model convnext-2026 --push-kernel`
 - [x] 7.5 ConvNeXt-2026 scored **0.720 macro-AUROC** on public LB (2026-03-15)
-- [ ] 7.6 Upload + push EAT-2026: `python scripts/upload_kaggle.py --model eat-2026 --push-kernel`
-- [ ] 7.7 Verify EAT-2026 submission scores on leaderboard
+- [x] 7.6 Upload + push EAT-2026: `python scripts/upload_kaggle.py --model eat-2026 --push-kernel`
+- [x] 7.7 EAT-2026 scored **0.701 macro-AUROC** on public LB (2026-03-15)
 
 ## 8. Documentation
 
@@ -67,8 +67,7 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 
 ### Key context for next session:
 - **Model names always include training year**: `protoclr-2025`, `protoclr-2026`, `all-2025`, `all-2026`
-- **Current LB scores**: ProtoCLR-2026 = 0.721, ConvNeXt-2026 = 0.720 (both trained on 80% of focal data)
-- **EAT-2026**: weights need to be uploaded before kernel push: `python scripts/upload_kaggle.py --model eat-2026 --push-kernel`
+- **Current LB scores**: ProtoCLR-2026 = 0.721, ConvNeXt-2026 = 0.720, EAT-2026 = 0.701 (all trained on 80% of focal data)
 - **Next priority**: retrain on 100% of focal data (no val/test split) for higher scores
 - **Check status**: `kaggle competitions submissions birdclef-2026`
 - **Species mapping**: 2025 models map 41/234 species; 2026 models map 206/234 species (28 soundscape-only insect sonotypes have no training data)
