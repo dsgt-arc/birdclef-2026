@@ -1,0 +1,44 @@
+{
+  "auroc": 0.9289225935935974,
+  "cmap": 0.5088461637496948,
+  "f1_macro": 0.47165656089782715,
+  "f1_micro": 0.5368559956550598,
+  "top1_accuracy": 0.6497539281845093,
+  "top5_accuracy": 0.7991073131561279,
+  "loss": 0.027411002665758133,
+  "encoder_type": "eat",
+  "encoder_model": "worstchan/EAT-base_epoch30_pretrain",
+  "embed_dim": 768,
+  "lora": {
+    "rank": 8,
+    "alpha": 16,
+    "dropout": 0.1,
+    "target_modules": ["qkv", "proj"]
+  },
+  "dataset": "birdclef-2026",
+  "split": "test",
+  "num_classes": 206,
+  "best_val_cmap": 0.5197351574897766,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/011-lora-baseline-2026/checkpoints/2026-eat-lora-attn-mlphead/best-epochepoch=17.ckpt",
+  "stopped_epoch": 28,
+  "training": {
+    "max_epochs": 50,
+    "lr": 0.0003,
+    "weight_decay": 0.01,
+    "warmup_epochs": 5,
+    "batch_size": 32,
+    "num_workers": 8,
+    "precision": "16-mixed",
+    "early_stopping_patience": 10,
+    "hidden_dim": 512,
+    "dropout": 0.1,
+    "grad_clip_val": 1.0,
+    "accumulate_grad_batches": 8
+  },
+  "compute": {
+    "gpu": "rtx_6000",
+    "slurm_job_id": 4948858,
+    "node": "atl1-1-03-003-17-0",
+    "cpus_per_task": "8"
+  }
+}
