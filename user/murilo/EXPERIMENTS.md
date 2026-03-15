@@ -32,7 +32,7 @@ Consolidated findings from experiments 001–009, covering BirdSet benchmarks, a
 
 The `train_soundscapes/` (9,726 unlabeled soundscape files) and `test_soundscapes/` (hidden, contains only a readme) are **not used** in any experiment. The "test" set in experiment results refers to the held-out 10% of focal recordings, not the Kaggle test soundscapes.
 
-Implementation: `src/birdclef/data/birdclef2025.py` → `BirdCLEF2025DataModule._split_dataframe()`.
+Implementation: `src/birdclef/data/birdclef2025.py` → `BirdCLEFDataModule._split_dataframe()`.
 
 ## 2. Research Progression
 

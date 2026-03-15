@@ -49,7 +49,7 @@ to isolate the tokenization effect from the pretraining loss.
 ### Data Flow
 
 ```
-BirdCLEF2025DataModule (16kHz waveforms, 5s chunks)
+BirdCLEFDataModule (16kHz waveforms, 5s chunks)
   → fbank transform (128 mel bins, 512 time frames)
   → (B, 1, 512, 128) spectrograms                     — (B, C, time, freq)
   → PatchEmbed: Conv2d(1, 768, (W, 128), (W, 128))   — W ∈ {2, 4}

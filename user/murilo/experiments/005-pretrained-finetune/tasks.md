@@ -24,8 +24,8 @@
 
 - [x] 3.1 Create `pyproject.toml` with dependencies (torch, torchaudio, BEATs/EAT, nnAudio)
 - [x] 3.2 Create BirdCLEF 2025 PyTorch Dataset class in shared `src/birdclef/data/birdclef2025.py`
-  - `BirdCLEF2025Dataset`: 5s non-overlapping chunks at 16kHz, multi-hot labels, sf.read partial reads
-  - `BirdCLEF2025DataModule`: stratified train/val/test split by primary_label (80/10/10)
+  - `BirdCLEFDataset`: 5s non-overlapping chunks at 16kHz, multi-hot labels, sf.read partial reads
+  - `BirdCLEFDataModule`: stratified train/val/test split by primary_label (80/10/10)
   - `build_species_list()`: sorted unique primary_label values
 - [x] 3.3 Create DataModule for BirdCLEF 2025 (adapted from Anthony's `BirdCLEFDataModule` pattern)
 - [x] 3.4 Write `proposal.md` with hypothesis, method, and evaluation plan

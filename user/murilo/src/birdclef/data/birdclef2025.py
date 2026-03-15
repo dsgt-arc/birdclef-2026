@@ -1,8 +1,11 @@
-"""BirdCLEF 2025 dataset and Lightning DataModule.
+"""BirdCLEF dataset and Lightning DataModule.
 
-Loads local BirdCLEF 2025 audio (206 species, 28k recordings), splits each
-recording into non-overlapping 5s chunks, resamples 32kHz -> 16kHz, and
+Loads local BirdCLEF audio (train_audio/ with species subdirectories), splits each
+recording into non-overlapping 5s chunks, resamples to target sample rate, and
 returns (waveform, labels) tuples for pretrained encoder fine-tuning.
+
+Compatible with BirdCLEF 2025 and 2026 data formats (same CSV columns and
+audio directory structure).
 """
 
 import logging
@@ -65,7 +68,7 @@ def _load_audio_chunk(audio_path, target_sr, start_sample=0, num_samples=None):
     return audio_tensor
 
 
-class BirdCLEF2025Dataset(Dataset):
+class BirdCLEFDataset(Dataset):
     """BirdCLEF 2025 dataset: non-overlapping 5s chunks at 16kHz.
 
     Each recording is split into non-overlapping chunks. Labels are multi-hot
@@ -124,7 +127,7 @@ class BirdCLEF2025Dataset(Dataset):
         if skipped > 0:
             logger.warning(f"Skipped {skipped} recordings (file not found or unreadable)")
         logger.info(
-            f"BirdCLEF2025Dataset: {len(self.chunks)} chunks from "
+            f"BirdCLEFDataset: {len(self.chunks)} chunks from "
             f"{len(metadata_df)} recordings ({self.num_classes} classes)"
         )
 
@@ -174,11 +177,11 @@ class BirdCLEF2025Dataset(Dataset):
         return waveform, label_vec.clone()
 
 
-class BirdCLEF2025DataModule(pl.LightningDataModule):
+class BirdCLEFDataModule(pl.LightningDataModule):
     """Lightning DataModule for BirdCLEF 2025 labeled training data.
 
     Reads train.csv, does stratified train/val/test split by primary_label,
-    and creates BirdCLEF2025Dataset for each split.
+    and creates BirdCLEFDataset for each split.
 
     Split strategy (80/10/10 by default):
         - Train: model training
@@ -295,7 +298,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
             f"Split: {len(train_df)} train, {len(val_df)} val, " f"{len(test_df)} test recordings"
         )
 
-        self.train_dataset = BirdCLEF2025Dataset(
+        self.train_dataset = BirdCLEFDataset(
             audio_dir=self.audio_dir,
             metadata_df=train_df,
             species_list=self.species_list,
@@ -303,7 +306,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
             chunk_duration=self.chunk_duration,
             transform=self.transform,
         )
-        self.val_dataset = BirdCLEF2025Dataset(
+        self.val_dataset = BirdCLEFDataset(
             audio_dir=self.audio_dir,
             metadata_df=val_df,
             species_list=self.species_list,
@@ -311,7 +314,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
             chunk_duration=self.chunk_duration,
             transform=self.transform,
         )
-        self.test_dataset = BirdCLEF2025Dataset(
+        self.test_dataset = BirdCLEFDataset(
             audio_dir=self.audio_dir,
             metadata_df=test_df,
             species_list=self.species_list,

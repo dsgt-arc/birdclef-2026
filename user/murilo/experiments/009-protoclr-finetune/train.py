@@ -46,7 +46,7 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger  # noqa: E4
 repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root / "src"))
 
-from birdclef.data import BirdCLEF2025DataModule, build_species_list  # noqa: E402
+from birdclef.data import BirdCLEFDataModule, build_species_list  # noqa: E402
 from birdclef.encoders.protoclr import ProtoCLREncoder  # noqa: E402
 from birdclef.lightning.lora_finetune import LoRAFinetuneModule  # noqa: E402
 from birdclef.preprocessing.protoclr_mel import ProtoCLRMelSpectrogram  # noqa: E402
@@ -237,8 +237,8 @@ def main():
     )
 
     # Initialize data module
-    logger.info("Initializing BirdCLEF2025DataModule...")
-    data_module = BirdCLEF2025DataModule(
+    logger.info("Initializing BirdCLEFDataModule...")
+    data_module = BirdCLEFDataModule(
         audio_dir=str(audio_dir),
         metadata_csv=str(metadata_csv),
         species_list=species_list,
