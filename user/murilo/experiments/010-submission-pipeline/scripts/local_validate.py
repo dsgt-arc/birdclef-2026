@@ -190,13 +190,18 @@ def main():
     # Load configs
     with open(weights_dir / "mel_config.json") as f:
         mel_cfg = json.load(f)
-    mapping_path = EXPERIMENT_DIR / "artifacts" / "weights" / "species_mapping.json"
+    # Use 2026 mapping for 2026-trained models, 2025 mapping otherwise
+    if args.model.endswith("-2026"):
+        mapping_path = EXPERIMENT_DIR / "artifacts" / "weights" / "species_mapping_2026.json"
+    else:
+        mapping_path = EXPERIMENT_DIR / "artifacts" / "weights" / "species_mapping.json"
     with open(mapping_path) as f:
         species_mapping = json.load(f)
 
+    idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
     sr = mel_cfg["sr"]
     logger.info(f"Model: {args.model}, mel type: {mel_cfg['type']}, SR: {sr}")
-    logger.info(f"Overlapping species: {len(species_mapping['idx_2025_to_name_2026'])}")
+    logger.info(f"Mapped species: {len(idx_map)} (from {mapping_path.name})")
 
     # Create ONNX session
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
