@@ -93,7 +93,7 @@ cd user/murilo/experiments/010-submission-pipeline
 The export job builds each model from its checkpoint, merges LoRA adapters, and traces to ONNX. It also builds the species mapping.
 
 ```bash
-# Export 2025-trained models
+# Export 2025-trained models (exp 006/007/009 checkpoints)
 bash sbatch/run.sh export                        # all 3 models
 bash sbatch/run.sh export --model protoclr       # specific model
 
