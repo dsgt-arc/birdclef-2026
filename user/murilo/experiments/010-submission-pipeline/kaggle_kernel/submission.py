@@ -5,13 +5,17 @@ Self-contained Kaggle CPU kernel for BirdCLEF 2026 submission.
 Auto-detects which model (EAT, ConvNeXt, ProtoCLR) is available in the
 weights directory and runs the appropriate preprocessing pipeline.
 
+Supports models trained on either BirdCLEF 2025 or 2026 data:
+  - 2025-trained: 41/206 model outputs map to 2026 columns (rest get 0.0)
+  - 2026-trained: 206/206 model outputs map to 2026 columns
+
 Pipeline per soundscape:
   for each 5s window:
     1. Load audio at model-specific sample rate
     2. Compute mel spectrogram (model-specific preprocessing)
-    3. ONNX session.run() -> (1, 206) logits
+    3. ONNX session.run() -> logits
     4. sigmoid -> probs
-    5. Map 206 BirdCLEF-2025 probs to 234 BirdCLEF-2026 columns
+    5. Map model probs to 234 BirdCLEF-2026 columns via species_mapping.json
     6. Unmapped species get 0.0
 
 Supports three mel types:

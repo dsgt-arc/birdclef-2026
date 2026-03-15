@@ -1,20 +1,28 @@
 # Experiment 010: BirdCLEF 2026 Submission Pipeline
 
-Submit our three **BirdCLEF 2025-trained** LoRA fine-tuned models (EAT, ConvNeXt, ProtoCLR) to the **BirdCLEF 2026** competition via ONNX export and a unified Kaggle CPU kernel.
-
-**Goals**: validate the end-to-end submission pipeline, measure CPU inference timing against Kaggle's 90-minute limit, and establish baseline scores. Scores are expected to be low since only 41 of 234 BirdCLEF 2026 species overlap with BirdCLEF 2025.
-
-> **Training data note**: These models were trained on BirdCLEF **2025** data (206 species). The BirdCLEF 2026 competition has 234 species with only 41 in common. This experiment tests the pipeline end-to-end; future experiments will retrain on 2026 data for competitive scores. All Kaggle artifacts are named with `2025` in the dataset slug (e.g., `birdclef-2025-eat-weights`) to distinguish them from future 2026-trained weights.
+Submit LoRA fine-tuned models (EAT, ConvNeXt, ProtoCLR) to the **BirdCLEF 2026** competition via ONNX export and a unified Kaggle CPU kernel. Supports models trained on both BirdCLEF 2025 and 2026 data.
 
 ## Models
 
-| Model | Source Experiment | Training Data | Checkpoint | AUROC | Params |
-|-------|-------------------|--------------|-----------|-------|--------|
-| EAT (ViT) | `006-lora-finetune` | BirdCLEF 2025 | `best-epochepoch=16.ckpt` | 0.942 | ~90M |
-| ConvNeXt-Base | `007-convnext-finetune` | BirdCLEF 2025 | `best-epochepoch=12.ckpt` | 0.941 | ~89M |
-| ProtoCLR (CvT-13) | `009-protoclr-finetune` | BirdCLEF 2025 | `best-epochepoch=20.ckpt` | 0.942 | ~20M |
+### BirdCLEF 2025-Trained (exps 006/007/009)
 
-All trained on BirdCLEF 2025 (206 species) with PEFT LoRA adapters + classification heads.
+Only 41/234 BirdCLEF 2026 species overlap — scores are low but validate the pipeline end-to-end.
+
+| Model | Source Experiment | Checkpoint | AUROC | Params |
+|-------|-------------------|-----------|-------|--------|
+| EAT (ViT) | `006-lora-finetune` | `best-epochepoch=16.ckpt` | 0.942 | ~90M |
+| ConvNeXt-Base | `007-convnext-finetune` | `best-epochepoch=12.ckpt` | 0.941 | ~89M |
+| ProtoCLR (CvT-13) | `009-protoclr-finetune` | `best-epochepoch=20.ckpt` | 0.942 | ~20M |
+
+### BirdCLEF 2026-Trained (exp 011)
+
+All 206 focal species map to 2026 columns. The 28 soundscape-only species get 0.0.
+
+| Model | Source Experiment | Checkpoint | AUROC | Params |
+|-------|-------------------|-----------|-------|--------|
+| ConvNeXt-Base | `011-lora-baseline-2026` | `best-epochepoch=09.ckpt` | 0.938 | ~89M |
+| ProtoCLR (CvT-13) | `011-lora-baseline-2026` | `best-epochepoch=21.ckpt` | 0.937 | ~20M |
+| EAT (ViT) | `011-lora-baseline-2026` | `best-epochepoch=17.ckpt` | 0.929 | ~90M |
 
 ## How It Works
 
@@ -23,12 +31,12 @@ Checkpoint (.ckpt)          ONNX model + configs          Kaggle kernel
  LoRA encoder + head   -->  model.onnx                -->  load ONNX
                             species_list.json              compute mel (model-specific)
                             mel_config.json                infer 5s windows
-                            species_mapping.json           map 206 probs -> 234 columns
+                            species_mapping.json           map probs -> 234 columns
 ```
 
 1. **Export**: Load Lightning checkpoint, merge LoRA weights into the base model, wrap encoder+head into a single module, export to ONNX (opset 17). Each model's mel preprocessing params are saved to `mel_config.json`.
 
-2. **Species mapping**: 41 of 206 BirdCLEF 2025 species appear in the 2026 competition. `species_mapping.json` maps model output indices to 2026 submission columns. Unmapped species default to probability 0.0.
+2. **Species mapping**: `species_mapping.json` maps model output indices to 2026 submission columns. For 2025-trained models: 41/206 map. For 2026-trained models: 206/206 map. Unmapped species default to probability 0.0.
 
 3. **Kaggle inference**: A single `submission.py` kernel auto-detects the model type from `mel_config.json` and dispatches to the correct preprocessing:
    - **EAT** (`kaldi_fbank`): torchaudio Kaldi fbank, 16kHz, 512 frames, AudioSet normalization
@@ -40,35 +48,36 @@ Checkpoint (.ckpt)          ONNX model + configs          Kaggle kernel
 ```
 010-submission-pipeline/
 ├── README.md
-├── proposal.md                       # Experiment rationale
-├── pyproject.toml                    # Dependencies
+├── proposal.md                            # Experiment rationale
+├── results.md                             # Kaggle leaderboard scores
+├── pyproject.toml                         # Dependencies
 ├── scripts/
-│   ├── build_species_mapping.py      # BirdCLEF 2025 -> 2026 species overlap
-│   ├── export_eat.py                 # Merge LoRA + ONNX export for EAT
-│   ├── export_convnext.py            # Merge LoRA + ONNX export for ConvNeXt
-│   ├── export_protoclr.py            # Merge LoRA + ONNX export for ProtoCLR
-│   ├── local_validate.py             # Timing test on train_soundscapes
-│   └── upload_kaggle.py              # Upload weights + push kernels to Kaggle
+│   ├── build_species_mapping.py           # Model output indices -> 2026 columns
+│   ├── export_eat.py                      # Merge LoRA + ONNX export for EAT
+│   ├── export_convnext.py                 # Merge LoRA + ONNX export for ConvNeXt
+│   ├── export_protoclr.py                 # Merge LoRA + ONNX export for ProtoCLR
+│   ├── local_validate.py                  # Timing test on train_soundscapes
+│   └── upload_kaggle.py                   # Upload weights + push kernels to Kaggle
 ├── kaggle_kernel/
-│   ├── submission.py                 # Unified Kaggle inference kernel
-│   ├── kernel-metadata-eat.json
-│   ├── kernel-metadata-convnext.json
-│   └── kernel-metadata-protoclr.json
+│   ├── submission.py                      # Unified Kaggle inference kernel
+│   ├── kernel-metadata-eat.json           # 2025-trained EAT
+│   ├── kernel-metadata-convnext.json      # 2025-trained ConvNeXt
+│   ├── kernel-metadata-protoclr.json      # 2025-trained ProtoCLR
+│   └── kernel-metadata-protoclr-2026.json # 2026-trained ProtoCLR
 ├── sbatch/
-│   ├── run.sh                        # Launcher (creates logs/, passes --output)
-│   ├── export.sbatch                 # GPU job for ONNX export
-│   └── validate.sbatch               # CPU job for timing validation
-├── logs/                             # SLURM output (gitignored)
-└── artifacts/weights/                # Generated by export scripts
-    ├── species_mapping.json          # Shared across all models
-    ├── eat/
-    │   ├── model.onnx
-    │   ├── species_list.json
-    │   └── mel_config.json
-    ├── convnext/
-    │   └── ...
-    └── protoclr/
-        └── ...
+│   ├── run.sh                             # Launcher (creates logs/, routes to jobs)
+│   ├── export.sbatch                      # GPU job for ONNX export
+│   └── validate.sbatch                    # CPU job for timing validation
+├── logs/                                  # SLURM output (gitignored)
+└── artifacts/weights/                     # Generated by export scripts
+    ├── species_mapping.json               # 2025-trained mapping (41 overlap)
+    ├── species_mapping_2026.json          # 2026-trained mapping (206 overlap)
+    ├── eat/                               # 2025-trained EAT weights
+    ├── convnext/                          # 2025-trained ConvNeXt weights
+    ├── protoclr/                          # 2025-trained ProtoCLR weights
+    ├── eat-2026/                          # 2026-trained EAT weights
+    ├── convnext-2026/                     # 2026-trained ConvNeXt weights
+    └── protoclr-2026/                     # 2026-trained ProtoCLR weights
 ```
 
 ## Quickstart
@@ -84,16 +93,16 @@ cd user/murilo/experiments/010-submission-pipeline
 The export job builds each model from its checkpoint, merges LoRA adapters, and traces to ONNX. It also builds the species mapping.
 
 ```bash
-# Export all 3 models (~2 min with cached HF weights)
-bash sbatch/run.sh export
+# Export 2025-trained models
+bash sbatch/run.sh export                        # all 3 models
+bash sbatch/run.sh export --model protoclr       # specific model
 
-# Export a single model
-bash sbatch/run.sh export --model eat
-bash sbatch/run.sh export --model convnext
-bash sbatch/run.sh export --model protoclr
+# Export 2026-trained models (exp 011 checkpoints)
+bash sbatch/run.sh export --model protoclr-2026  # specific model
+bash sbatch/run.sh export --model all-2026       # all 3 models
 
 # Preview without submitting
-bash sbatch/run.sh export --dry-run
+bash sbatch/run.sh export --model protoclr-2026 --dry-run
 ```
 
 Logs go to `logs/slurm_export_<model>_<jobid>.log`.
@@ -106,21 +115,19 @@ salloc -p gpu-rtx6000 --gres=gpu:1 -c 4 --mem=32G -t 2:00:00
 
 # Set up venv (NEVER install in home dir -- use TMPDIR)
 bash ../../create_venv.sh --exp-num 10
-# Also install PEFT extra
 uv pip install peft>=0.7.0 onnx onnxruntime
 
-# Build species mapping
-python scripts/build_species_mapping.py
+# Build species mapping (2026-trained)
+python scripts/build_species_mapping.py \
+    --train-csv /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv \
+    --output artifacts/weights/species_mapping_2026.json
 
-# Export (one at a time)
-python scripts/export_eat.py \
-    --checkpoint /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/006-lora-finetune/checkpoints/eat-lora-attn-mlphead/best-epochepoch=16.ckpt
-
-python scripts/export_convnext.py \
-    --checkpoint /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/007-convnext-finetune/checkpoints/convnext-lora-mlp-mlphead/best-epochepoch=12.ckpt
-
+# Export ProtoCLR (2026-trained)
 python scripts/export_protoclr.py \
-    --checkpoint /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/009-protoclr-finetune/checkpoints/protoclr-lora-attn/best-epochepoch=20.ckpt
+    --checkpoint /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/011-lora-baseline-2026/checkpoints/2026-protoclr-lora-attn/best-epochepoch=21.ckpt \
+    --config ../011-lora-baseline-2026/config/protoclr_lora_attn.yaml \
+    --train-csv /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv \
+    --output-dir artifacts/weights/protoclr-2026/
 ```
 
 Each export script:
@@ -144,40 +151,42 @@ bash sbatch/run.sh validate --model eat
 
 # Or interactively
 python scripts/local_validate.py --model eat --max-files 10
-python scripts/local_validate.py --model convnext --max-files 10
 python scripts/local_validate.py --model protoclr --max-files 10
 ```
 
 Logs go to `logs/slurm_validate_<model>_<jobid>.log`.
-
-Reports per-window and per-file timing, and estimates whether inference fits within the 90-minute Kaggle limit.
 
 ### Step 3: Upload to Kaggle and submit
 
 Requires `~/.kaggle/kaggle.json` to be configured.
 
 ```bash
-# Upload weights for all models
-python scripts/upload_kaggle.py --model all
+# Upload 2026-trained ProtoCLR + push kernel
+python scripts/upload_kaggle.py --model protoclr-2026 --push-kernel
 
-# Upload weights + push kernel for a specific model
-python scripts/upload_kaggle.py --model eat --push-kernel
+# Upload all 2026-trained models
+python scripts/upload_kaggle.py --model all-2026
+
+# Upload 2025-trained models
+python scripts/upload_kaggle.py --model all-2025
 
 # Dry run (preview without uploading)
-python scripts/upload_kaggle.py --model all --dry-run
+python scripts/upload_kaggle.py --model protoclr-2026 --dry-run
 ```
 
 This creates one Kaggle dataset per model and pushes the unified `submission.py` kernel with the appropriate metadata.
 
-**Naming convention** (distinguishes 2025-trained weights from future 2026-trained ones):
-- Kaggle datasets: `mgustineli3/birdclef-2025-{eat,convnext,protoclr}-weights`
-- Kaggle kernels: `mgustineli3/birdclef-2026-{eat,convnext,protoclr}-baseline-2025`
-
-Each submission kernel uses the same `submission.py` code but different `kernel-metadata-*.json` pointing to different weight datasets.
+**Naming convention**:
+- 2025-trained datasets: `murilogustineli/birdclef-2025-{model}-weights`
+- 2026-trained datasets: `murilogustineli/birdclef-2026-{model}-weights`
+- 2025-trained kernels: `birdclef-2026-{model}-baseline-trained-on-2025`
+- 2026-trained kernels: `birdclef-2026-{model}-baseline`
 
 ## Checkpoint Paths
 
 All checkpoints live under `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`:
+
+### 2025-Trained
 
 | Model | Path |
 |-------|------|
@@ -185,11 +194,20 @@ All checkpoints live under `/storage/project/ps-clef2026_birdclef-0/mgustineli3/
 | ConvNeXt | `007-convnext-finetune/checkpoints/convnext-lora-mlp-mlphead/best-epochepoch=12.ckpt` |
 | ProtoCLR | `009-protoclr-finetune/checkpoints/protoclr-lora-attn/best-epochepoch=20.ckpt` |
 
+### 2026-Trained
+
+| Model | Path |
+|-------|------|
+| EAT | `011-lora-baseline-2026/checkpoints/2026-eat-lora-attn-mlphead/best-epochepoch=17.ckpt` |
+| ConvNeXt | `011-lora-baseline-2026/checkpoints/2026-convnext-lora-mlp-mlphead/best-epochepoch=09.ckpt` |
+| ProtoCLR | `011-lora-baseline-2026/checkpoints/2026-protoclr-lora-attn/best-epochepoch=21.ckpt` |
+
 ## Data Paths
 
 | Dataset | Path |
 |---------|------|
 | BirdCLEF 2025 train.csv | `/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2025/train.csv` |
+| BirdCLEF 2026 train.csv | `/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv` |
 | BirdCLEF 2026 sample_submission.csv | `/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/sample_submission.csv` |
 | BirdCLEF 2026 train_soundscapes | `/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/` |
 

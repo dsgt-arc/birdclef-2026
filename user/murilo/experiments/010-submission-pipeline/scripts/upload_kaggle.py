@@ -2,22 +2,23 @@
 """Upload model weights to Kaggle datasets and push submission kernels.
 
 Creates/updates Kaggle datasets with ONNX model weights and pushes the
-unified submission kernel with model-specific metadata.
+unified submission kernel with model-specific metadata. Supports both
+BirdCLEF 2025-trained and 2026-trained models.
 
 Usage:
-    # Upload weights for a specific model
-    python scripts/upload_kaggle.py --model eat
-    python scripts/upload_kaggle.py --model convnext
+    # Upload 2025-trained models
     python scripts/upload_kaggle.py --model protoclr
+    python scripts/upload_kaggle.py --model all-2025
 
-    # Upload all models
-    python scripts/upload_kaggle.py --model all
+    # Upload 2026-trained models (exp 011)
+    python scripts/upload_kaggle.py --model protoclr-2026
+    python scripts/upload_kaggle.py --model all-2026
 
-    # Push kernel for a model
-    python scripts/upload_kaggle.py --model eat --push-kernel
+    # Upload + push kernel
+    python scripts/upload_kaggle.py --model protoclr-2026 --push-kernel
 
     # Dry run
-    python scripts/upload_kaggle.py --model eat --dry-run
+    python scripts/upload_kaggle.py --model protoclr-2026 --dry-run
 """
 
 import argparse

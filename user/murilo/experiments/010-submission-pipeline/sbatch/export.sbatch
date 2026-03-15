@@ -12,11 +12,13 @@
 #
 # Experiment 010: ONNX Export for BirdCLEF 2026 Submission
 # GPU needed for model construction (HuggingFace) and ONNX tracing.
+# Supports both 2025-trained (exps 006/007/009) and 2026-trained (exp 011) models.
 #
 # Usage:
 #   cd user/murilo/experiments/010-submission-pipeline
-#   sbatch sbatch/export.sbatch              # export all 3 models
-#   MODEL=eat sbatch sbatch/export.sbatch    # export specific model
+#   sbatch sbatch/export.sbatch                       # export all 2025-trained models
+#   MODEL=protoclr-2026 sbatch sbatch/export.sbatch   # export 2026-trained ProtoCLR
+#   MODEL=all-2026 sbatch sbatch/export.sbatch        # export all 2026-trained models
 
 set -eu
 
