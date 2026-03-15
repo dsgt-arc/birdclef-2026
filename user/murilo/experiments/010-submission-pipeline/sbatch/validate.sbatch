@@ -76,11 +76,20 @@ validate_model() {
 }
 
 case "$MODEL" in
-    eat|convnext|protoclr)
+    eat|convnext|protoclr|eat-2026|convnext-2026|protoclr-2026)
         validate_model "$MODEL"
         ;;
     all)
         for m in eat convnext protoclr; do
+            if [ -f "artifacts/weights/$m/model.onnx" ]; then
+                validate_model "$m"
+            else
+                echo "Skipping $m (no ONNX model found)"
+            fi
+        done
+        ;;
+    all-2026)
+        for m in protoclr-2026 eat-2026 convnext-2026; do
             if [ -f "artifacts/weights/$m/model.onnx" ]; then
                 validate_model "$m"
             else
