@@ -58,12 +58,45 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 - [x] 7.6 Upload + push EAT-2026: `python scripts/upload_kaggle.py --model eat-2026 --push-kernel`
 - [x] 7.7 EAT-2026 scored **0.701 macro-AUROC** on public LB (2026-03-15)
 
-## 8. Documentation
+## 8. Next Steps — Improving Scores
 
-- [x] 8.1 Write proposal.md
-- [x] 8.2 Write README.md with quickstart guide
-- [x] 8.3 Add .gitignore for generated kernel-metadata.json
-- [x] 8.4 Write results.md with submission scores
+### 8.1 Retrain on 100% focal data (highest priority)
+Current models use 80/10/10 train/val/test split — 20% of data is unused. Training on all
+35,549 recordings should improve scores, especially for tail species with few samples.
+
+- [ ] 8.1.1 Create full-data configs in exp 011 (`val_fraction: 0.0`, `test_fraction: 0.0`)
+- [ ] 8.1.2 Train for fixed epochs (no early stopping — use ~25 epochs based on ProtoCLR's best epoch of 21)
+- [ ] 8.1.3 Train ProtoCLR on full data (best current score: 0.721)
+- [ ] 8.1.4 Train ConvNeXt on full data (best current score: 0.720)
+- [ ] 8.1.5 Train EAT on full data (best current score: 0.701)
+- [ ] 8.1.6 Export, upload, submit full-data models
+- [ ] 8.1.7 Compare LB scores vs 80% data models
+
+### 8.2 Ensemble models
+Average predictions from 2-3 models in a single Kaggle kernel. ProtoCLR (conv-transformer),
+ConvNeXt (CNN), and EAT (transformer) have different architectures and pretraining, so errors
+should be complementary.
+
+- [ ] 8.2.1 Modify `submission.py` to load multiple ONNX models and average predictions
+- [ ] 8.2.2 Create ensemble kernel metadata referencing multiple weight datasets
+- [ ] 8.2.3 Verify ensemble fits within 90-min Kaggle time limit
+- [ ] 8.2.4 Submit ensemble and compare to single-model scores
+
+### 8.3 Incorporate labeled soundscapes
+66 labeled soundscapes with 1,478 expert-annotated segments cover 75 species including the
+28 soundscape-only species (insect sonotypes, amphibians) that current models predict 0.0 for.
+
+- [ ] 8.3.1 Add soundscape training data to the training pipeline
+- [ ] 8.3.2 Handle multi-label annotations (avg 4.2 species per 5s segment)
+- [ ] 8.3.3 Retrain with combined focal + soundscape data
+- [ ] 8.3.4 Submit and evaluate improvement on soundscape-only species
+
+## 9. Documentation
+
+- [x] 9.1 Write proposal.md
+- [x] 9.2 Write README.md with quickstart guide
+- [x] 9.3 Add .gitignore for generated kernel-metadata.json
+- [x] 9.4 Write results.md with submission scores
 
 ### Key context for next session:
 - **Model names always include training year**: `protoclr-2025`, `protoclr-2026`, `all-2025`, `all-2026`
