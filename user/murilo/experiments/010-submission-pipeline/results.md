@@ -30,9 +30,12 @@ have no focal training data and get 0.0 predictions.
 
 | Model | Training Data | Mapped Species | Public LB Score | Kernel Version | Date |
 |-------|--------------|---------------:|----------------:|----------------|------|
-| ProtoCLR LoRA attn | BirdCLEF 2026 (exp 011) | 206/234 | — | — | — |
+| ProtoCLR LoRA attn | BirdCLEF 2026 (exp 011) | 206/234 | **0.721** | v1 | 2026-03-15 |
 | EAT LoRA attn+MLP head | BirdCLEF 2026 (exp 011) | 206/234 | — | — | — |
 | ConvNeXt LoRA MLP+MLP head | BirdCLEF 2026 (exp 011) | 206/234 | — | — | — |
+
+**Note**: Public LB uses ~34% of test data. Final standings use the remaining ~66%.
+ProtoCLR 2026 was trained on 80% of focal data (80/10/10 train/val/test split).
 
 ## Observations
 

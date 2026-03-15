@@ -31,6 +31,8 @@ Identify which species (birds, amphibians, mammals, reptiles, insects) are calli
 | **Soundscape labels** | None | **1,478 expert-annotated 5s segments** |
 | **Sample rate** | 32 kHz | 32 kHz |
 | **Test soundscapes** | ~700 hidden, 1 min | ~600 hidden, 1 min |
+| **Public LB split** | — | ~34% of test data |
+| **Private LB split** | — | ~66% of test data (final standings) |
 | **Max recordings/species** | 990 (grekis) | 499 (rubthr1) |
 | **Min recordings/species** | 2 | **1** |
 
