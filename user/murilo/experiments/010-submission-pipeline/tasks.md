@@ -35,17 +35,27 @@ Submit BirdCLEF 2025-trained LoRA models (EAT, ConvNeXt, ProtoCLR) to the BirdCL
 - [x] 5.5 Switch to Anthony's two-dataset pattern for Kaggle submission (deps + weights as separate datasets)
 - [x] 5.6 Add debug logging for Kaggle input paths during scoring
 - [x] 5.7 Add `_find_input()` helper to support both old and new Kaggle directory layouts
+- [x] 5.8 Fix ONNX output shape bug: `logits[0]` failed when output was already 1D — fixed with `logits.flatten()`
+- [x] 5.9 Add train_soundscapes fallback (process 2 train files when test is empty) to surface inference bugs during public run
 
 ## 6. Kaggle Submission
 
 - [x] 6.1 Upload ProtoCLR weights to Kaggle (`birdclef-2025-protoclr-weights`)
 - [x] 6.2 Upload deps dataset to Kaggle (`birdclef-2025-deps`)
-- [x] 6.3 Push ProtoCLR kernel (version 10 pending)
-- [ ] 6.4 **WAITING**: 2hr cooldown to submit notebook version 10 to Kaggle
+- [x] 6.3 Push ProtoCLR kernel — v10 had ONNX IndexError, v11 surfaced the bug via train fallback, v12 fixed with `flatten()`
+- [ ] 6.4 **IN PROGRESS**: ProtoCLR v12 submitted to competition, scoring rerun is running (2026-03-15)
 - [ ] 6.5 Verify ProtoCLR submission scores on leaderboard
 - [ ] 6.6 Upload and submit EAT model
 - [ ] 6.7 Upload and submit ConvNeXt model
 - [ ] 6.8 Record baseline scores for all 3 models
+
+### Key context for next session:
+- **Push command**: `source ~/clef/birdclef-2026/.venv/bin/activate && cd user/murilo/experiments/010-submission-pipeline && python scripts/upload_kaggle.py --model protoclr --push-kernel`
+- **Check status**: `kaggle competitions submissions birdclef-2026` and `kaggle kernels status murilogustineli/birdclef-2026-protoclr-baseline-trained-on-2025`
+- **Root cause of v3-v10 failures**: All previous "Notebook Threw Exception" errors were caused by `probs_206[int(idx_str)]` failing on a 0-dimensional array — the ONNX model output shape wasn't being handled correctly. Fixed by using `logits.flatten()` before sigmoid.
+- **test_soundscapes is empty during public runs** — this is expected Kaggle behavior. Real test data only appears during scoring reruns. The train fallback (2 files) was added to catch inference bugs in visible logs.
+- **If v12 scoring succeeds**: proceed to upload+submit EAT and ConvNeXt models (same `flatten()` fix applies to all)
+- **If v12 scoring fails**: download logs with `kaggle kernels output murilogustineli/birdclef-2026-protoclr-baseline-trained-on-2025 -p /tmp/kaggle-output-010`
 
 ## 7. Documentation
 

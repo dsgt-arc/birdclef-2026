@@ -337,8 +337,10 @@ def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
 
         # ONNX inference
         input_name = session.get_inputs()[0].name
-        logits = session.run(None, {input_name: mel})[0]  # (1, 206)
-        probs_206 = sigmoid(logits[0])  # (206,)
+        logits = session.run(None, {input_name: mel})[0]
+        # Flatten to 1D: handles both (1, 206) and (206,) output shapes
+        logits = logits.flatten()
+        probs_206 = sigmoid(logits)  # (206,)
 
         # Map 206 probs to 234 submission columns
         end_time = int(window_start_s + window_duration)
@@ -410,6 +412,15 @@ def main():
     audio_files = sorted(
         list(test_dir.glob("*.ogg")) + list(test_dir.glob("*.wav")) + list(test_dir.glob("*.flac"))
     )
+
+    # Fallback: if test_soundscapes is empty (public run), use train_soundscapes
+    # so we can validate the full inference pipeline in visible logs
+    if len(audio_files) == 0:
+        train_dir = competition_dir / "train_soundscapes"
+        if train_dir.exists():
+            audio_files = sorted(train_dir.glob("*.ogg"))[:2]
+            print(f"No test soundscapes found, using {len(audio_files)} train files for validation")
+
     print(f"Processing {len(audio_files)} soundscapes from {test_dir}")
 
     # Run inference
