@@ -107,22 +107,88 @@ export_protoclr() {
         --output-dir artifacts/weights/protoclr/
 }
 
-# Build species mapping first
-echo "=== Building species mapping ==="
-python scripts/build_species_mapping.py \
-    --output artifacts/weights/species_mapping.json
-echo ""
+# ============================================================================
+# 2026-trained model exports (exp 011 checkpoints)
+# ============================================================================
+
+TRAIN_CSV_2026="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv"
+EXP011_DIR="$(dirname "$EXPERIMENT_DIR")/011-lora-baseline-2026"
+
+export_protoclr_2026() {
+    echo "=== Exporting ProtoCLR (2026-trained) ==="
+    local CKPT="${CHECKPOINTS_BASE}/011-lora-baseline-2026/checkpoints/2026-protoclr-lora-attn/best-epochepoch=21.ckpt"
+    python scripts/export_protoclr.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP011_DIR}/config/protoclr_lora_attn.yaml" \
+        --train-csv "$TRAIN_CSV_2026" \
+        --output-dir artifacts/weights/protoclr-2026/
+}
+
+export_eat_2026() {
+    echo "=== Exporting EAT (2026-trained) ==="
+    local CKPT="${CHECKPOINTS_BASE}/011-lora-baseline-2026/checkpoints/2026-eat-lora-attn-mlphead/best-epochepoch=17.ckpt"
+    python scripts/export_eat.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP011_DIR}/config/eat_lora_attn_mlphead.yaml" \
+        --train-csv "$TRAIN_CSV_2026" \
+        --output-dir artifacts/weights/eat-2026/
+}
+
+export_convnext_2026() {
+    echo "=== Exporting ConvNeXt (2026-trained) ==="
+    local CKPT="${CHECKPOINTS_BASE}/011-lora-baseline-2026/checkpoints/2026-convnext-lora-mlp-mlphead/best-epochepoch=09.ckpt"
+    python scripts/export_convnext.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP011_DIR}/config/convnext_lora_mlp_mlphead.yaml" \
+        --train-csv "$TRAIN_CSV_2026" \
+        --output-dir artifacts/weights/convnext-2026/
+}
+
+# ============================================================================
+# Build species mappings and run exports
+# ============================================================================
 
 case "$MODEL" in
-    eat)      export_eat ;;
-    convnext) export_convnext ;;
-    protoclr) export_protoclr ;;
+    # 2025-trained models
+    eat|convnext|protoclr|all)
+        echo "=== Building species mapping (2025→2026) ==="
+        python scripts/build_species_mapping.py \
+            --output artifacts/weights/species_mapping.json
+        echo ""
+        ;;
+esac
+
+case "$MODEL" in
+    # 2026-trained models
+    protoclr-2026|eat-2026|convnext-2026|all-2026)
+        echo "=== Building species mapping (2026→2026) ==="
+        python scripts/build_species_mapping.py \
+            --train-csv "$TRAIN_CSV_2026" \
+            --output artifacts/weights/species_mapping_2026.json
+        echo ""
+        ;;
+esac
+
+case "$MODEL" in
+    eat)            export_eat ;;
+    convnext)       export_convnext ;;
+    protoclr)       export_protoclr ;;
+    protoclr-2026)  export_protoclr_2026 ;;
+    eat-2026)       export_eat_2026 ;;
+    convnext-2026)  export_convnext_2026 ;;
     all)
         export_eat
         echo ""
         export_convnext
         echo ""
         export_protoclr
+        ;;
+    all-2026)
+        export_protoclr_2026
+        echo ""
+        export_eat_2026
+        echo ""
+        export_convnext_2026
         ;;
     *)
         echo "Unknown model: $MODEL"

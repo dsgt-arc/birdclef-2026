@@ -31,7 +31,8 @@ if [[ $# -lt 1 ]]; then
     echo "  validate   CPU job: timing test on train_soundscapes"
     echo ""
     echo "Options:"
-    echo "  --model M   Model to process: eat, convnext, protoclr, all (default: all)"
+    echo "  --model M   Model to process: eat, convnext, protoclr, protoclr-2026,"
+    echo "              eat-2026, convnext-2026, all, all-2026 (default: all)"
     echo "  --dry-run   Preview sbatch command without submitting"
     exit 1
 fi

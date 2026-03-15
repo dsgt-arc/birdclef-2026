@@ -34,6 +34,7 @@ DEPS_SLUG = "birdclef-2025-deps"
 DEPS_DIR = "artifacts/dist/dependencies"
 
 MODELS = {
+    # Models trained on BirdCLEF 2025 data
     "eat": {
         "slug": "birdclef-2025-eat-weights",
         "weights_dir": "artifacts/weights/eat",
@@ -48,6 +49,22 @@ MODELS = {
         "slug": "birdclef-2025-protoclr-weights",
         "weights_dir": "artifacts/weights/protoclr",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr.json",
+    },
+    # Models trained on BirdCLEF 2026 focal data (exp 011)
+    "protoclr-2026": {
+        "slug": "birdclef-2026-protoclr-weights",
+        "weights_dir": "artifacts/weights/protoclr-2026",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026.json",
+    },
+    "eat-2026": {
+        "slug": "birdclef-2026-eat-weights",
+        "weights_dir": "artifacts/weights/eat-2026",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-eat-2026.json",
+    },
+    "convnext-2026": {
+        "slug": "birdclef-2026-convnext-weights",
+        "weights_dir": "artifacts/weights/convnext-2026",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-convnext-2026.json",
     },
 }
 
@@ -151,11 +168,17 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
         return
 
     # Copy species_mapping.json into model weights dir
-    mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping.json"
+    # Use 2026 mapping for 2026-trained models, 2025 mapping otherwise
+    if model_name.endswith("-2026"):
+        mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026.json"
+    else:
+        mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping.json"
     mapping_dst = weights_dir / "species_mapping.json"
-    if mapping_src.exists() and not mapping_dst.exists():
+    if mapping_src.exists():
         shutil.copy2(mapping_src, mapping_dst)
-        print(f"  Copied species_mapping.json to {weights_dir}")
+        print(f"  Copied {mapping_src.name} to {weights_dir}")
+    elif not mapping_dst.exists():
+        print(f"  WARNING: {mapping_src} not found, species_mapping.json missing")
 
     upload_dataset(model_cfg["slug"], weights_dir, kaggle_user, dry_run)
 
@@ -186,8 +209,8 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=["eat", "convnext", "protoclr", "all"],
-        help="Model to upload",
+        choices=list(MODELS.keys()) + ["all", "all-2025", "all-2026"],
+        help="Model to upload (e.g., protoclr, protoclr-2026, all, all-2025, all-2026)",
     )
     parser.add_argument("--kaggle-user", type=str, default=DEFAULT_KAGGLE_USER)
     parser.add_argument("--push-kernel", action="store_true", help="Also push the Kaggle kernel")
@@ -202,7 +225,14 @@ def main():
         sys.exit(1)
 
     experiment_dir = get_experiment_dir()
-    models = list(MODELS.keys()) if args.model == "all" else [args.model]
+    if args.model == "all":
+        models = list(MODELS.keys())
+    elif args.model == "all-2025":
+        models = [k for k in MODELS if not k.endswith("-2026")]
+    elif args.model == "all-2026":
+        models = [k for k in MODELS if k.endswith("-2026")]
+    else:
+        models = [args.model]
 
     # Upload deps dataset (shared across all models)
     deps_path = experiment_dir / DEPS_DIR

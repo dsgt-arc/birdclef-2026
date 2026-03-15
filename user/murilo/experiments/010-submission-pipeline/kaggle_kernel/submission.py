@@ -87,6 +87,11 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Models trained on BirdCLEF 2026 focal data (206/234 species mapped)
+    "birdclef-2026-protoclr-weights",
+    "birdclef-2026-eat-weights",
+    "birdclef-2026-convnext-weights",
+    # Models trained on BirdCLEF 2025 data (41/234 species mapped)
     "birdclef-2025-eat-weights",
     "birdclef-2025-convnext-weights",
     "birdclef-2025-protoclr-weights",
@@ -326,7 +331,7 @@ def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
     total_duration = info.frames / info.samplerate
 
     species_2026 = species_mapping["birdclef2026_species"]
-    idx_map = species_mapping["idx_2025_to_name_2026"]
+    idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
 
     predictions = []
     window_start_s = 0.0
@@ -399,7 +404,8 @@ def main():
 
     mel_type = mel_cfg.get("type", "mel")
     print(f"Mel type: {mel_type}, SR: {mel_cfg['sr']}")
-    print(f"Species mapping: {len(species_mapping['idx_2025_to_name_2026'])} overlapping")
+    idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
+    print(f"Species mapping: {len(idx_map)} mapped to 2026 columns")
 
     # Create ONNX session (CPU only)
     session = ort.InferenceSession(

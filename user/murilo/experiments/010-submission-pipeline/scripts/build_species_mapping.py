@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
-"""Build species mapping between BirdCLEF 2025 model outputs and 2026 submission columns.
+"""Build species mapping between model outputs and BirdCLEF 2026 submission columns.
 
-Computes overlap between 206 BirdCLEF 2025 species (model output indices) and
+Computes overlap between model output species (from training data) and
 234 BirdCLEF 2026 species (submission columns). Saves mapping JSON for use in
 both ONNX export and Kaggle inference.
 
+Works for both 2025-trained and 2026-trained models:
+  - 2025-trained: 41/206 species overlap with 2026 submission columns
+  - 2026-trained: 206/206 species overlap (all focal species map directly)
+
 Usage:
+    # For 2025-trained models (41 overlap)
     python scripts/build_species_mapping.py \
         --train-csv /path/to/birdclef-2025/train.csv \
-        --submission-csv /path/to/birdclef-2026/sample_submission.csv \
         --output artifacts/weights/species_mapping.json
+
+    # For 2026-trained models (206 overlap)
+    python scripts/build_species_mapping.py \
+        --train-csv /path/to/birdclef-2026/train.csv \
+        --output artifacts/weights/species_mapping_2026.json
 """
 
 import argparse
@@ -30,12 +39,12 @@ def build_species_list(metadata_csv: str | Path) -> list[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build BirdCLEF 2025→2026 species mapping")
+    parser = argparse.ArgumentParser(description="Build model→2026 species mapping")
     parser.add_argument(
         "--train-csv",
         type=str,
         default="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2025/train.csv",
-        help="BirdCLEF 2025 train.csv",
+        help="Train CSV for the model's training data (2025 or 2026)",
     )
     parser.add_argument(
         "--submission-csv",
@@ -53,9 +62,9 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    # BirdCLEF 2025: sorted species list (matches model output dimension order)
-    species_2025 = build_species_list(args.train_csv)
-    logger.info(f"BirdCLEF 2025: {len(species_2025)} species")
+    # Model species: sorted species list (matches model output dimension order)
+    model_species = build_species_list(args.train_csv)
+    logger.info(f"Model species: {len(model_species)} (from {args.train_csv})")
 
     # BirdCLEF 2026: species from submission columns (excluding row_id)
     sub_df = pd.read_csv(args.submission_csv, nrows=1)
@@ -63,27 +72,29 @@ def main():
     logger.info(f"BirdCLEF 2026: {len(species_2026)} species")
 
     # Compute overlap
-    set_2025 = set(species_2025)
+    set_model = set(model_species)
     set_2026 = set(species_2026)
-    overlap = set_2025 & set_2026
+    overlap = set_model & set_2026
     logger.info(f"Overlap: {len(overlap)} species")
-    logger.info(f"  2025-only: {len(set_2025 - set_2026)} species")
-    logger.info(f"  2026-only: {len(set_2026 - set_2025)} species")
+    logger.info(f"  Model-only: {len(set_model - set_2026)} species")
+    logger.info(f"  2026-only: {len(set_2026 - set_model)} species")
 
-    # Build mapping: model output index (2025) → 2026 column name
-    # Only for species that exist in both years
-    idx_2025_to_name_2026 = {}
-    for idx, sp in enumerate(species_2025):
+    # Build mapping: model output index → 2026 column name
+    # Only for species that exist in both the model output and 2026 submission
+    idx_to_name_2026 = {}
+    for idx, sp in enumerate(model_species):
         if sp in set_2026:
-            idx_2025_to_name_2026[str(idx)] = sp
+            idx_to_name_2026[str(idx)] = sp
 
-    logger.info(f"Mapped {len(idx_2025_to_name_2026)} model output indices to 2026 species")
+    logger.info(f"Mapped {len(idx_to_name_2026)} model output indices to 2026 species")
 
-    # Save mapping
+    # Save mapping (idx_to_name_2026 is the canonical key;
+    # idx_2025_to_name_2026 kept for backward compatibility with existing Kaggle kernels)
     mapping = {
-        "birdclef2025_species": species_2025,
+        "model_species": model_species,
         "birdclef2026_species": species_2026,
-        "idx_2025_to_name_2026": idx_2025_to_name_2026,
+        "idx_to_name_2026": idx_to_name_2026,
+        "idx_2025_to_name_2026": idx_to_name_2026,  # backward compat
     }
 
     output_path = Path(args.output)
@@ -96,7 +107,7 @@ def main():
     # Print overlap species for verification
     logger.info("Overlapping species:")
     for sp in sorted(overlap):
-        idx = species_2025.index(sp)
+        idx = model_species.index(sp)
         logger.info(f"  [{idx:3d}] {sp}")
 
 
