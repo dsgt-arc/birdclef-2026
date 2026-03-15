@@ -31,7 +31,7 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 
 - [x] 5.1 Fix Kaggle username: `mgustineli3` → `murilogustineli`
 - [x] 5.2 Fix kernel metadata: `id` must match slugified `title`
-- [x] 5.3 Bundle onnxruntime wheels as a separate Kaggle dataset (`birdclef-2025-deps`) — no internet on Kaggle
+- [x] 5.3 Bundle onnxruntime wheels as a separate Kaggle dataset (`birdclef-deps`) — no internet on Kaggle
 - [x] 5.4 Add pip install fallback for onnxruntime in kernel
 - [x] 5.5 Switch to Anthony's two-dataset pattern for Kaggle submission (deps + weights as separate datasets)
 - [x] 5.6 Add debug logging for Kaggle input paths during scoring
@@ -42,7 +42,7 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 ## 6. Kaggle Submissions — BirdCLEF 2025-Trained Models
 
 - [x] 6.1 Upload ProtoCLR weights to Kaggle (`birdclef-2025-protoclr-weights`)
-- [x] 6.2 Upload deps dataset to Kaggle (`birdclef-2025-deps`)
+- [x] 6.2 Upload deps dataset to Kaggle (`birdclef-deps`)
 - [x] 6.3 Push ProtoCLR kernel — v10 had ONNX IndexError, v11 surfaced the bug via train fallback, v12 fixed with `flatten()`
 - [x] 6.4 ProtoCLR v12 scored successfully: **0.531 macro-AUROC** on public LB (2026-03-15)
 - [ ] 6.5 Upload and submit EAT model: `python scripts/upload_kaggle.py --model eat-2025 --push-kernel`
@@ -70,4 +70,4 @@ Submit LoRA models to the BirdCLEF 2026 competition via ONNX export and a unifie
 - **Upload command**: `source ~/clef/birdclef-2026/.venv/bin/activate && cd user/murilo/experiments/010-submission-pipeline && python scripts/upload_kaggle.py --model protoclr-2026 --push-kernel`
 - **Check status**: `kaggle competitions submissions birdclef-2026`
 - **Species mapping**: 2025 models map 41/234 species; 2026 models map 206/234 species (28 soundscape-only insect sonotypes have no training data)
-- **Deps dataset is shared**: `birdclef-2025-deps` works for both 2025 and 2026 model kernels
+- **Deps dataset is shared**: `birdclef-deps` works for both 2025 and 2026 model kernels

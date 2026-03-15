@@ -35,7 +35,7 @@ from pathlib import Path
 DEFAULT_KAGGLE_USER = "murilogustineli"
 
 # Separate deps dataset (onnxruntime wheels for offline Kaggle install)
-DEPS_SLUG = "birdclef-2025-deps"
+DEPS_SLUG = "birdclef-deps"
 DEPS_DIR = "artifacts/dist/dependencies"
 
 MODELS = {

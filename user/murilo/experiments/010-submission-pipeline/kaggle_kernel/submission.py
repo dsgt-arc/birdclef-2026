@@ -26,7 +26,7 @@ Supports three mel types:
 
 # ---------------------------------------------------------------------------
 # Offline dependency installation (runs on Kaggle before imports)
-# Wheels are in a separate Kaggle dataset: birdclef-2025-deps
+# Wheels are in a separate Kaggle dataset: birdclef-deps
 # ---------------------------------------------------------------------------
 import os
 import subprocess
@@ -47,7 +47,7 @@ def _find_input(slug: str) -> str:
     return candidates[0]  # fallback to old-style
 
 
-DEPS_DIR = _find_input("birdclef-2025-deps")
+DEPS_DIR = _find_input("birdclef-deps")
 
 # Debug: show what we see in /kaggle/input
 if os.path.exists("/kaggle/input"):

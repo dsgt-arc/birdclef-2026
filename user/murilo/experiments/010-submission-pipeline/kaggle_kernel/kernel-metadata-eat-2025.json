@@ -8,7 +8,7 @@
   "enable_gpu": false,
   "enable_internet": false,
   "dataset_sources": [
-    "murilogustineli/birdclef-2025-deps",
+    "murilogustineli/birdclef-deps",
     "murilogustineli/birdclef-2025-eat-weights"
   ],
   "competition_sources": ["birdclef-2026"],

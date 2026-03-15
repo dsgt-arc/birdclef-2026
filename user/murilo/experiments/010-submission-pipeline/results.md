@@ -52,7 +52,7 @@ have no focal training data and get 0.0 predictions.
 |-------|-----------|-----|-------------------|
 | Notebook Threw Exception | ONNX output shape (1,206) vs (206,) | `logits.flatten()` before sigmoid | v3–v10 |
 | Empty test_soundscapes | Expected Kaggle behavior during public run | train_soundscapes fallback (2 files) | v11 |
-| onnxruntime not found | No internet on Kaggle | Bundled wheels in `birdclef-2025-deps` dataset | v4–v6 |
+| onnxruntime not found | No internet on Kaggle | Bundled wheels in `birdclef-deps` dataset | v4–v6 |
 | Kernel ID mismatch | `id` field must match slugified `title` | Fixed metadata generation | v2 |
 
 ## Artifacts

@@ -2,7 +2,7 @@
 # Download dependency wheels for offline Kaggle kernel installation.
 #
 # Downloads manylinux wheels compatible with Kaggle's Python 3.12 + x86_64 environment.
-# These get uploaded as a separate Kaggle dataset (birdclef-2025-deps) and installed
+# These get uploaded as a separate Kaggle dataset (birdclef-deps) and installed
 # offline in the submission kernel via pip --no-index --find-links.
 #
 # Usage:
