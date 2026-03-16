@@ -31,6 +31,11 @@ def main():
         help="Path to the config YAML used for training",
     )
     parser.add_argument(
+        "--train-all",
+        action="store_true",
+        help="Match the --train-all suffix used by train.py",
+    )
+    parser.add_argument(
         "--artifacts-dir",
         type=str,
         default="artifacts/training",
@@ -46,6 +51,8 @@ def main():
         config = yaml.safe_load(f)
 
     run_name = config["run_name"]
+    if args.train_all:
+        run_name = f"{run_name}-fulldata"
 
     # Load raw test results from train.py
     results_file = experiment_dir / "outputs" / "test_results" / f"{run_name}.json"
@@ -61,6 +68,8 @@ def main():
 
     # Derive variant name from config filename
     variant_name = Path(args.config).stem
+    if args.train_all:
+        variant_name = f"{variant_name}-fulldata"
 
     # Build structured metrics
     metrics = {
@@ -85,7 +94,8 @@ def main():
         },
         # Dataset info
         "dataset": "birdclef-2026",
-        "split": "test",
+        "train_all": args.train_all,
+        "split": "none (train_all)" if args.train_all else "test",
         "num_classes": raw.get("num_classes"),
         # Training dynamics
         "best_val_cmap": raw.get("best_val_cmap"),

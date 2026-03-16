@@ -25,6 +25,7 @@ set -eu
 # Config file and project name (passed via environment variables from run.sh)
 CONFIG="${CONFIG:-config/eat_lora_attn_mlphead.yaml}"
 PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
+TRAIN_ALL="${TRAIN_ALL:-false}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 GPU_CHECK="${GPU_CHECK:-0}"
 NUM_WORKERS="${NUM_WORKERS:-}"
@@ -152,6 +153,10 @@ echo "Starting training..."
 echo ""
 
 TRAIN_CMD="python train.py --config ${CONFIG} --project-name ${PROJECT_NAME}"
+if [[ "${TRAIN_ALL}" == "true" ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --train-all"
+    echo "  (train_all mode: 100% focal data, no val/test split)"
+fi
 if [[ "${FAST_DEV_RUN}" == "true" ]]; then
     TRAIN_CMD="${TRAIN_CMD} --fast-dev-run"
     echo "  (fast dev run: 5 batches, no W&B)"
@@ -174,7 +179,11 @@ srun ${TRAIN_CMD}
 if [[ "${FAST_DEV_RUN}" != "true" && "${GPU_CHECK}" -eq 0 ]]; then
     echo ""
     echo "Saving structured metrics to artifacts/..."
-    python save_metrics.py --config "${CONFIG}"
+    METRICS_CMD="python save_metrics.py --config ${CONFIG}"
+    if [[ "${TRAIN_ALL}" == "true" ]]; then
+        METRICS_CMD="${METRICS_CMD} --train-all"
+    fi
+    ${METRICS_CMD}
 fi
 
 echo ""

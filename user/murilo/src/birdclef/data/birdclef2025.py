@@ -200,6 +200,7 @@ class BirdCLEFDataModule(pl.LightningDataModule):
         num_workers: int = 8,
         val_fraction: float = 0.1,
         test_fraction: float = 0.1,
+        train_all: bool = False,
         seed: int = 42,
         transform=None,
     ):
@@ -213,6 +214,7 @@ class BirdCLEFDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.val_fraction = val_fraction
         self.test_fraction = test_fraction
+        self.train_all = train_all
         self.seed = seed
         self.transform = transform
 
@@ -284,44 +286,60 @@ class BirdCLEFDataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         # Only build datasets once (they're deterministic given the seed)
-        if (
-            self.train_dataset is not None
-            and self.val_dataset is not None
-            and self.test_dataset is not None
-        ):
+        if self.train_dataset is not None:
             return
 
         df = pd.read_csv(self.metadata_csv)
-        train_df, val_df, test_df = self._split_dataframe(df)
 
-        logger.info(
-            f"Split: {len(train_df)} train, {len(val_df)} val, " f"{len(test_df)} test recordings"
-        )
-
-        self.train_dataset = BirdCLEFDataset(
-            audio_dir=self.audio_dir,
-            metadata_df=train_df,
-            species_list=self.species_list,
-            sample_rate=self.sample_rate,
-            chunk_duration=self.chunk_duration,
-            transform=self.transform,
-        )
-        self.val_dataset = BirdCLEFDataset(
-            audio_dir=self.audio_dir,
-            metadata_df=val_df,
-            species_list=self.species_list,
-            sample_rate=self.sample_rate,
-            chunk_duration=self.chunk_duration,
-            transform=self.transform,
-        )
-        self.test_dataset = BirdCLEFDataset(
-            audio_dir=self.audio_dir,
-            metadata_df=test_df,
-            species_list=self.species_list,
-            sample_rate=self.sample_rate,
-            chunk_duration=self.chunk_duration,
-            transform=self.transform,
-        )
+        if self.train_all:
+            # Use 100% of data for training (no val/test split)
+            train_df = df
+            logger.info(
+                f"train_all=True: using all {len(train_df)} recordings for training "
+                f"(no val/test split)"
+            )
+            self.train_dataset = BirdCLEFDataset(
+                audio_dir=self.audio_dir,
+                metadata_df=train_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                chunk_duration=self.chunk_duration,
+                transform=self.transform,
+            )
+            # PL requires valid iterables for val/test even when limit_val_batches=0.
+            # Point them at the train dataset as a placeholder (never actually iterated).
+            self.val_dataset = self.train_dataset
+            self.test_dataset = self.train_dataset
+        else:
+            train_df, val_df, test_df = self._split_dataframe(df)
+            logger.info(
+                f"Split: {len(train_df)} train, {len(val_df)} val, "
+                f"{len(test_df)} test recordings"
+            )
+            self.train_dataset = BirdCLEFDataset(
+                audio_dir=self.audio_dir,
+                metadata_df=train_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                chunk_duration=self.chunk_duration,
+                transform=self.transform,
+            )
+            self.val_dataset = BirdCLEFDataset(
+                audio_dir=self.audio_dir,
+                metadata_df=val_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                chunk_duration=self.chunk_duration,
+                transform=self.transform,
+            )
+            self.test_dataset = BirdCLEFDataset(
+                audio_dir=self.audio_dir,
+                metadata_df=test_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                chunk_duration=self.chunk_duration,
+                transform=self.transform,
+            )
 
     def train_dataloader(self):
         return DataLoader(

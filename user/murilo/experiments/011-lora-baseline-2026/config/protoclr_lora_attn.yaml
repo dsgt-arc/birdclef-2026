@@ -25,6 +25,7 @@ data:
   num_workers: 8
   val_fraction: 0.1
   test_fraction: 0.1
+  train_all: false           # set true (or use --train-all) to train on 100% focal data
   seed: 42
 
 training:

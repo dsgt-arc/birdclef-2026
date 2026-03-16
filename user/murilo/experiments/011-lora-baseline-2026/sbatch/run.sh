@@ -13,6 +13,10 @@
 #   bash sbatch/run.sh --all
 #   bash sbatch/run.sh --all --num-workers 12
 #
+#   # Train on 100% of focal data (no val/test split)
+#   bash sbatch/run.sh config/eat_lora_attn_mlphead.yaml --train-all
+#   bash sbatch/run.sh --all --train-all
+#
 #   # Fast dev run (5 batches, no W&B logging — pipeline validation)
 #   bash sbatch/run.sh config/eat_lora_attn_mlphead.yaml --fast-dev-run
 #   bash sbatch/run.sh --all --fast-dev-run
@@ -38,6 +42,7 @@ GPU_CHECK=0
 NUM_WORKERS=""
 CONFIG=""
 ALL=false
+TRAIN_ALL=false
 PROJECT_NAME="ps-clef2026_birdclef-0"
 
 while [[ $# -gt 0 ]]; do
@@ -48,6 +53,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --train-all)
+            TRAIN_ALL=true
             shift
             ;;
         --fast-dev-run)
@@ -75,6 +84,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --project-name    PACE project allocation name (default: ps-clef2026_birdclef-0)"
+            echo "  --train-all       Train on 100% focal data (no val/test split)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
             echo "  --gpu-check N     Run N epochs for GPU utilization check, then exit"
             echo "  --num-workers N   Override num_workers from config"
@@ -107,6 +117,7 @@ if [[ "${ALL}" == "true" ]]; then
     # Forward all flags except --all and CONFIG
     EXTRA_ARGS=()
     [[ "${DRY_RUN}" == "true" ]] && EXTRA_ARGS+=(--dry-run)
+    [[ "${TRAIN_ALL}" == "true" ]] && EXTRA_ARGS+=(--train-all)
     [[ "${FAST_DEV_RUN}" == "true" ]] && EXTRA_ARGS+=(--fast-dev-run)
     [[ "${GPU_CHECK}" -gt 0 ]] && EXTRA_ARGS+=(--gpu-check "${GPU_CHECK}")
     [[ -n "${NUM_WORKERS}" ]] && EXTRA_ARGS+=(--num-workers "${NUM_WORKERS}")
@@ -153,6 +164,7 @@ echo "Experiment dir: ${EXPERIMENT_DIR}"
 echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
 echo "Project: ${PROJECT_NAME}"
+echo "Train all: ${TRAIN_ALL}"
 echo "Fast dev run: ${FAST_DEV_RUN}"
 echo "GPU check: ${GPU_CHECK}"
 echo "Num workers: ${NUM_WORKERS:-config default}"
@@ -184,7 +196,7 @@ fi
 
 CMD="sbatch \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK},NUM_WORKERS=${NUM_WORKERS} \
+    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},TRAIN_ALL=${TRAIN_ALL},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK},NUM_WORKERS=${NUM_WORKERS} \
     --job-name=exp011-${RUN_NAME} \
     ${CPUS_OVERRIDE} \
     ${JOB_SCRIPT}"

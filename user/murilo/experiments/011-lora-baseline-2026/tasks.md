@@ -40,15 +40,40 @@ Retrain the proven LoRA fine-tuning pipeline (EAT, ConvNeXt, ProtoCLR) on BirdCL
 - [x] 5.3 Confirm all 3 models fit in RTX 6000 (24GB) VRAM — all under 4% usage
 - [x] 5.4 No batch size adjustments needed — utilization is healthy across the board
 
-## 6. Full Training
+## 6. Full Training (80/10/10 split)
 
-- [ ] 6.1 Submit all 3 configs: `sbatch/run.sh --all`
-- [ ] 6.2 Monitor on W&B (`dsgt-arc/birdclef-2026-lora-finetune`)
-- [ ] 6.3 Verify convergence within 50 epochs for all 3 models
-- [ ] 6.4 Record cmAP/AUROC for each model
+- [x] 6.1 Submit all 3 configs: `sbatch/run.sh --all`
+- [x] 6.2 Monitor on W&B (`dsgt-arc/birdclef-2026-lora-finetune`)
+- [x] 6.3 Verify convergence within 50 epochs for all 3 models
+  - ConvNeXt: best epoch 9, stopped at 20
+  - EAT: best epoch 17, stopped at 28
+  - ProtoCLR: best epoch 21, stopped at 32
+- [x] 6.4 Record cmAP/AUROC for each model
+  - ConvNeXt: AUROC 0.938, cmAP 0.522
+  - ProtoCLR: AUROC 0.937, cmAP 0.531
+  - EAT: AUROC 0.929, cmAP 0.509
 
 ## 7. Results
 
-- [ ] 7.1 Compare 2026 results with 2025 baselines (AUROC ~0.94 for all 3)
-- [ ] 7.2 Write results.md with cmAP/AUROC per model, training curves, and comparison to 2025
-- [ ] 7.3 Update `EXPERIMENTS.md` with exp 011 findings
+- [x] 7.1 Compare 2026 results with 2025 baselines (AUROC ~0.94 for all 3)
+- [x] 7.2 Write results.md with cmAP/AUROC per model, training curves, and comparison to 2025
+- [x] 7.3 ONNX export + Kaggle submission done in exp 010 — LB scores: ProtoCLR 0.721, ConvNeXt 0.720, EAT 0.701
+
+## 8. Full-Data Retraining (100% focal, no val/test split)
+
+Train on all 35,549 focal recordings to maximize data for competition submission.
+Previous 80/10/10 split leaves ~20% unused. No early stopping — train for fixed epochs
+based on prior convergence (ConvNeXt ~15, EAT ~25, ProtoCLR ~30).
+
+- [x] 8.1 Add `--train-all` flag to `train.py` and `run.sh`/`_job.sh`
+  - `BirdCLEFDataModule(train_all=True)`: all data → training, val/test use train as placeholder
+  - Trainer: `limit_val_batches=0`, `num_sanity_val_steps=0` — no val runs
+  - No EarlyStopping callback, checkpoint saves last + every 5 epochs
+  - Run name gets `-fulldata` suffix (e.g., `2026-eat-lora-attn-mlphead-fulldata`)
+  - Fixed PL compat: PL requires iterable val/test dataloaders even when skipped —
+    val/test datasets point to train_dataset as placeholder
+- [x] 8.2 Add `train_all: false` default to all 3 config files
+- [x] 8.3 Submit all 3 full-data jobs: `sbatch/run.sh --all --train-all` (2026-03-16)
+- [ ] 8.4 Monitor on W&B — verify training loss decreases and doesn't diverge
+- [ ] 8.5 Export full-data checkpoints to ONNX via exp 010 pipeline
+- [ ] 8.6 Submit to Kaggle and compare LB scores with 80/10/10 models

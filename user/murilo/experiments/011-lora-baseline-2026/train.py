@@ -12,6 +12,7 @@ Usage:
     python train.py --config config/convnext_lora_mlp_mlphead.yaml [--fast-dev-run]
     python train.py --config config/protoclr_lora_attn.yaml [--fast-dev-run]
     python train.py --config config/eat_lora_attn_mlphead.yaml --gpu-check 3
+    python train.py --config config/eat_lora_attn_mlphead.yaml --train-all
 """
 
 import argparse
@@ -201,6 +202,12 @@ def main():
         help="Override num_workers from config",
     )
     parser.add_argument(
+        "--train-all",
+        action="store_true",
+        help="Train on 100%% of focal data (no val/test split). "
+        "Disables early stopping; saves last checkpoint only.",
+    )
+    parser.add_argument(
         "--devices",
         type=int,
         default=1,
@@ -213,6 +220,7 @@ def main():
         parser.error("--fast-dev-run and --gpu-check are mutually exclusive")
 
     gpu_check_mode = args.gpu_check > 0
+    train_all = args.train_all
 
     # Derive project directory from project name
     project_dir = Path(f"/storage/project/{args.project_name}/mgustineli3")
@@ -222,6 +230,13 @@ def main():
     config = load_config(config_path)
     run_name = config["run_name"]
     encoder_type = config["encoder"]["type"]
+
+    # Apply --train-all: override config and append suffix to run name
+    if train_all:
+        config["data"]["train_all"] = True
+        run_name = f"{run_name}-fulldata"
+        logger.info("train_all mode: using 100% of focal data, no val/test split")
+
     logger.info(f"Loaded config from {config_path}")
     logger.info(f"Run name: {run_name}")
     logger.info(f"Encoder type: {encoder_type}")
@@ -304,6 +319,7 @@ def main():
         num_workers=config["data"]["num_workers"],
         val_fraction=config["data"].get("val_fraction", 0.1),
         test_fraction=config["data"].get("test_fraction", 0.1),
+        train_all=config["data"].get("train_all", False),
         seed=config["data"].get("seed", 42),
         transform=audio_transform,
     )
@@ -325,33 +341,45 @@ def main():
 
         logger.info("GPU check mode: skipping checkpoints, early stopping, and device stats")
     else:
-        # Normal training: full callback set
-
         # Model checkpoint — save to project shared storage
         checkpoint_dir = project_dir / "experiments" / EXPERIMENT_NAME / "checkpoints" / run_name
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-        checkpoint_callback = ModelCheckpoint(
-            monitor=config["callbacks"]["model_checkpoint"]["monitor"],
-            mode=config["callbacks"]["model_checkpoint"]["mode"],
-            save_top_k=config["callbacks"]["model_checkpoint"]["save_top_k"],
-            save_last=config["callbacks"]["model_checkpoint"]["save_last"],
-            filename=config["callbacks"]["model_checkpoint"]["filename"],
-            dirpath=checkpoint_dir,
-            verbose=True,
-        )
+        if train_all:
+            # Full-data mode: no val metrics to monitor, save last checkpoint only
+            checkpoint_callback = ModelCheckpoint(
+                save_last=True,
+                every_n_epochs=5,
+                filename="epoch{epoch:02d}",
+                dirpath=checkpoint_dir,
+                verbose=True,
+            )
+            logger.info(
+                "train_all mode: saving last checkpoint + every 5 epochs (no early stopping)"
+            )
+        else:
+            # Normal training: monitor val/cmap for best checkpoint + early stopping
+            checkpoint_callback = ModelCheckpoint(
+                monitor=config["callbacks"]["model_checkpoint"]["monitor"],
+                mode=config["callbacks"]["model_checkpoint"]["mode"],
+                save_top_k=config["callbacks"]["model_checkpoint"]["save_top_k"],
+                save_last=config["callbacks"]["model_checkpoint"]["save_last"],
+                filename=config["callbacks"]["model_checkpoint"]["filename"],
+                dirpath=checkpoint_dir,
+                verbose=True,
+            )
+
+            early_stopping = EarlyStopping(
+                monitor=config["callbacks"]["early_stopping"]["monitor"],
+                mode=config["callbacks"]["early_stopping"]["mode"],
+                patience=config["callbacks"]["early_stopping"]["patience"],
+                min_delta=config["callbacks"]["early_stopping"]["min_delta"],
+                verbose=True,
+            )
+            callbacks.append(early_stopping)
+
         callbacks.append(checkpoint_callback)
         logger.info(f"Checkpoints will be saved to: {checkpoint_dir}")
-
-        # Early stopping
-        early_stopping = EarlyStopping(
-            monitor=config["callbacks"]["early_stopping"]["monitor"],
-            mode=config["callbacks"]["early_stopping"]["mode"],
-            patience=config["callbacks"]["early_stopping"]["patience"],
-            min_delta=config["callbacks"]["early_stopping"]["min_delta"],
-            verbose=True,
-        )
-        callbacks.append(early_stopping)
 
         # Learning rate monitor
         lr_monitor = LearningRateMonitor(logging_interval="epoch")
@@ -387,7 +415,12 @@ def main():
         )
         # Log full config + fine-tuning details
         wandb_logger.experiment.config.update(config)
-        wandb_logger.experiment.config.update({"finetune_mode": "lora" if use_lora else "full"})
+        wandb_logger.experiment.config.update(
+            {
+                "finetune_mode": "lora" if use_lora else "full",
+                "train_all": train_all,
+            }
+        )
         if use_lora:
             wandb_logger.experiment.config.update(
                 {
@@ -412,6 +445,8 @@ def main():
         logger=loggers,
         log_every_n_steps=config["logging"]["log_every_n_steps"],
         fast_dev_run=5 if args.fast_dev_run else False,
+        limit_val_batches=0 if train_all else 1.0,
+        num_sanity_val_steps=0 if train_all else 2,
         enable_progress_bar=True,
         enable_model_summary=True,
     )
@@ -431,8 +466,11 @@ def main():
         logger.info("GPU check complete!")
         return
 
-    # Evaluate on held-out test set using best checkpoint
-    if not args.fast_dev_run and checkpoint_callback.best_model_path:
+    # Evaluate on held-out test set (skip when train_all — no test split exists)
+    test_results = None
+    if train_all:
+        logger.info("train_all mode: skipping test evaluation (no held-out test set)")
+    elif not args.fast_dev_run and checkpoint_callback.best_model_path:
         logger.info(
             f"Evaluating best checkpoint on test set: {checkpoint_callback.best_model_path}"
         )
@@ -442,8 +480,6 @@ def main():
     elif args.fast_dev_run:
         logger.info("Fast dev run — running test step for pipeline validation")
         test_results = trainer.test(pl_module, datamodule=data_module)
-    else:
-        test_results = None
 
     # Save results
     if not args.fast_dev_run:
@@ -451,14 +487,25 @@ def main():
         results_dir.mkdir(parents=True, exist_ok=True)
         results_file = results_dir / f"{run_name}.json"
 
+        # For train_all, use last checkpoint path; for normal, use best
+        if train_all:
+            best_score = None
+            best_path = str(checkpoint_callback.last_model_path)
+        else:
+            best_score = (
+                float(checkpoint_callback.best_model_score)
+                if checkpoint_callback.best_model_score is not None
+                else None
+            )
+            best_path = str(checkpoint_callback.best_model_path)
+
         raw_results = {
             "config_path": str(config_path),
             "run_name": run_name,
             "finetune_mode": "lora" if use_lora else "full",
-            "best_val_cmap": float(checkpoint_callback.best_model_score)
-            if checkpoint_callback.best_model_score is not None
-            else None,
-            "best_checkpoint_path": str(checkpoint_callback.best_model_path),
+            "train_all": train_all,
+            "best_val_cmap": best_score,
+            "best_checkpoint_path": best_path,
             "stopped_epoch": trainer.current_epoch,
             "num_classes": num_classes,
             "encoder_type": encoder_type,
