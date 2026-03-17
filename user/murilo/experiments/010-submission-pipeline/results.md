@@ -23,7 +23,7 @@ pipeline validation, not competitive scores.
 | EAT LoRA attn+MLP head | BirdCLEF 2025 | 41/234 | — | — | — |
 | ConvNeXt LoRA MLP+MLP head | BirdCLEF 2025 | 41/234 | — | — | — |
 
-### Models Trained on BirdCLEF 2026
+### Models Trained on BirdCLEF 2026 (80/10/10 split)
 
 These models cover all 206 focal species. The 28 soundscape-only species (insect sonotypes)
 have no focal training data and get 0.0 predictions.
@@ -34,8 +34,18 @@ have no focal training data and get 0.0 predictions.
 | ConvNeXt LoRA MLP+MLP head | BirdCLEF 2026 (exp 011) | 206/234 | **0.720** | v1 | 2026-03-15 |
 | EAT LoRA attn+MLP head | BirdCLEF 2026 (exp 011) | 206/234 | **0.701** | v1 | 2026-03-15 |
 
+### Models Trained on BirdCLEF 2026 (100% fulldata)
+
+Same architectures retrained on all 35,549 focal recordings (no val/test holdout, fixed epochs).
+
+| Model | Training Data | Mapped Species | Public LB Score | Kernel Version | Date |
+|-------|--------------|---------------:|----------------:|----------------|------|
+| ProtoCLR LoRA attn | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.736** | v1 | 2026-03-17 |
+| ConvNeXt LoRA MLP+MLP head | BirdCLEF 2026 fulldata (exp 011) | 206/234 | — | — | — |
+| EAT LoRA attn+MLP head | BirdCLEF 2026 fulldata (exp 011) | 206/234 | — | — | — |
+
 **Note**: Public LB uses ~34% of test data. Final standings use the remaining ~66%.
-All 2026 models were trained on 80% of focal data (80/10/10 train/val/test split).
+ProtoCLR fulldata improved from 0.721 → **0.736** (+0.015) by training on 100% of focal data.
 
 ## Observations
 
