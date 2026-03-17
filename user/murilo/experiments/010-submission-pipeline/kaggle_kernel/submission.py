@@ -91,7 +91,11 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
-    # Models trained on BirdCLEF 2026 focal data (206/234 species mapped)
+    # Models trained on BirdCLEF 2026 focal data, 100% fulldata (206/234 species mapped)
+    "birdclef-2026-protoclr-fulldata-weights",
+    "birdclef-2026-eat-fulldata-weights",
+    "birdclef-2026-convnext-fulldata-weights",
+    # Models trained on BirdCLEF 2026 focal data, 80/10/10 split (206/234 species mapped)
     "birdclef-2026-protoclr-weights",
     "birdclef-2026-eat-weights",
     "birdclef-2026-convnext-weights",
@@ -124,6 +128,9 @@ def find_weights_dir() -> Path:
     # Local testing fallback
     local = Path("artifacts/weights")
     for subdir in [
+        "protoclr-2026-fulldata",
+        "eat-2026-fulldata",
+        "convnext-2026-fulldata",
         "protoclr-2026",
         "eat-2026",
         "convnext-2026",

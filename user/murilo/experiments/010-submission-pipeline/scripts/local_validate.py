@@ -4,13 +4,14 @@
 Tests inference on BirdCLEF 2026 train_soundscapes, measures timing,
 validates submission format, and computes rough metrics on overlapping species.
 
-Model names include the training data year:
-  - eat-2025, convnext-2025, protoclr-2025  (exps 006/007/009)
-  - eat-2026, convnext-2026, protoclr-2026  (exp 011)
+Model naming: {encoder}-{year}[-{variant}]
+  - eat-2025, convnext-2025, protoclr-2025        (exps 006/007/009)
+  - eat-2026, convnext-2026, protoclr-2026         (exp 011, 80/10/10)
+  - eat-2026-fulldata, convnext-2026-fulldata, ... (exp 011, fulldata)
 
 Usage:
-    python scripts/local_validate.py --model protoclr-2025 --max-files 10
     python scripts/local_validate.py --model protoclr-2026 --max-files 10
+    python scripts/local_validate.py --model protoclr-2026-fulldata --max-files 10
 """
 
 import argparse
@@ -162,6 +163,9 @@ def main():
             "eat-2026",
             "convnext-2026",
             "protoclr-2026",
+            "eat-2026-fulldata",
+            "convnext-2026-fulldata",
+            "protoclr-2026-fulldata",
         ],
     )
     parser.add_argument(
@@ -190,8 +194,8 @@ def main():
     # Load configs
     with open(weights_dir / "mel_config.json") as f:
         mel_cfg = json.load(f)
-    # Use 2026 mapping for 2026-trained models, 2025 mapping otherwise
-    if args.model.endswith("-2026"):
+    # Use 2026 mapping for 2026-trained models (incl. fulldata), 2025 mapping otherwise
+    if "-2026" in args.model:
         mapping_path = EXPERIMENT_DIR / "artifacts" / "weights" / "species_mapping_2026.json"
     else:
         mapping_path = EXPERIMENT_DIR / "artifacts" / "weights" / "species_mapping.json"

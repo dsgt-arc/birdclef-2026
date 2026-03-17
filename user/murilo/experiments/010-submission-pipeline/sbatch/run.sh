@@ -1,19 +1,26 @@
 #!/bin/bash
 # Launcher script for Experiment 010 submission pipeline jobs.
 #
+# Model naming: {encoder}-{year}[-{variant}]
+#   encoder: eat, convnext, protoclr
+#   year:    2025 (exps 006/007/009), 2026 (exp 011)
+#   variant: (none) = 80/10/10 split, fulldata = 100% focal
+#
 # Usage:
 #   cd user/murilo/experiments/010-submission-pipeline
 #
-#   # ONNX export (GPU) — model names always include training year
-#   bash sbatch/run.sh export --model protoclr-2025   # 2025-trained ProtoCLR (exp 009)
-#   bash sbatch/run.sh export --model protoclr-2026   # 2026-trained ProtoCLR (exp 011)
-#   bash sbatch/run.sh export --model all-2025        # all 3 models trained on 2025
-#   bash sbatch/run.sh export --model all-2026        # all 3 models trained on 2026
-#   bash sbatch/run.sh export --model all-2026 --dry-run
+#   # ONNX export (GPU)
+#   bash sbatch/run.sh export --model protoclr-2025          # 2025-trained (exp 009)
+#   bash sbatch/run.sh export --model protoclr-2026          # 2026 80/10/10 (exp 011)
+#   bash sbatch/run.sh export --model protoclr-2026-fulldata # 2026 fulldata (exp 011 --train-all)
+#   bash sbatch/run.sh export --model all-2025               # all 3 encoders, 2025
+#   bash sbatch/run.sh export --model all-2026               # all 3 encoders, 2026 80/10/10
+#   bash sbatch/run.sh export --model all-2026-fulldata      # all 3 encoders, 2026 fulldata
+#   bash sbatch/run.sh export --model all-2026-fulldata --dry-run
 #
 #   # Local validation (CPU)
-#   bash sbatch/run.sh validate --model protoclr-2026
-#   bash sbatch/run.sh validate --model all-2025
+#   bash sbatch/run.sh validate --model protoclr-2026-fulldata
+#   bash sbatch/run.sh validate --model all-2026
 
 set -eu
 
@@ -33,9 +40,10 @@ if [[ $# -lt 1 ]]; then
     echo "  validate   CPU job: timing test on train_soundscapes"
     echo ""
     echo "Options:"
-    echo "  --model M   Model to process (always includes training year):"
+    echo "  --model M   Model to process ({encoder}-{year}[-{variant}]):"
     echo "              eat-2025, convnext-2025, protoclr-2025, all-2025"
     echo "              eat-2026, convnext-2026, protoclr-2026, all-2026"
+    echo "              eat-2026-fulldata, convnext-2026-fulldata, protoclr-2026-fulldata, all-2026-fulldata"
     echo "  --dry-run   Preview sbatch command without submitting"
     exit 1
 fi

@@ -2,27 +2,31 @@
 """Upload model weights to Kaggle datasets and push submission kernels.
 
 Creates/updates Kaggle datasets with ONNX model weights and pushes the
-unified submission kernel with model-specific metadata. Supports both
-BirdCLEF 2025-trained and 2026-trained models.
+unified submission kernel with model-specific metadata.
 
-Model names always include the training data year for clarity:
-  - protoclr-2025, eat-2025, convnext-2025  (exps 006/007/009)
-  - protoclr-2026, eat-2026, convnext-2026  (exp 011)
+Model naming: {encoder}-{year}[-{variant}]
+  - protoclr-2025, eat-2025, convnext-2025        (exps 006/007/009, 2025 data)
+  - protoclr-2026, eat-2026, convnext-2026         (exp 011, 2026 80/10/10 split)
+  - protoclr-2026-fulldata, eat-2026-fulldata, ... (exp 011, 2026 100% focal)
 
 Usage:
     # Upload 2025-trained models
     python scripts/upload_kaggle.py --model protoclr-2025
     python scripts/upload_kaggle.py --model all-2025
 
-    # Upload 2026-trained models (exp 011)
+    # Upload 2026-trained models (80/10/10 split)
     python scripts/upload_kaggle.py --model protoclr-2026
     python scripts/upload_kaggle.py --model all-2026
 
+    # Upload 2026-trained fulldata models (100% focal)
+    python scripts/upload_kaggle.py --model protoclr-2026-fulldata
+    python scripts/upload_kaggle.py --model all-2026-fulldata
+
     # Upload + push kernel
-    python scripts/upload_kaggle.py --model protoclr-2026 --push-kernel
+    python scripts/upload_kaggle.py --model protoclr-2026-fulldata --push-kernel
 
     # Dry run
-    python scripts/upload_kaggle.py --model protoclr-2026 --dry-run
+    python scripts/upload_kaggle.py --model protoclr-2026-fulldata --dry-run
 """
 
 import argparse
@@ -55,7 +59,7 @@ MODELS = {
         "weights_dir": "artifacts/weights/protoclr-2025",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2025.json",
     },
-    # Models trained on BirdCLEF 2026 focal data (exp 011)
+    # Models trained on BirdCLEF 2026 focal data, 80/10/10 split (exp 011)
     "eat-2026": {
         "slug": "birdclef-2026-eat-weights",
         "weights_dir": "artifacts/weights/eat-2026",
@@ -70,6 +74,22 @@ MODELS = {
         "slug": "birdclef-2026-protoclr-weights",
         "weights_dir": "artifacts/weights/protoclr-2026",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026.json",
+    },
+    # Models trained on BirdCLEF 2026 focal data, 100% fulldata (exp 011 --train-all)
+    "eat-2026-fulldata": {
+        "slug": "birdclef-2026-eat-fulldata-weights",
+        "weights_dir": "artifacts/weights/eat-2026-fulldata",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-eat-2026-fulldata.json",
+    },
+    "convnext-2026-fulldata": {
+        "slug": "birdclef-2026-convnext-fulldata-weights",
+        "weights_dir": "artifacts/weights/convnext-2026-fulldata",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-convnext-2026-fulldata.json",
+    },
+    "protoclr-2026-fulldata": {
+        "slug": "birdclef-2026-protoclr-fulldata-weights",
+        "weights_dir": "artifacts/weights/protoclr-2026-fulldata",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026-fulldata.json",
     },
 }
 
@@ -173,8 +193,8 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
         return
 
     # Copy species_mapping.json into model weights dir
-    # Use 2026 mapping for 2026-trained models, 2025 mapping otherwise
-    if model_name.endswith("-2026"):
+    # Use 2026 mapping for 2026-trained models (incl. fulldata), 2025 mapping otherwise
+    if "-2026" in model_name:
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026.json"
     else:
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping.json"
@@ -214,8 +234,8 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=list(MODELS.keys()) + ["all", "all-2025", "all-2026"],
-        help="Model to upload (e.g., protoclr-2025, protoclr-2026, all-2025, all-2026)",
+        choices=list(MODELS.keys()) + ["all", "all-2025", "all-2026", "all-2026-fulldata"],
+        help="Model to upload (e.g., protoclr-2026, protoclr-2026-fulldata, all-2026-fulldata)",
     )
     parser.add_argument("--kaggle-user", type=str, default=DEFAULT_KAGGLE_USER)
     parser.add_argument("--push-kernel", action="store_true", help="Also push the Kaggle kernel")
@@ -234,8 +254,11 @@ def main():
         models = list(MODELS.keys())
     elif args.model == "all-2025":
         models = [k for k in MODELS if k.endswith("-2025")]
+    elif args.model == "all-2026-fulldata":
+        models = [k for k in MODELS if k.endswith("-2026-fulldata")]
     elif args.model == "all-2026":
-        models = [k for k in MODELS if k.endswith("-2026")]
+        # Only 80/10/10 models, not fulldata
+        models = [k for k in MODELS if k.endswith("-2026") and "-fulldata" not in k]
     else:
         models = [args.model]
 

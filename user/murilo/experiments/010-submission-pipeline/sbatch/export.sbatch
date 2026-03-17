@@ -12,13 +12,18 @@
 #
 # Experiment 010: ONNX Export for BirdCLEF 2026 Submission
 # GPU needed for model construction (HuggingFace) and ONNX tracing.
-# Supports both 2025-trained (exps 006/007/009) and 2026-trained (exp 011) models.
 #
-# Usage:
-#   cd user/murilo/experiments/010-submission-pipeline
-#   sbatch sbatch/export.sbatch                       # export all 2025-trained models
-#   MODEL=protoclr-2026 sbatch sbatch/export.sbatch   # export 2026-trained ProtoCLR
-#   MODEL=all-2026 sbatch sbatch/export.sbatch        # export all 2026-trained models
+# Model naming: {encoder}-{year}[-{variant}]
+# Prefer using run.sh instead of calling this directly.
+#
+# Usage (via run.sh):
+#   bash sbatch/run.sh export --model protoclr-2026          # 2026 80/10/10
+#   bash sbatch/run.sh export --model protoclr-2026-fulldata # 2026 fulldata
+#   bash sbatch/run.sh export --model all-2026-fulldata      # all 3, fulldata
+#
+# Direct usage:
+#   MODEL=protoclr-2026-fulldata sbatch sbatch/export.sbatch
+#   MODEL=all-2026 sbatch sbatch/export.sbatch
 
 set -eu
 
@@ -117,7 +122,7 @@ TRAIN_CSV_2026="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-202
 EXP011_DIR="$(dirname "$EXPERIMENT_DIR")/011-lora-baseline-2026"
 
 export_protoclr_2026() {
-    echo "=== Exporting ProtoCLR (2026-trained) ==="
+    echo "=== Exporting ProtoCLR (2026-trained, 80/10/10) ==="
     local CKPT="${CHECKPOINTS_BASE}/011-lora-baseline-2026/checkpoints/2026-protoclr-lora-attn/best-epochepoch=21.ckpt"
     python scripts/export_protoclr.py \
         --checkpoint "$CKPT" \
@@ -127,7 +132,7 @@ export_protoclr_2026() {
 }
 
 export_eat_2026() {
-    echo "=== Exporting EAT (2026-trained) ==="
+    echo "=== Exporting EAT (2026-trained, 80/10/10) ==="
     local CKPT="${CHECKPOINTS_BASE}/011-lora-baseline-2026/checkpoints/2026-eat-lora-attn-mlphead/best-epochepoch=17.ckpt"
     python scripts/export_eat.py \
         --checkpoint "$CKPT" \
@@ -137,13 +142,69 @@ export_eat_2026() {
 }
 
 export_convnext_2026() {
-    echo "=== Exporting ConvNeXt (2026-trained) ==="
+    echo "=== Exporting ConvNeXt (2026-trained, 80/10/10) ==="
     local CKPT="${CHECKPOINTS_BASE}/011-lora-baseline-2026/checkpoints/2026-convnext-lora-mlp-mlphead/best-epochepoch=09.ckpt"
     python scripts/export_convnext.py \
         --checkpoint "$CKPT" \
         --config "${EXP011_DIR}/config/convnext_lora_mlp_mlphead.yaml" \
         --train-csv "$TRAIN_CSV_2026" \
         --output-dir artifacts/weights/convnext-2026/
+}
+
+# ============================================================================
+# 2026 fulldata model exports (exp 011 --train-all checkpoints)
+# ============================================================================
+
+# Helper: find the most recent last*.ckpt in a checkpoint directory.
+# PL may create last.ckpt or last-v1.ckpt depending on save timing.
+find_last_ckpt() {
+    local ckpt_dir="$1"
+    local ckpt
+    ckpt="$(ls -t "$ckpt_dir"/last*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$ckpt" ]; then
+        echo "ERROR: No last*.ckpt found in $ckpt_dir" >&2
+        exit 1
+    fi
+    echo "$ckpt"
+}
+
+export_protoclr_2026_fulldata() {
+    echo "=== Exporting ProtoCLR (2026-trained, fulldata) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/011-lora-baseline-2026/checkpoints/2026-protoclr-lora-attn-fulldata"
+    local CKPT
+    CKPT="$(find_last_ckpt "$CKPT_DIR")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_protoclr.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP011_DIR}/config/protoclr_lora_attn.yaml" \
+        --train-csv "$TRAIN_CSV_2026" \
+        --output-dir artifacts/weights/protoclr-2026-fulldata/
+}
+
+export_eat_2026_fulldata() {
+    echo "=== Exporting EAT (2026-trained, fulldata) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/011-lora-baseline-2026/checkpoints/2026-eat-lora-attn-mlphead-fulldata"
+    local CKPT
+    CKPT="$(find_last_ckpt "$CKPT_DIR")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_eat.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP011_DIR}/config/eat_lora_attn_mlphead.yaml" \
+        --train-csv "$TRAIN_CSV_2026" \
+        --output-dir artifacts/weights/eat-2026-fulldata/
+}
+
+export_convnext_2026_fulldata() {
+    echo "=== Exporting ConvNeXt (2026-trained, fulldata) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/011-lora-baseline-2026/checkpoints/2026-convnext-lora-mlp-mlphead-fulldata"
+    local CKPT
+    CKPT="$(find_last_ckpt "$CKPT_DIR")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_convnext.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP011_DIR}/config/convnext_lora_mlp_mlphead.yaml" \
+        --train-csv "$TRAIN_CSV_2026" \
+        --output-dir artifacts/weights/convnext-2026-fulldata/
 }
 
 # ============================================================================
@@ -160,7 +221,8 @@ case "$MODEL" in
 esac
 
 case "$MODEL" in
-    eat-2026|convnext-2026|protoclr-2026|all-2026)
+    eat-2026|convnext-2026|protoclr-2026|all-2026|\
+    eat-2026-fulldata|convnext-2026-fulldata|protoclr-2026-fulldata|all-2026-fulldata)
         echo "=== Building species mapping (2026→2026, 206 overlap) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TRAIN_CSV_2026" \
@@ -170,12 +232,15 @@ case "$MODEL" in
 esac
 
 case "$MODEL" in
-    eat-2025)       export_eat_2025 ;;
-    convnext-2025)  export_convnext_2025 ;;
-    protoclr-2025)  export_protoclr_2025 ;;
-    eat-2026)       export_eat_2026 ;;
-    convnext-2026)  export_convnext_2026 ;;
-    protoclr-2026)  export_protoclr_2026 ;;
+    eat-2025)                export_eat_2025 ;;
+    convnext-2025)           export_convnext_2025 ;;
+    protoclr-2025)           export_protoclr_2025 ;;
+    eat-2026)                export_eat_2026 ;;
+    convnext-2026)           export_convnext_2026 ;;
+    protoclr-2026)           export_protoclr_2026 ;;
+    eat-2026-fulldata)       export_eat_2026_fulldata ;;
+    convnext-2026-fulldata)  export_convnext_2026_fulldata ;;
+    protoclr-2026-fulldata)  export_protoclr_2026_fulldata ;;
     all-2025)
         export_eat_2025
         echo ""
@@ -189,6 +254,13 @@ case "$MODEL" in
         export_convnext_2026
         echo ""
         export_protoclr_2026
+        ;;
+    all-2026-fulldata)
+        export_eat_2026_fulldata
+        echo ""
+        export_convnext_2026_fulldata
+        echo ""
+        export_protoclr_2026_fulldata
         ;;
     *)
         echo "Unknown model: $MODEL"

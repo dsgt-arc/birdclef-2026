@@ -76,7 +76,9 @@ validate_model() {
 }
 
 case "$MODEL" in
-    eat-2025|convnext-2025|protoclr-2025|eat-2026|convnext-2026|protoclr-2026)
+    eat-2025|convnext-2025|protoclr-2025|\
+    eat-2026|convnext-2026|protoclr-2026|\
+    eat-2026-fulldata|convnext-2026-fulldata|protoclr-2026-fulldata)
         validate_model "$MODEL"
         ;;
     all-2025)
@@ -90,6 +92,15 @@ case "$MODEL" in
         ;;
     all-2026)
         for m in eat-2026 convnext-2026 protoclr-2026; do
+            if [ -f "artifacts/weights/$m/model.onnx" ]; then
+                validate_model "$m"
+            else
+                echo "Skipping $m (no ONNX model found)"
+            fi
+        done
+        ;;
+    all-2026-fulldata)
+        for m in eat-2026-fulldata convnext-2026-fulldata protoclr-2026-fulldata; do
             if [ -f "artifacts/weights/$m/model.onnx" ]; then
                 validate_model "$m"
             else
