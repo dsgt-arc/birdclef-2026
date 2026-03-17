@@ -74,6 +74,7 @@ based on prior convergence (ConvNeXt ~15, EAT ~25, ProtoCLR ~30).
     val/test datasets point to train_dataset as placeholder
 - [x] 8.2 Add `train_all: false` default to all 3 config files
 - [x] 8.3 Submit all 3 full-data jobs: `sbatch/run.sh --all --train-all` (2026-03-16)
-- [ ] 8.4 Monitor on W&B — verify training loss decreases and doesn't diverge
-- [ ] 8.5 Export full-data checkpoints to ONNX via exp 010 pipeline
-- [ ] 8.6 Submit to Kaggle and compare LB scores with 80/10/10 models
+- [x] 8.4 ProtoCLR fulldata: completed, exported, submitted — **0.736 LB** (+0.015 vs 80/10/10)
+- [x] 8.5 EAT fulldata: completed, exported, submitted — **0.736 LB** (+0.035 vs 80/10/10)
+- [ ] 8.6 ConvNeXt fulldata: **timed out** (exceeded 24hr SLURM limit) — needs resubmission with shorter epoch count or extended wall time
+- [ ] 8.7 Export + submit ConvNeXt fulldata once retraining completes
