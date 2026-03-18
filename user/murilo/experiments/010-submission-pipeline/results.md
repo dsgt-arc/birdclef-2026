@@ -41,12 +41,12 @@ Same architectures retrained on all 35,549 focal recordings (no val/test holdout
 | Model | Training Data | Mapped Species | Public LB Score | Kernel Version | Date |
 |-------|--------------|---------------:|----------------:|----------------|------|
 | ProtoCLR LoRA attn | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.736** | v1 | 2026-03-17 |
-| EAT LoRA attn+MLP head | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.736** | v1 | 2026-03-17 |
+| EAT LoRA attn+MLP head | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.698** | v1 | 2026-03-17 |
 | ConvNeXt LoRA MLP+MLP head | BirdCLEF 2026 fulldata (exp 011) | 206/234 | — | — | — |
 
 **Note**: Public LB uses ~34% of test data. Final standings use the remaining ~66%.
 ProtoCLR fulldata improved from 0.721 → **0.736** (+0.015) by training on 100% of focal data.
-EAT fulldata improved from 0.701 → **0.736** (+0.035) — the largest fulldata gain across all models.
+EAT fulldata dropped from 0.701 → **0.698** (−0.003) — fulldata training slightly hurt performance, possibly due to overfitting without a validation-based stopping criterion.
 ConvNeXt fulldata training timed out (24hr SLURM limit) in exp 011 — no checkpoint available for submission.
 
 ## Observations
