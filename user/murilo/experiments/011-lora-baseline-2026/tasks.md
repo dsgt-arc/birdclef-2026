@@ -75,6 +75,6 @@ based on prior convergence (ConvNeXt ~15, EAT ~25, ProtoCLR ~30).
 - [x] 8.2 Add `train_all: false` default to all 3 config files
 - [x] 8.3 Submit all 3 full-data jobs: `sbatch/run.sh --all --train-all` (2026-03-16)
 - [x] 8.4 ProtoCLR fulldata: completed, exported, submitted — **0.736 LB** (+0.015 vs 80/10/10)
-- [x] 8.5 EAT fulldata: completed, exported, submitted — **0.736 LB** (+0.035 vs 80/10/10)
-- [ ] 8.6 ConvNeXt fulldata: **timed out** (exceeded 24hr SLURM limit) — needs resubmission with shorter epoch count or extended wall time
+- [x] 8.5 EAT fulldata: completed, exported, submitted — **0.698 LB** (−0.003 vs 80/10/10, overfitting)
+- [ ] 8.6 ConvNeXt fulldata: **timed out** at ~epoch 39/50 (exceeded 24hr SLURM limit) — walltime extended to 48hrs, needs resubmission
 - [ ] 8.7 Export + submit ConvNeXt fulldata once retraining completes

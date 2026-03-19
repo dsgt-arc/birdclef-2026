@@ -54,6 +54,12 @@ All three models trained with identical LoRA hyperparameters (rank=8, alpha=16, 
   the shifted species distribution, or the attention-only LoRA targets being less adaptive to
   the new class boundaries.
 
+- **EAT fulldata regressed (0.698 vs 0.701)**: When retrained on 100% focal data without
+  early stopping, EAT's LB score dropped by 0.003. Training all 50 epochs overshoots the
+  optimal checkpoint (best epoch was 17 on 80/10/10). ProtoCLR benefited from fulldata (+0.015),
+  suggesting the overfitting effect is model-dependent — EAT's attention-only LoRA may be more
+  prone to memorization on the longer training runs.
+
 - **All models fit comfortably on RTX 6000**: GPU memory usage was <3% across all runs (0.4–0.7
   GB allocated out of 24 GB). ConvNeXt achieved 99.9% GPU utilization, while EAT (88.9%) and
   ProtoCLR (66.0%) were somewhat data-loading bottlenecked.
@@ -90,8 +96,15 @@ and potentially different class balance in the 2026 focal data.
   on actual Kaggle soundscapes. Real competition performance depends on the focal-to-soundscape
   domain gap plus the 28 soundscape-only species we cannot train on.
 
-- **cmAP monitored for checkpointing, not AUROC**: Early stopping and checkpoint selection use
-  `val/cmap`, not `val/auroc`. The best AUROC checkpoint may differ from the best cmAP checkpoint.
+- **Fulldata overfitting risk**: Training all 50 epochs without validation-based stopping
+  overshoots the optimal checkpoint for EAT (best epoch 17 → trained 50, LB −0.003). ProtoCLR
+  benefited (+0.015, best epoch 21 → trained 50), suggesting the effect is model-dependent.
+  Future fulldata runs should cap epochs at ~1.5× the best epoch from the 80/10/10 run
+  (e.g., ~25 for EAT, ~30 for ProtoCLR, ~15 for ConvNeXt).
+
+- **cmAP was monitored for checkpointing, not AUROC**: Early stopping and checkpoint selection
+  used `val/cmap`, not `val/auroc`. The best AUROC checkpoint may differ from the best cmAP
+  checkpoint. **Fixed**: configs now use `val/auroc` for both model_checkpoint and early_stopping.
 
 ## Artifacts
 
@@ -111,7 +124,7 @@ and potentially different class balance in the 2026 focal data.
 - [ ] Export 2026-trained checkpoints to ONNX for Kaggle submission (extend exp 010 pipeline)
 - [ ] Submit all 3 models to Kaggle and compare public LB scores
 - [ ] Tune hyperparameters on 2026 data (higher LoRA rank, learning rate schedule, longer warmup)
-- [ ] Monitor with AUROC as checkpoint selection metric instead of cmAP
+- [x] Monitor with AUROC as checkpoint selection metric instead of cmAP
 - [ ] Build 3-model ensemble for pseudo-labeling unlabeled soundscapes
 
 **Leads to**: These 2026 baselines become the foundation for submission and pseudo-labeling.

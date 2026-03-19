@@ -46,7 +46,7 @@ Same architectures retrained on all 35,549 focal recordings (no val/test holdout
 
 **Note**: Public LB uses ~34% of test data. Final standings use the remaining ~66%.
 ProtoCLR fulldata improved from 0.721 → **0.736** (+0.015) by training on 100% of focal data.
-EAT fulldata dropped from 0.701 → **0.698** (−0.003) — fulldata training slightly hurt performance, possibly due to overfitting without a validation-based stopping criterion.
+EAT fulldata dropped from 0.701 → **0.698** (−0.003) — overfitting from training all 50 epochs without early stopping (best epoch was 17 on the 80/10/10 split). Future EAT fulldata runs should cap at ~25 epochs (~1.5× best epoch).
 ConvNeXt fulldata training timed out (24hr SLURM limit) in exp 011 — no checkpoint available for submission.
 
 ## Observations
