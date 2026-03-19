@@ -68,8 +68,9 @@ Implementation done in exp 011 (tasks 8.1–8.7).
 - [x] 8.1.1 Add `--train-all` flag to exp 011 (done in exp 011 task 8.1)
 - [x] 8.1.2 ProtoCLR fulldata: **0.736 LB** (+0.015 vs 80/10/10)
 - [x] 8.1.3 EAT fulldata: **0.698 LB** (−0.003, overfitting — see exp 011 results)
-- [ ] 8.1.4 ConvNeXt fulldata: timed out at 24hrs, resubmitting with 48hr walltime
+- [ ] 8.1.4 ConvNeXt fulldata: resubmitted with 48hr walltime (2026-03-19), training in progress
 - [ ] 8.1.5 Export + submit ConvNeXt fulldata once retraining completes
+- [ ] 8.1.6 Add ConvNeXt fulldata LB score to results.md
 
 > **Removed: Ensemble models (formerly 8.2)** — infeasible under 90-min Kaggle inference limit.
 > ProtoCLR + ConvNeXt alone estimate ~120 min for ~600 soundscape files. Would require
