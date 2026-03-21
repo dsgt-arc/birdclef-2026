@@ -1,0 +1,48 @@
+{
+  "auroc": null,
+  "cmap": null,
+  "f1_macro": null,
+  "f1_micro": null,
+  "top1_accuracy": null,
+  "top5_accuracy": null,
+  "loss": null,
+  "encoder_type": "convnext",
+  "encoder_model": "convnext_base.fb_in22k_ft_in1k",
+  "embed_dim": 1024,
+  "lora": {
+    "rank": 8,
+    "alpha": 16,
+    "dropout": 0.1,
+    "target_modules": [
+      "fc1",
+      "fc2"
+    ]
+  },
+  "dataset": "birdclef-2026",
+  "train_all": true,
+  "split": "none (train_all)",
+  "num_classes": 206,
+  "best_val_cmap": null,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/011-lora-baseline-2026/checkpoints/2026-convnext-lora-mlp-mlphead-fulldata/last-v1.ckpt",
+  "stopped_epoch": 50,
+  "training": {
+    "max_epochs": 50,
+    "lr": 0.0003,
+    "weight_decay": 0.01,
+    "warmup_epochs": 5,
+    "batch_size": 64,
+    "num_workers": 8,
+    "precision": "16-mixed",
+    "early_stopping_patience": 10,
+    "hidden_dim": 512,
+    "dropout": 0.1,
+    "grad_clip_val": 1.0,
+    "accumulate_grad_batches": 4
+  },
+  "compute": {
+    "gpu": "1",
+    "slurm_job_id": 5057247,
+    "node": "atl1-1-03-007-13-0",
+    "cpus_per_task": "8"
+  }
+}
