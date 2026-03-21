@@ -56,9 +56,16 @@ All three models trained with identical LoRA hyperparameters (rank=8, alpha=16, 
 
 - **EAT fulldata regressed (0.698 vs 0.701)**: When retrained on 100% focal data without
   early stopping, EAT's LB score dropped by 0.003. Training all 50 epochs overshoots the
-  optimal checkpoint (best epoch was 17 on 80/10/10). ProtoCLR benefited from fulldata (+0.015),
-  suggesting the overfitting effect is model-dependent — EAT's attention-only LoRA may be more
-  prone to memorization on the longer training runs.
+  optimal checkpoint (best epoch was 17 on 80/10/10).
+
+- **ConvNeXt fulldata regressed (0.695 vs 0.720)**: The largest fulldata regression (−0.025).
+  ConvNeXt converges fastest (best epoch 9 on 80/10/10) so training ~50 epochs overshoots
+  the most. Future ConvNeXt fulldata runs should cap at ~15 epochs (~1.5× best epoch).
+
+- **Fulldata overfitting is model-dependent**: ProtoCLR benefited from fulldata (+0.015),
+  while both EAT (−0.003) and ConvNeXt (−0.025) regressed. The faster a model converges,
+  the more it overfits on fixed-epoch fulldata training. Epoch caps should be ~1.5× the
+  best epoch from the 80/10/10 run: ~15 for ConvNeXt, ~25 for EAT, ~30 for ProtoCLR.
 
 - **All models fit comfortably on RTX 6000**: GPU memory usage was <3% across all runs (0.4–0.7
   GB allocated out of 24 GB). ConvNeXt achieved 99.9% GPU utilization, while EAT (88.9%) and
@@ -97,10 +104,11 @@ and potentially different class balance in the 2026 focal data.
   domain gap plus the 28 soundscape-only species we cannot train on.
 
 - **Fulldata overfitting risk**: Training all 50 epochs without validation-based stopping
-  overshoots the optimal checkpoint for EAT (best epoch 17 → trained 50, LB −0.003). ProtoCLR
-  benefited (+0.015, best epoch 21 → trained 50), suggesting the effect is model-dependent.
+  overshoots the optimal checkpoint for both EAT (best epoch 17 → trained 50, LB −0.003)
+  and ConvNeXt (best epoch 9 → trained ~50, LB −0.025). ProtoCLR benefited (+0.015,
+  best epoch 21 → trained 50). The faster a model converges, the worse it overfits.
   Future fulldata runs should cap epochs at ~1.5× the best epoch from the 80/10/10 run
-  (e.g., ~25 for EAT, ~30 for ProtoCLR, ~15 for ConvNeXt).
+  (e.g., ~15 for ConvNeXt, ~25 for EAT, ~30 for ProtoCLR).
 
 - **cmAP was monitored for checkpointing, not AUROC**: Early stopping and checkpoint selection
   used `val/cmap`, not `val/auroc`. The best AUROC checkpoint may differ from the best cmAP
