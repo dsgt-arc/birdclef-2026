@@ -34,7 +34,7 @@ Use `NNAudioMelSpectrogram` to convert 32kHz waveforms to mel spectrograms on CP
 ### Data Flow
 
 ```
-BirdCLEF2025DataModule (32kHz waveforms, 5s chunks)
+BirdCLEFDataModule (32kHz waveforms, 5s chunks)
   → NNAudioMelSpectrogram transform in dataset workers (CPU)
   → (B, 1, 128, 500) mel spectrograms
   → ConvNeXtEncoder (timm backbone, 1-channel adapted, PEFT-wrapped)

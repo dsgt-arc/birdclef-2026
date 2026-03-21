@@ -1,8 +1,11 @@
-"""BirdCLEF 2025 dataset and Lightning DataModule.
+"""BirdCLEF dataset and Lightning DataModule.
 
-Loads local BirdCLEF 2025 audio (206 species, 28k recordings), splits each
-recording into non-overlapping 5s chunks, resamples 32kHz -> 16kHz, and
+Loads local BirdCLEF audio (train_audio/ with species subdirectories), splits each
+recording into non-overlapping 5s chunks, resamples to target sample rate, and
 returns (waveform, labels) tuples for pretrained encoder fine-tuning.
+
+Compatible with BirdCLEF 2025 and 2026 data formats (same CSV columns and
+audio directory structure).
 """
 
 import logging
@@ -65,7 +68,7 @@ def _load_audio_chunk(audio_path, target_sr, start_sample=0, num_samples=None):
     return audio_tensor
 
 
-class BirdCLEF2025Dataset(Dataset):
+class BirdCLEFDataset(Dataset):
     """BirdCLEF 2025 dataset: non-overlapping 5s chunks at 16kHz.
 
     Each recording is split into non-overlapping chunks. Labels are multi-hot
@@ -124,7 +127,7 @@ class BirdCLEF2025Dataset(Dataset):
         if skipped > 0:
             logger.warning(f"Skipped {skipped} recordings (file not found or unreadable)")
         logger.info(
-            f"BirdCLEF2025Dataset: {len(self.chunks)} chunks from "
+            f"BirdCLEFDataset: {len(self.chunks)} chunks from "
             f"{len(metadata_df)} recordings ({self.num_classes} classes)"
         )
 
@@ -174,11 +177,11 @@ class BirdCLEF2025Dataset(Dataset):
         return waveform, label_vec.clone()
 
 
-class BirdCLEF2025DataModule(pl.LightningDataModule):
+class BirdCLEFDataModule(pl.LightningDataModule):
     """Lightning DataModule for BirdCLEF 2025 labeled training data.
 
     Reads train.csv, does stratified train/val/test split by primary_label,
-    and creates BirdCLEF2025Dataset for each split.
+    and creates BirdCLEFDataset for each split.
 
     Split strategy (80/10/10 by default):
         - Train: model training
@@ -197,6 +200,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
         num_workers: int = 8,
         val_fraction: float = 0.1,
         test_fraction: float = 0.1,
+        train_all: bool = False,
         seed: int = 42,
         transform=None,
     ):
@@ -210,6 +214,7 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.val_fraction = val_fraction
         self.test_fraction = test_fraction
+        self.train_all = train_all
         self.seed = seed
         self.transform = transform
 
@@ -281,44 +286,60 @@ class BirdCLEF2025DataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         # Only build datasets once (they're deterministic given the seed)
-        if (
-            self.train_dataset is not None
-            and self.val_dataset is not None
-            and self.test_dataset is not None
-        ):
+        if self.train_dataset is not None:
             return
 
         df = pd.read_csv(self.metadata_csv)
-        train_df, val_df, test_df = self._split_dataframe(df)
 
-        logger.info(
-            f"Split: {len(train_df)} train, {len(val_df)} val, " f"{len(test_df)} test recordings"
-        )
-
-        self.train_dataset = BirdCLEF2025Dataset(
-            audio_dir=self.audio_dir,
-            metadata_df=train_df,
-            species_list=self.species_list,
-            sample_rate=self.sample_rate,
-            chunk_duration=self.chunk_duration,
-            transform=self.transform,
-        )
-        self.val_dataset = BirdCLEF2025Dataset(
-            audio_dir=self.audio_dir,
-            metadata_df=val_df,
-            species_list=self.species_list,
-            sample_rate=self.sample_rate,
-            chunk_duration=self.chunk_duration,
-            transform=self.transform,
-        )
-        self.test_dataset = BirdCLEF2025Dataset(
-            audio_dir=self.audio_dir,
-            metadata_df=test_df,
-            species_list=self.species_list,
-            sample_rate=self.sample_rate,
-            chunk_duration=self.chunk_duration,
-            transform=self.transform,
-        )
+        if self.train_all:
+            # Use 100% of data for training (no val/test split)
+            train_df = df
+            logger.info(
+                f"train_all=True: using all {len(train_df)} recordings for training "
+                f"(no val/test split)"
+            )
+            self.train_dataset = BirdCLEFDataset(
+                audio_dir=self.audio_dir,
+                metadata_df=train_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                chunk_duration=self.chunk_duration,
+                transform=self.transform,
+            )
+            # PL requires valid iterables for val/test even when limit_val_batches=0.
+            # Point them at the train dataset as a placeholder (never actually iterated).
+            self.val_dataset = self.train_dataset
+            self.test_dataset = self.train_dataset
+        else:
+            train_df, val_df, test_df = self._split_dataframe(df)
+            logger.info(
+                f"Split: {len(train_df)} train, {len(val_df)} val, "
+                f"{len(test_df)} test recordings"
+            )
+            self.train_dataset = BirdCLEFDataset(
+                audio_dir=self.audio_dir,
+                metadata_df=train_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                chunk_duration=self.chunk_duration,
+                transform=self.transform,
+            )
+            self.val_dataset = BirdCLEFDataset(
+                audio_dir=self.audio_dir,
+                metadata_df=val_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                chunk_duration=self.chunk_duration,
+                transform=self.transform,
+            )
+            self.test_dataset = BirdCLEFDataset(
+                audio_dir=self.audio_dir,
+                metadata_df=test_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                chunk_duration=self.chunk_duration,
+                transform=self.transform,
+            )
 
     def train_dataloader(self):
         return DataLoader(

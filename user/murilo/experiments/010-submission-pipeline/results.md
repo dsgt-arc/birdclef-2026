@@ -1,0 +1,84 @@
+# Results: BirdCLEF 2026 Submission Pipeline
+
+**Date Started**: 2026-03-14
+**Author**: Murilo Gustineli
+
+## Summary
+
+End-to-end Kaggle submission pipeline validated. Models trained on both BirdCLEF 2025 and 2026
+focal data are exported to ONNX, uploaded to Kaggle datasets, and scored via unified CPU kernel.
+
+## Kaggle Leaderboard Results
+
+Competition metric: **macro-averaged ROC-AUC** (skips classes with no true positive labels).
+
+### Models Trained on BirdCLEF 2025
+
+These models cover only 41/234 BirdCLEF 2026 species. Low scores are expected — the goal was
+pipeline validation, not competitive scores.
+
+| Model | Training Data | Overlapping Species | Public LB Score | Kernel Version | Date |
+|-------|--------------|--------------------:|----------------:|----------------|------|
+| ProtoCLR LoRA attn | BirdCLEF 2025 | 41/234 | **0.531** | v12 | 2026-03-15 |
+| EAT LoRA attn+MLP head | BirdCLEF 2025 | 41/234 | — | — | — |
+| ConvNeXt LoRA MLP+MLP head | BirdCLEF 2025 | 41/234 | — | — | — |
+
+### Models Trained on BirdCLEF 2026 (80/10/10 split)
+
+These models cover all 206 focal species. The 28 soundscape-only species (insect sonotypes)
+have no focal training data and get 0.0 predictions.
+
+| Model | Training Data | Mapped Species | Public LB Score | Kernel Version | Date |
+|-------|--------------|---------------:|----------------:|----------------|------|
+| ProtoCLR LoRA attn | BirdCLEF 2026 (exp 011) | 206/234 | **0.721** | v1 | 2026-03-15 |
+| ConvNeXt LoRA MLP+MLP head | BirdCLEF 2026 (exp 011) | 206/234 | **0.720** | v1 | 2026-03-15 |
+| EAT LoRA attn+MLP head | BirdCLEF 2026 (exp 011) | 206/234 | **0.701** | v1 | 2026-03-15 |
+
+### Models Trained on BirdCLEF 2026 (100% fulldata)
+
+Same architectures retrained on all 35,549 focal recordings (no val/test holdout, fixed epochs).
+
+| Model | Training Data | Mapped Species | Public LB Score | Kernel Version | Date |
+|-------|--------------|---------------:|----------------:|----------------|------|
+| ProtoCLR LoRA attn | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.736** | v1 | 2026-03-17 |
+| EAT LoRA attn+MLP head | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.698** | v1 | 2026-03-17 |
+| ConvNeXt LoRA MLP+MLP head | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.695** | v1 | 2026-03-21 |
+
+**Note**: Public LB uses ~34% of test data. Final standings use the remaining ~66%.
+ProtoCLR fulldata improved from 0.721 → **0.736** (+0.015) by training on 100% of focal data.
+EAT fulldata dropped from 0.701 → **0.698** (−0.003) — overfitting from training all 50 epochs without early stopping (best epoch was 17 on the 80/10/10 split). Future EAT fulldata runs should cap at ~25 epochs (~1.5× best epoch).
+ConvNeXt fulldata dropped from 0.720 → **0.695** (−0.025) — also overfitting, likely same cause as EAT. Best epoch was 9 on 80/10/10 but fulldata trained ~50 epochs. Future ConvNeXt fulldata runs should cap at ~15 epochs.
+
+## Observations
+
+- **ProtoCLR 2025 scored 0.531 macro-AUROC** on the public leaderboard despite only covering
+  41/234 species. The metric skips classes with no true positives, so the score reflects
+  quality on the 41 overlapping species rather than being diluted by 193 zero-probability species.
+
+- **ONNX export works reliably for all 3 architectures**: EAT and ConvNeXt export cleanly,
+  ProtoCLR required einops-compatible tracing but succeeded with opset 17.
+
+- **CPU timing is well within Kaggle limits**: All models complete inference on ~600 soundscapes
+  within the 90-minute budget.
+
+## Pipeline Issues Resolved
+
+| Issue | Root Cause | Fix | Versions Affected |
+|-------|-----------|-----|-------------------|
+| Notebook Threw Exception | ONNX output shape (1,206) vs (206,) | `logits.flatten()` before sigmoid | v3–v10 |
+| Empty test_soundscapes | Expected Kaggle behavior during public run | train_soundscapes fallback (2 files) | v11 |
+| onnxruntime not found | No internet on Kaggle | Bundled wheels in `birdclef-deps` dataset | v4–v6 |
+| Kernel ID mismatch | `id` field must match slugified `title` | Fixed metadata generation | v2 |
+
+## Artifacts
+
+| Type | Location |
+|------|----------|
+| ONNX weights (2025) | `artifacts/weights/{eat,convnext,protoclr}-2025/model.onnx` |
+| Species mapping (2025→2026) | `artifacts/weights/species_mapping.json` (41 mapped) |
+| Kaggle kernel | `kaggle_kernel/submission.py` |
+| Kernel metadata | `kaggle_kernel/kernel-metadata-{model}-{2025,2026}.json` |
+| Export scripts | `scripts/export_{eat,convnext,protoclr}.py` |
+| Offline deps | `artifacts/dist/dependencies/` |
+| SLURM logs | `logs/slurm_{export,validate}_*.log` |
+| Code | Branch `mg/010-submission-pipeline`, PR #16 |

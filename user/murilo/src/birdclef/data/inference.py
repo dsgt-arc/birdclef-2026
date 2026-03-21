@@ -1,7 +1,7 @@
 """Inference dataset for extracting embeddings and predictions from audio files.
 
 Chunks arbitrary audio files into non-overlapping segments for batch inference.
-Unlike BirdCLEF2025Dataset (which requires metadata with labels), this dataset
+Unlike BirdCLEFDataset (which requires metadata with labels), this dataset
 takes a flat list of file descriptors and returns (transformed_audio, metadata).
 """
 
