@@ -62,7 +62,7 @@ Soundscape segments are split **by file** (not by segment) to prevent data leaka
   per-class AUROC for 28 soundscape-only species
 
 ### Baseline
-- Exp 011 fulldata LB scores: ProtoCLR 0.736, EAT 0.698, ConvNeXt (pending)
+- Exp 011 fulldata LB scores: ProtoCLR 0.736, EAT 0.698, ConvNeXt 0.695
 
 ### Success Criteria
 - **Confirm if**: LB improves over exp 011 AND 28 new species get non-zero predictions
@@ -75,7 +75,54 @@ Soundscape segments are split **by file** (not by segment) to prevent data leaka
 - No data augmentation explored yet (deferred)
 - Single seed (42)
 
+## Why Soundscape Fine-Tuning Before MixIT (Exp 012 → 013 Sequencing)
+
+Exp 013 will apply MixIT source separation to pseudo-label 10,592 unlabeled soundscapes.
+We deliberately do labeled soundscape fine-tuning *first* for four reasons:
+
+### 1. Ablation baseline — isolate MixIT's contribution
+
+Without a soundscape-only baseline, we cannot measure what MixIT actually adds:
+
+```
+Focal-only baseline (exp 011):       0.695–0.736 LB
++ Labeled soundscape fine-tuning:     ??? LB        ← exp 012 measures this
++ MixIT-enhanced pseudo-labeling:     ??? LB        ← exp 013 measures this
+```
+
+If we skip exp 012 and go straight to MixIT + pseudo-labeling, any improvement could
+be from the soundscape data itself, the pseudo-labels, or the separation — impossible
+to disentangle. Exp 012 gives us a clean ablation point.
+
+### 2. Multi-label infrastructure is needed regardless
+
+Whether we use MixIT-separated sources or raw labeled soundscapes, we need the same
+building blocks: BCE multi-label loss, soundscape segment data loading, 234-class head
+expansion, and handling of the 28 soundscape-only species. Building and validating this
+infrastructure on labeled soundscapes first means it's ready and tested when pseudo-labeled
+data arrives from MixIT.
+
+### 3. Stronger teachers produce better pseudo-labels
+
+The teacher ensemble for pseudo-labeling in exp 013 will be better if the teachers have
+already seen soundscape data. A focal-only teacher (exp 011) gives 0.0 for 28 species and
+has a domain gap on the rest. A soundscape-fine-tuned teacher (exp 012) produces more
+accurate pseudo-labels — MixIT + better teachers = compounding improvement.
+
+### 4. Immediate coverage for 28 soundscape-only species
+
+The labeled soundscapes have expert annotations for all 28 species. Even with dense
+co-occurrence (avg 12.9 partners per species), multi-label BCE training will learn
+*something* — going from 0.0 to any non-zero signal is a large jump in macro-averaged
+AUROC. MixIT can refine these representations later with cleaner isolated signals.
+
+**Counter-argument considered**: MixIT separation would give cleaner training signals
+for the 28 species since they are never isolated in raw soundscapes. True — but even
+noisy multi-label training is a massive step up from zero predictions, and we can always
+re-fine-tune with MixIT-cleaned data in exp 013.
+
 ## Leads to
 
 Exp 013 (MixIT pseudo-labeling) will use these 234-class models as teachers to pseudo-label
-10,592 unlabeled soundscapes.
+10,592 unlabeled soundscapes. The exp 012 LB score serves as the baseline against which
+MixIT's contribution is measured.
