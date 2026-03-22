@@ -29,8 +29,9 @@ unlabeled soundscapes, then train on pseudo-labels to improve LB score.
 > **Anthony's feedback**: The base Bird MixIT model was "kind of crappy" in BirdCLEF 2023.
 > We must validate separation quality before scaling to 10,592 files.
 
-- [ ] 3.5.1 Have Anthony listen to a few separated channel outputs from the 66 labeled files
-- [ ] 3.5.2 Visualize spectrograms: original vs 4 separated channels for 3-5 files
+- [ ] 3.5.1 Listen to separated channel outputs from the 66 labeled files
+- [ ] 3.5.2 Visualize spectrograms in `user/murilo/notebooks/004-mixit-separation-quality.ipynb`:
+  original vs 4 separated channels for 3-5 files
   - Pick files with different characteristics: dense frog chorus, bird dawn chorus, quiet/sparse
 - [ ] 3.5.3 Compare separated channels against expert labels — does channel 0 contain
   the dominant species? Do other channels isolate background species?
