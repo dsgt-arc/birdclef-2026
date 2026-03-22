@@ -18,13 +18,27 @@
 
 set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPTS_DIR="$(dirname "$SCRIPT_DIR")"
-USER_DIR="$(dirname "$SCRIPTS_DIR")"
+# In launcher mode, BASH_SOURCE paths work. In job mode, sbatch copies the script
+# to /var/lib/slurm so we must use SLURM_SUBMIT_DIR to recover the original paths.
+if [[ -z "${SCRIPT_ARGS+x}" ]]; then
+    # Launcher mode: paths from BASH_SOURCE
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SCRIPTS_DIR="$(dirname "$SCRIPT_DIR")"
+    USER_DIR="$(dirname "$SCRIPTS_DIR")"
+else
+    # Job mode: paths from SLURM_SUBMIT_DIR
+    SCRIPTS_DIR="$(cd "$SLURM_SUBMIT_DIR" && pwd)"
+    # If submitted from sbatch/ subdir, go up one level
+    if [[ "$(basename "$SCRIPTS_DIR")" == "sbatch" ]]; then
+        SCRIPTS_DIR="$(dirname "$SCRIPTS_DIR")"
+    fi
+    SCRIPT_DIR="${SCRIPTS_DIR}/sbatch"
+    USER_DIR="$(dirname "$SCRIPTS_DIR")"
+fi
+
 INFER_SCRIPT="${SCRIPTS_DIR}/infer_soundscapes.py"
 LOG_DIR="${USER_DIR}/logs"
 
-# Detect launcher vs job mode: SCRIPT_ARGS is only set when we submit ourselves
 if [[ -z "${SCRIPT_ARGS+x}" ]]; then
     # === Launcher mode: parse args and submit via sbatch ===
     mkdir -p "$LOG_DIR"
