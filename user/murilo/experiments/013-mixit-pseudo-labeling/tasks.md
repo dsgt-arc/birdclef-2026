@@ -7,27 +7,33 @@ unlabeled soundscapes, then train on pseudo-labels to improve LB score.
 
 ## 2. Phase 1: MixIT Conversion (TF1 → ONNX)
 
-- [ ] 2.1 Download Bird MixIT TF1 checkpoint from Google Cloud Storage
-- [ ] 2.2 Write `scripts/convert_mixit_onnx.py` (tf2onnx conversion)
-- [ ] 2.3 Validate ONNX output matches TF1 output on test audio (atol < 1e-4)
-- [ ] 2.4 Benchmark ONNX inference speed (target: <1s per 1-min file on CPU)
+- [x] 2.1 Download Bird MixIT TF1 checkpoint from Google Cloud Storage
+  - Downloaded 4-source model to `/storage/project/ps-clef2026_birdclef-0/shared/models/bird-mixit/`
+  - 3 files: `inference.meta` (3.1 MB), `model.ckpt-3223090.data-*` (106 MB), `model.ckpt-3223090.index` (18 KB)
+- [x] 2.2 Write `scripts/convert_mixit_onnx.py` (tf2onnx conversion + validation)
+- [x] 2.3 Write `sbatch/convert.sh` SLURM job for conversion
+- [ ] 2.4 Run conversion: `sbatch sbatch/convert.sh`
+- [ ] 2.5 Validate ONNX output matches TF1 output on test audio (atol < 1e-4)
+- [ ] 2.6 Benchmark ONNX inference speed (target: <1s per 1-min file on CPU)
 
 ## 3. Phase 2: Offline Separation
 
-- [ ] 3.1 Write `scripts/separate_soundscapes.py` (batch separation)
-- [ ] 3.2 Create SLURM job for batch processing (CPU, 64GB RAM)
-- [ ] 3.3 Run on all 10,592 unlabeled soundscapes
+- [x] 3.1 Write `scripts/separate_soundscapes.py` (batch separation with resume support)
+- [x] 3.2 Write `sbatch/separate.sh` SLURM job (supports unlabeled/labeled/test modes)
+- [ ] 3.3 Run on labeled soundscapes first (validation): `MODE=labeled sbatch sbatch/separate.sh`
 - [ ] 3.4 Spot-check: visualize spectrograms of separated channels vs original
+- [ ] 3.5 Run on all unlabeled soundscapes: `sbatch sbatch/separate.sh`
+- [ ] 3.6 Verify output: ~10,592 NPZ files in `artifacts/separated/`
 
-## 4. Phase 3: Teacher Pseudo-Labeling
+## 4. Phase 3: Teacher Pseudo-Labeling (depends on exp 012 completion)
 
 - [ ] 4.1 Write `scripts/pseudo_label.py` using exp 012 ONNX models
 - [ ] 4.2 Implement aggregation: max-pool channels, average models
-- [ ] 4.3 Run on separated + original audio for all 10,592 soundscapes
-- [ ] 4.4 Evaluate pseudo-label quality on 66 labeled soundscapes (precision/recall)
+- [ ] 4.3 Validate on 66 labeled soundscapes: per-taxon precision/recall (bird vs amphibian vs insect)
+- [ ] 4.4 Run on separated + original audio for all unlabeled soundscapes
 - [ ] 4.5 Sweep confidence thresholds (0.3, 0.5, 0.7) and pick best
 
-## 5. Phase 4: Student Training
+## 5. Phase 4: Student Training (depends on Phase 3)
 
 - [ ] 5.1 Create `PseudoLabelDataset` for soft-label training
 - [ ] 5.2 Implement soft BCE loss (teacher probabilities as targets)
@@ -42,8 +48,10 @@ unlabeled soundscapes, then train on pseudo-labels to improve LB score.
 
 ## Key Context
 
-- **Bird MixIT checkpoint**: `gs://gresearch/sound_separation/bird_mixit_model_checkpoints`
-- **4-source model**: `output_sources4/model.ckpt-3223090` (used in ICASSP paper)
+- **Bird MixIT checkpoint**: `/storage/project/ps-clef2026_birdclef-0/shared/models/bird-mixit/`
+- **GitHub reference**: https://github.com/google-research/sound-separation/tree/master/models/bird_mixit
+- **4-source model**: `model.ckpt-3223090` (ICASSP 2022 paper)
 - **Input**: 22.05 kHz mono audio
-- **Output**: 4 separated waveforms (sum = input)
-- **Sample rate mismatch**: BirdCLEF data is 32 kHz, need to resample to 22.05 kHz
+- **Output**: 4 separated waveforms (sum = input, mixture consistency)
+- **Sample rate mismatch**: BirdCLEF data is 32 kHz → resample to 22.05 kHz for MixIT
+- **Non-bird limitation**: Pretrained model is bird-only; separation quality may degrade for frogs/insects
