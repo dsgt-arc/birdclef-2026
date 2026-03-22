@@ -147,6 +147,16 @@ fi
 
 srun ${TRAIN_CMD}
 
+# ============================================================================
+# Save structured metrics to artifacts/ (skip for fast-dev-run)
+# ============================================================================
+
+if [[ "${FAST_DEV_RUN}" != "true" ]]; then
+    echo ""
+    echo "Saving structured metrics to artifacts/..."
+    python save_metrics.py --config ${CONFIG}
+fi
+
 echo ""
 echo "=============================================="
 echo "End Time: $(date)"
