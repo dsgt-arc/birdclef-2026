@@ -5,7 +5,7 @@
 Use Bird MixIT source separation + exp 012 teacher ensemble to pseudo-label 10,592
 unlabeled soundscapes, then train on pseudo-labels to improve LB score.
 
-## 2. Phase 1: MixIT Conversion (TF1 → ONNX)
+## 2. Phase 1: MixIT Conversion (TF1 → ONNX) ✓
 
 - [x] 2.1 Download Bird MixIT TF1 checkpoint to `shared/models/bird-mixit/`
 - [x] 2.2 Write `scripts/convert_mixit_onnx.py` (tf2onnx conversion + validation)
@@ -22,35 +22,58 @@ unlabeled soundscapes, then train on pseudo-labels to improve LB score.
 - [x] 3.4 Labeled separation: 66 files across 4 GPUs in ~2 min
   - Output: `shared/mixit/pretrained/soundscapes_labeled/` (66 NPZ files, 1.25 GB)
   - Shape: (4, 1323000) per file — 4 channels × 60s at 22050 Hz
-  - Active channels: 1-2 per file (most signal in channel 0)
 
-### 3.5 Quality validation (BLOCKING — do before full unlabeled run)
+### 3.5 Quality validation results (2026-03-21)
 
-> **Anthony's feedback**: The base Bird MixIT model was "kind of crappy" in BirdCLEF 2023.
-> We must validate separation quality before scaling to 10,592 files.
+Notebook: `user/murilo/notebooks/004-mixit-separation-quality.ipynb`
+Figures: `experiments/013-mixit-pseudo-labeling/figures/`
 
-- [ ] 3.5.1 Listen to separated channel outputs from the 66 labeled files
-- [ ] 3.5.2 Visualize spectrograms in `user/murilo/notebooks/004-mixit-separation-quality.ipynb`:
-  original vs 4 separated channels for 3-5 files
-  - Pick files with different characteristics: dense frog chorus, bird dawn chorus, quiet/sparse
-- [ ] 3.5.3 Compare separated channels against expert labels — does channel 0 contain
-  the dominant species? Do other channels isolate background species?
-- [ ] 3.5.4 Decision: proceed with pretrained model OR prioritize domain-matched training
+**Channel activity across all 66 labeled files:**
+```
+Active channels (RMS > 0.01) distribution:
+  0 active:  4 files ( 6%) — MixIT produced near-silence, no separable sources found
+  1 active: 21 files (32%) — no meaningful separation, just original in channel 0
+  2 active: 16 files (24%) — some separation
+  3 active: 14 files (21%) — good separation
+  4 active: 11 files (17%) — full 4-source separation
 
-### 3.6 Storage format update
+Mean RMS per channel: [0.0403, 0.0187, 0.0242, 0.0144]
+Channel 0 dominates: 2.1x higher RMS than channels 1-3
+```
+
+**Qualitative assessment** (listening + spectrograms):
+- Separation worked well for some sounds, less well for others
+- ~38% of files (0-1 active channels) get no meaningful separation
+- ~62% of files (2-4 active channels) show some degree of source isolation
+- Dense frog choruses: spectrograms show partial separation but quality unclear
+- Sparse recordings: MixIT correctly puts near-silence in unused channels
+
+**Spectrograms saved:**
+- `figures/dense_frog_chorus.jpg` — file 0039, 5 species nocturnal frog chorus
+- `figures/bird_multi_species.jpg` — file 0057, multi-species with birds
+- `figures/sparse_quiet.jpg` — file 0006, single species
+
+**Decision**: Proceed with full unlabeled separation. Even with imperfect separation,
+the max-pool-across-channels approach means we never do worse than the original.
+Phase 3 validation will quantitatively measure whether separation improves pseudo-label
+quality. If it doesn't, skip MixIT for pseudo-labeling and consider domain-matched
+training (Asteroid/PyTorch) as a follow-up.
+
+### 3.6 Storage format (pending)
 
 > **Anthony's feedback**: Save as OGG (lossy, 192kbps VBR) instead of raw NPZ.
 > Use ffmpeg for batch conversion. Keep 22050 Hz sample rate.
 
-- [ ] 3.6.1 Update `separate_soundscapes.py` to save channels as OGG (via ffmpeg or soundfile)
-  - Option A: 4 separate OGG files per soundscape (e.g., `{filename}_ch0.ogg`, ..., `{filename}_ch3.ogg`)
-  - Option B: Single 4-channel OGG file per soundscape
+- [ ] 3.6.1 Update `separate_soundscapes.py` to save channels as OGG
 - [ ] 3.6.2 Re-run labeled separation with OGG output
 - [ ] 3.6.3 Verify downstream pipeline can load OGG channels for pseudo-labeling
 
-### 3.7 Full unlabeled separation (after quality validation)
-- [ ] 3.7.1 Run: `bash sbatch/run.sh separate --num-workers 10` (~2 hours)
-- [ ] 3.7.2 Verify output: 10,592 files in `shared/mixit/pretrained/soundscapes/`
+**Note**: 200 GB (NPZ) is fine on 900+ GB available PACE storage. OGG conversion is
+a nice-to-have optimization, not a blocker. Can do before or after the full run.
+
+### 3.7 Full unlabeled separation (ready to run)
+- [ ] 3.7.1 Run: `bash sbatch/run.sh separate --num-workers 10` (~2 hours on 10 GPUs)
+- [ ] 3.7.2 Verify output: ~10,592 files in `shared/mixit/pretrained/soundscapes/`
 
 ## 4. Phase 3: Teacher Pseudo-Labeling (depends on exp 012 completion)
 
@@ -73,12 +96,37 @@ unlabeled soundscapes, then train on pseudo-labels to improve LB score.
 - [ ] 6.1 Write results.md with pseudo-label quality metrics + LB scores
 - [ ] 6.2 Compare vs exp 012 baseline
 
-## Key Context
+## Key Context for Next Session
 
-- **ONNX model**: `/storage/project/ps-clef2026_birdclef-0/shared/models/bird-mixit/bird_mixit_4sources.onnx` (38.4 MB)
-- **Separated labeled output**: `/storage/project/ps-clef2026_birdclef-0/shared/mixit/pretrained/soundscapes_labeled/` (66 NPZ, 1.25 GB)
-- **Separated unlabeled output**: `/storage/project/ps-clef2026_birdclef-0/shared/mixit/pretrained/soundscapes/` (pending quality validation)
-- **GitHub reference**: https://github.com/google-research/sound-separation/tree/master/models/bird_mixit
-- **GPU performance**: ~7s/file on RTX 6000, distributed via SLURM array jobs
-- **Non-bird limitation**: Pretrained model is bird-only; quality may degrade for frogs/insects
-- **Anthony's BirdCLEF 2023 experience**: Base model was "kind of crappy" — validate before scaling
+### Exp 012 status (soundscape fine-tuning)
+- **ProtoCLR**: trained (best epoch 11, test AUROC 0.845), exported to ONNX, submitted to Kaggle — **awaiting LB score**
+- **EAT**: training in progress on PACE
+- **ConvNeXt**: training in progress on PACE
+- **Baseline LB scores** (exp 011 fulldata): ProtoCLR 0.736, EAT 0.698, ConvNeXt 0.695
+- **Checkpoints**: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/012-soundscape-finetune/checkpoints/`
+- **W&B project**: `dsgt-arc/birdclef-2026-soundscape-finetune`
+
+### Exp 013 status (MixIT)
+- **Phase 1** (TF1→ONNX): ✓ complete
+- **Phase 2** (separation): labeled files done (66 NPZ), quality validated, ready for full unlabeled run
+- **Phase 3** (pseudo-labeling): blocked on exp 012 ONNX teacher models
+- **ONNX model**: `/storage/project/ps-clef2026_birdclef-0/shared/models/bird-mixit/bird_mixit_4sources.onnx`
+- **Separated labeled**: `/storage/project/ps-clef2026_birdclef-0/shared/mixit/pretrained/soundscapes_labeled/` (66 files)
+- **Separated unlabeled**: `/storage/project/ps-clef2026_birdclef-0/shared/mixit/pretrained/soundscapes/` (empty, pending full run)
+
+### Naming conventions
+- `{encoder}-2026` — focal only, 80/10/10 (exp 011)
+- `{encoder}-2026-fulldata` — focal only, 100% (exp 011)
+- `{encoder}-2026-soundscape` — focal + labeled soundscapes, 234 classes (exp 012)
+- `{encoder}-2026-pseudo` — focal + labeled + pseudo-labeled, 234 classes (future exp 013)
+
+### Next steps
+1. Check exp 012 ProtoCLR Kaggle LB score
+2. Check EAT/ConvNeXt training completion → export → submit
+3. Run full MixIT unlabeled separation: `bash sbatch/run.sh separate --num-workers 10`
+4. Decide on OGG storage format (can defer)
+5. Implement Phase 3 pseudo-labeling once exp 012 models are ready
+
+### Git
+- **Branch**: `mg/012-soundscape-finetune`
+- **PR**: #17
