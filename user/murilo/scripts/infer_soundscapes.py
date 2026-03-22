@@ -81,9 +81,7 @@ def compute_mel(audio, cfg):
         )
         mel_db = 10.0 * np.log10(np.maximum(mel, 1e-10))
         mel_norm = (mel_db - mel_db.min()) / (mel_db.max() - mel_db.min() + 1e-8)
-        mel_std = (mel_norm - cfg.get("protoclr_mean", 0.5347)) / cfg.get(
-            "protoclr_std", 0.0772
-        )
+        mel_std = (mel_norm - cfg.get("protoclr_mean", 0.5347)) / cfg.get("protoclr_std", 0.0772)
         target = cfg.get("target_frames", 250)
         T = mel_std.shape[1]
         if target < T:
@@ -295,9 +293,7 @@ def main():
         choices=["labeled", "unlabeled", "all"],
         help="Which soundscape files to process",
     )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Preview without running"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="Preview without running")
     args = parser.parse_args()
 
     slugs = MODEL_SLUGS if args.model == "all" else [args.model]
