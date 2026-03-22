@@ -40,10 +40,6 @@ if [[ -z "${SCRIPT_ARGS+x}" ]]; then
     done
 
     SCRIPT_PATH="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
-    CMD="sbatch \
-        --output=${LOG_DIR}/slurm_infer_%j.log \
-        --export=ALL,SCRIPT_ARGS=\"${ARGS[*]}\" \
-        ${SCRIPT_PATH}"
 
     echo "=============================================="
     echo "Soundscape Inference"
@@ -53,10 +49,14 @@ if [[ -z "${SCRIPT_ARGS+x}" ]]; then
     echo ""
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        echo "[DRY-RUN] ${CMD}"
+        echo "[DRY-RUN] sbatch --output=${LOG_DIR}/slurm_infer_%j.log --export=ALL,SCRIPT_ARGS=${ARGS[*]} ${SCRIPT_PATH}"
     else
         echo "Submitting job..."
-        ${CMD}
+        export SCRIPT_ARGS="${ARGS[*]}"
+        sbatch \
+            --output="${LOG_DIR}/slurm_infer_%j.log" \
+            --export=ALL \
+            "${SCRIPT_PATH}"
     fi
     exit 0
 fi
