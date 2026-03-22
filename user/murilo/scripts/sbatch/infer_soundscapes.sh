@@ -11,24 +11,22 @@
 #
 # Run ONNX inference on soundscapes.
 #
-# Usage:
-#   # Labeled soundscapes, all 3 models
+# Usage (from repo root or user/murilo/):
 #   bash user/murilo/scripts/sbatch/infer_soundscapes.sh --model all --split labeled
-#
-#   # Single model, all soundscapes
 #   bash user/murilo/scripts/sbatch/infer_soundscapes.sh --model protoclr-2026-soundscape --split all
-#
-#   # Dry run
 #   bash user/murilo/scripts/sbatch/infer_soundscapes.sh --model all --split labeled --dry-run
 
 set -eu
 
-# When run via sbatch, args come from SCRIPT_ARGS env var
-# When run directly (as launcher), we parse args and submit via sbatch
-if [[ -z "${SLURM_JOB_ID:-}" ]]; then
-    # === Launcher mode: parse args and submit ===
-    SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-    LOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/logs"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="$(dirname "$SCRIPT_DIR")"
+USER_DIR="$(dirname "$SCRIPTS_DIR")"
+INFER_SCRIPT="${SCRIPTS_DIR}/infer_soundscapes.py"
+LOG_DIR="${USER_DIR}/logs"
+
+# Detect launcher vs job mode: SCRIPT_ARGS is only set when we submit ourselves
+if [[ -z "${SCRIPT_ARGS+x}" ]]; then
+    # === Launcher mode: parse args and submit via sbatch ===
     mkdir -p "$LOG_DIR"
 
     DRY_RUN=false
@@ -41,6 +39,7 @@ if [[ -z "${SLURM_JOB_ID:-}" ]]; then
         fi
     done
 
+    SCRIPT_PATH="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
     CMD="sbatch \
         --output=${LOG_DIR}/slurm_infer_%j.log \
         --export=ALL,SCRIPT_ARGS=\"${ARGS[*]}\" \
@@ -62,23 +61,21 @@ if [[ -z "${SLURM_JOB_ID:-}" ]]; then
     exit 0
 fi
 
-# === Job mode: running inside SLURM ===
+# === Job mode: running inside SLURM batch job ===
 echo "=============================================="
 echo "Soundscape Inference Job"
 echo "=============================================="
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Node: $(hostname)"
 echo "Date: $(date)"
-echo "Args: ${SCRIPT_ARGS:-}"
+echo "Args: ${SCRIPT_ARGS}"
 echo ""
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INFER_SCRIPT="$(dirname "$SCRIPT_DIR")/scripts/infer_soundscapes.py"
-
 # Setup venv
-JOB_VENV_DIR="$TMPDIR/birdclef-${SLURM_JOB_ID}"
+VENV_BASE="${TMPDIR:-/tmp}"
+JOB_VENV_DIR="$VENV_BASE/birdclef-${SLURM_JOB_ID}"
 JOB_VENV="$JOB_VENV_DIR/.venv"
-export UV_CACHE_DIR="$TMPDIR/uv-cache"
+export UV_CACHE_DIR="$VENV_BASE/uv-cache"
 
 mkdir -p "$JOB_VENV_DIR"
 uv venv "$JOB_VENV" --python 3.11
@@ -89,7 +86,7 @@ uv pip install onnxruntime soundfile librosa numpy tqdm torch torchaudio --index
 echo ""
 
 # Run inference
-python "$INFER_SCRIPT" ${SCRIPT_ARGS:-}
+python "$INFER_SCRIPT" ${SCRIPT_ARGS}
 
 echo ""
 echo "=============================================="
