@@ -220,6 +220,10 @@ def main():
     sess_options.inter_op_num_threads = 1
 
     if args.gpu:
+        # Preload CUDA/cuDNN libs from pip-installed nvidia packages
+        # Must be called BEFORE creating InferenceSession
+        # See: https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html
+        ort.preload_dlls(cuda=True, cudnn=True)
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
     else:
         providers = ["CPUExecutionProvider"]
