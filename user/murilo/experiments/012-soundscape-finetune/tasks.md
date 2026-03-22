@@ -67,7 +67,7 @@ Fast-dev-run results (2026-03-21):
 ### 6.4 ConvNeXt soundscape submission (pending training)
 - [x] Export ConvNeXt to ONNX: `bash sbatch/run.sh export --model convnext-2026-soundscape`
 - [x] Upload + push: `python scripts/upload_kaggle.py --model convnext-2026-soundscape --push-kernel`
-- [ ] Record ConvNeXt LB score (inference running on Kaggle)
+- [x] ConvNeXt LB score: **0.755** (+0.060 vs exp 011 fulldata 0.695)
 
 ## 7. Documentation
 
@@ -78,7 +78,7 @@ Fast-dev-run results (2026-03-21):
 ### Key context for next session:
 - **ProtoCLR**: **0.767 LB** (+0.031 vs exp 011 fulldata 0.736) — best single-model score
 - **EAT**: **0.720 LB** (+0.022 vs exp 011 fulldata 0.698)
-- **ConvNeXt**: submitted to Kaggle, awaiting LB score
+- **ConvNeXt**: **0.755 LB** (+0.060 vs exp 011 fulldata 0.695)
 - **Checkpoint paths**: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/012-soundscape-finetune/checkpoints/`
 - **W&B project**: `dsgt-arc/birdclef-2026-soundscape-finetune`
 - **Model naming**: `{encoder}-2026-soundscape` (exp 012), `{encoder}-2026-pseudo` (future exp 013)

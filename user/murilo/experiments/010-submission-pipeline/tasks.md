@@ -85,8 +85,7 @@ Implementation done in exp 011 (tasks 8.1–8.7).
 - [x] 9.1 Add soundscape model slugs to exp 010 pipeline (submission.py, export.sbatch, upload_kaggle.py)
 - [x] 9.2 Upload + push ProtoCLR-soundscape: **0.767 LB** (+0.031 vs fulldata 0.736) (2026-03-21)
 - [x] 9.3 Upload + push EAT-soundscape: **0.720 LB** (+0.022 vs fulldata 0.698) (2026-03-22)
-- [x] 9.4 Upload + push ConvNeXt-soundscape: submitted, awaiting LB score
-- [ ] 9.5 Record ConvNeXt-soundscape LB score
+- [x] 9.4 Upload + push ConvNeXt-soundscape: **0.755 LB** (+0.060 vs fulldata 0.695) (2026-03-22)
 
 ## 10. Documentation
 
@@ -97,7 +96,7 @@ Implementation done in exp 011 (tasks 8.1–8.7).
 
 ### Key context for next session:
 - **Model names always include training year + variant**: `protoclr-2026`, `protoclr-2026-fulldata`, `protoclr-2026-soundscape`
-- **Best LB scores**: ProtoCLR-soundscape **0.767**, EAT-soundscape **0.720**, ConvNeXt-soundscape pending
+- **Best LB scores**: ProtoCLR-soundscape **0.767**, ConvNeXt-soundscape **0.755**, EAT-soundscape **0.720**
 - **Soundscape models** (exp 012) cover 234/234 species vs 206/234 for focal-only models
 - **Check status**: `kaggle competitions submissions birdclef-2026`
 - **Species mapping**: 2025 models map 41/234 species; 2026 focal models map 206/234; soundscape models map 234/234

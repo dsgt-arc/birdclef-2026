@@ -57,7 +57,7 @@ Exp 011 checkpoints fine-tuned on mixed focal + labeled soundscape data, with he
 |-------|--------------|---------------:|----------------:|------------:|------|
 | ProtoCLR LoRA attn | Focal + soundscape (exp 012) | 234/234 | **0.767** | +0.031 | 2026-03-21 |
 | EAT LoRA attn+MLP head | Focal + soundscape (exp 012) | 234/234 | **0.720** | +0.022 | 2026-03-22 |
-| ConvNeXt LoRA MLP+MLP head | Focal + soundscape (exp 012) | 234/234 | — | — | — |
+| ConvNeXt LoRA MLP+MLP head | Focal + soundscape (exp 012) | 234/234 | **0.755** | +0.060 | 2026-03-22 |
 
 Soundscape fine-tuning improves all models by expanding species coverage and adapting to the soundscape domain. ProtoCLR-soundscape (**0.767**) is the best single-model score to date.
 
