@@ -60,6 +60,11 @@ if [[ "${USE_GPU}" == "true" ]]; then
     # onnxruntime-gpu needs CUDA libs (cublas, cudnn) in the venv
     uv pip install onnxruntime-gpu soundfile resampy numpy tqdm
     uv pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-nvrtc-cu12
+
+    # Add nvidia pip package lib paths to LD_LIBRARY_PATH so onnxruntime can find them
+    SITE_PACKAGES="$JOB_VENV/lib/python3.11/site-packages"
+    export LD_LIBRARY_PATH="${SITE_PACKAGES}/nvidia/cublas/lib:${SITE_PACKAGES}/nvidia/cudnn/lib:${SITE_PACKAGES}/nvidia/cuda_nvrtc/lib:${LD_LIBRARY_PATH:-}"
+    echo "  LD_LIBRARY_PATH updated for CUDA libs"
 else
     uv pip install onnxruntime soundfile resampy numpy tqdm
 fi
