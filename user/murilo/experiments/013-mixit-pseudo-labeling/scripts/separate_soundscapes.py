@@ -141,7 +141,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="artifacts/separated",
+        default="/storage/project/ps-clef2026_birdclef-0/shared/mixit/pretrained/soundscapes",
         help="Output directory for separated channels (NPZ files)",
     )
     parser.add_argument(

@@ -53,12 +53,15 @@ uv pip install onnxruntime soundfile resampy numpy tqdm
 echo ""
 
 cd "$EXPERIMENT_DIR"
-mkdir -p logs artifacts/separated artifacts/separated_labeled
+mkdir -p logs
+
+# Output to shared project storage (persistent, team-accessible)
+MIXIT_OUTPUT_BASE="/storage/project/${PROJECT_NAME}/shared/mixit/pretrained"
 
 # Verify model exists
 if [ ! -f "$MIXIT_MODEL" ]; then
     echo "ERROR: ONNX model not found at $MIXIT_MODEL"
-    echo "Run Phase 1 first: sbatch sbatch/convert.sh"
+    echo "Run Phase 1 first: bash sbatch/run.sh convert"
     exit 1
 fi
 
@@ -66,31 +69,34 @@ fi
 case "$MODE" in
     unlabeled)
         echo "Separating unlabeled soundscapes..."
+        echo "Output: ${MIXIT_OUTPUT_BASE}/soundscapes/"
         python scripts/separate_soundscapes.py \
             --model "$MIXIT_MODEL" \
             --soundscape-dir "$SOUNDSCAPE_DIR" \
             --data-dir "$DATA_DIR" \
-            --output-dir artifacts/separated \
+            --output-dir "${MIXIT_OUTPUT_BASE}/soundscapes" \
             --exclude-labeled \
             --num-threads "$SLURM_CPUS_PER_TASK"
         ;;
     labeled)
         echo "Separating labeled soundscapes (for validation)..."
+        echo "Output: ${MIXIT_OUTPUT_BASE}/soundscapes_labeled/"
         python scripts/separate_soundscapes.py \
             --model "$MIXIT_MODEL" \
             --soundscape-dir "$SOUNDSCAPE_DIR" \
             --data-dir "$DATA_DIR" \
-            --output-dir artifacts/separated_labeled \
+            --output-dir "${MIXIT_OUTPUT_BASE}/soundscapes_labeled" \
             --only-labeled \
             --num-threads "$SLURM_CPUS_PER_TASK"
         ;;
     test)
         echo "Test run (10 files)..."
+        echo "Output: ${MIXIT_OUTPUT_BASE}/soundscapes/"
         python scripts/separate_soundscapes.py \
             --model "$MIXIT_MODEL" \
             --soundscape-dir "$SOUNDSCAPE_DIR" \
             --data-dir "$DATA_DIR" \
-            --output-dir artifacts/separated_test \
+            --output-dir "${MIXIT_OUTPUT_BASE}/soundscapes" \
             --max-files 10 \
             --num-threads "$SLURM_CPUS_PER_TASK"
         ;;
