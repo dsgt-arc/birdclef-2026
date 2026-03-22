@@ -40,7 +40,7 @@ Fast-dev-run results (2026-03-21):
 
 - [x] 5.1 Submit all 3 configs: `bash sbatch/run.sh --all` (2026-03-21)
 - [x] 5.2 ProtoCLR completed: best epoch 11, early stopped at 13, test AUROC 0.845, cmAP 0.481
-- [ ] 5.3 EAT: training in progress
+- [x] 5.3 EAT completed: best epoch 3, early stopped at 11, test AUROC 0.838, cmAP 0.452
 - [ ] 5.4 ConvNeXt: training in progress
 - [ ] 5.5 Check focal test AUROC vs exp 011 baseline (forgetting check: flag if >0.02 drop)
 - [ ] 5.6 Check 28 soundscape-only species have non-zero predictions
@@ -57,12 +57,12 @@ Fast-dev-run results (2026-03-21):
 - [x] Export ProtoCLR to ONNX: `bash sbatch/run.sh export --model protoclr-2026-soundscape`
 - [x] Upload weights to Kaggle: `python scripts/upload_kaggle.py --model protoclr-2026-soundscape`
 - [x] Push kernel: `python scripts/upload_kaggle.py --model protoclr-2026-soundscape --push-kernel`
-- [ ] Record ProtoCLR LB score (inference running on Kaggle)
+- [x] ProtoCLR LB score: **0.767** (+0.031 vs exp 011 fulldata 0.736)
 
-### 6.3 EAT soundscape submission (pending training)
-- [ ] Export EAT to ONNX: `bash sbatch/run.sh export --model eat-2026-soundscape`
-- [ ] Upload + push: `python scripts/upload_kaggle.py --model eat-2026-soundscape --push-kernel`
-- [ ] Record EAT LB score
+### 6.3 EAT soundscape submission
+- [x] Export EAT to ONNX: `bash sbatch/run.sh export --model eat-2026-soundscape`
+- [x] Upload + push: `python scripts/upload_kaggle.py --model eat-2026-soundscape --push-kernel`
+- [ ] Record EAT LB score (inference running on Kaggle)
 
 ### 6.4 ConvNeXt soundscape submission (pending training)
 - [ ] Export ConvNeXt to ONNX: `bash sbatch/run.sh export --model convnext-2026-soundscape`
