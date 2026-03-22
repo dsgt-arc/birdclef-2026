@@ -13,15 +13,15 @@
 | ConvNeXt | 0.822 | 0.755 |
 | EAT | 0.777 | 0.720 |
 
-## Per-Taxon Breakdown (Ensemble)
+## Per-Taxon Per-Model Breakdown
 
-| Taxon | Species | Ensemble AUROC | Notes |
-|-------|---------|---------------|-------|
-| Mammalia | 4 | **0.927** | Best taxon across all models |
-| Aves | 28 | **0.899** | Only 28/162 bird species evaluable |
-| Amphibia | 17 | 0.864 | Includes dense frog choruses |
-| Insecta | 25 | 0.857 | EAT drags to 0.673 alone |
-| Reptilia | 1 | 0.785 | Single species, low confidence |
+| Taxon | Species | ProtoCLR | ConvNeXt | EAT | Ensemble |
+|-------|---------|----------|----------|-----|----------|
+| Mammalia | 4 | 0.899 | 0.869 | **0.913** | **0.927** |
+| Aves | 28 | 0.854 | 0.809 | 0.823 | **0.899** |
+| Amphibia | 17 | 0.844 | 0.820 | 0.834 | 0.864 |
+| Insecta | 25 | 0.856 | 0.848 | **0.673** | 0.857 |
+| Reptilia | 1 | 0.816 | 0.411 | 0.578 | 0.785 |
 
 ## Key Findings
 
