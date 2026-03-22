@@ -169,9 +169,31 @@ def main():
     parser.add_argument(
         "--gpu",
         action="store_true",
-        help="Use GPU for ONNX inference (requires onnxruntime-gpu)",
+        default=True,
+        help="Use GPU for ONNX inference (default: True)",
+    )
+    parser.add_argument(
+        "--cpu",
+        action="store_true",
+        help="Force CPU inference (overrides --gpu)",
+    )
+    parser.add_argument(
+        "--worker-id",
+        type=int,
+        default=0,
+        help="Worker ID for distributed processing (0-indexed)",
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=1,
+        help="Total number of workers for distributed processing",
     )
     args = parser.parse_args()
+
+    # --cpu overrides --gpu
+    if args.cpu:
+        args.gpu = False
 
     soundscape_dir = Path(args.soundscape_dir)
     output_dir = Path(args.output_dir)
@@ -195,6 +217,11 @@ def main():
 
     if args.max_files > 0:
         files = files[: args.max_files]
+
+    # Distributed: each worker takes a slice via modulo partitioning
+    if args.num_workers > 1:
+        files = [f for i, f in enumerate(files) if i % args.num_workers == args.worker_id]
+        logger.info(f"Worker {args.worker_id}/{args.num_workers}: assigned {len(files)} files")
 
     # Skip already-processed files
     todo = []

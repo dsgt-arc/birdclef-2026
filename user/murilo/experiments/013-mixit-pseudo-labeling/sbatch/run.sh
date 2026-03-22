@@ -7,19 +7,17 @@
 #   # Phase 1: Convert TF1 → ONNX
 #   bash sbatch/run.sh convert
 #
-#   # Phase 2: Separate soundscapes (CPU)
-#   bash sbatch/run.sh separate                  # all unlabeled (default)
-#   bash sbatch/run.sh separate --labeled         # labeled only (validation)
-#   bash sbatch/run.sh separate --test            # 10 files (smoke test)
-#
-#   # Phase 2: Separate soundscapes (GPU — much faster for large runs)
-#   bash sbatch/run.sh separate --gpu             # all unlabeled on GPU
-#   bash sbatch/run.sh separate --gpu --test      # smoke test on GPU
-#   bash sbatch/run.sh separate --gpu --labeled   # labeled on GPU
+#   # Phase 2: Separate soundscapes (GPU default)
+#   bash sbatch/run.sh separate                              # 1 GPU, all unlabeled
+#   bash sbatch/run.sh separate --num-workers 8              # 8 GPUs in parallel
+#   bash sbatch/run.sh separate --labeled                    # labeled only, 1 GPU
+#   bash sbatch/run.sh separate --labeled --num-workers 4    # labeled, 4 GPUs
+#   bash sbatch/run.sh separate --test                       # 10 files, 1 GPU
+#   bash sbatch/run.sh separate --cpu                        # CPU fallback
 #
 #   # Dry run
 #   bash sbatch/run.sh convert --dry-run
-#   bash sbatch/run.sh separate --gpu --dry-run
+#   bash sbatch/run.sh separate --num-workers 8 --dry-run
 
 set -eu
 
@@ -30,7 +28,8 @@ set -eu
 PHASE=""
 DRY_RUN=false
 MODE="unlabeled"
-USE_GPU=false
+USE_GPU=true
+NUM_WORKERS=1
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -50,6 +49,14 @@ while [[ $# -gt 0 ]]; do
             USE_GPU=true
             shift
             ;;
+        --cpu)
+            USE_GPU=false
+            shift
+            ;;
+        --num-workers)
+            NUM_WORKERS="$2"
+            shift 2
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -64,11 +71,17 @@ while [[ $# -gt 0 ]]; do
             echo "Options (separate only):"
             echo "  --labeled           Process only labeled soundscapes (validation)"
             echo "  --test              Process 10 files only (smoke test)"
-            echo "  --gpu               Use GPU for ONNX inference (~10-50x faster)"
+            echo "  --num-workers N     Distribute across N GPUs via SLURM job array"
+            echo "  --cpu               Force CPU inference (default: GPU)"
             echo ""
             echo "Options:"
             echo "  --dry-run           Preview command without submitting"
             echo "  -h, --help          Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0 separate                              # 1 GPU, all unlabeled"
+            echo "  $0 separate --num-workers 8              # 8 GPUs, ~2.5h for 10k files"
+            echo "  $0 separate --labeled --num-workers 4    # test distributed on 66 files"
             exit 0
             ;;
         *)
@@ -81,9 +94,9 @@ done
 if [[ -z "$PHASE" ]]; then
     echo "Error: PHASE is required (convert or separate)"
     echo "Usage: $0 PHASE [OPTIONS]"
-    echo "  $0 convert                        Phase 1: TF1 → ONNX conversion"
-    echo "  $0 separate [--labeled|--test]     Phase 2: batch separation (CPU)"
-    echo "  $0 separate --gpu [--labeled|--test]  Phase 2: batch separation (GPU)"
+    echo "  $0 convert                                 Phase 1: TF1 → ONNX conversion"
+    echo "  $0 separate [--labeled|--test]              Phase 2: separation (1 GPU)"
+    echo "  $0 separate --num-workers N [--labeled]     Phase 2: distributed (N GPUs)"
     exit 1
 fi
 
@@ -134,18 +147,19 @@ case "$PHASE" in
         ;;
 
     separate)
-        DEVICE="CPU"
-        if [[ "${USE_GPU}" == "true" ]]; then
-            DEVICE="GPU"
+        DEVICE="GPU"
+        if [[ "${USE_GPU}" != "true" ]]; then
+            DEVICE="CPU"
         fi
 
         echo "=============================================="
-        echo "Experiment 013: MixIT Phase 2 — Separation (${DEVICE})"
+        echo "Experiment 013: MixIT Phase 2 — Separation"
         echo "=============================================="
         echo "Experiment dir: ${EXPERIMENT_DIR}"
         echo "ONNX model: ${MIXIT_DIR}/bird_mixit_4sources.onnx"
         echo "Mode: ${MODE}"
         echo "Device: ${DEVICE}"
+        echo "Workers: ${NUM_WORKERS}"
         echo ""
 
         # Verify ONNX model exists
@@ -157,17 +171,23 @@ case "$PHASE" in
 
         JOB_SCRIPT="${SCRIPT_DIR}/separate.sh"
 
-        # Override SLURM resources for GPU mode
-        if [[ "${USE_GPU}" == "true" ]]; then
-            SLURM_OVERRIDES="--partition=gpu-rtx6000 --gres=gpu:1 --time=24:00:00"
-        else
-            SLURM_OVERRIDES=""
+        # SLURM overrides for CPU mode
+        SLURM_OVERRIDES=""
+        if [[ "${USE_GPU}" != "true" ]]; then
+            SLURM_OVERRIDES="--partition=cpu-small --gres= --time=8:00:00"
+        fi
+
+        # Job array for distributed processing
+        ARRAY_FLAG=""
+        if [[ "${NUM_WORKERS}" -gt 1 ]]; then
+            ARRAY_FLAG="--array=0-$((NUM_WORKERS - 1))"
         fi
 
         CMD="sbatch \
-            --output=${LOG_DIR}/slurm_separate_${MODE}_${DEVICE,,}_%j.log \
-            --export=ALL,MODE=${MODE},USE_GPU=${USE_GPU} \
+            --output=${LOG_DIR}/slurm_separate_${MODE}_${DEVICE,,}_%A_%a.log \
+            --export=ALL,MODE=${MODE},USE_GPU=${USE_GPU},NUM_WORKERS=${NUM_WORKERS} \
             --job-name=exp013-sep-${MODE}-${DEVICE,,} \
+            ${ARRAY_FLAG} \
             ${SLURM_OVERRIDES} \
             ${JOB_SCRIPT}"
 
@@ -181,6 +201,10 @@ case "$PHASE" in
             echo "Job submitted!"
             echo "=============================================="
             echo ""
+            if [[ "${NUM_WORKERS}" -gt 1 ]]; then
+                echo "Distributed: ${NUM_WORKERS} workers via SLURM job array"
+                echo "Each worker processes ~$((10592 / NUM_WORKERS)) files"
+            fi
             echo "Monitor with: squeue -u \$USER"
             echo "View logs in: ${LOG_DIR}/"
         fi
