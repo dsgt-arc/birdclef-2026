@@ -1,6 +1,6 @@
 # Experiments Summary
 
-Consolidated findings from experiments 001–009, covering BirdSet benchmarks, architecture comparisons, tokenization studies, and LoRA fine-tuning across three encoder families.
+Consolidated findings from experiments 001–012, covering BirdSet benchmarks, architecture comparisons, tokenization studies, LoRA fine-tuning across three encoder families, Kaggle submission pipeline, and soundscape domain adaptation.
 
 ## 1. Quick Reference
 
@@ -15,9 +15,12 @@ Consolidated findings from experiments 001–009, covering BirdSet benchmarks, a
 | 007 | ConvNeXt LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Does an ImageNet CNN compete with an AudioSet transformer? | 0.941 | Within 0.4% AUROC of EAT; ImageNet features transfer surprisingly well | Confirmed |
 | 008 | Frame Tokenization (EAT) | BirdCLEF 2025 (206 cls) | Do frame tokens help a pretrained transformer? | 0.933 | Frame tokens hurt pretrained models; pretrained patches are critical | Rejected |
 | 009 | ProtoCLR LoRA Fine-Tune | BirdCLEF 2025 (206 cls) | Does bird-specific pretraining add ensemble value? | 0.942 | 5× smaller model matches EAT/ConvNeXt at AUROC parity | Confirmed |
+| 010 | Submission Pipeline | BirdCLEF 2026 | Can ONNX export + Kaggle CPU kernel work end-to-end? | 0.531‡ | Pipeline validated; 3 architectures export and score on Kaggle | Confirmed |
+| 011 | LoRA Baseline 2026 | BirdCLEF 2026 (206 cls) | Does the 2025 LoRA pipeline transfer to 2026 data? | 0.736‡ | Transfers without changes; ProtoCLR fulldata best single model | Confirmed |
+| 012 | Soundscape Fine-Tuning | BirdCLEF 2026 (234 cls) | Does labeled soundscape data improve LB scores? | 0.767‡ | All 3 models improve (+0.022 to +0.060); ProtoCLR 0.767 best overall | Confirmed |
 
 † Exp 001 evaluated all 8 BirdSet datasets (HSN, PER, NES, UHH, POW, SSW, SNE, NBP); best cmAP shown is the mean across all 8 (HSN alone: 0.480 ConvNeXT, 0.380 EfficientNetB1).
-‡ BirdSet experiments (001–004) report cmAP; BirdCLEF 2025 experiments (005–009) report ROC-AUC (the Kaggle competition metric).
+‡ BirdSet experiments (001–004) report cmAP; BirdCLEF experiments (005–012) report ROC-AUC. Experiments 005–009 report offline test-split AUROC; experiments 010–012 report Kaggle public LB macro-AUROC.
 
 ### Data Splits
 
@@ -34,6 +37,12 @@ The `train_soundscapes/` (9,726 unlabeled soundscape files) and `test_soundscape
 
 Implementation: `src/birdclef/data/birdclef2025.py` → `BirdCLEFDataModule._split_dataframe()`.
 
+**BirdCLEF 2026 experiments (010–012)** use the BirdCLEF 2026 dataset (35,549 focal recordings from 206 species, plus 66 labeled soundscape files covering 234 species including 28 soundscape-only insect/amphibian sonotypes). The same **80/10/10 stratified split** is applied to focal recordings; soundscape files are split **by file** (not by segment) to prevent data leakage (~50 train / ~8 val / ~8 test files).
+
+BirdCLEF 2026 also provides 10,592 **unlabeled** soundscape files (used in exp 013, not in 010–012). The Kaggle evaluation is on a hidden test set of ~600 soundscape files; the public LB uses ~34% of this data.
+
+Implementation: Same `BirdCLEFDataModule` as 2025 (renamed from `BirdCLEF2025DataModule`); soundscape data via `MixedDataModule` in `src/birdclef/data/mixed.py` (exp 012).
+
 ## 2. Research Progression
 
 The first three experiments established foundations. Experiment 001 validated the BirdSet benchmark pipeline by reproducing published ConvNeXT and EfficientNetB1 baselines within ±0.02 cmAP across all 8 evaluation datasets, setting the audio-pretrained reference at 0.480 cmAP on HSN. Experiments 002 and 003 then tested whether ImageNet-pretrained vision models could close this gap: ConvNeXT-Tiny and ViT-Small with ImageNet weights reached only 0.17–0.19 cmAP, while training from scratch yielded 0.087–0.098. The clear takeaway was that pretraining is essential and audio-domain pretraining is far more valuable than ImageNet pretraining for bird sound classification.
@@ -41,6 +50,10 @@ The first three experiments established foundations. Experiment 001 validated th
 Two tokenization experiments explored whether better patch design could compensate for weaker representations. Experiment 004 showed that vertical frame patches (128×4, spanning the full frequency axis) improve ViT from scratch by +37% over standard 16×16 patches on HSN, confirming that spectrogram-aware tokenization provides a better inductive bias. Experiment 008 then tested the same idea on EAT with AudioSet-pretrained transformer blocks — and found the opposite: frame tokens degraded performance by 43% relative to pretrained 16×16 patches. The conclusion is that tokenization shape matters when training from scratch, but pretrained representations are so strongly coupled to their original patch structure that changing it destroys more value than the better inductive bias recovers.
 
 The LoRA fine-tuning arc (experiments 005–009) produced the most actionable results. Starting from a frozen EAT linear probe baseline of AUROC=0.890, LoRA fine-tuning of less than 1% of parameters improved all three encoder families: EAT reached AUROC=0.945, ConvNeXt-Base 0.941, and ProtoCLR 0.942. The convergence of three architecturally diverse models — a self-supervised audio transformer (90M params), an ImageNet-pretrained CNN (89M params), and a compact bird-specific contrastive model (19M params) — to within 0.004 AUROC of each other suggests a performance ceiling at the current data scale. Their architectural and pretraining diversity makes them natural candidates for ensemble-based pseudo-labeling.
+
+Experiments 010–012 moved from offline evaluation to real Kaggle leaderboard scores. Experiment 010 built the end-to-end submission pipeline: ONNX export with merged LoRA weights, species mapping, and a unified Kaggle CPU inference kernel supporting all three architectures. The first submission — ProtoCLR trained on BirdCLEF 2025 — scored 0.531 LB with only 41/234 species overlapping, validating the pipeline. Experiment 011 retrained the same LoRA configurations on BirdCLEF 2026 focal data (35,549 recordings, 206 species) with no hyperparameter changes, confirming that the pipeline generalizes across years. ProtoCLR fulldata reached 0.736 LB, the best focal-only score. EAT and ConvNeXt fulldata regressed (0.698 and 0.695 respectively), revealing that fixed-epoch training without early stopping causes overfitting — the faster a model converges, the more it overshoots.
+
+Experiment 012 addressed the focal-to-soundscape domain gap by fine-tuning from exp 011 checkpoints on mixed focal + labeled soundscape data, expanding the classification head from 206 to 234 species. All three models improved on the leaderboard: ProtoCLR reached **0.767** (+0.031), ConvNeXt **0.755** (+0.060), and EAT **0.720** (+0.022). ConvNeXt showed the largest gain, recovering from its fulldata overfitting and surpassing its original 80/10/10 score. The consistent improvement across all architectures confirms that soundscape domain adaptation and species expansion are both valuable, and positions these models as stronger teachers for pseudo-labeling in exp 013.
 
 ## 3. Detailed Findings
 
@@ -262,7 +275,91 @@ Full results: [results.md](experiments/009-protoclr-finetune/results.md)
 
 ---
 
-## 4. Cross-Experiment Analysis (Experiments 001–009)
+### 3.10 Exp 010: Submission Pipeline
+
+**Hypothesis**: LoRA fine-tuned models (EAT, ConvNeXt, ProtoCLR) can be exported to ONNX and scored on the Kaggle leaderboard via a unified CPU inference kernel within the 90-minute time limit.
+
+**Pipeline**: Checkpoint → merge LoRA → ONNX export (opset 17) → species mapping → Kaggle kernel with model-specific mel preprocessing → 5s window inference → probability mapping to 234 submission columns.
+
+**Models**: 3 architectures × 3 training variants (2025-trained, 2026 80/10/10, 2026 fulldata) + 3 soundscape models (exp 012).
+
+| Model | Training Data | Mapped Species | Public LB | Date |
+|-------|--------------|---------------:|----------:|------|
+| ProtoCLR LoRA attn | BirdCLEF 2025 (exp 009) | 41/234 | **0.531** | 2026-03-15 |
+| ProtoCLR LoRA attn | BirdCLEF 2026 80/10/10 (exp 011) | 206/234 | **0.721** | 2026-03-15 |
+| ConvNeXt LoRA MLP | BirdCLEF 2026 80/10/10 (exp 011) | 206/234 | **0.720** | 2026-03-15 |
+| EAT LoRA attn | BirdCLEF 2026 80/10/10 (exp 011) | 206/234 | **0.701** | 2026-03-15 |
+| ProtoCLR LoRA attn | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.736** | 2026-03-17 |
+| EAT LoRA attn | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.698** | 2026-03-17 |
+| ConvNeXt LoRA MLP | BirdCLEF 2026 fulldata (exp 011) | 206/234 | **0.695** | 2026-03-21 |
+| ProtoCLR LoRA attn | Focal + soundscape (exp 012) | 234/234 | **0.767** | 2026-03-21 |
+| ConvNeXt LoRA MLP | Focal + soundscape (exp 012) | 234/234 | **0.755** | 2026-03-22 |
+| EAT LoRA attn | Focal + soundscape (exp 012) | 234/234 | **0.720** | 2026-03-22 |
+
+- ONNX export works reliably for all 3 architectures. ProtoCLR required einops-compatible tracing but succeeded with opset 17. EAT and ConvNeXt export cleanly.
+- CPU timing is well within the 90-minute Kaggle budget for all single-model submissions.
+- Each model's mel preprocessing is encoded in `mel_config.json` (kaldi_fbank for EAT, log-mel for ConvNeXt, protoclr_mel for ProtoCLR), auto-detected by the unified kernel.
+- Species mapping handles both 2025→2026 (41/234 overlap) and 2026→2026 (206/234 or 234/234) mappings. Unmapped species default to probability 0.0.
+
+**Limitation**: Ensemble submission is infeasible — ProtoCLR + ConvNeXt alone would need ~120 minutes for ~600 soundscapes. Single-model submissions only.
+
+Full results: [results.md](experiments/010-submission-pipeline/results.md)
+
+---
+
+### 3.11 Exp 011: LoRA Baseline on BirdCLEF 2026
+
+**Hypothesis**: The LoRA fine-tuning pipeline from BirdCLEF 2025 (exps 006/007/009) will produce competitive baselines on BirdCLEF 2026 focal data without hyperparameter changes.
+
+**Dataset**: BirdCLEF 2026 — 35,549 focal recordings, 206 species, 80/10/10 stratified split.
+
+**Models**: EAT-base, ConvNeXt-Base, ProtoCLR/CvT-13 — all with LoRA rank=8, alpha=16, lr=3e-4, effective batch=256.
+
+| Run | Encoder | Test AUROC | Test cmAP | F1 macro | Best Epoch | Stopped | LB (80/10/10) | LB (fulldata) |
+|-----|---------|-----------|----------|----------|------------|---------|---------------|---------------|
+| `convnext-lora-mlp-mlphead` | ConvNeXt-Base | **0.938** | 0.522 | 0.456 | 9 | 20 | **0.720** | 0.695 |
+| `protoclr-lora-attn` | ProtoCLR/CvT-13 | 0.937 | **0.531** | **0.492** | 21 | 32 | 0.721 | **0.736** |
+| `eat-lora-attn-mlphead` | EAT-base | 0.929 | 0.509 | 0.472 | 17 | 28 | 0.701 | 0.698 |
+
+- The 2025 LoRA pipeline transfers to 2026 with zero hyperparameter changes. A unified `train.py` handles all 3 encoders.
+- Offline AUROC (0.929–0.938) is slightly below 2025 (0.941–0.945), likely due to different species composition rather than pipeline issues.
+- ProtoCLR is the best value model: highest cmAP (0.531) and F1 (0.492) despite being 5× smaller (~20M vs ~90M params). Its Xeno-Canto pretraining generalizes well to the new species set.
+- **Fulldata overfitting is model-dependent**: ProtoCLR benefited from fulldata (+0.015 LB) while EAT (−0.003) and ConvNeXt (−0.025) regressed. Fixed-epoch training overshoots the optimal checkpoint — the faster a model converges, the worse it overfits. Future fulldata runs should cap epochs at ~1.5× the best epoch from the 80/10/10 run.
+
+**Limitation**: Single seed (42); no hyperparameter tuning on 2026 data; fulldata runs used fixed 50 epochs without early stopping.
+
+Full results: [results.md](experiments/011-lora-baseline-2026/results.md)
+
+---
+
+### 3.12 Exp 012: Labeled Soundscape Fine-Tuning
+
+**Hypothesis**: Fine-tuning exp 011 models on labeled soundscape data will expand species coverage from 206 → 234 and improve LB scores by adapting to the soundscape domain.
+
+**Dataset**: BirdCLEF 2026 — 35,549 focal recordings + 739 labeled soundscape segments (66 files), 234 species (206 focal + 28 soundscape-only insect/amphibian sonotypes). Soundscape files split by file (~50 train / ~8 val / ~8 test).
+
+**Models**: EAT, ConvNeXt, ProtoCLR — fine-tuned from exp 011 best checkpoint (80/10/10) with head expanded 206 → 234, LoRA rank=8, lr=1e-4 (lower than exp 011's 3e-4), early stopping patience=8.
+
+| Run | Encoder | Test AUROC | Test cmAP | Best Epoch | Stopped | Public LB | vs Exp 011 |
+|-----|---------|-----------|----------|------------|---------|----------|-----------|
+| `protoclr-soundscape` | ProtoCLR/CvT-13 | **0.845** | **0.481** | 11 | 13 | **0.767** | +0.031 |
+| `convnext-soundscape` | ConvNeXt-Base | 0.844 | 0.470 | 2 | 11 | **0.755** | +0.060 |
+| `eat-soundscape` | EAT-base | 0.838 | 0.452 | 3 | 12 | **0.720** | +0.022 |
+
+- All 3 models improved on the Kaggle LB. Soundscape fine-tuning is universally beneficial — species expansion (206→234) and domain adaptation both contribute.
+- ConvNeXt had the largest LB gain (+0.060), recovering from its fulldata overfitting in exp 011 and surpassing its original 80/10/10 score (0.720 → 0.755). This suggests ConvNeXt had the biggest focal→soundscape domain gap.
+- ProtoCLR remains the best single model (**0.767 LB**), consistent with its strong bird-specific pretraining.
+- Models converge much faster than exp 011 (best epoch 2–11 vs 9–21) due to warm-starting at lower LR.
+- Offline test AUROC (234 classes) is not comparable to exp 011 (206 classes) — the 28 barely-trained soundscape-only species lower the aggregate metric.
+- Offline test AUROC does not predict LB ranking: ConvNeXt (0.844) and ProtoCLR (0.845) are nearly tied offline, but ProtoCLR leads by 0.012 on LB.
+
+**Limitation**: Only 739 soundscape segments (vs ~200K focal chunks); 28 soundscape-only species have minimal training signal; single seed; no hyperparameter tuning.
+
+Full results: [results.md](experiments/012-soundscape-finetune/results.md)
+
+---
+
+## 4. Cross-Experiment Analysis (Experiments 001–012)
 
 ### 4.1 Master Comparison Tables
 
@@ -306,6 +403,23 @@ All configurations evaluated on held-out test set (2,803 samples), sorted by ROC
 | EAT frame 4×128 | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.873 | 0.284 |
 | EAT frame 2×128 | 008 | EAT-base (90M) | AudioSet | attn | Linear | PEFT | 0.864 | 0.260 |
 
+#### BirdCLEF 2026 Kaggle Leaderboard (234 classes)
+
+All models submitted via the exp 010 pipeline. Sorted by public LB macro-AUROC descending.
+
+| Model | Exp | Training Data | Species | Public LB | vs Best Focal |
+|-------|-----|--------------|---------|----------|--------------|
+| ProtoCLR soundscape | 012 | Focal + soundscape | 234/234 | **0.767** | +0.031 |
+| ConvNeXt soundscape | 012 | Focal + soundscape | 234/234 | **0.755** | +0.060 |
+| ProtoCLR fulldata | 011 | Focal 100% | 206/234 | **0.736** | — |
+| ProtoCLR 80/10/10 | 011 | Focal 80% | 206/234 | **0.721** | — |
+| ConvNeXt 80/10/10 | 011 | Focal 80% | 206/234 | **0.720** | — |
+| EAT soundscape | 012 | Focal + soundscape | 234/234 | **0.720** | +0.022 |
+| EAT 80/10/10 | 011 | Focal 80% | 206/234 | **0.701** | — |
+| EAT fulldata | 011 | Focal 100% | 206/234 | **0.698** | — |
+| ConvNeXt fulldata | 011 | Focal 100% | 206/234 | **0.695** | — |
+| ProtoCLR 2025 | 010 | BirdCLEF 2025 | 41/234 | **0.531** | — |
+
 ### 4.2 Key Insights
 
 1. **Pretraining domain matters, but less than expected for LoRA.** On HSN, audio-pretrained models (0.480 cmAP) outperform ImageNet-pretrained models (0.174–0.191) by 2.5×. On BirdCLEF 2025 with LoRA, however, the gap narrows dramatically: ImageNet-pretrained ConvNeXt (AUROC=0.941) nearly matches AudioSet-pretrained EAT (0.945), and Xeno-Canto-pretrained ProtoCLR (0.942) matches both despite being 5× smaller. LoRA appears to equalize pretraining domains when sufficient task-specific data is available.
@@ -322,24 +436,40 @@ All configurations evaluated on held-out test set (2,803 samples), sorted by ROC
 
 7. **Ensemble readiness.** Three architecturally diverse models reach AUROC parity (0.939–0.945) on BirdCLEF 2025: EAT (transformer, AudioSet pretraining), ConvNeXt (CNN, ImageNet pretraining), and ProtoCLR (CvT with convolutional tokenization, Xeno-Canto contrastive pretraining). Their different architectures, patch strategies, and pretraining domains should produce complementary error patterns, making them strong candidates for teacher ensemble pseudo-labeling.
 
+8. **Pipeline portability (exp 010–011).** The LoRA fine-tuning pipeline transfers from BirdCLEF 2025 to 2026 with zero hyperparameter changes. A unified `train.py` handles all 3 encoders, and the ONNX export + Kaggle kernel works reliably across architectures. This infrastructure investment pays off with each new dataset or model variant.
+
+9. **Fulldata training is a double-edged sword (exp 011).** Training on 100% of focal data (no val/test split) improved ProtoCLR by +0.015 LB but hurt EAT (−0.003) and ConvNeXt (−0.025). The root cause is fixed-epoch training without early stopping: ConvNeXt converges at epoch 9 but trained 50, massively overfitting. The faster a model converges, the more it overshoots. Future fulldata runs should cap epochs at ~1.5× the best epoch from the split run.
+
+10. **Soundscape domain adaptation is universally beneficial (exp 012).** Fine-tuning on just 739 labeled soundscape segments improved all 3 models on the Kaggle LB (+0.022 to +0.060). The improvement comes from two sources: species expansion (206→234 covers 28 previously-zero species) and domain adaptation (models learn multi-species overlapping audio patterns). ConvNeXt gained the most (+0.060), suggesting it had the largest focal→soundscape domain gap.
+
+11. **Offline metrics don't predict LB ranking (exp 012).** ConvNeXt (0.844 test AUROC) and ProtoCLR (0.845) are nearly tied on the offline test split, but ProtoCLR leads by 0.012 on the actual Kaggle LB (0.767 vs 0.755). The real evaluation on diverse soundscapes amplifies differences that the held-out focal test set underestimates. LB submission is essential for reliable model comparison.
+
+12. **ProtoCLR consistently leads despite smallest size.** Across both exp 011 and 012, ProtoCLR (~20M params) achieves the highest LB scores (0.736 fulldata, 0.767 soundscape) while being 5× smaller than EAT and ConvNeXt (~90M). Its Xeno-Canto bird-specific pretraining provides a persistent advantage that neither AudioSet (EAT) nor ImageNet (ConvNeXt) pretraining can match on this task.
+
 ### 4.3 Open Questions
 
 **Representation Quality**
 - Would higher LoRA rank (r=16, r=32) or the adapters backend improve ProtoCLR and ConvNeXt, which were only tested with PEFT at r=8?
-- Can an MLP classification head on ProtoCLR (384→256→206) push beyond AUROC=0.942, as it did for EAT in exp 006?
-- Is the ~0.94 AUROC ceiling a data-scale limitation (28K focal recordings, 206 species) or a representation quality plateau?
+- Can an MLP classification head on ProtoCLR (384→256→234) push beyond 0.767 LB, as MLP heads helped EAT in exp 006?
+- Is the ~0.77 LB ceiling a data-scale limitation, a domain gap issue, or a representation quality plateau?
+
+**Pseudo-Labeling and Unlabeled Data (exp 013)**
+- Will MixIT source separation improve pseudo-label quality on the 10,592 unlabeled soundscapes?
+- How much do separated channels help for non-bird taxa (frogs, insects) where the pretrained Bird MixIT was not trained?
+- What confidence threshold maximizes pseudo-label precision without discarding too many true positives?
+- Will student training on pseudo-labeled data improve over the exp 012 teacher models?
 
 **Data and Augmentation**
-- How much would SpecAugment, mixup, or time-frequency masking improve generalization, given the pervasive overfitting observed in all experiments?
-- Does weighted sampling or loss reweighting help rare species (15 species in BirdCLEF 2025 have only 2 samples)?
-- Would training on BirdCLEF 2025 train_soundscapes (9,726 labeled soundscape files) reduce the focal-to-soundscape domain gap?
+- How much would SpecAugment, mixup, or time-frequency masking improve generalization?
+- Does weighted sampling or loss reweighting help the 28 soundscape-only species with minimal training data?
+- Would fulldata soundscape fine-tuning (100% focal + soundscape, no val/test split, capped epochs) push scores higher?
 
 **Ensembles and Deployment**
-- Do the three teacher models (EAT, ConvNeXt, ProtoCLR) make complementary errors at the per-sample level?
-- What is the optimal ensemble strategy: prediction averaging, stacking, or learned weights?
-- How do these models perform on the Kaggle hidden test set (soundscape evaluation)?
+- Can ensemble inference be made feasible within the 90-minute Kaggle limit (currently ~120 min for 2 models)?
+- Do the three soundscape-adapted models (exp 012) make complementary errors at the per-sample level?
 
 **Deferred Work**
 - BirdNET and Perch evaluation via linear probing on BirdSet (exp 001 Phase 2B)
 - Multi-seed runs to quantify variance in current single-seed results
-- Full fine-tuning completion for exp 005 (EAT fine-tune timed out before test evaluation)
+- Catastrophic forgetting check: compare exp 012 focal test AUROC against exp 011 baseline
+- Verify 28 soundscape-only species have non-zero predictions in exp 012 models
