@@ -91,6 +91,10 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Models fine-tuned on focal + labeled soundscapes, 234 classes (exp 012)
+    "birdclef-2026-protoclr-soundscape-weights",
+    "birdclef-2026-eat-soundscape-weights",
+    "birdclef-2026-convnext-soundscape-weights",
     # Models trained on BirdCLEF 2026 focal data, 100% fulldata (206/234 species mapped)
     "birdclef-2026-protoclr-fulldata-weights",
     "birdclef-2026-eat-fulldata-weights",
@@ -128,6 +132,9 @@ def find_weights_dir() -> Path:
     # Local testing fallback
     local = Path("artifacts/weights")
     for subdir in [
+        "protoclr-2026-soundscape",
+        "eat-2026-soundscape",
+        "convnext-2026-soundscape",
         "protoclr-2026-fulldata",
         "eat-2026-fulldata",
         "convnext-2026-fulldata",
