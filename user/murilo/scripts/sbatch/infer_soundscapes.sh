@@ -49,7 +49,8 @@ if [[ -z "${SCRIPT_ARGS+x}" ]]; then
     echo ""
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        echo "[DRY-RUN] sbatch --output=${LOG_DIR}/slurm_infer_%j.log --export=ALL,SCRIPT_ARGS=${ARGS[*]} ${SCRIPT_PATH}"
+        echo "[DRY-RUN] sbatch --output=${LOG_DIR}/slurm_infer_%j.log ${SCRIPT_PATH}"
+        echo "  SCRIPT_ARGS=${ARGS[*]}"
     else
         echo "Submitting job..."
         export SCRIPT_ARGS="${ARGS[*]}"
@@ -69,24 +70,46 @@ echo "Job ID: ${SLURM_JOB_ID}"
 echo "Node: $(hostname)"
 echo "Date: $(date)"
 echo "Args: ${SCRIPT_ARGS}"
+echo "Scripts dir: ${SCRIPTS_DIR}"
 echo ""
 
-# Setup venv
+# ============================================================================
+# Setup per-job virtual environment in TMPDIR (fast local NVMe)
+# ============================================================================
+
+echo "Setting up per-job virtual environment..."
+
 VENV_BASE="${TMPDIR:-/tmp}"
 JOB_VENV_DIR="$VENV_BASE/birdclef-${SLURM_JOB_ID}"
 JOB_VENV="$JOB_VENV_DIR/.venv"
 export UV_CACHE_DIR="$VENV_BASE/uv-cache"
 
+echo "  TMPDIR: $VENV_BASE"
+echo "  Venv: $JOB_VENV"
+
 mkdir -p "$JOB_VENV_DIR"
 uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
-echo "Installing dependencies..."
-uv pip install onnxruntime soundfile librosa numpy tqdm
-uv pip install torch torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+echo "  Installing dependencies from pyproject.toml..."
+uv pip install -e "$SCRIPTS_DIR"
+
+echo "  Installing CPU PyTorch..."
+uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+echo "  Virtual environment ready!"
 echo ""
 
+# Verify
+python -c "import onnxruntime; print(f'onnxruntime: {onnxruntime.__version__}')"
+python -c "import librosa; print(f'librosa: {librosa.__version__}')"
+python -c "import torch; print(f'torch: {torch.__version__}')"
+echo ""
+
+# ============================================================================
 # Run inference
+# ============================================================================
+
 python "$INFER_SCRIPT" ${SCRIPT_ARGS}
 
 echo ""
