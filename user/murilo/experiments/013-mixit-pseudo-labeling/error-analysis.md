@@ -4,6 +4,12 @@
 **Notebook**: `user/murilo/notebooks/005-error-analysis.ipynb`
 **Data**: 66 labeled soundscape files, 792 segments, 75/234 species evaluable
 
+**Caveat: data leakage.** Exp 012 trained on ~50/66 labeled soundscape files (80/10/10 split).
+This analysis evaluates on all 66 files, so ~75% of segments were seen during training.
+Absolute AUROC numbers are optimistic. However, the directional findings (per-taxon gaps,
+model-specific failures, confidence patterns) are still valid since leakage inflates all
+models equally — the relative comparisons hold.
+
 ## Macro AUROC (75 evaluable species)
 
 | Model | AUROC | Kaggle LB |
