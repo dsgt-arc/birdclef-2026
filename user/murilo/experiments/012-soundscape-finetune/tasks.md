@@ -73,7 +73,7 @@ Fast-dev-run results (2026-03-21):
 
 - [x] 7.1 Write proposal.md (includes exp 012→013 sequencing rationale)
 - [x] 7.2 Write README.md
-- [ ] 7.3 Write results.md (after all LB scores collected)
+- [x] 7.3 Write results.md with all 3 LB scores and analysis
 
 ### Key context for next session:
 - **ProtoCLR**: **0.767 LB** (+0.031 vs exp 011 fulldata 0.736) — best single-model score
