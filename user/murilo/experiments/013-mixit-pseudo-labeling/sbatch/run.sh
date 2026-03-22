@@ -7,14 +7,19 @@
 #   # Phase 1: Convert TF1 → ONNX
 #   bash sbatch/run.sh convert
 #
-#   # Phase 2: Separate soundscapes
+#   # Phase 2: Separate soundscapes (CPU)
 #   bash sbatch/run.sh separate                  # all unlabeled (default)
 #   bash sbatch/run.sh separate --labeled         # labeled only (validation)
 #   bash sbatch/run.sh separate --test            # 10 files (smoke test)
 #
+#   # Phase 2: Separate soundscapes (GPU — much faster for large runs)
+#   bash sbatch/run.sh separate --gpu             # all unlabeled on GPU
+#   bash sbatch/run.sh separate --gpu --test      # smoke test on GPU
+#   bash sbatch/run.sh separate --gpu --labeled   # labeled on GPU
+#
 #   # Dry run
 #   bash sbatch/run.sh convert --dry-run
-#   bash sbatch/run.sh separate --dry-run
+#   bash sbatch/run.sh separate --gpu --dry-run
 
 set -eu
 
@@ -25,6 +30,7 @@ set -eu
 PHASE=""
 DRY_RUN=false
 MODE="unlabeled"
+USE_GPU=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -38,6 +44,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --test)
             MODE="test"
+            shift
+            ;;
+        --gpu)
+            USE_GPU=true
             shift
             ;;
         --dry-run)
@@ -54,6 +64,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options (separate only):"
             echo "  --labeled           Process only labeled soundscapes (validation)"
             echo "  --test              Process 10 files only (smoke test)"
+            echo "  --gpu               Use GPU for ONNX inference (~10-50x faster)"
             echo ""
             echo "Options:"
             echo "  --dry-run           Preview command without submitting"
@@ -70,8 +81,9 @@ done
 if [[ -z "$PHASE" ]]; then
     echo "Error: PHASE is required (convert or separate)"
     echo "Usage: $0 PHASE [OPTIONS]"
-    echo "  $0 convert              Phase 1: TF1 → ONNX conversion"
-    echo "  $0 separate [--labeled|--test]  Phase 2: batch separation"
+    echo "  $0 convert                        Phase 1: TF1 → ONNX conversion"
+    echo "  $0 separate [--labeled|--test]     Phase 2: batch separation (CPU)"
+    echo "  $0 separate --gpu [--labeled|--test]  Phase 2: batch separation (GPU)"
     exit 1
 fi
 
@@ -122,12 +134,18 @@ case "$PHASE" in
         ;;
 
     separate)
+        DEVICE="CPU"
+        if [[ "${USE_GPU}" == "true" ]]; then
+            DEVICE="GPU"
+        fi
+
         echo "=============================================="
-        echo "Experiment 013: MixIT Phase 2 — Separation"
+        echo "Experiment 013: MixIT Phase 2 — Separation (${DEVICE})"
         echo "=============================================="
         echo "Experiment dir: ${EXPERIMENT_DIR}"
         echo "ONNX model: ${MIXIT_DIR}/bird_mixit_4sources.onnx"
         echo "Mode: ${MODE}"
+        echo "Device: ${DEVICE}"
         echo ""
 
         # Verify ONNX model exists
@@ -138,10 +156,19 @@ case "$PHASE" in
         fi
 
         JOB_SCRIPT="${SCRIPT_DIR}/separate.sh"
+
+        # Override SLURM resources for GPU mode
+        if [[ "${USE_GPU}" == "true" ]]; then
+            SLURM_OVERRIDES="--partition=gpu-rtx6000 --gres=gpu:1 --time=24:00:00"
+        else
+            SLURM_OVERRIDES=""
+        fi
+
         CMD="sbatch \
-            --output=${LOG_DIR}/slurm_separate_${MODE}_%j.log \
-            --export=ALL,MODE=${MODE} \
-            --job-name=exp013-sep-${MODE} \
+            --output=${LOG_DIR}/slurm_separate_${MODE}_${DEVICE,,}_%j.log \
+            --export=ALL,MODE=${MODE},USE_GPU=${USE_GPU} \
+            --job-name=exp013-sep-${MODE}-${DEVICE,,} \
+            ${SLURM_OVERRIDES} \
             ${JOB_SCRIPT}"
 
         if [[ "${DRY_RUN}" == "true" ]]; then

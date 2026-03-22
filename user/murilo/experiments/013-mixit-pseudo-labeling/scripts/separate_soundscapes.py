@@ -166,6 +166,11 @@ def main():
         default=4,
         help="Number of ONNX runtime threads (default: 4)",
     )
+    parser.add_argument(
+        "--gpu",
+        action="store_true",
+        help="Use GPU for ONNX inference (requires onnxruntime-gpu)",
+    )
     args = parser.parse_args()
 
     soundscape_dir = Path(args.soundscape_dir)
@@ -213,11 +218,22 @@ def main():
     sess_options = ort.SessionOptions()
     sess_options.intra_op_num_threads = args.num_threads
     sess_options.inter_op_num_threads = 1
+
+    if args.gpu:
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    else:
+        providers = ["CPUExecutionProvider"]
+
     session = ort.InferenceSession(
         args.model,
         sess_options=sess_options,
-        providers=["CPUExecutionProvider"],
+        providers=providers,
     )
+
+    active_provider = session.get_providers()[0]
+    logger.info(f"  Provider: {active_provider}")
+    if args.gpu and "CUDA" not in active_provider:
+        logger.warning("GPU requested but CUDA provider not available, falling back to CPU")
 
     input_info = session.get_inputs()[0]
     output_info = session.get_outputs()[0]

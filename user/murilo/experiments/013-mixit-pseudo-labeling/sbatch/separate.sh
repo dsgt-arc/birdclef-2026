@@ -21,6 +21,7 @@
 set -eu
 
 MODE="${MODE:-unlabeled}"
+USE_GPU="${USE_GPU:-false}"
 
 EXPERIMENT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 USER_DIR="$(dirname "$(dirname "$EXPERIMENT_DIR")")"
@@ -37,7 +38,13 @@ echo "Job ID: ${SLURM_JOB_ID:-local}"
 echo "Node: $(hostname)"
 echo "Date: $(date)"
 echo "Mode: ${MODE}"
+echo "GPU: ${USE_GPU}"
 echo ""
+
+if [[ "${USE_GPU}" == "true" ]]; then
+    nvidia-smi
+    echo ""
+fi
 
 # Setup venv
 JOB_VENV_DIR="$TMPDIR/birdclef-$SLURM_JOB_ID"
@@ -49,7 +56,11 @@ uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
 echo "Installing dependencies..."
-uv pip install onnxruntime soundfile resampy numpy tqdm
+if [[ "${USE_GPU}" == "true" ]]; then
+    uv pip install onnxruntime-gpu soundfile resampy numpy tqdm
+else
+    uv pip install onnxruntime soundfile resampy numpy tqdm
+fi
 echo ""
 
 cd "$EXPERIMENT_DIR"
@@ -65,6 +76,12 @@ if [ ! -f "$MIXIT_MODEL" ]; then
     exit 1
 fi
 
+# GPU flag for python script
+GPU_FLAG=""
+if [[ "${USE_GPU}" == "true" ]]; then
+    GPU_FLAG="--gpu"
+fi
+
 # Run separation based on mode
 case "$MODE" in
     unlabeled)
@@ -76,7 +93,8 @@ case "$MODE" in
             --data-dir "$DATA_DIR" \
             --output-dir "${MIXIT_OUTPUT_BASE}/soundscapes" \
             --exclude-labeled \
-            --num-threads "$SLURM_CPUS_PER_TASK"
+            --num-threads "$SLURM_CPUS_PER_TASK" \
+            ${GPU_FLAG}
         ;;
     labeled)
         echo "Separating labeled soundscapes (for validation)..."
@@ -87,7 +105,8 @@ case "$MODE" in
             --data-dir "$DATA_DIR" \
             --output-dir "${MIXIT_OUTPUT_BASE}/soundscapes_labeled" \
             --only-labeled \
-            --num-threads "$SLURM_CPUS_PER_TASK"
+            --num-threads "$SLURM_CPUS_PER_TASK" \
+            ${GPU_FLAG}
         ;;
     test)
         echo "Test run (10 files)..."
@@ -98,7 +117,8 @@ case "$MODE" in
             --data-dir "$DATA_DIR" \
             --output-dir "${MIXIT_OUTPUT_BASE}/soundscapes" \
             --max-files 10 \
-            --num-threads "$SLURM_CPUS_PER_TASK"
+            --num-threads "$SLURM_CPUS_PER_TASK" \
+            ${GPU_FLAG}
         ;;
     *)
         echo "Unknown mode: $MODE (expected: unlabeled, labeled, test)"
