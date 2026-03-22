@@ -50,6 +50,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MIXIT_SAMPLE_RATE = 22050  # Bird MixIT expects 22.05 kHz
+MIXIT_BLOCK_SIZE = 22  # Learned basis window: 1ms at 22050 Hz (~22 samples)
 
 
 def load_and_resample(audio_path: Path, target_sr: int = MIXIT_SAMPLE_RATE) -> np.ndarray:
@@ -69,20 +70,36 @@ def load_and_resample(audio_path: Path, target_sr: int = MIXIT_SAMPLE_RATE) -> n
 def separate(session: ort.InferenceSession, audio: np.ndarray) -> np.ndarray:
     """Run MixIT separation on a mono waveform.
 
+    Pads input to the nearest multiple of MIXIT_BLOCK_SIZE (the learned Conv1D
+    kernel size) to avoid shape mismatches in the ONNX mixture consistency layer,
+    then trims output back to original length.
+
     Args:
         session: ONNX inference session for Bird MixIT
         audio: (num_samples,) mono waveform at 22.05 kHz
 
     Returns:
-        (num_sources, num_samples) separated channels
+        (num_sources, num_samples) separated channels at original length
     """
+    original_len = len(audio)
+
+    # Pad to nearest multiple of block size
+    padded_len = int(np.ceil(original_len / MIXIT_BLOCK_SIZE) * MIXIT_BLOCK_SIZE)
+    if padded_len != original_len:
+        audio = np.pad(audio, (0, padded_len - original_len), mode="constant")
+
     # Model expects (1, 1, num_samples) — batch=1, mics=1, samples=N
     audio_3d = audio.reshape(1, 1, -1)
     input_name = session.get_inputs()[0].name
     output = session.run(None, {input_name: audio_3d})[0]
+
     # Output is (1, num_sources, num_samples) — squeeze batch dim
     if output.ndim == 3:
         output = output.squeeze(0)
+
+    # Trim to original length
+    output = output[:, :original_len]
+
     return output  # (4, num_samples)
 
 

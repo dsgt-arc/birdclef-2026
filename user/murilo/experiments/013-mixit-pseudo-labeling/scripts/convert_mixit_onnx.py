@@ -121,10 +121,23 @@ def validate_onnx(
 
     # The TF1 model expects input shape (1, 1, num_samples) — batch=1, mics=1, samples=N
     # Output shape is (1, num_sources, num_samples)
+    #
+    # The ONNX model requires input length to be a multiple of the internal Conv1D
+    # kernel size (22 samples = 1ms window at 22050 Hz). Otherwise the mixture
+    # consistency projection fails with a shape mismatch.
+    original_len = len(audio)
+    block_size = 22  # learned basis window: 1ms at 22050 Hz
+    padded_len = int(np.ceil(original_len / block_size) * block_size)
+    if padded_len != original_len:
+        audio = np.pad(audio, (0, padded_len - original_len), mode="constant")
+        logger.info(
+            f"Padded audio from {original_len} to {padded_len} samples (block_size={block_size})"
+        )
+
     audio_3d = audio.reshape(1, 1, -1)
     logger.info(f"Input shape for inference: {audio_3d.shape}")
 
-    # Run TF1 inference
+    # Run TF1 inference (TF handles dynamic shapes natively, no padding needed)
     logger.info("Running TF1 inference...")
     tf.compat.v1.reset_default_graph()
     with tf.compat.v1.Session() as sess:
@@ -137,16 +150,25 @@ def validate_onnx(
         )
     logger.info(f"TF1 output shape: {tf_output.shape}")
 
-    # Run ONNX inference
+    # Run ONNX inference (uses padded input)
     logger.info("Running ONNX inference...")
-    session = ort.InferenceSession(str(onnx_path))
+    sess_options = ort.SessionOptions()
+    sess_options.intra_op_num_threads = 4
+    sess_options.inter_op_num_threads = 1
+    session = ort.InferenceSession(
+        str(onnx_path), sess_options=sess_options, providers=["CPUExecutionProvider"]
+    )
     input_name = session.get_inputs()[0].name
     onnx_output = session.run(None, {input_name: audio_3d})[0]
     logger.info(f"ONNX output shape: {onnx_output.shape}")
 
-    # Squeeze batch dimension for comparison: (1, sources, samples) → (sources, samples)
+    # Squeeze batch dimension: (1, sources, samples) → (sources, samples)
     tf_out = tf_output.squeeze(0) if tf_output.ndim == 3 else tf_output
     onnx_out = onnx_output.squeeze(0) if onnx_output.ndim == 3 else onnx_output
+
+    # Trim both to original length for comparison
+    tf_out = tf_out[:, :original_len]
+    onnx_out = onnx_out[:, :original_len]
 
     # Compare
     max_diff = np.max(np.abs(tf_out - onnx_out))
