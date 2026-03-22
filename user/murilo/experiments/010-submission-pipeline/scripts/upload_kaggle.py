@@ -5,9 +5,10 @@ Creates/updates Kaggle datasets with ONNX model weights and pushes the
 unified submission kernel with model-specific metadata.
 
 Model naming: {encoder}-{year}[-{variant}]
-  - protoclr-2025, eat-2025, convnext-2025        (exps 006/007/009, 2025 data)
-  - protoclr-2026, eat-2026, convnext-2026         (exp 011, 2026 80/10/10 split)
-  - protoclr-2026-fulldata, eat-2026-fulldata, ... (exp 011, 2026 100% focal)
+  - protoclr-2025, eat-2025, convnext-2025            (exps 006/007/009, 2025 data)
+  - protoclr-2026, eat-2026, convnext-2026             (exp 011, 2026 80/10/10 split)
+  - protoclr-2026-fulldata, eat-2026-fulldata, ...     (exp 011, 2026 100% focal)
+  - protoclr-2026-soundscape, eat-2026-soundscape, ... (exp 012, focal + soundscapes, 234 classes)
 
 Usage:
     # Upload 2025-trained models
@@ -22,11 +23,15 @@ Usage:
     python scripts/upload_kaggle.py --model protoclr-2026-fulldata
     python scripts/upload_kaggle.py --model all-2026-fulldata
 
+    # Upload 2026-trained soundscape models (focal + soundscapes, 234 classes)
+    python scripts/upload_kaggle.py --model protoclr-2026-soundscape
+    python scripts/upload_kaggle.py --model all-2026-soundscape
+
     # Upload + push kernel
-    python scripts/upload_kaggle.py --model protoclr-2026-fulldata --push-kernel
+    python scripts/upload_kaggle.py --model protoclr-2026-soundscape --push-kernel
 
     # Dry run
-    python scripts/upload_kaggle.py --model protoclr-2026-fulldata --dry-run
+    python scripts/upload_kaggle.py --model protoclr-2026-soundscape --dry-run
 """
 
 import argparse
@@ -90,6 +95,22 @@ MODELS = {
         "slug": "birdclef-2026-protoclr-fulldata-weights",
         "weights_dir": "artifacts/weights/protoclr-2026-fulldata",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026-fulldata.json",
+    },
+    # Models fine-tuned on focal + labeled soundscapes, 234 classes (exp 012)
+    "eat-2026-soundscape": {
+        "slug": "birdclef-2026-eat-soundscape-weights",
+        "weights_dir": "artifacts/weights/eat-2026-soundscape",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-eat-2026-soundscape.json",
+    },
+    "convnext-2026-soundscape": {
+        "slug": "birdclef-2026-convnext-soundscape-weights",
+        "weights_dir": "artifacts/weights/convnext-2026-soundscape",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-convnext-2026-soundscape.json",
+    },
+    "protoclr-2026-soundscape": {
+        "slug": "birdclef-2026-protoclr-soundscape-weights",
+        "weights_dir": "artifacts/weights/protoclr-2026-soundscape",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026-soundscape.json",
     },
 }
 
@@ -193,8 +214,10 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
         return
 
     # Copy species_mapping.json into model weights dir
-    # Use 2026 mapping for 2026-trained models (incl. fulldata), 2025 mapping otherwise
-    if "-2026" in model_name:
+    # Soundscape models use 234-species mapping, 2026 models use 206, 2025 uses 41-overlap
+    if "-soundscape" in model_name:
+        mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026_234.json"
+    elif "-2026" in model_name:
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026.json"
     else:
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping.json"
@@ -234,8 +257,9 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=list(MODELS.keys()) + ["all", "all-2025", "all-2026", "all-2026-fulldata"],
-        help="Model to upload (e.g., protoclr-2026, protoclr-2026-fulldata, all-2026-fulldata)",
+        choices=list(MODELS.keys())
+        + ["all", "all-2025", "all-2026", "all-2026-fulldata", "all-2026-soundscape"],
+        help="Model to upload (e.g., protoclr-2026-soundscape, all-2026-soundscape)",
     )
     parser.add_argument("--kaggle-user", type=str, default=DEFAULT_KAGGLE_USER)
     parser.add_argument("--push-kernel", action="store_true", help="Also push the Kaggle kernel")
@@ -256,9 +280,15 @@ def main():
         models = [k for k in MODELS if k.endswith("-2025")]
     elif args.model == "all-2026-fulldata":
         models = [k for k in MODELS if k.endswith("-2026-fulldata")]
+    elif args.model == "all-2026-soundscape":
+        models = [k for k in MODELS if k.endswith("-2026-soundscape")]
     elif args.model == "all-2026":
-        # Only 80/10/10 models, not fulldata
-        models = [k for k in MODELS if k.endswith("-2026") and "-fulldata" not in k]
+        # Only 80/10/10 models, not fulldata or soundscape
+        models = [
+            k
+            for k in MODELS
+            if k.endswith("-2026") and "-fulldata" not in k and "-soundscape" not in k
+        ]
     else:
         models = [args.model]
 

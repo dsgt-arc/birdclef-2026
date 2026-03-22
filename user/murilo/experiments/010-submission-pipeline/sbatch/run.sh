@@ -44,6 +44,7 @@ if [[ $# -lt 1 ]]; then
     echo "              eat-2025, convnext-2025, protoclr-2025, all-2025"
     echo "              eat-2026, convnext-2026, protoclr-2026, all-2026"
     echo "              eat-2026-fulldata, convnext-2026-fulldata, protoclr-2026-fulldata, all-2026-fulldata"
+    echo "              eat-2026-soundscape, convnext-2026-soundscape, protoclr-2026-soundscape, all-2026-soundscape"
     echo "  --dry-run   Preview sbatch command without submitting"
     exit 1
 fi

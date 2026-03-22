@@ -208,6 +208,57 @@ export_convnext_2026_fulldata() {
 }
 
 # ============================================================================
+# 2026-trained soundscape model exports (exp 012 checkpoints, 234 classes)
+# ============================================================================
+
+TAXONOMY_CSV_2026="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/taxonomy.csv"
+EXP012_DIR="$(dirname "$EXPERIMENT_DIR")/012-soundscape-finetune"
+
+export_protoclr_2026_soundscape() {
+    echo "=== Exporting ProtoCLR (2026-soundscape, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-protoclr-soundscape/best-epochepoch=11.ckpt"
+    python scripts/export_protoclr.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP012_DIR}/config/protoclr_soundscape.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/protoclr-2026-soundscape/
+}
+
+export_eat_2026_soundscape() {
+    echo "=== Exporting EAT (2026-soundscape, 234 classes) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-eat-soundscape"
+    local CKPT
+    CKPT="$(ls -t "$CKPT_DIR"/best-epoch*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No best-epoch*.ckpt found in $CKPT_DIR" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_eat.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP012_DIR}/config/eat_soundscape.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/eat-2026-soundscape/
+}
+
+export_convnext_2026_soundscape() {
+    echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
+    local CKPT
+    CKPT="$(ls -t "$CKPT_DIR"/best-epoch*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No best-epoch*.ckpt found in $CKPT_DIR" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_convnext.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP012_DIR}/config/convnext_soundscape.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/convnext-2026-soundscape/
+}
+
+# ============================================================================
 # Build species mappings and run exports
 # ============================================================================
 
@@ -227,6 +278,16 @@ case "$MODEL" in
         python scripts/build_species_mapping.py \
             --train-csv "$TRAIN_CSV_2026" \
             --output artifacts/weights/species_mapping_2026.json
+        echo ""
+        ;;
+esac
+
+case "$MODEL" in
+    eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape)
+        echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
+        python scripts/build_species_mapping.py \
+            --train-csv "$TAXONOMY_CSV_2026" \
+            --output artifacts/weights/species_mapping_2026_234.json
         echo ""
         ;;
 esac
@@ -261,6 +322,16 @@ case "$MODEL" in
         export_convnext_2026_fulldata
         echo ""
         export_protoclr_2026_fulldata
+        ;;
+    eat-2026-soundscape)       export_eat_2026_soundscape ;;
+    convnext-2026-soundscape)  export_convnext_2026_soundscape ;;
+    protoclr-2026-soundscape)  export_protoclr_2026_soundscape ;;
+    all-2026-soundscape)
+        export_eat_2026_soundscape
+        echo ""
+        export_convnext_2026_soundscape
+        echo ""
+        export_protoclr_2026_soundscape
         ;;
     *)
         echo "Unknown model: $MODEL"
