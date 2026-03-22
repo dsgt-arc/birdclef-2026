@@ -119,6 +119,11 @@ def validate_onnx(
         audio = np.random.randn(22050 * 5).astype(np.float32) * 0.1
         logger.info("Test audio: random noise (5s at 22050 Hz)")
 
+    # The TF1 model expects input shape (1, 1, num_samples) — batch=1, mics=1, samples=N
+    # Output shape is (1, num_sources, num_samples)
+    audio_3d = audio.reshape(1, 1, -1)
+    logger.info(f"Input shape for inference: {audio_3d.shape}")
+
     # Run TF1 inference
     logger.info("Running TF1 inference...")
     tf.compat.v1.reset_default_graph()
@@ -128,7 +133,7 @@ def validate_onnx(
 
         tf_output = sess.run(
             "denoised_waveforms:0",
-            feed_dict={"input_audio/receiver_audio:0": audio},
+            feed_dict={"input_audio/receiver_audio:0": audio_3d},
         )
     logger.info(f"TF1 output shape: {tf_output.shape}")
 
@@ -136,12 +141,16 @@ def validate_onnx(
     logger.info("Running ONNX inference...")
     session = ort.InferenceSession(str(onnx_path))
     input_name = session.get_inputs()[0].name
-    onnx_output = session.run(None, {input_name: audio})[0]
+    onnx_output = session.run(None, {input_name: audio_3d})[0]
     logger.info(f"ONNX output shape: {onnx_output.shape}")
 
+    # Squeeze batch dimension for comparison: (1, sources, samples) → (sources, samples)
+    tf_out = tf_output.squeeze(0) if tf_output.ndim == 3 else tf_output
+    onnx_out = onnx_output.squeeze(0) if onnx_output.ndim == 3 else onnx_output
+
     # Compare
-    max_diff = np.max(np.abs(tf_output - onnx_output))
-    mean_diff = np.mean(np.abs(tf_output - onnx_output))
+    max_diff = np.max(np.abs(tf_out - onnx_out))
+    mean_diff = np.mean(np.abs(tf_out - onnx_out))
     logger.info(f"Max absolute difference: {max_diff:.6f}")
     logger.info(f"Mean absolute difference: {mean_diff:.6f}")
 
@@ -154,8 +163,8 @@ def validate_onnx(
         )
 
     # Log channel activity (which channels have signal)
-    for i in range(onnx_output.shape[0]):
-        rms = np.sqrt(np.mean(onnx_output[i] ** 2))
+    for i in range(onnx_out.shape[0]):
+        rms = np.sqrt(np.mean(onnx_out[i] ** 2))
         logger.info(f"  Channel {i}: RMS = {rms:.6f}")
 
     return max_diff < atol

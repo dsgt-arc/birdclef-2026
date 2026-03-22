@@ -76,8 +76,13 @@ def separate(session: ort.InferenceSession, audio: np.ndarray) -> np.ndarray:
     Returns:
         (num_sources, num_samples) separated channels
     """
+    # Model expects (1, 1, num_samples) — batch=1, mics=1, samples=N
+    audio_3d = audio.reshape(1, 1, -1)
     input_name = session.get_inputs()[0].name
-    output = session.run(None, {input_name: audio})[0]
+    output = session.run(None, {input_name: audio_3d})[0]
+    # Output is (1, num_sources, num_samples) — squeeze batch dim
+    if output.ndim == 3:
+        output = output.squeeze(0)
     return output  # (4, num_samples)
 
 
