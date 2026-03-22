@@ -55,7 +55,7 @@ uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
 echo "  Installing dependencies..."
-uv pip install -e "$SCRIPTS_DIR"
+uv pip install onnxruntime librosa soundfile numpy tqdm scikit-learn pandas
 
 echo "  Installing CPU PyTorch..."
 uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
