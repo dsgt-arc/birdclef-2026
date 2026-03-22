@@ -21,6 +21,7 @@ and adapt to the soundscape domain. Mixed focal + soundscape training with head 
   - `MixedDataModule` integration
 - [x] 3.2 Create 3 YAML configs (EAT, ConvNeXt, ProtoCLR)
 - [x] 3.3 Create SLURM scripts (`sbatch/run.sh`, `sbatch/_job.sh`)
+- [x] 3.4 Create `save_metrics.py` for structured artifact saving
 
 ## 4. Validation
 
@@ -38,26 +39,47 @@ Fast-dev-run results (2026-03-21):
 ## 5. Full Training
 
 - [x] 5.1 Submit all 3 configs: `bash sbatch/run.sh --all` (2026-03-21)
-- [ ] 5.2 Monitor on W&B (`dsgt-arc/birdclef-2026-soundscape-finetune`)
-- [ ] 5.3 Check focal test AUROC vs exp 011 baseline (forgetting check: flag if >0.02 drop)
-- [ ] 5.4 Check soundscape test AUROC
-- [ ] 5.5 Check 28 soundscape-only species have non-zero predictions
+- [x] 5.2 ProtoCLR completed: best epoch 11, early stopped at 13, test AUROC 0.845, cmAP 0.481
+- [ ] 5.3 EAT: training in progress
+- [ ] 5.4 ConvNeXt: training in progress
+- [ ] 5.5 Check focal test AUROC vs exp 011 baseline (forgetting check: flag if >0.02 drop)
+- [ ] 5.6 Check 28 soundscape-only species have non-zero predictions
 
 ## 6. Kaggle Submission
 
-- [ ] 6.1 Export 234-class models to ONNX (via exp 010 pipeline, `--train-csv taxonomy.csv`)
-- [ ] 6.2 Upload + push kernels to Kaggle
-- [ ] 6.3 Record LB scores in results.md
+### 6.1 Exp 010 pipeline updates (done)
+- [x] Add soundscape model slugs to `submission.py` MODEL_SLUGS
+- [x] Add export functions to `export.sbatch` for `{encoder}-2026-soundscape`
+- [x] Add MODELS entries to `upload_kaggle.py` with `all-2026-soundscape` filter
+- [x] Create kernel-metadata JSON for all 3 soundscape models
+
+### 6.2 ProtoCLR soundscape submission
+- [x] Export ProtoCLR to ONNX: `bash sbatch/run.sh export --model protoclr-2026-soundscape`
+- [x] Upload weights to Kaggle: `python scripts/upload_kaggle.py --model protoclr-2026-soundscape`
+- [x] Push kernel: `python scripts/upload_kaggle.py --model protoclr-2026-soundscape --push-kernel`
+- [ ] Record ProtoCLR LB score (inference running on Kaggle)
+
+### 6.3 EAT soundscape submission (pending training)
+- [ ] Export EAT to ONNX: `bash sbatch/run.sh export --model eat-2026-soundscape`
+- [ ] Upload + push: `python scripts/upload_kaggle.py --model eat-2026-soundscape --push-kernel`
+- [ ] Record EAT LB score
+
+### 6.4 ConvNeXt soundscape submission (pending training)
+- [ ] Export ConvNeXt to ONNX: `bash sbatch/run.sh export --model convnext-2026-soundscape`
+- [ ] Upload + push: `python scripts/upload_kaggle.py --model convnext-2026-soundscape --push-kernel`
+- [ ] Record ConvNeXt LB score
 
 ## 7. Documentation
 
-- [x] 7.1 Write proposal.md
+- [x] 7.1 Write proposal.md (includes exp 012→013 sequencing rationale)
 - [x] 7.2 Write README.md
-- [ ] 7.3 Write results.md (after training completes)
+- [ ] 7.3 Write results.md (after all LB scores collected)
 
 ### Key context for next session:
-- **Full training submitted** 2026-03-21, expected 6–12h per model
+- **ProtoCLR**: trained, exported, submitted to Kaggle — awaiting LB score
+- **EAT / ConvNeXt**: training in progress on PACE
 - **Checkpoint paths**: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/012-soundscape-finetune/checkpoints/`
 - **W&B project**: `dsgt-arc/birdclef-2026-soundscape-finetune`
-- **Export needs update**: exp 010 export scripts need `--train-csv taxonomy.csv` to get 234 species list; species mapping becomes identity (234→234)
+- **Model naming**: `{encoder}-2026-soundscape` (exp 012), `{encoder}-2026-pseudo` (future exp 013)
 - **Baseline LB scores** (exp 011 fulldata): ProtoCLR 0.736, EAT 0.698, ConvNeXt 0.695
+- **Note**: Exp 012 uses 80/10/10 split (not fulldata). Could do fulldata run later if results are promising.
