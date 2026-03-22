@@ -80,17 +80,25 @@ Implementation done in exp 011 (tasks 8.1–8.7).
 > (e.g., exp 012). Requires multi-label training support, a different data pipeline for
 > soundscape segments, and careful handling of the 28 soundscape-only insect sonotypes.
 
-## 9. Documentation
+## 9. Kaggle Submissions — Soundscape Fine-Tuned Models (exp 012)
 
-- [x] 9.1 Write proposal.md
-- [x] 9.2 Write README.md with quickstart guide
-- [x] 9.3 Add .gitignore for generated kernel-metadata.json
-- [x] 9.4 Write results.md with submission scores
+- [x] 9.1 Add soundscape model slugs to exp 010 pipeline (submission.py, export.sbatch, upload_kaggle.py)
+- [x] 9.2 Upload + push ProtoCLR-soundscape: **0.767 LB** (+0.031 vs fulldata 0.736) (2026-03-21)
+- [x] 9.3 Upload + push EAT-soundscape: **0.720 LB** (+0.022 vs fulldata 0.698) (2026-03-22)
+- [x] 9.4 Upload + push ConvNeXt-soundscape: submitted, awaiting LB score
+- [ ] 9.5 Record ConvNeXt-soundscape LB score
+
+## 10. Documentation
+
+- [x] 10.1 Write proposal.md
+- [x] 10.2 Write README.md with quickstart guide
+- [x] 10.3 Add .gitignore for generated kernel-metadata.json
+- [x] 10.4 Write results.md with submission scores
 
 ### Key context for next session:
-- **Model names always include training year**: `protoclr-2025`, `protoclr-2026`, `all-2025`, `all-2026`
-- **Current LB scores**: ProtoCLR-2026 = 0.721, ConvNeXt-2026 = 0.720, EAT-2026 = 0.701 (all trained on 80% of focal data)
-- **Next priority**: retrain on 100% of focal data (no val/test split) for higher scores
+- **Model names always include training year + variant**: `protoclr-2026`, `protoclr-2026-fulldata`, `protoclr-2026-soundscape`
+- **Best LB scores**: ProtoCLR-soundscape **0.767**, EAT-soundscape **0.720**, ConvNeXt-soundscape pending
+- **Soundscape models** (exp 012) cover 234/234 species vs 206/234 for focal-only models
 - **Check status**: `kaggle competitions submissions birdclef-2026`
-- **Species mapping**: 2025 models map 41/234 species; 2026 models map 206/234 species (28 soundscape-only insect sonotypes have no training data)
+- **Species mapping**: 2025 models map 41/234 species; 2026 focal models map 206/234; soundscape models map 234/234
 - **Public LB uses ~34% of test data**; final standings use the remaining ~66%

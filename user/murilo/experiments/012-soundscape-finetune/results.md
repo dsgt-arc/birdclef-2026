@@ -17,7 +17,7 @@ Competition metric: **macro-averaged ROC-AUC** (skips classes with no true posit
 | Model | Training Data | Species | Public LB Score | vs Exp 011 | Date |
 |-------|--------------|---------|----------------:|----------:|------|
 | ProtoCLR LoRA attn | Focal + soundscape | 234/234 | **0.767** | +0.031 | 2026-03-21 |
-| EAT LoRA attn+MLP head | Focal + soundscape | 234/234 | — | — | — |
+| EAT LoRA attn+MLP head | Focal + soundscape | 234/234 | **0.720** | +0.022 | 2026-03-22 |
 | ConvNeXt LoRA MLP+MLP head | Focal + soundscape | 234/234 | — | — | — |
 
 ### Exp 011 Baseline (for comparison)

@@ -41,7 +41,7 @@ Fast-dev-run results (2026-03-21):
 - [x] 5.1 Submit all 3 configs: `bash sbatch/run.sh --all` (2026-03-21)
 - [x] 5.2 ProtoCLR completed: best epoch 11, early stopped at 13, test AUROC 0.845, cmAP 0.481
 - [x] 5.3 EAT completed: best epoch 3, early stopped at 11, test AUROC 0.838, cmAP 0.452
-- [ ] 5.4 ConvNeXt: training in progress
+- [x] 5.4 ConvNeXt: completed
 - [ ] 5.5 Check focal test AUROC vs exp 011 baseline (forgetting check: flag if >0.02 drop)
 - [ ] 5.6 Check 28 soundscape-only species have non-zero predictions
 
@@ -62,12 +62,12 @@ Fast-dev-run results (2026-03-21):
 ### 6.3 EAT soundscape submission
 - [x] Export EAT to ONNX: `bash sbatch/run.sh export --model eat-2026-soundscape`
 - [x] Upload + push: `python scripts/upload_kaggle.py --model eat-2026-soundscape --push-kernel`
-- [ ] Record EAT LB score (inference running on Kaggle)
+- [x] EAT LB score: **0.720** (+0.022 vs exp 011 fulldata 0.698)
 
 ### 6.4 ConvNeXt soundscape submission (pending training)
-- [ ] Export ConvNeXt to ONNX: `bash sbatch/run.sh export --model convnext-2026-soundscape`
-- [ ] Upload + push: `python scripts/upload_kaggle.py --model convnext-2026-soundscape --push-kernel`
-- [ ] Record ConvNeXt LB score
+- [x] Export ConvNeXt to ONNX: `bash sbatch/run.sh export --model convnext-2026-soundscape`
+- [x] Upload + push: `python scripts/upload_kaggle.py --model convnext-2026-soundscape --push-kernel`
+- [ ] Record ConvNeXt LB score (inference running on Kaggle)
 
 ## 7. Documentation
 
@@ -76,8 +76,9 @@ Fast-dev-run results (2026-03-21):
 - [ ] 7.3 Write results.md (after all LB scores collected)
 
 ### Key context for next session:
-- **ProtoCLR**: trained, exported, submitted to Kaggle — awaiting LB score
-- **EAT / ConvNeXt**: training in progress on PACE
+- **ProtoCLR**: **0.767 LB** (+0.031 vs exp 011 fulldata 0.736) — best single-model score
+- **EAT**: **0.720 LB** (+0.022 vs exp 011 fulldata 0.698)
+- **ConvNeXt**: submitted to Kaggle, awaiting LB score
 - **Checkpoint paths**: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/012-soundscape-finetune/checkpoints/`
 - **W&B project**: `dsgt-arc/birdclef-2026-soundscape-finetune`
 - **Model naming**: `{encoder}-2026-soundscape` (exp 012), `{encoder}-2026-pseudo` (future exp 013)
