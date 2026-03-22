@@ -11,7 +11,8 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$(dirname "$SCRIPT_DIR")"
-LOG_DIR="$(dirname "$SCRIPTS_DIR")/logs"
+USER_DIR="$(dirname "$SCRIPTS_DIR")"
+LOG_DIR="${USER_DIR}/logs"
 JOB_SCRIPT="${SCRIPT_DIR}/_job.sh"
 
 mkdir -p "$LOG_DIR"
@@ -29,7 +30,8 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 --model MODEL --split SPLIT [--dry-run]"
             echo ""
-            echo "  --model   Model slug or 'all' (protoclr-2026-soundscape, convnext-2026-soundscape, eat-2026-soundscape)"
+            echo "  --model   Model slug or 'all'"
+            echo "            (protoclr-2026-soundscape, convnext-2026-soundscape, eat-2026-soundscape)"
             echo "  --split   labeled, unlabeled, or all"
             echo "  --dry-run Preview command without submitting"
             exit 0
@@ -49,12 +51,13 @@ echo "Soundscape Inference"
 echo "=============================================="
 echo "Model: ${MODEL}"
 echo "Split: ${SPLIT}"
+echo "Scripts dir: ${SCRIPTS_DIR}"
 echo "Logs: ${LOG_DIR}/"
 echo ""
 
 CMD="sbatch \
     --output=${LOG_DIR}/slurm_infer_${SPLIT}_%j.log \
-    --export=ALL,MODEL=${MODEL},SPLIT=${SPLIT} \
+    --export=ALL,MODEL=${MODEL},SPLIT=${SPLIT},SCRIPTS_DIR=${SCRIPTS_DIR} \
     ${JOB_SCRIPT}"
 
 if [[ "${DRY_RUN}" == "true" ]]; then

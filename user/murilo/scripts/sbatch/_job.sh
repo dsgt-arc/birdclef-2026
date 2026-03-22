@@ -16,23 +16,9 @@ set -eu
 
 MODEL="${MODEL:-all}"
 SPLIT="${SPLIT:-labeled}"
+# SCRIPTS_DIR is passed via --export from run.sh
+SCRIPTS_DIR="${SCRIPTS_DIR:?SCRIPTS_DIR must be set by run.sh}"
 
-# ============================================================================
-# Determine paths
-# ============================================================================
-
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    SCRIPTS_DIR="$SLURM_SUBMIT_DIR"
-    # If submitted from sbatch/ subdir, go up one level
-    if [[ "$(basename "$SCRIPTS_DIR")" == "sbatch" ]]; then
-        SCRIPTS_DIR="$(dirname "$SCRIPTS_DIR")"
-    fi
-else
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    SCRIPTS_DIR="$(dirname "$SCRIPT_DIR")"
-fi
-
-USER_DIR="$(dirname "$SCRIPTS_DIR")"
 INFER_SCRIPT="${SCRIPTS_DIR}/infer_soundscapes.py"
 
 # ============================================================================
@@ -48,11 +34,10 @@ echo "Date: $(date)"
 echo "Model: ${MODEL}"
 echo "Split: ${SPLIT}"
 echo "Scripts dir: ${SCRIPTS_DIR}"
-echo "Inference script: ${INFER_SCRIPT}"
 echo ""
 
 # ============================================================================
-# Setup per-job virtual environment in TMPDIR
+# Setup per-job virtual environment in TMPDIR (fast local NVMe)
 # ============================================================================
 
 echo "Setting up per-job virtual environment..."
