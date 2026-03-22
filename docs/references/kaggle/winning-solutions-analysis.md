@@ -264,9 +264,35 @@ with soft labels provides zero gain over clip-level prediction. Anthony conclude
 Prototypical SED with frame-level cosine similarity on frozen EfficientNet-B1. Well-designed
 ablation plan but inherits the frozen-backbone limitation.
 
+### Error Analysis: Exp 012 Models on Labeled Soundscapes (Phase 0)
+
+Full report: [`user/murilo/experiments/013-mixit-pseudo-labeling/error-analysis.md`](../../../user/murilo/experiments/013-mixit-pseudo-labeling/error-analysis.md)
+Notebook: `user/murilo/notebooks/005-error-analysis.ipynb`
+
+Ran all 3 exp 012 ONNX models on 66 labeled soundscapes (792 segments, 75/234 species).
+
+**Macro AUROC** (75 evaluable species): ProtoCLR 0.854, ConvNeXt 0.822, EAT 0.777, Ensemble 0.877.
+
+**Per-taxon** (Ensemble): Mammalia 0.927, Aves 0.899, Amphibia 0.864, Insecta 0.857, Reptilia 0.785.
+
+Key findings:
+
+1. **EAT fails on insects (0.673 AUROC)** — 0.18 lower than ProtoCLR/ConvNeXt. Root cause:
+   kaldi fbank at fmax=8000Hz misses high-frequency insect stridulation. Exclude EAT from
+   teacher ensemble for insect species in pseudo-labeling.
+2. **Simple mean ensemble hurts (−0.039 vs best single)** — EAT contaminates insect and
+   some bird predictions. Helps only 8 species, hurts 39. Need weighted or `min()` strategy.
+3. **Low positive confidence (median 0.05–0.19)** — true-positive segments get very low
+   predictions due to clip-level averaging. Confirms SED with framewise-max is the
+   highest-priority architecture change.
+4. **134/162 bird species unevaluable** — labeled soundscapes over-represent insects (25/28)
+   and amphibians (17/35) but cover only 17% of birds. LB is our only bird signal.
+5. **Worst species are mixed across taxa** — not purely a non-bird problem. Some birds
+   (trsowl 0.558, limpki 0.675) and amphibians (1491113 0.611 despite 79 segments) also fail.
+
 ### Implications for Our Roadmap
 
-Anthony's experiments provide critical guardrails:
+Anthony's experiments + error analysis provide critical guardrails:
 
 1. **SED architecture needs trainable backbone** — our LoRA setup already provides this,
    which is the key difference from Anthony's frozen-backbone experiments
@@ -274,9 +300,11 @@ Anthony's experiments provide critical guardrails:
    10,592 unlabeled soundscapes, keep hard labels for focal + labeled soundscape data
 3. **FlyingSquid needs 3+ independent sources** — our 3 teacher models share training data
    so aren't truly independent; direct iterative self-training sidesteps this requirement
-4. **Error analysis before architecture changes** — understand WHERE we lose 0.170 LB points
-   (per-species, per-taxon, frequency bands) before deciding how to close the gap
-5. **Non-bird taxa are a blind spot** — insect sonotypes and dense frog choruses occupy
+4. **Low positive confidence confirms SED priority** — median 0.05–0.19 on true positives
+   means clip-level pooling is leaving significant performance on the table
+5. **EAT is a liability for non-bird taxa** — exclude from insect pseudo-labeling, use
+   weighted ensemble strategies, and ensure future models have fmax ≥ 16kHz
+6. **Non-bird taxa are a blind spot** — insect sonotypes and dense frog choruses occupy
    different spectral ranges than birds; our mel configs (8–16kHz max) may miss them
 
 ---
