@@ -82,7 +82,8 @@ uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
 echo "Installing dependencies..."
-uv pip install onnxruntime soundfile librosa numpy tqdm torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+uv pip install onnxruntime soundfile librosa numpy tqdm
+uv pip install torch torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
 echo ""
 
 # Run inference
