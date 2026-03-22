@@ -71,6 +71,35 @@ prominent species by design — MixIT would either return the same audio in one 
 fragments might get misclassified. The paper confirmed this: prominent species scores
 *decrease* after separation due to lost audio context.
 
+#### Phase 2 Results: Labeled Soundscape Separation Quality
+
+Validated on 66 labeled soundscape files (notebook `004-mixit-separation-quality.ipynb`).
+
+**Channel activity (RMS > 0.01 threshold):**
+
+| Active Channels | Files | % |
+|----------------:|------:|----:|
+| 0 | 4 | 6% |
+| 1 | 21 | 32% |
+| 2 | 16 | 24% |
+| 3 | 14 | 21% |
+| 4 | 11 | 17% |
+
+- Mean RMS per channel: [0.0403, 0.0187, 0.0242, 0.0144]
+- Channel 0 dominates at 2.1× higher RMS than channels 1–3
+- ~38% of files (0–1 active channels) get no meaningful separation
+- ~62% of files (2–4 active channels) show some degree of source isolation
+
+**Qualitative assessment** (spectrograms + listening):
+- Dense frog choruses: partial separation visible in spectrograms but quality unclear
+- Multi-species bird recordings: some channel isolation of individual species
+- Sparse recordings: MixIT correctly puts near-silence in unused channels
+
+**Decision**: Proceed with full unlabeled separation. The max-pool-across-channels
+approach means we never do worse than the original — even files with no meaningful
+separation fall back to the original prediction. Phase 3 validation will quantitatively
+measure whether separation improves pseudo-label quality.
+
 ### Phase 3: Teacher Ensemble Pseudo-Labeling
 
 Run exp 012 ONNX models on each separated channel + original:
@@ -120,7 +149,7 @@ Fine-tune from exp 012 checkpoint on pseudo-labeled data:
 - **Per-taxon breakdown**: Bird vs amphibian vs insect pseudo-label quality (see below)
 
 ### Baseline
-- Exp 012 LB score (pending)
+- Exp 012 LB: ProtoCLR **0.767**, ConvNeXt **0.755**, EAT **0.720**
 
 ### Success Criteria
 - **Confirm if**: LB improves by ≥0.02 over exp 012
