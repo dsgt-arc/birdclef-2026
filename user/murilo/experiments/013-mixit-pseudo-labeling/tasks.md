@@ -71,8 +71,8 @@ training (Asteroid/PyTorch) as a follow-up.
 **Note**: 200 GB (NPZ) is fine on 900+ GB available PACE storage. OGG conversion is
 a nice-to-have optimization, not a blocker. Can do before or after the full run.
 
-### 3.7 Full unlabeled separation (ready to run)
-- [ ] 3.7.1 Run: `bash sbatch/run.sh separate --num-workers 10` (~2 hours on 10 GPUs)
+### 3.7 Full unlabeled separation
+- [x] 3.7.1 Submitted: `bash sbatch/run.sh separate --num-workers 10` — job 5355342 (2026-03-22)
 - [ ] 3.7.2 Verify output: ~10,592 files in `shared/mixit/pretrained/soundscapes/`
 
 ## 4. Phase 3: Teacher Pseudo-Labeling (depends on exp 012 completion)

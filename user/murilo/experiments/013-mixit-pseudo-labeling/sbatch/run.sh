@@ -9,7 +9,7 @@
 #
 #   # Phase 2: Separate soundscapes (GPU default)
 #   bash sbatch/run.sh separate                              # 1 GPU, all unlabeled
-#   bash sbatch/run.sh separate --num-workers 8              # 8 GPUs in parallel
+#   bash sbatch/run.sh separate --num-workers 10             # 10 GPUs in parallel (~2h)
 #   bash sbatch/run.sh separate --labeled                    # labeled only, 1 GPU
 #   bash sbatch/run.sh separate --labeled --num-workers 4    # labeled, 4 GPUs
 #   bash sbatch/run.sh separate --test                       # 10 files, 1 GPU
@@ -17,7 +17,7 @@
 #
 #   # Dry run
 #   bash sbatch/run.sh convert --dry-run
-#   bash sbatch/run.sh separate --num-workers 8 --dry-run
+#   bash sbatch/run.sh separate --num-workers 10 --dry-run
 
 set -eu
 
@@ -80,7 +80,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Examples:"
             echo "  $0 separate                              # 1 GPU, all unlabeled"
-            echo "  $0 separate --num-workers 8              # 8 GPUs, ~2.5h for 10k files"
+            echo "  $0 separate --num-workers 10             # 10 GPUs, ~2h for 10k files"
             echo "  $0 separate --labeled --num-workers 4    # test distributed on 66 files"
             exit 0
             ;;

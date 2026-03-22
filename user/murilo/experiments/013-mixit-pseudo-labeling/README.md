@@ -80,11 +80,14 @@ bash sbatch/run.sh separate --test
 # Separate labeled soundscapes only (for Phase 3 validation)
 bash sbatch/run.sh separate --labeled
 
-# Separate all unlabeled soundscapes (~10,592 files, ~2-4 hours)
+# Separate all unlabeled soundscapes (~10,592 files, ~2 hours on 10 GPUs)
+bash sbatch/run.sh separate --num-workers 10
+
+# Single GPU (slower, ~20 hours)
 bash sbatch/run.sh separate
 
 # Dry run
-bash sbatch/run.sh separate --dry-run
+bash sbatch/run.sh separate --num-workers 10 --dry-run
 ```
 
 Output: `artifacts/separated/` (unlabeled), `artifacts/separated_labeled/` (labeled),
