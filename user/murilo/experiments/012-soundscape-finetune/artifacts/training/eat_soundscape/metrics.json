@@ -1,0 +1,49 @@
+{
+  "auroc": 0.8382559418678284,
+  "cmap": 0.4518759548664093,
+  "f1_macro": 0.4277232885360718,
+  "f1_micro": 0.5412770509719849,
+  "top1_accuracy": 0.6476672291755676,
+  "top5_accuracy": 0.7954674959182739,
+  "loss": 0.025148993358016014,
+  "encoder_type": "eat",
+  "encoder_model": "worstchan/EAT-base_epoch30_pretrain",
+  "embed_dim": 768,
+  "lora": {
+    "rank": 8,
+    "alpha": 16,
+    "dropout": 0.1,
+    "target_modules": [
+      "qkv",
+      "proj"
+    ]
+  },
+  "dataset": "birdclef-2026",
+  "finetune_mode": "lora_soundscape",
+  "num_classes": 234,
+  "num_focal_species": 206,
+  "checkpoint_from": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/011-lora-baseline-2026/checkpoints/2026-eat-lora-attn-mlphead/best-epochepoch=17.ckpt",
+  "best_val_score": 0.82719886302948,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/012-soundscape-finetune/checkpoints/2026-eat-soundscape/best-epochepoch=03.ckpt",
+  "stopped_epoch": 12,
+  "training": {
+    "max_epochs": 30,
+    "lr": 0.0001,
+    "weight_decay": 0.01,
+    "warmup_epochs": 3,
+    "batch_size": 32,
+    "num_workers": 8,
+    "precision": "16-mixed",
+    "early_stopping_patience": 8,
+    "hidden_dim": 512,
+    "dropout": 0.1,
+    "grad_clip_val": 1.0,
+    "accumulate_grad_batches": 8
+  },
+  "compute": {
+    "gpu": "unknown",
+    "slurm_job_id": 5294338,
+    "node": null,
+    "cpus_per_task": null
+  }
+}
