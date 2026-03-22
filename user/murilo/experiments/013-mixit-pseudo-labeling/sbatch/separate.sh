@@ -8,20 +8,15 @@
 #SBATCH -qinferno
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=mgustineli3@gatech.edu
+#SBATCH --output=logs/slurm_separate_%j.log
 #
 # Experiment 013, Phase 2: Run Bird MixIT separation on soundscapes
 #
-# Usage:
+# Usage (via launcher):
 #   cd user/murilo/experiments/013-mixit-pseudo-labeling
-#
-#   # Separate all unlabeled soundscapes
-#   sbatch sbatch/separate.sh
-#
-#   # Separate labeled soundscapes only (for validation)
-#   MODE=labeled sbatch sbatch/separate.sh
-#
-#   # Quick test (10 files)
-#   MODE=test sbatch sbatch/separate.sh
+#   bash sbatch/run.sh separate              # all unlabeled
+#   bash sbatch/run.sh separate --labeled    # labeled only (validation)
+#   bash sbatch/run.sh separate --test       # 10 files (smoke test)
 
 set -eu
 

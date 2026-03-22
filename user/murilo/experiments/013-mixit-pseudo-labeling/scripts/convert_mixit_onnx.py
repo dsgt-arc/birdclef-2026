@@ -57,10 +57,9 @@ def convert_tf1_to_onnx(checkpoint_dir: Path, output_path: Path):
         graph_def = sess.graph.as_graph_def()
 
         # Freeze the graph (replace variables with constants)
-        from tensorflow.python.framework import graph_util
-
+        # Use compat.v1 API — graph_util moved in TF2
         output_node_name = "denoised_waveforms"
-        frozen_graph = graph_util.convert_variables_to_constants(
+        frozen_graph = tf.compat.v1.graph_util.convert_variables_to_constants(
             sess, graph_def, [output_node_name]
         )
 

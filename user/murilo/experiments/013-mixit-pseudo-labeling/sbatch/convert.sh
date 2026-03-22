@@ -8,12 +8,13 @@
 #SBATCH -qinferno
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=mgustineli3@gatech.edu
+#SBATCH --output=logs/slurm_convert_%j.log
 #
 # Experiment 013, Phase 1: Convert Bird MixIT TF1 checkpoint to ONNX
 #
-# Usage:
+# Usage (via launcher):
 #   cd user/murilo/experiments/013-mixit-pseudo-labeling
-#   sbatch sbatch/convert.sh
+#   bash sbatch/run.sh convert
 
 set -eu
 
