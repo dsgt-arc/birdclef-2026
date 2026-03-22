@@ -24,12 +24,40 @@ Soft pseudo-labels (234 species probabilities per 5s segment)
 Student training on focal + labeled soundscape + pseudo-labeled data
 ```
 
+## Pseudo-Labeling Pipeline (Phase 3)
+
+```
+For each unlabeled soundscape (12 × 5s segments per file):
+    ├── Original audio → EAT → probs_eat_orig
+    │                  → ConvNeXt → probs_cnx_orig
+    │                  → ProtoCLR → probs_pcr_orig
+    │
+    ├── Channel 1 → EAT/ConvNeXt/ProtoCLR → probs per model
+    ├── Channel 2 → same
+    ├── Channel 3 → same
+    └── Channel 4 → same
+
+Per model: max-pool across 5 inputs (4 channels + original)
+Final: average across 3 models → soft pseudo-labels per segment
+```
+
+The original audio is always included — if separation fails (e.g., for non-bird taxa),
+the max-pool falls back to the original prediction.
+
 ## Phases
 
 1. **Convert Bird MixIT TF1 → ONNX** (`scripts/convert_mixit_onnx.py`)
-2. **Offline separation** (`scripts/separate_soundscapes.py`) — CPU batch job
+2. **Offline separation** (`scripts/separate_soundscapes.py`) — CPU batch job, soundscapes only (not focal)
 3. **Teacher pseudo-labeling** (`scripts/pseudo_label.py`) — using exp 012 ONNX models
 4. **Student training** (`train.py`) — fine-tune on mixed data with soft BCE loss
+
+## Known Limitation: Non-Bird Species
+
+The pretrained Bird MixIT was trained on bird audio only. BirdCLEF 2026 includes
+amphibians (35 species), insects (28 species), mammals, and reptiles. Separation
+quality will likely degrade for non-bird taxa. If Phase 3 validation shows poor
+per-taxon performance, a domain-matched MixIT model trained on BirdCLEF data
+(via Asteroid/PyTorch) would be the follow-up experiment.
 
 ## Dependencies
 
