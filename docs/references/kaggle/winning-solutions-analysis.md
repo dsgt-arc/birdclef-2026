@@ -207,14 +207,90 @@ Based on the 2024 1st place ablations and cross-solution patterns:
 
 ---
 
-## 4. Gap Analysis: Our Approach vs Winners
+## 4. Internal Evidence: Anthony's SED and Weak Supervision Experiments
+
+Anthony (team member) ran four experiments on BirdCLEF 2025 data that directly test some of
+the winning-solution techniques. These results constrain our roadmap.
+
+### Exp A-013: FlyingSquid Weak Supervision (label fusion)
+
+Fused BirdNET/Perch/acoustic-indices probes via the triplet method into per-frame soft labels.
+
+| Metric | Focal | Soundscape |
+|--------|-------|------------|
+| Tokens | 939K | 564K |
+| BirdNET probe accuracy | 0.788 | 0.735 |
+| Perch probe accuracy | 0.779 | 0.695 |
+| Indices probe accuracy | 0.687 | 0.686 |
+| LF correlation (BirdNET-Perch) | 0.353 | **0.606** |
+| Species with signal (acc > 0.52) | 201/206 | 142/206 |
+
+**Verdict**: Focal labels usable (201/206 species), soundscape labels weak — high LF
+correlation (~0.6) violates the conditional independence assumption the triplet method
+requires. 64/206 species have no signal on soundscape.
+
+### Exp A-014: EfficientNet Soft Labels (NEGATIVE)
+
+Replaced hard labels with FlyingSquid soft labels for EfficientNet-B1 frozen-backbone training.
+
+| Condition | val/cmap | vs Baseline |
+|-----------|----------|-------------|
+| Hard labels (exp 012 baseline) | **0.336** | — |
+| Soft labels, focal only | 0.238 | −0.098 |
+| Soft labels, focal + soundscape | 0.238 | −0.098 |
+
+**Key finding**: Replacing ground truth with noisy teacher estimates is a net loss of
+information. Soft labels should be used **additively** (for unlabeled data only), never as
+replacements for known-good labels. The 117K soundscape chunks added zero signal.
+
+### Exp A-015: EfficientNet SED with Soft Labels (NEGATIVE)
+
+Added SED attention head (attention train, framewise max infer) on frozen EfficientNet-B1.
+
+| Model | val/cmap | val/auroc |
+|-------|----------|-----------|
+| Clip + hard labels (baseline) | **0.336** | — |
+| SED + soft labels | 0.237 | 0.812 |
+| Clip + soft labels (exp 014) | 0.238 | 0.804 |
+
+**Key finding**: The bottleneck was label quality, not architecture. SED on a frozen backbone
+with soft labels provides zero gain over clip-level prediction. Anthony concludes SED needs:
+1. **Trainable backbone** (LoRA or full fine-tuning) so temporal features can co-adapt
+2. **Hard labels** for focal data (don't replace ground truth)
+3. **Soft labels only for unlabeled data** where no ground truth exists
+
+### Exp A-016: Contrastive SED (proposed)
+
+Prototypical SED with frame-level cosine similarity on frozen EfficientNet-B1. Well-designed
+ablation plan but inherits the frozen-backbone limitation.
+
+### Implications for Our Roadmap
+
+Anthony's experiments provide critical guardrails:
+
+1. **SED architecture needs trainable backbone** — our LoRA setup already provides this,
+   which is the key difference from Anthony's frozen-backbone experiments
+2. **Never replace hard labels with soft labels** — use soft/pseudo labels only for the
+   10,592 unlabeled soundscapes, keep hard labels for focal + labeled soundscape data
+3. **FlyingSquid needs 3+ independent sources** — our 3 teacher models share training data
+   so aren't truly independent; direct iterative self-training sidesteps this requirement
+4. **Error analysis before architecture changes** — understand WHERE we lose 0.170 LB points
+   (per-species, per-taxon, frequency bands) before deciding how to close the gap
+5. **Non-bird taxa are a blind spot** — insect sonotypes and dense frog choruses occupy
+   different spectral ranges than birds; our mel configs (8–16kHz max) may miss them
+
+---
+
+## 5. Gap Analysis: Our Approach vs Winners
 
 ### What we do well
 - **Three diverse architectures** (EAT/ConvNeXt/ProtoCLR) — strong ensemble candidates
-- **LoRA fine-tuning** — parameter-efficient, fast iteration
+- **LoRA fine-tuning** — parameter-efficient, trainable backbone (addresses Anthony's key SED finding)
 - **ONNX export pipeline** — validated end-to-end on Kaggle
 - **Soundscape domain adaptation** (exp 012) — 206→234 species expansion
 - **MixIT source separation** (exp 013) — unique approach no winner has tried
+- **Internal negative results** — Anthony's experiments rule out frozen-backbone SED and
+  soft-label replacement, saving us from repeating those dead ends
 
 ### Critical gaps (ordered by estimated impact)
 
@@ -228,56 +304,95 @@ Based on the 2024 1st place ablations and cross-solution patterns:
 | Temporal post-processing | Gaussian smoothing, delta TTA | None | +0.01–0.02 |
 | Data quality filtering | Google classifier, stats filtering | None | +0.01–0.02 |
 | Inference optimization | OpenVINO INT8/FP16 | ONNX FP32 | Enables ensemble |
+| Error analysis | Per-species/taxon tuning | No error breakdown | Informs all above |
 
 **Total estimated gap**: ~0.13–0.24 (consistent with the observed 0.170 gap)
 
 ### What might NOT close the gap
-- MixIT source separation — no winner uses it, uncertain ROI
+- MixIT source separation — no winner uses it, uncertain ROI, only ~62% of files get
+  meaningful separation in our Phase 2 quality validation
+- Soft labels replacing hard labels — Anthony showed this hurts (exp A-014)
+- SED on frozen backbone — Anthony showed this gives zero gain (exp A-015)
+- FlyingSquid with correlated sources — LF correlations ~0.6 on soundscape violate
+  the conditional independence assumption
 - Higher LoRA rank / more LoRA targets — diminishing returns at r=8
 - More training data (Xeno-Canto) — 2024 winner found it hurt
 
 ---
 
-## 5. Recommended Experiment Roadmap
+## 6. Recommended Experiment Roadmap
 
-### Phase A: Architecture Improvements (highest impact per effort)
+### Phase 0: Error Analysis (prerequisite — do first)
 
-**Exp 014: SED Architecture + CE Loss + Overlapping Context**
+**Goal**: Understand WHERE the 0.170 LB gap comes from before deciding how to close it.
+
+Using our 3 submitted exp 012 models + 66 labeled soundscape files:
+
+1. **Per-species AUROC breakdown**: Which species do we fail on? Correlate with training
+   data volume, taxonomic class, and frequency range.
+2. **Per-taxon performance**: Birds (162 sp) vs amphibians (35 sp) vs insects (28 sp, 25
+   soundscape-only). Are the 28 new species the main loss driver, or is it calibration
+   across all species?
+3. **Frequency band analysis**: Our mel configs cap at 8–16kHz. Insect stridulation can
+   extend to 20kHz+. Are we missing high-frequency taxa entirely?
+4. **False positive analysis on labeled soundscapes**: Where do our models predict species
+   that aren't present? Dense frog choruses? Background noise?
+5. **Temporal analysis**: Do we miss brief calls that a framewise-max approach would catch?
+   Compare per-frame teacher predictions vs our 5s-averaged outputs.
+
+**Output**: Error analysis report identifying the top sources of LB loss, directly informing
+which Phase A–D investments have the highest expected ROI.
+
+### Phase A: Architecture Improvements (highest expected impact)
+
+**SED Architecture + CE Loss + Overlapping Context**
+
+This is the biggest architectural gap vs winners. Critically, our LoRA setup provides
+the **trainable backbone** that Anthony's frozen-backbone experiments identified as
+the missing ingredient for SED to work.
+
 - Replace linear/MLP head with AttHead (GeMFreq + attention pooling + framewise max blending)
 - Switch from BCE to CE loss (softmax train, sigmoid infer)
 - Use 10–20s input windows with 5s step for temporal context
-- Train all 3 encoders (EAT, ConvNeXt, ProtoCLR)
+- Train all 3 encoders (EAT, ConvNeXt, ProtoCLR) with LoRA
 - Add temporal post-processing (Gaussian smoothing, delta-shifted TTA)
 - **Expected gain**: +0.05–0.10 combined
 
+**Key difference from Anthony's exp A-015**: We use LoRA (trainable backbone), hard labels
+for focal data, and BCE/CE loss with ground truth — not soft labels on a frozen backbone.
+
 ### Phase B: Pseudo-Labeling (proven winner technique)
 
-**Exp 013** (current): MixIT pseudo-labeling — complete as planned, measure gain.
+**Exp 013** (current, Murilo): MixIT pseudo-labeling — complete as planned, measure gain.
+Even if MixIT itself adds little, the pseudo-labeling infrastructure is needed.
 
-**Exp 015: Iterative Self-Training** (following 2025 1st place pattern)
-- Use exp 014 SED models as teachers
+**Iterative Self-Training** (following 2025 1st place pattern):
+- Use Phase A SED models as teachers (stronger than current exp 012 models)
 - Pseudo-label all 10,592 unlabeled soundscapes with temperature scaling (T=0.5–0.6)
-- Retrain on focal + labeled soundscape + pseudo-labeled data
+- **Hard labels for focal + labeled soundscape data** (per Anthony's exp A-014 finding)
+- **Soft pseudo-labels only for unlabeled data** (additive, not replacement)
 - Iterate 2-3 times (each iteration uses the improved model as teacher)
 - Compare: with vs without MixIT separation, to measure MixIT's true contribution
 - **Expected gain**: +0.02–0.05
 
 ### Phase C: Ensemble + Inference Optimization
 
-**Exp 016: Ensemble Inference**
+**Ensemble Inference**:
 - Convert backbones to OpenVINO (INT8/FP16) for 2-3× speedup
 - Fit 2-3 models within 90-min Kaggle budget
 - Try 2024's `min()` within-architecture + `mean()` across-architecture strategy
 - Temporal smoothing as post-processing (pure numpy, no inference cost)
 - **Expected gain**: +0.02–0.04
 
-### Phase D: Data Quality (if time permits)
+### Phase D: Data Quality and Non-Bird Taxa (informed by Phase 0)
 
-**Exp 017: Data Curation**
+**Data Curation + Spectral Coverage**:
 - Signal statistics filtering (keep quieter/cleaner recordings)
 - BirdNET or Google classifier for train data quality filtering
 - Secondary label incorporation from Xeno-Canto metadata
 - Background noise augmentation using nocall soundscape segments
+- **Frequency range expansion**: If Phase 0 reveals insect/high-freq gaps, explore
+  mel configs with higher fmax or multi-resolution spectrograms
 - **Expected gain**: +0.01–0.02
 
 ### Cumulative Target
@@ -285,30 +400,44 @@ Based on the 2024 1st place ablations and cross-solution patterns:
 | Phase | Technique | Cumulative LB (est.) |
 |-------|-----------|---------------------|
 | Current | Exp 012 (soundscape finetune) | **0.767** |
+| 0 | Error analysis (informs priorities) | 0.767 (no score change) |
 | A | SED + CE + context + smoothing | **0.82–0.87** |
 | B | Iterative pseudo-labeling | **0.85–0.90** |
 | C | Ensemble (2-3 models) | **0.87–0.93** |
-| D | Data curation | **0.88–0.94** |
+| D | Data curation + spectral coverage | **0.88–0.94** |
 
 ---
 
-## 6. Key Takeaways
+## 7. Key Takeaways
 
-1. **Architecture matters**: SED with attention head is the single biggest gap. Every top
-   solution uses it except 2024 1st (who compensated with data quality and ensembles).
+1. **Error analysis first**: Understand per-species, per-taxon, and per-frequency-band
+   failure modes before investing in architecture changes. The 0.170 gap may be concentrated
+   in specific areas (e.g., 28 soundscape-only species, non-bird taxa, dense choruses).
 
-2. **Pseudo-labeling is the proven path to using unlabeled data**: Iterative self-training
-   with temperature scaling, not source separation, is what winners use.
+2. **SED needs trainable backbone**: Anthony's frozen-backbone SED experiments (exp A-015)
+   showed zero gain. Our LoRA setup provides trainable features — this is the critical
+   difference that should make SED work for us.
 
-3. **Simple models beat complex ones**: EfficientNet-B0 won 2024. ConvNeXt-Small/Tiny won
+3. **Never replace hard labels with soft labels**: Anthony's exp A-014 showed a −0.098 cmap
+   drop from replacing ground truth with teacher soft labels. Pseudo/soft labels should only
+   be used additively for unlabeled data.
+
+4. **Iterative self-training is the proven pseudo-labeling path**: Winners use direct
+   iterative pseudo-labeling (teacher → label → retrain → repeat), not source separation
+   or weak supervision frameworks. FlyingSquid requires 3+ independent sources that are
+   hard to obtain on soundscape data (LF correlations ~0.6).
+
+5. **Simple models beat complex ones**: EfficientNet-B0 won 2024. ConvNeXt-Small/Tiny won
    2023. No winner uses models larger than ~90M params. Our 3 encoders are the right size.
 
-4. **Inference budget is a strategic constraint**: OpenVINO can unlock ensemble inference
+6. **Inference budget is a strategic constraint**: OpenVINO can unlock ensemble inference
    within 90 minutes. This should be prioritized alongside architecture changes.
 
-5. **Data quality > data quantity**: Filtering noisy samples is more valuable than adding
-   more data. Quality pseudo-labels > more pseudo-labels.
+7. **Non-bird taxa are a blind spot**: Insect sonotypes (28 species, 25 soundscape-only)
+   and dense frog choruses occupy different spectral ranges than birds. Our mel configs
+   (8–16kHz max) and bird-pretrained models may fundamentally miss these. Phase 0 error
+   analysis should quantify this gap.
 
-6. **Train-infer asymmetry works**: CE loss + sigmoid inference, framewise max + attention
+8. **Train-infer asymmetry works**: CE loss + sigmoid inference, framewise max + attention
    blending, overlapping windows with reconstruction — these train/infer mismatches are
-   deliberate and effective.
+   deliberate and effective across multiple winning solutions.
