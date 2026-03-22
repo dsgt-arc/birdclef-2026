@@ -57,7 +57,9 @@ source "$JOB_VENV/bin/activate"
 
 echo "Installing dependencies..."
 if [[ "${USE_GPU}" == "true" ]]; then
+    # onnxruntime-gpu needs CUDA libs (cublas, cudnn) in the venv
     uv pip install onnxruntime-gpu soundfile resampy numpy tqdm
+    uv pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-nvrtc-cu12
 else
     uv pip install onnxruntime soundfile resampy numpy tqdm
 fi
