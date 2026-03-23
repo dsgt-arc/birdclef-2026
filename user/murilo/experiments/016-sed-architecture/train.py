@@ -256,7 +256,7 @@ def main():
             {
                 "architecture": "sed",
                 "num_classes": num_classes,
-                "encoder": config["encoder"]["model_name"],
+                "encoder_name": config["encoder"]["model_name"],
             }
         )
         loggers.append(wandb_logger)
