@@ -15,7 +15,7 @@
 
 set -eu
 
-CONFIG="${CONFIG:-config/mode_a.yaml}"
+CONFIG="${CONFIG:-config/direct.yaml}"
 SPLIT="${SPLIT:-labeled}"
 MAX_FILES="${MAX_FILES:-}"
 

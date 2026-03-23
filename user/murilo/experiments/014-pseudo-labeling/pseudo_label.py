@@ -214,7 +214,7 @@ def run_pseudo_labeling(config, split, max_files=None):
     weights_dir = Path(config["data"]["weights_dir"])
     out_base = Path(config["output"]["base_dir"])
     run_name = config["output"]["run_name"]
-    out_dir = out_base / run_name
+    out_dir = out_base / run_name / split
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load taxonomy

@@ -3,10 +3,10 @@
 #
 # Usage:
 #   cd user/murilo/experiments/014-pseudo-labeling
-#   bash sbatch/run.sh config/mode_a.yaml --split labeled
-#   bash sbatch/run.sh config/mode_a.yaml --split unlabeled
-#   bash sbatch/run.sh config/mode_b.yaml --split labeled
-#   bash sbatch/run.sh config/mode_a.yaml --split labeled --dry-run
+#   bash sbatch/run.sh config/direct.yaml --split labeled
+#   bash sbatch/run.sh config/direct.yaml --split unlabeled
+#   bash sbatch/run.sh config/direct.yaml --split labeled
+#   bash sbatch/run.sh config/direct.yaml --split labeled --dry-run
 
 set -eu
 
@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 CONFIG --split SPLIT [--max-files N] [--dry-run]"
             echo ""
-            echo "  CONFIG     Path to config YAML (e.g., config/mode_a.yaml)"
+            echo "  CONFIG     Path to config YAML (e.g., config/direct.yaml)"
             echo "  --split    labeled, unlabeled, or all"
             echo "  --max-files N  Limit files for testing"
             echo "  --dry-run  Preview command without submitting"
@@ -50,7 +50,7 @@ done
 
 if [[ -z "$CONFIG" || -z "$SPLIT" ]]; then
     echo "Error: CONFIG and --split are required"
-    echo "Usage: $0 config/mode_a.yaml --split labeled"
+    echo "Usage: $0 config/direct.yaml --split labeled"
     exit 1
 fi
 

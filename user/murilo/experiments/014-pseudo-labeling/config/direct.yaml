@@ -16,4 +16,4 @@ data:
 
 output:
   base_dir: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026"
-  run_name: "direct"
+  run_name: "pcr-cnx-soundscape-v1"
