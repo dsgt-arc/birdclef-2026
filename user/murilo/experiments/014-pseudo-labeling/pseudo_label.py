@@ -303,15 +303,18 @@ def run_pseudo_labeling(config, split, max_files=None):
     df.to_parquet(parquet_path, index=False)
     logger.info(f"Saved pseudo-labels: {parquet_path} ({len(df)} segments)")
 
-    # Save config
+    # Save config (full input YAML + run metadata for reproducibility)
     with open(out_dir / "config.json", "w") as f:
         json.dump(
             {
-                "teachers": teacher_names,
-                "split": split,
-                "n_files": len(files),
-                "n_segments": len(all_seg_keys),
-                "aggregation": "mean",
+                "input_config": config,
+                "run_metadata": {
+                    "split": split,
+                    "n_files": len(files),
+                    "n_segments": len(all_seg_keys),
+                    "aggregation": "mean",
+                    "teachers": teacher_names,
+                },
             },
             f,
             indent=2,
