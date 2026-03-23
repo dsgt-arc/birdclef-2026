@@ -20,10 +20,20 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 - [x] 1.6 Create experiment directory, pyproject.toml, config, SLURM scripts
 - [x] 1.7 Create `train.py`
 
+### Bugs Fixed During Setup
+
+1. **embed_dim 1280 → 320**: With `features_only=True`, EfficientNet-B0's last stage
+   outputs 320 channels (not 1280 — that's the conv_head which is excluded). Fixed in
+   config and train.py now uses `encoder.embed_dim` instead of config value.
+
+2. **PyTorch 2.11+cu130 incompatibility**: PyTorch 2.11 released 2026-03-23 and
+   auto-resolved from the cu121 index. CUDA 13.0 requires newer drivers than PACE
+   RTX 6000 nodes have. Fixed by pinning `torch<2.11` in `_job.sh`.
+
 ## 2. Pipeline Validation
 
 - [ ] 2.1 Fast dev run: `bash sbatch/run.sh config/efficientnet_b0_sed.yaml --fast-dev-run`
-- [ ] 2.2 Verify encoder output shape: (B, 1280, F', T')
+- [ ] 2.2 Verify encoder output shape: (B, 320, F', T')
 - [ ] 2.3 Verify SED head output shapes: clipwise (B, 234), framewise (B, 234, T)
 - [ ] 2.4 Verify soft CE loss computation (no NaN/inf)
 - [ ] 2.5 Verify dataset sizes (focal recordings + soundscape segments)
