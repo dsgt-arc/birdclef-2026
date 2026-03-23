@@ -12,7 +12,7 @@ import pandas as pd
 import pytorch_lightning as pl
 from torch.utils.data import ConcatDataset, DataLoader
 
-from .birdclef2025 import BirdCLEFDataset, build_species_list
+from .dataset import BirdCLEFDataset, build_species_list
 from .soundscape import (
     FocalDataset234,
     SoundscapeDataset,

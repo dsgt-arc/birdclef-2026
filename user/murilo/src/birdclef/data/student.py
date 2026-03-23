@@ -18,7 +18,7 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
-from .birdclef2025 import BirdCLEFDataset, _load_audio_chunk, build_species_list
+from .dataset import BirdCLEFDataset, _load_audio_chunk, build_species_list
 from .soundscape import (
     FocalDataset234,
     SoundscapeDataset,

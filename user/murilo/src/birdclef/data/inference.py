@@ -11,7 +11,7 @@ import soundfile as sf
 import torch
 from torch.utils.data import Dataset
 
-from birdclef.data.birdclef2025 import _load_audio_chunk
+from birdclef.data.dataset import _load_audio_chunk
 
 logger = logging.getLogger(__name__)
 

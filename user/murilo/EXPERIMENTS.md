@@ -35,7 +35,7 @@ Consolidated findings from experiments 001–012, covering BirdSet benchmarks, a
 
 The `train_soundscapes/` (9,726 unlabeled soundscape files) and `test_soundscapes/` (hidden, contains only a readme) are **not used** in any experiment. The "test" set in experiment results refers to the held-out 10% of focal recordings, not the Kaggle test soundscapes.
 
-Implementation: `src/birdclef/data/birdclef2025.py` → `BirdCLEFDataModule._split_dataframe()`.
+Implementation: `src/birdclef/data/dataset.py` → `BirdCLEFDataModule._split_dataframe()`.
 
 **BirdCLEF 2026 experiments (010–012)** use the BirdCLEF 2026 dataset (35,549 focal recordings from 206 species, plus 66 labeled soundscape files covering 234 species including 28 soundscape-only insect/amphibian sonotypes). The same **80/10/10 stratified split** is applied to focal recordings; soundscape files are split **by file** (not by segment) to prevent data leakage (~50 train / ~8 val / ~8 test files).
 

@@ -23,7 +23,7 @@ Retrain the proven LoRA fine-tuning pipeline (EAT, ConvNeXt, ProtoCLR) on BirdCL
 
 - [x] 3.1 Rename `BirdCLEF2025DataModule` → `BirdCLEFDataModule` across all `user/murilo/` files (14 files updated)
 - [x] 3.2 Rename `BirdCLEF2025Dataset` → `BirdCLEFDataset` across all `user/murilo/` files
-- [x] 3.3 Update docstring in `src/birdclef/data/birdclef2025.py` to reflect 2025+2026 compatibility
+- [x] 3.3 Update docstring in `src/birdclef/data/dataset.py` (renamed from `birdclef2025.py`) to reflect 2025+2026 compatibility
 
 ## 4. Validation
 

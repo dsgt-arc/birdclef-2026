@@ -67,37 +67,67 @@ to compare against.
 
 ## 4. Full Training (Round 0)
 
-- [ ] 4.1 Submit all 3 models: `bash sbatch/run.sh --all`
-- [ ] 4.2 Monitor training via W&B dashboard
-- [ ] 4.3 Record best val/auroc and stopped epoch for each model
+- [x] 4.1 Submit all 3 models: `bash sbatch/run.sh --all`
+      Jobs: ProtoCLR 5414046, ConvNeXt 5414044, EAT 5414045
+- [x] 4.2 Monitor training via W&B dashboard
+- [x] 4.3 ProtoCLR finished — record results below
+- [ ] 4.3b ConvNeXt — in progress
+- [ ] 4.3c EAT — in progress
 - [ ] 4.4 Verify structured metrics saved to `artifacts/training/` (auto-runs via `save_metrics.py` in `_job.sh`)
 
-### Results
+### GPU Check (ProtoCLR, job 5415802)
 
-| Model | val/auroc | val/cmap | Best Epoch | Stopped |
-|-------|-----------|----------|------------|---------|
-| ProtoCLR | | | | |
-| ConvNeXt | | | | |
-| EAT | | | | |
+| Metric | Min | Avg | Max |
+|--------|-----|-----|-----|
+| GPU Utilization | 43.0% | 67.9% | 84.0% |
+| Data Loading % | 0.6% | 13.6% | 84.4% |
+| Throughput | 95 s/s | 577 s/s | 684 s/s |
+| Memory Allocated | 0.14 GB | 0.62 GB | 1.09 GB |
+| Memory % | 0.5% | 2.4% | 4.3% |
+
+**Bottleneck**: I/O spikes from loading 10,592 unlabeled soundscape files on
+shared filesystem. Updated configs from 8 → 12 num_workers for future runs.
+
+### Training Results
+
+| Model | val/auroc | val/cmap | test/auroc | test/cmap | Best Epoch | Stopped |
+|-------|-----------|----------|-----------|----------|------------|---------|
+| ProtoCLR | 0.827 | 0.476 | 0.846 | 0.485 | 5 | 9 (early stop) |
+| ConvNeXt | pending | | | | | |
+| EAT | pending | | | | | |
+
+### Comparison vs Exp 012 Baseline (offline test set)
+
+| Model | Exp 012 AUROC | Exp 015 AUROC | Delta | Exp 012 cmAP | Exp 015 cmAP | Delta |
+|-------|--------------|--------------|-------|-------------|-------------|-------|
+| ProtoCLR | 0.845 | 0.846 | +0.001 | 0.481 | 0.485 | +0.004 |
+| ConvNeXt | 0.844 | pending | | 0.470 | pending | |
+| EAT | 0.838 | pending | | 0.452 | pending | |
+
+**Note**: Offline metrics essentially flat for ProtoCLR. Model barely moved
+from exp 012 starting point (early stopped at epoch 9, best at epoch 5).
 
 ## 5. Evaluation
 
-- [ ] 5.1 Export best checkpoints to ONNX (via exp 010 pipeline)
-- [ ] 5.2 Submit to Kaggle LB
-- [ ] 5.3 Record LB scores and compare to exp 012 baseline
+- [x] 5.1 Export ProtoCLR to ONNX: `bash sbatch/run.sh export --model protoclr-2026-student-v1`
+      Added to exp 010 pipeline: export.sbatch, upload_kaggle.py, kernel metadata, submission.py MODEL_SLUGS
+- [x] 5.2 Upload + push kernel: `python scripts/upload_kaggle.py --model protoclr-2026-student-v1 --push-kernel`
+- [ ] 5.3 ProtoCLR LB score — Kaggle inference running (~1hr)
+- [ ] 5.4 Export ConvNeXt to ONNX + submit (after training completes)
+- [ ] 5.5 Export EAT to ONNX + submit (after training completes)
 
 ### LB Results
 
 | Model | Exp 012 LB | Exp 015 LB | Delta |
 |-------|-----------|-----------|-------|
-| ProtoCLR | 0.767 | | |
-| ConvNeXt | 0.755 | | |
-| EAT | 0.720 | | |
+| ProtoCLR | 0.767 | pending | |
+| ConvNeXt | 0.755 | pending | |
+| EAT | 0.720 | pending | |
 
 ## 6. Documentation
 
-- [ ] 6.1 Update MODEL-RUNS.md with exp 015 results
-- [ ] 6.2 Update docs/STATUS.md
+- [x] 6.1 Update MODEL-RUNS.md with exp 015 results (ProtoCLR done, others pending)
+- [ ] 6.2 Update docs/STATUS.md (after all LB scores in)
 
 ---
 

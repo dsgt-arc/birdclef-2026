@@ -12,7 +12,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from .birdclef2025 import _load_audio_chunk
+from .dataset import _load_audio_chunk
 
 logger = logging.getLogger(__name__)
 
