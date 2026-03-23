@@ -1,0 +1,113 @@
+#!/bin/bash
+#SBATCH --job-name=exp016-sed
+#SBATCH --account=paceship-clef2026_birdclef
+#SBATCH --partition=gpu-rtx6000
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --time=24:00:00
+#SBATCH -qinferno
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=mgustineli3@gatech.edu
+#
+# Experiment 016: SED Architecture with EfficientNet-B0
+#
+# Usage:
+#   cd user/murilo/experiments/016-sed-architecture
+#   bash sbatch/run.sh config/efficientnet_b0_sed.yaml
+#   bash sbatch/run.sh config/efficientnet_b0_sed.yaml --fast-dev-run
+
+set -eu
+
+CONFIG="${CONFIG:-config/efficientnet_b0_sed.yaml}"
+PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
+FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
+GPU_CHECK="${GPU_CHECK:-0}"
+NUM_WORKERS="${NUM_WORKERS:-}"
+
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    EXPERIMENT_DIR="$SLURM_SUBMIT_DIR"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
+fi
+
+USER_DIR="$(dirname "$(dirname "$EXPERIMENT_DIR")")"
+REPO_DIR="$(dirname "$(dirname "$USER_DIR")")"
+
+echo "=============================================="
+echo "Job: Experiment 016 - SED Architecture"
+echo "=============================================="
+echo "Job ID: ${SLURM_JOB_ID:-local}"
+echo "Node: $(hostname)"
+echo "Date: $(date)"
+echo "Config: ${CONFIG}"
+echo ""
+nvidia-smi
+echo ""
+
+# Setup venv
+echo "Setting up per-job virtual environment..."
+export UV_CACHE_DIR="$TMPDIR/uv-cache"
+JOB_VENV_DIR="$TMPDIR/birdclef-$SLURM_JOB_ID"
+JOB_VENV="$JOB_VENV_DIR/.venv"
+echo "  Venv: $JOB_VENV"
+
+mkdir -p "$JOB_VENV_DIR"
+uv venv "$JOB_VENV" --python 3.11
+source "$JOB_VENV/bin/activate"
+
+echo "  Installing dependencies..."
+uv pip install -e "$EXPERIMENT_DIR"
+
+echo "  Installing PyTorch with CUDA..."
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+echo "  Virtual environment ready!"
+echo ""
+
+python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}, Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else None}')"
+python -c "import timm; print(f'timm: {timm.__version__}')"
+echo ""
+
+cd "$EXPERIMENT_DIR"
+mkdir -p logs outputs/wandb
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+export HF_HOME="/storage/project/${PROJECT_NAME}/mgustineli3/cache/huggingface"
+mkdir -p "$HF_HOME"
+
+if [ -f "$USER_DIR/.env" ]; then
+    set -a
+    source "$USER_DIR/.env"
+    set +a
+fi
+
+echo "=============================================="
+echo "Configuration (${CONFIG}):"
+cat "${CONFIG}"
+echo "=============================================="
+echo ""
+
+TRAIN_CMD="python train.py --config ${CONFIG} --project-name ${PROJECT_NAME}"
+if [[ "${FAST_DEV_RUN}" == "true" ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --fast-dev-run"
+    echo "  (fast dev run: 5 batches, no W&B)"
+fi
+if [[ "${GPU_CHECK}" -gt 0 ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --gpu-check ${GPU_CHECK}"
+    echo "  (GPU check mode: ${GPU_CHECK} epoch(s), no W&B)"
+fi
+if [[ -n "${NUM_WORKERS}" ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --num-workers ${NUM_WORKERS}"
+fi
+
+echo "Starting training..."
+srun ${TRAIN_CMD}
+
+echo ""
+echo "=============================================="
+echo "End Time: $(date)"
+echo "Job completed successfully!"
+echo "=============================================="
