@@ -55,11 +55,28 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 |-------|-----------|----------|-----------|----------|------------|---------|
 | EfficientNet-B0 SED | | | | | | |
 
-## 5. Evaluation
+## 5. ONNX Export & Kaggle Submission
 
-- [ ] 5.1 Export to ONNX (update exp 010 pipeline for SED inference)
-- [ ] 5.2 Submit to Kaggle LB
-- [ ] 5.3 Compare to exp 012 baseline and competition reference (0.908)
+SED models need a **different ONNX export** than clip-level models because
+the inference logic is different (dual output + blending).
+
+- [ ] 5.1 Create `scripts/export_efficientnet_sed.py` in exp 010 pipeline
+      - Load checkpoint → build EfficientNetEncoder + AttHead
+      - Wrap in SEDWrapper that takes mel input and returns blended probabilities:
+        `0.75 * sigmoid(clipwise) + 0.25 * sigmoid(framewise_max)`
+      - Export single ONNX with mel input → blended probs output
+      - Alternative: export raw clipwise + framewise_max logits and do blending
+        in submission.py (more flexible for tuning blend ratio)
+- [ ] 5.2 Register in exp 010: export.sbatch, upload_kaggle.py, kernel metadata, submission.py MODEL_SLUGS
+- [ ] 5.3 Verify ONNX output matches PyTorch (max diff < 1e-4)
+- [ ] 5.4 Upload weights + push kernel to Kaggle
+- [ ] 5.5 Verify species_mapping.json has 234 items on Kaggle before submitting
+- [ ] 5.6 Record LB score, compare to baseline and competition reference (0.908)
+
+### LB Results
+
+| Model | Exp 012 Best | Exp 016 LB | Target |
+|-------|-------------|-----------|--------|
 
 ### LB Results
 
