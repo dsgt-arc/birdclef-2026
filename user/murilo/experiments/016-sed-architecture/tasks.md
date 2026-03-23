@@ -32,11 +32,12 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 
 ## 2. Pipeline Validation
 
-- [ ] 2.1 Fast dev run: `bash sbatch/run.sh config/efficientnet_b0_sed.yaml --fast-dev-run`
-- [ ] 2.2 Verify encoder output shape: (B, 320, F', T')
-- [ ] 2.3 Verify SED head output shapes: clipwise (B, 234), framewise (B, 234, T)
-- [ ] 2.4 Verify soft CE loss computation (no NaN/inf)
-- [ ] 2.5 Verify dataset sizes (focal recordings + soundscape segments)
+- [x] 2.1 Fast dev run: job 5430704, completed successfully
+- [x] 2.2 Encoder: embed_dim=320, 5 stages (correct with features_only=True)
+- [x] 2.3 SED head: no shape errors, clipwise + framewise passed through loss and metrics
+- [x] 2.4 Soft CE loss: train=5.654, val=5.524 (reasonable for 234 classes, ln(234)≈5.46)
+- [x] 2.5 Datasets: 28,596 focal recordings + 570 soundscape = 29,166 train (10s windows)
+      Model: 3.6M params (EfficientNet-B0), all trainable
 
 ## 3. GPU Check
 
