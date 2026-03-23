@@ -221,7 +221,7 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
 
     # Copy species_mapping.json into model weights dir
     # Soundscape models use 234-species mapping, 2026 models use 206, 2025 uses 41-overlap
-    if "-soundscape" in model_name:
+    if "-soundscape" in model_name or "-student" in model_name:
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026_234.json"
     elif "-2026" in model_name:
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026.json"
