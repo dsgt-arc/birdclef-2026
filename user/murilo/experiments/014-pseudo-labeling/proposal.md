@@ -9,110 +9,133 @@ author: Murilo Gustineli
 
 ## Hypothesis
 
-Running teacher models on unlabeled soundscapes (with and without MixIT-separated
-channels) produces soft pseudo-labels whose quality exceeds single-model direct
-prediction, enabling downstream student training (exp 015) to improve LB scores
-beyond the exp 012 baseline (0.767).
+Running exp 012 teacher models (ProtoCLR + ConvNeXt) on 10,592 unlabeled soundscapes
+and averaging their predictions produces soft pseudo-labels that improve downstream
+student training (exp 015) beyond the exp 012 baseline (ProtoCLR 0.767 LB).
 
-## Motivation
+## Background: Two Different Approaches
 
-BirdCLEF 2026 provides 10,592 unlabeled soundscapes — 160× more soundscape data
-than the 66 labeled files used in exp 012. Every recent BirdCLEF winner (2024 1st,
-2025 1st) uses pseudo-labeling to leverage this data. The 2025 1st place solution
-used 5/7 models trained with iterative pseudo-labels.
+### The MixIT paper's approach (inference-time enhancement)
 
-This experiment is **decoupled from student training** (exp 015) so that:
-- Pseudo-labels can be regenerated with stronger teachers without retraining
-- Multiple student architectures/configurations can consume the same labels
-- MixIT-enhanced vs direct pseudo-labeling can be compared as an ablation
+The Bird MixIT paper (Section 7.1) improves a **single classifier's predictions** by
+feeding it separated audio channels at inference time:
+
+```
+Soundscape → MixIT → 4 channels + original → ONE classifier → max-pool per species
+```
+
+This produces better predictions from one model. It's an inference-time trick, not a
+training data generation method. Our exp 013 MixIT separation enables this approach.
+
+### The winning solutions' approach (pseudo-labeling for training)
+
+BirdCLEF 2024/2025 winners use **iterative self-training** — a fundamentally different
+technique:
+
+```
+Round 0: Train model on labeled data
+Round 1: Model predicts on unlabeled data → pseudo-labels → retrain on labeled + pseudo-labeled
+Round 2: Improved model → better pseudo-labels → retrain
+...repeat 3-4 times
+```
+
+No source separation involved. Pseudo-labels come from the model's own predictions
+(or an ensemble), optionally sharpened with temperature scaling.
+
+### Our approach: start simple, extend later
+
+We start with the proven winning approach — direct ensemble pseudo-labeling — and
+can later extend with MixIT enhancement if validated on the 66 labeled files.
 
 ## Approach
 
-### Inputs
+### v1: Direct Ensemble (this experiment)
 
-- **Teacher models**: Exp 012 ONNX models (ProtoCLR, ConvNeXt, EAT — 234 classes)
-- **Unlabeled audio**: 10,592 soundscape files in `shared/data/birdclef-2026/train_soundscapes/`
-- **MixIT separated audio** (optional): 4 channels per file from exp 013
-  (`shared/mixit/pretrained/soundscapes/`)
-- **Labeled soundscapes**: 66 files for quality validation
-
-### Pipeline
+For each unlabeled soundscape, run ProtoCLR and ConvNeXt on each 5s segment, average
+their sigmoid predictions → soft pseudo-label.
 
 ```
-For each unlabeled soundscape (12 × 5s segments per file):
-
-  Mode A — Direct (no MixIT):
-    Original audio → ProtoCLR → probs_pcr
-                   → ConvNeXt → probs_cnx
-                   → EAT     → probs_eat (exclude for insect species)
-    Per species: weighted_mean(probs_pcr, probs_cnx, [probs_eat])
-
-  Mode B — MixIT-enhanced:
-    Original + 4 separated channels → each teacher model
-    Per model: max-pool across 5 inputs (4 channels + original)
-    Per species: weighted_mean across models
-
-  Final: soft pseudo-labels (234 probabilities per 5s segment)
+For each 5s segment:
+  Original audio → ProtoCLR (exp 012, LB 0.767) → sigmoid(logits) → probs_pcr (234,)
+  Original audio → ConvNeXt (exp 012, LB 0.755) → sigmoid(logits) → probs_cnx (234,)
+  Pseudo-label = mean(probs_pcr, probs_cnx)  → (234,)
 ```
+
+**Why only ProtoCLR + ConvNeXt, no EAT**: The error analysis
+(`013-mixit-separation/error-analysis.md`) showed:
+- EAT AUROC on insects: **0.673** (vs 0.856 ProtoCLR, 0.848 ConvNeXt)
+- Simple 3-model mean ensemble **hurts** (−0.039 vs best single model)
+- Root cause: EAT's kaldi fbank caps at 8kHz, missing insect stridulation
+
+Including EAT would inject noise into pseudo-labels for 25/234 insect species.
+ProtoCLR + ConvNeXt are close in quality and architecturally diverse.
+
+### Future extensions (deferred)
+
+These can be added in later iterations once v1 is validated:
+
+1. **Temperature scaling**: Apply `sigmoid(logits / T)` with T < 1.0 to sharpen
+   predictions. The 2025 1st place used T=0.55-0.6. Requires saving raw logits
+   (which we do) and sweeping T on the 66 labeled files.
+
+2. **MixIT-enhanced predictions**: Run each teacher on original + 4 MixIT channels,
+   max-pool per model (Bird MixIT paper Section 7.1), then average across models.
+   Requires exp 013 separation to be complete.
+
+3. **Per-taxon weighting**: Assign different model weights per taxonomic class
+   based on error analysis (e.g., higher ProtoCLR weight for insects).
+
+4. **Iterative self-training**: Student from exp 015 becomes a new teacher, re-generate
+   pseudo-labels, retrain. Repeat 2-3 times.
+
+5. **EAT inclusion for bird-only species**: If per-taxon weighting is implemented,
+   EAT could be included with weight=0 for insects and positive weight for birds.
 
 ### Key Design Decisions
 
-1. **Weighted ensemble, not simple mean**: Error analysis (exp 013 error-analysis.md)
-   showed EAT fails on insects (0.673 AUROC). Exclude EAT for insect species or
-   use per-taxon weights (e.g., ProtoCLR 0.4 + ConvNeXt 0.4 + EAT 0.2 for birds;
-   ProtoCLR 0.5 + ConvNeXt 0.5 for insects).
+1. **Hard labels for labeled data**: Per Anthony's exp A-014 finding, never replace
+   ground truth with pseudo-labels. Pseudo-labels are only for unlabeled soundscapes.
 
-2. **Temperature scaling**: Following 2025 1st place (T=0.55–0.6), apply temperature
-   scaling to sharpen predictions before averaging. Lower T → higher confidence on
-   strong predictions, less noise.
+2. **Save raw logits alongside final probs**: Enables offline re-aggregation (temperature
+   sweep, weight tuning) without re-running inference.
 
-3. **Confidence thresholding**: Sweep thresholds (0.3, 0.5, 0.7) on the 66 labeled
-   soundscapes to find the optimal precision/recall tradeoff.
+3. **GPU inference**: Use `onnxruntime-gpu` on `gpu-rtx6000` for speed. Two models ×
+   10,592 files × 12 segments = ~254K forward passes.
 
-4. **Hard labels for labeled data**: Per Anthony's exp A-014 finding, never replace
-   ground truth with pseudo-labels. Pseudo-labels are only for the ~10,526 unlabeled
-   soundscapes.
-
-5. **Mode A vs Mode B comparison**: Run both direct and MixIT-enhanced pseudo-labeling
-   on the 66 labeled files. Compare pseudo-label quality against ground truth to
-   measure MixIT's actual contribution.
+4. **Validate on labeled soundscapes first**: Run pseudo-labeling on 66 labeled files,
+   compare against ground truth to measure quality before the full unlabeled run.
 
 ### Output
 
 ```
-shared/pseudo-labels/birdclef-2026/{run_name}/
-├── pseudo_labels.parquet    # (n_segments, 236 cols: filename, end_sec, 234 species probs)
-├── config.json              # teacher models, weights, temperature, threshold
-└── validation/
-    └── labeled_quality.json # precision/recall on 66 labeled files
+shared/pseudo-labels/birdclef-2026/direct/
+├── logits/
+│   ├── protoclr-2026-soundscape.npz   # (n_segments, 234) raw logits
+│   └── convnext-2026-soundscape.npz   # (n_segments, 234) raw logits
+├── pseudo_labels.parquet               # (n_segments, 236 cols: filename, end_sec, 234 avg probs)
+└── config.json                         # models used, split, n_segments
 ```
 
 ## Evaluation
 
 ### Metrics
-- **Pseudo-label quality on labeled soundscapes**: Per-species precision/recall/AUROC
-  against ground truth labels
+- **Pseudo-label AUROC on labeled soundscapes**: Per-species AUROC vs ground truth
 - **Per-taxon quality**: Birds vs amphibians vs insects breakdown
-- **MixIT gain**: Mode B quality − Mode A quality
-- **Coverage**: % of unlabeled segments with ≥1 species above threshold
+- **Coverage**: % of unlabeled segments with ≥1 species above 0.5
+- **Ensemble vs single model**: Does averaging ProtoCLR + ConvNeXt beat either alone?
 
 ### Baseline
-- Exp 012 models' direct predictions (no ensemble, no temperature scaling)
+- Individual model predictions (ProtoCLR alone, ConvNeXt alone)
 
 ### Success Criteria
-- **Confirm if**: Ensemble pseudo-labels have higher AUROC than any single model
-  on labeled soundscapes
-- **Confirm if**: MixIT-enhanced (Mode B) outperforms direct (Mode A) on labeled set
-- **Reject if**: No quality improvement from ensemble or MixIT over single-model predictions
+- **Confirm if**: 2-model ensemble AUROC > best single model AUROC on labeled soundscapes
+- **Reject if**: Ensemble AUROC < best single model (averaging hurts)
 
 ## Dependencies
 
-- Exp 012 ONNX models (complete)
-- Exp 013 MixIT separated audio (running, ~10,500/10,592 files done)
-- Inference script: `user/murilo/scripts/infer_soundscapes.py` (complete)
+- Exp 012 ONNX models: ProtoCLR + ConvNeXt (complete)
+- For future Mode B: Exp 013 MixIT separated audio (complete)
 
 ## Leads to
 
 Exp 015 (student training) consumes the pseudo-labels produced here.
-Future iterations: regenerate pseudo-labels with stronger teachers (e.g., SED models)
-and re-run exp 015.

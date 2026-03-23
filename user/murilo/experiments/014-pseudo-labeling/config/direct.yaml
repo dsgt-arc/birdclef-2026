@@ -1,0 +1,19 @@
+# Direct ensemble pseudo-labeling: ProtoCLR + ConvNeXt (no EAT, no MixIT)
+# Teachers are exp 012 soundscape-finetuned models (234 classes).
+# EAT excluded: insect AUROC 0.673 vs 0.85+ for ProtoCLR/ConvNeXt (error-analysis.md).
+
+mode: "direct"
+
+teachers:
+  protoclr-2026-soundscape:
+    slug: "protoclr-2026-soundscape"  # exp 012, LB 0.767
+  convnext-2026-soundscape:
+    slug: "convnext-2026-soundscape"  # exp 012, LB 0.755
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  weights_dir: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/010-submission-pipeline/artifacts/weights"
+
+output:
+  base_dir: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026"
+  run_name: "direct"

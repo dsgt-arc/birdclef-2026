@@ -14,15 +14,14 @@ downstream student training (exp 015).
 - [ ] 2.4 Create SLURM scripts (`sbatch/run.sh`, `sbatch/_job.sh`)
 - [ ] 2.5 Write README.md and tasks.md
 
-## 3. Pseudo-Labeling Script
+## 3. Pseudo-Labeling Script (v1: direct ensemble)
 
-- [ ] 3.1 Create `pseudo_label.py` with Mode A (direct ensemble)
-  - Load 3 ONNX teacher models (ProtoCLR, ConvNeXt, EAT)
-  - Per-segment: compute mel → ONNX inference → store raw logits
-  - Save per-model logits as npz for offline re-aggregation
-- [ ] 3.2 Add ensemble aggregation: temperature scaling + per-taxon weighted average
-- [ ] 3.3 Add Mode B support (load MixIT NPZ channels, max-pool per model)
-- [ ] 3.4 Save final pseudo-labels as parquet
+- [x] 3.1 Create `pseudo_label.py` — ProtoCLR + ConvNeXt only (no EAT)
+  - Per-segment: compute mel → ONNX GPU inference → raw logits
+  - Average sigmoid predictions across 2 teachers → soft pseudo-labels
+  - Save per-model logits as npz (for offline re-aggregation)
+  - Save ensemble pseudo-labels as parquet
+- [x] 3.2 Create `config/direct.yaml` with teacher model slugs
 
 ## 4. Validation
 
@@ -43,8 +42,11 @@ downstream student training (exp 015).
 - [ ] 6.1 Write results.md with pseudo-label quality metrics
 - [ ] 6.2 Compare Mode A vs Mode B
 
-## 7. Future Work (deferred)
+## 7. Future Extensions (deferred)
 
-- [ ] 7.1 Re-export ONNX models with dual outputs (logits + embeddings)
-- [ ] 7.2 Save 2026 embeddings alongside predictions (384/768/1024-dim per model)
-- [ ] 7.3 Regenerate pseudo-labels with stronger teachers (e.g., SED models from future exps)
+- [ ] 7.1 Temperature scaling: sweep T on labeled validation (2025 1st used T=0.55-0.6)
+- [ ] 7.2 MixIT-enhanced: max-pool across 4 separated channels + original per model (Bird MixIT paper Section 7.1)
+- [ ] 7.3 Per-taxon model weighting (e.g., higher ProtoCLR weight for insects)
+- [ ] 7.4 Include EAT for bird-only species with per-taxon weights
+- [ ] 7.5 Re-export ONNX models with dual outputs (logits + embeddings)
+- [ ] 7.6 Regenerate pseudo-labels with stronger teachers (e.g., SED models)
