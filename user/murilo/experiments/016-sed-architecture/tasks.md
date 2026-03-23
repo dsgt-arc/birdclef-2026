@@ -41,8 +41,10 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 
 ## 3. GPU Check
 
-- [ ] 3.1 Submit: `bash sbatch/run.sh config/efficientnet_b0_sed.yaml --gpu-check`
-- [ ] 3.2 Record GPU utilization, memory usage, throughput
+- [x] 3.1 Submit: job 5430838, completed
+- [x] 3.2 Results: GPU 68.2% avg, **data loading 42.1% avg** (spikes to 96%), memory 0.7%
+      Bottleneck: I/O spikes from loading 10s audio. Compute is fast (141ms avg).
+      Recommendation: increase batch_size and num_workers to reduce data stalls.
 
 ## 4. Full Training
 
