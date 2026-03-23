@@ -1,0 +1,33 @@
+# Teacher label generation config for BirdCLEF 2026
+
+data:
+  # BirdCLEF 2026 audio directories (shared project storage)
+  focal_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes
+
+output:
+  # Separate output directory from 2025
+  root: ~/scratch/birdclef-2026/outputs/exp010-2026/labels
+
+partitions:
+  focal: 50       # 35,549 files / 50 = ~711 per partition
+  soundscape: 20  # 10,658 files / 20 = ~533 per partition
+
+models:
+  bambird:
+    config: configs/bambird.yaml
+
+  birdnet:
+    clip_step: 1.0
+
+  perch:
+    tflite_path: ~/scratch/birdclef-2026/outputs/exp010/perch.tflite
+    clip_step: 5.0
+
+  indices:
+    target_sr: 48000
+    window_sec: 3.0
+    window_step: 1.0
+
+benchmark:
+  num_files: 5

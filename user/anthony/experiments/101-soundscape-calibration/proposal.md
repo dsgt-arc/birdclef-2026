@@ -90,7 +90,11 @@ windows). See `docs/split-strategy.md`.
 
 **Phase 4: Pseudo-labeling recommendation**
 
-14. Select strategy: best model or ensemble, raw or calibrated, confidence threshold
+See `docs/pseudo-label-strategies.md` for full comparison of 5 strategies (global
+threshold + weighting, top-k ranking, temperature scaling, per-taxa isotonic,
+hierarchical isotonic + residual thresholds).
+
+14. Select strategy from the candidates in `docs/pseudo-label-strategies.md`
 15. Per-species decision: reliable / usable / unreliable tier assignments
 16. Produce config for applying to 176.5h unlabeled soundscapes
 
