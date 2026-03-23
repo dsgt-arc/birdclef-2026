@@ -113,10 +113,10 @@ MODELS = {
         "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026-soundscape.json",
     },
     # Exp 015: Student models (pseudo-labeled training, 234 classes)
-    "protoclr-2026-student": {
-        "slug": "birdclef-2026-protoclr-student-weights",
-        "weights_dir": "artifacts/weights/protoclr-2026-student",
-        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026-student.json",
+    "protoclr-2026-student-v1": {
+        "slug": "birdclef-2026-protoclr-student-v1-weights",
+        "weights_dir": "artifacts/weights/protoclr-2026-student-v1",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026-student-v1.json",
     },
 }
 

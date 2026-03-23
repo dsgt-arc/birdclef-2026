@@ -1,6 +1,6 @@
 {
-  "id": "murilogustineli/birdclef-2026-protoclr-student",
-  "title": "BirdCLEF 2026 ProtoCLR Student",
+  "id": "murilogustineli/birdclef-2026-protoclr-student-v1",
+  "title": "BirdCLEF 2026 ProtoCLR Student v1",
   "code_file": "submission.py",
   "language": "python",
   "kernel_type": "script",
@@ -9,7 +9,7 @@
   "enable_internet": false,
   "dataset_sources": [
     "murilogustineli/birdclef-deps",
-    "murilogustineli/birdclef-2026-protoclr-student-weights"
+    "murilogustineli/birdclef-2026-protoclr-student-v1-weights"
   ],
   "competition_sources": ["birdclef-2026"],
   "kernel_sources": []
