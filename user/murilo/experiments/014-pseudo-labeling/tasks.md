@@ -56,8 +56,8 @@ student training (exp 015).
 
 ## 6. Results
 
-- [ ] 6.1 Write results.md with pseudo-label quality metrics
-- [ ] 6.2 Update MODEL-RUNS.md with pseudo-label run details
+- [x] 6.1 Validation metrics documented in tasks.md (4.3-4.4) and MODEL-RUNS.md
+- [x] 6.2 Update MODEL-RUNS.md with pseudo-label run details
 
 ## 7. Future Extensions (deferred)
 
