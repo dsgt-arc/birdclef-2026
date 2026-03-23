@@ -189,8 +189,10 @@ def main():
     parser.add_argument(
         "--gpu-check",
         type=int,
+        nargs="?",
+        const=1,
         default=0,
-        help="Run N epochs for GPU utilization check, print report, then exit",
+        help="Run N epochs for GPU utilization check (default: 1), print report, then exit",
     )
     parser.add_argument(
         "--num-workers",

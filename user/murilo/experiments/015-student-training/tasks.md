@@ -21,6 +21,8 @@ Target: LB improvement ≥0.02 over exp 012 baseline.
 - [x] 1.7 Create SLURM scripts (run.sh, _job.sh)
 - [x] 1.8 Implement `sweep_temperature.py`
 - [x] 1.9 Implement `train.py` (adapted from exp 012)
+- [x] 1.10 Implement `save_metrics.py` (saves structured metrics to `artifacts/` after training)
+- [x] 1.11 Add `--gpu-check` support (GPUUtilizationMonitor callback, outputs txt + png)
 
 ## 2. Temperature Scaling Sweep
 

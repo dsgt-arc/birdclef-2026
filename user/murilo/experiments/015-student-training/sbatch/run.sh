@@ -16,6 +16,10 @@
 #   bash sbatch/run.sh config/protoclr_student.yaml --fast-dev-run
 #   bash sbatch/run.sh --all --fast-dev-run
 #
+#   # GPU check (default 1 epoch, prints utilization report + plot)
+#   bash sbatch/run.sh config/protoclr_student.yaml --gpu-check
+#   bash sbatch/run.sh config/protoclr_student.yaml --gpu-check 3
+#
 #   # Override pseudo-label weight
 #   bash sbatch/run.sh config/protoclr_student.yaml --pseudo-weight 0.25
 #
@@ -52,8 +56,14 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --gpu-check)
-            GPU_CHECK="$2"
-            shift 2
+            # Default to 1 epoch if no number given, or next arg is a flag
+            if [[ -n "${2:-}" && "$2" =~ ^[0-9]+$ ]]; then
+                GPU_CHECK="$2"
+                shift 2
+            else
+                GPU_CHECK=1
+                shift
+            fi
             ;;
         --num-workers)
             NUM_WORKERS="$2"
@@ -77,7 +87,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --project-name    PACE project allocation name (default: ps-clef2026_birdclef-0)"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B (pipeline validation)"
-            echo "  --gpu-check N     Run N epochs for GPU utilization check, then exit"
+            echo "  --gpu-check [N]   Run N epochs for GPU utilization check (default: 1)"
             echo "  --num-workers N   Override num_workers from config"
             echo "  --pseudo-weight W Override pseudo-label weight from config"
             echo "  --dry-run         Preview command without submitting job"
