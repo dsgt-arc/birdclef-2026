@@ -67,10 +67,20 @@ EAT excluded from pseudo-labeling teacher ensemble (exp 014) due to insect failu
 
 ## Pseudo-Label Runs (exp 014)
 
-| Run Name | Teachers | Method | Split | Segments | Path |
-|----------|---------|--------|-------|----------|------|
-| `pcr-cnx-soundscape-v1` | protoclr + convnext (exp 012) | Direct average | labeled | TBD | `shared/pseudo-labels/birdclef-2026/pcr-cnx-soundscape-v1/labeled/` |
-| `pcr-cnx-soundscape-v1` | protoclr + convnext (exp 012) | Direct average | unlabeled | TBD | `shared/pseudo-labels/birdclef-2026/pcr-cnx-soundscape-v1/unlabeled/` |
+| Run Name | Teachers | Method | Split | Files | Segments | Path |
+|----------|---------|--------|-------|-------|----------|------|
+| `pcr-cnx-soundscape-v1` | protoclr + convnext (exp 012) | Direct average | labeled | 66 | 792 | `shared/pseudo-labels/birdclef-2026/pcr-cnx-soundscape-v1/labeled/` |
+| `pcr-cnx-soundscape-v1` | protoclr + convnext (exp 012) | Direct average | unlabeled | 10,592 | 127,104 | `shared/pseudo-labels/birdclef-2026/pcr-cnx-soundscape-v1/unlabeled/` |
+
+### Labeled Split Validation (ensemble vs ground truth, 75/234 species)
+
+| Model | Macro AUROC | cmAP |
+|-------|-----------|------|
+| **Ensemble (mean)** | **0.8851** | **0.3876** |
+| protoclr-2026-soundscape | 0.8543 | 0.3583 |
+| convnext-2026-soundscape | 0.8224 | 0.3085 |
+
+Per-taxon ensemble AUROC: Insecta 0.904, Aves 0.888, Mammalia 0.864, Amphibia 0.862, Reptilia 0.794.
 
 ## Checkpoint Base Path
 
