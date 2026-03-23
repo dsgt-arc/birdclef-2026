@@ -9,7 +9,7 @@ encoder:
   type: "efficientnet"
   model_name: "efficientnet_b0"
   pretrained: true
-  embed_dim: 1280
+  embed_dim: 320            # last stage channels with features_only=True (not 1280)
 
 sed_head:
   hidden_dim: 512

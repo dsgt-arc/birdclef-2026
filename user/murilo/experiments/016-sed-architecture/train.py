@@ -112,9 +112,13 @@ def main():
         pretrained=config["encoder"].get("pretrained", True),
     )
 
+    # Use encoder's actual embed_dim (not config) — features_only=True may differ
+    embed_dim = encoder.embed_dim
+    logger.info(f"Encoder embed_dim: {embed_dim}")
+
     logger.info("Building SED attention head...")
     sed_head = AttHead(
-        in_channels=config["encoder"]["embed_dim"],
+        in_channels=embed_dim,
         num_classes=num_classes,
         hidden_dim=config["sed_head"]["hidden_dim"],
         dropout=config["sed_head"]["dropout"],
