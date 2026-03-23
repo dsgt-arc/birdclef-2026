@@ -82,6 +82,30 @@ EAT excluded from pseudo-labeling teacher ensemble (exp 014) due to insect failu
 
 Per-taxon ensemble AUROC: Insecta 0.904, Aves 0.888, Mammalia 0.864, Amphibia 0.862, Reptilia 0.794.
 
+## BirdCLEF 2026 Models — Student Training (exp 015, round 0)
+
+Fine-tuned from exp 012 checkpoints on focal + labeled soundscape + 127K pseudo-labeled
+soundscape segments (soft labels from exp 014 `pcr-cnx-soundscape-v1`). Per-sample weighted
+BCE loss: w=1.0 for ground truth, w=0.5 for pseudo-labels. Temperature T=1.0 (no scaling).
+
+| Slug | Encoder | Training Data | Classes | Test AUROC | Test cmAP | Best Epoch | LB | Checkpoint |
+|------|---------|--------------|---------|-----------|----------|------------|-----|------------|
+| `protoclr-2026-student-v1` | ProtoCLR/CvT-13 | focal + soundscape + pseudo (340K) | 234 | 0.846 | 0.485 | 5 | pending | `015-.../2026-protoclr-student-v1/best-epochepoch=05.ckpt` |
+| `convnext-2026-student-v1` | ConvNeXt-Base | focal + soundscape + pseudo (340K) | 234 | pending | pending | pending | pending | `015-.../2026-convnext-student-v1/` |
+| `eat-2026-student-v1` | EAT-base | focal + soundscape + pseudo (340K) | 234 | pending | pending | pending | pending | `015-.../2026-eat-student-v1/` |
+
+### Comparison vs Exp 012 Baseline (offline test set)
+
+| Model | Exp 012 Test AUROC | Exp 015 Test AUROC | Delta | Exp 012 cmAP | Exp 015 cmAP | Delta |
+|-------|-------------------|-------------------|-------|-------------|-------------|-------|
+| ProtoCLR | 0.845 | 0.846 | +0.001 | 0.481 | 0.485 | +0.004 |
+| ConvNeXt | 0.844 | pending | — | 0.470 | pending | — |
+| EAT | 0.838 | pending | — | 0.452 | pending | — |
+
+Note: Offline test metrics are essentially flat for ProtoCLR. LB submission pending —
+the pseudo-labels may help more on the soundscape-only evaluation (domain shift) than
+on the mixed focal+soundscape offline test set.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
