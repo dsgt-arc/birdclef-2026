@@ -190,7 +190,26 @@ sonotypes, but 73 have no evaluable species.)
 - **Only 73 negative windows** makes this a weak test. These are windows where
   no evaluable species was annotated (may still contain sonotype insects).
 
+### Acoustic indices for call/no-call
+
+See `docs/call-nocall-detector.md` for full details.
+
+**Spectral contrast alone (0.888 AUROC)** nearly matches the ensemble top-5
+sum (0.901) for call detection — a single acoustic feature with no ML.
+
+All attempts to improve on raw spectral contrast failed:
+- Combined classifiers (LR, ridge, decision trees, GBDT): 0.35–0.53 AUROC
+- Isotonic calibration of spectral contrast: 0.472 AUROC (destroyed ranking)
+
+Root cause: only 53 no-call windows across 2 sites. Not enough negatives to
+train or calibrate anything. Raw spectral contrast works because it's a
+physical measurement that doesn't need calibration data.
+
+**Recommendation**: use raw spectral contrast threshold as a call/no-call gate
+before species classification. No calibration.
+
 ## Next Steps
 
 - [ ] Apply ensemble + threshold to 176.5h unlabeled soundscapes
 - [ ] Per-species threshold tuning for high-AUROC / low-recall species
+- [ ] Consider mining hard negatives from unlabeled data for better call/no-call calibration

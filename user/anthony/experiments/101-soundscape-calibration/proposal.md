@@ -96,7 +96,8 @@ hierarchical isotonic + residual thresholds).
 
 14. Select strategy from the candidates in `docs/pseudo-label-strategies.md`
 15. Per-species decision: reliable / usable / unreliable tier assignments
-16. Produce config for applying to 176.5h unlabeled soundscapes
+16. Evaluate acoustic indices as call/no-call gate (see `docs/call-nocall-detector.md`)
+17. Produce config for applying to 176.5h unlabeled soundscapes
 
 ### Variables
 
