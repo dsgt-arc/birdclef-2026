@@ -1,32 +1,33 @@
 # Mode A: Direct ensemble pseudo-labeling (no MixIT)
+# Teachers: exp 012 soundscape-finetuned models (234 classes)
 # Each teacher runs on original audio only.
 
 mode: "direct"
 temperature: 1.0  # no scaling by default; sweep 0.5-0.7 on validation
 
 teachers:
-  protoclr:
-    slug: "protoclr-2026-soundscape"
+  protoclr-2026-soundscape:
+    slug: "protoclr-2026-soundscape"  # exp 012, LB 0.767
     weights:
       Aves: 0.4
       Amphibia: 0.4
       Insecta: 0.5
       Mammalia: 0.4
       Reptilia: 0.4
-  convnext:
-    slug: "convnext-2026-soundscape"
+  convnext-2026-soundscape:
+    slug: "convnext-2026-soundscape"  # exp 012, LB 0.755
     weights:
       Aves: 0.4
       Amphibia: 0.4
       Insecta: 0.5
       Mammalia: 0.4
       Reptilia: 0.4
-  eat:
-    slug: "eat-2026-soundscape"
+  eat-2026-soundscape:
+    slug: "eat-2026-soundscape"  # exp 012, LB 0.720
     weights:
       Aves: 0.2
       Amphibia: 0.2
-      Insecta: 0.0  # EAT fails on insects (AUROC 0.673)
+      Insecta: 0.0  # EAT fails on insects (AUROC 0.673, error-analysis.md)
       Mammalia: 0.2
       Reptilia: 0.2
 
@@ -36,4 +37,4 @@ data:
 
 output:
   base_dir: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026"
-  run_name: "mode-a-v1"
+  run_name: "exp012-teachers-direct"
