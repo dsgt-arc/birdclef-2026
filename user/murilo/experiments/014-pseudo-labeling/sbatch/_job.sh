@@ -18,6 +18,8 @@ set -eu
 CONFIG="${CONFIG:-config/direct.yaml}"
 SPLIT="${SPLIT:-labeled}"
 MAX_FILES="${MAX_FILES:-}"
+NUM_WORKERS="${NUM_WORKERS:-1}"
+WORKER_ID="${SLURM_ARRAY_TASK_ID:-0}"
 
 # ============================================================================
 # Determine paths
@@ -38,6 +40,7 @@ echo "=============================================="
 echo "Job: Experiment 014 — Pseudo-Labeling"
 echo "=============================================="
 echo "Job ID: ${SLURM_JOB_ID:-local}"
+echo "Worker: ${WORKER_ID}/${NUM_WORKERS}"
 echo "Node: $(hostname)"
 echo "Date: $(date)"
 echo "Config: ${CONFIG}"
@@ -66,18 +69,30 @@ mkdir -p "$JOB_VENV_DIR"
 uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
-echo "  Installing dependencies..."
+echo "  Installing experiment dependencies..."
 uv pip install -e "$EXPERIMENT_DIR"
-
-echo "  Installing PyTorch with CUDA..."
-uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+# NOTE: torch/torchaudio NOT installed — only needed for kaldi_fbank (EAT),
+# which is excluded from this config. Installing torch cu121 downgrades
+# nvidia-cublas-cu12 from 12.9→12.1, breaking onnxruntime-gpu CUDA provider.
 
 echo "  Virtual environment ready!"
 echo ""
 
-# Verify
-python -c "import onnxruntime as ort; print(f'onnxruntime: {ort.__version__}, providers: {ort.get_available_providers()}')"
-python -c "import torch; print(f'torch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
+# Verify ONNX + CUDA libs
+python -c "
+import onnxruntime as ort
+import importlib.metadata
+
+provs = ort.get_available_providers()
+print(f'onnxruntime: {ort.__version__}, providers: {provs}')
+
+cublas = importlib.metadata.version('nvidia-cublas-cu12')
+cudnn = importlib.metadata.version('nvidia-cudnn-cu12')
+print(f'nvidia-cublas-cu12: {cublas}, nvidia-cudnn-cu12: {cudnn}')
+
+assert 'CUDAExecutionProvider' in provs, 'ERROR: CUDAExecutionProvider not available — GPU inference will fail'
+print('CUDA provider: OK')
+"
 echo ""
 
 # ============================================================================
@@ -101,6 +116,9 @@ echo ""
 EXTRA_FLAGS=""
 if [[ -n "${MAX_FILES}" ]]; then
     EXTRA_FLAGS="--max-files ${MAX_FILES}"
+fi
+if [[ "${NUM_WORKERS}" -gt 1 ]]; then
+    EXTRA_FLAGS="${EXTRA_FLAGS} --worker-id ${WORKER_ID} --num-workers ${NUM_WORKERS}"
 fi
 
 echo "Running pseudo-labeling..."

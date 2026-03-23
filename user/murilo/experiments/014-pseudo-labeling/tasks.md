@@ -31,9 +31,19 @@ student training (exp 015).
   - `pseudo_labels.parquet` (792 segments × 236 cols)
   - `logits/protoclr-2026-soundscape.npz` + `logits/convnext-2026-soundscape.npz`
   - `config.json` with full provenance
-- [ ] 4.3 Compare pseudo-label quality vs ground truth (per-species/taxon AUROC)
-- [ ] 4.4 Compare ensemble vs single-model quality
-- [ ] 4.5 Check GPU utilization from `logs/gpu_labeled_*.csv`
+- [x] 4.3 Compare pseudo-label quality vs ground truth (per-species/taxon AUROC)
+  - Created `validate.py` — reusable validation script
+  - Ensemble macro AUROC: 0.8851, cmAP: 0.3876 (75/234 species in GT)
+  - Per-taxon: Insecta 0.904, Aves 0.888, Mammalia 0.864, Amphibia 0.862, Reptilia 0.794
+  - Worst species: Guaraní leaf-litter frog (0.531), Tropical Screech Owl (0.594)
+- [x] 4.4 Compare ensemble vs single-model quality
+  - Ensemble (0.8851) > ProtoCLR (0.8543) > ConvNeXt (0.8224) — ensemble gains +0.03/+0.06
+  - cmAP: Ensemble (0.3876) > ProtoCLR (0.3583) > ConvNeXt (0.3085)
+- [x] 4.5 Check GPU utilization from `logs/gpu_labeled_*.csv`
+  - Fixed ONNX GPU: added `ort.preload_dlls(cuda=True, cudnn=True)` before session creation
+  - Removed torch install (was downgrading nvidia-cublas-cu12 12.9→12.1)
+  - GPU run: 58s (1.1 files/s) vs CPU fallback: 248s (0.3 files/s) — 4.3x speedup
+  - Mean GPU util: 13.7%, Peak VRAM: 852 MB (I/O-bound, not compute-bound)
 
 ## 5. Full Unlabeled Run
 

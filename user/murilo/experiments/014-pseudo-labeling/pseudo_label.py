@@ -152,16 +152,22 @@ class TeacherModel:
         opts = ort.SessionOptions()
         opts.inter_op_num_threads = 2
         opts.intra_op_num_threads = 4
-        providers = (
-            ["CUDAExecutionProvider", "CPUExecutionProvider"]
-            if use_gpu
-            else ["CPUExecutionProvider"]
-        )
+        if use_gpu:
+            # Preload CUDA/cuDNN libs from pip-installed nvidia packages
+            # Must be called BEFORE creating InferenceSession
+            ort.preload_dlls(cuda=True, cudnn=True)
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        else:
+            providers = ["CPUExecutionProvider"]
         self.session = ort.InferenceSession(
             str(self.model_dir / "model.onnx"),
             sess_options=opts,
             providers=providers,
         )
+        active_providers = self.session.get_providers()
+        logger.info(f"  Session providers: {active_providers}")
+        if use_gpu and "CUDAExecutionProvider" not in active_providers:
+            logger.error(f"  CUDA provider NOT active for {name} — falling back to CPU!")
         self.input_name = self.session.get_inputs()[0].name
 
     def infer(self, audio_path, start_s, n_species, sp2idx):
@@ -209,7 +215,7 @@ def get_soundscape_files(data_dir, split):
 # ---------------------------------------------------------------------------
 
 
-def run_pseudo_labeling(config, split, max_files=None):
+def run_pseudo_labeling(config, split, max_files=None, worker_id=0, num_workers=1):
     data_dir = Path(config["data"]["data_dir"])
     weights_dir = Path(config["data"]["weights_dir"])
     out_base = Path(config["output"]["base_dir"])
@@ -240,6 +246,13 @@ def run_pseudo_labeling(config, split, max_files=None):
     files = get_soundscape_files(data_dir, split)
     if max_files:
         files = files[:max_files]
+    total_files = len(files)
+
+    # Distributed: shard files across workers via modulo
+    if num_workers > 1:
+        files = [f for i, f in enumerate(files) if i % num_workers == worker_id]
+        logger.info(f"Worker {worker_id}/{num_workers}: {len(files)}/{total_files} files")
+
     logger.info(f"Split: {split}, files: {len(files)}, teachers: {teacher_names}")
 
     # Process all files
@@ -275,6 +288,9 @@ def run_pseudo_labeling(config, split, max_files=None):
             rate = (fi + 1) / elapsed
             logger.info(f"  {fi + 1}/{len(files)} files ({rate:.1f} files/s)")
 
+    # Determine output suffix for sharded vs single runs
+    shard_suffix = f"_shard{worker_id}" if num_workers > 1 else ""
+
     # Save per-model logits (for offline re-aggregation)
     logits_dir = out_dir / "logits"
     logits_dir.mkdir(parents=True, exist_ok=True)
@@ -282,7 +298,7 @@ def run_pseudo_labeling(config, split, max_files=None):
     for tname in teacher_names:
         logits_arr = np.array(per_model_logits[tname], dtype=np.float32)
         np.savez_compressed(
-            logits_dir / f"{tname}.npz",
+            logits_dir / f"{tname}{shard_suffix}.npz",
             logits=logits_arr,
             seg_keys=seg_keys_arr,
             species=np.array(all_species),
@@ -299,26 +315,28 @@ def run_pseudo_labeling(config, split, max_files=None):
         df_data[sp] = probs_arr[:, sp_idx]
 
     df = pd.DataFrame(df_data)
-    parquet_path = out_dir / "pseudo_labels.parquet"
+    parquet_path = out_dir / f"pseudo_labels{shard_suffix}.parquet"
     df.to_parquet(parquet_path, index=False)
     logger.info(f"Saved pseudo-labels: {parquet_path} ({len(df)} segments)")
 
-    # Save config (full input YAML + run metadata for reproducibility)
-    with open(out_dir / "config.json", "w") as f:
-        json.dump(
-            {
-                "input_config": config,
-                "run_metadata": {
-                    "split": split,
-                    "n_files": len(files),
-                    "n_segments": len(all_seg_keys),
-                    "aggregation": "mean",
-                    "teachers": teacher_names,
+    # Save config (only from worker 0 or single runs)
+    if worker_id == 0:
+        with open(out_dir / "config.json", "w") as f:
+            json.dump(
+                {
+                    "input_config": config,
+                    "run_metadata": {
+                        "split": split,
+                        "n_files": total_files,
+                        "n_segments": len(all_seg_keys),
+                        "aggregation": "mean",
+                        "teachers": teacher_names,
+                        "num_workers": num_workers,
+                    },
                 },
-            },
-            f,
-            indent=2,
-        )
+                f,
+                indent=2,
+            )
 
     elapsed = time.time() - t0
     logger.info(f"Done: {len(files)} files, {len(all_seg_keys)} segments in {elapsed:.1f}s")
@@ -329,12 +347,14 @@ def main():
     parser.add_argument("--config", required=True, help="Path to YAML config")
     parser.add_argument("--split", required=True, choices=["labeled", "unlabeled", "all"])
     parser.add_argument("--max-files", type=int, default=None, help="Limit files for testing")
+    parser.add_argument("--worker-id", type=int, default=0, help="Worker index (0-based)")
+    parser.add_argument("--num-workers", type=int, default=1, help="Total number of workers")
     args = parser.parse_args()
 
     with open(args.config) as f:
         config = yaml.safe_load(f)
 
-    run_pseudo_labeling(config, args.split, args.max_files)
+    run_pseudo_labeling(config, args.split, args.max_files, args.worker_id, args.num_workers)
 
 
 if __name__ == "__main__":
