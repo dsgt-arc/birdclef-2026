@@ -112,6 +112,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/protoclr-2026-soundscape",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026-soundscape.json",
     },
+    # Exp 015: Student models (pseudo-labeled training, 234 classes)
+    "protoclr-2026-student": {
+        "slug": "birdclef-2026-protoclr-student-weights",
+        "weights_dir": "artifacts/weights/protoclr-2026-student",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026-student.json",
+    },
 }
 
 
@@ -258,7 +264,14 @@ def main():
         type=str,
         required=True,
         choices=list(MODELS.keys())
-        + ["all", "all-2025", "all-2026", "all-2026-fulldata", "all-2026-soundscape"],
+        + [
+            "all",
+            "all-2025",
+            "all-2026",
+            "all-2026-fulldata",
+            "all-2026-soundscape",
+            "all-2026-student",
+        ],
         help="Model to upload (e.g., protoclr-2026-soundscape, all-2026-soundscape)",
     )
     parser.add_argument("--kaggle-user", type=str, default=DEFAULT_KAGGLE_USER)

@@ -241,6 +241,22 @@ export_eat_2026_soundscape() {
         --output-dir artifacts/weights/eat-2026-soundscape/
 }
 
+# ============================================================================
+# 2026-trained student model exports (exp 015 checkpoints, 234 classes)
+# ============================================================================
+
+EXP015_DIR="$(dirname "$EXPERIMENT_DIR")/015-student-training"
+
+export_protoclr_2026_student() {
+    echo "=== Exporting ProtoCLR (2026-student, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/015-student-training/checkpoints/2026-protoclr-student-v1/best-epochepoch=05.ckpt"
+    python scripts/export_protoclr.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP015_DIR}/config/protoclr_student.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/protoclr-2026-student/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -283,7 +299,8 @@ case "$MODEL" in
 esac
 
 case "$MODEL" in
-    eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape)
+    eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
+    protoclr-2026-student|all-2026-student)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TAXONOMY_CSV_2026" \
@@ -332,6 +349,10 @@ case "$MODEL" in
         export_convnext_2026_soundscape
         echo ""
         export_protoclr_2026_soundscape
+        ;;
+    protoclr-2026-student)     export_protoclr_2026_student ;;
+    all-2026-student)
+        export_protoclr_2026_student
         ;;
     *)
         echo "Unknown model: $MODEL"
