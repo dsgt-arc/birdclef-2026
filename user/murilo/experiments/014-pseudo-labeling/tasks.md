@@ -59,7 +59,11 @@ student training (exp 015).
 - [x] 6.1 Validation metrics documented in tasks.md (4.3-4.4) and MODEL-RUNS.md
 - [x] 6.2 Update MODEL-RUNS.md with pseudo-label run details
 
-## 7. Future Extensions (deferred)
+## 7. Next Step
+
+- [ ] 7.0 Start exp 015: train student models on focal + labeled soundscape + pseudo-labeled data (`pcr-cnx-soundscape-v1`)
+
+## 8. Future Extensions (deferred)
 
 - [ ] 7.1 Temperature scaling: sweep T on labeled validation (2025 1st used T=0.55-0.6)
 - [ ] 7.2 MixIT-enhanced: max-pool across 4 separated channels + original per model (Bird MixIT paper Section 7.1)
