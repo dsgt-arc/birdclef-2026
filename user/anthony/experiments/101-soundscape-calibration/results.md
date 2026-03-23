@@ -208,8 +208,35 @@ physical measurement that doesn't need calibration data.
 **Recommendation**: use raw spectral contrast threshold as a call/no-call gate
 before species classification. No calibration.
 
+## Open Questions
+
+- **Focal model calibration**: Models trained on clean single-species focal data
+  are systematically underconfident on multi-species soundscapes (threshold 0.12
+  not 0.5). Iterative pseudo-labeling should improve calibration as the model
+  sees real soundscape data each round.
+
+- **CE vs BCE for training**: Some 2025 winners used CE (softmax) on focal data
+  for sharper gradients, switching to BCE for soundscape pseudo-labels. Worth
+  testing in the training pipeline.
+
+- **Perch call density**: Proportion estimation without thresholds
+  (`chirp/inference/call_density.py`). Could estimate per-species prevalence
+  per site directly from score distributions, avoiding threshold selection
+  entirely. See `docs/vendor/perch.md`.
+
+- **Triplet method for combining classifiers**: Not recommended for current
+  ensemble (3 models trained on same data violate conditional independence).
+  Could work if combining structurally different sources (e.g., ensemble +
+  spectral contrast + BirdNET raw logits).
+
+- **Frame-level SED on focal**: Acoustic indices (already computed) could
+  provide call/no-call labels per frame within focal recordings. Would enable
+  SED-style training without new annotation. Lower priority than getting
+  pseudo-labeling running.
+
 ## Next Steps
 
-- [ ] Apply ensemble + threshold to 176.5h unlabeled soundscapes
+- [ ] Run ensemble inference on all 10,658 soundscapes
+- [ ] Set up iterative pseudo-labeling pipeline (focal + soundscape, round 1)
 - [ ] Per-species threshold tuning for high-AUROC / low-recall species
-- [ ] Consider mining hard negatives from unlabeled data for better call/no-call calibration
+- [ ] Consider Perch call density for threshold-free prevalence estimation
