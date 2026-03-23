@@ -1,0 +1,74 @@
+# Experiment 015: EAT Student — Pseudo-Label Training
+#
+# Continues from exp 012 EAT checkpoint (best epoch 3, 234 classes).
+# Fine-tunes on focal + labeled soundscape + pseudo-labeled soundscape data.
+#
+# Note: EAT was excluded from the teacher ensemble in exp 014 due to poor
+# insect performance (kaldi fbank fmax=8kHz). However, as a student, EAT
+# can learn from the ProtoCLR+ConvNeXt pseudo-labels which have strong
+# insect AUROC (0.904). This may help EAT improve on insects.
+
+run_name: "2026-eat-student-v1"
+
+encoder:
+  type: "eat"
+  model_name: "worstchan/EAT-base_epoch30_pretrain"
+  target_length: 512
+  embed_dim: 768
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+  target_modules: ["qkv", "proj"]
+
+checkpoint:
+  resume_from: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/012-soundscape-finetune/checkpoints/2026-eat-soundscape/best-epochepoch=03.ckpt"
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 16000
+  chunk_duration: 5.0
+  batch_size: 32
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.1
+  soundscape_val_files: 8
+  soundscape_test_files: 8
+  seed: 42
+
+pseudo_labels:
+  parquet_dir: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/pcr-cnx-soundscape-v1/unlabeled/"
+  weight: 0.5
+
+training:
+  max_epochs: 30
+  lr: 1.0e-4
+  weight_decay: 0.01
+  warmup_epochs: 3
+  threshold: 0.5
+  hidden_dim: 512
+  dropout: 0.1
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 8
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/auroc"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/auroc"
+    mode: "max"
+    patience: 8
+    min_delta: 0.001
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-student-training"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

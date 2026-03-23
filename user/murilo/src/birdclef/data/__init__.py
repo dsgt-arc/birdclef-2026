@@ -9,6 +9,7 @@ from .soundscape import (
     build_full_species_list,
     load_soundscape_labels,
 )
+from .student import PseudoLabeledDataset, StudentDataModule, WeightedDatasetWrapper
 
 __all__ = [
     "BirdCLEFDataset",
@@ -16,7 +17,10 @@ __all__ = [
     "FocalDataset234",
     "InferenceChunkDataset",
     "MixedDataModule",
+    "PseudoLabeledDataset",
     "SoundscapeDataset",
+    "StudentDataModule",
+    "WeightedDatasetWrapper",
     "build_full_species_list",
     "build_species_list",
     "inference_collate_fn",

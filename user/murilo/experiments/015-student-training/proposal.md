@@ -1,6 +1,6 @@
 ---
 experiment: "015-student-training"
-status: proposed
+status: in_progress
 date: 2026-03-22
 author: Murilo Gustineli
 ---
@@ -64,13 +64,61 @@ For pseudo-labeled:  BCE(pred, soft_label) × w     # soft targets, weighted
 Total:               loss_labeled + w × loss_pseudo
 ```
 
-Weight `w` controls the influence of pseudo-labeled data. Start with w=0.5,
-sweep [0.25, 0.5, 0.75, 1.0].
+Weight `w` controls the influence of pseudo-labeled data. Round 0 uses w=0.5;
+weight sweep [0.1, 0.25, 0.75, 1.0] deferred to future work.
+
+### Temperature Scaling
+
+The 2025 1st place winner used T=0.55-0.6 to sharpen pseudo-labels. A sweep
+on our labeled validation (75 species, 739 segments) showed the teachers are
+slightly over-confident — T=1.0 gives best calibration (log loss 0.1699 vs
+0.3163 at T=0.5). Since calibration metrics don't capture downstream training
+benefit, we use **T=1.0 (no scaling) for round 0** and defer T tuning.
+
+### Implementation Details
+
+All three data sources are combined into a single `ConcatDataset` and shuffled.
+Each sample returns a `(waveform, labels, weight)` tuple. With batch_size=256
+and natural proportions (~62% focal, <1% labeled soundscape, ~37% pseudo-labeled),
+each batch contains a random mix of all sources.
+
+**Per-sample weighted loss**: The `StudentFinetuneModule` computes per-sample BCE
+with `reduction='none'`, then multiplies by the sample weight before averaging:
+
+```python
+per_sample_loss = BCE(logits, labels, reduction='none').mean(dim=1)  # (batch,)
+loss = (per_sample_loss * weights).mean()                             # scalar
+```
+
+Ground-truth samples (weight=1.0) contribute full gradient signal. Pseudo-labeled
+samples (weight=0.5) contribute half. This prevents noisy pseudo-labels from
+dominating the loss.
+
+**Soft targets and BCE**: BCE works natively with continuous targets in [0, 1].
+For a pseudo-labeled sample where the teacher predicts P(species_X) = 0.72:
+
+```
+loss_X = -[0.72 × log(σ(logit_X)) + 0.28 × log(1 - σ(logit_X))]
+```
+
+The student learns to output ~0.72, preserving the teacher's uncertainty rather
+than forcing a hard 0/1 decision. This is a form of knowledge distillation
+where the student inherits the teacher ensemble's calibration.
+
+**Validation and test sets contain only ground-truth data** (focal + labeled
+soundscapes). No pseudo-labels in val/test. Early stopping on `val/auroc`
+reflects real performance, not teacher-mimicking ability.
+
+**EAT as student**: EAT was excluded from the exp 014 teacher ensemble due to
+poor insect AUROC (0.673, caused by kaldi fbank fmax=8kHz). However, as a
+student, EAT can learn from the ProtoCLR+ConvNeXt pseudo-labels which have
+strong insect AUROC (0.904). The teacher ensemble's strength compensates for
+EAT's spectral limitation during training.
 
 ### Variables
 
-- **Independent**: Pseudo-label source (direct vs MixIT-enhanced from exp 014),
-  pseudo-label weight `w`, confidence threshold, number of self-training iterations
+- **Independent**: Pseudo-label weight `w`, temperature T, confidence threshold,
+  number of self-training iterations
 - **Dependent**: LB score, per-species AUROC, focal test AUROC (forgetting check)
 - **Controlled**: Same encoders, same LoRA config, same preprocessing as exp 012
 
@@ -90,8 +138,8 @@ sweep [0.25, 0.5, 0.75, 1.0].
 
 ## Dependencies
 
-- Exp 014 pseudo-labels (proposed)
-- Exp 012 checkpoints (complete)
+- Exp 014 pseudo-labels (complete): 127K segments, ProtoCLR+ConvNeXt ensemble, AUROC 0.8851
+- Exp 012 checkpoints (complete): ProtoCLR 0.767, ConvNeXt 0.755, EAT 0.720 LB
 - Exp 012 training infrastructure: `train.py`, `MixedDataModule`, SLURM scripts (complete)
 
 ## Leads to
