@@ -30,7 +30,7 @@ data:
   sample_rate: 16000
   chunk_duration: 5.0
   batch_size: 32
-  num_workers: 8
+  num_workers: 12
   val_fraction: 0.1
   test_fraction: 0.1
   soundscape_val_files: 8
