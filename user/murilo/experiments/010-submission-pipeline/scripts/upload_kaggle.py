@@ -118,6 +118,11 @@ MODELS = {
         "weights_dir": "artifacts/weights/protoclr-2026-student-v1",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-protoclr-2026-student-v1.json",
     },
+    "eat-2026-student-v1": {
+        "slug": "birdclef-2026-eat-student-v1-weights",
+        "weights_dir": "artifacts/weights/eat-2026-student-v1",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-eat-2026-student-v1.json",
+    },
 }
 
 

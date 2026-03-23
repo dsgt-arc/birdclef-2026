@@ -93,6 +93,7 @@ KAGGLE_USER = "murilogustineli"
 MODEL_SLUGS = [
     # Student models trained on focal + soundscape + pseudo-labels, 234 classes (exp 015)
     "birdclef-2026-protoclr-student-v1-weights",
+    "birdclef-2026-eat-student-v1-weights",
     # Models fine-tuned on focal + labeled soundscapes, 234 classes (exp 012)
     "birdclef-2026-protoclr-soundscape-weights",
     "birdclef-2026-eat-soundscape-weights",
