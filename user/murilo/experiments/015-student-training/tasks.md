@@ -70,6 +70,7 @@ to compare against.
 - [ ] 4.1 Submit all 3 models: `bash sbatch/run.sh --all`
 - [ ] 4.2 Monitor training via W&B dashboard
 - [ ] 4.3 Record best val/auroc and stopped epoch for each model
+- [ ] 4.4 Verify structured metrics saved to `artifacts/training/` (auto-runs via `save_metrics.py` in `_job.sh`)
 
 ### Results
 
