@@ -14,6 +14,7 @@ Usage:
     python train.py --config config/convnext_student.yaml
     python train.py --config config/eat_student.yaml
     python train.py --config config/protoclr_student.yaml --fast-dev-run
+    python train.py --config config/protoclr_student.yaml --gpu-check 2
     python train.py --config config/protoclr_student.yaml --pseudo-weight 0.25
 """
 
@@ -186,6 +187,12 @@ def main():
         help="Run quick validation with 5 batches",
     )
     parser.add_argument(
+        "--gpu-check",
+        type=int,
+        default=0,
+        help="Run N epochs for GPU utilization check, print report, then exit",
+    )
+    parser.add_argument(
         "--num-workers",
         type=int,
         default=None,
@@ -205,6 +212,12 @@ def main():
     )
     args = parser.parse_args()
 
+    # Validate mutually exclusive flags
+    if args.fast_dev_run and args.gpu_check > 0:
+        parser.error("--fast-dev-run and --gpu-check are mutually exclusive")
+
+    gpu_check_mode = args.gpu_check > 0
+
     # Derive project directory from project name
     project_dir = Path(f"/storage/project/{args.project_name}/mgustineli3")
 
@@ -217,6 +230,11 @@ def main():
     logger.info(f"Loaded config from {config_path}")
     logger.info(f"Run name: {run_name}")
     logger.info(f"Encoder type: {encoder_type}")
+
+    # Override max_epochs for GPU check mode
+    if gpu_check_mode:
+        config["training"]["max_epochs"] = args.gpu_check
+        logger.info(f"GPU check mode: running {args.gpu_check} epoch(s)")
 
     # Override from CLI
     if args.num_workers is not None:
@@ -334,40 +352,55 @@ def main():
     # ========================================================================
 
     callbacks = []
+    checkpoint_callback = None
+    gpu_monitor = None
 
-    # Model checkpoint — save to project shared storage
-    checkpoint_dir = project_dir / "experiments" / EXPERIMENT_NAME / "checkpoints" / run_name
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    if gpu_check_mode:
+        # GPU check mode: only GPU monitor + LR monitor
+        from birdclef.callbacks.gpu_monitor import GPUUtilizationMonitor
 
-    checkpoint_callback = ModelCheckpoint(
-        monitor=config["callbacks"]["model_checkpoint"]["monitor"],
-        mode=config["callbacks"]["model_checkpoint"]["mode"],
-        save_top_k=config["callbacks"]["model_checkpoint"]["save_top_k"],
-        save_last=config["callbacks"]["model_checkpoint"]["save_last"],
-        filename=config["callbacks"]["model_checkpoint"]["filename"],
-        dirpath=checkpoint_dir,
-        verbose=True,
-    )
-    callbacks.append(checkpoint_callback)
-    logger.info(f"Checkpoints will be saved to: {checkpoint_dir}")
+        gpu_monitor = GPUUtilizationMonitor(log_every_n_steps=10)
+        callbacks.append(gpu_monitor)
 
-    # Early stopping
-    early_stopping = EarlyStopping(
-        monitor=config["callbacks"]["early_stopping"]["monitor"],
-        mode=config["callbacks"]["early_stopping"]["mode"],
-        patience=config["callbacks"]["early_stopping"]["patience"],
-        min_delta=config["callbacks"]["early_stopping"]["min_delta"],
-        verbose=True,
-    )
-    callbacks.append(early_stopping)
+        lr_monitor = LearningRateMonitor(logging_interval="epoch")
+        callbacks.append(lr_monitor)
 
-    # Learning rate monitor
-    lr_monitor = LearningRateMonitor(logging_interval="epoch")
-    callbacks.append(lr_monitor)
+        logger.info("GPU check mode: skipping checkpoints, early stopping, and device stats")
+    else:
+        # Full training mode: all callbacks
+        # Model checkpoint — save to project shared storage
+        checkpoint_dir = project_dir / "experiments" / EXPERIMENT_NAME / "checkpoints" / run_name
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    # GPU stats monitor
-    device_stats = DeviceStatsMonitor()
-    callbacks.append(device_stats)
+        checkpoint_callback = ModelCheckpoint(
+            monitor=config["callbacks"]["model_checkpoint"]["monitor"],
+            mode=config["callbacks"]["model_checkpoint"]["mode"],
+            save_top_k=config["callbacks"]["model_checkpoint"]["save_top_k"],
+            save_last=config["callbacks"]["model_checkpoint"]["save_last"],
+            filename=config["callbacks"]["model_checkpoint"]["filename"],
+            dirpath=checkpoint_dir,
+            verbose=True,
+        )
+        callbacks.append(checkpoint_callback)
+        logger.info(f"Checkpoints will be saved to: {checkpoint_dir}")
+
+        # Early stopping
+        early_stopping = EarlyStopping(
+            monitor=config["callbacks"]["early_stopping"]["monitor"],
+            mode=config["callbacks"]["early_stopping"]["mode"],
+            patience=config["callbacks"]["early_stopping"]["patience"],
+            min_delta=config["callbacks"]["early_stopping"]["min_delta"],
+            verbose=True,
+        )
+        callbacks.append(early_stopping)
+
+        # Learning rate monitor
+        lr_monitor = LearningRateMonitor(logging_interval="epoch")
+        callbacks.append(lr_monitor)
+
+        # GPU stats monitor
+        device_stats = DeviceStatsMonitor()
+        callbacks.append(device_stats)
 
     # ========================================================================
     # Loggers
@@ -384,8 +417,8 @@ def main():
     )
     loggers.append(tb_logger)
 
-    if args.fast_dev_run:
-        logger.info("Fast dev run — skipping W&B logging")
+    if args.fast_dev_run or gpu_check_mode:
+        logger.info(f"{'GPU check' if gpu_check_mode else 'Fast dev run'} — skipping W&B logging")
     else:
         logger.info("Initializing W&B logger...")
         wandb_logger = WandbLogger(
@@ -433,6 +466,20 @@ def main():
 
     logger.info("Starting training...")
     trainer.fit(pl_module, data_module)
+
+    # ========================================================================
+    # GPU check mode: print summary, save report + plot, and exit
+    # ========================================================================
+
+    if gpu_check_mode:
+        import os
+
+        job_id = os.environ.get("SLURM_JOB_ID", "local")
+        summary_dir = Path(__file__).parent / "outputs" / "gpu_check"
+        summary_file = summary_dir / f"{run_name}_{job_id}.txt"
+        gpu_monitor.print_summary(save_path=summary_file)
+        logger.info("GPU check complete!")
+        return
 
     # ========================================================================
     # Evaluate on test set

@@ -24,6 +24,7 @@ set -eu
 CONFIG="${CONFIG:-config/protoclr_student.yaml}"
 PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
+GPU_CHECK="${GPU_CHECK:-0}"
 NUM_WORKERS="${NUM_WORKERS:-}"
 PSEUDO_WEIGHT="${PSEUDO_WEIGHT:-}"
 
@@ -140,6 +141,10 @@ TRAIN_CMD="python train.py --config ${CONFIG} --project-name ${PROJECT_NAME}"
 if [[ "${FAST_DEV_RUN}" == "true" ]]; then
     TRAIN_CMD="${TRAIN_CMD} --fast-dev-run"
     echo "  (fast dev run: 5 batches, no W&B)"
+fi
+if [[ "${GPU_CHECK}" -gt 0 ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --gpu-check ${GPU_CHECK}"
+    echo "  (GPU check mode: ${GPU_CHECK} epoch(s), no W&B)"
 fi
 if [[ -n "${NUM_WORKERS}" ]]; then
     TRAIN_CMD="${TRAIN_CMD} --num-workers ${NUM_WORKERS}"
