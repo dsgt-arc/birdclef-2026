@@ -47,8 +47,12 @@ student training (exp 015).
 
 ## 5. Full Unlabeled Run
 
-- [ ] 5.1 Submit on unlabeled split: `bash sbatch/run.sh config/direct.yaml --split unlabeled`
-- [ ] 5.2 Verify output: ~127K segments in `pcr-cnx-soundscape-v1/unlabeled/pseudo_labels.parquet`
+- [x] 5.1 Submit on unlabeled split: `bash sbatch/run.sh config/direct.yaml --split unlabeled`
+  - 10 workers (SLURM array job 5382327), ~9 min per worker, ~25% GPU util
+- [x] 5.2 Verify output: 127,104 segments from 10,592 files in `pcr-cnx-soundscape-v1/unlabeled/`
+  - 10 parquet shards (pseudo_labels_shard0-9.parquet, ~16.5 MB each)
+  - 20 logits shards (2 models × 10 workers, ~10 MB each)
+  - 0 duplicate segments, all files accounted for
 
 ## 6. Results
 
