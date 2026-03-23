@@ -20,8 +20,8 @@ data:
   data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
   sample_rate: 32000
   window_duration: 10.0
-  batch_size: 64
-  num_workers: 8
+  batch_size: 256
+  num_workers: 12
   val_fraction: 0.1
   test_fraction: 0.1
   soundscape_val_files: 8
@@ -37,7 +37,7 @@ training:
   threshold: 0.5
   grad_clip_val: 1.0
   precision: "16-mixed"
-  accumulate_grad_batches: 4
+  accumulate_grad_batches: 1
   clipwise_weight: 0.5
   framewise_weight: 0.5
   blend_clip: 0.75
