@@ -92,20 +92,25 @@ BCE loss: w=1.0 for ground truth, w=0.5 for pseudo-labels. Temperature T=1.0 (no
 |------|---------|--------------|---------|-----------|----------|------------|-----|------------|
 | `protoclr-2026-student-v1` | ProtoCLR/CvT-13 | focal + soundscape + pseudo (340K) | 234 | 0.846 | 0.485 | 5 | **0.762** | `015-.../2026-protoclr-student-v1/best-epochepoch=05.ckpt` |
 | `convnext-2026-student-v1` | ConvNeXt-Base | focal + soundscape + pseudo (340K) | 234 | pending | pending | pending | pending | `015-.../2026-convnext-student-v1/` |
-| `eat-2026-student-v1` | EAT-base | focal + soundscape + pseudo (340K) | 234 | 0.842 | 0.465 | 2 | pending | `015-.../2026-eat-student-v1/best-epochepoch=02.ckpt` |
+| `eat-2026-student-v1` | EAT-base | focal + soundscape + pseudo (340K) | 234 | 0.842 | 0.465 | 2 | **0.696** | `015-.../2026-eat-student-v1/best-epochepoch=02.ckpt` |
 
 ### Comparison vs Exp 012 Baseline
 
 | Model | Exp 012 Test AUROC | Exp 015 Test AUROC | Delta | Exp 012 LB | Exp 015 LB | LB Delta |
 |-------|-------------------|-------------------|-------|-----------|-----------|----------|
-| ProtoCLR | 0.845 | 0.846 | +0.001 | 0.767 | 0.762 | −0.005 |
-| ConvNeXt | 0.844 | pending | — | 0.755 | pending | — |
-| EAT | 0.838 | 0.842 | +0.004 | 0.720 | pending | — |
+| ProtoCLR | 0.845 | 0.846 | +0.001 | 0.767 | 0.762 | **−0.005** |
+| ConvNeXt | 0.844 | — | — | 0.755 | — | — |
+| EAT | 0.838 | 0.842 | +0.004 | 0.720 | 0.696 | **−0.024** |
 
-**Conclusion (round 0)**: Pseudo-labels at w=0.5 with T=1.0 did not improve LB.
-ProtoCLR dropped −0.005 on LB despite +0.001 on offline test. The clip-level
-architecture appears to be the bottleneck — more soundscape data cannot compensate
-for global average pooling that dilutes brief vocalizations.
+ConvNeXt student training timed out and was not completed.
+
+**Conclusion (round 0)**: Pseudo-labels at w=0.5, T=1.0 **hurt** LB performance.
+Both ProtoCLR (−0.005) and EAT (−0.024) regressed despite flat/improved offline
+test metrics. EAT's larger drop may reflect the pseudo-label quality mismatch —
+EAT was excluded from the teacher ensemble (exp 014) due to poor insect AUROC,
+yet the pseudo-labels encode the ProtoCLR+ConvNeXt teachers' behavior which may
+conflict with EAT's learned representations. The clip-level architecture is the
+primary bottleneck — exp 016 (SED) addresses this directly.
 
 ## Checkpoint Base Path
 

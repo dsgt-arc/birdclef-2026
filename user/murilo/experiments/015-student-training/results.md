@@ -5,10 +5,11 @@
 **Hypothesis**: Training on focal + labeled soundscapes + pseudo-labeled unlabeled
 soundscapes (soft labels from exp 014) will improve LB by ≥0.02 over exp 012 baseline.
 
-**Result**: **Rejected.** Pseudo-labels at w=0.5, T=1.0 did not improve LB score.
-ProtoCLR dropped −0.005 on LB despite flat offline metrics. The experiment confirms
-that the architectural bottleneck (clip-level global average pooling) limits gains
-from additional soundscape data.
+**Result**: **Rejected.** Pseudo-labels at w=0.5, T=1.0 **hurt** LB performance.
+ProtoCLR dropped −0.005 (0.762 vs 0.767) and EAT dropped −0.024 (0.696 vs 0.720)
+despite flat/improved offline metrics. The experiment confirms that the clip-level
+architecture (global average pooling) is the bottleneck — more soundscape data
+through the same architecture cannot improve and may even degrade LB performance.
 
 ---
 
@@ -30,17 +31,25 @@ from additional soundscape data.
 |-------|-----------|-----------|----------|------------|------------|
 | ProtoCLR | 0.827 | 0.846 | 0.485 | 5 | 9 |
 | EAT | 0.829 | 0.842 | 0.465 | 2 | 8 |
-| ConvNeXt | pending | pending | pending | pending | pending |
+| ConvNeXt | — | — | — | — | timed out |
 
 All models early-stopped quickly, barely improving from the exp 012 starting point.
+ConvNeXt student training timed out (24hr limit) and was not completed.
 
 ## Leaderboard Results
 
 | Model | Exp 012 LB | Exp 015 LB | Delta |
 |-------|-----------|-----------|-------|
-| ProtoCLR | **0.767** | 0.762 | −0.005 |
-| EAT | 0.720 | pending | — |
-| ConvNeXt | 0.755 | pending | — |
+| ProtoCLR | **0.767** | 0.762 | **−0.005** |
+| EAT | 0.720 | 0.696 | **−0.024** |
+| ConvNeXt | 0.755 | — | — |
+
+**Both models regressed on LB.** EAT's larger drop (−0.024) may reflect the
+pseudo-label quality mismatch: EAT was excluded from the teacher ensemble
+(exp 014) due to poor insect AUROC (0.673), yet the pseudo-labels encode
+ProtoCLR+ConvNeXt teachers' behavior which may conflict with EAT's learned
+representations, effectively teaching EAT to mimic models with different
+spectral characteristics.
 
 ## Comparison vs Exp 012 Baseline (Offline Test Set)
 
@@ -48,10 +57,13 @@ All models early-stopped quickly, barely improving from the exp 012 starting poi
 |-------|--------------|--------------|-------|-------------|-------------|-------|
 | ProtoCLR | 0.845 | 0.846 | +0.001 | 0.481 | 0.485 | +0.004 |
 | EAT | 0.838 | 0.842 | +0.004 | 0.452 | 0.465 | +0.013 |
-| ConvNeXt | 0.844 | pending | — | 0.470 | pending | — |
+| ConvNeXt | 0.844 | — | — | 0.470 | — | — |
 
-Offline test metrics show marginal improvement, but this is dominated by focal data
-(~26K segments) which masks any soundscape-specific changes.
+**Key discrepancy**: Offline metrics improved slightly but LB regressed. The
+offline test set is dominated by focal data (~26K segments vs ~86 soundscape)
+which masks soundscape-specific degradation. The pseudo-labels may have caused
+the model to overfit to the teachers' soundscape behavior at the expense of
+generalization to unseen test soundscapes.
 
 ## GPU Utilization (ProtoCLR)
 
