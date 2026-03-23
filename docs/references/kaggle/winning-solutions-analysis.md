@@ -266,7 +266,7 @@ ablation plan but inherits the frozen-backbone limitation.
 
 ### Error Analysis: Exp 012 Models on Labeled Soundscapes (Phase 0)
 
-Full report: [`user/murilo/experiments/013-mixit-pseudo-labeling/error-analysis.md`](../../../user/murilo/experiments/013-mixit-pseudo-labeling/error-analysis.md)
+Full report: [`user/murilo/experiments/013-mixit-separation/error-analysis.md`](../../../user/murilo/experiments/013-mixit-separation/error-analysis.md)
 Notebook: `user/murilo/notebooks/005-error-analysis.ipynb`
 
 Ran all 3 exp 012 ONNX models on 66 labeled soundscapes (792 segments, 75/234 species).

@@ -2,7 +2,7 @@
 # Launcher script for Experiment 013 MixIT jobs.
 #
 # Usage:
-#   cd user/murilo/experiments/013-mixit-pseudo-labeling
+#   cd user/murilo/experiments/013-mixit-separation
 #
 #   # Phase 1: Convert TF1 → ONNX
 #   bash sbatch/run.sh convert

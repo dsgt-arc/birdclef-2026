@@ -1,13 +1,13 @@
-# Experiment 013: MixIT Source Separation + Pseudo-Labeling
+# Experiment 013: MixIT Source Separation
 
-Use Bird MixIT source separation as offline preprocessing to generate cleaner
-pseudo-labels from 10,592 unlabeled soundscapes, then fine-tune models on
-pseudo-labeled data.
+Use Bird MixIT source separation as offline preprocessing to separate 10,592
+unlabeled soundscapes into 4 channels per file. The separated audio is consumed
+by downstream experiments (exp 014 pseudo-labeling, exp 015 student training).
 
-## Status: In Progress (Phases 1–2)
+## Status: Phase 2 Complete (separation running)
 
-- Phases 1–2 (conversion + separation): Independent of exp 012, can run now
-- Phases 3–4 (pseudo-labeling + student training): Depend on exp 012 completion
+- Phase 1 (TF1 → ONNX conversion): Complete
+- Phase 2 (offline separation): Complete for labeled (66 files), running for unlabeled (~10,592 files)
 
 ## Overview
 
@@ -50,7 +50,7 @@ the max-pool falls back to the original prediction.
 All commands assume you are in the experiment directory:
 
 ```bash
-cd user/murilo/experiments/013-mixit-pseudo-labeling
+cd user/murilo/experiments/013-mixit-separation
 ```
 
 ### Phase 1: Convert Bird MixIT TF1 → ONNX
@@ -148,7 +148,7 @@ per-taxon performance, a domain-matched MixIT model trained on BirdCLEF data
 ## Directory Structure
 
 ```
-013-mixit-pseudo-labeling/
+013-mixit-separation/
 ├── README.md
 ├── proposal.md
 ├── tasks.md

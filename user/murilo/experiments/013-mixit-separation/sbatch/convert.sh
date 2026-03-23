@@ -13,7 +13,7 @@
 # Experiment 013, Phase 1: Convert Bird MixIT TF1 checkpoint to ONNX
 #
 # Usage (via launcher):
-#   cd user/murilo/experiments/013-mixit-pseudo-labeling
+#   cd user/murilo/experiments/013-mixit-separation
 #   bash sbatch/run.sh convert
 
 set -eu

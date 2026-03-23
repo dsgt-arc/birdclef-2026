@@ -1,11 +1,11 @@
 ---
-experiment: "013-mixit-pseudo-labeling"
+experiment: "013-mixit-separation"
 status: proposed
 date: 2026-03-21
 author: Murilo Gustineli
 ---
 
-# Experiment 013: MixIT Source Separation + Pseudo-Labeling
+# Experiment 013: MixIT Source Separation
 
 ## Hypothesis
 

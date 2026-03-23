@@ -15,7 +15,7 @@
 # Default: GPU mode with SLURM job array support for distributed processing
 #
 # Usage (via launcher):
-#   cd user/murilo/experiments/013-mixit-pseudo-labeling
+#   cd user/murilo/experiments/013-mixit-separation
 #   bash sbatch/run.sh separate                          # 1 GPU (default)
 #   bash sbatch/run.sh separate --num-workers 8          # 8 GPUs in parallel
 #   bash sbatch/run.sh separate --labeled                # labeled only, 1 GPU

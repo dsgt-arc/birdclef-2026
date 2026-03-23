@@ -1,9 +1,10 @@
-# Experiment 013: MixIT Source Separation + Pseudo-Labeling — Tasks
+# Experiment 013: MixIT Source Separation — Tasks
 
 ## 1. Goal
 
-Use Bird MixIT source separation + exp 012 teacher ensemble to pseudo-label 10,592
-unlabeled soundscapes, then train on pseudo-labels to improve LB score.
+Use Bird MixIT source separation to separate 10,592 unlabeled soundscapes into 4
+channels per file, producing cleaner audio for downstream pseudo-labeling (exp 014)
+and student training (exp 015).
 
 ## 2. Phase 1: MixIT Conversion (TF1 → ONNX) ✓
 
@@ -26,7 +27,7 @@ unlabeled soundscapes, then train on pseudo-labels to improve LB score.
 ### 3.5 Quality validation results (2026-03-21)
 
 Notebook: `user/murilo/notebooks/004-mixit-separation-quality.ipynb`
-Figures: `experiments/013-mixit-pseudo-labeling/figures/`
+Figures: `experiments/013-mixit-separation/figures/`
 
 **Channel activity across all 66 labeled files:**
 ```
@@ -75,57 +76,22 @@ a nice-to-have optimization, not a blocker. Can do before or after the full run.
 - [x] 3.7.1 Submitted: `bash sbatch/run.sh separate --num-workers 10` — job 5355342 (2026-03-22)
 - [ ] 3.7.2 Verify output: ~10,592 files in `shared/mixit/pretrained/soundscapes/`
 
-## 4. Phase 3: Teacher Pseudo-Labeling (depends on exp 012 completion)
+## 4. Documentation
 
-- [ ] 4.1 Write `scripts/pseudo_label.py` using exp 012 ONNX models
-- [ ] 4.2 Implement aggregation: max-pool channels, average models
-- [ ] 4.3 Validate on 66 labeled soundscapes: per-taxon precision/recall (bird vs amphibian vs insect)
-- [ ] 4.4 Run on separated + original audio for all unlabeled soundscapes
-- [ ] 4.5 Sweep confidence thresholds (0.3, 0.5, 0.7) and pick best
+- [x] 4.1 Write proposal.md
+- [x] 4.2 Write README.md
+- [x] 4.3 Write error-analysis.md (exp 012 model evaluation on labeled soundscapes)
 
-## 5. Phase 4: Student Training (depends on Phase 3)
+## Key Context
 
-- [ ] 5.1 Create `PseudoLabelDataset` for soft-label training
-- [ ] 5.2 Implement soft BCE loss (teacher probabilities as targets)
-- [ ] 5.3 Create `train.py` for mixed data: focal + labeled soundscape + pseudo-labeled
-- [ ] 5.4 Train all 3 encoders
-- [ ] 5.5 Export + submit to Kaggle LB
-
-## 6. Results
-
-- [ ] 6.1 Write results.md with pseudo-label quality metrics + LB scores
-- [ ] 6.2 Compare vs exp 012 baseline
-
-## Key Context for Next Session
-
-### Exp 012 status (soundscape fine-tuning)
-- **ProtoCLR**: trained (best epoch 11, test AUROC 0.845), exported to ONNX, submitted to Kaggle — **awaiting LB score**
-- **EAT**: training in progress on PACE
-- **ConvNeXt**: training in progress on PACE
-- **Baseline LB scores** (exp 011 fulldata): ProtoCLR 0.736, EAT 0.698, ConvNeXt 0.695
-- **Checkpoints**: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/012-soundscape-finetune/checkpoints/`
-- **W&B project**: `dsgt-arc/birdclef-2026-soundscape-finetune`
-
-### Exp 013 status (MixIT)
-- **Phase 1** (TF1→ONNX): ✓ complete
-- **Phase 2** (separation): labeled files done (66 NPZ), quality validated, ready for full unlabeled run
-- **Phase 3** (pseudo-labeling): blocked on exp 012 ONNX teacher models
+### Outputs
 - **ONNX model**: `/storage/project/ps-clef2026_birdclef-0/shared/models/bird-mixit/bird_mixit_4sources.onnx`
-- **Separated labeled**: `/storage/project/ps-clef2026_birdclef-0/shared/mixit/pretrained/soundscapes_labeled/` (66 files)
-- **Separated unlabeled**: `/storage/project/ps-clef2026_birdclef-0/shared/mixit/pretrained/soundscapes/` (empty, pending full run)
+- **Separated labeled**: `/storage/project/ps-clef2026_birdclef-0/shared/mixit/pretrained/soundscapes_labeled/` (66 NPZ files)
+- **Separated unlabeled**: `/storage/project/ps-clef2026_birdclef-0/shared/mixit/pretrained/soundscapes/` (~10,592 NPZ files)
 
-### Naming conventions
-- `{encoder}-2026` — focal only, 80/10/10 (exp 011)
-- `{encoder}-2026-fulldata` — focal only, 100% (exp 011)
-- `{encoder}-2026-soundscape` — focal + labeled soundscapes, 234 classes (exp 012)
-- `{encoder}-2026-pseudo` — focal + labeled + pseudo-labeled, 234 classes (future exp 013)
-
-### Next steps
-1. Check exp 012 ProtoCLR Kaggle LB score
-2. Check EAT/ConvNeXt training completion → export → submit
-3. Run full MixIT unlabeled separation: `bash sbatch/run.sh separate --num-workers 10`
-4. Decide on OGG storage format (can defer)
-5. Implement Phase 3 pseudo-labeling once exp 012 models are ready
+### Downstream experiments
+- **Exp 014 (pseudo-labeling)**: Consumes separated audio + teacher ONNX models → produces soft labels
+- **Exp 015 (student training)**: Consumes pseudo-labels → trains student models
 
 ### Git
 - **Branch**: `mg/012-soundscape-finetune`
