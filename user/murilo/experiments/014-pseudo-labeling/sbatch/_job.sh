@@ -81,11 +81,22 @@ python -c "import torch; print(f'torch: {torch.__version__}, CUDA: {torch.cuda.i
 echo ""
 
 # ============================================================================
-# Run pseudo-labeling
+# Run pseudo-labeling with GPU monitoring
 # ============================================================================
 
 cd "$EXPERIMENT_DIR"
 mkdir -p logs
+
+# Start GPU monitoring in background (every 10s)
+GPU_LOG="logs/gpu_${SPLIT}_${SLURM_JOB_ID}.csv"
+echo "timestamp,gpu_name,pci_bus,driver,pstate,temp_c,gpu_util_%,mem_util_%,mem_total_mb,mem_used_mb,mem_free_mb" > "$GPU_LOG"
+while true; do
+    nvidia-smi --query-gpu=timestamp,name,pci.bus_id,driver_version,pstate,temperature.gpu,utilization.gpu,utilization.memory,memory.total,memory.used,memory.free --format=csv,noheader,nounits >> "$GPU_LOG"
+    sleep 10
+done &
+GPU_MONITOR_PID=$!
+echo "GPU monitoring started (PID=$GPU_MONITOR_PID, log=$GPU_LOG)"
+echo ""
 
 EXTRA_FLAGS=""
 if [[ -n "${MAX_FILES}" ]]; then
@@ -94,6 +105,16 @@ fi
 
 echo "Running pseudo-labeling..."
 python pseudo_label.py --config "${CONFIG}" --split "${SPLIT}" ${EXTRA_FLAGS}
+
+# Stop GPU monitoring
+kill $GPU_MONITOR_PID 2>/dev/null || true
+echo ""
+echo "GPU log: $GPU_LOG"
+
+# Print GPU utilization summary
+echo "GPU utilization summary:"
+awk -F',' 'NR>1 {sum+=$7; n++} END {if(n>0) printf "  Mean GPU util: %.1f%% (%d samples)\n", sum/n, n}' "$GPU_LOG"
+awk -F',' 'NR>1 {if($10>max) max=$10} END {printf "  Peak VRAM: %s MB\n", max}' "$GPU_LOG"
 
 echo ""
 echo "=============================================="
