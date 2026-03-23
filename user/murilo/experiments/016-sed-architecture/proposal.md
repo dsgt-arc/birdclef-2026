@@ -257,12 +257,38 @@ If time is limited, skip ablation and go directly to variant E for all 3 encoder
 - Exp 012 training infrastructure (complete) — adapt for SED
 - Anthony's SED findings (exp A-015) — trainable backbone required (LoRA provides this)
 
+## Phase 2: Extend SED to Existing Encoders
+
+If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline),
+extend the SED architecture to our 3 existing encoders:
+
+### Per-Encoder Approach
+
+| Encoder | Feature Map | GeM Applicable? | Starting Checkpoint |
+|---------|-------------|-----------------|---------------------|
+| ProtoCLR (CvT-13) | (B, 384, H, W) from last stage | Yes | Exp 012 LoRA checkpoint |
+| ConvNeXt-Base | (B, 1024, H, W) via `forward_features()` | Yes | Exp 012 LoRA checkpoint |
+| EAT (ViT) | (B, seq_len, 768) token sequence | No — use 1D temporal attention | Exp 012 LoRA checkpoint |
+
+**Strategy**: Add `forward_features()` to each encoder, replace clip-level head with
+AttHead, resume from exp 012 LoRA checkpoints (backbone weights transfer, head is new).
+Same dual CE loss, 10s windows, and mixup as EfficientNet-B0.
+
+**EAT special handling**: ViT outputs a 1D token sequence, not a 2D feature map.
+Need an `AttHead1D` variant that skips GeM and applies temporal attention directly
+on the (B, T, C) token sequence.
+
+**Expected outcome**: Our pretrained encoders (19-90M params, bird-audio specialized)
+should match or exceed EfficientNet-B0 (5.3M, ImageNet only) when paired with the
+same SED head. The combination of strong pretrained features + temporal attention +
+CE loss should approach the 0.908 reference.
+
 ## Leads to
 
-- **Pseudo-labeling with SED teachers** (exp 014 v2): SED models as teachers will produce
-  better pseudo-labels because they detect brief calls that clip-level models miss
+- **4-model SED ensemble**: EfficientNet-B0 + ProtoCLR + ConvNeXt + EAT with temporal smoothing
+- **Pseudo-labeling with SED teachers**: SED models as teachers will produce better
+  pseudo-labels because they detect brief calls that clip-level models miss
 - **Iterative self-training**: SED teacher → pseudo-label → SED student → repeat
-- **Ensemble**: 3 SED models (ProtoCLR + ConvNeXt + EAT) with temporal smoothing
 - **OpenVINO optimization**: Enable multi-model ensemble within Kaggle time budget
 
 ## Risk Assessment
