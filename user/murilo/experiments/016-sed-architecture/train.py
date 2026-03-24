@@ -146,6 +146,8 @@ def main():
         blend_frame=training_cfg["blend_frame"],
         mixup_prob=training_cfg.get("mixup_prob", 0.5),
         mixup_alpha=training_cfg.get("mixup_alpha", 0.5),
+        loss_type=training_cfg.get("loss_type", "soft_ce"),
+        label_smoothing=training_cfg.get("label_smoothing", 0.05),
     )
 
     # ========================================================================

@@ -47,6 +47,10 @@ class SEDFinetuneModule(pl.LightningModule):
         blend_frame: Inference blending weight for framewise-max predictions.
         mixup_prob: Probability of applying spectrogram mixup (0 to disable).
         mixup_alpha: Beta distribution parameter for mixup lambda.
+        loss_type: Loss function type. "soft_ce" normalizes multi-hot labels to sum
+            to 1 then uses F.cross_entropy. "ce" uses standard F.cross_entropy with
+            label_smoothing on the argmax class (single-label approximation).
+        label_smoothing: Label smoothing factor for "ce" loss type (default: 0.05).
     """
 
     def __init__(
@@ -66,6 +70,8 @@ class SEDFinetuneModule(pl.LightningModule):
         blend_frame: float = 0.25,
         mixup_prob: float = 0.5,
         mixup_alpha: float = 0.5,
+        loss_type: str = "soft_ce",
+        label_smoothing: float = 0.05,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head"])
@@ -115,11 +121,12 @@ class SEDFinetuneModule(pl.LightningModule):
         features = self.encoder.forward_features(mel)
         return self.sed_head(features)
 
-    def _soft_ce_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        """Cross-entropy with soft targets (normalized multi-hot labels).
+    def _compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """Compute loss based on configured loss_type.
 
-        Multi-hot labels are normalized to sum to 1 per sample, then used as
-        soft targets for F.cross_entropy. E.g., [0, 1, 0, 1, 0] → [0, 0.5, 0, 0.5, 0].
+        Supports:
+        - "soft_ce": Normalize multi-hot to sum-to-1 soft targets, F.cross_entropy.
+        - "ce": Standard CE with label_smoothing on argmax class (single-label approx).
 
         Args:
             logits: (B, num_classes) raw logits.
@@ -128,9 +135,15 @@ class SEDFinetuneModule(pl.LightningModule):
         Returns:
             Scalar loss.
         """
-        label_sum = labels.sum(dim=-1, keepdim=True).clamp(min=1)
-        soft_targets = labels.float() / label_sum
-        return F.cross_entropy(logits, soft_targets)
+        if self.hparams.loss_type == "ce":
+            # Standard CE: use argmax of multi-hot as class index
+            targets = labels.argmax(dim=-1)
+            return F.cross_entropy(logits, targets, label_smoothing=self.hparams.label_smoothing)
+        else:
+            # soft_ce: normalize multi-hot to soft distribution
+            label_sum = labels.sum(dim=-1, keepdim=True).clamp(min=1)
+            soft_targets = labels.float() / label_sum
+            return F.cross_entropy(logits, soft_targets)
 
     def _apply_mixup(
         self, mel: torch.Tensor, labels: torch.Tensor
@@ -166,9 +179,9 @@ class SEDFinetuneModule(pl.LightningModule):
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
         # Dual soft CE loss
-        loss = self.hparams.clipwise_weight * self._soft_ce_loss(
+        loss = self.hparams.clipwise_weight * self._compute_loss(
             clipwise_logits, labels
-        ) + self.hparams.framewise_weight * self._soft_ce_loss(framewise_max_logits, labels)
+        ) + self.hparams.framewise_weight * self._compute_loss(framewise_max_logits, labels)
 
         # Blended probabilities for metrics
         probs = self._blended_probs(clipwise_logits, framewise_logits)
@@ -206,9 +219,9 @@ class SEDFinetuneModule(pl.LightningModule):
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
-        loss = self.hparams.clipwise_weight * self._soft_ce_loss(
+        loss = self.hparams.clipwise_weight * self._compute_loss(
             clipwise_logits, labels
-        ) + self.hparams.framewise_weight * self._soft_ce_loss(framewise_max_logits, labels)
+        ) + self.hparams.framewise_weight * self._compute_loss(framewise_max_logits, labels)
 
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()
@@ -245,9 +258,9 @@ class SEDFinetuneModule(pl.LightningModule):
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
-        loss = self.hparams.clipwise_weight * self._soft_ce_loss(
+        loss = self.hparams.clipwise_weight * self._compute_loss(
             clipwise_logits, labels
-        ) + self.hparams.framewise_weight * self._soft_ce_loss(framewise_max_logits, labels)
+        ) + self.hparams.framewise_weight * self._compute_loss(framewise_max_logits, labels)
 
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()
