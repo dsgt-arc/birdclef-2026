@@ -125,5 +125,5 @@ Bidirectional selective state space model with prototypical classification:
 
 - **Related notebooks**: [perch-protossm-fvegamaza](perch-protossm-fvegamaza.md) (identical),
   [perch-blamerx](perch-blamerx.md) (same family), [pantanal-distill](pantanal-distill.md) (evolved version)
-- **Existing analysis**: [discussions/perch-protossm-zirach.md](../discussions/perch-protossm-zirach.md)
+- **Detailed analysis**: [perch-protossm-zirach-analysis.md](perch-protossm-zirach-analysis.md)
 - **Informs experiments**: exp 016 (SED architecture gap analysis)

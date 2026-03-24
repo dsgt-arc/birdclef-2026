@@ -119,4 +119,4 @@ Same as zirach/fvegamaza:
 
 - **Same family**: [perch-protossm-zirach](perch-protossm-zirach.md) (0.913),
   [pantanal-distill](pantanal-distill.md) (0.917)
-- **Existing analysis**: [discussions/perch-protossm-zirach.md](../discussions/perch-protossm-zirach.md)
+- **Detailed analysis**: [perch-protossm-zirach-analysis.md](perch-protossm-zirach-analysis.md)

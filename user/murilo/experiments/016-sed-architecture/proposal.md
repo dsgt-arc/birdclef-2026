@@ -346,12 +346,12 @@ see [competition discussion analysis](../../docs/references/kaggle/birdclef-2026
    site/hour metadata priors. Key insight: Perch alone = 0.825, and building lightweight
    heads on top of a strong foundation model outperforms training from scratch. Suggests
    a hybrid approach (ensemble our SED with Perch-based predictions) or Perch KD as a
-   faster path. See [analysis](../../docs/references/kaggle/birdclef-2026/discussions/perch-protossm-zirach.md).
+   faster path. See [analysis](../../docs/references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach-analysis.md).
 
 ## References
 
 - [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md): 28 SED experiments, technique rankings, code snippets
-- [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/discussions/perch-protossm-zirach.md): Foundation model approach (0.913 LB)
+- [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach-analysis.md): Foundation model approach (0.913 LB)
 - [2025 1st place](../../docs/references/kaggle/birdclef-2025/birdclef2025-1st-place-inference.md): GeM + AttHead, CE loss, 20s windows
 - [2025 9th place](../../docs/references/kaggle/birdclef-2025/bird2025-9th-place-solution.md): AttBlockV2, framewise max, 10s windows
 - [2024 1st place](../../docs/references/kaggle/birdclef-2024/birdclef2024-1st-place-solution.md): CE >> BCE, 10s context, +0.015 from context overlap

@@ -16,7 +16,7 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 - **v3 ablation running**: 3 parallel runs isolating TF weights (v3a), waveform mixup (v3b), CE loss (v3c)
 - **Key references**:
   - [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
-  - [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/discussions/perch-protossm-zirach.md) (0.913 LB)
+  - [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach-analysis.md) (0.913 LB)
 
 ### Score Progression
 
