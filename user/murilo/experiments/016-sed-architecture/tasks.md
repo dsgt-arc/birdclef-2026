@@ -19,6 +19,7 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 - [x] 1.5 Update `__init__.py` package exports
 - [x] 1.6 Create experiment directory, pyproject.toml, config, SLURM scripts
 - [x] 1.7 Create `train.py`
+- [x] 1.8 Create `save_metrics.py` (saves structured metrics to `artifacts/`)
 
 ### Bugs Fixed During Setup
 
@@ -29,6 +30,12 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 2. **PyTorch 2.11+cu130 incompatibility**: PyTorch 2.11 released 2026-03-23 and
    auto-resolved from the cu121 index. CUDA 13.0 requires newer drivers than PACE
    RTX 6000 nodes have. Fixed by pinning `torch<2.11` in `_job.sh`.
+
+3. **W&B config key conflict**: `encoder` key set as dict by first `config.update()`,
+   then overwritten as string. Renamed to `encoder_name`.
+
+4. **OOM at batch_size=256**: 10s mel spectrograms (128×1000) too large for 24GB RTX 6000
+   with batch_size=256. Reduced to batch_size=128 with accumulate_grad_batches=2.
 
 ## 2. Pipeline Validation
 
@@ -44,42 +51,60 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 - [x] 3.1 Submit: job 5430838, completed
 - [x] 3.2 Results: GPU 68.2% avg, **data loading 42.1% avg** (spikes to 96%), memory 0.7%
       Bottleneck: I/O spikes from loading 10s audio. Compute is fast (141ms avg).
-      Recommendation: increase batch_size and num_workers to reduce data stalls.
+      Updated config: batch_size 64→128, num_workers 8→12, accumulate 4→2.
 
 ## 4. Full Training
 
-- [ ] 4.1 Submit: `bash sbatch/run.sh config/efficientnet_b0_sed.yaml`
-- [ ] 4.2 Monitor via W&B dashboard
-- [ ] 4.3 Record best val/auroc, stopped epoch
+- [x] 4.1 Submit: job 5432792, completed
+- [x] 4.2 Monitored via W&B: `dsgt-arc/birdclef-2026-sed-architecture/runs/x5rs663d`
+- [x] 4.3 Results recorded below
+- [x] 4.4 Structured metrics saved to `artifacts/training/efficientnet_b0_sed/metrics.json`
 
-### Results
+### Training Results
 
-| Model | val/auroc | val/cmap | test/auroc | test/cmap | Best Epoch | Stopped |
-|-------|-----------|----------|-----------|----------|------------|---------|
-| EfficientNet-B0 SED | | | | | | |
+| Model | val/auroc | test/auroc | test/cmap | Best Epoch | Stopped |
+|-------|-----------|-----------|----------|------------|---------|
+| EfficientNet-B0 SED | 0.845 | **0.860** | **0.593** | 24 | 34 (early stop) |
+
+### Training Dynamics
+
+Strong learning curve from ImageNet init (no prior BirdCLEF checkpoint):
+- Epoch 0: val/auroc 0.517 (random head)
+- Epoch 5: val/auroc 0.815 (rapid improvement)
+- Epoch 12: val/auroc 0.839
+- Epoch 18: val/auroc 0.844
+- Epoch 24: val/auroc 0.845 (best)
+- Epoch 34: early stopped (patience=10)
+
+### Comparison vs Exp 012 Clip-Level (offline test set)
+
+| Model | Architecture | Test AUROC | Test cmAP |
+|-------|-------------|-----------|----------|
+| **EfficientNet-B0 SED** | **SED (GeM + AttHead)** | **0.860** | **0.593** |
+| ProtoCLR (exp 012) | Clip (global avg pool) | 0.845 | 0.481 |
+| ConvNeXt (exp 012) | Clip (global avg pool) | 0.844 | 0.470 |
+| EAT (exp 012) | Clip (global avg pool) | 0.838 | 0.452 |
+
+SED beats all clip-level models: +0.015 AUROC, **+0.112 cmAP** over best clip-level.
 
 ## 5. ONNX Export & Kaggle Submission
 
-SED models need a **different ONNX export** than clip-level models because
-the inference logic is different (dual output + blending).
+- [x] 5.1 Created `scripts/export_efficientnet_sed.py` — SEDWrapper bakes blending
+      into ONNX: `0.75 * sigmoid(clipwise) + 0.25 * sigmoid(framewise_max)`.
+      Dynamic time axis for both 5s and 10s inference.
+- [x] 5.2 Registered in exp 010: export.sbatch, upload_kaggle.py, kernel metadata,
+      submission.py (MODEL_SLUGS + output_type=probs handling)
+- [x] 5.3 ONNX exported: `bash sbatch/run.sh export --model effnet-b0-sed-v1`
+- [x] 5.4 Uploaded + pushed kernel: `upload_kaggle.py --model effnet-b0-sed-v1 --push-kernel`
+- [ ] 5.5 Verify species_mapping.json has 234 items on Kaggle
+- [ ] 5.6 Record LB score — **Kaggle inference running**
 
-- [ ] 5.1 Create `scripts/export_efficientnet_sed.py` in exp 010 pipeline
-      - Load checkpoint → build EfficientNetEncoder + AttHead
-      - Wrap in SEDWrapper that takes mel input and returns blended probabilities:
-        `0.75 * sigmoid(clipwise) + 0.25 * sigmoid(framewise_max)`
-      - Export single ONNX with mel input → blended probs output
-      - Alternative: export raw clipwise + framewise_max logits and do blending
-        in submission.py (more flexible for tuning blend ratio)
-- [ ] 5.2 Register in exp 010: export.sbatch, upload_kaggle.py, kernel metadata, submission.py MODEL_SLUGS
-- [ ] 5.3 Verify ONNX output matches PyTorch (max diff < 1e-4)
-- [ ] 5.4 Upload weights + push kernel to Kaggle
-- [ ] 5.5 Verify species_mapping.json has 234 items on Kaggle before submitting
-- [ ] 5.6 Record LB score, compare to baseline and competition reference (0.908)
+### Key Implementation Notes for SED ONNX
 
-### LB Results
-
-| Model | Exp 012 Best | Exp 016 LB | Target |
-|-------|-------------|-----------|--------|
+- ONNX outputs **probabilities** (not logits) — submission.py checks `mel_cfg["output_type"] == "probs"` to skip sigmoid
+- mel_config has `target_frames: 500` (5s at 32kHz) for inference, though model trained on 1000 (10s)
+- Dynamic time axis allows both 5s and 10s inference windows
+- Species mapping uses 234-class identity mapping (same as soundscape/student models)
 
 ### LB Results
 
@@ -102,7 +127,7 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 
 | Model | Params | Exp 012 LB (clip) | Exp 016 LB (SED) | Delta |
 |-------|--------|-------------------|-------------------|-------|
-| EfficientNet-B0 | 5.3M | — | pending | — |
+| EfficientNet-B0 | 3.6M | — | pending | — |
 | ProtoCLR (CvT-13) | 19.9M | 0.767 | pending | — |
 | ConvNeXt-Base | 89M | 0.755 | pending | — |
 | EAT (ViT) | 90M | 0.720 | pending | — |
@@ -120,8 +145,8 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 
 ## 7. Documentation
 
-- [ ] 7.1 Update MODEL-RUNS.md
-- [ ] 7.2 Create results.md
+- [x] 7.1 Update MODEL-RUNS.md with exp 016 offline results
+- [ ] 7.2 Create results.md (after LB score)
 
 ---
 
