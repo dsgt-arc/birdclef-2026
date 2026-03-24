@@ -96,6 +96,24 @@ Focal BCE with gamma=2.0. Each of the 206 species is an independent binary
 classification. Focal loss downweights easy negatives (the vast majority of
 species are absent in any given clip) and focuses learning on hard cases.
 
+## Data Split
+
+90/10 stratified by species, split by recording (not by chunk). Seed 42.
+All chunks from the same recording go to the same split (prevents leakage).
+No dedicated test split — use Kaggle LB or exp 101 soundscape windows.
+
+## Data Module Limitations
+
+The current data module (`birdclef_009.data.finetune.BirdCLEFDataModule`):
+- Returns `{waveform, clip_labels, num_tokens, real_tokens}` — no sample weights
+- No activity score integration
+- No mixup support
+- No soundscape data loading
+- Split is hardcoded 90/10
+
+Runs A and B use this as-is. Run C needs a custom data module that adds
+soundscape data and mixup.
+
 ## Diagram
 
 ```
