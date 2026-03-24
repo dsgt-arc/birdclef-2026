@@ -74,6 +74,7 @@ def main():
         head_dropout=model_cfg.get("head_dropout", 0.3),
         backbone_mode=backbone_mode,
         pooling_mode=pooling_mode,
+        head_hidden_dim=model_cfg.get("head_hidden_dim", 0),
         lora_rank=lora_cfg.get("rank", 8),
         lora_alpha=lora_cfg.get("alpha", 16),
         lora_dropout=lora_cfg.get("dropout", 0.1),

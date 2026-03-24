@@ -32,23 +32,43 @@ class AttentionPoolingHead(nn.Module):
     Training: attention-weighted mean of frame logits
     Inference: framewise max of frame logits
 
-    This is the dominant pattern from BirdCLEF 2025 top solutions.
+    Optionally includes a hidden projection layer (GEMM) before the
+    attention/frame heads for additional capacity.
 
     Args:
         embed_dim: Input feature dimension (1280 for EfficientNet-B1)
         num_classes: Number of output classes
+        hidden_dim: If > 0, add a Linear + ReLU projection before heads
         dropout: Dropout before linear layers
     """
 
-    def __init__(self, embed_dim: int, num_classes: int, dropout: float = 0.3):
+    def __init__(
+        self,
+        embed_dim: int,
+        num_classes: int,
+        hidden_dim: int = 0,
+        dropout: float = 0.3,
+    ):
         super().__init__()
+
+        if hidden_dim > 0:
+            self.projection = nn.Sequential(
+                nn.Linear(embed_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+            )
+            head_dim = hidden_dim
+        else:
+            self.projection = None
+            head_dim = embed_dim
+
         self.frame_head = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(embed_dim, num_classes),
+            nn.Dropout(dropout) if hidden_dim == 0 else nn.Identity(),
+            nn.Linear(head_dim, num_classes),
         )
         self.att_head = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(embed_dim, num_classes),
+            nn.Dropout(dropout) if hidden_dim == 0 else nn.Identity(),
+            nn.Linear(head_dim, num_classes),
         )
 
     def forward(self, frame_features: torch.Tensor) -> torch.Tensor:
@@ -59,6 +79,9 @@ class AttentionPoolingHead(nn.Module):
         Returns:
             clip_logits: (B, C) clip-level logits
         """
+        if self.projection is not None:
+            frame_features = self.projection(frame_features)  # (B, T, hidden_dim)
+
         frame_logits = self.frame_head(frame_features)  # (B, T, C)
         att_logits = self.att_head(frame_features)       # (B, T, C)
 
@@ -103,6 +126,7 @@ class EfficientNetClassifier(nn.Module):
         head_dropout: float = 0.3,
         backbone_mode: str = "frozen",
         pooling_mode: str = "avg",
+        head_hidden_dim: int = 0,
         lora_rank: int = 8,
         lora_alpha: int = 16,
         lora_dropout: float = 0.1,
@@ -136,7 +160,9 @@ class EfficientNetClassifier(nn.Module):
                 nn.Linear(embed_dim, num_classes),
             )
         elif pooling_mode == "attention":
-            self.head = AttentionPoolingHead(embed_dim, num_classes, dropout=head_dropout)
+            self.head = AttentionPoolingHead(
+                embed_dim, num_classes, hidden_dim=head_hidden_dim, dropout=head_dropout,
+            )
         else:
             raise ValueError(f"Unknown pooling_mode: {pooling_mode}")
 

@@ -57,8 +57,10 @@ class MelInputWrapper(nn.Module):
             pooled = F.adaptive_avg_pool2d(features, 1).flatten(1)  # (B, 1280)
             logits = self.head(pooled)
         elif self.pooling_mode == "attention":
-            # At inference: collapse freq, get frame features, use frame_head + max
+            # At inference: collapse freq, project, frame_head + max
             frame_features = features.mean(dim=2).permute(0, 2, 1)  # (B, T, 1280)
+            if self.head.projection is not None:
+                frame_features = self.head.projection(frame_features)  # (B, T, hidden)
             frame_logits = self.head.frame_head(frame_features)  # (B, T, C)
             logits = frame_logits.max(dim=1).values  # (B, C)
         else:
@@ -153,7 +155,8 @@ def main():
         )
     elif pooling_mode == "attention":
         from birdclef_102.model import AttentionPoolingHead
-        head = AttentionPoolingHead(embed_dim, num_classes, dropout=0.0)
+        head_hidden_dim = model_cfg.get("head_hidden_dim", 0)
+        head = AttentionPoolingHead(embed_dim, num_classes, hidden_dim=head_hidden_dim, dropout=0.0)
     else:
         raise ValueError(f"Unknown pooling_mode: {pooling_mode}")
 
