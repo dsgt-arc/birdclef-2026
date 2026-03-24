@@ -118,43 +118,42 @@ class BirdCLEF102Dataset(Dataset):
         return label_vec
 
     def _build_from_parquet(self, parquet_path, metadata_df):
-        """Build chunk index from pre-computed activity scores. Instant."""
+        """Build chunk index from pre-computed activity scores. Fast."""
         activity = pd.read_parquet(parquet_path)
         logger.info(f"Loading chunk index from {parquet_path}: {len(activity)} chunks")
 
+        # Build basename → relative path lookup from metadata (O(N) once)
+        basename_to_path = {}
+        for _, row in metadata_df.iterrows():
+            basename = Path(row["filename"]).name
+            basename_to_path[basename] = row["filename"]
+
         # Filter to only recordings in this split
-        valid_files = set(Path(f).name for f in metadata_df["filename"])
+        valid_files = set(basename_to_path.keys())
         activity = activity[activity["filename"].isin(valid_files)]
 
+        # Vectorized chunk building
         self.chunks = []
-        for _, row in activity.iterrows():
-            basename = row["filename"]
+        for basename, group in activity.groupby("filename"):
             if basename not in self.file_to_labels:
                 continue
 
-            # Find the audio file path
-            species = row.get("species", "")
-            if species and not pd.isna(species):
-                audio_path = self.audio_dir / str(species) / basename
-            else:
-                # Try to find it from metadata
-                meta_row = metadata_df[
-                    metadata_df["filename"].apply(lambda f: Path(f).name) == basename
-                ]
-                if len(meta_row) == 0:
-                    continue
-                audio_path = self.audio_dir / meta_row.iloc[0]["filename"]
+            rel_path = basename_to_path.get(basename)
+            if rel_path is None:
+                continue
+            audio_path = str(self.audio_dir / rel_path)
+            label_vec = self.file_to_labels[basename]
 
-            start_sample = int(row["chunk_start"] * self.sample_rate)
-            activity_score = float(row.get("activity_score", 0.5))
-
-            self.chunks.append((
-                str(audio_path),
-                start_sample,
-                self.chunk_samples,
-                self.file_to_labels[basename],
-                activity_score,
-            ))
+            for _, row in group.iterrows():
+                start_sample = int(row["chunk_start"] * self.sample_rate)
+                activity_score = float(row.get("activity_score", 0.5))
+                self.chunks.append((
+                    audio_path,
+                    start_sample,
+                    self.chunk_samples,
+                    label_vec,
+                    activity_score,
+                ))
 
         logger.info(f"BirdCLEF102Dataset (parquet): {len(self.chunks)} chunks")
 
