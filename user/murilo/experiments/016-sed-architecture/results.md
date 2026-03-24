@@ -35,7 +35,7 @@ augmentation, loss function, and inference strategy.
 | **EfficientNet-B0 SED v1 + pp** | **SED + TTA + smoothing + TopN** | **0.823** | **+0.056** |
 | EfficientNet-B0 SED v1 | SED | 0.795 | +0.028 |
 | EfficientNet-B0 SED v2 + pp | SED (NS-JFT + CE) + TTA + smoothing + TopN | 0.755 | −0.012 |
-| EfficientNet-B0 SED v3a + pp | SED (TF weights) + pp | pending | — |
+| EfficientNet-B0 SED v3a + pp | SED (TF weights) + pp | 0.813 | +0.046 |
 | EfficientNet-B0 SED v3b + pp | SED (raw waveform mixup) + pp | 0.802 | +0.035 |
 | EfficientNet-B0 SED v3c + pp | SED (CE loss) + pp | pending | — |
 | ProtoCLR (exp 012) | Clip | 0.767 | baseline |
@@ -123,19 +123,22 @@ Three parallel experiments, each changing one variable from v1:
 | Model | Change | val/auroc | test/auroc | test/cmap | LB (+pp) |
 |-------|--------|-----------|-----------|----------|----------|
 | **v1** | **baseline** | **0.845** | **0.860** | **0.593** | **0.823** |
-| v3a | TF-ported weights | 0.845 | 0.857 | 0.599 | pending |
+| v3a | TF-ported weights | 0.845 | 0.857 | 0.599 | 0.813 |
 | v3b | raw waveform mixup | 0.846 | 0.862 | 0.607 | 0.802 |
 | v3c | standard CE loss | 0.831 | 0.850 | 0.552 | pending |
 | v3d | EfficientNetV2-B0 | training... | — | — | — |
 
 **Conclusions from v3 ablation:**
-- **v3b** (waveform mixup): Best offline metrics but **worse on LB** (0.802 vs 0.823).
-  Offline improvement doesn't translate. Possible overfitting.
-- **v3a** (TF weights): Roughly flat. TF-ported weights ≈ PyTorch RA weights.
-- **v3c** (CE loss): Hurt significantly. Soft CE is better than standard CE for this task.
-  Confirms v1's soft CE choice was correct.
-- **v3d** (EfficientNetV2-B0): Still training. This is the most promising change —
-  competitor confirmed using V2, not V1. Different architecture entirely (5.6M vs 3.6M params).
+- **All v3 variants regressed on LB** vs v1+pp (0.823):
+  - v3a (TF weights): LB **0.813** (−0.010). Worse despite similar offline metrics.
+  - v3b (waveform mixup): LB **0.802** (−0.021). Best offline but worst LB.
+  - v3c (CE loss): LB pending. Hurt offline (−0.041 cmAP).
+- **Offline metrics don't predict LB**: v3b had the best offline metrics but the worst
+  LB among v3a/v3b. The offline→LB correlation is unreliable for these changes.
+- **v1 remains the best model** at 0.823 LB. The soft CE + spectrogram mixup +
+  ImageNet RA weights combination is surprisingly robust.
+- **v3d** (EfficientNetV2-B0): Still training. The only remaining change that addresses
+  a fundamental architecture mismatch (V1 vs V2).
 
 ---
 

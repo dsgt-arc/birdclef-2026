@@ -28,7 +28,7 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 | Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** |
 | Exp 016 v2 + pp | + NS-JFT + CE + post-processing | 0.755 (regression) |
 | Exp 016 v3b + pp | + raw waveform mixup + pp | 0.802 (regression) |
-| Exp 016 v3a + pp | + TF-ported weights + pp | pending |
+| Exp 016 v3a + pp | + TF-ported weights + pp | 0.813 (regression) |
 | Exp 016 v3c + pp | + standard CE loss + pp | pending |
 | Exp 016 v3d | EfficientNetV2-B0 | training... |
 | Target | Close gap to competitor | ≥0.85 |
@@ -262,5 +262,5 @@ Detailed analysis of each item below is in [summary.md](summary.md) § "Potentia
 - ~~NS-JFT pretrained weights~~: v2, regressed (−0.068 LB, confounded with CE loss)
 - ~~Standard CE loss~~: v3c, hurt offline (−0.041 cmAP). Soft CE is better.
 - ~~Raw waveform mixup~~: v3b, better offline but worse LB (0.802 vs 0.823)
-- ~~TF-ported V1 weights~~: v3a, flat. No meaningful difference from PyTorch RA weights.
+- ~~TF-ported V1 weights~~: v3a, LB 0.813 (−0.010). Worse than v1.
 - ~~Post-processing~~: ✅ Done (+0.028 confirmed). TTA + smoothing + TopN.

@@ -153,7 +153,7 @@ needed, just weight averaging and re-export.
 | Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** | **baseline** |
 | Exp 016 v2 + pp | + NS-JFT + CE (2 changes, regression) | 0.755 | −0.068 |
 | Exp 016 v3b + pp | + raw waveform mixup | 0.802 | −0.021 |
-| Exp 016 v3a + pp | + TF-ported V1 weights | pending | — |
+| Exp 016 v3a + pp | + TF-ported V1 weights | 0.813 | −0.010 |
 | Exp 016 v3c + pp | + standard CE loss | pending | — |
 | Exp 016 v3d | EfficientNetV2-B0 (correct architecture) | training | — |
 
@@ -164,16 +164,17 @@ Three parallel experiments, each changing one variable from v1:
 | Model | Change | test/auroc | test/cmap | LB (+pp) | Verdict |
 |-------|--------|-----------|----------|----------|---------|
 | **v1** | **baseline** | **0.860** | **0.593** | **0.823** | — |
-| v3a | TF-ported weights | 0.857 | 0.599 | pending | Flat |
-| v3b | raw waveform mixup | 0.862 | 0.607 | 0.802 | **Worse on LB** |
+| v3a | TF-ported weights | 0.857 | 0.599 | 0.813 | **Worse on LB** (−0.010) |
+| v3b | raw waveform mixup | 0.862 | 0.607 | 0.802 | **Worse on LB** (−0.021) |
 | v3c | standard CE loss | 0.850 | 0.552 | pending | **Hurt offline** |
 
 **Key findings:**
-- None of the V1 tweaks close the gap to 0.908
-- v3b improved offline (+0.014 cmAP) but **regressed on LB** (0.802 vs 0.823),
-  suggesting overfitting to training distribution
-- v3c confirmed soft CE is better than standard CE for this multi-label task
-- v3a showed TF-ported vs PyTorch-native weights are roughly equivalent
+- **Every V1 tweak made LB worse** — v1's recipe (ImageNet RA weights + soft CE +
+  spectrogram mixup) is a robust local optimum for EfficientNet-B0 V1
+- v3a (TF weights): LB 0.813 (−0.010), v3b (waveform mixup): LB 0.802 (−0.021)
+- Offline metrics are **not predictive of LB** for these changes: v3b had the best
+  offline metrics but the worst LB among v3a/v3b
+- The gap to 0.889 is unlikely to be closed by hyperparameter tweaks on V1
 
 **Critical discovery:** The competitor used **EfficientNetV2-B0** (V2 architecture),
 not EfficientNet-B0 (V1). V2 has Fused-MBConv blocks, 5.6M params (vs V1's 3.6M),
