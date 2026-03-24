@@ -315,7 +315,7 @@ CE loss should approach the 0.908 reference.
 ## Competitive Intelligence (2026-03-23)
 
 Detailed analysis of active competitor experiments and 2025 winner techniques:
-see [competition discussion analysis](../../docs/references/kaggle/birdclef-2026/competition-discussion-analysis.md).
+see [competition discussion analysis](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md).
 
 ### Key Findings That Affect This Experiment
 
@@ -343,7 +343,7 @@ see [competition discussion analysis](../../docs/references/kaggle/birdclef-2026
 
 ## References
 
-- [Competition discussion analysis](../../docs/references/kaggle/birdclef-2026/competition-discussion-analysis.md): Full technique breakdown with LB impacts
+- [Competition discussion analysis](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md): Full technique breakdown with LB impacts
 - [2025 1st place](../../docs/references/kaggle/birdclef-2025/birdclef2025-1st-place-inference.md): GeM + AttHead, CE loss, 20s windows
 - [2025 9th place](../../docs/references/kaggle/birdclef-2025/bird2025-9th-place-solution.md): AttBlockV2, framewise max, 10s windows
 - [2024 1st place](../../docs/references/kaggle/birdclef-2024/birdclef2024-1st-place-solution.md): CE >> BCE, 10s context, +0.015 from context overlap

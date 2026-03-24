@@ -171,7 +171,7 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 
 ## Future Work
 
-See [competition discussion analysis](../../docs/references/kaggle/birdclef-2026/competition-discussion-analysis.md)
+See [competition discussion analysis](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
 for full details on each technique, confirmed LB impacts, and code snippets.
 
 ### Immediate Improvements (next training run)
