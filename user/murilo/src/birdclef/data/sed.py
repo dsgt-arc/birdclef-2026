@@ -343,9 +343,10 @@ class SEDDataModule(pl.LightningDataModule):
         soundscape_test_files: int = 8,
         seed: int = 42,
         transform=None,
+        eval_transform=None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["transform"])
+        self.save_hyperparameters(ignore=["transform", "eval_transform"])
         self.data_dir = Path(data_dir)
         self.taxonomy_csv = Path(taxonomy_csv)
         self.sample_rate = sample_rate
@@ -358,6 +359,10 @@ class SEDDataModule(pl.LightningDataModule):
         self.soundscape_test_files = soundscape_test_files
         self.seed = seed
         self.transform = transform
+        # eval_transform: separate transform for val/test datasets.
+        # When None (default), uses the same transform for all splits.
+        # Use this when training on raw waveforms but val/test need mel spectrograms.
+        self.eval_transform = eval_transform if eval_transform is not None else transform
 
         # Build species lists
         self.species_list = build_full_species_list(taxonomy_csv)
@@ -399,7 +404,7 @@ class SEDDataModule(pl.LightningDataModule):
             species_list=self.species_206,
             sample_rate=self.sample_rate,
             window_duration=self.window_duration,
-            transform=self.transform,
+            transform=self.eval_transform,
         )
         focal_test_206 = SEDFocalDataset(
             audio_dir=str(focal_audio_dir),
@@ -407,7 +412,7 @@ class SEDDataModule(pl.LightningDataModule):
             species_list=self.species_206,
             sample_rate=self.sample_rate,
             window_duration=self.window_duration,
-            transform=self.transform,
+            transform=self.eval_transform,
         )
 
         # Remap 206→234
@@ -443,7 +448,7 @@ class SEDDataModule(pl.LightningDataModule):
             sample_rate=self.sample_rate,
             target_duration=5.0,
             context_duration=self.window_duration,
-            transform=self.transform,
+            transform=self.eval_transform,
         )
         sc_test = SEDSoundscapeDataset(
             soundscape_dir=str(soundscape_dir),
@@ -452,7 +457,7 @@ class SEDDataModule(pl.LightningDataModule):
             sample_rate=self.sample_rate,
             target_duration=5.0,
             context_duration=self.window_duration,
-            transform=self.transform,
+            transform=self.eval_transform,
         )
 
         # --- Combine ---

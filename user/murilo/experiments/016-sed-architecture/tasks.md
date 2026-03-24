@@ -12,8 +12,8 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 
 - **Branch**: `mg/016-sed-improvements` (PR #18)
 - **Best LB**: **0.823** (v1 + post-processing)
-- **v2 training complete**: NS-JFT + CE loss **regressed** (test/auroc 0.837 vs v1 0.860)
-- **Next**: Export v2 ONNX → submit to confirm LB regression → investigate root cause
+- **v2 training complete**: NS-JFT + CE loss **regressed** (test/auroc 0.837, LB 0.755)
+- **v3 ablation running**: 3 parallel runs isolating TF weights (v3a), waveform mixup (v3b), CE loss (v3c)
 - **Key references**:
   - [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
   - [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/discussions/perch-protossm-zirach.md) (0.913 LB)
@@ -25,8 +25,7 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 | Exp 012 ProtoCLR | Clip-level baseline | 0.767 |
 | Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 |
 | Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** |
-| Exp 016 v2 | + NS-JFT pretrained + CE loss | pending (offline: 0.837 AUROC, **regression**) |
-| Exp 016 v2 + pp | + post-processing | pending |
+| Exp 016 v2 + pp | + NS-JFT + CE + post-processing | **0.755** (regression: −0.068 vs v1+pp) |
 | Target | Close gap to competitor | ≥0.85 |
 
 ---
@@ -184,9 +183,24 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 - [x] 8.4 Record v2 results — **REGRESSION**: test/auroc 0.837 (−0.023), test/cmap 0.539 (−0.054)
       v2 underperformed v1 on all metrics. NS-JFT + CE hurt vs ImageNet + soft CE.
       W&B run: `covhhpck`. Best epoch 24, early stopped at 35.
-- [ ] 8.5 Export v2 to ONNX + submit to Kaggle LB with post-processing (check if LB also regresses)
+- [x] 8.5 Export v2 to ONNX + submit to Kaggle LB: **0.755** (−0.068 vs v1+pp 0.823, confirmed regression)
 - [ ] 8.6 Implement raw waveform mixup (move mel to model forward, mixup before mel)
 - [ ] 8.7 Implement 10s overlapping inference (load 10s centered on 5s target)
+
+## 9. v3 Ablation Runs — Isolate Individual Changes
+
+Three parallel runs, each changing one variable from v1 baseline:
+
+- [x] 9.1 v3a config: `tf_efficientnet_b0.in1k` (TF-ported Google weights)
+- [x] 9.2 v3b config + code: raw waveform mixup (mel to GPU, mixup before mel)
+      Changed: `sed_finetune.py` (mel_transform param, waveform mixup path),
+      `sed.py` (eval_transform for val/test), `train.py` (raw_waveform_mixup flag)
+- [x] 9.3 v3c config: `loss_type="ce"`, `label_smoothing=0.0` (standard CE)
+- [x] 9.4 Tests: 29 pytest tests covering all v3 changes + backward compat
+- [x] 9.5 All three submitted to SLURM (running in parallel)
+- [ ] 9.6 Record v3a/v3b/v3c results, compare to v1
+- [ ] 9.7 Export best v3 to ONNX + submit to Kaggle LB
+- [ ] 9.8 If multiple help → combine winners into v4
 
 ## 9. Documentation
 
