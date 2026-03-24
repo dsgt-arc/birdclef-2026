@@ -17,7 +17,7 @@ dependencies = [
 birdclef-efficientnet = "birdclef_102.cli:main"
 
 [tool.uv.sources]
-exp009-birdclef-pipeline = { path = "../../009-birdclef-pipeline", editable = true }
+exp009-birdclef-pipeline = { path = "../009-birdclef-pipeline", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/birdclef_102"]
