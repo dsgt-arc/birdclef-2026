@@ -1,0 +1,44 @@
+# Run D: LoRA backbone + attention pooling + GEMM projection
+
+model:
+  model_name: "DBD-research-group/EfficientNet-B1-BirdSet-XCL"
+  backbone_mode: lora
+  pooling_mode: attention
+  head_hidden_dim: 512  # GEMM projection before attention/frame heads
+  head_dropout: 0.3
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+
+data:
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
+  metadata_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
+  sample_rate: 32000
+  chunk_duration: 5.0
+  n_mels: 256
+  n_fft: 2048
+  hop_length: 256
+  target_frames: 625
+  batch_size: 32  # LoRA + attention needs gradients through backbone
+  num_workers: 8
+  val_fraction: 0.1
+  activity_parquet: artifacts/focal_activity.parquet
+
+training:
+  max_epochs: 50
+  lr: 3.0e-4
+  weight_decay: 0.01
+  warmup_epochs: 3
+  precision: bf16-mixed
+  gamma: 2.0
+  augmentation:
+    freq_mask_param: 40
+    time_mask_param: 50
+    num_freq_masks: 2
+    num_time_masks: 2
+
+callbacks:
+  early_stopping: { monitor: val/cmap, mode: max, patience: 10 }
+  model_checkpoint: { monitor: val/cmap, mode: max, save_top_k: 1 }
