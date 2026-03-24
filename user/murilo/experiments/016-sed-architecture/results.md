@@ -34,6 +34,7 @@ augmentation, loss function, and inference strategy.
 |-------|-------------|-----|-----------------|
 | **EfficientNet-B0 SED v1 + pp** | **SED + TTA + smoothing + TopN** | **0.823** | **+0.056** |
 | EfficientNet-B0 SED v1 | SED | 0.795 | +0.028 |
+| EfficientNet-B0 SED v2 | SED (NS-JFT + CE) | pending | — |
 | ProtoCLR (exp 012) | Clip | 0.767 | baseline |
 | ConvNeXt (exp 012) | Clip | 0.755 | −0.012 |
 | EAT (exp 012) | Clip | 0.720 | −0.047 |
@@ -54,10 +55,37 @@ gain +0.028 vs estimated +0.033. These are free inference-time improvements.
 
 | Model | Test AUROC | Test cmAP |
 |-------|-----------|----------|
-| **EfficientNet-B0 SED** | **0.860** | **0.593** |
+| **EfficientNet-B0 SED v1** | **0.860** | **0.593** |
+| EfficientNet-B0 SED v2 (NS-JFT + CE) | 0.837 | 0.539 |
 | ProtoCLR (exp 012) | 0.845 | 0.481 |
 | ConvNeXt (exp 012) | 0.844 | 0.470 |
 | EAT (exp 012) | 0.838 | 0.452 |
+
+### V2 Training Results (NS-JFT + CE Loss) — Regression
+
+V2 changed two variables: encoder pretrained weights (`tf_efficientnet_b0.ns_jft_in1k` vs
+standard ImageNet) and loss function (standard CE with label_smoothing=0.05 vs soft CE with
+normalized multi-hot). Both offline metrics regressed:
+
+| Metric | v1 (ImageNet + Soft CE) | v2 (NS-JFT + CE) | Delta |
+|--------|------------------------|-------------------|-------|
+| val/auroc | 0.845 | 0.822 | **−0.023** |
+| test/auroc | 0.860 | 0.837 | **−0.023** |
+| test/cmap | 0.593 | 0.539 | **−0.054** |
+| Best epoch | 24 | 24 | — |
+| Stopped | 34 | 35 | — |
+
+**Analysis**: Changing two variables simultaneously makes it impossible to attribute the
+regression. Possible explanations:
+1. NS-JFT weights may need different learning rates (the JFT-pretrained features are
+   stronger, so backbone lr=1e-4 may be too aggressive and destroy good representations)
+2. Standard CE with label_smoothing may be worse than soft CE for multi-label audio where
+   many segments genuinely contain multiple species
+3. The combination of both changes compounded negatively
+
+**Recommendation**: Test each change independently. Try NS-JFT with soft CE (v1 loss),
+or standard ImageNet with CE loss, to isolate the effect. Also try lower backbone lr
+(1e-5) with NS-JFT weights.
 
 ---
 

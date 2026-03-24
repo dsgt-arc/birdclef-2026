@@ -115,18 +115,22 @@ primary bottleneck — exp 016 (SED) addresses this directly.
 ## BirdCLEF 2026 Models — SED Architecture (exp 016)
 
 EfficientNet-B0 with SED attention head (GeM freq pooling + attention + framewise max).
-Trained from ImageNet-pretrained backbone (no prior BirdCLEF checkpoint). Soft CE dual
-loss, 10s windows, spectrogram mixup, 32kHz.
+Trained from ImageNet-pretrained backbone (no prior BirdCLEF checkpoint). 10s windows,
+spectrogram mixup, 32kHz. v1: soft CE dual loss, standard ImageNet init.
+v2: standard CE with label_smoothing=0.05, NS-JFT pretrained (`tf_efficientnet_b0.ns_jft_in1k`).
+**v2 regressed** on all offline metrics vs v1 (−0.023 AUROC, −0.054 cmAP).
 
 | Slug | Encoder | Architecture | Classes | Test AUROC | Test cmAP | Best Epoch | LB | Checkpoint |
 |------|---------|-------------|---------|-----------|----------|------------|-----|------------|
 | `effnet-b0-sed-v1` | EfficientNet-B0 | SED (GeM + AttHead) | 234 | **0.860** | **0.593** | 24 | 0.795 / **0.823** (+ pp) | `016-.../2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
+| `effnet-b0-sed-v2` | EfficientNet-B0 (NS-JFT) | SED (GeM + AttHead) + CE | 234 | 0.837 | 0.539 | 24 | pending | `016-.../2026-effnet-b0-sed-v2/best-epochepoch=24.ckpt` |
 
 ### Comparison: SED vs Clip-Level (offline test set)
 
 | Model | Architecture | Test AUROC | Test cmAP | LB |
 |-------|-------------|-----------|----------|-----|
-| **EfficientNet-B0 SED** | **SED (GeM + AttHead)** | **0.860** | **0.593** | 0.795 / **0.823** (+pp) |
+| **EfficientNet-B0 SED v1** | **SED (GeM + AttHead)** | **0.860** | **0.593** | 0.795 / **0.823** (+pp) |
+| EfficientNet-B0 SED v2 | SED + NS-JFT + CE | 0.837 | 0.539 | pending |
 | ProtoCLR (exp 012) | Clip (global avg pool) | 0.845 | 0.481 | 0.767 |
 | ConvNeXt (exp 012) | Clip (global avg pool) | 0.844 | 0.470 | 0.755 |
 | EAT (exp 012) | Clip (global avg pool) | 0.838 | 0.452 | 0.720 |
