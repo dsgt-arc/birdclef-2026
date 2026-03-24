@@ -30,9 +30,8 @@ source "$JOB_VENV/bin/activate"
 
 module load cuda/12.1.1
 
-uv pip install -e "$repo_dir/user/anthony/experiments/009-birdclef-pipeline"
-uv pip install -e "$exp_dir"
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+uv pip install -e "$exp_dir"
 
 cd $exp_dir
 
