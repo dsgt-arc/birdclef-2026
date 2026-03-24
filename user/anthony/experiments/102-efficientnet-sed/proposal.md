@@ -1,4 +1,4 @@
-# Proposal: EfficientNet with Unfrozen Backbone and Frame Weighting
+# Proposal: EfficientNet LoRA Fine-Tuning
 
 **Status**: proposed
 **Created**: 2026-03-23
@@ -6,9 +6,8 @@
 
 ## Hypothesis
 
-Unfreezing the EfficientNet-B1 backbone with acoustic-index-weighted frame pooling
-will improve Kaggle LB score by ≥0.10 over the frozen linear probe baseline (exp 012:
-0.649 private LB), achieving ≥0.75 LB.
+LoRA fine-tuning the EfficientNet-B1 backbone will improve Kaggle LB score by ≥0.10
+over the frozen linear probe baseline (exp 012: 0.649 private LB), achieving ≥0.75 LB.
 
 ## Background
 
@@ -71,8 +70,8 @@ identifiable via acoustic indices.
 
 ### Approach
 
-Fork exp 012 code. Three changes: unfreeze backbone, add differential learning
-rate, replace global average pooling with index-weighted pooling.
+Fork exp 012 code. Add LoRA adapters to the EfficientNet backbone via PEFT.
+Backbone weights stay frozen, only LoRA adapters + head train. Single LR.
 
 ### Architecture
 
@@ -83,36 +82,39 @@ Raw Audio (B, 160000) ← 5s @ 32kHz
   nnAudio Mel + log-normalize + SpecAugment (train)
     │ (B, 1, 256, 625)
     ▼
-  EfficientNet-B1 (UNFROZEN, pretrained ImageNet)
-    │ (B, 1280, 8, 20)   ← 8 freq bins, 20 time frames
+  EfficientNet-B1 (frozen weights + LoRA adapters)
+    │ (B, 1280, 8, 20)
     ▼
-  mean over freq → (B, 1280, 20)
-    │
-    ├── [acoustic index weights] → (B, 20) from spectral_contrast
-    │     resampled from 1s resolution to match 20 time frames
-    │     normalized: w = softmax(contrast / temperature)
-    │
-    ▼
-  weighted_mean(features, weights) → (B, 1280)
+  adaptive avg pool → (B, 1280)
     │
     ▼
   Dropout → Linear(1280, C) → clip logits (B, C)
     │
     ▼
-  BCE loss with hard labels
+  focal BCE loss with hard labels
 ```
+
+LoRA config (following Murilo's exp 011):
+
+| Parameter | Value |
+|-----------|-------|
+| Rank | 8 |
+| Alpha | 16 |
+| Dropout | 0.1 |
+| Target modules | EfficientNet attention/projection layers |
+| Trainable params | ~100-500K (vs 6.5M total) |
 
 ### Run matrix
 
 | Run | Backbone | Head | Data | Purpose |
 |-----|----------|------|------|---------|
-| **A** | Frozen | Linear + GAP | Focal only | Reproduce exp 012 baseline on 2026 data |
-| **B** | Unfrozen | Attention + GAP | Focal only | Does unfreezing + attention help? |
-| **C** | Unfrozen | Attention + GAP | Focal + soundscape + mixup | Does mixup with in-domain data help? |
+| **A** | Frozen | Linear (avg pool) | Focal only | Reproduce exp 012 baseline on 2026 data |
+| **B** | LoRA (rank 8) | Linear (avg pool) | Focal only | Does LoRA help? |
+| **C** | LoRA (rank 8) | Linear (avg pool) | Focal + soundscape mixup | Does in-domain data help? |
 
-Sequential progression — each run adds one change. Run A establishes the
-baseline, Run B tests the main hypothesis (unfreezing + attention), Run C
-adds domain mixing.
+Sequential progression — each run adds one change. Single LR throughout
+(no differential LR needed with LoRA). LoRA adapters on attention layers,
+backbone weights frozen.
 
 ### Setup
 
@@ -139,8 +141,8 @@ adds domain mixing.
 **Phase 2: Training**
 
 6. Run A: frozen backbone + linear head, focal only (2026 baseline)
-7. Run B: unfrozen backbone + attention head, focal only
-8. Run C: unfrozen backbone + attention head, focal + soundscape mixup
+7. Run B: LoRA backbone + linear head, focal only (main hypothesis)
+8. Run C: LoRA backbone + linear head, focal + soundscape mixup
 
 **Phase 3: Evaluation**
 
@@ -152,20 +154,20 @@ adds domain mixing.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| LR (head) | 1e-3 | Same as exp 012 |
-| LR (backbone) | 1e-4 | 10x lower to preserve pretrained features |
-| Batch size | 32 | Fits on RTX 6000 with unfrozen backbone |
-| Max epochs | 50 | With early stopping patience 8 |
-| Optimizer | AdamW | Weight decay 1e-4 |
+| LR | 3e-4 | Single LR, same as Murilo's LoRA runs |
+| Batch size | 256 | Same as exp 012 (LoRA uses less memory than full unfreeze) |
+| Effective batch | 256 | No gradient accumulation needed |
+| Max epochs | 50 | With early stopping patience 10 |
+| Optimizer | AdamW | Weight decay 0.01 |
 | Precision | bf16-mixed | Memory efficiency |
-| SpecAugment | freq_mask=20, time_mask=50, 2+2 masks | Same as exp 012 |
-| Scheduler | Cosine with warmup (3 epochs) | Standard |
+| SpecAugment | freq_mask=40, time_mask=50, 2+2 masks | Same as exp 012 |
+| Scheduler | Cosine annealing | Standard |
 
 ### Variables
 
-- **Independent**: backbone freezing (full/partial), pooling (GAP/index-weighted)
+- **Independent**: backbone adaptation (frozen/LoRA), training data (focal/focal+soundscape)
 - **Dependent**: val AUROC, val cmAP, soundscape AUROC, Kaggle LB
-- **Controlled**: data (2026 focal), backbone (EfficientNet-B1), mel params, seed
+- **Controlled**: backbone (EfficientNet-B1), LoRA config (rank 8), mel params, seed
 
 ## Evaluation
 
