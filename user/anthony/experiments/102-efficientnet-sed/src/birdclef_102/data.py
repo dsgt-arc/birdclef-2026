@@ -90,11 +90,15 @@ class BirdCLEF102Dataset(Dataset):
         self.chunk_samples = int(chunk_duration * sample_rate)
 
         # Build species label lookup from metadata
+        # Key by relative path (e.g., "species/XC12345.ogg") to avoid basename collisions
         self.file_to_labels = {}
+        self.file_to_relpath = {}
         for _, row in metadata_df.iterrows():
             label_vec = self._build_label_vec(row)
-            basename = Path(row["filename"]).name
-            self.file_to_labels[basename] = label_vec
+            relpath = row["filename"]  # e.g., "species_id/recording.ogg"
+            basename = Path(relpath).name
+            self.file_to_labels[relpath] = label_vec
+            self.file_to_relpath[basename] = relpath
 
         # Build chunk index
         if activity_parquet and Path(activity_parquet).exists():
@@ -122,27 +126,19 @@ class BirdCLEF102Dataset(Dataset):
         activity = pd.read_parquet(parquet_path)
         logger.info(f"Loading chunk index from {parquet_path}: {len(activity)} chunks")
 
-        # Build basename → relative path lookup from metadata (O(N) once)
-        basename_to_path = {}
-        for _, row in metadata_df.iterrows():
-            basename = Path(row["filename"]).name
-            basename_to_path[basename] = row["filename"]
+        # Filter to only recordings in this split (by basename)
+        valid_basenames = set(self.file_to_relpath.keys())
+        activity = activity[activity["filename"].isin(valid_basenames)]
 
-        # Filter to only recordings in this split
-        valid_files = set(basename_to_path.keys())
-        activity = activity[activity["filename"].isin(valid_files)]
-
-        # Vectorized chunk building
+        # Build chunks using relpath for correct label lookup
         self.chunks = []
         for basename, group in activity.groupby("filename"):
-            if basename not in self.file_to_labels:
+            relpath = self.file_to_relpath.get(basename)
+            if relpath is None or relpath not in self.file_to_labels:
                 continue
 
-            rel_path = basename_to_path.get(basename)
-            if rel_path is None:
-                continue
-            audio_path = str(self.audio_dir / rel_path)
-            label_vec = self.file_to_labels[basename]
+            audio_path = str(self.audio_dir / relpath)
+            label_vec = self.file_to_labels[relpath]
 
             for _, row in group.iterrows():
                 start_sample = int(row["chunk_start"] * self.sample_rate)
@@ -168,7 +164,7 @@ class BirdCLEF102Dataset(Dataset):
                 skipped += 1
                 continue
 
-            label_vec = self.file_to_labels.get(Path(row["filename"]).name)
+            label_vec = self.file_to_labels.get(row["filename"])
             if label_vec is None:
                 skipped += 1
                 continue

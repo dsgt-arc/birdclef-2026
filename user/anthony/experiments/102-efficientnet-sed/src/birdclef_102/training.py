@@ -129,8 +129,9 @@ class TrainingModule(pl.LightningModule):
             weight_decay=self.hparams.weight_decay,
         )
 
+        cosine_epochs = self.hparams.max_epochs - self.hparams.warmup_epochs
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.hparams.max_epochs, eta_min=1e-6
+            optimizer, T_max=max(cosine_epochs, 1), eta_min=1e-6
         )
 
         if self.hparams.warmup_epochs > 0:
