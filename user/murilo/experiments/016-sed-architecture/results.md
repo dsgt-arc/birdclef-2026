@@ -32,11 +32,23 @@ augmentation, loss function, and inference strategy.
 
 | Model | Architecture | LB | vs Exp 012 Best |
 |-------|-------------|-----|-----------------|
-| **EfficientNet-B0 SED v1** | **SED** | **0.795** | **+0.028** |
+| **EfficientNet-B0 SED v1 + pp** | **SED + TTA + smoothing + TopN** | **0.823** | **+0.056** |
+| EfficientNet-B0 SED v1 | SED | 0.795 | +0.028 |
 | ProtoCLR (exp 012) | Clip | 0.767 | baseline |
 | ConvNeXt (exp 012) | Clip | 0.755 | −0.012 |
 | EAT (exp 012) | Clip | 0.720 | −0.047 |
 | Competition reference | SED | 0.908 | +0.141 |
+
+### Post-Processing Impact (v1 model, no retraining)
+
+| Technique | LB | Delta |
+|-----------|-----|-------|
+| v1 baseline | 0.795 | — |
+| **+ TTA + smoothing + TopN** | **0.823** | **+0.028** |
+
+TTA (2.5s temporal shifts, 3× forward passes), Gaussian temporal smoothing
+([0.1, 0.2, 0.4, 0.2, 0.1]), TopN (file-level max multiplication). Combined
+gain +0.028 vs estimated +0.033. These are free inference-time improvements.
 
 ### Offline Test Set
 
@@ -91,14 +103,10 @@ trained AND inferred on 10s.
 **Fix**: Implement 10s overlapping inference with 5s step. Load 10s centered on each
 5s target, run inference, reconstruct per-5s predictions.
 
-### 5. Post-Processing (est. +0.02–0.03 combined)
+### 5. Post-Processing — CLOSED (+0.028 confirmed)
 
-We have zero post-processing. Free gains available:
-- TopN postprocessing: +0.011 LB (multiply by file-level max per species)
-- Temporal smoothing: +0.010 LB (Gaussian kernel across segments)
-- TTA: +0.012 LB (2.5s temporal shifts, average 3 predictions)
-
-**Fix**: Add to submission.py. No retraining needed.
+~~We have zero post-processing.~~ **Implemented and confirmed: +0.028 LB (0.795 → 0.823).**
+- TopN postprocessing + temporal smoothing + TTA all enabled in submission.py.
 
 ### 6. Training Duration (est. +0.005–0.01)
 
@@ -114,9 +122,9 @@ steps per epoch (29K samples with 10s random crops vs potentially more with
 | NS-JFT pretrained | +0.01–0.02 | Config change |
 | CE/ASL loss | +0.01–0.02 | Loss function change |
 | 10s inference | +0.01–0.02 | Inference pipeline change |
-| Post-processing | +0.02–0.03 | submission.py only |
-| **Total estimated** | **+0.08–0.13** | |
-| **Gap to close** | **+0.113** | |
+| ~~Post-processing~~ | ~~+0.02–0.03~~ | **DONE: +0.028 confirmed** |
+| **Total remaining** | **+0.05–0.10** | |
+| **Remaining gap** | **+0.085** (0.823 → 0.908) | |
 
 The estimated gains align with the observed 0.113 gap. Closing all gaps
 should bring us to ~0.88–0.92, within range of the 0.908 reference.

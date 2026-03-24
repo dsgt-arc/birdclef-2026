@@ -120,13 +120,13 @@ loss, 10s windows, spectrogram mixup, 32kHz.
 
 | Slug | Encoder | Architecture | Classes | Test AUROC | Test cmAP | Best Epoch | LB | Checkpoint |
 |------|---------|-------------|---------|-----------|----------|------------|-----|------------|
-| `effnet-b0-sed-v1` | EfficientNet-B0 | SED (GeM + AttHead) | 234 | **0.860** | **0.593** | 24 | **0.795** | `016-.../2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
+| `effnet-b0-sed-v1` | EfficientNet-B0 | SED (GeM + AttHead) | 234 | **0.860** | **0.593** | 24 | 0.795 / **0.823** (+ pp) | `016-.../2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
 
 ### Comparison: SED vs Clip-Level (offline test set)
 
 | Model | Architecture | Test AUROC | Test cmAP | LB |
 |-------|-------------|-----------|----------|-----|
-| **EfficientNet-B0 SED** | **SED (GeM + AttHead)** | **0.860** | **0.593** | **0.795** |
+| **EfficientNet-B0 SED** | **SED (GeM + AttHead)** | **0.860** | **0.593** | 0.795 / **0.823** (+pp) |
 | ProtoCLR (exp 012) | Clip (global avg pool) | 0.845 | 0.481 | 0.767 |
 | ConvNeXt (exp 012) | Clip (global avg pool) | 0.844 | 0.470 | 0.755 |
 | EAT (exp 012) | Clip (global avg pool) | 0.838 | 0.452 | 0.720 |
@@ -136,10 +136,13 @@ using a smaller backbone (3.6M params vs 19-90M for our LoRA encoders). The cmAP
 improvement is particularly notable — SED's framewise detection captures brief calls
 that clip-level averaging misses.
 
-**Competition reference**: EfficientNet-B0 SED = 0.908 LB (competitor). Our 0.795 leaves
-a 0.113 gap — likely from: standard ImageNet init (vs NS-JFT), spectrogram mixup (vs raw
-waveform), soft CE (vs CE/ASL), no post-processing (TopN/smoothing/TTA), and 5s inference
-windows (trained on 10s). See exp 016 results.md for gap analysis.
+**Post-processing**: TTA (2.5s shifts) + temporal smoothing (Gaussian) + TopN (file-level
+max multiplication) added +0.028 LB (0.795 → 0.823) with zero retraining.
+
+**Competition reference**: EfficientNet-B0 SED = 0.908 LB (competitor). Remaining gap
+0.085 — likely from: standard ImageNet init (vs NS-JFT), spectrogram mixup (vs raw
+waveform), soft CE (vs CE/ASL), and 5s inference windows (trained on 10s).
+See exp 016 results.md for gap analysis.
 
 ### Training Dynamics
 

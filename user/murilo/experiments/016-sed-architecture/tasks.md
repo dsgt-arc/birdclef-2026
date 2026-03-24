@@ -110,7 +110,8 @@ SED beats all clip-level models: +0.015 AUROC, **+0.112 cmAP** over best clip-le
 
 | Model | Exp 012 Best | Exp 016 LB | Target |
 |-------|-------------|-----------|--------|
-| EfficientNet-B0 SED | 0.767 (ProtoCLR) | **0.795** | ≥0.85 |
+| EfficientNet-B0 SED v1 | 0.767 (ProtoCLR) | 0.795 | ≥0.85 |
+| EfficientNet-B0 SED v1 + pp | — | **0.823** | — |
 
 ## 6. Extend SED to Existing Encoders (after EfficientNet-B0 validates)
 
@@ -149,8 +150,8 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 - [x] 7.2 Add temporal smoothing to submission.py (+0.010)
 - [x] 7.3 Add TTA 2.5s shifts to submission.py (+0.012)
 - [ ] 7.4 Model soup: average epochs 20-24 checkpoints, re-export ONNX
-- [ ] 7.5 Record LB with post-processing — **Kaggle inference running**
-      Kernel: `birdclef-2026-effnet-b0-sed-v1` (new notebook with EffNet slug)
+- [x] 7.5 LB with post-processing: **0.823** (+0.028 over v1 baseline 0.795)
+      TTA + smoothing + TopN confirmed +0.028 gain (estimated was +0.033)
 
 ## 8. Training v2 — Close the Gap (est. +0.05–0.08)
 
