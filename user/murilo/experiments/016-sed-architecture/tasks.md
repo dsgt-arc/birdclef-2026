@@ -8,6 +8,27 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 **Competition reference**: EfficientNet-B0 SED single model = 0.908 LB
 **Our baseline** (exp 012): ProtoCLR 0.767, ConvNeXt 0.755, EAT 0.720
 
+### Current Status (2026-03-24)
+
+- **Branch**: `mg/016-sed-improvements` (PR #18)
+- **Best LB**: **0.823** (v1 + post-processing)
+- **v2 training running**: NS-JFT pretrained + CE loss (`efficientnet_b0_sed_v2.yaml`)
+- **Next session**: Check v2 training results → export ONNX → submit with post-processing
+- **Key references**:
+  - [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
+  - [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/discussions/perch-protossm-zirach.md) (0.913 LB)
+
+### Score Progression
+
+| Version | Changes | LB |
+|---------|---------|-----|
+| Exp 012 ProtoCLR | Clip-level baseline | 0.767 |
+| Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 |
+| Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** |
+| Exp 016 v2 | + NS-JFT pretrained + CE loss | **pending** |
+| Exp 016 v2 + pp | + post-processing | pending |
+| Target | Close gap to competitor | ≥0.85 |
+
 ---
 
 ## 1. Setup
@@ -157,9 +178,11 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 
 - [x] 8.1 Created v2 config: `tf_efficientnet_b0.ns_jft_in1k` + CE loss with label_smoothing=0.05
 - [x] 8.2 Made loss_type configurable in SEDFinetuneModule ("soft_ce" for v1, "ce" for v2)
-- [ ] 8.3 Submit v2 training: `bash sbatch/run.sh config/efficientnet_b0_sed_v2.yaml`
+- [x] 8.3 v2 training submitted — **SLURM job running** (NS-JFT + CE loss)
+      Config: `config/efficientnet_b0_sed_v2.yaml`
+      Changes: `tf_efficientnet_b0.ns_jft_in1k`, loss_type="ce", label_smoothing=0.05
 - [ ] 8.4 Record v2 results, compare to v1
-- [ ] 8.5 Submit v2 to Kaggle LB, target ≥0.85
+- [ ] 8.5 Export v2 to ONNX + submit to Kaggle LB with post-processing, target ≥0.85
 - [ ] 8.6 Implement raw waveform mixup (move mel to model forward, mixup before mel)
 - [ ] 8.7 Implement 10s overlapping inference (load 10s centered on 5s target)
 
@@ -175,23 +198,21 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 See [competition discussion analysis](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
 for full details on each technique, confirmed LB impacts, and code snippets.
 
-### Immediate Improvements (next training run)
+### Immediate Improvements (in progress / next)
 
-- **NS-JFT pretrained weights**: Switch from `efficientnet_b0` (standard ImageNet) to
-  `tf_efficientnet_b0.ns_jft_in1k` (Noisy Student on JFT-300M). Competitor confirmed
-  it consistently outperforms standard ImageNet init for audio spectrograms.
-- **ASL loss**: Consider replacing soft CE with Asymmetric Loss (γ⁻=4, γ⁺=0, clip=0.05).
-  Competitor ablation: +0.023 over BCE. Handles multi-label natively without normalization.
-- **Raw waveform mixup**: Current spectrogram mixup vs competitor's raw waveform mixup.
-  2025 2nd place confirmed +0.036 Private LB from audio-domain mixup. Requires moving
-  mel transform to model forward pass or custom collate.
+- ~~**NS-JFT pretrained weights**~~: **Done in v2** — `tf_efficientnet_b0.ns_jft_in1k`
+- ~~**CE loss**~~: **Done in v2** — loss_type="ce" with label_smoothing=0.05
+- **ASL loss**: If CE doesn't help, try Asymmetric Loss (γ⁻=4, γ⁺=0, clip=0.05).
+  Competitor ablation: +0.023 over BCE.
+- **Raw waveform mixup**: Biggest remaining gap (est. +0.03-0.04). Requires moving mel
+  transform to model forward pass or custom collate.
 
-### Free Post-Processing (no retraining, add to submission.py)
+### Free Post-Processing — DONE (+0.028 confirmed)
 
-- **TopN postprocessing** (+0.011 LB): `preds *= preds.max(axis=0, keepdims=True)`
-- **Temporal smoothing** (+0.010 LB): Gaussian [0.1, 0.2, 0.4, 0.2, 0.1] across segments
-- **TTA: 2.5s shifts** (+0.012 LB): 3 predictions per segment (0, −2.5s, +2.5s), average
-- **Model soup** (free stability): Average last 3-5 epoch checkpoints
+- ~~TopN postprocessing~~: ✅
+- ~~Temporal smoothing~~: ✅
+- ~~TTA 2.5s shifts~~: ✅
+- **Model soup** (still todo): Average last 3-5 epoch checkpoints
 
 ### Larger Improvements
 
