@@ -282,6 +282,110 @@ The codec tokenization makes the search fast (DNA-style k-mer matching).
 
 See `docs/concepts/codec-motif-search.md` for the search component.
 
+## Prompted Separation: Reference-Conditioned Source Extraction
+
+### Idea
+
+Instead of blind separation into N fixed channels, condition the separator
+on a reference call: "here's what species X sounds like — extract it from
+this soundscape." This is **target sound extraction**, adapted from the
+speech domain's "speaker extraction" literature.
+
+```
+Input:  [reference call of species X] + [60s soundscape]
+Output: [just the species X parts of the soundscape]
+```
+
+Run it N times with N different reference calls to extract N species.
+No fixed channel count, no channel assignment ambiguity.
+
+### Why this is better than blind MixIT
+
+| Blind MixIT (4 channels) | Prompted extraction |
+|--------------------------|---------------------|
+| Fixed 4 channels for 8+ species | One extraction per query species |
+| No control over what goes where | Reference defines what to extract |
+| Channels contain species mixtures | Each output is one species (ideally) |
+| Can't handle new species at inference | Zero-shot: any species with a focal recording |
+
+### Training
+
+Use focal recordings as both references and targets:
+
+1. Form MoM: `focal_A + focal_B`
+2. Reference: a different recording of species A (or a chunk of focal_A)
+3. Target: reconstruct `focal_A` from the MoM
+4. The model learns: "given this reference, pull out matching sounds"
+
+The reference and target should be different recordings of the same species
+(not the same file) to force the model to learn species-level features
+rather than memorizing specific recordings.
+
+### Soundscape MoMs
+
+Training can also use soundscape-only MoMs:
+
+- `soundscape_A + soundscape_B` as input
+- No reference needed for MixIT training (unsupervised)
+- At inference, add the reference conditioning
+
+Or a **hybrid**: MixIT pretraining on soundscape MoMs (learn to separate
+in-domain audio), then supervised fine-tuning with focal references
+(learn to condition on reference calls).
+
+### Architecture
+
+The conditioning can be injected via:
+
+| Method | How | Precedent |
+|--------|-----|-----------|
+| FiLM | Reference embedding scales/shifts intermediate features | SpeakerBeam |
+| Cross-attention | Separator attends to reference features | VoiceFilter-Lite |
+| Concatenation | Reference features prepended to encoder input | Simple, works for Mamba |
+| Codec tokens | Reference as token prefix, separator as sequence model | Novel — connects to codec motif search |
+
+For Mamba: concatenation is natural. Prepend reference tokens to the
+soundscape tokens, let the recurrence build up "what to listen for"
+in the hidden state before processing the soundscape. This is the same
+prompted processing pattern from exp 011 (prompted SED) but applied to
+separation.
+
+### Connection to codec motif search
+
+The prompted separator and codec search solve the same problem differently:
+
+| | Prompted separator | Codec motif search |
+|---|---|---|
+| Input | Reference waveform + soundscape | Reference tokens + soundscape tokens |
+| Method | Neural network extraction | Sequence alignment |
+| Output | Separated waveform | Match positions + scores |
+| Training | Requires training | No training (search algorithm) |
+| Temporal output | Full extracted waveform | Time positions of matches |
+
+They could work together:
+1. **Codec search** (fast, no training) identifies which species are present
+   and approximately when
+2. **Prompted separator** (slower, trained) extracts clean audio for those
+   species at the identified times
+3. **Classifier** confirms species identity on the cleaned audio
+
+### Existing work
+
+- **SpeakerBeam** (Delcroix et al., 2018): target speaker extraction
+  conditioned on enrollment utterance
+- **VoiceFilter** (Wang et al., 2019): Google's speaker-conditioned separation
+- **Universal Sound Separation** (Kavalerov et al., 2019): query-based
+  separation for arbitrary sounds
+- **No published work on reference-conditioned bioacoustic separation**
+
+### Testable hypothesis
+
+**H6 (Prompted separation)**: A reference-conditioned separator, given a
+focal recording of species X and a soundscape containing species X, can
+extract species X's vocalization at >6 dB SI-SNR improvement. This would
+enable per-species clean audio extraction from dense soundscapes, directly
+feeding into both classification and codec-based indexing.
+
 ## Notes
 
 - **Asteroid is already a biodenoising dependency**, so adding it to the pipeline introduces no new top-level dependency.
