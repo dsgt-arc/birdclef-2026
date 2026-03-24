@@ -96,8 +96,8 @@ SED beats all clip-level models: +0.015 AUROC, **+0.112 cmAP** over best clip-le
       submission.py (MODEL_SLUGS + output_type=probs handling)
 - [x] 5.3 ONNX exported: `bash sbatch/run.sh export --model effnet-b0-sed-v1`
 - [x] 5.4 Uploaded + pushed kernel: `upload_kaggle.py --model effnet-b0-sed-v1 --push-kernel`
-- [ ] 5.5 Verify species_mapping.json has 234 items on Kaggle
-- [ ] 5.6 Record LB score — **Kaggle inference running**
+- [x] 5.5 Verified species_mapping.json has 234 items on Kaggle
+- [x] 5.6 LB score: **0.795** (+0.028 over exp 012 ProtoCLR 0.767, but far from 0.908 target)
 
 ### Key Implementation Notes for SED ONNX
 
@@ -110,7 +110,7 @@ SED beats all clip-level models: +0.015 AUROC, **+0.112 cmAP** over best clip-le
 
 | Model | Exp 012 Best | Exp 016 LB | Target |
 |-------|-------------|-----------|--------|
-| EfficientNet-B0 SED | 0.767 (ProtoCLR) | pending | ≥0.85 |
+| EfficientNet-B0 SED | 0.767 (ProtoCLR) | **0.795** | ≥0.85 |
 
 ## 6. Extend SED to Existing Encoders (after EfficientNet-B0 validates)
 
@@ -143,10 +143,26 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
   apply 1D temporal attention directly on the token sequence. May need a modified
   AttHead variant (AttHead1D) that skips GeM and takes (B, T, C) input.
 
-## 7. Documentation
+## 7. Quick Wins — Post-Processing (no retraining, est. +0.03 combined)
 
-- [x] 7.1 Update MODEL-RUNS.md with exp 016 offline results
-- [ ] 7.2 Create results.md (after LB score)
+- [ ] 7.1 Add TopN postprocessing to submission.py (+0.011): `preds *= preds.max(axis=0)`
+- [ ] 7.2 Add temporal smoothing to submission.py (+0.010): Gaussian kernel
+- [ ] 7.3 Add TTA 2.5s shifts to submission.py (+0.012): average 3 predictions
+- [ ] 7.4 Model soup: average epochs 20-24 checkpoints, re-export ONNX
+- [ ] 7.5 Re-submit to Kaggle, record improved LB
+
+## 8. Training v2 — Close the Gap (est. +0.05–0.08)
+
+- [ ] 8.1 Switch to `tf_efficientnet_b0.ns_jft_in1k` (NS-JFT pretrained)
+- [ ] 8.2 Replace soft CE with standard CE + label_smoothing=0.05 (or try ASL γ⁻=4)
+- [ ] 8.3 Implement raw waveform mixup (move mel to model forward, mixup before mel)
+- [ ] 8.4 Implement 10s overlapping inference (load 10s centered on 5s target)
+- [ ] 8.5 Train v2, submit to Kaggle, target ≥0.85
+
+## 9. Documentation
+
+- [x] 9.1 Update MODEL-RUNS.md with LB score
+- [x] 9.2 Create results.md with gap analysis
 
 ---
 

@@ -1,0 +1,155 @@
+# Experiment 016: SED Architecture — Results
+
+## Summary
+
+**Hypothesis**: SED architecture (GeM + AttHead + dual CE loss + 10s windows) will
+improve LB by ≥0.05 over exp 012 baseline (0.767).
+
+**Result**: **Partially confirmed.** LB improved to **0.795** (+0.028 over baseline),
+but fell far short of the 0.908 competition reference. The SED architecture works —
+it's our best single-model LB score — but significant gaps remain in pretraining,
+augmentation, loss function, and inference strategy.
+
+---
+
+## Training Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| Encoder | EfficientNet-B0 (`efficientnet_b0`, standard ImageNet RA pretrained) |
+| Architecture | SED: GeM freq pooling → AttHead (512 hidden, 0.5 dropout) |
+| Loss | Soft CE (normalized multi-hot) on clipwise + framewise max (0.5/0.5) |
+| Input | 10s windows, 32kHz, 128 mel bins |
+| Augmentation | Spectrogram mixup (prob=0.5, alpha=0.5) |
+| Optimizer | AdamW, backbone lr=1e-4, head lr=1e-3 |
+| Batch | 128 × accumulate=2 = 256 effective |
+| Epochs | 40 max, patience=10, best at epoch 24, stopped at 34 |
+| Inference | 5s windows (trained on 10s), blended 0.75 clip + 0.25 framewise max |
+
+## Results
+
+### Leaderboard
+
+| Model | Architecture | LB | vs Exp 012 Best |
+|-------|-------------|-----|-----------------|
+| **EfficientNet-B0 SED v1** | **SED** | **0.795** | **+0.028** |
+| ProtoCLR (exp 012) | Clip | 0.767 | baseline |
+| ConvNeXt (exp 012) | Clip | 0.755 | −0.012 |
+| EAT (exp 012) | Clip | 0.720 | −0.047 |
+| Competition reference | SED | 0.908 | +0.141 |
+
+### Offline Test Set
+
+| Model | Test AUROC | Test cmAP |
+|-------|-----------|----------|
+| **EfficientNet-B0 SED** | **0.860** | **0.593** |
+| ProtoCLR (exp 012) | 0.845 | 0.481 |
+| ConvNeXt (exp 012) | 0.844 | 0.470 |
+| EAT (exp 012) | 0.838 | 0.452 |
+
+---
+
+## Gap Analysis: Our 0.795 vs Competitor's 0.908
+
+The 0.113 gap can be attributed to several differences between our implementation
+and the competitor's approach. Ordered by estimated impact:
+
+### 1. Raw Waveform Mixup vs Spectrogram Mixup (est. +0.03–0.04)
+
+The competitor used "Mixup on Raw Waves". We use spectrogram-domain mixup.
+The 2025 2nd place confirmed **+0.036 Private LB** from audio-domain mixup
+(0.835→0.871 in their ablation). This is likely our single biggest gap.
+
+**Fix**: Move mel transform from dataset `__getitem__` to model forward pass,
+apply mixup on raw waveforms before mel conversion.
+
+### 2. NS-JFT Pretrained Weights (est. +0.01–0.02)
+
+We use `efficientnet_b0` (standard ImageNet RA pretrained). The competitor
+and the SED model comparison study both found `tf_efficientnet_b0.ns_jft_in1k`
+(Noisy Student trained on JFT-300M) consistently outperforms standard ImageNet
+for audio spectrograms.
+
+**Fix**: Change `model_name` in config to `tf_efficientnet_b0.ns_jft_in1k`.
+
+### 3. Loss Function: CE/ASL vs Soft CE (est. +0.01–0.02)
+
+The competitor used "CrossEntropyLoss on clipwise and framewise max" — likely
+standard CE with label smoothing, not our soft CE with normalized multi-hot.
+The competitor model comparison found ASL (γ⁻=4) gained +0.023 over BCE.
+Our soft CE normalization may weaken the training signal for single-species
+segments (majority of focal data).
+
+**Fix**: Try standard CE with label smoothing=0.05, or ASL (γ⁻=4, γ⁺=0, clip=0.05).
+
+### 4. Inference Window Mismatch (est. +0.01–0.02)
+
+We trained on 10s windows but infer on 5s (500 frames instead of 1000). The model
+learned temporal patterns over 10s that are halved at inference. The competitor
+trained AND inferred on 10s.
+
+**Fix**: Implement 10s overlapping inference with 5s step. Load 10s centered on each
+5s target, run inference, reconstruct per-5s predictions.
+
+### 5. Post-Processing (est. +0.02–0.03 combined)
+
+We have zero post-processing. Free gains available:
+- TopN postprocessing: +0.011 LB (multiply by file-level max per species)
+- Temporal smoothing: +0.010 LB (Gaussian kernel across segments)
+- TTA: +0.012 LB (2.5s temporal shifts, average 3 predictions)
+
+**Fix**: Add to submission.py. No retraining needed.
+
+### 6. Training Duration (est. +0.005–0.01)
+
+Competitor trained 20+ epochs. We trained 24 epochs (best) but on fewer
+steps per epoch (29K samples with 10s random crops vs potentially more with
+5s chunks or oversampling).
+
+### Gap Summary
+
+| Gap | Estimated Impact | Effort |
+|-----|-----------------|--------|
+| Raw waveform mixup | +0.03–0.04 | Pipeline change |
+| NS-JFT pretrained | +0.01–0.02 | Config change |
+| CE/ASL loss | +0.01–0.02 | Loss function change |
+| 10s inference | +0.01–0.02 | Inference pipeline change |
+| Post-processing | +0.02–0.03 | submission.py only |
+| **Total estimated** | **+0.08–0.13** | |
+| **Gap to close** | **+0.113** | |
+
+The estimated gains align with the observed 0.113 gap. Closing all gaps
+should bring us to ~0.88–0.92, within range of the 0.908 reference.
+
+---
+
+## Recommendations (Priority Order)
+
+### Phase 1: Quick Wins (no retraining)
+
+1. **Add post-processing to submission.py**: TopN + temporal smoothing + TTA (+0.03)
+2. **Model soup**: Average epochs 20-24 checkpoints (free stability)
+
+### Phase 2: Training Improvements (v2 run)
+
+3. **Switch to NS-JFT weights**: `tf_efficientnet_b0.ns_jft_in1k` (config change)
+4. **Standard CE with label smoothing=0.05** instead of soft CE (loss change)
+5. **Raw waveform mixup** (pipeline change — biggest expected gain)
+6. **10s overlapping inference** (inference change)
+
+### Phase 3: Advanced Techniques
+
+7. **Perch knowledge distillation** (+0.030 from competitor ablation)
+8. **Multi-round pseudo-labels with PowerTransform** (2025 1st place: +0.032)
+9. **Extend SED to ProtoCLR/ConvNeXt/EAT** for ensemble diversity
+10. **SoftAUCLoss** in later pseudo-label rounds
+
+---
+
+## Artifacts
+
+- Checkpoint: `.../016-sed-architecture/checkpoints/2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt`
+- ONNX: `010-submission-pipeline/artifacts/weights/effnet-b0-sed-v1/model.onnx`
+- Metrics: `016-sed-architecture/artifacts/training/efficientnet_b0_sed/metrics.json`
+- GPU check: `016-sed-architecture/outputs/gpu_check/2026-effnet-b0-sed-v1_5430838.{txt,png}`
+- W&B: `dsgt-arc/birdclef-2026-sed-architecture`
