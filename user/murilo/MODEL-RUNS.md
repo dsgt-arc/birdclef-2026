@@ -112,6 +112,40 @@ yet the pseudo-labels encode the ProtoCLR+ConvNeXt teachers' behavior which may
 conflict with EAT's learned representations. The clip-level architecture is the
 primary bottleneck — exp 016 (SED) addresses this directly.
 
+## BirdCLEF 2026 Models — SED Architecture (exp 016)
+
+EfficientNet-B0 with SED attention head (GeM freq pooling + attention + framewise max).
+Trained from ImageNet-pretrained backbone (no prior BirdCLEF checkpoint). Soft CE dual
+loss, 10s windows, spectrogram mixup, 32kHz.
+
+| Slug | Encoder | Architecture | Classes | Test AUROC | Test cmAP | Best Epoch | LB | Checkpoint |
+|------|---------|-------------|---------|-----------|----------|------------|-----|------------|
+| `effnet-b0-sed-v1` | EfficientNet-B0 | SED (GeM + AttHead) | 234 | **0.860** | **0.593** | 24 | pending | `016-.../2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
+
+### Comparison: SED vs Clip-Level (offline test set)
+
+| Model | Architecture | Test AUROC | Test cmAP | LB |
+|-------|-------------|-----------|----------|-----|
+| **EfficientNet-B0 SED** | **SED (GeM + AttHead)** | **0.860** | **0.593** | pending |
+| ProtoCLR (exp 012) | Clip (global avg pool) | 0.845 | 0.481 | 0.767 |
+| ConvNeXt (exp 012) | Clip (global avg pool) | 0.844 | 0.470 | 0.755 |
+| EAT (exp 012) | Clip (global avg pool) | 0.838 | 0.452 | 0.720 |
+
+SED architecture achieves +0.015 AUROC and +0.112 cmAP over the best clip-level model,
+using a smaller backbone (3.6M params vs 19-90M for our LoRA encoders). The cmAP
+improvement is particularly notable — SED's framewise detection captures brief calls
+that clip-level averaging misses.
+
+**Competition reference**: EfficientNet-B0 SED = 0.908 LB (competitor, same architecture).
+
+### Training Dynamics
+
+Strong learning curve from random init:
+- Epoch 0: val/auroc 0.517 (random)
+- Epoch 8: val/auroc 0.833 (rapid improvement)
+- Epoch 18: val/auroc 0.844 (plateauing)
+- Epoch 24: val/auroc 0.845 (best, early stopped at epoch 34)
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
