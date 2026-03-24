@@ -13,7 +13,8 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 - **Branch**: `mg/016-sed-improvements` (PR #18)
 - **Best LB**: **0.823** (v1 + post-processing)
 - **v2 training complete**: NS-JFT + CE loss **regressed** (test/auroc 0.837, LB 0.755)
-- **v3 ablation running**: 3 parallel runs isolating TF weights (v3a), waveform mixup (v3b), CE loss (v3c)
+- **v3 ablation complete**: v3b LB 0.802 (worse than v1+pp 0.823), v3a/v3c LB pending
+- **v3d (EfficientNetV2-B0) training**: most promising — competitor used V2 not V1
 - **Key references**:
   - [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
   - [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach-analysis.md) (0.913 LB)
@@ -25,7 +26,11 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 | Exp 012 ProtoCLR | Clip-level baseline | 0.767 |
 | Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 |
 | Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** |
-| Exp 016 v2 + pp | + NS-JFT + CE + post-processing | **0.755** (regression: −0.068 vs v1+pp) |
+| Exp 016 v2 + pp | + NS-JFT + CE + post-processing | 0.755 (regression) |
+| Exp 016 v3b + pp | + raw waveform mixup + pp | 0.802 (regression) |
+| Exp 016 v3a + pp | + TF-ported weights + pp | pending |
+| Exp 016 v3c + pp | + standard CE loss + pp | pending |
+| Exp 016 v3d | EfficientNetV2-B0 | training... |
 | Target | Close gap to competitor | ≥0.85 |
 
 ---
@@ -198,9 +203,15 @@ Three parallel runs, each changing one variable from v1 baseline:
 - [x] 9.3 v3c config: `loss_type="ce"`, `label_smoothing=0.0` (standard CE)
 - [x] 9.4 Tests: 29 pytest tests covering all v3 changes + backward compat
 - [x] 9.5 All three submitted to SLURM (running in parallel)
-- [ ] 9.6 Record v3a/v3b/v3c results, compare to v1
-- [ ] 9.7 Export best v3 to ONNX + submit to Kaggle LB
-- [ ] 9.8 If multiple help → combine winners into v4
+- [x] 9.6 Record v3a/v3b/v3c results:
+      v3a (TF weights): test/auroc 0.857, test/cmap 0.599 (flat vs v1)
+      v3b (waveform mixup): test/auroc 0.862, test/cmap 0.607 (+0.014 cmAP, but LB 0.802 — worse than v1+pp 0.823)
+      v3c (CE loss): test/auroc 0.850, test/cmap 0.552 (hurt, soft CE is better)
+- [x] 9.7 Export v3a/v3b/v3c + submit to Kaggle LB (v3b=0.802, v3a/v3c pending)
+- [x] 9.8 v3d config created: EfficientNetV2-B0 (tf_efficientnetv2_b0.in1k) — competitor
+      confirmed using V2 not V1. Training submitted.
+- [ ] 9.9 Record v3d results + submit to Kaggle LB
+- [ ] 9.10 If v3d helps → combine with waveform mixup into v4
 
 ## 9. Documentation
 
