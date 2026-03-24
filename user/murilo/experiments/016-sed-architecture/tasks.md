@@ -145,11 +145,12 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 
 ## 7. Quick Wins — Post-Processing (no retraining, est. +0.03 combined)
 
-- [ ] 7.1 Add TopN postprocessing to submission.py (+0.011): `preds *= preds.max(axis=0)`
-- [ ] 7.2 Add temporal smoothing to submission.py (+0.010): Gaussian kernel
-- [ ] 7.3 Add TTA 2.5s shifts to submission.py (+0.012): average 3 predictions
+- [x] 7.1 Add TopN postprocessing to submission.py (+0.011)
+- [x] 7.2 Add temporal smoothing to submission.py (+0.010)
+- [x] 7.3 Add TTA 2.5s shifts to submission.py (+0.012)
 - [ ] 7.4 Model soup: average epochs 20-24 checkpoints, re-export ONNX
-- [ ] 7.5 Re-submit to Kaggle, record improved LB
+- [ ] 7.5 Record LB with post-processing — **Kaggle inference running**
+      Kernel: `birdclef-2026-effnet-b0-sed-v1` (new notebook with EffNet slug)
 
 ## 8. Training v2 — Close the Gap (est. +0.05–0.08)
 
