@@ -1,166 +1,106 @@
 # Experiment Ladder
 
-Progressive runs building toward a competitive single model. Each step adds
-one change. Earlier steps inform later ones — if a step doesn't help, skip
-the downstream steps that depend on it.
+Progressive runs building toward a strong single model. Each step adds one
+change. Each has a decision gate — if it doesn't help, skip it.
 
 ## Phase 1: Architecture
 
-Find the best model architecture on focal data only.
+| Run | Change | Config |
+|-----|--------|--------|
+| A | Frozen backbone + avg pool | `run-a-frozen.yaml` |
+| B | LoRA r=8 + avg pool | `run-b-lora.yaml` |
+| C | LoRA r=8 + attention + GEMM(512) | `run-c-lora-attention.yaml` |
 
-| Run | Change | Config | Depends on |
-|-----|--------|--------|------------|
-| A | Frozen backbone + avg pool | `run-a-frozen.yaml` | — |
-| B | LoRA r=8 + avg pool | `run-b-lora.yaml` | — |
-| C | LoRA r=8 + attention + GEMM(512) | `run-c-lora-attention.yaml` | — |
+**Gate**: Pick best by val/cmap.
 
-**Decision gate**: Pick best architecture by val/cmap. If B ≈ A, LoRA isn't
-helping and we should investigate why before proceeding. If C > B, attention
-pooling is worth the complexity.
+## Phase 2: Class Weighting
 
-### LoRA rank sweep (optional, after C)
+Apply per-species weights to the loss so rare species contribute more.
+Use on best architecture from Phase 1.
 
-If LoRA helps, test whether more capacity helps further.
+| Formula | Description |
+|---------|-------------|
+| Inverse frequency | `w = 1/count`, normalized to mean 1.0 |
+| Inverse square root | `w = 1/sqrt(count)`, normalized to mean 1.0 |
 
-| Run | Rank | Alpha |
-|-----|------|-------|
-| C-r16 | 16 | 32 |
-| C-r32 | 32 | 64 |
+The 2025 1st place used `count^(-0.5)` (inverse square root). Full inverse
+can over-amplify singleton species (1 recording → huge weight). Test both.
 
-## Phase 2: Sample Weighting
+Class weights already computed in exp 100 `class_weights.json` (inverse
+frequency). Need to add inverse square root variant.
 
-Use activity scores to weight focal training samples. Applied to the best
-architecture from Phase 1.
+**Gate**: Check rare species val/auroc. Keep if rare species improve >0.02
+without hurting common species.
 
-| Run | Change | Depends on |
-|-----|--------|------------|
-| E | Activity score sample weighting | Best from Phase 1 |
+## Phase 3: Sample Weighting / Filtering
 
-Uses `activity_score` from `focal_activity.parquet` as per-sample weight
-in BCE loss. High-activity chunks (likely containing calls) contribute more
-gradient. Low-activity chunks (likely silence) contribute less.
+Use activity scores to handle focal chunks that are mostly silence.
 
-**Decision gate**: If val/cmap improves, keep weighting for all subsequent runs.
+| Variant | Description |
+|---------|-------------|
+| Soft weight | `activity_score` as sample weight in BCE loss |
+| Hard filter | Drop chunks with `activity_score < threshold` |
 
-## Phase 3: Class Weighting
+The research suggests hard filtering (dropping bad chunks) may work
+better than soft weighting. Test both.
 
-Address the 499x class imbalance. Rare species (1-3 recordings) should
-contribute more to the loss than common species (499 recordings).
-
-| Run | Change | Depends on |
-|-----|--------|------------|
-| F | Per-species class weights in BCE loss | E |
-
-Class weights from exp 100 `class_weights.json` (inverse frequency,
-normalized to mean 1.0). Applies per-class weighting to the loss so rare
-amphibians/insects get proportionally more gradient.
-
-**Decision gate**: Check if rare species val/auroc improves without hurting
-common species. If rare species improve by >0.02 auroc, keep.
+**Gate**: Compare val/cmap. If neither helps, focal chunks are fine as-is.
 
 ## Phase 4: Focal Mixup
 
-Mix focal recordings to create synthetic training examples. Increases
-diversity without adding new data sources.
+Mix focal recordings to create multi-species training examples.
 
-| Run | Change | Depends on |
-|-----|--------|------------|
-| G-2 | Mixup 2 focal clips | F |
-| G-4 | Mixup 4 focal clips | F |
-| G-8 | Mixup 8 focal clips | F |
+| Variant | Description |
+|---------|-------------|
+| 2-clip, alpha=0.3 | Standard mixup, conservative |
+| 2-clip, alpha=1.0 | Standard mixup, uniform weights |
+| 8-clip, Dirichlet | Match soundscape density (~8 species/window) |
 
-Standard audio mixup: sample N clips, mix waveforms with random weights
-(Dirichlet-sampled), union the species labels. This creates multi-species
-training examples that better match the soundscape domain (which has 8+
-species per window).
+Start with 2-clip alpha=0.3 (close to what the 2025 1st place used at
+alpha=0.15). Only try higher if 2-clip helps.
 
-**Decision gate**: Pick best N by val/cmap. If none help, mixup may not be
-useful with focal-only data. If 4 or 8 source mixup helps, the model is
-learning to handle multi-species inputs.
+**Gate**: If 2-clip doesn't help, skip higher counts.
 
-## Phase 5: Cross-Taxa Mixup
+## Phase 5: No-Call Class
 
-Mix focal recordings across taxonomic groups to create realistic multi-taxa
-training examples matching the Pantanal soundscape distribution.
+Add soundscape silence as negative training examples.
 
-| Run | Change | Depends on |
-|-----|--------|------------|
-| H | Cross-taxa mixup (bird + frog + insect) | Best from G |
+Mine low-activity windows from unlabeled soundscapes (spectral contrast
+below threshold). Train with all-zero labels. This teaches the model
+that silence exists — currently every training sample has at least one
+species.
 
-Instead of random mixup, explicitly combine recordings from different taxa:
-- Sample 1 bird + 1 frog + 1 insect recording
-- Mix waveforms, union labels
-- This directly addresses the soundscape composition: 76% amphibian + 29%
-  bird + 23% insect windows
+**Gate**: Does precision improve on soundscape evaluation (exp 101)?
 
-**Decision gate**: Compare against same-taxa mixup. If cross-taxa is better,
-it confirms the model needs exposure to multi-taxa scenes.
+## Phase 6: Label Smoothing (optional)
 
-## Phase 6: No-Call Class
+Smooth hard labels from 1.0 to 0.9. Prevents overconfidence, especially
+useful with mixup. Simple to add, low risk.
 
-Add a dedicated negative class from soundscape silence. Teaches the model
-when nothing is vocalizing.
+## Out of Scope (separate experiments)
 
-| Run | Change | Depends on |
-|-----|--------|------------|
-| I | Add no-call class from soundscape noise | Best from H |
+| What | Why separate | Experiment |
+|------|-------------|------------|
+| Pseudo-labeling | Changes training data, needs inference on 10K soundscapes, iterative | Exp 103 |
+| Soundscape-realistic mixup | Complex, depends on pseudo-label quality. See `docs/soundscape-mixup.md` | Exp 104 |
+| Model ensembling | Multiple architectures, orthogonal to single-model optimization | Later |
+| External data (Xeno-Canto) | Data pipeline work, legal/license considerations | Later |
+| SoftAUCLoss | Alternative loss function, could test as Phase 1 variant | Optional |
+| TTA / inference tricks | Applied at submission time, not training | Submission pipeline |
 
-Source: low-activity windows from unlabeled soundscapes (identified by
-spectral contrast < threshold). These become training examples with all-zero
-labels (no species present).
+## Research Notes (from BirdCLEF 2025 solutions)
 
-This is a separate experiment because it changes the label space — all-zero
-targets are currently not seen in focal training (every clip has at least
-one species).
+**1st place (Nikita Babych)**:
+- EfficientNet ensemble + CE/AdamW baseline
+- MixUp (alpha=0.15) + StochasticDepth → 0.872 → 0.898
+- Iterative pseudo-labeling (3-4 rounds) → 0.898 → 0.930
+- Used `count^(-0.5)` class weighting + SoftAUCLoss
 
-**Decision gate**: Does adding no-call examples improve precision on
-soundscape evaluation (exp 101 windows)?
+**Key insight**: Pseudo-labeling was worth +3-6 AUC points — more than any
+architectural change. But it requires a decent single model to start.
+Exp 102 builds that single model; exp 103 does the pseudo-labeling.
 
-## Phase 7: Soundscape Mixup
-
-Mix focal recordings with real soundscape audio. Maximum domain diversity.
-
-| Run | Change | Depends on |
-|-----|--------|------------|
-| J | Focal + soundscape mixup | Best from I |
-
-Mix focal clips (clean, single-species, labeled) with soundscape windows
-(noisy, multi-species, pseudo-labeled or unlabeled). This bridges the
-focal-to-soundscape domain gap directly.
-
-Options:
-- Mix with labeled soundscapes (739 windows, ground truth labels)
-- Mix with unlabeled soundscapes (as noise augmentation, no label contribution)
-- Mix with pseudo-labeled soundscapes (from exp 101 ensemble, soft labels)
-
-**Decision gate**: Compare focal val metrics AND soundscape val metrics. If
-soundscape auroc improves, the domain gap is being addressed.
-
-## Summary
-
-```
-Phase 1: Architecture     A → B → C (→ rank sweep)
-Phase 2: Sample weight    E
-Phase 3: Class weight     F
-Phase 4: Focal mixup      G-2 → G-4 → G-8
-Phase 5: Cross-taxa       H
-Phase 6: No-call          I
-Phase 7: Soundscape mix   J
-```
-
-Each phase has a decision gate. The ladder can be short-circuited — if Phase 1
-shows frozen backbone is sufficient, skip LoRA-dependent phases. If mixup
-doesn't help in Phase 4, skip Phases 5 and 7.
-
-## What's NOT in this ladder
-
-- **Iterative pseudo-labeling**: Requires running inference on all 10K
-  soundscapes and retraining. Separate experiment once single-model is strong.
-- **Ensemble**: Combining multiple architectures (ProtoCLR + EAT + ConvNeXt +
-  EfficientNet). Separate from single-model optimization.
-- **SED with frame labels**: Requires temporal annotations we don't have.
-  Activity scores are the closest proxy.
-- **Different backbones**: Only testing EfficientNet-B1. Could test B3, B5,
-  or entirely different architectures.
-- **Test-time augmentation**: Inference-time flipping, multi-crop, etc.
-  Applied at submission time, not training.
+**What winners did NOT use**:
+- Cross-taxa explicit mixup (random mixup was sufficient)
+- Activity-weighted training (used hard filtering instead)
+- Attention pooling (some did, some used simple SED)
