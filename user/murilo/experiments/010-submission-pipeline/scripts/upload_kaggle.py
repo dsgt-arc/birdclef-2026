@@ -123,6 +123,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/eat-2026-student-v1",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-eat-2026-student-v1.json",
     },
+    # Exp 016: SED models (234 classes)
+    "effnet-b0-sed-v1": {
+        "slug": "birdclef-2026-effnet-b0-sed-v1-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v1",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v1.json",
+    },
 }
 
 
@@ -226,7 +232,7 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
 
     # Copy species_mapping.json into model weights dir
     # Soundscape models use 234-species mapping, 2026 models use 206, 2025 uses 41-overlap
-    if "-soundscape" in model_name or "-student" in model_name:
+    if "-soundscape" in model_name or "-student" in model_name or "-sed" in model_name:
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026_234.json"
     elif "-2026" in model_name:
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026.json"
@@ -276,6 +282,7 @@ def main():
             "all-2026-fulldata",
             "all-2026-soundscape",
             "all-2026-student",
+            "all-2026-sed",
         ],
         help="Model to upload (e.g., protoclr-2026-soundscape, all-2026-soundscape)",
     )

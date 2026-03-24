@@ -91,6 +91,8 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # SED models, 234 classes (exp 016)
+    "birdclef-2026-effnet-b0-sed-v1-weights",
     # Student models trained on focal + soundscape + pseudo-labels, 234 classes (exp 015)
     "birdclef-2026-protoclr-student-v1-weights",
     "birdclef-2026-eat-student-v1-weights",
@@ -352,6 +354,8 @@ def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
     Each 5s window produces one row with 234 BirdCLEF 2026 species columns.
     """
     sr = mel_cfg["sr"]
+    # SED models may specify a different window duration (e.g., 10s for context)
+    # but submission format is always 5s segments, so we predict per 5s
     window_duration = 5.0
     soundscape_id = Path(audio_path).stem
 
@@ -370,10 +374,15 @@ def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
 
         # ONNX inference
         input_name = session.get_inputs()[0].name
-        logits = session.run(None, {input_name: mel})[0]
-        # Flatten to 1D: handles both (1, 206) and (206,) output shapes
-        logits = logits.flatten()
-        probs_206 = sigmoid(logits)  # (206,)
+        output = session.run(None, {input_name: mel})[0]
+        # Flatten to 1D: handles both (1, 234) and (234,) output shapes
+        output = output.flatten()
+
+        # SED models output blended probabilities directly; clip-level models output logits
+        if mel_cfg.get("output_type") == "probs":
+            probs_206 = output
+        else:
+            probs_206 = sigmoid(output)
 
         # Map 206 probs to 234 submission columns
         end_time = int(window_start_s + window_duration)

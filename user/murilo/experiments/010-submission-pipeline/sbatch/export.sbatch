@@ -267,6 +267,22 @@ export_eat_2026_student_v1() {
         --output-dir artifacts/weights/eat-2026-student-v1/
 }
 
+# ============================================================================
+# 2026 SED model exports (exp 016 checkpoints, 234 classes)
+# ============================================================================
+
+EXP016_DIR="$(dirname "$EXPERIMENT_DIR")/016-sed-architecture"
+
+export_effnet_b0_sed_v1() {
+    echo "=== Exporting EfficientNet-B0 SED (2026, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/016-sed-architecture/checkpoints/2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP016_DIR}/config/efficientnet_b0_sed.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v1/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -310,7 +326,8 @@ esac
 
 case "$MODEL" in
     eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
-    protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student)
+    protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student|\
+    effnet-b0-sed-v1|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TAXONOMY_CSV_2026" \
@@ -366,6 +383,10 @@ case "$MODEL" in
         export_protoclr_2026_student_v1
         echo ""
         export_eat_2026_student_v1
+        ;;
+    effnet-b0-sed-v1)          export_effnet_b0_sed_v1 ;;
+    all-2026-sed)
+        export_effnet_b0_sed_v1
         ;;
     *)
         echo "Unknown model: $MODEL"
