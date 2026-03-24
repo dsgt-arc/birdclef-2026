@@ -182,10 +182,14 @@ class SEDFinetuneModule(pl.LightningModule):
         x, labels = batch
 
         if self.mel_transform is not None:
-            # Raw waveform mode: mixup on waveforms, then compute mel on GPU
+            # Raw waveform mode: mixup on waveforms, then compute mel on GPU.
+            # Mel computation must run in float32 and outside autograd graph:
+            # - float32: nnAudio STFT magnitudes can overflow float16 range
+            # - no_grad: mel is a fixed transform, not a learnable layer
             if random.random() < self.hparams.mixup_prob:
                 x, labels = self._apply_mixup(x, labels)
-            mel = self.mel_transform(x)
+            with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                mel = self.mel_transform(x.float())
         else:
             # Spectrogram mode (default): mixup on pre-computed mel
             mel = x

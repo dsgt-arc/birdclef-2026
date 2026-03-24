@@ -203,6 +203,50 @@ class TestRawWaveformMixup:
         submodule_names = [name for name, _ in module.named_modules()]
         assert "mel_transform" in submodule_names, "mel_transform should be a registered submodule"
 
+    def test_mel_output_is_float32_under_autocast(self, encoder, sed_head, batch_waveforms):
+        """Mel transform should produce float32 output even under autocast.
+
+        nnAudio STFT magnitudes can overflow float16 range (~65504), so the mel
+        computation must run in float32 regardless of mixed precision settings.
+        """
+        mel_tf = NNAudioMelSpectrogram(sample_rate=SAMPLE_RATE, target_frames=TARGET_FRAMES)
+
+        # Simulate autocast context (as Lightning does with precision="16-mixed")
+        with torch.amp.autocast("cpu", dtype=torch.float16):
+            x, labels = batch_waveforms, torch.zeros(4, NUM_CLASSES)
+            labels[0, 10] = 1.0
+            labels[1, 20] = 1.0
+            labels[2, 30] = 1.0
+            labels[3, 40] = 1.0
+
+            # The mel transform should force float32 internally
+            with torch.no_grad(), torch.amp.autocast("cpu", enabled=False):
+                mel = mel_tf(x.float())
+
+            assert mel.dtype == torch.float32, f"Mel should be float32, got {mel.dtype}"
+            assert torch.isfinite(mel).all(), "Mel contains non-finite values under autocast"
+
+    def test_waveform_mixup_output_matches_cpu_mel(
+        self, encoder, sed_head, batch_waveforms, batch_labels
+    ):
+        """GPU-side mel from waveform mixup should match CPU-side mel numerically.
+
+        Ensures the mel transform produces the same values whether run inside the
+        model (GPU path for v3b) or as a dataset transform (CPU path for v1).
+        """
+        mel_tf = NNAudioMelSpectrogram(sample_rate=SAMPLE_RATE, target_frames=TARGET_FRAMES)
+
+        # CPU path (v1 behavior): transform in dataset
+        with torch.no_grad():
+            cpu_mel = mel_tf(batch_waveforms)
+
+        # GPU path (v3b behavior): transform in training_step
+        with torch.no_grad(), torch.amp.autocast("cpu", enabled=False):
+            gpu_mel = mel_tf(batch_waveforms.float())
+
+        max_diff = (cpu_mel - gpu_mel).abs().max().item()
+        assert max_diff < 1e-5, f"CPU vs GPU mel mismatch: max diff {max_diff}"
+
 
 # ============================================================================
 # v3c: Standard CE loss
