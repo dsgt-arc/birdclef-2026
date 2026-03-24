@@ -11,10 +11,10 @@ import pytorch_lightning as pl
 import yaml
 from nnAudio.features import MelSpectrogram
 
-from birdclef_009.data.finetune import BirdCLEFDataModule, build_species_list
 from birdclef_009.training.finetune import FinetuneLightningModule
 from birdclef_009.utils.gpu_monitor import GPUUtilizationMonitor
 
+from .data import BirdCLEF102DataModule, build_species_list
 from .model import EfficientNetClassifier
 
 logger = logging.getLogger(__name__)
@@ -98,16 +98,16 @@ def main():
     )
 
     # Build data module
-    data_module = BirdCLEFDataModule(
+    data_module = BirdCLEF102DataModule(
         audio_dir=data_cfg["audio_dir"],
         metadata_csv=data_cfg["metadata_csv"],
         species_list=species_list,
         sample_rate=data_cfg["sample_rate"],
         chunk_duration=data_cfg["chunk_duration"],
-        num_tokens=data_cfg.get("target_frames", 1000),
         batch_size=data_cfg["batch_size"],
         num_workers=data_cfg["num_workers"],
         val_fraction=data_cfg.get("val_fraction", 0.1),
+        activity_parquet=data_cfg.get("activity_parquet"),
     )
 
     # Run name for logging
