@@ -312,9 +312,38 @@ CE loss should approach the 0.908 reference.
 | Mixup changes label distribution | Start without mixup (variant D), add later if needed |
 | LoRA backbone may not produce good temporal features | The competitor's from-scratch EfficientNet works; LoRA should too since backbone is trainable |
 
+## Competitive Intelligence (2026-03-23)
+
+Detailed analysis of active competitor experiments and 2025 winner techniques:
+see [competition discussion analysis](../../docs/references/kaggle/birdclef-2026/competition-discussion-analysis.md).
+
+### Key Findings That Affect This Experiment
+
+1. **NS-JFT pretrained B0 > standard ImageNet**: `tf_efficientnet_b0.ns_jft_in1k`
+   consistently outperforms our `efficientnet_b0`. Should switch for next run.
+
+2. **ASL may outperform our soft CE**: Competitor ablation showed ASL (γ⁻=4, γ⁺=0,
+   clip=0.05) gained +0.023 over BCE. Handles multi-label natively. However, the
+   0.908 competitor used CE, so both CE and ASL are valid — NOT using plain BCE is key.
+
+3. **Audio MixUp confirmed +0.036**: 2025 2nd place ablation. We use spectrogram mixup
+   which is weaker. This is the single biggest augmentation gain.
+
+4. **Perch baseline = 0.825 LB**: Google's Perch model out-of-the-box beats our best
+   clip-level model (0.767). Also serves as a strong teacher for knowledge distillation
+   (+0.030 val when used for soft pseudo-labels on soundscapes).
+
+5. **Free post-processing gains (+0.033 combined)**: TopN (+0.011), temporal smoothing
+   (+0.010), TTA shifts (+0.012). No retraining needed.
+
+6. **Model soup is free**: Average last 3-5 epoch checkpoints for stability.
+
+7. **2025 1st place core innovation**: PowerTransform pseudo-labels (p^γ, γ=2.0) across
+   4 rounds, combined with SoftAUCLoss in later rounds. Baseline 0.872 → final 0.933.
+
 ## References
 
-- BirdCLEF 2026 competition discussion: SED EfficientNet-B0, 0.908 single model
+- [Competition discussion analysis](../../docs/references/kaggle/birdclef-2026/competition-discussion-analysis.md): Full technique breakdown with LB impacts
 - [2025 1st place](../../docs/references/kaggle/birdclef-2025/birdclef2025-1st-place-inference.md): GeM + AttHead, CE loss, 20s windows
 - [2025 9th place](../../docs/references/kaggle/birdclef-2025/bird2025-9th-place-solution.md): AttBlockV2, framewise max, 10s windows
 - [2024 1st place](../../docs/references/kaggle/birdclef-2024/birdclef2024-1st-place-solution.md): CE >> BCE, 10s context, +0.015 from context overlap

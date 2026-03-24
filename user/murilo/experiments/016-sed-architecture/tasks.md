@@ -127,12 +127,38 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 
 ## Future Work
 
-- **Raw waveform mixup**: Current implementation does spectrogram-domain mixup (post mel
-  transform). The competitor used "Mixup on Raw Waves" — mixing waveforms before mel
-  conversion preserves phase relationships and produces more realistic audio mixtures.
-  Requires moving mel transform from dataset __getitem__ to model forward pass (GPU-side)
-  or applying mixup in a custom collate function on raw waveforms before transform.
-- **Temporal post-processing**: Gaussian smoothing [0.1, 0.2, 0.4, 0.2, 0.1]
-- **Ensemble**: Multiple SED models (EfficientNet-B0 + our 3 encoders)
-- **Pseudo-labeling with SED teachers**: Re-run exp 014/015 with SED-based teachers
-- **Overlapping inference**: 20s windows with 5s step (2025 winner pattern)
+See [competition discussion analysis](../../docs/references/kaggle/birdclef-2026/competition-discussion-analysis.md)
+for full details on each technique, confirmed LB impacts, and code snippets.
+
+### Immediate Improvements (next training run)
+
+- **NS-JFT pretrained weights**: Switch from `efficientnet_b0` (standard ImageNet) to
+  `tf_efficientnet_b0.ns_jft_in1k` (Noisy Student on JFT-300M). Competitor confirmed
+  it consistently outperforms standard ImageNet init for audio spectrograms.
+- **ASL loss**: Consider replacing soft CE with Asymmetric Loss (γ⁻=4, γ⁺=0, clip=0.05).
+  Competitor ablation: +0.023 over BCE. Handles multi-label natively without normalization.
+- **Raw waveform mixup**: Current spectrogram mixup vs competitor's raw waveform mixup.
+  2025 2nd place confirmed +0.036 Private LB from audio-domain mixup. Requires moving
+  mel transform to model forward pass or custom collate.
+
+### Free Post-Processing (no retraining, add to submission.py)
+
+- **TopN postprocessing** (+0.011 LB): `preds *= preds.max(axis=0, keepdims=True)`
+- **Temporal smoothing** (+0.010 LB): Gaussian [0.1, 0.2, 0.4, 0.2, 0.1] across segments
+- **TTA: 2.5s shifts** (+0.012 LB): 3 predictions per segment (0, −2.5s, +2.5s), average
+- **Model soup** (free stability): Average last 3-5 epoch checkpoints
+
+### Larger Improvements
+
+- **Perch as soft label teacher** (+0.030 val): Knowledge distillation from Google Perch
+  model on soundscape clips. Perch baseline alone = 0.825 LB.
+- **Multi-round pseudo-labels with PowerTransform**: p^γ (γ=2.0) sharpening across 4
+  rounds. 2025 1st place core innovation: +0.032 LB.
+- **SoftAUCLoss**: Directly optimizes competition metric (macro ROC-AUC) instead of proxy.
+  Used in later pseudo-label rounds by 2025 1st place.
+- **StochasticDepth**: drop_path_rate=0.2 during pseudo-label training rounds.
+- **Separate non-bird pipeline**: Dedicated model for insects/amphibians (+0.003 LB).
+- **819K prior-year pretraining**: 2025 2nd place gained +0.014 LB from pretraining on
+  BirdCLEF 2021-2024 data (16,607 species, 50 epochs).
+- **Extend SED to ProtoCLR/ConvNeXt/EAT**: See section 6 above.
+- **Ensemble**: Multiple SED models with Optuna weight optimization.
