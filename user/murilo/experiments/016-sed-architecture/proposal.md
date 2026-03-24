@@ -22,12 +22,15 @@ A BirdCLEF 2026 competitor reported **0.908 LB with a single EfficientNet-B0** u
 only SED + CE loss + 10s windows + mixup. No pseudo-labels, no unlabeled data, no
 complex augmentation. This is +0.141 over our best single model (ProtoCLR 0.767).
 
-Their recipe:
-- SED EfficientNet B0 (trained on 10 seconds)
-- Mixup on raw waveforms
-- CrossEntropy loss on clipwise AND framewise max
-- 20+ epochs
-- 2-model ensemble: 0.914
+Their exact comment (BirdCLEF 2026 competition discussion, 2026-03-23):
+
+> My best single model is SED Efficientnet B0 (Trained on 10 sec). Mixup on
+> Raw Waves, and CrossEntropyLoss on clipwise and framewise max. Trained for
+> 20+ epochs. This single model scores 0.908
+>
+> I have a ensemble of these 2 models and it scores 0.914
+>
+> No other augmentation. No unlabeled data.
 
 ### Winning Solutions Consensus
 
