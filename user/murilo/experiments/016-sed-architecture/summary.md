@@ -155,7 +155,7 @@ needed, just weight averaging and re-export.
 | Exp 016 v3b + pp | + raw waveform mixup | 0.802 | −0.021 |
 | Exp 016 v3a + pp | + TF-ported V1 weights | 0.813 | −0.010 |
 | Exp 016 v3c + pp | + standard CE loss | pending | — |
-| Exp 016 v3d | EfficientNetV2-B0 (correct architecture) | training | — |
+| Exp 016 v3d | EfficientNetV2-B0 | pending | — (offline: 0.841 AUROC, regression) |
 
 ## V3 Ablation Results
 
@@ -167,14 +167,16 @@ Three parallel experiments, each changing one variable from v1:
 | v3a | TF-ported weights | 0.857 | 0.599 | 0.813 | **Worse on LB** (−0.010) |
 | v3b | raw waveform mixup | 0.862 | 0.607 | 0.802 | **Worse on LB** (−0.021) |
 | v3c | standard CE loss | 0.850 | 0.552 | pending | **Hurt offline** |
+| v3d | EfficientNetV2-B0 | 0.841 | 0.523 | pending | **Hurt offline** (−0.070 cmAP) |
 
 **Key findings:**
-- **Every V1 tweak made LB worse** — v1's recipe (ImageNet RA weights + soft CE +
-  spectrogram mixup) is a robust local optimum for EfficientNet-B0 V1
+- **Every change from v1 made things worse** — v1's recipe (ImageNet RA weights +
+  soft CE + spectrogram mixup + EfficientNet-B0 V1) is a robust local optimum
 - v3a (TF weights): LB 0.813 (−0.010), v3b (waveform mixup): LB 0.802 (−0.021)
-- Offline metrics are **not predictive of LB** for these changes: v3b had the best
-  offline metrics but the worst LB among v3a/v3b
-- The gap to 0.889 is unlikely to be closed by hyperparameter tweaks on V1
+- v3d (EfficientNetV2-B0): offline 0.841 AUROC (−0.019), 0.523 cmAP (−0.070).
+  Early-stopped at epoch 13 (vs v1's 24). V2 is **not better** with our recipe.
+- Offline metrics are **not predictive of LB**: v3b had the best offline but worst LB
+- The gap to 0.889 is not in model variant, weights, mixup domain, or loss function
 
 **Critical discovery:** The discussion post author (0.889 LB) explicitly used
 **EfficientNetV2-B0** (V2 architecture). The 0.908 commenter said only "SED
@@ -200,20 +202,7 @@ or an ensemble. The post author confirmed 0.889 with EfficientNetV2-B0 single mo
 
 ## Potential Next Steps (Priority Order)
 
-### 1. EfficientNetV2-B0 (v3d — currently training)
-
-**Status**: Training. Most promising change.
-
-The discussion post author (0.889 LB) used EfficientNetV2-B0 (`tf_efficientnetv2_b0`
-in timm). The 0.908 commenter's model variant is ambiguous ("SED EfficientNet B0").
-V2 is a fundamentally different architecture:
-- Fused-MBConv blocks in early layers (faster training, better features)
-- 5.6M params vs 3.6M (56% more capacity)
-- Different channel widths (192 vs 320 at last stage)
-
-If v3d shows significant improvement, combine with other winning changes (v4).
-
-### 2. Train/inference window alignment
+### 1. Train/inference window alignment
 
 **Status**: NOT INVESTIGATED.
 
@@ -233,7 +222,7 @@ learns temporal patterns over 10s that are halved at inference. Two approaches:
 - Would require retraining but simplifies the pipeline
 - May lose the temporal context benefit of 10s training
 
-### 3. Mel spectrogram parameters
+### 2. Mel spectrogram parameters
 
 **Status**: NOT INVESTIGATED.
 
@@ -250,14 +239,14 @@ Higher n_fft gives better frequency resolution (important for distinguishing sim
 bird calls). More mel bins (224 vs 128) provide finer spectral detail. These changes
 would require retraining since the input dimensions change.
 
-### 4. Model soup (free, no retraining)
+### 3. Model soup (free, no retraining)
 
 **Status**: NOT IMPLEMENTED.
 
 Average checkpoints from epochs 20-25 for stability. Zero cost — just weight averaging
 and re-export. Should be done for any model that goes to final submission.
 
-### 5. Ensemble with Perch-based approach
+### 4. Ensemble with Perch-based approach
 
 **Status**: NOT STARTED.
 

@@ -62,6 +62,7 @@ gain +0.028 vs estimated +0.033. These are free inference-time improvements.
 | EfficientNet-B0 SED v1 (baseline) | 0.860 | 0.593 |
 | EfficientNet-B0 SED v3a (TF weights) | 0.857 | 0.599 |
 | EfficientNet-B0 SED v3c (CE loss) | 0.850 | 0.552 |
+| EfficientNetV2-B0 SED v3d | 0.841 | 0.523 |
 | EfficientNet-B0 SED v2 (NS-JFT + CE) | 0.837 | 0.539 |
 | ProtoCLR (exp 012) | 0.845 | 0.481 |
 | ConvNeXt (exp 012) | 0.844 | 0.470 |
@@ -126,7 +127,7 @@ Three parallel experiments, each changing one variable from v1:
 | v3a | TF-ported weights | 0.845 | 0.857 | 0.599 | 0.813 |
 | v3b | raw waveform mixup | 0.846 | 0.862 | 0.607 | 0.802 |
 | v3c | standard CE loss | 0.831 | 0.850 | 0.552 | pending |
-| v3d | EfficientNetV2-B0 | training... | — | — | — |
+| v3d | EfficientNetV2-B0 | 0.841 | 0.523 | pending | **Hurt** (−0.070 cmAP) |
 
 **Conclusions from v3 ablation:**
 - **All v3 variants regressed on LB** vs v1+pp (0.823):
@@ -137,8 +138,11 @@ Three parallel experiments, each changing one variable from v1:
   LB among v3a/v3b. The offline→LB correlation is unreliable for these changes.
 - **v1 remains the best model** at 0.823 LB. The soft CE + spectrogram mixup +
   ImageNet RA weights combination is surprisingly robust.
-- **v3d** (EfficientNetV2-B0): Still training. The only remaining change that addresses
-  a fundamental architecture mismatch (V1 vs V2).
+- **v3d** (EfficientNetV2-B0): **Hurt significantly**. test/auroc 0.841 (−0.019),
+  test/cmap 0.523 (−0.070). Early-stopped at epoch 13 (vs v1's 24). V2 architecture
+  is not better than V1 for this task with our training recipe. The smaller last-stage
+  channels (192 vs 320) may limit the SED head's capacity, and the model may need
+  different hyperparameters (lr, epochs) than V1.
 
 ---
 

@@ -30,7 +30,7 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 | Exp 016 v3b + pp | + raw waveform mixup + pp | 0.802 (regression) |
 | Exp 016 v3a + pp | + TF-ported weights + pp | 0.813 (regression) |
 | Exp 016 v3c + pp | + standard CE loss + pp | pending |
-| Exp 016 v3d | EfficientNetV2-B0 | training... |
+| Exp 016 v3d | EfficientNetV2-B0 | pending (offline: 0.841 AUROC, regression) |
 | Target | Close gap to competitor | ≥0.85 |
 
 ---
@@ -210,8 +210,9 @@ Three parallel runs, each changing one variable from v1 baseline:
 - [x] 9.7 Export v3a/v3b/v3c + submit to Kaggle LB (v3b=0.802, v3a/v3c pending)
 - [x] 9.8 v3d config created: EfficientNetV2-B0 (tf_efficientnetv2_b0.in1k) — competitor
       confirmed using V2 not V1. Training submitted.
-- [ ] 9.9 Record v3d results + submit to Kaggle LB
-- [ ] 9.10 If v3d helps → combine with waveform mixup into v4
+- [x] 9.9 Record v3d results: test/auroc 0.841 (−0.019), test/cmap 0.523 (−0.070).
+      EfficientNetV2-B0 hurt with our training recipe. Early-stopped epoch 13.
+- [x] 9.10 v3 ablation complete: **no single change improved LB over v1 (0.823)**
 
 ## 10. Documentation
 
@@ -228,9 +229,8 @@ Detailed analysis of each item below is in [summary.md](summary.md) § "Potentia
 
 ### High Priority (next experiments)
 
-- [ ] **EfficientNetV2-B0** (v3d, training): Post author (0.889) used V2; 0.908
-  commenter ambiguous ("SED EfficientNet B0"). V2 has Fused-MBConv, 5.6M params.
-  Worth testing regardless. If successful → combine into v4.
+- [x] ~~**EfficientNetV2-B0**~~: v3d, hurt offline (−0.019 AUROC, −0.070 cmAP).
+  V2 not better with our recipe. May need different hyperparameters.
 
 - [ ] **Train/inference window alignment**: We train on 10s but infer on 5s. The model
   sees 1000 mel frames during training but only 500 at inference. Two options:
