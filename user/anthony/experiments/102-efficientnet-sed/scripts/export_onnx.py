@@ -40,17 +40,30 @@ class MelInputWrapper(nn.Module):
 
     Input: (B, 1, n_mels, target_frames) mel spectrogram
     Output: (B, C) clip-level logits
+
+    For attention pooling, always uses framewise max at export (inference mode).
     """
 
-    def __init__(self, backbone, head):
+    def __init__(self, backbone, head, pooling_mode="avg"):
         super().__init__()
         self.backbone = backbone
         self.head = head
+        self.pooling_mode = pooling_mode
 
     def forward(self, mel: torch.Tensor) -> torch.Tensor:
-        features = self.backbone(pixel_values=mel).last_hidden_state
-        pooled = F.adaptive_avg_pool2d(features, 1).flatten(1)
-        logits = self.head(pooled)
+        features = self.backbone(pixel_values=mel).last_hidden_state  # (B, 1280, H, W)
+
+        if self.pooling_mode == "avg":
+            pooled = F.adaptive_avg_pool2d(features, 1).flatten(1)  # (B, 1280)
+            logits = self.head(pooled)
+        elif self.pooling_mode == "attention":
+            # At inference: collapse freq, get frame features, use frame_head + max
+            frame_features = features.mean(dim=2).permute(0, 2, 1)  # (B, T, 1280)
+            frame_logits = self.head.frame_head(frame_features)  # (B, T, C)
+            logits = frame_logits.max(dim=1).values  # (B, C)
+        else:
+            raise ValueError(f"Unknown pooling_mode: {self.pooling_mode}")
+
         return logits
 
 
@@ -132,20 +145,28 @@ def main():
     backbone.eval()
 
     # Build head
-    head = nn.Sequential(
-        nn.Dropout(0.0),  # No dropout for inference
-        nn.Linear(embed_dim, num_classes),
-    )
+    pooling_mode = model_cfg.get("pooling_mode", "avg")
+    if pooling_mode == "avg":
+        head = nn.Sequential(
+            nn.Dropout(0.0),
+            nn.Linear(embed_dim, num_classes),
+        )
+    elif pooling_mode == "attention":
+        from birdclef_102.model import AttentionPoolingHead
+        head = AttentionPoolingHead(embed_dim, num_classes, dropout=0.0)
+    else:
+        raise ValueError(f"Unknown pooling_mode: {pooling_mode}")
+
     head_state = {
         k.removeprefix("head."): v
         for k, v in model_state.items()
         if k.startswith("head.")
     }
     head.load_state_dict(head_state, strict=True)
-    logger.info("Head weights loaded")
+    logger.info(f"Head weights loaded (pooling_mode={pooling_mode})")
 
     # Wrap and test
-    wrapper = MelInputWrapper(backbone, head)
+    wrapper = MelInputWrapper(backbone, head, pooling_mode=pooling_mode)
     wrapper.eval()
 
     n_mels = data_cfg["n_mels"]

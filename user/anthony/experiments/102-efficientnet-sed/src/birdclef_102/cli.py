@@ -65,6 +65,7 @@ def main():
 
     # Build model
     backbone_mode = model_cfg.get("backbone_mode", "frozen")
+    pooling_mode = model_cfg.get("pooling_mode", "avg")
     model = EfficientNetClassifier(
         model_name=model_cfg["model_name"],
         num_classes=num_classes,
@@ -72,6 +73,7 @@ def main():
         target_frames=data_cfg["target_frames"],
         head_dropout=model_cfg.get("head_dropout", 0.3),
         backbone_mode=backbone_mode,
+        pooling_mode=pooling_mode,
         lora_rank=lora_cfg.get("rank", 8),
         lora_alpha=lora_cfg.get("alpha", 16),
         lora_dropout=lora_cfg.get("dropout", 0.1),
