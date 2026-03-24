@@ -44,6 +44,7 @@ class TrainingModule(pl.LightningModule):
         augmentation: dict | None = None,
         gamma: float = 2.0,
         use_activity_weights: bool = False,
+        from_logits: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["model"])
@@ -51,8 +52,11 @@ class TrainingModule(pl.LightningModule):
         self.model = model
         self.num_classes = num_classes
         self.use_activity_weights = use_activity_weights
+        self.from_logits = from_logits
 
-        self.clip_loss = FocalBCELoss(gamma=gamma, from_logits=True)
+        # avg pooling → from_logits=True (model returns logits)
+        # attention pooling → from_logits=False (model returns probabilities)
+        self.clip_loss = FocalBCELoss(gamma=gamma, from_logits=from_logits)
 
         if augmentation:
             self.spec_augment = SpecAugment(**augmentation)
@@ -75,11 +79,18 @@ class TrainingModule(pl.LightningModule):
         )
         self.log("train/grad_norm", grad_norm, on_step=True, on_epoch=False)
 
+    def _to_probs(self, output):
+        """Convert model output to probabilities for metrics."""
+        if self.from_logits:
+            return torch.sigmoid(output)
+        else:
+            return output  # already probabilities (attention pooling)
+
     def training_step(self, batch, batch_idx):
         waveforms = batch["waveform"]
         clip_labels = batch["clip_labels"]
 
-        clip_logits = self.model(
+        output = self.model(
             waveforms,
             spec_augment=self.spec_augment if self.training else None,
         )
@@ -89,10 +100,9 @@ class TrainingModule(pl.LightningModule):
         if self.use_activity_weights and "activity_scores" in batch:
             sample_weight = batch["activity_scores"]
 
-        loss = self.clip_loss(clip_logits, clip_labels, sample_weight=sample_weight)
+        loss = self.clip_loss(output, clip_labels, sample_weight=sample_weight)
 
-        clip_probs = torch.sigmoid(clip_logits)
-        self.train_cmap.update(clip_probs, clip_labels.round().int())
+        self.train_cmap.update(self._to_probs(output), clip_labels.round().int())
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
@@ -105,12 +115,12 @@ class TrainingModule(pl.LightningModule):
         waveforms = batch["waveform"]
         clip_labels = batch["clip_labels"]
 
-        clip_logits = self.model(waveforms)
-        loss = self.clip_loss(clip_logits, clip_labels)
+        output = self.model(waveforms)
+        loss = self.clip_loss(output, clip_labels)
 
-        clip_probs = torch.sigmoid(clip_logits)
-        self.val_cmap.update(clip_probs, clip_labels.int())
-        self.val_auroc.update(clip_probs, clip_labels.int())
+        probs = self._to_probs(output)
+        self.val_cmap.update(probs, clip_labels.int())
+        self.val_auroc.update(probs, clip_labels.int())
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss

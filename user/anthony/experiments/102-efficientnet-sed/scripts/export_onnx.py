@@ -57,12 +57,13 @@ class MelInputWrapper(nn.Module):
             pooled = F.adaptive_avg_pool2d(features, 1).flatten(1)  # (B, 1280)
             logits = self.head(pooled)
         elif self.pooling_mode == "attention":
-            # At inference: collapse freq, project, frame_head + max
+            # At inference: collapse freq, project, sigmoid(frame_head) + max
             frame_features = features.mean(dim=2).permute(0, 2, 1)  # (B, T, 1280)
             if self.head.projection is not None:
                 frame_features = self.head.projection(frame_features)  # (B, T, hidden)
             frame_logits = self.head.frame_head(frame_features)  # (B, T, C)
-            logits = frame_logits.max(dim=1).values  # (B, C)
+            # Output probabilities (sigmoid before max, matching training formula)
+            logits = torch.sigmoid(frame_logits).max(dim=1).values  # (B, C)
         else:
             raise ValueError(f"Unknown pooling_mode: {self.pooling_mode}")
 
@@ -201,6 +202,10 @@ def main():
         json.dump(species_list, f, indent=2)
 
     # Save mel config
+    # avg pooling outputs logits (need sigmoid in kernel)
+    # attention pooling outputs probabilities (sigmoid already in ONNX graph)
+    output_is_probs = pooling_mode == "attention"
+
     mel_config = {
         "sr": data_cfg["sample_rate"],
         "n_fft": data_cfg.get("n_fft", 2048),
@@ -210,6 +215,7 @@ def main():
         "fmax": 14000,
         "norm_mean": -4.268,
         "norm_std": 4.569,
+        "output_is_probs": output_is_probs,
     }
     with open(output_dir / "mel_config.json", "w") as f:
         json.dump(mel_config, f, indent=2)

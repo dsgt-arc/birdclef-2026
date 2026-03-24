@@ -77,23 +77,27 @@ class AttentionPoolingHead(nn.Module):
             frame_features: (B, T, D) per-frame features
 
         Returns:
-            clip_logits: (B, C) clip-level logits
+            clip_probs: (B, C) clip-level probabilities (not logits!)
+                Training: attention-weighted mean of per-frame sigmoid probs
+                Inference: framewise max of per-frame sigmoid probs
         """
         if self.projection is not None:
             frame_features = self.projection(frame_features)  # (B, T, hidden_dim)
 
         frame_logits = self.frame_head(frame_features)  # (B, T, C)
-        att_logits = self.att_head(frame_features)       # (B, T, C)
 
         if self.training:
-            # Attention-weighted mean: softmax over time, weighted sum of frame probs
-            att_weights = torch.softmax(att_logits, dim=1)  # (B, T, C)
-            clip_logits = (att_weights * frame_logits).sum(dim=1)  # (B, C)
+            # Standard SED formula (PANNs/AttBlockV2 pattern):
+            # clip = sum(softmax(tanh(att)) * sigmoid(frame), dim=T)
+            # tanh bounds attention logits to [-1,1], preventing peaky softmax
+            att_logits = self.att_head(frame_features)  # (B, T, C)
+            att_weights = torch.softmax(torch.tanh(att_logits), dim=1)  # (B, T, C)
+            clip_probs = (att_weights * torch.sigmoid(frame_logits)).sum(dim=1)  # (B, C)
         else:
-            # Framewise max: take the highest frame prediction per species
-            clip_logits = frame_logits.max(dim=1).values  # (B, C)
+            # Framewise max of sigmoid probs: catches brief calls
+            clip_probs = torch.sigmoid(frame_logits).max(dim=1).values  # (B, C)
 
-        return clip_logits
+        return clip_probs
 
 
 class EfficientNetClassifier(nn.Module):
@@ -236,7 +240,7 @@ class EfficientNetClassifier(nn.Module):
         padding_mask: torch.Tensor | None = None,
         spec_augment=None,
     ):
-        """Forward pass from raw waveforms to clip-level logits.
+        """Forward pass from raw waveforms to clip-level predictions.
 
         Args:
             waveforms: (B, num_samples) raw audio
@@ -244,7 +248,8 @@ class EfficientNetClassifier(nn.Module):
             spec_augment: Optional SpecAugment callable (training only)
 
         Returns:
-            clip_logits: (B, C) clip-level raw logits
+            avg pooling:       (B, C) raw logits — apply sigmoid for probabilities
+            attention pooling: (B, C) probabilities in [0, 1] — already sigmoided
         """
         mel = self.compute_mel(waveforms)
 
@@ -255,10 +260,7 @@ class EfficientNetClassifier(nn.Module):
 
         if self.pooling_mode == "avg":
             pooled = F.adaptive_avg_pool2d(features, 1).flatten(1)  # (B, 1280)
-            clip_logits = self.head(pooled)
+            return self.head(pooled)  # logits
         elif self.pooling_mode == "attention":
-            # Collapse freq, keep time: (B, 1280, H, W) → (B, W, 1280)
             frame_features = features.mean(dim=2).permute(0, 2, 1)  # (B, T, 1280)
-            clip_logits = self.head(frame_features)
-
-        return clip_logits
+            return self.head(frame_features)  # probabilities

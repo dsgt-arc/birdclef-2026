@@ -135,7 +135,11 @@ def predict_soundscape(session, audio_path, species_list, mel_cfg):
 
         input_name = session.get_inputs()[0].name
         clip_logits = session.run(None, {input_name: mel})[0]
-        probs = sigmoid(clip_logits[0])
+        # Skip sigmoid if model already outputs probabilities (attention pooling)
+        if mel_cfg.get("output_is_probs", False):
+            probs = clip_logits[0]
+        else:
+            probs = sigmoid(clip_logits[0])
 
         end_time = int(window_start_s + window_duration)
         row_id = f"{soundscape_id}_{end_time}"

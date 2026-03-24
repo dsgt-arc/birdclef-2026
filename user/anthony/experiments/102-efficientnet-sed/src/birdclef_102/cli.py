@@ -88,6 +88,8 @@ def main():
     logger.info(f"Backbone mode: {backbone_mode}")
 
     # Build training module
+    # avg pooling returns logits, attention pooling returns probabilities
+    from_logits = pooling_mode == "avg"
     use_activity = train_cfg.get("use_activity_weights", False)
     lightning_module = TrainingModule(
         model=model,
@@ -99,6 +101,7 @@ def main():
         gamma=train_cfg.get("gamma", 2.0),
         augmentation=train_cfg.get("augmentation"),
         use_activity_weights=use_activity,
+        from_logits=from_logits,
     )
 
     # Build data module
