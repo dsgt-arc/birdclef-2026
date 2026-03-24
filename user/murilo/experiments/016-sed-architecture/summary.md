@@ -146,58 +146,135 @@ needed, just weight averaging and re-export.
 
 ## Score Timeline
 
-| Version | Changes | LB | Delta |
+| Version | Changes | LB | Delta vs v1+pp |
 |---------|---------|-----|-------|
 | Exp 012 ProtoCLR | Clip-level baseline | 0.767 | — |
-| Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 | +0.028 |
-| Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** | +0.056 |
-| Exp 016 v2 + pp | + NS-JFT + CE (regression) | 0.755 | −0.012 |
+| Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 | — |
+| Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** | **baseline** |
+| Exp 016 v2 + pp | + NS-JFT + CE (2 changes, regression) | 0.755 | −0.068 |
+| Exp 016 v3b + pp | + raw waveform mixup | 0.802 | −0.021 |
+| Exp 016 v3a + pp | + TF-ported V1 weights | pending | — |
+| Exp 016 v3c + pp | + standard CE loss | pending | — |
+| Exp 016 v3d | EfficientNetV2-B0 (correct architecture) | training | — |
 
-## Key Artifacts
+## V3 Ablation Results
 
-| Artifact | Path |
-|----------|------|
-| Best checkpoint (v1) | `checkpoints/2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
-| ONNX model (v1) | `010-.../artifacts/weights/effnet-b0-sed-v1/model.onnx` |
-| v1 metrics | `artifacts/training/efficientnet_b0_sed/metrics.json` |
-| v2 metrics | `artifacts/training/efficientnet_b0_sed_v2/metrics.json` |
-| W&B v1 | `dsgt-arc/birdclef-2026-sed-architecture/runs/x5rs663d` |
-| W&B v2 | `dsgt-arc/birdclef-2026-sed-architecture/runs/covhhpck` |
+Three parallel experiments, each changing one variable from v1:
+
+| Model | Change | test/auroc | test/cmap | LB (+pp) | Verdict |
+|-------|--------|-----------|----------|----------|---------|
+| **v1** | **baseline** | **0.860** | **0.593** | **0.823** | — |
+| v3a | TF-ported weights | 0.857 | 0.599 | pending | Flat |
+| v3b | raw waveform mixup | 0.862 | 0.607 | 0.802 | **Worse on LB** |
+| v3c | standard CE loss | 0.850 | 0.552 | pending | **Hurt offline** |
+
+**Key findings:**
+- None of the V1 tweaks close the gap to 0.908
+- v3b improved offline (+0.014 cmAP) but **regressed on LB** (0.802 vs 0.823),
+  suggesting overfitting to training distribution
+- v3c confirmed soft CE is better than standard CE for this multi-label task
+- v3a showed TF-ported vs PyTorch-native weights are roughly equivalent
+
+**Critical discovery:** The competitor used **EfficientNetV2-B0** (V2 architecture),
+not EfficientNet-B0 (V1). V2 has Fused-MBConv blocks, 5.6M params (vs V1's 3.6M),
+and different channel widths. This is a fundamental architecture mismatch, not a
+hyperparameter gap. v3d tests this.
 
 ## Competition Context
 
-Our approach trains EfficientNet-B0 from ImageNet weights on ~29K focal + soundscape
-recordings. The top public notebooks take a fundamentally different approach:
-
 | Approach | Best LB | Strategy |
 |----------|---------|----------|
-| Perch v2 + ProtoSSM + MLP | 0.917 | Frozen foundation model + lightweight heads |
-| Perch v2 + ProtoSSM | 0.913 | Same family, different tuning |
+| Pantanal Distill (Perch + ProtoSSM v3) | 0.917 | Frozen foundation model + SSM + probes |
+| Perch + ProtoSSM | 0.913 | Same family, different tuning |
+| Perch + LogReg probes | 0.910 | Simplest: frozen Perch + sklearn |
 | Perch v2 baseline | 0.907 | Foundation model + simple probes |
-| **Competitor SED (reference)** | **0.908** | **Train-from-scratch SED (our approach)** |
-| **Our SED v1 + pp** | **0.823** | **Same approach, gap in implementation** |
+| **Competitor SED (reference)** | **0.889** | **EfficientNetV2-B0 SED, single model** |
+| **Our SED v1 + pp** | **0.823** | **EfficientNet-B0 (V1) SED** |
 
-The foundation model approaches (Perch-based, 0.907-0.917) use Google's pretrained bird
-audio model as a frozen feature extractor. They don't train on focal recordings at all.
+Source: [discussion/683791](https://www.kaggle.com/competitions/birdclef-2026/discussion/683791).
+Note: the 0.908 figure from earlier analysis may have been from a different competitor
+or an ensemble. The post author confirmed 0.889 with EfficientNetV2-B0 single model.
 
-The competitor's 0.908 proves that a train-from-scratch SED approach can match foundation
-models. The gap between our 0.823 and 0.908 is implementation detail, not architecture.
+## Potential Next Steps (Priority Order)
 
-## Recommendations
+### 1. EfficientNetV2-B0 (v3d — currently training)
 
-### Priority 1: Raw waveform mixup (highest expected ROI)
-Move mel to model forward, mixup raw audio. Confirmed +0.036 by 2025 2nd place.
+**Status**: Training. Most promising change.
 
-### Priority 2: Fix CE loss implementation
-Use standard `nn.CrossEntropyLoss(logits, primary_species_index)` like the competitor.
-Don't normalize multi-hot labels. Don't use argmax on multi-hot.
+The competitor confirmed using EfficientNetV2-B0 (`tf_efficientnetv2_b0` in timm), not
+our EfficientNet-B0 (V1). V2 is a fundamentally different architecture:
+- Fused-MBConv blocks in early layers (faster training, better features)
+- 5.6M params vs 3.6M (56% more capacity)
+- Different channel widths (192 vs 320 at last stage)
 
-### Priority 3: Try audio-pretrained B0
-Check if PANNs or BirdNET provides an EfficientNet-B0 checkpoint pretrained on AudioSet
-or bird audio. These should provide better initial features than ImageNet.
+If v3d shows significant improvement, combine with other winning changes (v4).
 
-### Priority 4: 10s overlapping inference
-Infer on 10s windows with 5s step to match training resolution.
+### 2. Train/inference window alignment
 
-### Priority 5: Model soup
-Average checkpoints from epochs 20-24 for free stability.
+**Status**: NOT INVESTIGATED.
+
+We train on 10s windows (1000 mel frames) but infer on 5s (500 frames). The model
+learns temporal patterns over 10s that are halved at inference. Two approaches:
+
+**Option A: 10s overlapping inference (inference-only change)**
+- Load 10s centered on each 5s target (2.5s context before + after)
+- Run inference on 10s mel, extract prediction for the center 5s
+- Overlap-average predictions from adjacent windows
+- Confirmed +0.015 LB by 2024 1st place
+- No retraining needed, just inference pipeline change
+
+**Option B: Train on 5s to match inference (training change)**
+- The 2025 1st place trained AND inferred on 5s (same window size)
+- Eliminates train/inference mismatch entirely
+- Would require retraining but simplifies the pipeline
+- May lose the temporal context benefit of 10s training
+
+### 3. Mel spectrogram parameters
+
+**Status**: NOT INVESTIGATED.
+
+Our mel config differs significantly from the 2025 1st place:
+
+| Parameter | Ours | 2025 1st Place |
+|-----------|------|----------------|
+| n_fft | 1024 | 4096 |
+| n_mels | 128 | 224 |
+| hop_length | 320 (10ms) | 1252 (39ms) |
+| fmax | None (Nyquist) | 16,000 Hz |
+
+Higher n_fft gives better frequency resolution (important for distinguishing similar
+bird calls). More mel bins (224 vs 128) provide finer spectral detail. These changes
+would require retraining since the input dimensions change.
+
+### 4. Model soup (free, no retraining)
+
+**Status**: NOT IMPLEMENTED.
+
+Average checkpoints from epochs 20-25 for stability. Zero cost — just weight averaging
+and re-export. Should be done for any model that goes to final submission.
+
+### 5. Ensemble with Perch-based approach
+
+**Status**: NOT STARTED.
+
+The Perch-based approaches (0.907-0.917) are fundamentally different from our SED
+approach — they use a frozen foundation model. Ensembling our trained SED with
+Perch predictions could capture complementary strengths:
+- Our SED: trained on focal recordings, learns species-specific spectral features
+- Perch: pretrained on 14K+ species, strong zero-shot generalization
+
+A simple weighted average or learned ensemble could push beyond either approach alone.
+
+## References
+
+- [2025 1st place inference](../../vendor/kaggle/notebooks/birdclef-2025/birdclef2025-1st-place-inference/):
+  5s windows (no overlap), 224 mels, n_fft=4096, spectrogram mixup, 7-model ensemble
+- [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md):
+  28 SED experiments, technique rankings, code snippets
+- [Competitor discussion](https://www.kaggle.com/competitions/birdclef-2026/discussion/683791):
+  EfficientNetV2-B0 SED = 0.889 single model
+- Kaggle notebook analyses:
+  [Pantanal Distill 0.917](../../docs/references/kaggle/birdclef-2026/notebooks/pantanal-distill.md),
+  [Perch+ProtoSSM 0.913](../../docs/references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach.md),
+  [Perch+LogReg 0.910](../../docs/references/kaggle/birdclef-2026/notebooks/perch-probes-chiranjithdharma.md),
+  [Perch baseline 0.907](../../docs/references/kaggle/birdclef-2026/notebooks/perch-blamerx.md)

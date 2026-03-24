@@ -213,45 +213,54 @@ Three parallel runs, each changing one variable from v1 baseline:
 - [ ] 9.9 Record v3d results + submit to Kaggle LB
 - [ ] 9.10 If v3d helps → combine with waveform mixup into v4
 
-## 9. Documentation
+## 10. Documentation
 
-- [x] 9.1 Update MODEL-RUNS.md with LB score
-- [x] 9.2 Create results.md with gap analysis
+- [x] 10.1 Update MODEL-RUNS.md with LB scores
+- [x] 10.2 Create results.md with gap analysis
+- [x] 10.3 Create summary.md with full experiment report
+- [x] 10.4 Kaggle notebook reference docs (Perch+ProtoSSM, Pantanal Distill, etc.)
 
 ---
 
 ## Future Work
 
-See [competition discussion analysis](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
-for full details on each technique, confirmed LB impacts, and code snippets.
+Detailed analysis of each item below is in [summary.md](summary.md) § "Potential Next Steps".
 
-### Immediate Improvements (in progress / next)
+### High Priority (next experiments)
 
-- ~~**NS-JFT pretrained weights**~~: **Done in v2** — `tf_efficientnet_b0.ns_jft_in1k`
-- ~~**CE loss**~~: **Done in v2** — loss_type="ce" with label_smoothing=0.05
-- **ASL loss**: If CE doesn't help, try Asymmetric Loss (γ⁻=4, γ⁺=0, clip=0.05).
-  Competitor ablation: +0.023 over BCE.
-- **Raw waveform mixup**: Biggest remaining gap (est. +0.03-0.04). Requires moving mel
-  transform to model forward pass or custom collate.
+- [ ] **EfficientNetV2-B0** (v3d, training): Competitor confirmed using V2 not V1.
+  Different architecture entirely: Fused-MBConv, 5.6M params. Most likely to close
+  the gap. If successful → combine with other winning changes into v4.
 
-### Free Post-Processing — DONE (+0.028 confirmed)
+- [ ] **Train/inference window alignment**: We train on 10s but infer on 5s. The model
+  sees 1000 mel frames during training but only 500 at inference. Two options:
+  - **10s overlapping inference** (no retraining): Load 10s centered on each 5s target,
+    overlap-average predictions. 2024 1st place confirmed +0.015 LB.
+  - **Train on 5s** (retraining): Match 2025 1st place who trained AND inferred on 5s.
 
-- ~~TopN postprocessing~~: ✅
-- ~~Temporal smoothing~~: ✅
-- ~~TTA 2.5s shifts~~: ✅
-- **Model soup** (still todo): Average last 3-5 epoch checkpoints
+- [ ] **Mel spectrogram parameters**: Our n_fft=1024, 128 mels differs significantly
+  from 2025 1st place (n_fft=4096, 224 mels). Higher frequency resolution may help
+  distinguish similar bird calls. Requires retraining.
 
-### Larger Improvements
+### Medium Priority
 
-- **Perch as soft label teacher** (+0.030 val): Knowledge distillation from Google Perch
-  model on soundscape clips. Perch baseline alone = 0.825 LB.
-- **Multi-round pseudo-labels with PowerTransform**: p^γ (γ=2.0) sharpening across 4
-  rounds. 2025 1st place core innovation: +0.032 LB.
-- **SoftAUCLoss**: Directly optimizes competition metric (macro ROC-AUC) instead of proxy.
-  Used in later pseudo-label rounds by 2025 1st place.
-- **StochasticDepth**: drop_path_rate=0.2 during pseudo-label training rounds.
-- **Separate non-bird pipeline**: Dedicated model for insects/amphibians (+0.003 LB).
-- **819K prior-year pretraining**: 2025 2nd place gained +0.014 LB from pretraining on
-  BirdCLEF 2021-2024 data (16,607 species, 50 epochs).
-- **Extend SED to ProtoCLR/ConvNeXt/EAT**: See section 6 above.
-- **Ensemble**: Multiple SED models with Optuna weight optimization.
+- [ ] **Model soup**: Average last 3-5 epoch checkpoints. Free stability, no retraining.
+- [ ] **ASL loss**: Asymmetric Loss (γ⁻=4, γ⁺=0, clip=0.05). Competitor: +0.023 over BCE.
+  May work where standard CE failed (v3c) since ASL handles multi-label natively.
+- [ ] **Ensemble with Perch**: Weighted average of our SED + Perch-based predictions.
+  The approaches are complementary (trained features vs foundation model).
+
+### Lower Priority / Longer Term
+
+- [ ] **Perch as soft label teacher** (+0.030 val): Knowledge distillation on soundscapes.
+- [ ] **Multi-round pseudo-labels with PowerTransform**: 2025 1st place: +0.032 LB.
+- [ ] **Extend SED to ProtoCLR/ConvNeXt/EAT**: See section 6 above.
+- [ ] **819K prior-year pretraining**: +0.014 LB from BirdCLEF 2021-2024 data.
+
+### Completed / Ruled Out
+
+- ~~NS-JFT pretrained weights~~: v2, regressed (−0.068 LB, confounded with CE loss)
+- ~~Standard CE loss~~: v3c, hurt offline (−0.041 cmAP). Soft CE is better.
+- ~~Raw waveform mixup~~: v3b, better offline but worse LB (0.802 vs 0.823)
+- ~~TF-ported V1 weights~~: v3a, flat. No meaningful difference from PyTorch RA weights.
+- ~~Post-processing~~: ✅ Done (+0.028 confirmed). TTA + smoothing + TopN.
