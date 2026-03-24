@@ -154,11 +154,13 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 
 ## 8. Training v2 — Close the Gap (est. +0.05–0.08)
 
-- [ ] 8.1 Switch to `tf_efficientnet_b0.ns_jft_in1k` (NS-JFT pretrained)
-- [ ] 8.2 Replace soft CE with standard CE + label_smoothing=0.05 (or try ASL γ⁻=4)
-- [ ] 8.3 Implement raw waveform mixup (move mel to model forward, mixup before mel)
-- [ ] 8.4 Implement 10s overlapping inference (load 10s centered on 5s target)
-- [ ] 8.5 Train v2, submit to Kaggle, target ≥0.85
+- [x] 8.1 Created v2 config: `tf_efficientnet_b0.ns_jft_in1k` + CE loss with label_smoothing=0.05
+- [x] 8.2 Made loss_type configurable in SEDFinetuneModule ("soft_ce" for v1, "ce" for v2)
+- [ ] 8.3 Submit v2 training: `bash sbatch/run.sh config/efficientnet_b0_sed_v2.yaml`
+- [ ] 8.4 Record v2 results, compare to v1
+- [ ] 8.5 Submit v2 to Kaggle LB, target ≥0.85
+- [ ] 8.6 Implement raw waveform mixup (move mel to model forward, mixup before mel)
+- [ ] 8.7 Implement 10s overlapping inference (load 10s centered on 5s target)
 
 ## 9. Documentation
 
