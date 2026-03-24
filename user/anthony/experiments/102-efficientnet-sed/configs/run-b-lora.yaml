@@ -20,7 +20,7 @@ data:
   n_fft: 2048
   hop_length: 256
   target_frames: 625
-  batch_size: 256
+  batch_size: 32  # LoRA needs gradients through backbone — much more memory than frozen
   num_workers: 8
   val_fraction: 0.1
   activity_parquet: artifacts/focal_activity.parquet
