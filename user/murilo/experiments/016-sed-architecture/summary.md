@@ -176,10 +176,11 @@ Three parallel experiments, each changing one variable from v1:
   offline metrics but the worst LB among v3a/v3b
 - The gap to 0.889 is unlikely to be closed by hyperparameter tweaks on V1
 
-**Critical discovery:** The competitor used **EfficientNetV2-B0** (V2 architecture),
-not EfficientNet-B0 (V1). V2 has Fused-MBConv blocks, 5.6M params (vs V1's 3.6M),
-and different channel widths. This is a fundamental architecture mismatch, not a
-hyperparameter gap. v3d tests this.
+**Critical discovery:** The discussion post author (0.889 LB) explicitly used
+**EfficientNetV2-B0** (V2 architecture). The 0.908 commenter said only "SED
+EfficientNet B0" which is ambiguous (could be V1 or V2). V2 has Fused-MBConv
+blocks, 5.6M params (vs V1's 3.6M), and different channel widths. v3d tests
+whether V2 closes the gap.
 
 ## Competition Context
 
@@ -189,7 +190,8 @@ hyperparameter gap. v3d tests this.
 | Perch + ProtoSSM | 0.913 | Same family, different tuning |
 | Perch + LogReg probes | 0.910 | Simplest: frozen Perch + sklearn |
 | Perch v2 baseline | 0.907 | Foundation model + simple probes |
-| **Competitor SED (reference)** | **0.889** | **EfficientNetV2-B0 SED, single model** |
+| Competitor SED (post author) | 0.889 | EfficientNetV2-B0 SED, single model |
+| **Competitor SED (commenter)** | **0.908** | **"SED EfficientNet B0" (V1 or V2 unclear)** |
 | **Our SED v1 + pp** | **0.823** | **EfficientNet-B0 (V1) SED** |
 
 Source: [discussion/683791](https://www.kaggle.com/competitions/birdclef-2026/discussion/683791).
@@ -202,8 +204,9 @@ or an ensemble. The post author confirmed 0.889 with EfficientNetV2-B0 single mo
 
 **Status**: Training. Most promising change.
 
-The competitor confirmed using EfficientNetV2-B0 (`tf_efficientnetv2_b0` in timm), not
-our EfficientNet-B0 (V1). V2 is a fundamentally different architecture:
+The discussion post author (0.889 LB) used EfficientNetV2-B0 (`tf_efficientnetv2_b0`
+in timm). The 0.908 commenter's model variant is ambiguous ("SED EfficientNet B0").
+V2 is a fundamentally different architecture:
 - Fused-MBConv blocks in early layers (faster training, better features)
 - 5.6M params vs 3.6M (56% more capacity)
 - Different channel widths (192 vs 320 at last stage)

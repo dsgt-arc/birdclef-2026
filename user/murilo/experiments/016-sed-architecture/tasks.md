@@ -14,7 +14,7 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 - **Best LB**: **0.823** (v1 + post-processing)
 - **v2 training complete**: NS-JFT + CE loss **regressed** (test/auroc 0.837, LB 0.755)
 - **v3 ablation complete**: v3b LB 0.802 (worse than v1+pp 0.823), v3a/v3c LB pending
-- **v3d (EfficientNetV2-B0) training**: most promising — competitor used V2 not V1
+- **v3d (EfficientNetV2-B0) training**: post author (0.889) used V2; 0.908 commenter ambiguous
 - **Key references**:
   - [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
   - [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach-analysis.md) (0.913 LB)
@@ -228,9 +228,9 @@ Detailed analysis of each item below is in [summary.md](summary.md) § "Potentia
 
 ### High Priority (next experiments)
 
-- [ ] **EfficientNetV2-B0** (v3d, training): Competitor confirmed using V2 not V1.
-  Different architecture entirely: Fused-MBConv, 5.6M params. Most likely to close
-  the gap. If successful → combine with other winning changes into v4.
+- [ ] **EfficientNetV2-B0** (v3d, training): Post author (0.889) used V2; 0.908
+  commenter ambiguous ("SED EfficientNet B0"). V2 has Fused-MBConv, 5.6M params.
+  Worth testing regardless. If successful → combine into v4.
 
 - [ ] **Train/inference window alignment**: We train on 10s but infer on 5s. The model
   sees 1000 mel frames during training but only 500 at inference. Two options:

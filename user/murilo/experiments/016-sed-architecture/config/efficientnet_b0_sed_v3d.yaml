@@ -3,7 +3,8 @@
 # Single variable change from v1: efficientnet_b0 (V1) → tf_efficientnetv2_b0.in1k (V2)
 # Everything else identical to v1.
 #
-# Competitor used "EfficientNetv2_b0" (Keras EfficientNetV2), NOT V1.
+# Discussion post author (0.889 LB) used "EfficientNetv2_b0" (Keras EfficientNetV2).
+# The 0.908 commenter said "SED EfficientNet B0" (V1 or V2 unclear).
 # V2 has Fused-MBConv blocks, 5.6M params (vs V1's 3.6M), different channel widths.
 # Source: https://www.kaggle.com/competitions/birdclef-2026/discussion/683791
 #
