@@ -1,6 +1,6 @@
 {
   "id": "murilogustineli/birdclef-2026-effnet-b0-sed-v1",
-  "title": "BirdCLEF 2026 EfficientNet-B0 SED v1",
+  "title": "BirdCLEF 2026 EffNet-B0 SED v1",
   "code_file": "submission.py",
   "language": "python",
   "kernel_type": "script",
