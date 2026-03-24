@@ -218,6 +218,70 @@ But with 8+ species per soundscape, even MixIT's 4 channels will contain species
 - **Could lead to**: Experiment proposal for training a BirdCLEF-specific MixIT separator, feeding into the augmentation pipeline described in source-separation-augmentation.md
 - **Depends on**: Asteroid library (`MixITLossWrapper`), biodenoising pretrained weights, BirdCLEF 2026 data
 
+## Per-Taxa Separation and High-Frequency Support
+
+### The insect problem at 16 kHz
+
+The current pretrained models (biodenoising, Bird MixIT) operate at 16-22 kHz,
+which loses all content above 8-11 kHz. BirdCLEF 2026 has 28 insect species
+(25 sonotypes + 3 focal) with vocalizations at 8-20+ kHz. These are completely
+invisible to low-sample-rate separators.
+
+### Training at 32 kHz for full-spectrum separation
+
+A separator trained at 32 kHz (BirdCLEF's native rate) would cover all taxa:
+
+| Taxa | Frequency range | Covered at 16 kHz | Covered at 32 kHz |
+|------|----------------|-------------------|-------------------|
+| Birds | 1-12 kHz | Mostly (lose harmonics) | Fully |
+| Amphibians | 0.5-6 kHz | Fully | Fully |
+| Insects | 8-20+ kHz | **Not at all** | Fully |
+| Mammals | 0.1-8 kHz | Fully | Fully |
+
+ConvTasNet (Path B) at 32 kHz is the simplest path to full-spectrum separation.
+
+### Per-taxa separation channels
+
+Instead of generic 4-source separation, train with taxa-aware channel
+assignment:
+
+| Channel | Target content | Why |
+|---------|---------------|-----|
+| 1 | Birds | Tonal, harmonic, 1-12 kHz |
+| 2 | Amphibians | Repetitive, narrow-band, 0.5-6 kHz |
+| 3 | Insects | Broadband, high-frequency, 8-20+ kHz |
+| 4 | Background/noise | Abiotic sounds, anthropophony |
+
+This is NOT supervised separation (we don't have per-taxa ground truth in
+soundscapes). But we can bias the MixIT training by forming MoMs from
+same-taxa focal recordings:
+
+```
+MoM_birds = bird_recording_1 + bird_recording_2
+MoM_frogs = frog_recording_1 + frog_recording_2
+MoM_cross = bird_recording + frog_recording  # cross-taxa
+```
+
+Training on a mix of same-taxa and cross-taxa MoMs lets the model learn
+both within-taxa separation and cross-taxa separation.
+
+### Connection to codec motif search
+
+Per-taxa separation + codec tokenization creates a clean pipeline:
+
+```
+soundscape → separator → 4 channels (bird/frog/insect/noise)
+    → codec tokenizer → token sequences per channel
+    → motif search per taxa (search bird tokens for bird calls,
+      insect tokens for insect calls)
+```
+
+The separator reduces the search space: instead of searching for a bird
+call in a dense multi-taxa soundscape, search in the bird-isolated channel.
+The codec tokenization makes the search fast (DNA-style k-mer matching).
+
+See `docs/concepts/codec-motif-search.md` for the search component.
+
 ## Notes
 
 - **Asteroid is already a biodenoising dependency**, so adding it to the pipeline introduces no new top-level dependency.
