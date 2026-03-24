@@ -293,6 +293,16 @@ export_effnet_b0_sed_v2() {
         --output-dir artifacts/weights/effnet-b0-sed-v2/
 }
 
+export_effnet_b0_sed_v3b() {
+    echo "=== Exporting EfficientNet-B0 SED v3b (raw waveform mixup, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/016-sed-architecture/checkpoints/2026-effnet-b0-sed-v3b/best-epochepoch=25.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP016_DIR}/config/efficientnet_b0_sed_v3b.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v3b/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -337,7 +347,7 @@ esac
 case "$MODEL" in
     eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
     protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student|\
-    effnet-b0-sed-v1|effnet-b0-sed-v2|all-2026-sed)
+    effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3b|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TAXONOMY_CSV_2026" \
@@ -396,10 +406,13 @@ case "$MODEL" in
         ;;
     effnet-b0-sed-v1)          export_effnet_b0_sed_v1 ;;
     effnet-b0-sed-v2)          export_effnet_b0_sed_v2 ;;
+    effnet-b0-sed-v3b)         export_effnet_b0_sed_v3b ;;
     all-2026-sed)
         export_effnet_b0_sed_v1
         echo ""
         export_effnet_b0_sed_v2
+        echo ""
+        export_effnet_b0_sed_v3b
         ;;
     *)
         echo "Unknown model: $MODEL"

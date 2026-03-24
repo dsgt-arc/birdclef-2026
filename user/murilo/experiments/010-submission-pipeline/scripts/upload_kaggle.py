@@ -134,6 +134,11 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-sed-v2",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v2.json",
     },
+    "effnet-b0-sed-v3b": {
+        "slug": "birdclef-2026-effnet-b0-sed-v3b-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v3b",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v3b.json",
+    },
 }
 
 

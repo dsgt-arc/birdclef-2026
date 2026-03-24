@@ -124,12 +124,14 @@ v2: standard CE with label_smoothing=0.05, NS-JFT pretrained (`tf_efficientnet_b
 |------|---------|-------------|---------|-----------|----------|------------|-----|------------|
 | `effnet-b0-sed-v1` | EfficientNet-B0 | SED (GeM + AttHead) | 234 | **0.860** | **0.593** | 24 | 0.795 / **0.823** (+ pp) | `016-.../2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
 | `effnet-b0-sed-v2` | EfficientNet-B0 (NS-JFT) | SED (GeM + AttHead) + CE | 234 | 0.837 | 0.539 | 24 | **0.755** (+pp) | `016-.../2026-effnet-b0-sed-v2/best-epochepoch=24.ckpt` |
+| `effnet-b0-sed-v3b` | EfficientNet-B0 | SED + raw waveform mixup | 234 | **0.862** | **0.607** | 25 | pending | `016-.../2026-effnet-b0-sed-v3b/best-epochepoch=25.ckpt` |
 
 ### Comparison: SED vs Clip-Level (offline test set)
 
 | Model | Architecture | Test AUROC | Test cmAP | LB |
 |-------|-------------|-----------|----------|-----|
-| **EfficientNet-B0 SED v1** | **SED (GeM + AttHead)** | **0.860** | **0.593** | 0.795 / **0.823** (+pp) |
+| **EfficientNet-B0 SED v3b** | **SED + raw waveform mixup** | **0.862** | **0.607** | pending |
+| EfficientNet-B0 SED v1 | SED (GeM + AttHead) | 0.860 | 0.593 | 0.795 / **0.823** (+pp) |
 | EfficientNet-B0 SED v2 | SED + NS-JFT + CE | 0.837 | 0.539 | **0.755** (+pp) |
 | ProtoCLR (exp 012) | Clip (global avg pool) | 0.845 | 0.481 | 0.767 |
 | ConvNeXt (exp 012) | Clip (global avg pool) | 0.844 | 0.470 | 0.755 |

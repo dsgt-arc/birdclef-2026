@@ -35,6 +35,7 @@ augmentation, loss function, and inference strategy.
 | **EfficientNet-B0 SED v1 + pp** | **SED + TTA + smoothing + TopN** | **0.823** | **+0.056** |
 | EfficientNet-B0 SED v1 | SED | 0.795 | +0.028 |
 | EfficientNet-B0 SED v2 + pp | SED (NS-JFT + CE) + TTA + smoothing + TopN | **0.755** | **−0.012** |
+| EfficientNet-B0 SED v3b | SED + raw waveform mixup | pending | — |
 | ProtoCLR (exp 012) | Clip | 0.767 | baseline |
 | ConvNeXt (exp 012) | Clip | 0.755 | −0.012 |
 | EAT (exp 012) | Clip | 0.720 | −0.047 |
@@ -55,7 +56,8 @@ gain +0.028 vs estimated +0.033. These are free inference-time improvements.
 
 | Model | Test AUROC | Test cmAP |
 |-------|-----------|----------|
-| **EfficientNet-B0 SED v1** | **0.860** | **0.593** |
+| **EfficientNet-B0 SED v3b (raw waveform mixup)** | **0.862** | **0.607** |
+| EfficientNet-B0 SED v1 | 0.860 | 0.593 |
 | EfficientNet-B0 SED v2 (NS-JFT + CE) | 0.837 | 0.539 |
 | ProtoCLR (exp 012) | 0.845 | 0.481 |
 | ConvNeXt (exp 012) | 0.844 | 0.470 |
@@ -86,8 +88,26 @@ attribute the regression. Possible explanations:
    many segments genuinely contain multiple species
 3. The combination of both changes compounded negatively
 
-**Conclusion**: v2 is a clear negative result. v1 (ImageNet + soft CE) remains the best
-SED model at **0.823 LB**.
+**Conclusion**: v2 is a clear negative result.
+
+### V3b Training Results (Raw Waveform Mixup) — Improvement
+
+V3b changed one variable from v1: mixup on raw waveforms instead of spectrograms.
+Mel transform moved to GPU-side (inside `training_step`), so mixup applies before
+mel conversion. Required fix: force float32 for mel computation under mixed precision
+(nnAudio STFT overflows float16).
+
+| Metric | v1 (spectrogram mixup) | v3b (waveform mixup) | Delta |
+|--------|----------------------|---------------------|-------|
+| val/auroc | 0.845 | 0.846 | +0.001 |
+| test/auroc | 0.860 | 0.862 | +0.002 |
+| test/cmap | 0.593 | **0.607** | **+0.014** |
+| Best epoch | 24 | 25 | +1 |
+| Stopped | 34 | 36 | +2 |
+
+cmAP improved by +0.014, suggesting waveform mixup helps the model detect brief calls
+more accurately (cmAP is sensitive to per-class precision). AUROC improvement is modest.
+LB submission pending — if post-processing gains are additive, expect ~0.825+.
 
 ---
 
