@@ -1,7 +1,8 @@
 """CLI entry point for EfficientNet-B1 fine-tuning with optional LoRA.
 
-Forked from exp 012. Reads a YAML config that controls backbone mode
-(frozen/lora/full), LoRA parameters, and training settings.
+Config-driven: reads a YAML that controls backbone mode (frozen/lora/full),
+LoRA parameters, training settings, and optional activity score weighting.
+Fully self-contained — no exp 009 dependency at runtime.
 """
 
 import argparse
@@ -11,11 +12,10 @@ import pytorch_lightning as pl
 import yaml
 from nnAudio.features import MelSpectrogram
 
-from birdclef_009.training.finetune import FinetuneLightningModule
-from birdclef_009.utils.gpu_monitor import GPUUtilizationMonitor
-
 from .data import BirdCLEF102DataModule, build_species_list
+from .gpu_monitor import GPUUtilizationMonitor
 from .model import EfficientNetClassifier
+from .training import TrainingModule
 
 logger = logging.getLogger(__name__)
 
@@ -84,17 +84,18 @@ def main():
     logger.info(f"Trainable parameters: {trainable_params:,} ({100*trainable_params/total_params:.1f}%)")
     logger.info(f"Backbone mode: {backbone_mode}")
 
-    # Build Lightning module
-    lightning_module = FinetuneLightningModule(
+    # Build training module
+    use_activity = train_cfg.get("use_activity_weights", False)
+    lightning_module = TrainingModule(
         model=model,
         num_classes=num_classes,
         lr=train_cfg["lr"],
         weight_decay=train_cfg["weight_decay"],
         max_epochs=train_cfg["max_epochs"],
         warmup_epochs=train_cfg.get("warmup_epochs", 0),
-        freeze_epochs=0,
         gamma=train_cfg.get("gamma", 2.0),
         augmentation=train_cfg.get("augmentation"),
+        use_activity_weights=use_activity,
     )
 
     # Build data module
@@ -110,7 +111,7 @@ def main():
         activity_parquet=data_cfg.get("activity_parquet"),
     )
 
-    # Run name for logging
+    # Run name
     run_name = args.run_name or backbone_mode
     log_dir = f"logs/{run_name}"
 
@@ -138,7 +139,6 @@ def main():
 
     max_epochs = 200 if args.overfit_batches else train_cfg["max_epochs"]
 
-    # Trainer
     trainer = pl.Trainer(
         max_epochs=max_epochs,
         precision=train_cfg.get("precision", "bf16-mixed"),
