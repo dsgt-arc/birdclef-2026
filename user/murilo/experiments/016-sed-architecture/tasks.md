@@ -127,6 +127,11 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
 
 ## Future Work
 
+- **Raw waveform mixup**: Current implementation does spectrogram-domain mixup (post mel
+  transform). The competitor used "Mixup on Raw Waves" — mixing waveforms before mel
+  conversion preserves phase relationships and produces more realistic audio mixtures.
+  Requires moving mel transform from dataset __getitem__ to model forward pass (GPU-side)
+  or applying mixup in a custom collate function on raw waveforms before transform.
 - **Temporal post-processing**: Gaussian smoothing [0.1, 0.2, 0.4, 0.2, 0.1]
 - **Ensemble**: Multiple SED models (EfficientNet-B0 + our 3 encoders)
 - **Pseudo-labeling with SED teachers**: Re-run exp 014/015 with SED-based teachers

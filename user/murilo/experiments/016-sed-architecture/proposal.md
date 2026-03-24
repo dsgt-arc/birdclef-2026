@@ -189,6 +189,13 @@ if random() < 0.5:
 Mixup on raw waveforms (before mel conversion) is more natural for audio than
 spectrogram-domain mixup because it preserves phase relationships.
 
+**Round 1 implementation note**: The initial implementation uses **spectrogram-domain
+mixup** instead of raw waveform mixup. This is because the mel transform runs in the
+dataset's `__getitem__` (CPU workers), so the model receives pre-computed spectrograms.
+Moving to true waveform mixup requires either: (a) moving mel computation to the model's
+forward pass (GPU-side), or (b) applying mixup in a custom collate function before the
+transform. This is deferred to future work if the architecture shows promise.
+
 ### Training Strategy
 
 1. **Start from exp 012 checkpoints** (ProtoCLR, ConvNeXt, EAT — soundscape-adapted)
