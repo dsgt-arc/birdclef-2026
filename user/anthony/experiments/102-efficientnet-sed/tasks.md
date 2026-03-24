@@ -1,28 +1,33 @@
 # Tasks
 
 ## 1. Setup
-- [ ] 1.1 Fork exp 012 model.py, cli.py into src/birdclef_102/
-- [ ] 1.2 Create pyproject.toml (add peft dependency)
-- [ ] 1.3 Create configs: run-a.yaml (frozen baseline), run-b.yaml (LoRA)
-- [ ] 1.4 Update data paths to BirdCLEF 2026
-- [ ] 1.5 Verify with fast-dev-run
+- [x] 1.1 Fork exp 012 model.py, cli.py into src/birdclef_102/
+- [x] 1.2 Create pyproject.toml
+- [x] 1.3 Create configs for each run
+- [x] 1.4 Update data paths to BirdCLEF 2026
+- [x] 1.5 Verify with fast-dev-run
+- [x] 1.6 Build activity scores parquet
 
 ## 2. Implementation
-- [ ] 2.1 Add LoRA wrapper via PEFT (apply_lora method on EfficientNet backbone)
-- [ ] 2.2 Add config flag: freeze_backbone (true for Run A, false for Run B/C)
-- [ ] 2.3 Add activity score loading option (sample weighting from focal_activity.parquet)
-- [ ] 2.4 Run C: add soundscape data loading + mixup
+- [x] 2.1 Vendor data module with parquet-based loading
+- [x] 2.2 Vendor training module, losses, SpecAugment, GPU monitor
+- [x] 2.3 Add LoRA via PEFT
+- [x] 2.4 Add attention pooling with standard SED formula (tanh + sigmoid)
+- [x] 2.5 Add GEMM hidden projection layer
+- [x] 2.6 Add ONNX export (handles frozen, LoRA merge, attention)
+- [x] 2.7 Add Kaggle submission kernel
 
 ## 3. Training
-- [ ] 3.1 Run A: frozen + linear (2026 baseline)
-- [ ] 3.2 Run B: LoRA + linear (main hypothesis)
-- [ ] 3.3 Run C: LoRA + linear + soundscape mixup
-- [ ] 3.4 Monitor training curves
+- [ ] 3.1 Run A: frozen + avg pool (2026 baseline) — job 5436408
+- [ ] 3.2 Run B: LoRA + avg pool — job 5436505
+- [ ] 3.3 Run C: LoRA + attention + GEMM(512) — ready to submit
+- [ ] 3.4 Run D: best pooling + soundscape mixup — needs data module
 
 ## 4. Evaluation
-- [ ] 4.1 Focal validation (AUROC, cmAP)
+- [ ] 4.1 Focal validation (AUROC, cmAP) for each run
 - [ ] 4.2 Soundscape evaluation (exp 101 pipeline, 739 windows)
-- [ ] 4.3 Export best to ONNX → Kaggle submission
+- [ ] 4.3 Export best to ONNX
+- [ ] 4.4 Kaggle submission
 
 ## 5. Documentation
 - [ ] 5.1 Write results.md

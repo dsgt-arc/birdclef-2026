@@ -108,13 +108,13 @@ LoRA config (following Murilo's exp 011):
 
 | Run | Backbone | Head | Data | Purpose |
 |-----|----------|------|------|---------|
-| **A** | Frozen | Linear (avg pool) | Focal only | Reproduce exp 012 baseline on 2026 data |
-| **B** | LoRA (rank 8) | Linear (avg pool) | Focal only | Does LoRA help? |
-| **C** | LoRA (rank 8) | Linear (avg pool) | Focal + soundscape mixup | Does in-domain data help? |
+| **A** | Frozen | Linear (avg pool) | Focal only | 2026 baseline |
+| **B** | LoRA r=8 | Linear (avg pool) | Focal only | Does LoRA help? |
+| **C** | LoRA r=8 | Attention + GEMM(512) | Focal only | Does attention help? |
+| **D** | LoRA r=8 | Best from A-C | Focal + soundscape mixup | Does in-domain data help? |
 
-Sequential progression — each run adds one change. Single LR throughout
-(no differential LR needed with LoRA). LoRA adapters on attention layers,
-backbone weights frozen.
+Sequential progression — each run adds one change. Run D uses whichever
+pooling mode won in A-C.
 
 ### Setup
 
@@ -140,9 +140,10 @@ backbone weights frozen.
 
 **Phase 2: Training**
 
-6. Run A: frozen backbone + linear head, focal only (2026 baseline)
-7. Run B: LoRA backbone + linear head, focal only (main hypothesis)
-8. Run C: LoRA backbone + linear head, focal + soundscape mixup
+6. Run A: frozen backbone + avg pool, focal only (2026 baseline)
+7. Run B: LoRA backbone + avg pool, focal only (does LoRA help?)
+8. Run C: LoRA backbone + attention pool + GEMM(512), focal only (does attention help?)
+9. Run D: LoRA backbone + best pooling, focal + soundscape mixup (does in-domain data help?)
 
 **Phase 3: Evaluation**
 
