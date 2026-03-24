@@ -31,10 +31,9 @@ through the same architecture cannot improve and may even degrade LB performance
 |-------|-----------|-----------|----------|------------|------------|
 | ProtoCLR | 0.827 | 0.846 | 0.485 | 5 | 9 |
 | EAT | 0.829 | 0.842 | 0.465 | 2 | 8 |
-| ConvNeXt | — | — | — | — | timed out |
+| ConvNeXt | 0.833 | 0.845 | 0.479 | 1 | 9 |
 
 All models early-stopped quickly, barely improving from the exp 012 starting point.
-ConvNeXt student training timed out (24hr limit) and was not completed.
 
 ## Leaderboard Results
 
@@ -42,7 +41,7 @@ ConvNeXt student training timed out (24hr limit) and was not completed.
 |-------|-----------|-----------|-------|
 | ProtoCLR | **0.767** | 0.762 | **−0.005** |
 | EAT | 0.720 | 0.696 | **−0.024** |
-| ConvNeXt | 0.755 | — | — |
+| ConvNeXt | 0.755 | pending | — |
 
 **Both models regressed on LB.** EAT's larger drop (−0.024) may reflect the
 pseudo-label quality mismatch: EAT was excluded from the teacher ensemble
@@ -57,7 +56,7 @@ spectral characteristics.
 |-------|--------------|--------------|-------|-------------|-------------|-------|
 | ProtoCLR | 0.845 | 0.846 | +0.001 | 0.481 | 0.485 | +0.004 |
 | EAT | 0.838 | 0.842 | +0.004 | 0.452 | 0.465 | +0.013 |
-| ConvNeXt | 0.844 | — | — | 0.470 | — | — |
+| ConvNeXt | 0.844 | 0.845 | +0.001 | 0.470 | 0.479 | +0.009 |
 
 **Key discrepancy**: Offline metrics improved slightly but LB regressed. The
 offline test set is dominated by focal data (~26K segments vs ~86 soundscape)
