@@ -49,6 +49,18 @@ ProtoCLR fulldata improved from 0.721 → **0.736** (+0.015) by training on 100%
 EAT fulldata dropped from 0.701 → **0.698** (−0.003) — overfitting from training all 50 epochs without early stopping (best epoch was 17 on the 80/10/10 split). Future EAT fulldata runs should cap at ~25 epochs (~1.5× best epoch).
 ConvNeXt fulldata dropped from 0.720 → **0.695** (−0.025) — also overfitting, likely same cause as EAT. Best epoch was 9 on 80/10/10 but fulldata trained ~50 epochs. Future ConvNeXt fulldata runs should cap at ~15 epochs.
 
+### Models Fine-Tuned on Labeled Soundscapes (exp 012, 234 classes)
+
+Exp 011 checkpoints fine-tuned on mixed focal + labeled soundscape data, with head expanded from 206 → 234 species to cover all submission classes (including 28 soundscape-only insect/amphibian sonotypes).
+
+| Model | Training Data | Mapped Species | Public LB Score | vs Fulldata | Date |
+|-------|--------------|---------------:|----------------:|------------:|------|
+| ProtoCLR LoRA attn | Focal + soundscape (exp 012) | 234/234 | **0.767** | +0.031 | 2026-03-21 |
+| EAT LoRA attn+MLP head | Focal + soundscape (exp 012) | 234/234 | **0.720** | +0.022 | 2026-03-22 |
+| ConvNeXt LoRA MLP+MLP head | Focal + soundscape (exp 012) | 234/234 | **0.755** | +0.060 | 2026-03-22 |
+
+Soundscape fine-tuning improves all models by expanding species coverage and adapting to the soundscape domain. ProtoCLR-soundscape (**0.767**) is the best single-model score to date.
+
 ## Observations
 
 - **ProtoCLR 2025 scored 0.531 macro-AUROC** on the public leaderboard despite only covering

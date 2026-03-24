@@ -35,7 +35,7 @@ from tqdm import tqdm
 repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root / "src"))
 
-from birdclef.data.birdclef2025 import build_species_list  # noqa: E402
+from birdclef.data.dataset import build_species_list  # noqa: E402
 from birdclef.data.inference import InferenceChunkDataset, inference_collate_fn  # noqa: E402
 from birdclef.encoders.protoclr import ProtoCLREncoder  # noqa: E402
 from birdclef.lightning.lora_finetune import LoRAFinetuneModule  # noqa: E402

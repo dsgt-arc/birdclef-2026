@@ -208,6 +208,99 @@ export_convnext_2026_fulldata() {
 }
 
 # ============================================================================
+# 2026-trained soundscape model exports (exp 012 checkpoints, 234 classes)
+# ============================================================================
+
+TAXONOMY_CSV_2026="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/taxonomy.csv"
+EXP012_DIR="$(dirname "$EXPERIMENT_DIR")/012-soundscape-finetune"
+
+export_protoclr_2026_soundscape() {
+    echo "=== Exporting ProtoCLR (2026-soundscape, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-protoclr-soundscape/best-epochepoch=11.ckpt"
+    python scripts/export_protoclr.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP012_DIR}/config/protoclr_soundscape.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/protoclr-2026-soundscape/
+}
+
+export_eat_2026_soundscape() {
+    echo "=== Exporting EAT (2026-soundscape, 234 classes) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-eat-soundscape"
+    local CKPT
+    CKPT="$(ls -t "$CKPT_DIR"/best-epoch*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No best-epoch*.ckpt found in $CKPT_DIR" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_eat.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP012_DIR}/config/eat_soundscape.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/eat-2026-soundscape/
+}
+
+# ============================================================================
+# 2026-trained student model exports (exp 015 checkpoints, 234 classes)
+# ============================================================================
+
+EXP015_DIR="$(dirname "$EXPERIMENT_DIR")/015-student-training"
+
+export_protoclr_2026_student_v1() {
+    echo "=== Exporting ProtoCLR (2026-student-v1, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/015-student-training/checkpoints/2026-protoclr-student-v1/best-epochepoch=05.ckpt"
+    python scripts/export_protoclr.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP015_DIR}/config/protoclr_student.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/protoclr-2026-student-v1/
+}
+
+export_eat_2026_student_v1() {
+    echo "=== Exporting EAT (2026-student-v1, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/015-student-training/checkpoints/2026-eat-student-v1/best-epochepoch=02.ckpt"
+    python scripts/export_eat.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP015_DIR}/config/eat_student.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/eat-2026-student-v1/
+}
+
+# ============================================================================
+# 2026 SED model exports (exp 016 checkpoints, 234 classes)
+# ============================================================================
+
+EXP016_DIR="$(dirname "$EXPERIMENT_DIR")/016-sed-architecture"
+
+export_effnet_b0_sed_v1() {
+    echo "=== Exporting EfficientNet-B0 SED (2026, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/016-sed-architecture/checkpoints/2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP016_DIR}/config/efficientnet_b0_sed.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v1/
+}
+
+export_convnext_2026_soundscape() {
+    echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
+    local CKPT
+    CKPT="$(ls -t "$CKPT_DIR"/best-epoch*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No best-epoch*.ckpt found in $CKPT_DIR" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_convnext.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP012_DIR}/config/convnext_soundscape.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/convnext-2026-soundscape/
+}
+
+# ============================================================================
 # Build species mappings and run exports
 # ============================================================================
 
@@ -227,6 +320,18 @@ case "$MODEL" in
         python scripts/build_species_mapping.py \
             --train-csv "$TRAIN_CSV_2026" \
             --output artifacts/weights/species_mapping_2026.json
+        echo ""
+        ;;
+esac
+
+case "$MODEL" in
+    eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
+    protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student|\
+    effnet-b0-sed-v1|all-2026-sed)
+        echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
+        python scripts/build_species_mapping.py \
+            --train-csv "$TAXONOMY_CSV_2026" \
+            --output artifacts/weights/species_mapping_2026_234.json
         echo ""
         ;;
 esac
@@ -261,6 +366,27 @@ case "$MODEL" in
         export_convnext_2026_fulldata
         echo ""
         export_protoclr_2026_fulldata
+        ;;
+    eat-2026-soundscape)       export_eat_2026_soundscape ;;
+    convnext-2026-soundscape)  export_convnext_2026_soundscape ;;
+    protoclr-2026-soundscape)  export_protoclr_2026_soundscape ;;
+    all-2026-soundscape)
+        export_eat_2026_soundscape
+        echo ""
+        export_convnext_2026_soundscape
+        echo ""
+        export_protoclr_2026_soundscape
+        ;;
+    protoclr-2026-student-v1)  export_protoclr_2026_student_v1 ;;
+    eat-2026-student-v1)       export_eat_2026_student_v1 ;;
+    all-2026-student)
+        export_protoclr_2026_student_v1
+        echo ""
+        export_eat_2026_student_v1
+        ;;
+    effnet-b0-sed-v1)          export_effnet_b0_sed_v1 ;;
+    all-2026-sed)
+        export_effnet_b0_sed_v1
         ;;
     *)
         echo "Unknown model: $MODEL"

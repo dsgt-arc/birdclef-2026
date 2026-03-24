@@ -54,7 +54,7 @@ def main():
 
     from peft import LoraConfig, get_peft_model
 
-    from birdclef.data.birdclef2025 import build_species_list
+    from birdclef.data.dataset import build_species_list
     from birdclef.encoders.eat import EATEncoder
     from birdclef.lightning.lora_finetune import LoRAFinetuneModule
 

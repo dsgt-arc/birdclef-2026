@@ -18,7 +18,21 @@ def __getattr__(name):
         from birdclef.lightning.supervised_vit import SupervisedViTModule
 
         return SupervisedViTModule
+    if name == "StudentFinetuneModule":
+        from birdclef.lightning.student_finetune import StudentFinetuneModule
+
+        return StudentFinetuneModule
+    if name == "SEDFinetuneModule":
+        from birdclef.lightning.sed_finetune import SEDFinetuneModule
+
+        return SEDFinetuneModule
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["BirdSetDataModule", "StreamingBirdSetDataModule", "SupervisedViTModule"]
+__all__ = [
+    "BirdSetDataModule",
+    "SEDFinetuneModule",
+    "StreamingBirdSetDataModule",
+    "StudentFinetuneModule",
+    "SupervisedViTModule",
+]

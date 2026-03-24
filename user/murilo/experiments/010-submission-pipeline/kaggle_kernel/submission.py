@@ -91,6 +91,15 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # SED models, 234 classes (exp 016)
+    "birdclef-2026-effnet-b0-sed-v1-weights",
+    # Student models trained on focal + soundscape + pseudo-labels, 234 classes (exp 015)
+    "birdclef-2026-protoclr-student-v1-weights",
+    "birdclef-2026-eat-student-v1-weights",
+    # Models fine-tuned on focal + labeled soundscapes, 234 classes (exp 012)
+    "birdclef-2026-protoclr-soundscape-weights",
+    "birdclef-2026-eat-soundscape-weights",
+    "birdclef-2026-convnext-soundscape-weights",
     # Models trained on BirdCLEF 2026 focal data, 100% fulldata (206/234 species mapped)
     "birdclef-2026-protoclr-fulldata-weights",
     "birdclef-2026-eat-fulldata-weights",
@@ -128,6 +137,9 @@ def find_weights_dir() -> Path:
     # Local testing fallback
     local = Path("artifacts/weights")
     for subdir in [
+        "protoclr-2026-soundscape",
+        "eat-2026-soundscape",
+        "convnext-2026-soundscape",
         "protoclr-2026-fulldata",
         "eat-2026-fulldata",
         "convnext-2026-fulldata",
@@ -336,10 +348,87 @@ def load_audio_chunk(audio_path, sr, start_s, duration_s):
 # ---------------------------------------------------------------------------
 
 
+def _run_onnx(session, mel, mel_cfg):
+    """Run ONNX inference and return probability vector."""
+    input_name = session.get_inputs()[0].name
+    output = session.run(None, {input_name: mel})[0]
+    output = output.flatten()
+
+    # SED models output blended probabilities directly; clip-level models output logits
+    if mel_cfg.get("output_type") == "probs":
+        return output
+    else:
+        return sigmoid(output)
+
+
+def _predict_segment_with_tta(
+    session, audio_path, sr, window_start_s, window_duration, mel_cfg, use_tta=True
+):
+    """Predict one segment, optionally with temporal TTA (2.5s shifts).
+
+    TTA: run 3 predictions per segment (center, -2.5s, +2.5s) and average.
+    Confirmed +0.012 LB from competition analysis.
+    """
+    audio = load_audio_chunk(audio_path, sr, window_start_s, window_duration)
+    mel = compute_mel(audio, mel_cfg)
+    probs = _run_onnx(session, mel, mel_cfg)
+
+    if not use_tta:
+        return probs
+
+    # TTA: shifted predictions
+    shift_s = window_duration / 2  # 2.5s for 5s windows
+    tta_preds = [probs]
+
+    for shift in [-shift_s, shift_s]:
+        shifted_start = window_start_s + shift
+        if shifted_start < 0:
+            shifted_start = 0
+        audio_shifted = load_audio_chunk(audio_path, sr, shifted_start, window_duration)
+        mel_shifted = compute_mel(audio_shifted, mel_cfg)
+        tta_preds.append(_run_onnx(session, mel_shifted, mel_cfg))
+
+    # Average: 50% center + 25% left + 25% right
+    return 0.5 * tta_preds[0] + 0.25 * tta_preds[1] + 0.25 * tta_preds[2]
+
+
+def _apply_temporal_smoothing(probs_matrix):
+    """Gaussian temporal smoothing across consecutive segments.
+
+    Kernel [0.1, 0.2, 0.4, 0.2, 0.1] — confirmed +0.010 LB.
+    """
+    kernel = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+    n_segments, n_species = probs_matrix.shape
+    if n_segments < 3:
+        return probs_matrix
+
+    smoothed = np.copy(probs_matrix)
+    for c in range(n_species):
+        smoothed[:, c] = np.convolve(probs_matrix[:, c], kernel, mode="same")
+    return smoothed
+
+
+def _apply_topn(probs_matrix):
+    """TopN postprocessing: multiply each segment by file-level max per species.
+
+    Boosts species that are consistently detected across the file and suppresses
+    spurious single-segment detections. Confirmed +0.011 LB.
+    """
+    file_max = probs_matrix.max(axis=0, keepdims=True)
+    return probs_matrix * file_max
+
+
+# Post-processing flags (set to True to enable)
+ENABLE_TTA = True
+ENABLE_TEMPORAL_SMOOTHING = True
+ENABLE_TOPN = True
+
+
 def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
     """Process one soundscape file and return prediction rows.
 
     Each 5s window produces one row with 234 BirdCLEF 2026 species columns.
+    Applies post-processing: TTA → temporal smoothing → TopN.
     """
     sr = mel_cfg["sr"]
     window_duration = 5.0
@@ -351,35 +440,48 @@ def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
     species_2026 = species_mapping["birdclef2026_species"]
     idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
 
-    predictions = []
+    # Collect all segment probabilities as a matrix for post-processing
+    segment_probs = []
+    segment_times = []
     window_start_s = 0.0
 
     while window_start_s < total_duration:
-        audio = load_audio_chunk(audio_path, sr, window_start_s, window_duration)
-        mel = compute_mel(audio, mel_cfg)
+        probs = _predict_segment_with_tta(
+            session,
+            audio_path,
+            sr,
+            window_start_s,
+            window_duration,
+            mel_cfg,
+            use_tta=ENABLE_TTA,
+        )
+        segment_probs.append(probs)
+        segment_times.append(int(window_start_s + window_duration))
+        window_start_s += window_duration
 
-        # ONNX inference
-        input_name = session.get_inputs()[0].name
-        logits = session.run(None, {input_name: mel})[0]
-        # Flatten to 1D: handles both (1, 206) and (206,) output shapes
-        logits = logits.flatten()
-        probs_206 = sigmoid(logits)  # (206,)
+    # Stack into (n_segments, n_model_outputs) matrix
+    probs_matrix = np.stack(segment_probs)  # (n_segments, n_model_outputs)
 
-        # Map 206 probs to 234 submission columns
-        end_time = int(window_start_s + window_duration)
+    # Apply post-processing pipeline
+    if ENABLE_TEMPORAL_SMOOTHING:
+        probs_matrix = _apply_temporal_smoothing(probs_matrix)
+
+    if ENABLE_TOPN:
+        probs_matrix = _apply_topn(probs_matrix)
+
+    # Build prediction rows mapped to 234 submission columns
+    predictions = []
+    for i, end_time in enumerate(segment_times):
         row_id = f"{soundscape_id}_{end_time}"
         row = {"row_id": row_id}
 
-        # Default all 2026 species to 0.0
         for sp in species_2026:
             row[sp] = 0.0
 
-        # Fill in overlapping species from model output
         for idx_str, name_2026 in idx_map.items():
-            row[name_2026] = float(probs_206[int(idx_str)])
+            row[name_2026] = float(probs_matrix[i, int(idx_str)])
 
         predictions.append(row)
-        window_start_s += window_duration
 
     return predictions
 
