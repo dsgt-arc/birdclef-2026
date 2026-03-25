@@ -228,43 +228,34 @@ Three parallel runs, each changing one variable from v1 baseline:
 - [x] 10.3 Create summary.md with full experiment report
 - [x] 10.4 Kaggle notebook reference docs (Perch+ProtoSSM, Pantanal Distill, etc.)
 
+## 11. Post-Processing v2 — Inference-Only Improvements (no retraining)
+
+Same v1 ONNX model. New slug: `effnet-b0-sed-v1-10s-pp2`.
+Adds temperature scaling + taxa-aware smoothing + metadata priors.
+
+- [ ] 11.1 Temperature scaling (T=1.10, logit-space)
+- [ ] 11.2 Taxa-aware temporal smoothing (local-max for birds, avg-neighbor for frogs/insects)
+- [ ] 11.3 Metadata priors (site/hour from soundscape filenames, Bayesian fusion)
+- [ ] 11.4 Create build_inference_priors.py, pp2 weights dir, kernel metadata
+- [ ] 11.5 Upload to Kaggle + submit for LB score
+- [ ] 11.6 Record LB result (baseline: v1-10s 0.826)
+- [ ] 11.7 Model soup: average v1 checkpoints epochs 20-24, re-export ONNX
+
 ---
 
-## Future Work
-
-Detailed analysis of each item below is in [summary.md](summary.md) § "Potential Next Steps".
-
-### High Priority (next experiments)
-
-- [x] ~~**EfficientNetV2-B0**~~: v3d, hurt offline (−0.019 AUROC, −0.070 cmAP).
-  V2 not better with our recipe. May need different hyperparameters.
-
-- [x] **10s overlapping inference** (v1-10s): **LB 0.826** (+0.003). Confirmed
-  train/inference alignment helps. Modest gain — bulk of remaining gap is elsewhere.
-
-- [ ] **Mel spectrogram parameters**: Our n_fft=1024, 128 mels differs significantly
-  from 2025 1st place (n_fft=4096, 224 mels). Higher frequency resolution may help
-  distinguish similar bird calls. Requires retraining.
-
-### Medium Priority
-
-- [ ] **Model soup**: Average last 3-5 epoch checkpoints. Free stability, no retraining.
-- [ ] **ASL loss**: Asymmetric Loss (γ⁻=4, γ⁺=0, clip=0.05). Competitor: +0.023 over BCE.
-  May work where standard CE failed (v3c) since ASL handles multi-label natively.
-- [ ] **Ensemble with Perch**: Weighted average of our SED + Perch-based predictions.
-  The approaches are complementary (trained features vs foundation model).
-
-### Lower Priority / Longer Term
-
-- [ ] **Perch as soft label teacher** (+0.030 val): Knowledge distillation on soundscapes.
-- [ ] **Multi-round pseudo-labels with PowerTransform**: 2025 1st place: +0.032 LB.
-- [ ] **Extend SED to ProtoCLR/ConvNeXt/EAT**: See section 6 above.
-- [ ] **819K prior-year pretraining**: +0.014 LB from BirdCLEF 2021-2024 data.
-
-### Completed / Ruled Out
+## Completed / Ruled Out
 
 - ~~NS-JFT pretrained weights~~: v2, regressed (−0.068 LB, confounded with CE loss)
 - ~~Standard CE loss~~: v3c, hurt offline (−0.041 cmAP). Soft CE is better.
 - ~~Raw waveform mixup~~: v3b, better offline but worse LB (0.802 vs 0.823)
 - ~~TF-ported V1 weights~~: v3a, LB 0.813 (−0.010). Worse than v1.
-- ~~Post-processing~~: ✅ Done (+0.028 confirmed). TTA + smoothing + TopN.
+- ~~EfficientNetV2-B0~~: v3d, hurt offline (−0.019 AUROC, −0.070 cmAP).
+- ~~Post-processing v1~~: Done (+0.028 confirmed). TTA + smoothing + TopN.
+- ~~10s overlapping inference~~: Done (+0.003). LB 0.826.
+
+## Next Experiments (beyond exp 016)
+
+- **Exp 017: Mel spectrogram overhaul** — n_fft=4096, 224 mels. Requires retraining.
+  See [concept](../../docs/concepts/strong-baseline-mel-overhaul.md).
+- **Exp 018: Recipe alignment** — ASL loss, AttBlockV2 head, StochasticDepth, backbone scaling.
+  Only if exp 017 shows promise. See [concept](../../docs/concepts/strong-baseline-mel-overhaul.md).
