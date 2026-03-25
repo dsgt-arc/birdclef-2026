@@ -88,6 +88,7 @@ EfficientNet-B1 frozen probe (0.649 Kaggle) is well below top solutions (>0.85).
 | [Weak Supervision Label Fusion](concepts/weak-supervision-label-fusion.md) | FlyingSquid triplet method to fuse noisy teacher signals | Done (exp 013) — labels generated |
 | [Soundscape Domain Shift](concepts/soundscape-domain-shift.md) | XenoCanto → soundscape gap analysis | Fundamental challenge — separation augmentation addresses it |
 | [SSAMBA Audio Mamba](concepts/ssamba-audio-mamba.md) | Mamba backbone for Track 2 | Mature — validated through exps 004-009 |
+| [Strong Baseline Mel Overhaul](concepts/strong-baseline-mel-overhaul.md) | Close SED gap via mel resolution (n_fft 1024→4096, 128→224 mels) + recipe alignment | Developing — phased plan, exp 017 next |
 
 ## Priority Stack
 
