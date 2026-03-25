@@ -112,6 +112,10 @@ Inference: ONNX CPU, TTA ±2.5s shifts, Gaussian smoothing, TopN
 
 6. **How much does StochasticDepth help?** It's standard regularization for deeper nets but untested with our small B0.
 
+7. **Should we switch to AttBlockV2?** Competition standard uses tanh+softmax attention with sigmoid classification (bounded activations). Our AttHead uses raw logits. The dual-activation pattern is used by 5+ top solutions.
+
+8. **How much do metadata priors help our SED model?** The Perch-based notebooks get huge gains from site/hour priors (especially for amphibians/insects which are 76.6% of labeled soundscape windows). This is inference-only, zero retraining.
+
 ## Testable Hypotheses
 
 ### Phase 1: Labeled-Data Baseline (Exp 017)
@@ -121,6 +125,8 @@ Inference: ONNX CPU, TTA ±2.5s shifts, Gaussian smoothing, TopN
 **H2 (Mel normalization)**: Switching from log+AudioSet normalization to AmplitudeToDB(top_db=80)+standardize+min-max will improve LB by ≥0.01, as it better preserves dynamic range and matches the winning pipeline.
 
 **H3 (Regularization)**: Adding StochasticDepth (drop_path=0.15) will improve LB by ≥0.005, reducing overfitting on the relatively small labeled dataset.
+
+**H3b (AttBlockV2 head)**: Switching to dual-activation head (tanh+softmax attention, sigmoid classification) and using framewise-max at inference (instead of 0.75/0.25 blend) will improve LB by ≥0.005. This is the competition-standard SED head design.
 
 **H4 (Model soup)**: Averaging the top-3 checkpoints by val/auroc will improve LB by ≥0.005 over single best checkpoint, at zero training cost.
 
@@ -143,22 +149,23 @@ Inference: ONNX CPU, TTA ±2.5s shifts, Gaussian smoothing, TopN
 ### Proposed Experiment Structure (Exp 017)
 
 **Step 0: Free wins (no retraining)**
-- Model soup: average v1 epochs 20-24
+- Model soup: average v1 checkpoints epochs 20-24
 - v1-10s result (submitted, awaiting LB)
+- Metadata priors: site/hour tables from 66 labeled soundscapes, multiply into predictions (H8)
 
 **Step 1: Mel overhaul (single variable from v1)**
 - v4a: n_fft=4096, n_mels=224, keep hop=320, keep everything else from v1
 - If OOM: try n_mels=160 or increase hop to 640
 - This tests H1 in isolation
 
-**Step 2: Normalization (single variable from best of step 1)**
-- v4b: Add AmplitudeToDB + min-max normalization
-- Tests H2
+**Step 2: Normalization + head (single variables from best of step 1)**
+- v4b: Add AmplitudeToDB + min-max normalization — tests H2
+- v4c: Switch to AttBlockV2 head (tanh+sigmoid dual activation, framewise-max inference) — tests H3b
 
 **Step 3: Regularization + capacity (cumulative)**
-- v4c: Add StochasticDepth (drop_path=0.15) — tests H3
-- v4d: Switch to EfficientNet-B3 — tests H5
-- v4e: Try ASL loss (γ⁻=4, γ⁺=0, clip=0.05)
+- v4d: Add StochasticDepth (drop_path=0.15) — tests H3
+- v4e: Switch to EfficientNet-B3 — tests H5
+- v4f: Try ASL loss (γ⁻=4, γ⁺=0, clip=0.05)
 
 **Step 4: Polish**
 - Model soup on best config (H4)
