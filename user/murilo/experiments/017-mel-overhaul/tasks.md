@@ -8,6 +8,11 @@ training recipe. Primary hypothesis: n_fft=4096 + 224 mels will improve LB by �
 **Baseline**: Exp 016 v1-10s + pp2 = 0.827 LB
 **Target**: ≥0.85 labeled-data-only baseline
 **Concept**: [strong-baseline-mel-overhaul](../../docs/concepts/strong-baseline-mel-overhaul.md)
+**Key references**:
+- [Tom's SED model comparison (28 experiments)](../../docs/references/kaggle/birdclef-2026/discussions/sed-model-comparison-tom.md) — ASL +0.023, Perch KD +0.030, AmplitudeToDB+minmax norm, tanh+softmax head, B0 > B3/V2S
+- [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md) — technique rankings and code snippets
+- [2025 1st place inference](../../docs/references/kaggle/birdclef-2025/birdclef2025-1st-place-inference.md) — n_fft=4096, 224 mels, 7-model ensemble
+- [Gemini strategic framework](../../docs/references/deep-research/2026-03-24-gemini-strategic-framework.md) — phased plan to >0.900
 
 ### Status: IN PROGRESS
 
