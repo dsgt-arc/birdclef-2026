@@ -1,0 +1,15 @@
+{
+  "id": "acmiyaguchi/birdclef-2026-efficientnet",
+  "title": "BirdCLEF 2026 EfficientNet",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "competition_sources": ["birdclef-2026"],
+  "dataset_sources": [
+    "acmiyaguchi/birdclef-2026-deps",
+    "acmiyaguchi/birdclef-2026-efficientnet-weights"
+  ]
+}

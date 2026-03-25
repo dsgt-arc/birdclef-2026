@@ -28,6 +28,7 @@ source "$JOB_VENV/bin/activate"
 module load cuda/12.1.1
 
 uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+uv pip install onnx
 uv pip install -e "$exp_dir"
 
 cd $exp_dir

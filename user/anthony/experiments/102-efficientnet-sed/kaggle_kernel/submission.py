@@ -33,8 +33,16 @@ def _find_input(slug: str) -> str:
     return candidates[0]
 
 
+# --- Model selection ---
+# Change this to switch between models:
+#   "frozen"          - Run A: frozen backbone, epoch 25, cmap 0.387
+#   "lora"            - Run B: LoRA r=8, epoch 1, cmap 0.524
+#   "lora-attention"  - Run C: LoRA + attention pooling, epoch 1, cmap 0.531
+MODEL_NAME = "lora-attention"
+
 DEPS_DIR = _find_input("birdclef-2026-deps")
-WEIGHTS_DIR = _find_input("birdclef-2026-efficientnet-weights")
+_weights_base = _find_input("birdclef-2026-efficientnet-weights")
+WEIGHTS_DIR = os.path.join(_weights_base, MODEL_NAME)
 COMPETITION_DIR = (
     "/kaggle/input/competitions/birdclef-2026"
     if os.path.exists("/kaggle/input/competitions/birdclef-2026")
