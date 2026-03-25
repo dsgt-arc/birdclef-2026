@@ -91,6 +91,9 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Mel overhaul SED models, 234 classes (exp 017)
+    "birdclef-2026-effnet-b0-sed-v4a-pp2-weights",
+    "birdclef-2026-effnet-b0-sed-v4a-weights",
     # SED models, 234 classes (exp 016)
     "birdclef-2026-effnet-b0-sed-v1-10s-pp2-weights",
     "birdclef-2026-effnet-b0-sed-v1-10s-weights",
@@ -312,6 +315,57 @@ def compute_mel(audio, mel_cfg):
         return compute_mel_standard(audio, mel_cfg)
 
 
+def compute_full_signal_mel(audio, mel_cfg):
+    """Compute mel spectrogram for an entire audio signal (e.g. 60s).
+
+    Returns the raw normalized mel as (n_mels, total_frames) WITHOUT
+    batch/channel dims or frame truncation. Callers slice frames as needed.
+    This avoids redundant STFT computation for overlapping segments.
+    """
+    mel = librosa.feature.melspectrogram(
+        y=audio,
+        sr=mel_cfg["sr"],
+        n_fft=mel_cfg["n_fft"],
+        hop_length=mel_cfg["hop_length"],
+        n_mels=mel_cfg["n_mels"],
+        fmin=mel_cfg.get("fmin", 0),
+        fmax=mel_cfg.get("fmax"),
+        htk=mel_cfg.get("htk", True),
+        power=2.0,
+    )
+    mel = np.log(mel + 1e-6)
+    mel = (mel - mel_cfg["norm_mean"]) / (mel_cfg["norm_std"] * 2)
+    return mel.astype(np.float32)  # (n_mels, total_frames)
+
+
+def _slice_mel_window(full_mel, start_frame, target_frames):
+    """Slice a window from a full-signal mel, padding if needed.
+
+    Returns (1, 1, n_mels, target_frames) ready for ONNX.
+    """
+    total_frames = full_mel.shape[1]
+
+    # Handle negative start (before audio begins)
+    if start_frame < 0:
+        pad_left = -start_frame
+        start_frame = 0
+    else:
+        pad_left = 0
+
+    end_frame = start_frame + target_frames - pad_left
+    if end_frame > total_frames:
+        end_frame = total_frames
+
+    window = full_mel[:, start_frame:end_frame]
+
+    # Pad if needed (left for negative start, right for end of file)
+    pad_right = target_frames - pad_left - window.shape[1]
+    if pad_left > 0 or pad_right > 0:
+        window = np.pad(window, ((0, 0), (pad_left, max(0, pad_right))), mode="constant")
+
+    return window[np.newaxis, np.newaxis, :, :]  # (1, 1, n_mels, target_frames)
+
+
 # ---------------------------------------------------------------------------
 # Audio loading
 # ---------------------------------------------------------------------------
@@ -415,6 +469,128 @@ def _predict_segment_with_tta(
 
     # Average: 50% center + 25% left + 25% right
     return 0.5 * tta_preds[0] + 0.25 * tta_preds[1] + 0.25 * tta_preds[2]
+
+
+def _run_onnx_batch(session, mel_batch, mel_cfg):
+    """Run batched ONNX inference. mel_batch: (B, 1, n_mels, T)."""
+    input_name = session.get_inputs()[0].name
+    output = session.run(None, {input_name: mel_batch})[0]  # (B, n_classes)
+    if mel_cfg.get("output_type") == "probs":
+        return output
+    else:
+        return sigmoid(output)
+
+
+def predict_soundscape_fullsignal(
+    session, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
+):
+    """Process one soundscape using full-signal mel (compute STFT once, slice frames).
+
+    ~10-30x faster than per-segment mel computation for n_fft=4096 models.
+    Only works for SED models with type="mel" normalization.
+    """
+    sr = mel_cfg["sr"]
+    hop_length = mel_cfg["hop_length"]
+    segment_duration = 5.0
+    inference_window = mel_cfg.get("inference_window", segment_duration)
+    context_pad = (inference_window - segment_duration) / 2
+    target_frames = mel_cfg.get("target_frames", 1000)
+    soundscape_id = Path(audio_path).stem
+
+    species_2026 = species_mapping["birdclef2026_species"]
+    idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
+
+    # 1. Load entire audio file once
+    audio, file_sr = sf.read(audio_path, dtype="float32")
+    if audio.ndim == 2:
+        audio = audio.mean(axis=1)
+    if file_sr != sr:
+        audio = librosa.resample(audio, orig_sr=file_sr, target_sr=sr)
+
+    total_duration = len(audio) / sr
+
+    # 2. Pad audio for context (negative start / end overflow)
+    context_samples = int(context_pad * sr)
+    tta_shift_samples = int(2.5 * sr)  # TTA shift = 2.5s
+    # Pad enough for context + TTA shifts on both sides
+    pad_samples = context_samples + tta_shift_samples
+    audio_padded = np.pad(audio, (pad_samples, pad_samples), mode="constant")
+
+    # 3. Compute full-signal mel ONCE on the padded audio
+    full_mel = compute_full_signal_mel(audio_padded, mel_cfg)
+    # full_mel shape: (n_mels, total_frames)
+
+    # Frame offset corresponding to t=0 in the original audio
+    origin_frame = int(pad_samples / hop_length)
+
+    # 4. Build all mel slices for all segments + TTA shifts
+    segment_times = []
+    segment_start_s = 0.0
+    all_slices = []  # list of (segment_idx, tta_weight, mel_slice)
+    segment_idx = 0
+
+    while segment_start_s < total_duration:
+        # Center of inference window on 5s segment
+        window_center_s = segment_start_s - context_pad
+
+        if ENABLE_TTA:
+            shifts = [
+                (window_center_s, 0.50),
+                (window_center_s - 2.5, 0.25),
+                (window_center_s + 2.5, 0.25),
+            ]
+        else:
+            shifts = [(window_center_s, 1.0)]
+
+        for shift_start_s, weight in shifts:
+            start_frame = origin_frame + int(shift_start_s * sr / hop_length)
+            mel_slice = _slice_mel_window(full_mel, start_frame, target_frames)
+            all_slices.append((segment_idx, weight, mel_slice))
+
+        segment_times.append(int(segment_start_s + segment_duration))
+        segment_start_s += segment_duration
+        segment_idx += 1
+
+    n_segments = segment_idx
+
+    # 5. Batched ONNX inference — run all slices at once
+    mel_batch = np.concatenate([s[2] for s in all_slices], axis=0)  # (N, 1, n_mels, T)
+    all_probs = _run_onnx_batch(session, mel_batch, mel_cfg)  # (N, n_classes)
+
+    # 6. Weighted average for TTA
+    probs_matrix = np.zeros((n_segments, all_probs.shape[1]), dtype=np.float32)
+    for i, (seg_idx, weight, _) in enumerate(all_slices):
+        probs_matrix[seg_idx] += weight * all_probs[i]
+
+    # 7. Post-processing pipeline (same as per-segment path)
+    temperature = mel_cfg.get("temperature", 1.0)
+    if temperature != 1.0:
+        probs_matrix = _apply_temperature(probs_matrix, temperature)
+
+    if ENABLE_TEMPORAL_SMOOTHING:
+        probs_matrix = _apply_temporal_smoothing(probs_matrix, taxa_mapping)
+
+    if ENABLE_TOPN:
+        probs_matrix = _apply_topn(probs_matrix)
+
+    site, hour = _parse_soundscape_metadata(audio_path)
+    if metadata_priors is not None and (site is not None or hour is not None):
+        probs_matrix = _apply_metadata_priors(
+            probs_matrix, metadata_priors, site, hour, taxa_mapping, idx_map
+        )
+
+    # 8. Build prediction rows
+    predictions = []
+    for i, end_time in enumerate(segment_times):
+        row_id = f"{soundscape_id}_{end_time}"
+        row = {"row_id": row_id}
+        for sp in species_2026:
+            row[sp] = 0.0
+        for idx_str, name_2026 in idx_map.items():
+            row[name_2026] = float(probs_matrix[i, int(idx_str)])
+        predictions.append(row)
+
+    return predictions
 
 
 def _apply_temporal_smoothing(probs_matrix, taxa_mapping=None):
@@ -744,12 +920,20 @@ def main():
     if mel_cfg.get("temperature", 1.0) != 1.0:
         print(f"Temperature scaling: T={mel_cfg['temperature']}")
 
-    # Create ONNX session (CPU only)
+    # Create ONNX session (CPU only, optimized)
+    sess_opts = ort.SessionOptions()
+    sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_opts.intra_op_num_threads = os.cpu_count() or 4
+    sess_opts.inter_op_num_threads = 1
     session = ort.InferenceSession(
         str(onnx_path),
+        sess_options=sess_opts,
         providers=["CPUExecutionProvider"],
     )
-    print(f"ONNX session created ({time.time() - start_time:.1f}s)")
+    print(
+        f"ONNX session created (threads={sess_opts.intra_op_num_threads}, "
+        f"{time.time() - start_time:.1f}s)"
+    )
 
     # Find soundscape files
     audio_files = sorted(
@@ -766,18 +950,35 @@ def main():
 
     print(f"Processing {len(audio_files)} soundscapes from {test_dir}")
 
+    # Choose inference strategy: full-signal mel for SED models, per-segment for others
+    use_fullsignal = mel_cfg.get("architecture") == "sed" and mel_type == "mel"
+    if use_fullsignal:
+        print("Using full-signal mel inference (compute STFT once per file)")
+    else:
+        print("Using per-segment mel inference")
+
     # Run inference
     all_predictions = []
     for i, audio_path in enumerate(audio_files):
         t0 = time.time()
-        preds = predict_soundscape(
-            session,
-            str(audio_path),
-            mel_cfg,
-            species_mapping,
-            taxa_mapping=taxa_mapping,
-            metadata_priors=metadata_priors,
-        )
+        if use_fullsignal:
+            preds = predict_soundscape_fullsignal(
+                session,
+                str(audio_path),
+                mel_cfg,
+                species_mapping,
+                taxa_mapping=taxa_mapping,
+                metadata_priors=metadata_priors,
+            )
+        else:
+            preds = predict_soundscape(
+                session,
+                str(audio_path),
+                mel_cfg,
+                species_mapping,
+                taxa_mapping=taxa_mapping,
+                metadata_priors=metadata_priors,
+            )
         elapsed = time.time() - t0
         print(f"  [{i+1}/{len(audio_files)}] {audio_path.name}: {len(preds)} rows ({elapsed:.1f}s)")
         all_predictions.extend(preds)

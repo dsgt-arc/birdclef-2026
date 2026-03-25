@@ -41,29 +41,33 @@ training recipe. Primary hypothesis: n_fft=4096 + 224 mels will improve LB by �
 
 ### 1.2 Pipeline Validation
 
-- [ ] 1.2.1 Fast dev run: validate pipeline with 5 batches (no W&B)
-- [ ] 1.2.2 Verify mel output shape: (B, 1, 224, 1000) for 10s at hop=320
-- [ ] 1.2.3 Verify encoder handles (1, 224, 1000) input without errors
+- [x] 1.2.1 Fast dev run: validate pipeline with 5 batches (no W&B)
+- [x] 1.2.2 Verify mel output shape: (B, 1, 224, 1000) for 10s at hop=320
+- [x] 1.2.3 Verify encoder handles (1, 224, 1000) input without errors
 
 ### 1.3 GPU Check
 
-- [ ] 1.3.1 Submit `--gpu-check 1`: run 1 epoch to verify no OOM at batch_size=64
-- [ ] 1.3.2 Check GPU utilization and memory usage
-- [ ] 1.3.3 If OOM: reduce batch_size to 32 + accumulate=8 (same 256 effective)
+- [x] 1.3.1 Submit `--gpu-check 1`: run 1 epoch to verify no OOM at batch_size=64
+- [x] 1.3.2 Check GPU utilization and memory usage
+- [x] 1.3.3 If OOM: reduce batch_size to 32 + accumulate=8 (same 256 effective) — N/A, no OOM
 
 ### 1.4 Full Training
 
-- [ ] 1.4.1 Submit full training run (40 epochs, early stopping patience=10)
-- [ ] 1.4.2 Monitor via W&B: `dsgt-arc/birdclef-2026-mel-overhaul`
-- [ ] 1.4.3 Record offline metrics (test/auroc, test/cmap)
-- [ ] 1.4.4 Save structured metrics to artifacts/
+- [x] 1.4.1 Submit full training run (40 epochs, early stopping patience=10)
+- [x] 1.4.2 Monitor via W&B: `dsgt-arc/birdclef-2026-mel-overhaul/runs/05pylg1y`
+- [x] 1.4.3 Record offline metrics: test/auroc=0.862, test/cmap=0.615
+- [x] 1.4.4 Save structured metrics to artifacts/training/efficientnet_b0_sed_v4a/metrics.json
 
 ### 1.5 ONNX Export & Kaggle Submission
 
-- [ ] 1.5.1 Export to ONNX (update mel_config.json with new params)
-- [ ] 1.5.2 Submit to Kaggle LB **without** post-processing (raw model score)
-- [ ] 1.5.3 Submit to Kaggle LB **with** pp2 (TTA + smoothing + TopN + temp/taxa/priors)
+- [x] 1.5.1 Export to ONNX (mel_config.json: n_fft=4096, n_mels=224, target_frames=1000)
+- [x] 1.5.2 Submit to Kaggle LB **without** post-processing (raw, full-signal mel kernel) — pending LB
+- [ ] 1.5.3 Submit to Kaggle LB **with** pp2 (full-signal mel kernel) — hit daily limit, submit tomorrow
 - [ ] 1.5.4 Record LB results
+
+**Note**: First submissions (old per-segment kernel) likely to timeout with n_fft=4096.
+Re-submitted v4a raw with optimized full-signal mel kernel. v4a-pp2 blocked by daily
+submission limit — submit next available window.
 
 ### 1.6 Decision Gate
 
@@ -77,29 +81,32 @@ training recipe. Primary hypothesis: n_fft=4096 + 224 mels will improve LB by �
 ## Step 2: Normalization + Head (single variables from best of Step 1) — FUTURE
 
 Only proceed if Step 1 passes decision gate.
+**All Step 2+ runs use 90/10 train/val split** (no test holdout — validate on LB directly).
 
-- [ ] 2.1 v4b config: AmplitudeToDB(top_db=80) + standardize + min-max [0,1] normalization
-- [ ] 2.2 v4c config: AttBlockV2 head (tanh+softmax attention, sigmoid classification)
-- [ ] 2.3 Run v4b and v4c in parallel on SLURM
-- [ ] 2.4 Record results, compare to v4a
+- [ ] 2.1 Switch SEDDataModule to 90/10 train/val (drop test_fraction, remove test dataloader)
+- [ ] 2.2 v4b config: AmplitudeToDB(top_db=80) + standardize + min-max [0,1] normalization
+- [ ] 2.3 v4c config: AttBlockV2 head (tanh+softmax attention, sigmoid classification)
+- [ ] 2.4 Run v4b and v4c in parallel on SLURM (50 epochs, patience=10)
+- [ ] 2.5 ONNX export + Kaggle submission for each
+- [ ] 2.6 Record LB results, compare to v4a
 
-## Step 3: Regularization + Capacity (cumulative) — FUTURE
+## Step 3: Loss + Regularization (single variables) — FUTURE
 
-- [ ] 3.1 v4d: StochasticDepth (drop_path=0.15)
-- [ ] 3.2 v4e: EfficientNet-B3 backbone
-- [ ] 3.3 v4f: ASL loss (γ⁻=4, γ⁺=0, clip=0.05)
+- [ ] 3.1 v4d: ASL loss (γ⁻=4, γ⁺=0, clip=0.05) — Tom's biggest single gain (+0.023)
+- [ ] 3.2 v4e: StochasticDepth (drop_path=0.15) — 2025 1st place used 0.2
+- [ ] 3.3 Record LB results, pick best recipe from Steps 1-3
 
 ## Step 4: Fulldata Training — FUTURE
 
-Train the best recipe from Steps 1-3 on 100% labeled data (no val/test split).
-This adds ~20% more focal recordings + ~16 more soundscape files (~130 segments).
+Train the best recipe from Steps 1-3 on 100% labeled data (no val split).
+This adds ~10% more focal recordings + more soundscape files.
 Lock in the recipe first, then scale.
 
 - [ ] 4.1 Add `train_all` support to SEDDataModule (focal 100% + all soundscape files)
-- [ ] 4.2 Run fulldata with epoch cap from best 80/10/10 run (~1.5× best epoch)
+- [ ] 4.2 Run fulldata with epoch cap from best 90/10 run (~1.5× best epoch)
 - [ ] 4.3 No early stopping — save checkpoints every 5 epochs + last
 - [ ] 4.4 Export best + last checkpoints, submit both to LB
-- [ ] 4.5 Record LB results vs 80/10/10 baseline
+- [ ] 4.5 Record LB results vs 90/10 baseline
 
 **Exp 011 reference**: ProtoCLR fulldata gained +0.015 LB, but ConvNeXt regressed
 −0.025 from overfitting. Epoch cap is critical.

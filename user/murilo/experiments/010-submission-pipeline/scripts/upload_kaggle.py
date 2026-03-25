@@ -164,6 +164,17 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-sed-v3d",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v3d.json",
     },
+    # Exp 017: Mel overhaul (n_fft=4096, n_mels=224)
+    "effnet-b0-sed-v4a": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4a-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4a",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4a.json",
+    },
+    "effnet-b0-sed-v4a-pp2": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4a-pp2-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4a-pp2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4a-pp2.json",
+    },
 }
 
 

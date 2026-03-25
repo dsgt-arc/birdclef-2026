@@ -165,6 +165,31 @@ Strong learning curve from random init:
 - Epoch 18: val/auroc 0.844 (plateauing)
 - Epoch 24: val/auroc 0.845 (best, early stopped at epoch 34)
 
+## BirdCLEF 2026 Models — Mel Overhaul (exp 017)
+
+EfficientNet-B0 SED with high-resolution mel: n_fft=4096, n_mels=224 (vs v1's 1024/128).
+All other parameters identical to exp 016 v1 to isolate the mel resolution variable.
+Mel computed on GPU (n_fft=4096 too slow on CPU DataLoader workers).
+
+| Slug | Encoder | Architecture | Mel | Classes | Test AUROC | Test cmAP | Best Epoch | LB | Checkpoint |
+|------|---------|-------------|-----|---------|-----------|----------|------------|-----|------------|
+| `effnet-b0-sed-v4a` | EfficientNet-B0 | SED (GeM + AttHead) | n_fft=4096, n_mels=224 | 234 | **0.862** | **0.615** | 24 | pending | `017-.../2026-effnet-b0-sed-v4a/best-epochepoch=24.ckpt` |
+
+### Comparison: v4a vs v1
+
+| Metric | v1 (exp 016) | v4a (exp 017) | Delta |
+|--------|-------------|---------------|-------|
+| test/auroc | 0.860 | **0.862** | +0.002 |
+| test/cmap | 0.593 | **0.615** | **+0.022** |
+| test/top1_acc | 0.762 | 0.772 | +0.010 |
+| test/top5_acc | 0.887 | 0.894 | +0.007 |
+| LB (raw) | 0.795 | pending | — |
+| LB (+pp2) | 0.827 | pending | — |
+
+The cmAP improvement (+0.022) is the strongest offline signal — higher mel resolution
+enables the model to better distinguish species. LB results pending ONNX export and
+Kaggle submission.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

@@ -348,7 +348,10 @@ def main():
     # ========================================================================
 
     test_results = None
-    if not args.fast_dev_run and checkpoint_callback.best_model_path:
+    has_test = data_module.test_dataset is not None
+    if not has_test:
+        logger.info("No test set (test_fraction=0) — skipping test phase")
+    elif not args.fast_dev_run and checkpoint_callback.best_model_path:
         logger.info(f"Testing: {checkpoint_callback.best_model_path}")
         test_results = trainer.test(
             pl_module, datamodule=data_module, ckpt_path=checkpoint_callback.best_model_path
