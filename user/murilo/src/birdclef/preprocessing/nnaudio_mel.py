@@ -34,6 +34,9 @@ class NNAudioMelSpectrogram(nn.Module):
         target_frames: Target number of time frames (default: 500 for ~5s)
         norm_mean: Normalization mean (default: AudioSet mean=-4.268)
         norm_std: Normalization std (default: AudioSet std=4.569)
+        n_fft: FFT window size. If None, derived from 25ms window (default: None → 1024)
+        hop_length: Hop length in samples. If None, derived from frame_shift_ms (default: None)
+        fmax: Maximum frequency for mel filterbank. None = Nyquist (default: None)
     """
 
     def __init__(
@@ -44,15 +47,22 @@ class NNAudioMelSpectrogram(nn.Module):
         target_frames: int = 500,
         norm_mean: float = -4.268,
         norm_std: float = 4.569,
+        n_fft: int | None = None,
+        hop_length: int | None = None,
+        fmax: int | None = None,
     ):
         super().__init__()
         self.target_frames = target_frames
         self.norm_mean = norm_mean
         self.norm_std = norm_std
 
-        hop_length = int(frame_shift_ms / 1000.0 * sample_rate)
-        win_length = int(0.025 * sample_rate)  # 25ms window
-        n_fft = 2 ** math.ceil(math.log2(win_length))
+        if hop_length is None:
+            hop_length = int(frame_shift_ms / 1000.0 * sample_rate)
+        if n_fft is None:
+            win_length = int(0.025 * sample_rate)  # 25ms window
+            n_fft = 2 ** math.ceil(math.log2(win_length))
+        # win_length = n_fft for explicit n_fft (standard STFT convention)
+        win_length = n_fft
 
         self.mel_spec = MelSpectrogram(
             sr=sample_rate,
@@ -61,7 +71,7 @@ class NNAudioMelSpectrogram(nn.Module):
             hop_length=hop_length,
             n_mels=n_mels,
             fmin=0,
-            fmax=None,
+            fmax=fmax,
             htk=True,  # Match torchaudio's mel_scale="htk"
             norm=None,  # Match torchaudio's norm=None (no area normalization)
             trainable_mel=False,
