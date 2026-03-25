@@ -1,0 +1,46 @@
+# Run E: ConvNeXt-Base LoRA + attention pooling + GPU mel + fp16 + compile
+
+model:
+  model_name: "DBD-research-group/ConvNeXT-Base-BirdSet-XCL"
+  backbone_mode: lora
+  pooling_mode: attention
+  head_hidden_dim: 512
+  head_dropout: 0.3
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+  target_modules: ["pwconv1", "pwconv2"]
+
+data:
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
+  metadata_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
+  sample_rate: 32000
+  chunk_duration: 5.0
+  n_mels: 128
+  n_fft: 1024
+  hop_length: 320
+  target_frames: 500
+  batch_size: 64
+  num_workers: 6
+  val_fraction: 0.1
+  activity_parquet: artifacts/focal_activity.parquet
+
+training:
+  max_epochs: 50
+  lr: 3.0e-4
+  weight_decay: 0.01
+  warmup_epochs: 3
+  compile: true
+  precision: 16-mixed
+  gamma: 2.0
+  augmentation:
+    freq_mask_param: 20
+    time_mask_param: 50
+    num_freq_masks: 2
+    num_time_masks: 2
+
+callbacks:
+  early_stopping: { monitor: val/cmap, mode: max, patience: 10 }
+  model_checkpoint: { monitor: val/cmap, mode: max, save_top_k: 1 }
