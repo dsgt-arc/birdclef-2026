@@ -126,6 +126,7 @@ if [[ -n "$NUM_WORKERS" ]]; then
 fi
 
 CMD="sbatch \
+    --partition=gpu-rtx6000 \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
     --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK},NUM_WORKERS=${NUM_WORKERS} \
     --job-name=exp017-${RUN_NAME} \
