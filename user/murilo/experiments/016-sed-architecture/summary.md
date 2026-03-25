@@ -6,7 +6,7 @@ Replaced clip-level classification (global avg pool → linear head) with Sound 
 Detection (SED) architecture using EfficientNet-B0. Goal: close the gap to a competitor's
 0.908 single-model LB score.
 
-**Best result**: 0.823 LB (v1 + post-processing), up from 0.767 baseline (exp 012).
+**Best result**: **0.826 LB** (v1-10s + post-processing), up from 0.767 baseline (exp 012).
 
 ## What Was Built
 
@@ -150,7 +150,8 @@ needed, just weight averaging and re-export.
 |---------|---------|-----|-------|
 | Exp 012 ProtoCLR | Clip-level baseline | 0.767 | — |
 | Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 | — |
-| Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** | **baseline** |
+| Exp 016 v1 + pp | + TTA + smoothing + TopN | 0.823 | baseline |
+| Exp 016 v1-10s + pp | + 10s overlapping inference | **0.826** | **+0.003** |
 | Exp 016 v2 + pp | + NS-JFT + CE (2 changes, regression) | 0.755 | −0.068 |
 | Exp 016 v3b + pp | + raw waveform mixup | 0.802 | −0.021 |
 | Exp 016 v3a + pp | + TF-ported V1 weights | 0.813 | −0.010 |

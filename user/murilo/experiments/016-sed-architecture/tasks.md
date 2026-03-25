@@ -11,8 +11,8 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 ### Current Status (2026-03-24)
 
 - **Branch**: `mg/016-sed-improvements` (PR #18)
-- **Best LB**: **0.823** (v1 + post-processing)
-- **v1-10s submitted**: 10s overlapping inference (same checkpoint, inference-only change). Awaiting LB.
+- **Best LB**: **0.826** (v1-10s + post-processing) — new best, +0.003 from 10s inference alignment
+- **v1-10s complete**: 10s overlapping inference confirmed +0.003 LB (0.823 → 0.826)
 - **v3 ablation complete**: all variants regressed vs v1. v1's recipe is a robust local optimum.
 - **v3d (EfficientNetV2-B0)**: regressed offline (0.841 AUROC, −0.070 cmAP)
 - **Key references**:
@@ -25,8 +25,8 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 |---------|---------|-----|
 | Exp 012 ProtoCLR | Clip-level baseline | 0.767 |
 | Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 |
-| Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** |
-| Exp 016 v1-10s + pp | + 10s overlapping inference | pending |
+| Exp 016 v1 + pp | + TTA + smoothing + TopN | 0.823 |
+| Exp 016 v1-10s + pp | + 10s overlapping inference | **0.826** |
 | Exp 016 v2 + pp | + NS-JFT + CE + post-processing | 0.755 (regression) |
 | Exp 016 v3b + pp | + raw waveform mixup + pp | 0.802 (regression) |
 | Exp 016 v3a + pp | + TF-ported weights + pp | 0.813 (regression) |
@@ -197,7 +197,7 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
       matching the training window. Same ONNX model (dynamic time axis), inference-only
       change. load_audio_chunk handles negative starts via zero-padding.
       New slug: `effnet-b0-sed-v1-10s` (v1 preserved for reproducibility).
-      Submitted to Kaggle, awaiting LB. Expected +0.015 (2024 1st place).
+      **LB: 0.826** (+0.003 over v1+pp 0.823). Modest but confirms alignment helps.
 
 ## 9. v3 Ablation Runs — Isolate Individual Changes
 
@@ -239,9 +239,8 @@ Detailed analysis of each item below is in [summary.md](summary.md) § "Potentia
 - [x] ~~**EfficientNetV2-B0**~~: v3d, hurt offline (−0.019 AUROC, −0.070 cmAP).
   V2 not better with our recipe. May need different hyperparameters.
 
-- [x] **10s overlapping inference** (v1-10s): Submitted, awaiting LB. Same model,
-  inference-only change. Expected +0.015 (2024 1st place).
-  Remaining option: train on 5s to match 2025 1st place (if 10s doesn't help).
+- [x] **10s overlapping inference** (v1-10s): **LB 0.826** (+0.003). Confirmed
+  train/inference alignment helps. Modest gain — bulk of remaining gap is elsewhere.
 
 - [ ] **Mel spectrogram parameters**: Our n_fft=1024, 128 mels differs significantly
   from 2025 1st place (n_fft=4096, 224 mels). Higher frequency resolution may help
