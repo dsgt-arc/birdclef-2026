@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Export fine-tuned EfficientNet-B1 to ONNX.
+"""Export trained model to ONNX.
 
+Supports EfficientNet-B1 and ConvNeXt-Base backbones (auto-detected from config).
 Handles both frozen and LoRA checkpoints:
 - Frozen: loads head weights only (backbone from pretrained HuggingFace)
 - LoRA: merges adapters into backbone, then exports merged model
@@ -28,9 +29,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import yaml
-from transformers import EfficientNetModel
+from transformers import AutoModel
 
 from birdclef_102.data import build_species_list
+from birdclef_102.model import _get_backbone_type, _get_embed_dim, LORA_TARGETS
 
 logger = logging.getLogger(__name__)
 
@@ -51,18 +53,16 @@ class MelInputWrapper(nn.Module):
         self.pooling_mode = pooling_mode
 
     def forward(self, mel: torch.Tensor) -> torch.Tensor:
-        features = self.backbone(pixel_values=mel).last_hidden_state  # (B, 1280, H, W)
+        features = self.backbone(pixel_values=mel).last_hidden_state  # (B, D, H, W)
 
         if self.pooling_mode == "avg":
-            pooled = F.adaptive_avg_pool2d(features, 1).flatten(1)  # (B, 1280)
+            pooled = F.adaptive_avg_pool2d(features, 1).flatten(1)  # (B, D)
             logits = self.head(pooled)
         elif self.pooling_mode == "attention":
-            # At inference: collapse freq, project, sigmoid(frame_head) + max
-            frame_features = features.mean(dim=2).permute(0, 2, 1)  # (B, T, 1280)
+            frame_features = features.mean(dim=2).permute(0, 2, 1)  # (B, T, D)
             if self.head.projection is not None:
-                frame_features = self.head.projection(frame_features)  # (B, T, hidden)
-            frame_logits = self.head.frame_head(frame_features)  # (B, T, C)
-            # Output probabilities (sigmoid before max, matching training formula)
+                frame_features = self.head.projection(frame_features)
+            frame_logits = self.head.frame_head(frame_features)
             logits = torch.sigmoid(frame_logits).max(dim=1).values  # (B, C)
         else:
             raise ValueError(f"Unknown pooling_mode: {self.pooling_mode}")
@@ -71,7 +71,7 @@ class MelInputWrapper(nn.Module):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Export EfficientNet to ONNX")
+    parser = argparse.ArgumentParser(description="Export model to ONNX")
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--output-dir", type=str, default="artifacts/weights/")
@@ -86,10 +86,13 @@ def main():
     data_cfg = cfg["data"]
     lora_cfg = cfg.get("lora", {})
     backbone_mode = model_cfg.get("backbone_mode", "frozen")
+    model_name = model_cfg["model_name"]
 
     species_list = build_species_list(data_cfg["metadata_csv"])
     num_classes = len(species_list)
-    logger.info(f"Classes: {num_classes}, Backbone mode: {backbone_mode}")
+
+    backbone_type = _get_backbone_type(model_name)
+    logger.info(f"Classes: {num_classes}, Backbone: {backbone_type}, Mode: {backbone_mode}")
 
     # Load checkpoint
     logger.info(f"Loading checkpoint: {args.checkpoint}")
@@ -103,26 +106,23 @@ def main():
         model_state[clean_key] = value
 
     # Build backbone
-    backbone = EfficientNetModel.from_pretrained(model_cfg["model_name"])
-    embed_dim = backbone.config.hidden_dim
+    backbone = AutoModel.from_pretrained(model_name)
+    embed_dim = _get_embed_dim(backbone, backbone_type)
 
     if backbone_mode == "lora":
-        # Apply LoRA, load adapter weights, then merge
         from peft import LoraConfig, get_peft_model
 
-        lora_targets = lora_cfg.get("target_modules", [
-            "project_conv", "expand_conv", "reduce", "expand",
-        ])
+        default_targets = LORA_TARGETS.get(backbone_type, LORA_TARGETS["efficientnet"])
+        lora_targets = lora_cfg.get("target_modules", default_targets)
         lora_config = LoraConfig(
             r=lora_cfg.get("rank", 8),
             lora_alpha=lora_cfg.get("alpha", 16),
-            lora_dropout=0.0,  # No dropout for inference
+            lora_dropout=0.0,
             target_modules=lora_targets,
             bias="none",
         )
         backbone = get_peft_model(backbone, lora_config)
 
-        # Load LoRA adapter weights from checkpoint
         backbone_state = {
             k.removeprefix("backbone."): v
             for k, v in model_state.items()
@@ -131,11 +131,9 @@ def main():
         missing, unexpected = backbone.load_state_dict(backbone_state, strict=False)
         logger.info(f"LoRA backbone loaded (missing={len(missing)}, unexpected={len(unexpected)})")
 
-        # Merge LoRA adapters into base weights for clean ONNX export
         backbone = backbone.merge_and_unload()
         logger.info("LoRA adapters merged into backbone")
     else:
-        # Frozen: backbone weights are pretrained, no checkpoint loading needed
         backbone_state = {
             k.removeprefix("backbone."): v
             for k, v in model_state.items()

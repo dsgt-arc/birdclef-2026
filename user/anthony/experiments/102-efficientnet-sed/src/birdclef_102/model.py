@@ -1,7 +1,9 @@
-"""EfficientNet-B1 with optional LoRA adapters and configurable pooling.
+"""Backbone-agnostic classifier with optional LoRA adapters and configurable pooling.
+
+Supports backbones: EfficientNet-B1, ConvNeXt-Base (auto-detected from HF config).
 
 Supports three backbone modes:
-  - frozen: backbone frozen, only head trains (exp 012 baseline)
+  - frozen: backbone frozen, only head trains
   - lora: backbone frozen + LoRA adapters
   - full: backbone fully unfrozen
 
@@ -11,8 +13,8 @@ Supports two pooling modes:
 
 Architecture:
     waveform → nnAudio mel → SpecAugment (train)
-    → EfficientNet-B1 backbone (+ optional LoRA)
-    → mean over freq → (B, 1280, T) frame features
+    → backbone (+ optional LoRA)
+    → mean over freq → (B, D, T) frame features
     → pooling → (B, C) clip logits
 """
 
@@ -21,9 +23,35 @@ import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import EfficientNetModel
+from transformers import AutoConfig, AutoModel
 
 logger = logging.getLogger(__name__)
+
+# Default LoRA targets per backbone architecture
+LORA_TARGETS = {
+    "efficientnet": ["project_conv", "expand_conv", "reduce", "expand"],
+    "convnext": ["fc1", "fc2"],
+}
+
+def _get_backbone_type(model_name: str) -> str:
+    """Detect backbone type from HuggingFace config."""
+    config = AutoConfig.from_pretrained(model_name)
+    model_type = getattr(config, "model_type", "").lower()
+    if "efficientnet" in model_type:
+        return "efficientnet"
+    elif "convnext" in model_type:
+        return "convnext"
+    else:
+        raise ValueError(f"Unsupported model_type: {model_type} for {model_name}")
+
+def _get_embed_dim(backbone, backbone_type: str) -> int:
+    """Get the output feature dimension from backbone config."""
+    if backbone_type == "efficientnet":
+        return backbone.config.hidden_dim  # 1280
+    elif backbone_type == "convnext":
+        return backbone.config.hidden_sizes[-1]  # 1024
+    else:
+        raise ValueError(f"Unknown backbone_type: {backbone_type}")
 
 
 class AttentionPoolingHead(nn.Module):
@@ -101,7 +129,10 @@ class AttentionPoolingHead(nn.Module):
 
 
 class EfficientNetClassifier(nn.Module):
-    """EfficientNet-B1 backbone with configurable fine-tuning and pooling.
+    """Backbone-agnostic classifier with configurable fine-tuning and pooling.
+
+    Supports EfficientNet-B1 and ConvNeXt-Base backbones from HuggingFace.
+    Backbone type is auto-detected from the model config.
 
     Args:
         model_name: HuggingFace model identifier
@@ -144,9 +175,11 @@ class EfficientNetClassifier(nn.Module):
         self.backbone_mode = backbone_mode
         self.pooling_mode = pooling_mode
 
-        # Load pretrained backbone
-        self.backbone = EfficientNetModel.from_pretrained(model_name)
-        embed_dim = self.backbone.config.hidden_dim
+        # Auto-detect and load pretrained backbone
+        self.backbone_type = _get_backbone_type(model_name)
+        self.backbone = AutoModel.from_pretrained(model_name)
+        embed_dim = _get_embed_dim(self.backbone, self.backbone_type)
+        logger.info(f"Backbone: {self.backbone_type}, embed_dim: {embed_dim}")
 
         if backbone_mode == "frozen":
             self._freeze_backbone()
@@ -182,7 +215,7 @@ class EfficientNetClassifier(nn.Module):
         from peft import LoraConfig, get_peft_model
 
         if targets is None:
-            targets = ["project_conv", "expand_conv", "reduce", "expand"]
+            targets = LORA_TARGETS.get(self.backbone_type, LORA_TARGETS["efficientnet"])
 
         for param in self.backbone.parameters():
             param.requires_grad = False
@@ -226,7 +259,8 @@ class EfficientNetClassifier(nn.Module):
             mel: (B, 1, n_mels, T) mel spectrogram
 
         Returns:
-            features: (B, 1280, H, W) backbone feature map
+            features: (B, D, H, W) backbone feature map
+                D=1280 for EfficientNet-B1, D=1024 for ConvNeXt-Base
         """
         if self.backbone_mode == "frozen":
             with torch.no_grad():
@@ -256,11 +290,11 @@ class EfficientNetClassifier(nn.Module):
         if spec_augment is not None:
             mel = spec_augment(mel)
 
-        features = self._extract_features(mel)  # (B, 1280, H, W)
+        features = self._extract_features(mel)  # (B, D, H, W)
 
         if self.pooling_mode == "avg":
-            pooled = F.adaptive_avg_pool2d(features, 1).flatten(1)  # (B, 1280)
+            pooled = F.adaptive_avg_pool2d(features, 1).flatten(1)  # (B, D)
             return self.head(pooled)  # logits
         elif self.pooling_mode == "attention":
-            frame_features = features.mean(dim=2).permute(0, 2, 1)  # (B, T, 1280)
+            frame_features = features.mean(dim=2).permute(0, 2, 1)  # (B, T, D)
             return self.head(frame_features)  # probabilities
