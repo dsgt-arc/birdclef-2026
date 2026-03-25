@@ -308,7 +308,7 @@ def jobs_ahead(jobs, username, target_set):
         # Count weighted jobs ahead per partition, then take the min.
         # If you request A100,H100 and there are 10.5 ahead on A100 but
         # 0.5 on H100, you'd get the H100 first — so 0.5 ahead, not 11.
-        per_part = {p: 0.0 for p in u_parts}
+        per_part = dict.fromkeys(u_parts, 0.0)
         for oj in other_pending:
             if oj.get("job_id", 0) >= uid:
                 continue
