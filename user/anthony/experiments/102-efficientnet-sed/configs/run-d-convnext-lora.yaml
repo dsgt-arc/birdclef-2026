@@ -32,8 +32,8 @@ training:
   lr: 3.0e-4
   weight_decay: 0.01
   warmup_epochs: 3
-  # compile: true       # Disabled — triton doesn't work on PACE RTX 6000 nodes
-  precision: bf16-mixed
+  compile: true         # torch.compile — needs setuptools + triton in venv
+  precision: 16-mixed   # fp16 — RTX 6000 (sm_75) has no native bf16
   gamma: 2.0
   augmentation:
     freq_mask_param: 20   # scaled for 128 mels (vs 40 for 256)

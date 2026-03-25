@@ -28,9 +28,10 @@ mkdir -p "$JOB_VENV_DIR"
 uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
-module load cuda/12.1.1
+module load cuda/12.6.1
 
-uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+uv pip install setuptools torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+uv pip install triton
 uv pip install -e "$exp_dir"
 
 cd $exp_dir
