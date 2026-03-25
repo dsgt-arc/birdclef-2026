@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=exp017-mel
 #SBATCH --account=paceship-clef2026_birdclef
-#SBATCH --partition=gpu-rtx6000
+#SBATCH --partition=gpu-rtx6000,gpu-v100
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
