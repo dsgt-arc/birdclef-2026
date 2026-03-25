@@ -18,7 +18,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-DEFAULT_PARTITIONS = "gpu-a100,gpu-h100,gpu-h200,gpu-l40s,gpu-rtx6000,gpu-rtxpro-blackwell,gpu-v100"
+DEFAULT_PARTITIONS = "gpu-a100,gpu-h100,gpu-h200,gpu-rtx6000"
 
 # ── ANSI helpers ──────────────────────────────────────────────────────────────
 USE_COLOR = sys.stdout.isatty()
@@ -302,15 +302,24 @@ def jobs_ahead(jobs, username, target_set):
     results = []
     for uj in sorted(user_pending, key=lambda x: x.get("job_id", 0)):
         uid = uj.get("job_id", 0)
-        u_parts = set(uj.get("partition", "").split(","))
-        ahead = 0.0
+        u_parts = set(uj.get("partition", "").split(",")) & target_set
+        if not u_parts:
+            continue
+        # Count weighted jobs ahead per partition, then take the min.
+        # If you request A100,H100 and there are 10.5 ahead on A100 but
+        # 0.5 on H100, you'd get the H100 first — so 0.5 ahead, not 11.
+        per_part = {p: 0.0 for p in u_parts}
         for oj in other_pending:
             if oj.get("job_id", 0) >= uid:
                 continue
             o_parts = set(oj.get("partition", "").split(","))
-            if not (u_parts & o_parts):
+            overlap = u_parts & o_parts
+            if not overlap:
                 continue
-            ahead += 1.0 / len(o_parts)
+            weight = 1.0 / len(o_parts)
+            for p in overlap:
+                per_part[p] += weight
+        ahead = min(per_part.values())
         results.append(
             {
                 "job_id": uid,
