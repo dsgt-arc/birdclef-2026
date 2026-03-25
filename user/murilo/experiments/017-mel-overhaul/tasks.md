@@ -61,13 +61,12 @@ training recipe. Primary hypothesis: n_fft=4096 + 224 mels will improve LB by �
 ### 1.5 ONNX Export & Kaggle Submission
 
 - [x] 1.5.1 Export to ONNX (mel_config.json: n_fft=4096, n_mels=224, target_frames=1000)
-- [x] 1.5.2 Submit to Kaggle LB **without** post-processing (raw, full-signal mel kernel) — pending LB
-- [ ] 1.5.3 Submit to Kaggle LB **with** pp2 (full-signal mel kernel) — hit daily limit, submit tomorrow
-- [ ] 1.5.4 Record LB results
+- [x] 1.5.2 Submit to Kaggle LB **without** post-processing → **0.825 LB** (+0.030 vs v1 raw)
+- [x] 1.5.3 Submit to Kaggle LB **with** pp2 → **0.830 LB** (+0.003 vs v1+pp2)
+- [x] 1.5.4 Record LB results: raw 0.825, pp2 0.830
 
-**Note**: First submissions (old per-segment kernel) likely to timeout with n_fft=4096.
-Re-submitted v4a raw with optimized full-signal mel kernel. v4a-pp2 blocked by daily
-submission limit — submit next available window.
+**Note**: PP2 gained only +0.005 on v4a (vs +0.032 on v1). Temperature and TTA
+hyperparameters were tuned for v1 — may need recalibration for v4a.
 
 ### 1.6 Decision Gate
 

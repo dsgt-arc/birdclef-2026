@@ -173,7 +173,7 @@ Mel computed on GPU (n_fft=4096 too slow on CPU DataLoader workers).
 
 | Slug | Encoder | Architecture | Mel | Classes | Test AUROC | Test cmAP | Best Epoch | LB | Checkpoint |
 |------|---------|-------------|-----|---------|-----------|----------|------------|-----|------------|
-| `effnet-b0-sed-v4a` | EfficientNet-B0 | SED (GeM + AttHead) | n_fft=4096, n_mels=224 | 234 | **0.862** | **0.615** | 24 | pending | `017-.../2026-effnet-b0-sed-v4a/best-epochepoch=24.ckpt` |
+| `effnet-b0-sed-v4a` | EfficientNet-B0 | SED (GeM + AttHead) | n_fft=4096, n_mels=224 | 234 | **0.862** | **0.615** | 24 | 0.825 / **0.830** (+pp2) | `017-.../2026-effnet-b0-sed-v4a/best-epochepoch=24.ckpt` |
 
 ### Comparison: v4a vs v1
 
@@ -183,12 +183,16 @@ Mel computed on GPU (n_fft=4096 too slow on CPU DataLoader workers).
 | test/cmap | 0.593 | **0.615** | **+0.022** |
 | test/top1_acc | 0.762 | 0.772 | +0.010 |
 | test/top5_acc | 0.887 | 0.894 | +0.007 |
-| LB (raw) | 0.795 | pending | — |
-| LB (+pp2) | 0.827 | pending | — |
+| LB (raw) | 0.795 | **0.825** | **+0.030** |
+| LB (+pp2) | 0.827 | **0.830** | **+0.003** |
 
-The cmAP improvement (+0.022) is the strongest offline signal — higher mel resolution
-enables the model to better distinguish species. LB results pending ONNX export and
-Kaggle submission.
+**Mel resolution is a major lever.** v4a raw (0.825) nearly matches v1+pp2 (0.827) with
+zero post-processing. PP2 adds only +0.005 on v4a (vs +0.032 on v1) — diminishing returns
+as the model already captures distinctions that post-processing was compensating for.
+Decision gate passed → continue to Step 2.
+
+Inference optimized with full-signal mel (compute STFT once per 60s file, slice frames)
+to stay within the 90-minute Kaggle CPU budget at n_fft=4096.
 
 ## Checkpoint Base Path
 

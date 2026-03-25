@@ -5,9 +5,9 @@
 **Hypothesis**: Changing from (n_fft=1024, n_mels=128) to (n_fft=4096, n_mels=224) while
 keeping all other v1 parameters identical will improve LB by >=0.02.
 
-**Result**: Pending LB submission. Offline metrics show improvement: test/auroc 0.862 (+0.002
-vs v1), test/cmap 0.615 (+0.022 vs v1). The cmAP gain is notable — higher mel resolution
-helps the model distinguish more species.
+**Result**: **Confirmed.** LB raw 0.825 (+0.030 over v1 raw 0.795) — passes decision gate.
+Mel resolution alone nearly matches v1+pp2 (0.827). Offline: test/auroc 0.862 (+0.002),
+test/cmap 0.615 (+0.022). Continue to Step 2.
 
 ---
 
@@ -60,16 +60,27 @@ but consistent.
 
 | Model | LB | vs v1 raw | vs v1+pp2 |
 |-------|-----|-----------|-----------|
-| v4a (raw) | pending | — | — |
-| v4a + pp2 | pending | — | — |
+| **v4a (raw)** | **0.825** | **+0.030** | −0.002 |
+| **v4a + pp2** | **0.830** | **+0.035** | **+0.003** |
 | v1 (raw, exp 016) | 0.795 | baseline | — |
 | v1 + pp2 (exp 016) | 0.827 | — | baseline |
 
-### Decision Gate (after LB results)
+### PP2 Diminishing Returns
 
-- If LB (raw) ≥ 0.815: mel overhaul helps → continue to Step 2
-- If LB (+pp2) ≥ 0.847: strong signal → continue
-- If LB gain < +0.01: mel resolution is NOT the gap → pivot
+PP2 gained only +0.005 on v4a (0.825→0.830) vs +0.032 on v1 (0.795→0.827). This
+makes sense — the higher mel resolution already captures species distinctions that
+post-processing was compensating for in v1. TTA temporal shifts add less value when
+the spectrogram already has 4× frequency resolution. The pp2 components most affected:
+- TTA (+0.012 on v1): less impact when the model already sees fine-grained features
+- Temporal smoothing: may smooth out predictions the model is now more confident about
+- Temperature scaling (T=1.10): calibration tuned for v1's distribution, may need retuning
+
+Worth revisiting pp2 hyperparameters (especially temperature) for v4a in a future step.
+
+### Decision Gate
+
+- **PASSED**: LB raw 0.825 ≥ 0.815 (+0.030 over v1 raw) → continue to Step 2
+- **PASSED**: LB pp2 0.830 ≥ 0.827 (+0.003 over v1+pp2) → improvement confirmed
 
 ---
 
