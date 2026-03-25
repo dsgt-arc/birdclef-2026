@@ -233,11 +233,11 @@ Three parallel runs, each changing one variable from v1 baseline:
 Same v1 ONNX model. New slug: `effnet-b0-sed-v1-10s-pp2`.
 Adds temperature scaling + taxa-aware smoothing + metadata priors.
 
-- [ ] 11.1 Temperature scaling (T=1.10, logit-space)
-- [ ] 11.2 Taxa-aware temporal smoothing (local-max for birds, avg-neighbor for frogs/insects)
-- [ ] 11.3 Metadata priors (site/hour from soundscape filenames, Bayesian fusion)
-- [ ] 11.4 Create build_inference_priors.py, pp2 weights dir, kernel metadata
-- [ ] 11.5 Upload to Kaggle + submit for LB score
+- [x] 11.1 Temperature scaling (T=1.10, logit-space)
+- [x] 11.2 Taxa-aware temporal smoothing (local-max for birds, avg-neighbor for frogs/insects)
+- [x] 11.3 Metadata priors (site/hour from soundscape filenames, Bayesian fusion)
+- [x] 11.4 Create build_inference_priors.py, pp2 weights dir, kernel metadata
+- [x] 11.5 Upload to Kaggle + submit for LB score — submitted 2026-03-25, awaiting result
 - [ ] 11.6 Record LB result (baseline: v1-10s 0.826)
 - [ ] 11.7 Model soup: average v1 checkpoints epochs 20-24, re-export ONNX
 
