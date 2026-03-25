@@ -30,7 +30,7 @@ source "$JOB_VENV/bin/activate"
 
 module load cuda/12.6.1
 
-uv pip install setuptools torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+uv pip install setuptools torch torchaudio --index-url https://download.pytorch.org/whl/cu126
 uv pip install triton
 uv pip install -e "$exp_dir"
 

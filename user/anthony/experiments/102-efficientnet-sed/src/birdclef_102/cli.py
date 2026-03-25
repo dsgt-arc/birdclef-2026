@@ -89,8 +89,6 @@ def main():
     # Optional torch.compile for faster training (compile backbone only)
     if train_cfg.get("compile", False):
         import torch
-        import torch._dynamo
-        torch._dynamo.config.suppress_errors = True
         compile_backend = train_cfg.get("compile_backend", "inductor")
         model.backbone = torch.compile(model.backbone, backend=compile_backend)
         logger.info(f"Backbone compiled with torch.compile(backend={compile_backend!r})")
