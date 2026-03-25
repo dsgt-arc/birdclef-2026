@@ -18,7 +18,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-DEFAULT_PARTITIONS = "gpu-a100,gpu-h100,gpu-h200,gpu-rtx6000"
+DEFAULT_PARTITIONS = "gpu-a100,gpu-h100,gpu-h200,gpu-l40s,gpu-rtx6000,gpu-rtxpro-blackwell,gpu-v100"
 
 # ── ANSI helpers ──────────────────────────────────────────────────────────────
 USE_COLOR = sys.stdout.isatty()
