@@ -10,7 +10,7 @@ lora:
   rank: 8
   alpha: 16
   dropout: 0.1
-  target_modules: ["fc1", "fc2"]
+  target_modules: ["pwconv1", "pwconv2"]  # HF transformers names (timm uses fc1/fc2)
 
 data:
   audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
@@ -21,7 +21,7 @@ data:
   n_fft: 1024
   hop_length: 320
   target_frames: 500   # 5s * 32000 / 320 = 500
-  batch_size: 128       # ConvNeXt MLP LoRA is GPU-friendly — large batches fit
+  batch_size: 64        # ConvNeXt-Base 89M params — 128 OOMs on RTX 6000 22GB
   num_workers: 8
   val_fraction: 0.1
   activity_parquet: artifacts/focal_activity.parquet

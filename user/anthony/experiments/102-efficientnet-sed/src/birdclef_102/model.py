@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Default LoRA targets per backbone architecture
 LORA_TARGETS = {
     "efficientnet": ["project_conv", "expand_conv", "reduce", "expand"],
-    "convnext": ["fc1", "fc2"],
+    "convnext": ["pwconv1", "pwconv2"],  # HF transformers names (timm uses fc1/fc2)
 }
 
 def _get_backbone_type(model_name: str) -> str:
