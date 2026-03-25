@@ -1,13 +1,15 @@
-"""SED fine-tuning module with dual soft cross-entropy loss.
+"""SED fine-tuning module with dual cross-entropy loss.
 
 Architecture: encoder.forward_features() → AttHead → dual logits (clipwise + framewise).
 
-Training loss: soft CE on clipwise + soft CE on framewise-max, with optional
-spectrogram-domain mixup.
+Training loss: CE on clipwise + CE on framewise-max, with optional mixup augmentation.
+Supports both spectrogram-domain mixup (v1/v2) and raw waveform mixup (v3b).
 
 Inference: 0.75 * sigmoid(clipwise) + 0.25 * sigmoid(framewise_max).
 
-Data flow: mel spectrogram → backbone features → SED head → dual logits.
+Data flow:
+  - Default: mel spectrogram → backbone features → SED head → dual logits.
+  - With mel_transform: raw waveform → mixup → mel transform (GPU) → backbone → SED head.
 """
 
 import logging
@@ -45,12 +47,15 @@ class SEDFinetuneModule(pl.LightningModule):
         framewise_weight: Loss weight for framewise-max term.
         blend_clip: Inference blending weight for clipwise predictions.
         blend_frame: Inference blending weight for framewise-max predictions.
-        mixup_prob: Probability of applying spectrogram mixup (0 to disable).
+        mixup_prob: Probability of applying mixup augmentation (0 to disable).
         mixup_alpha: Beta distribution parameter for mixup lambda.
-        loss_type: Loss function type. "soft_ce" normalizes multi-hot labels to sum
-            to 1 then uses F.cross_entropy. "ce" uses standard F.cross_entropy with
-            label_smoothing on the argmax class (single-label approximation).
-        label_smoothing: Label smoothing factor for "ce" loss type (default: 0.05).
+        loss_type: Loss function type:
+            - "soft_ce": Normalize multi-hot labels to sum-to-1, F.cross_entropy.
+            - "ce": Standard F.cross_entropy on argmax class with label_smoothing.
+        label_smoothing: Label smoothing factor for "ce" loss type (default: 0.0).
+        mel_transform: Optional nn.Module for GPU-side mel spectrogram transform.
+            When set, training data is raw waveforms and mixup applies before mel.
+            When None (default), training data is pre-computed mel spectrograms.
     """
 
     def __init__(
@@ -72,14 +77,18 @@ class SEDFinetuneModule(pl.LightningModule):
         mixup_alpha: float = 0.5,
         loss_type: str = "soft_ce",
         label_smoothing: float = 0.05,
+        mel_transform: nn.Module | None = None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["encoder", "sed_head"])
+        self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform"])
 
         self.encoder = encoder
         self.sed_head = sed_head
         self.num_classes = num_classes
         self.threshold = threshold
+        # GPU-side mel transform for raw waveform mixup mode (v3b).
+        # When set, training_step receives raw waveforms, applies mixup, then mel.
+        self.mel_transform = mel_transform
 
         # --- Metrics (same as LoRAFinetuneModule) ---
         for split in ("train", "val", "test"):
@@ -146,18 +155,19 @@ class SEDFinetuneModule(pl.LightningModule):
             return F.cross_entropy(logits, soft_targets)
 
     def _apply_mixup(
-        self, mel: torch.Tensor, labels: torch.Tensor
+        self, x: torch.Tensor, labels: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Apply spectrogram-domain mixup augmentation.
+        """Apply mixup augmentation on input tensor (mel spectrogram or raw waveform).
 
-        Shuffles the batch and mixes mel spectrograms with a random lambda.
+        Shuffles the batch and mixes inputs with a random lambda.
         Labels are unioned (multi-hot OR) to preserve all active species.
+        Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N).
         """
-        indices = torch.randperm(mel.size(0), device=mel.device)
+        indices = torch.randperm(x.size(0), device=x.device)
         lam = np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
-        mel = lam * mel + (1 - lam) * mel[indices]
+        x = lam * x + (1 - lam) * x[indices]
         labels = torch.clamp(labels + labels[indices], max=1.0)
-        return mel, labels
+        return x, labels
 
     def _blended_probs(
         self, clipwise_logits: torch.Tensor, framewise_logits: torch.Tensor
@@ -169,11 +179,22 @@ class SEDFinetuneModule(pl.LightningModule):
         ) + self.hparams.blend_frame * torch.sigmoid(framewise_max)
 
     def training_step(self, batch, batch_idx):
-        mel, labels = batch
+        x, labels = batch
 
-        # Optional spectrogram mixup
-        if random.random() < self.hparams.mixup_prob:
-            mel, labels = self._apply_mixup(mel, labels)
+        if self.mel_transform is not None:
+            # Raw waveform mode: mixup on waveforms, then compute mel on GPU.
+            # Mel computation must run in float32 and outside autograd graph:
+            # - float32: nnAudio STFT magnitudes can overflow float16 range
+            # - no_grad: mel is a fixed transform, not a learnable layer
+            if random.random() < self.hparams.mixup_prob:
+                x, labels = self._apply_mixup(x, labels)
+            with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                mel = self.mel_transform(x.float())
+        else:
+            # Spectrogram mode (default): mixup on pre-computed mel
+            mel = x
+            if random.random() < self.hparams.mixup_prob:
+                mel, labels = self._apply_mixup(mel, labels)
 
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values

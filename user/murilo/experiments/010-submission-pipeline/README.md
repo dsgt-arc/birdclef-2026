@@ -149,8 +149,6 @@ Logs go to `logs/slurm_validate_<model>_<jobid>.log`.
 
 Requires `~/.kaggle/kaggle.json` to be configured.
 
-The weights dataset **must exist on Kaggle** before the kernel can reference it. For new models (first submission), always upload the dataset first and wait for it to be available before pushing the kernel.
-
 ```bash
 # Upload weights dataset only
 python scripts/upload_kaggle.py --model protoclr-2026-fulldata
@@ -167,17 +165,25 @@ python scripts/upload_kaggle.py --model protoclr-2026-fulldata --dry-run
 Once the weights dataset is available on Kaggle, push the submission kernel. The kernel auto-detects which model weights are attached and runs inference.
 
 ```bash
-# Upload weights + push kernel (works if dataset already exists)
 python scripts/upload_kaggle.py --model protoclr-2026-fulldata --push-kernel
-
-# Upload all fulldata models + push kernels
-python scripts/upload_kaggle.py --model all-2026-fulldata --push-kernel
 ```
 
-> **Note**: `--push-kernel` uploads the dataset then pushes the kernel in sequence.
-> For a brand-new dataset that doesn't exist on Kaggle yet, Kaggle may need a few
-> minutes to process it. If the kernel fails with "No model weights found", wait
-> and re-push the kernel: run step 3 first, wait, then step 4.
+> **Important: two-step process for new models.** The kernel metadata references
+> the weights dataset by slug. If the dataset doesn't exist on Kaggle yet, the
+> kernel push will fail. For a model you've never uploaded before:
+>
+> ```bash
+> # 1. Create the weights dataset first
+> python scripts/upload_kaggle.py --model effnet-b0-sed-v2
+>
+> # 2. Wait a few minutes for Kaggle to process the dataset
+>
+> # 3. Then push the kernel
+> python scripts/upload_kaggle.py --model effnet-b0-sed-v2 --push-kernel
+> ```
+>
+> For models whose dataset already exists on Kaggle, `--push-kernel` works in a
+> single command (it versions the existing dataset, then pushes the kernel).
 
 **Naming convention** (`{encoder}` = eat, convnext, protoclr):
 - 2025-trained datasets: `birdclef-2025-{encoder}-weights`

@@ -1,111 +1,140 @@
 # Project Status
 
-> **Last Updated**: 2026-03-14
-
-## Research Thesis
-
-BirdCLEF 2026 requires CPU-only inference on soundscapes. The project pursues a **two-track strategy** (see [STRATEGY.md](STRATEGY.md)):
-
-1. **Track 1 (SOTA Baseline)**: EfficientNet-B1 + SED + iterative pseudo-labeling + source separation augmentation. Target: 0.85+ (competitive with 2025 top-5).
-2. **Track 2 (Novel Research)**: SSAMBA prompted SED with 30-60s long-context soundscape processing. A reference clip conditions Mamba to detect a specific species across an entire soundscape — few-shot, zero-shot capable, CPU-viable via O(n) complexity.
-
-Both tracks share the same data infrastructure: source separation, teacher labels, and the Kaggle submission pipeline.
+> **Last Updated**: 2026-03-25
 
 ## Current State
 
-**Phase**: Source separation infrastructure + Track 1 unfreezing + Track 2 SSL pre-training
+**Best LB**: **0.827** (EfficientNet-B0 SED v1 + pp2 + 10s inference, exp 016)
+**Target**: 0.85+ labeled-data baseline, then 0.90+ with pseudo-labeling
+**Active branch**: `mg/016-sed-improvements`
+**Next experiment**: Exp 017 — mel spectrogram overhaul ([concept](concepts/strong-baseline-mel-overhaul.md))
 
-The EfficientNet-B1 linear probe (exp 012) achieved **0.649 Kaggle private LB** with a frozen backbone — the project's best submission. The next steps are:
+### Score Progression
 
-1. **Train MixIT separator** — PyTorch ConvTasNet + MixIT loss at 32 kHz (concept ready, enables both tracks)
-2. **Unfreeze EfficientNet + SED head** — the single highest-impact Track 1 change (exp 015 showed frozen+SED fails; need to unfreeze)
-3. **SSAMBA SSL pre-training** (exp 009) — MPG runs completed, finetune evaluation pending
-4. **Exp 016 step 0 results** — does frozen EfficientNet have metric structure? Informs both tracks.
+| Model | Experiment | LB | Notes |
+|-------|-----------|-----|-------|
+| ProtoCLR clip-level | 012 | 0.767 | Best clip-level model |
+| EfficientNet-B0 SED v1 | 016 | 0.795 | SED architecture validated |
+| + post-processing (TTA + smoothing + TopN) | 016 | 0.823 | +0.028 free gains |
+| **+ pp2 (temp scaling + taxa smoothing + priors)** | **016** | **0.827** | **Current best** |
+| + 10s overlapping inference | 016 | 0.826 | |
+| Competitor SED (single model) | — | 0.908 | Our target |
+| Perch + ProtoSSM | — | 0.913 | Foundation model approach |
+| Pantanal Distill | — | 0.917 | Best public notebook |
+
+### What's Next
+
+**Exp 017: Strong Baseline via Mel Overhaul** — close the 0.082 gap to 0.908 using only labeled data.
+
+The v3 ablation (exp 016) proved no single recipe tweak helps — the gap is likely cumulative,
+starting with **mel spectrogram resolution** (n_fft=1024/128 mels vs 2025 1st place n_fft=4096/224 mels).
+Phased plan: mel overhaul → normalization → AttBlockV2 head → backbone scaling → ASL loss.
+See [concept doc](concepts/strong-baseline-mel-overhaul.md) for full details.
+
+After establishing a strong labeled-data baseline, **Phase 2** will leverage the 10,592 unlabeled
+soundscapes via iterative pseudo-labeling with PowerTransform (2025 1st place: +0.06 from this alone).
 
 ### Honest Assessment
 
-EfficientNet-B1 frozen probe (0.649 Kaggle) is well below top solutions (>0.85). The 2025 Kaggle landscape shows the dominant factor is **iterative pseudo-labeling** (3-4 rounds), not architecture. Soft labels from exp 013 hurt when used as training targets (exp 014/015) — the bottleneck is label quality, not model capacity. Track 1 focuses on proven techniques (pseudo-labeling, SED, ensemble). Track 2 bets on a novel approach (prompted SED + long context) that could leapfrog standard methods if it works, with Track 1 as fallback.
+Our SED architecture (GeM + AttHead) matches 3/4 BirdCLEF winners. The v3 ablation
+exhaustively tested weight variants, loss functions, and mixup domains — all regressed.
+The remaining gap is likely in input resolution (mel params), training recipe details
+(regularization, head design), and data leverage (pseudo-labeling, metadata priors).
+The Perch-based approaches (0.907-0.917) represent a fundamentally different paradigm
+(frozen foundation model + lightweight heads) that is complementary to our trained SED approach.
 
 ## Key Findings
 
 | Finding | Source | Implication |
 |---------|--------|-------------|
-| BEATs 95.8% on ESC-50 (linear probe) | Exp 001 | Best frozen feature extractor |
-| Static embeddings lose 48% accuracy | Exp 002 | Model2vec approach fails for transformers |
-| ConvNeXT achieves 0.48 cmAP on HSN | murilo/Exp 001 | Strong baseline from pre-trained convolutions |
-| Vertical tokenization +37% over 16×16 | murilo/Exp 004 | 128×4 tokens: cmAP=0.118, frequency axis matters |
-| EAT LoRA fine-tuning: **0.536 cmAP** | murilo/Exp 006 | 78% improvement over frozen probe; MLP head > LoRA scope |
-| ConvNeXt LoRA: **0.527 cmAP** | murilo/Exp 007 | ImageNet features nearly match AudioSet (only 1.7% gap) |
-| SSAMBA pre-trained: **0.18 cmAP** on HSN | Exp 007 | Pre-training doubles performance; Mamba-only transfer works |
-| SED attention pooling: no improvement | Exp 008 | Bottleneck is representation quality, not pooling |
-| Teacher labels: 88 GB across 3 models | Exp 010 | BirdNET + Perch + BamBird + acoustic indices on full dataset |
-| Prompted SED phase 0: inconclusive | Exp 011 | Finetuned backbone has emerging species signal but below threshold |
-| **EfficientNet-B1 frozen: 0.649 Kaggle** | Exp 012 | **Best submission** — frozen backbone + linear head |
-| Weak supervision fusion complete | Exp 013 | FlyingSquid triplet method, 3-6 LFs per species |
-| Soft labels hurt linear probe | Exp 014 | 0.238 cmAP vs 0.336 baseline — don't replace hard labels |
-| SED + soft labels: no benefit | Exp 015 | 0.237 cmAP — bottleneck is label quality, not head architecture |
-| Pseudo-labeling dominated 2025 solutions | Kaggle analysis | Top-1 used 3-4 rounds iterative pseudo-labeling |
+| **SED v1 = 0.827 LB** (best single model) | murilo/Exp 016 | SED + pp2 + 10s inference |
+| SED +0.112 cmAP over clip-level | murilo/Exp 016 | Framewise detection captures brief calls |
+| Every v3 ablation regressed vs v1 | murilo/Exp 016 | Gap is NOT in weights, loss, or mixup domain |
+| Mel resolution gap: 1024 vs 4096 n_fft | Analysis | Largest untested difference vs competitors |
+| ProtoCLR 0.767 (best clip-level) | murilo/Exp 012 | Soundscape fine-tuning universally helps |
+| LoRA equalizes pretraining domains | murilo/Exps 006-009 | 5× smaller ProtoCLR matches 90M models |
+| Soft labels hurt as training targets | Exp 014 | −0.098 cmAP; don't replace hard labels |
+| Pseudo-labels (round 0) didn't help | murilo/Exp 015 | Clip-level architecture was the bottleneck |
+| Perch alone = 0.825 LB | Competition | Foundation model matches our best trained model |
+| Metadata priors are free gains | Competition analysis | Site/hour tables, inference-only, +0.01-0.02 est. |
+| 2025 1st: pseudo-labeling = +0.06 | Winning solutions | PowerTransform × 4 rounds on strong baseline |
 
-## Experiments
+## Murilo's Experiments
 
 | ID | Name | Status | Result |
 |----|------|--------|--------|
-| anthony/001 | Encoder Benchmark | Complete | BEATs 95.8%, EAT+LoRA 94.6% |
-| anthony/002 | BEATs Inference Optimization | Complete | Rejected — 63% best accuracy |
-| anthony/003 | Model Distillation | Proposed | Distill BEATs → lightweight student |
-| anthony/004 | SSAMBA HF Port | Complete | SSAMBA ported to HuggingFace format |
-| anthony/005 | Token Context Shaping | Complete | Rectangular patches + ONNX benchmark |
-| anthony/006 | SSAMBA BirdSet HSN | Complete | 0.086 cmAP from scratch |
-| anthony/007 | Pre-trained SSAMBA Transfer | Complete | 0.179 cmAP (16x16), 0.173 cmAP (128x1) |
-| anthony/008 | Attention-Pooled SED | **Rejected** | No improvement over mean pooling (0.164 vs 0.173) |
-| anthony/009 | BirdCLEF End-to-End Pipeline | **In Progress** | SSL pretrain done, finetune pending, Kaggle 0.484 preliminary |
-| anthony/010 | Teacher Labels | **Complete** | BirdNET + Perch + BamBird + acoustic indices (88 GB) |
-| anthony/011 | Prompted SED | **Phase 0 Done** | Inconclusive — emerging signal but below pass gate |
-| anthony/012 | EfficientNet-B1 Linear Probe | **Complete** | **0.336 val/cmap, 0.649 Kaggle private** |
-| anthony/013 | Weak Supervision (FlyingSquid) | **Complete** | Triplet fusion of 3-6 LFs, soft labels generated |
-| anthony/014 | EfficientNet + Soft Labels | **Rejected** | 0.238 cmAP — soft labels hurt vs hard-label baseline |
-| anthony/015 | EfficientNet SED + Soft Labels | **Rejected** | 0.237 cmAP — SED head adds nothing with soft labels |
-| anthony/016 | Contrastive SED / Prototypical | **In Progress** | Step 0: zero-training baseline (awaiting results) |
-| murilo/001 | BirdSet Benchmark | Complete | ConvNeXT 0.48, EfficientNet 0.38 on HSN |
-| murilo/002 | Supervised ViT Baseline | Complete | 0.164 cmAP on HSN |
-| murilo/003 | Model Training | Complete | ConvNeXT-Tiny pretrained best (cmAP=0.180) |
-| murilo/004 | Frame-Based Tokenization | Complete | 128×4 vertical tokens: cmAP=0.118 (+37%) |
-| murilo/005 | Pretrained Audio Fine-Tuning | Complete | EAT frozen probe: cmAP=0.301 |
-| murilo/006 | LoRA Fine-Tuning EAT | **Complete** | **Best HSN: cmAP=0.536** |
-| murilo/007 | ConvNeXt-Base LoRA | **Complete** | cmAP=0.527, ImageNet nearly matches AudioSet |
-| murilo/008 | Frame Tokenization EAT | Proposed | Vertical patches for EAT |
-| murilo/009 | ProtoCLR Fine-Tuning | Proposed | CvT-13 prototypical contrastive for ensemble diversity |
-| adrian/001 | Inference Benchmark | Complete | CPU/GPU timing for BirdNET, Perch, BEATs, etc. |
-| adrian/002 | Kaggle Submission | Complete | Offline submission pipeline (three artifacts approach) |
+| 001 | BirdSet Benchmark | Complete | ConvNeXT 0.48, EfficientNet 0.38 on HSN |
+| 002 | Supervised ViT Baseline | Complete | 0.164 cmAP on HSN |
+| 003 | Model Training | Complete | ConvNeXT-Tiny pretrained best (cmAP=0.180) |
+| 004 | Frame-Based Tokenization | Complete | 128×4 vertical tokens: cmAP=0.118 (+37%) |
+| 005 | Pretrained Audio Fine-Tuning | Complete | EAT frozen probe: cmAP=0.301 |
+| 006 | LoRA Fine-Tuning EAT | Complete | **Best HSN: cmAP=0.536** |
+| 007 | ConvNeXt-Base LoRA | Complete | cmAP=0.527, ImageNet nearly matches AudioSet |
+| 009 | ProtoCLR LoRA Fine-Tuning | Complete | 0.942 AUROC, 5× smaller matches EAT/ConvNeXt |
+| 010 | Submission Pipeline | Complete | ONNX + Kaggle kernel, 3 architectures |
+| 011 | LoRA Baseline 2026 | Complete | ProtoCLR fulldata 0.736 LB |
+| 012 | Soundscape Fine-Tuning | Complete | ProtoCLR **0.767 LB**, all 3 models improved |
+| 015 | Student Training (pseudo-labels) | **Rejected** | Pseudo-labels hurt with clip-level arch |
+| 016 | SED Architecture | **Complete** | **0.827 LB** (v1-10s + pp2), v3 ablation done |
+| 017 | Strong Baseline (mel overhaul) | **Proposed** | [Concept](concepts/strong-baseline-mel-overhaul.md) ready |
+
+Full experiment history with detailed metrics: [EXPERIMENTS.md](../user/murilo/EXPERIMENTS.md)
+All model runs and checkpoints: [MODEL-RUNS.md](../user/murilo/MODEL-RUNS.md)
+
+## Anthony's Experiments
+
+| ID | Name | Status | Result |
+|----|------|--------|--------|
+| 001 | Encoder Benchmark | Complete | BEATs 95.8%, EAT+LoRA 94.6% |
+| 009 | BirdCLEF End-to-End Pipeline | In Progress | SSL pretrain done, finetune pending |
+| 010 | Teacher Labels | Complete | BirdNET + Perch + BamBird (88 GB) |
+| 011 | Prompted SED | Phase 0 Done | Inconclusive — emerging signal |
+| 012 | EfficientNet-B1 Linear Probe | Complete | 0.649 Kaggle (frozen backbone) |
+| 013 | Weak Supervision (FlyingSquid) | Complete | Soft labels generated |
+| 014 | EfficientNet + Soft Labels | Rejected | Soft labels hurt (−0.098 cmAP) |
+| 015 | EfficientNet SED + Soft Labels | Rejected | SED needs trainable backbone |
+| 016 | Contrastive SED / Prototypical | In Progress | Step 0 awaiting results |
 
 ## Concept Docs
 
 | Concept | Key Idea | Status |
 |---------|----------|--------|
-| [Prompted SED](concepts/prompted-sound-event-detection.md) | Reference audio as Mamba prefix for few-shot SED (Track 2 core) | Developing — phase 0 inconclusive, redesigning |
+| [Strong Baseline Mel Overhaul](concepts/strong-baseline-mel-overhaul.md) | Close SED gap via mel resolution + recipe alignment | **Developing — exp 017 next** |
+| [Prompted SED](concepts/prompted-sound-event-detection.md) | Reference audio as Mamba prefix for few-shot SED | Developing — phase 0 inconclusive |
 | [Source Separation Training](concepts/source-separation-training.md) | Train PyTorch MixIT separator on BirdCLEF data | Developing — concept ready, not started |
-| [Source Separation Augmentation](concepts/source-separation-augmentation.md) | Biodenoising + MixIT for smart augmentation (both tracks) | Developing — 4 strategies, 5 hypotheses |
-| [Weak Supervision Label Fusion](concepts/weak-supervision-label-fusion.md) | FlyingSquid triplet method to fuse noisy teacher signals | Done (exp 013) — labels generated |
-| [Soundscape Domain Shift](concepts/soundscape-domain-shift.md) | XenoCanto → soundscape gap analysis | Fundamental challenge — separation augmentation addresses it |
+| [Source Separation Augmentation](concepts/source-separation-augmentation.md) | Biodenoising + MixIT for smart augmentation | Developing — 4 strategies, 5 hypotheses |
+| [Weak Supervision Label Fusion](concepts/weak-supervision-label-fusion.md) | FlyingSquid triplet method to fuse noisy teacher signals | Done (exp 013) |
+| [Soundscape Domain Shift](concepts/soundscape-domain-shift.md) | XenoCanto → soundscape gap analysis | Fundamental challenge |
 | [SSAMBA Audio Mamba](concepts/ssamba-audio-mamba.md) | Mamba backbone for Track 2 | Mature — validated through exps 004-009 |
+
+## Competition Intelligence
+
+| Resource | Location |
+|----------|----------|
+| SED improvement plan (28-experiment ablation) | [discussions/sed-improvement-plan-681146.md](references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md) |
+| Perch + ProtoSSM (0.913 LB) | [notebooks/perch-protossm-zirach.md](references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach.md) |
+| Pantanal Distill (0.917 LB) | [notebooks/pantanal-distill.md](references/kaggle/birdclef-2026/notebooks/pantanal-distill.md) |
+| Perch + LogReg (0.910 LB) | [notebooks/perch-probes-chiranjithdharma.md](references/kaggle/birdclef-2026/notebooks/perch-probes-chiranjithdharma.md) |
+| 2025 1st place inference | [birdclef-2025/birdclef2025-1st-place-inference.md](references/kaggle/birdclef-2025/birdclef2025-1st-place-inference.md) |
+| Winning solutions analysis | [winning-solutions-analysis.md](references/kaggle/winning-solutions-analysis.md) |
+| Gemini deep research | [deep-research/2026-03-24-gemini-strategic-framework.md](references/deep-research/2026-03-24-gemini-strategic-framework.md) |
 
 ## Priority Stack
 
-1. **Track 1: Unfreeze EfficientNet + SED + class weights** — fork exp 012, highest-impact proven change
-2. **Track 1: Pseudo-labeling round 1** — predict on 176.5h unlabeled soundscapes — highest-value single activity
-3. **Train MixIT separator** — ConvTasNet at 32 kHz + Demucs at 16 kHz in parallel (6-24h). Enables both tracks.
-4. **Track 1: Iterate pseudo-labeling** — rounds 2-3, separation-enhanced labels
-5. **Track 2: Episode training prototype** — within-recording episodes, 30-60s windows, SSL backbone
-6. **Track 2: Soundscape adaptation** — focal ref + soundscape target episodes, prioritize amphibians + zero-shot species
-
-See [STRATEGY.md](STRATEGY.md) for full sequencing, risk assessment, and EDA-informed context.
+1. **Exp 017: Mel spectrogram overhaul** — n_fft=4096, 224 mels, single-variable test from v1
+2. **Exp 017: Recipe alignment** — normalization, AttBlockV2 head, StochasticDepth, backbone scaling
+3. **Free inference wins** — model soup, metadata priors (site/hour), temperature scaling
+4. **Pseudo-labeling** (Phase 2) — PowerTransform × 3-4 rounds on the strongest baseline
+5. **Ensemble** — SED + Perch hybrid, OpenVINO for CPU budget
 
 ## Quick Links
 
 | Resource | Link |
 |----------|------|
 | Concepts | [concepts/](concepts/) |
+| Competition Intel | [references/kaggle/](references/kaggle/) |
+| Deep Research | [references/deep-research/](references/deep-research/) |
 | Literature | [references/literature.md](references/literature.md) |
 | Vendor Docs | [vendor/](vendor/) |
 | Templates | [_templates/](_templates/) |
-| Kaggle Notebooks | [references/kaggle/](references/kaggle/) |
+| Strategy | [STRATEGY.md](STRATEGY.md) |

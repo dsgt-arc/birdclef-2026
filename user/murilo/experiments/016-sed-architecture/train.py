@@ -126,10 +126,38 @@ def main():
     )
 
     # ========================================================================
+    # Build mel spectrogram transform (10s → 1000 frames at 32kHz)
+    # ========================================================================
+
+    sample_rate = config["data"]["sample_rate"]
+    window_duration = config["data"]["window_duration"]
+    target_frames = int(window_duration * sample_rate / (sample_rate * 0.01))  # 10ms hop
+
+    audio_transform = NNAudioMelSpectrogram(
+        sample_rate=sample_rate,
+        target_frames=target_frames,
+    )
+    logger.info(f"Mel transform: sr={sample_rate}, target_frames={target_frames}")
+
+    # ========================================================================
     # Build Lightning module
     # ========================================================================
 
     training_cfg = config["training"]
+    raw_waveform_mixup = training_cfg.get("raw_waveform_mixup", False)
+
+    # When raw_waveform_mixup is enabled, the mel transform moves to the model
+    # (GPU-side) so mixup can apply on raw waveforms before mel conversion.
+    # Use a separate instance for the model to avoid sharing nn.Module state
+    # between GPU (model) and CPU (DataLoader eval workers).
+    gpu_mel_transform = None
+    if raw_waveform_mixup:
+        gpu_mel_transform = NNAudioMelSpectrogram(
+            sample_rate=sample_rate,
+            target_frames=target_frames,
+        )
+        logger.info("Raw waveform mixup: mel transform on GPU, mixup before mel")
+
     pl_module = SEDFinetuneModule(
         encoder=encoder,
         sed_head=sed_head,
@@ -147,26 +175,19 @@ def main():
         mixup_prob=training_cfg.get("mixup_prob", 0.5),
         mixup_alpha=training_cfg.get("mixup_alpha", 0.5),
         loss_type=training_cfg.get("loss_type", "soft_ce"),
-        label_smoothing=training_cfg.get("label_smoothing", 0.05),
+        label_smoothing=training_cfg.get("label_smoothing", 0.0),
+        mel_transform=gpu_mel_transform,
     )
-
-    # ========================================================================
-    # Build mel spectrogram transform (10s → 1000 frames at 32kHz)
-    # ========================================================================
-
-    sample_rate = config["data"]["sample_rate"]
-    window_duration = config["data"]["window_duration"]
-    target_frames = int(window_duration * sample_rate / (sample_rate * 0.01))  # 10ms hop
-
-    audio_transform = NNAudioMelSpectrogram(
-        sample_rate=sample_rate,
-        target_frames=target_frames,
-    )
-    logger.info(f"Mel transform: sr={sample_rate}, target_frames={target_frames}")
 
     # ========================================================================
     # Build data module
     # ========================================================================
+
+    # When raw_waveform_mixup is enabled:
+    #   - train datasets get transform=None (return raw waveforms)
+    #   - val/test datasets get eval_transform=audio_transform (return mel)
+    # When disabled (default): all datasets use audio_transform (backward compatible)
+    train_transform = None if raw_waveform_mixup else audio_transform
 
     data_module = SEDDataModule(
         data_dir=str(data_dir),
@@ -180,7 +201,8 @@ def main():
         soundscape_val_files=config["data"].get("soundscape_val_files", 8),
         soundscape_test_files=config["data"].get("soundscape_test_files", 8),
         seed=config["data"].get("seed", 42),
-        transform=audio_transform,
+        transform=train_transform,
+        eval_transform=audio_transform,
     )
 
     # ========================================================================

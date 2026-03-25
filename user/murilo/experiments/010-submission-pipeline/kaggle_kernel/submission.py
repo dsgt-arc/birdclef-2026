@@ -92,6 +92,13 @@ KAGGLE_USER = "murilogustineli"
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
     # SED models, 234 classes (exp 016)
+    "birdclef-2026-effnet-b0-sed-v1-10s-pp2-weights",
+    "birdclef-2026-effnet-b0-sed-v1-10s-weights",
+    "birdclef-2026-effnet-b0-sed-v3d-weights",
+    "birdclef-2026-effnet-b0-sed-v3c-weights",
+    "birdclef-2026-effnet-b0-sed-v3b-weights",
+    "birdclef-2026-effnet-b0-sed-v3a-weights",
+    "birdclef-2026-effnet-b0-sed-v2-weights",
     "birdclef-2026-effnet-b0-sed-v1-weights",
     # Student models trained on focal + soundscape + pseudo-labels, 234 classes (exp 015)
     "birdclef-2026-protoclr-student-v1-weights",
@@ -311,19 +318,33 @@ def compute_mel(audio, mel_cfg):
 
 
 def load_audio_chunk(audio_path, sr, start_s, duration_s):
-    """Load a chunk of audio at target sample rate."""
+    """Load a chunk of audio at target sample rate.
+
+    Handles negative start times by zero-padding the beginning (needed for
+    10s overlapping inference where the first segments need context before t=0).
+    """
     info = sf.info(audio_path)
     source_sr = info.samplerate
     total_duration = info.frames / source_sr
+    target_samples = int(sr * duration_s)
 
-    actual_duration = min(duration_s, total_duration - start_s)
+    # Handle negative start: zero-pad the beginning
+    pre_pad_samples = 0
+    read_start_s = start_s
+    if start_s < 0:
+        pre_pad_s = -start_s
+        pre_pad_samples = int(sr * pre_pad_s)
+        read_start_s = 0.0
+        duration_s = duration_s - pre_pad_s
+
+    actual_duration = min(duration_s, total_duration - read_start_s)
     if actual_duration <= 0:
-        return np.zeros(int(sr * duration_s), dtype=np.float32)
+        return np.zeros(target_samples, dtype=np.float32)
 
     audio, _ = sf.read(
         audio_path,
         dtype="float32",
-        start=int(start_s * source_sr),
+        start=int(read_start_s * source_sr),
         frames=int(actual_duration * source_sr) + 2,
     )
     if audio.ndim == 2:
@@ -333,8 +354,11 @@ def load_audio_chunk(audio_path, sr, start_s, duration_s):
     if source_sr != sr:
         audio = librosa.resample(audio, orig_sr=source_sr, target_sr=sr)
 
-    # Pad to full chunk length
-    target_samples = int(sr * duration_s)
+    # Prepend zero-padding for negative start
+    if pre_pad_samples > 0:
+        audio = np.concatenate([np.zeros(pre_pad_samples, dtype=np.float32), audio])
+
+    # Pad/trim to exact target length
     if len(audio) < target_samples:
         audio = np.pad(audio, (0, target_samples - len(audio)))
     elif len(audio) > target_samples:
@@ -368,6 +392,8 @@ def _predict_segment_with_tta(
 
     TTA: run 3 predictions per segment (center, -2.5s, +2.5s) and average.
     Confirmed +0.012 LB from competition analysis.
+    The shift is always 2.5s (half a competition segment), regardless of
+    inference window size.
     """
     audio = load_audio_chunk(audio_path, sr, window_start_s, window_duration)
     mel = compute_mel(audio, mel_cfg)
@@ -376,14 +402,13 @@ def _predict_segment_with_tta(
     if not use_tta:
         return probs
 
-    # TTA: shifted predictions
-    shift_s = window_duration / 2  # 2.5s for 5s windows
+    # TTA: shifted predictions (always 2.5s = half of 5s competition segment)
+    shift_s = 2.5
     tta_preds = [probs]
 
     for shift in [-shift_s, shift_s]:
         shifted_start = window_start_s + shift
-        if shifted_start < 0:
-            shifted_start = 0
+        # load_audio_chunk handles negative start times via zero-padding
         audio_shifted = load_audio_chunk(audio_path, sr, shifted_start, window_duration)
         mel_shifted = compute_mel(audio_shifted, mel_cfg)
         tta_preds.append(_run_onnx(session, mel_shifted, mel_cfg))
@@ -392,19 +417,63 @@ def _predict_segment_with_tta(
     return 0.5 * tta_preds[0] + 0.25 * tta_preds[1] + 0.25 * tta_preds[2]
 
 
-def _apply_temporal_smoothing(probs_matrix):
-    """Gaussian temporal smoothing across consecutive segments.
+def _apply_temporal_smoothing(probs_matrix, taxa_mapping=None):
+    """Taxa-aware temporal smoothing across consecutive segments.
 
-    Kernel [0.1, 0.2, 0.4, 0.2, 0.1] — confirmed +0.010 LB.
+    When taxa_mapping is provided, applies different strategies by taxa:
+    - Aves/Mammalia/Reptilia (events): local-max propagation (alpha=0.15)
+      x_new = (1-a)*x + a*max(prev, next) — preserves transient peaks
+    - Amphibia/Insecta (textures): average-neighbor smoothing (alpha=0.35)
+      x_new = (1-a)*x + a*mean(prev, next) — solidifies continuous signals
+
+    Fallback (no taxa_mapping): Gaussian kernel [0.1, 0.2, 0.4, 0.2, 0.1].
     """
-    kernel = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
     n_segments, n_species = probs_matrix.shape
     if n_segments < 3:
         return probs_matrix
 
     smoothed = np.copy(probs_matrix)
+
+    if taxa_mapping is None:
+        # Fallback: original uniform Gaussian kernel
+        kernel = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+        for c in range(n_species):
+            smoothed[:, c] = np.convolve(probs_matrix[:, c], kernel, mode="same")
+        return smoothed
+
+    # Build index sets by ecological behavior
+    event_indices = set()  # transient calls
+    texture_indices = set()  # continuous sounds
+    for taxa in ["aves", "mammalia", "reptilia"]:
+        event_indices.update(taxa_mapping.get(taxa, []))
+    for taxa in ["amphibia", "insecta"]:
+        texture_indices.update(taxa_mapping.get(taxa, []))
+
+    alpha_event = 0.15
+    alpha_texture = 0.35
+
     for c in range(n_species):
-        smoothed[:, c] = np.convolve(probs_matrix[:, c], kernel, mode="same")
+        if c in event_indices:
+            # Local-max propagation: preserves transient bird call peaks
+            for t in range(n_segments):
+                prev_val = probs_matrix[max(0, t - 1), c]
+                next_val = probs_matrix[min(n_segments - 1, t + 1), c]
+                smoothed[t, c] = (1 - alpha_event) * probs_matrix[t, c] + alpha_event * max(
+                    prev_val, next_val
+                )
+        elif c in texture_indices:
+            # Average-neighbor: solidifies continuous frog/insect textures
+            for t in range(n_segments):
+                prev_val = probs_matrix[max(0, t - 1), c]
+                next_val = probs_matrix[min(n_segments - 1, t + 1), c]
+                smoothed[t, c] = (1 - alpha_texture) * probs_matrix[t, c] + alpha_texture * (
+                    (prev_val + next_val) / 2
+                )
+        else:
+            # Unknown taxa: use Gaussian kernel
+            kernel = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+            smoothed[:, c] = np.convolve(probs_matrix[:, c], kernel, mode="same")
+
     return smoothed
 
 
@@ -418,20 +487,129 @@ def _apply_topn(probs_matrix):
     return probs_matrix * file_max
 
 
+def _apply_temperature(probs_matrix, temperature):
+    """Temperature scaling in logit space.
+
+    Converts probabilities to logits, scales by 1/T, converts back.
+    T > 1 softens (reduces overconfidence on dominant species),
+    T < 1 sharpens. Perch notebooks use T=1.10.
+    """
+    if temperature is None or temperature == 1.0:
+        return probs_matrix
+
+    eps = 1e-7
+    p = np.clip(probs_matrix, eps, 1 - eps)
+    logits = np.log(p / (1 - p))
+    scaled_logits = logits / temperature
+    return sigmoid(scaled_logits)
+
+
+def _parse_soundscape_metadata(filename):
+    """Parse site and hour from soundscape filename.
+
+    Format: BC2026_{Train|Test}_NNNN_SXX_YYYYMMDD_HHMMSS.ogg
+    Returns: (site, hour) or (None, None) if parsing fails.
+    """
+    stem = Path(filename).stem
+    parts = stem.split("_")
+    if len(parts) < 6:
+        return None, None
+
+    site = parts[3]  # e.g. "S08"
+    try:
+        hour = int(parts[5][:2])  # first 2 digits of HHMMSS
+    except (ValueError, IndexError):
+        return site, None
+
+    return site, hour
+
+
+def _apply_metadata_priors(probs_matrix, metadata_priors, site, hour, taxa_mapping, idx_map):
+    """Apply site/hour metadata priors multiplicatively.
+
+    probs *= prior ** lambda, where lambda varies by taxa:
+    - Aves: 0.3 (birds somewhat mobile, moderate prior)
+    - Amphibia/Insecta: 0.5 (strongly site/time dependent)
+    - Mammalia/Reptilia: 0.2 (most mobile)
+
+    Fallback hierarchy: site+hour -> site -> hour -> global.
+    """
+    if metadata_priors is None:
+        return probs_matrix
+
+    n_segments, n_species = probs_matrix.shape
+    lambda_map = {"aves": 0.3, "amphibia": 0.5, "insecta": 0.5, "mammalia": 0.2, "reptilia": 0.2}
+
+    # Build index-to-taxa lookup
+    idx_to_taxa = {}
+    if taxa_mapping:
+        for taxa_class, indices in taxa_mapping.items():
+            for idx in indices:
+                idx_to_taxa[idx] = taxa_class
+
+    # Prior lookup tables
+    site_hour_priors = metadata_priors.get("site_hour_species", {})
+    site_priors = metadata_priors.get("site_species", {})
+    hour_priors = metadata_priors.get("hour_species", {})
+    global_priors = metadata_priors.get("global_species", {})
+
+    site_str = site if site else None
+    hour_str = str(hour).zfill(2) if hour is not None else None
+
+    # Build per-species prior multiplier vector
+    prior_vector = np.ones(n_species, dtype=np.float32)
+    for idx_str, species_code in idx_map.items():
+        idx = int(idx_str)
+        if idx >= n_species:
+            continue
+
+        # Fallback hierarchy: site+hour -> site -> hour -> global
+        prior_val = None
+        if site_str and hour_str:
+            prior_val = site_hour_priors.get(site_str, {}).get(hour_str, {}).get(species_code)
+        if prior_val is None and site_str:
+            prior_val = site_priors.get(site_str, {}).get(species_code)
+        if prior_val is None and hour_str:
+            prior_val = hour_priors.get(hour_str, {}).get(species_code)
+        if prior_val is None:
+            prior_val = global_priors.get(species_code)
+        if prior_val is None:
+            continue  # No prior data; leave at 1.0
+
+        # Scale lambda by taxa class
+        taxa = idx_to_taxa.get(idx, "aves")
+        lam = lambda_map.get(taxa, 0.3)
+        prior_vector[idx] = prior_val**lam
+
+    # Apply multiplicatively to all segments
+    return probs_matrix * prior_vector[np.newaxis, :]
+
+
 # Post-processing flags (set to True to enable)
 ENABLE_TTA = True
 ENABLE_TEMPORAL_SMOOTHING = True
 ENABLE_TOPN = True
 
 
-def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
+def predict_soundscape(
+    session, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
+):
     """Process one soundscape file and return prediction rows.
 
-    Each 5s window produces one row with 234 BirdCLEF 2026 species columns.
-    Applies post-processing: TTA → temporal smoothing → TopN.
+    Each 5s segment produces one row with 234 BirdCLEF 2026 species columns.
+
+    If mel_cfg["inference_window"] > 5s (e.g., 10s), loads a wider audio
+    window centered on each 5s target segment. This matches the training
+    window size and provides temporal context (2.5s before + after).
+    2024 1st place confirmed +0.015 LB from this approach.
+
+    Post-processing pipeline:
+      TTA → temperature scaling → taxa-aware smoothing → TopN → metadata priors
     """
     sr = mel_cfg["sr"]
-    window_duration = 5.0
+    segment_duration = 5.0  # competition: predictions every 5s
+    inference_window = mel_cfg.get("inference_window", segment_duration)
+    context_pad = (inference_window - segment_duration) / 2  # 2.5s for 10s window
     soundscape_id = Path(audio_path).stem
 
     info = sf.info(audio_path)
@@ -443,31 +621,48 @@ def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
     # Collect all segment probabilities as a matrix for post-processing
     segment_probs = []
     segment_times = []
-    window_start_s = 0.0
+    segment_start_s = 0.0
 
-    while window_start_s < total_duration:
+    while segment_start_s < total_duration:
+        # Center the inference window on the 5s target segment
+        # For 10s inference: audio_start = segment_start - 2.5s
+        audio_start = segment_start_s - context_pad
         probs = _predict_segment_with_tta(
             session,
             audio_path,
             sr,
-            window_start_s,
-            window_duration,
+            audio_start,
+            inference_window,
             mel_cfg,
             use_tta=ENABLE_TTA,
         )
         segment_probs.append(probs)
-        segment_times.append(int(window_start_s + window_duration))
-        window_start_s += window_duration
+        segment_times.append(int(segment_start_s + segment_duration))
+        segment_start_s += segment_duration
 
     # Stack into (n_segments, n_model_outputs) matrix
     probs_matrix = np.stack(segment_probs)  # (n_segments, n_model_outputs)
 
-    # Apply post-processing pipeline
-    if ENABLE_TEMPORAL_SMOOTHING:
-        probs_matrix = _apply_temporal_smoothing(probs_matrix)
+    # Post-processing pipeline (order matters):
+    # 1. Temperature scaling (calibration)
+    temperature = mel_cfg.get("temperature", 1.0)
+    if temperature != 1.0:
+        probs_matrix = _apply_temperature(probs_matrix, temperature)
 
+    # 2. Taxa-aware temporal smoothing
+    if ENABLE_TEMPORAL_SMOOTHING:
+        probs_matrix = _apply_temporal_smoothing(probs_matrix, taxa_mapping)
+
+    # 3. TopN (file-level consistency)
     if ENABLE_TOPN:
         probs_matrix = _apply_topn(probs_matrix)
+
+    # 4. Metadata priors (site/hour conditioning)
+    site, hour = _parse_soundscape_metadata(audio_path)
+    if metadata_priors is not None and (site is not None or hour is not None):
+        probs_matrix = _apply_metadata_priors(
+            probs_matrix, metadata_priors, site, hour, taxa_mapping, idx_map
+        )
 
     # Build prediction rows mapped to 234 submission columns
     predictions = []
@@ -527,6 +722,28 @@ def main():
     idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
     print(f"Species mapping: {len(idx_map)} mapped to 2026 columns")
 
+    # Load optional pp2 artifacts (taxa mapping, metadata priors)
+    taxa_mapping = None
+    taxa_path = weights_dir / "taxa_mapping.json"
+    if taxa_path.exists():
+        with open(taxa_path) as f:
+            taxa_mapping = json.load(f)
+        n_taxa_species = sum(len(v) for v in taxa_mapping.values())
+        print(f"Taxa mapping: {n_taxa_species} species across {len(taxa_mapping)} classes")
+
+    metadata_priors = None
+    priors_path = weights_dir / "metadata_priors.json"
+    if priors_path.exists():
+        with open(priors_path) as f:
+            metadata_priors = json.load(f)
+        print(
+            f"Metadata priors: {len(metadata_priors.get('sites', []))} sites, "
+            f"{metadata_priors.get('n_segments', 0)} segments"
+        )
+
+    if mel_cfg.get("temperature", 1.0) != 1.0:
+        print(f"Temperature scaling: T={mel_cfg['temperature']}")
+
     # Create ONNX session (CPU only)
     session = ort.InferenceSession(
         str(onnx_path),
@@ -553,7 +770,14 @@ def main():
     all_predictions = []
     for i, audio_path in enumerate(audio_files):
         t0 = time.time()
-        preds = predict_soundscape(session, str(audio_path), mel_cfg, species_mapping)
+        preds = predict_soundscape(
+            session,
+            str(audio_path),
+            mel_cfg,
+            species_mapping,
+            taxa_mapping=taxa_mapping,
+            metadata_priors=metadata_priors,
+        )
         elapsed = time.time() - t0
         print(f"  [{i+1}/{len(audio_files)}] {audio_path.name}: {len(preds)} rows ({elapsed:.1f}s)")
         all_predictions.extend(preds)

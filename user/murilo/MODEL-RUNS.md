@@ -115,18 +115,30 @@ primary bottleneck — exp 016 (SED) addresses this directly.
 ## BirdCLEF 2026 Models — SED Architecture (exp 016)
 
 EfficientNet-B0 with SED attention head (GeM freq pooling + attention + framewise max).
-Trained from ImageNet-pretrained backbone (no prior BirdCLEF checkpoint). Soft CE dual
-loss, 10s windows, spectrogram mixup, 32kHz.
+Trained from ImageNet-pretrained backbone (no prior BirdCLEF checkpoint). 10s windows,
+spectrogram mixup, 32kHz. v1: soft CE dual loss, standard ImageNet init.
+v2: standard CE with label_smoothing=0.05, NS-JFT pretrained (`tf_efficientnet_b0.ns_jft_in1k`).
+**v2 regressed** on all offline metrics vs v1 (−0.023 AUROC, −0.054 cmAP).
 
 | Slug | Encoder | Architecture | Classes | Test AUROC | Test cmAP | Best Epoch | LB | Checkpoint |
 |------|---------|-------------|---------|-----------|----------|------------|-----|------------|
-| `effnet-b0-sed-v1` | EfficientNet-B0 | SED (GeM + AttHead) | 234 | **0.860** | **0.593** | 24 | **0.795** | `016-.../2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
+| `effnet-b0-sed-v1` | EfficientNet-B0 | SED (GeM + AttHead) | 234 | **0.860** | **0.593** | 24 | 0.795 / 0.823 (+pp) / 0.826 (+pp +10s) / **0.827** (+pp2 +10s) | `016-.../2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
+| `effnet-b0-sed-v2` | EfficientNet-B0 (NS-JFT) | SED (GeM + AttHead) + CE | 234 | 0.837 | 0.539 | 24 | **0.755** (+pp) | `016-.../2026-effnet-b0-sed-v2/best-epochepoch=24.ckpt` |
+| `effnet-b0-sed-v3a` | EfficientNet-B0 (TF) | SED (TF-ported weights) | 234 | 0.857 | 0.599 | 25 | **0.813** (+pp) | `016-.../2026-effnet-b0-sed-v3a/best-epochepoch=25.ckpt` |
+| `effnet-b0-sed-v3b` | EfficientNet-B0 | SED + raw waveform mixup | 234 | **0.862** | **0.607** | 25 | **0.802** (+pp) | `016-.../2026-effnet-b0-sed-v3b/best-epochepoch=25.ckpt` |
+| `effnet-b0-sed-v3c` | EfficientNet-B0 | SED + CE loss | 234 | 0.850 | 0.552 | 25 | pending | `016-.../2026-effnet-b0-sed-v3c/best-epochepoch=25.ckpt` |
+| `effnet-b0-sed-v3d` | EfficientNetV2-B0 | SED (V2 architecture) | 234 | 0.841 | 0.523 | 13 | pending | `016-.../2026-effnet-b0-sed-v3d/best-epochepoch=13.ckpt` |
 
 ### Comparison: SED vs Clip-Level (offline test set)
 
 | Model | Architecture | Test AUROC | Test cmAP | LB |
 |-------|-------------|-----------|----------|-----|
-| **EfficientNet-B0 SED** | **SED (GeM + AttHead)** | **0.860** | **0.593** | **0.795** |
+| EfficientNet-B0 SED v3b | SED + raw waveform mixup | **0.862** | **0.607** | **0.802** (+pp) |
+| **EfficientNet-B0 SED v1** | **SED (GeM + AttHead)** | **0.860** | **0.593** | 0.795 / 0.823 (+pp) / **0.826** (+pp +10s) |
+| EfficientNet-B0 SED v3a | SED (TF-ported weights) | 0.857 | 0.599 | **0.813** (+pp) |
+| EfficientNet-B0 SED v3c | SED + CE loss | 0.850 | 0.552 | pending |
+| EfficientNetV2-B0 SED v3d | SED (V2 architecture) | 0.841 | 0.523 | pending |
+| EfficientNet-B0 SED v2 | SED + NS-JFT + CE | 0.837 | 0.539 | **0.755** (+pp) |
 | ProtoCLR (exp 012) | Clip (global avg pool) | 0.845 | 0.481 | 0.767 |
 | ConvNeXt (exp 012) | Clip (global avg pool) | 0.844 | 0.470 | 0.755 |
 | EAT (exp 012) | Clip (global avg pool) | 0.838 | 0.452 | 0.720 |
@@ -136,10 +148,14 @@ using a smaller backbone (3.6M params vs 19-90M for our LoRA encoders). The cmAP
 improvement is particularly notable — SED's framewise detection captures brief calls
 that clip-level averaging misses.
 
-**Competition reference**: EfficientNet-B0 SED = 0.908 LB (competitor). Our 0.795 leaves
-a 0.113 gap — likely from: standard ImageNet init (vs NS-JFT), spectrogram mixup (vs raw
-waveform), soft CE (vs CE/ASL), no post-processing (TopN/smoothing/TTA), and 5s inference
-windows (trained on 10s). See exp 016 results.md for gap analysis.
+**Post-processing**: TTA (2.5s shifts) + temporal smoothing (Gaussian) + TopN (file-level
+max multiplication) added +0.028 LB (0.795 → 0.823) with zero retraining.
+
+**Competition reference**: EfficientNet-B0 SED = 0.908 LB (competitor). Remaining gap
+0.082 — likely from: mel resolution (n_fft=1024 vs 4096, 128 vs 224 mels),
+standard ImageNet init, spectrogram mixup (vs raw waveform), and head design.
+10s inference alignment added +0.003, pp2 (temp scaling + taxa smoothing + metadata priors) added +0.001. See exp 016 summary.md for gap analysis;
+next steps in [concept: strong-baseline-mel-overhaul](docs/concepts/strong-baseline-mel-overhaul.md).
 
 ### Training Dynamics
 

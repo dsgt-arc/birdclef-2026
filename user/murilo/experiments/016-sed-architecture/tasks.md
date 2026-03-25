@@ -8,6 +8,30 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 **Competition reference**: EfficientNet-B0 SED single model = 0.908 LB
 **Our baseline** (exp 012): ProtoCLR 0.767, ConvNeXt 0.755, EAT 0.720
 
+### Status: COMPLETE (2026-03-25)
+
+- **Branch**: `mg/016-sed-improvements` (PR #18)
+- **Best LB**: **0.827** (v1-10s + pp2)
+- **Outcome**: SED architecture validated (+0.060 over clip-level baseline). v3 ablation
+  exhaustively ruled out single-variable recipe changes. Remaining gap (0.081 to 0.908)
+  requires input resolution changes (mel overhaul) → exp 017.
+
+### Score Progression
+
+| Version | Changes | LB |
+|---------|---------|-----|
+| Exp 012 ProtoCLR | Clip-level baseline | 0.767 |
+| Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 |
+| Exp 016 v1 + pp | + TTA + smoothing + TopN | 0.823 |
+| Exp 016 v1-10s + pp2 | + temp scaling + taxa smoothing + metadata priors | **0.827** |
+| Exp 016 v1-10s + pp | + 10s overlapping inference | 0.826 |
+| Exp 016 v2 + pp | + NS-JFT + CE + post-processing | 0.755 (regression) |
+| Exp 016 v3b + pp | + raw waveform mixup + pp | 0.802 (regression) |
+| Exp 016 v3a + pp | + TF-ported weights + pp | 0.813 (regression) |
+| Exp 016 v3c + pp | + standard CE loss + pp | pending |
+| Exp 016 v3d | EfficientNetV2-B0 | pending (offline: 0.841 AUROC, regression) |
+| Target | Close gap to competitor | ≥0.85 |
+
 ---
 
 ## 1. Setup
@@ -102,105 +126,112 @@ SED beats all clip-level models: +0.015 AUROC, **+0.112 cmAP** over best clip-le
 ### Key Implementation Notes for SED ONNX
 
 - ONNX outputs **probabilities** (not logits) — submission.py checks `mel_cfg["output_type"] == "probs"` to skip sigmoid
-- mel_config has `target_frames: 500` (5s at 32kHz) for inference, though model trained on 1000 (10s)
 - Dynamic time axis allows both 5s and 10s inference windows
+- v1 mel_config: `target_frames: 500` (5s inference, original)
+- v1-10s mel_config: `target_frames: 1000`, `inference_window: 10.0` (10s overlapping inference)
 - Species mapping uses 234-class identity mapping (same as soundscape/student models)
 
 ### LB Results
 
 | Model | Exp 012 Best | Exp 016 LB | Target |
 |-------|-------------|-----------|--------|
-| EfficientNet-B0 SED | 0.767 (ProtoCLR) | **0.795** | ≥0.85 |
+| EfficientNet-B0 SED v1 | 0.767 (ProtoCLR) | 0.795 | ≥0.85 |
+| EfficientNet-B0 SED v1 + pp | — | **0.823** | — |
 
-## 6. Extend SED to Existing Encoders (after EfficientNet-B0 validates)
+## 6. Extend SED to Existing Encoders — DEFERRED
 
-If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
+Moved to [Future Work](#future-work).
 
-- [ ] 6.1 Add `forward_features()` to ProtoCLR encoder (returns (B, 384, H, W))
-- [ ] 6.2 Add `forward_features()` to ConvNeXt encoder (timm already has this)
-- [ ] 6.3 Add `forward_features()` to EAT encoder (returns (B, seq_len, 768) tokens — 1D temporal, skip GeM)
-- [ ] 6.4 Create SED configs for ProtoCLR, ConvNeXt, EAT (with LoRA + SED head)
-- [ ] 6.5 Train all 3 encoders with SED head (resume from exp 012 LoRA checkpoints)
-- [ ] 6.6 Submit to Kaggle LB, compare all 4 SED models
-
-### Expected SED Results (all models)
-
-| Model | Params | Exp 012 LB (clip) | Exp 016 LB (SED) | Delta |
-|-------|--------|-------------------|-------------------|-------|
-| EfficientNet-B0 | 3.6M | — | pending | — |
-| ProtoCLR (CvT-13) | 19.9M | 0.767 | pending | — |
-| ConvNeXt-Base | 89M | 0.755 | pending | — |
-| EAT (ViT) | 90M | 0.720 | pending | — |
-
-### Architecture Notes per Encoder
-
-- **ProtoCLR**: CvT produces (B, 384, H, W) feature maps. Apply GeM + AttHead directly.
-  Resume from exp 012 LoRA checkpoint, replace head with AttHead, freeze backbone
-  initially then unfreeze with LoRA.
-- **ConvNeXt**: `backbone.forward_features()` returns (B, 1024, H, W). Straightforward
-  — same pattern as EfficientNet. Resume from exp 012 LoRA checkpoint.
-- **EAT**: ViT outputs (B, seq_len, 768) tokens. No 2D spatial structure — skip GeM,
-  apply 1D temporal attention directly on the token sequence. May need a modified
-  AttHead variant (AttHead1D) that skips GeM and takes (B, T, C) input.
-
-## 7. Quick Wins — Post-Processing (no retraining, est. +0.03 combined)
+## 7. Quick Wins — Post-Processing (no retraining, +0.028 confirmed)
 
 - [x] 7.1 Add TopN postprocessing to submission.py (+0.011)
 - [x] 7.2 Add temporal smoothing to submission.py (+0.010)
 - [x] 7.3 Add TTA 2.5s shifts to submission.py (+0.012)
-- [ ] 7.4 Model soup: average epochs 20-24 checkpoints, re-export ONNX
-- [ ] 7.5 Record LB with post-processing — **Kaggle inference running**
-      Kernel: `birdclef-2026-effnet-b0-sed-v1` (new notebook with EffNet slug)
+- [x] 7.5 LB with post-processing: **0.823** (+0.028 over v1 baseline 0.795)
+      TTA + smoothing + TopN confirmed +0.028 gain (estimated was +0.033)
 
-## 8. Training v2 — Close the Gap (est. +0.05–0.08)
+## 8. Training v2 — Close the Gap
 
-- [ ] 8.1 Switch to `tf_efficientnet_b0.ns_jft_in1k` (NS-JFT pretrained)
-- [ ] 8.2 Replace soft CE with standard CE + label_smoothing=0.05 (or try ASL γ⁻=4)
-- [ ] 8.3 Implement raw waveform mixup (move mel to model forward, mixup before mel)
-- [ ] 8.4 Implement 10s overlapping inference (load 10s centered on 5s target)
-- [ ] 8.5 Train v2, submit to Kaggle, target ≥0.85
+- [x] 8.1 Created v2 config: `tf_efficientnet_b0.ns_jft_in1k` + CE loss with label_smoothing=0.05
+- [x] 8.2 Made loss_type configurable in SEDFinetuneModule ("soft_ce" for v1, "ce" for v2)
+- [x] 8.3 v2 training submitted — job 5438912, completed
+      Config: `config/efficientnet_b0_sed_v2.yaml`
+      Changes: `tf_efficientnet_b0.ns_jft_in1k`, loss_type="ce", label_smoothing=0.05
+- [x] 8.4 Record v2 results — **REGRESSION**: test/auroc 0.837 (−0.023), test/cmap 0.539 (−0.054)
+      v2 underperformed v1 on all metrics. NS-JFT + CE hurt vs ImageNet + soft CE.
+      W&B run: `covhhpck`. Best epoch 24, early stopped at 35.
+- [x] 8.5 Export v2 to ONNX + submit to Kaggle LB: **0.755** (−0.068 vs v1+pp 0.823, confirmed regression)
+- [x] 8.6 ~~Implement raw waveform mixup~~ — tested as v3b, regressed on LB (0.802). Ruled out.
+- [x] 8.7 Implement 10s overlapping inference (load 10s centered on 5s target)
+      Loads 10s audio centered on each 5s segment (2.5s context before + after),
+      matching the training window. Same ONNX model (dynamic time axis), inference-only
+      change. load_audio_chunk handles negative starts via zero-padding.
+      New slug: `effnet-b0-sed-v1-10s` (v1 preserved for reproducibility).
+      **LB: 0.826** (+0.003 over v1+pp 0.823). Modest but confirms alignment helps.
 
-## 9. Documentation
+## 9. v3 Ablation Runs — Isolate Individual Changes
 
-- [x] 9.1 Update MODEL-RUNS.md with LB score
-- [x] 9.2 Create results.md with gap analysis
+Three parallel runs, each changing one variable from v1 baseline:
+
+- [x] 9.1 v3a config: `tf_efficientnet_b0.in1k` (TF-ported Google weights)
+- [x] 9.2 v3b config + code: raw waveform mixup (mel to GPU, mixup before mel)
+      Changed: `sed_finetune.py` (mel_transform param, waveform mixup path),
+      `sed.py` (eval_transform for val/test), `train.py` (raw_waveform_mixup flag)
+- [x] 9.3 v3c config: `loss_type="ce"`, `label_smoothing=0.0` (standard CE)
+- [x] 9.4 Tests: 29 pytest tests covering all v3 changes + backward compat
+- [x] 9.5 All three submitted to SLURM (running in parallel)
+- [x] 9.6 Record v3a/v3b/v3c results:
+      v3a (TF weights): test/auroc 0.857, test/cmap 0.599 (flat vs v1)
+      v3b (waveform mixup): test/auroc 0.862, test/cmap 0.607 (+0.014 cmAP, but LB 0.802 — worse than v1+pp 0.823)
+      v3c (CE loss): test/auroc 0.850, test/cmap 0.552 (hurt, soft CE is better)
+- [x] 9.7 Export v3a/v3b/v3c + submit to Kaggle LB (v3b=0.802, v3a/v3c pending)
+- [x] 9.8 v3d config created: EfficientNetV2-B0 (tf_efficientnetv2_b0.in1k) — competitor
+      confirmed using V2 not V1. Training submitted.
+- [x] 9.9 Record v3d results: test/auroc 0.841 (−0.019), test/cmap 0.523 (−0.070).
+      EfficientNetV2-B0 hurt with our training recipe. Early-stopped epoch 13.
+- [x] 9.10 v3 ablation complete: **no single change improved LB over v1 (0.823)**
+
+## 10. Documentation
+
+- [x] 10.1 Update MODEL-RUNS.md with LB scores
+- [x] 10.2 Create results.md with gap analysis
+- [x] 10.3 Create summary.md with full experiment report
+- [x] 10.4 Kaggle notebook reference docs (Perch+ProtoSSM, Pantanal Distill, etc.)
+
+## 11. Post-Processing v2 — Inference-Only Improvements (no retraining)
+
+Same v1 ONNX model. New slug: `effnet-b0-sed-v1-10s-pp2`.
+Adds temperature scaling + taxa-aware smoothing + metadata priors.
+
+- [x] 11.1 Temperature scaling (T=1.10, logit-space)
+- [x] 11.2 Taxa-aware temporal smoothing (local-max for birds, avg-neighbor for frogs/insects)
+- [x] 11.3 Metadata priors (site/hour from soundscape filenames, Bayesian fusion)
+- [x] 11.4 Create build_inference_priors.py, pp2 weights dir, kernel metadata
+- [x] 11.5 Upload to Kaggle + submit for LB score — submitted 2026-03-25
+- [x] 11.6 Record LB result: **0.827** (+0.001 over v1-10s 0.826). Modest gain from pp2.
 
 ---
 
 ## Future Work
 
-See [competition discussion analysis](../../docs/references/kaggle/birdclef-2026/competition-discussion-analysis.md)
-for full details on each technique, confirmed LB impacts, and code snippets.
+- [ ] **Model soup**: Average v1 checkpoints epochs 20-24, re-export ONNX. Free stability gain, no retraining.
+- [ ] **Extend SED to other encoders**: Add `forward_features()` to ProtoCLR, ConvNeXt, EAT.
+  Train with SED head for ensemble diversity. Lower priority than mel overhaul (exp 017).
 
-### Immediate Improvements (next training run)
+## Completed / Ruled Out
 
-- **NS-JFT pretrained weights**: Switch from `efficientnet_b0` (standard ImageNet) to
-  `tf_efficientnet_b0.ns_jft_in1k` (Noisy Student on JFT-300M). Competitor confirmed
-  it consistently outperforms standard ImageNet init for audio spectrograms.
-- **ASL loss**: Consider replacing soft CE with Asymmetric Loss (γ⁻=4, γ⁺=0, clip=0.05).
-  Competitor ablation: +0.023 over BCE. Handles multi-label natively without normalization.
-- **Raw waveform mixup**: Current spectrogram mixup vs competitor's raw waveform mixup.
-  2025 2nd place confirmed +0.036 Private LB from audio-domain mixup. Requires moving
-  mel transform to model forward pass or custom collate.
+- ~~NS-JFT pretrained weights~~: v2, regressed (−0.068 LB, confounded with CE loss)
+- ~~Standard CE loss~~: v3c, hurt offline (−0.041 cmAP). Soft CE is better.
+- ~~Raw waveform mixup~~: v3b, better offline but worse LB (0.802 vs 0.823)
+- ~~TF-ported V1 weights~~: v3a, LB 0.813 (−0.010). Worse than v1.
+- ~~EfficientNetV2-B0~~: v3d, hurt offline (−0.019 AUROC, −0.070 cmAP).
+- ~~Post-processing v1~~: Done (+0.028 confirmed). TTA + smoothing + TopN.
+- ~~10s overlapping inference~~: Done (+0.003). LB 0.826.
+- ~~Post-processing v2 (pp2)~~: Done (+0.001). Temp scaling + taxa smoothing + metadata priors. LB 0.827.
 
-### Free Post-Processing (no retraining, add to submission.py)
+## Next Experiments (beyond exp 016)
 
-- **TopN postprocessing** (+0.011 LB): `preds *= preds.max(axis=0, keepdims=True)`
-- **Temporal smoothing** (+0.010 LB): Gaussian [0.1, 0.2, 0.4, 0.2, 0.1] across segments
-- **TTA: 2.5s shifts** (+0.012 LB): 3 predictions per segment (0, −2.5s, +2.5s), average
-- **Model soup** (free stability): Average last 3-5 epoch checkpoints
-
-### Larger Improvements
-
-- **Perch as soft label teacher** (+0.030 val): Knowledge distillation from Google Perch
-  model on soundscape clips. Perch baseline alone = 0.825 LB.
-- **Multi-round pseudo-labels with PowerTransform**: p^γ (γ=2.0) sharpening across 4
-  rounds. 2025 1st place core innovation: +0.032 LB.
-- **SoftAUCLoss**: Directly optimizes competition metric (macro ROC-AUC) instead of proxy.
-  Used in later pseudo-label rounds by 2025 1st place.
-- **StochasticDepth**: drop_path_rate=0.2 during pseudo-label training rounds.
-- **Separate non-bird pipeline**: Dedicated model for insects/amphibians (+0.003 LB).
-- **819K prior-year pretraining**: 2025 2nd place gained +0.014 LB from pretraining on
-  BirdCLEF 2021-2024 data (16,607 species, 50 epochs).
-- **Extend SED to ProtoCLR/ConvNeXt/EAT**: See section 6 above.
-- **Ensemble**: Multiple SED models with Optuna weight optimization.
+- **Exp 017: Mel spectrogram overhaul** — n_fft=4096, 224 mels. Requires retraining.
+  See [concept](../../docs/concepts/strong-baseline-mel-overhaul.md).
+- **Exp 018: Recipe alignment** — ASL loss, AttBlockV2 head, StochasticDepth, backbone scaling.
+  Only if exp 017 shows promise. See [concept](../../docs/concepts/strong-baseline-mel-overhaul.md).

@@ -129,6 +129,41 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-sed-v1",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v1.json",
     },
+    "effnet-b0-sed-v1-10s": {
+        "slug": "birdclef-2026-effnet-b0-sed-v1-10s-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v1-10s",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v1-10s.json",
+    },
+    "effnet-b0-sed-v1-10s-pp2": {
+        "slug": "birdclef-2026-effnet-b0-sed-v1-10s-pp2-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v1-10s-pp2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v1-10s-pp2.json",
+    },
+    "effnet-b0-sed-v2": {
+        "slug": "birdclef-2026-effnet-b0-sed-v2-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v2.json",
+    },
+    "effnet-b0-sed-v3a": {
+        "slug": "birdclef-2026-effnet-b0-sed-v3a-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v3a",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v3a.json",
+    },
+    "effnet-b0-sed-v3b": {
+        "slug": "birdclef-2026-effnet-b0-sed-v3b-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v3b",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v3b.json",
+    },
+    "effnet-b0-sed-v3c": {
+        "slug": "birdclef-2026-effnet-b0-sed-v3c-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v3c",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v3c.json",
+    },
+    "effnet-b0-sed-v3d": {
+        "slug": "birdclef-2026-effnet-b0-sed-v3d-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v3d",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v3d.json",
+    },
 }
 
 

@@ -1,0 +1,50 @@
+{
+  "auroc": 0.862159788608551,
+  "cmap": 0.6069921851158142,
+  "f1_macro": 0.2912887930870056,
+  "f1_micro": 0.22255884110927582,
+  "top1_accuracy": 0.7763453125953674,
+  "top5_accuracy": 0.9002242088317871,
+  "loss": 1.4999018907546997,
+  "architecture": "sed",
+  "encoder_type": "efficientnet",
+  "encoder_model": "efficientnet_b0",
+  "embed_dim": 320,
+  "sed_head": {
+    "hidden_dim": 512,
+    "dropout": 0.5,
+    "gem_p": 3.0
+  },
+  "dataset": "birdclef-2026",
+  "num_classes": 234,
+  "best_val_score": 0.8461496233940125,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/016-sed-architecture/checkpoints/2026-effnet-b0-sed-v3b/best-epochepoch=25.ckpt",
+  "stopped_epoch": 36,
+  "training": {
+    "max_epochs": 40,
+    "lr": 0.0001,
+    "head_lr": 0.001,
+    "weight_decay": 0.01,
+    "warmup_epochs": 5,
+    "batch_size": 64,
+    "num_workers": 12,
+    "precision": "16-mixed",
+    "early_stopping_patience": 10,
+    "grad_clip_val": 1.0,
+    "accumulate_grad_batches": 4,
+    "clipwise_weight": 0.5,
+    "framewise_weight": 0.5,
+    "blend_clip": 0.75,
+    "blend_frame": 0.25,
+    "mixup_prob": 0.5,
+    "mixup_alpha": 0.5,
+    "window_duration": 10.0,
+    "sample_rate": 32000
+  },
+  "compute": {
+    "gpu": "2",
+    "slurm_job_id": 5464907,
+    "node": "atl1-1-03-006-29-0",
+    "cpus_per_task": "8"
+  }
+}
