@@ -92,6 +92,7 @@ KAGGLE_USER = "murilogustineli"
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
     # SED models, 234 classes (exp 016)
+    "birdclef-2026-effnet-b0-sed-v1-10s-weights",
     "birdclef-2026-effnet-b0-sed-v3d-weights",
     "birdclef-2026-effnet-b0-sed-v3c-weights",
     "birdclef-2026-effnet-b0-sed-v3b-weights",
@@ -316,19 +317,33 @@ def compute_mel(audio, mel_cfg):
 
 
 def load_audio_chunk(audio_path, sr, start_s, duration_s):
-    """Load a chunk of audio at target sample rate."""
+    """Load a chunk of audio at target sample rate.
+
+    Handles negative start times by zero-padding the beginning (needed for
+    10s overlapping inference where the first segments need context before t=0).
+    """
     info = sf.info(audio_path)
     source_sr = info.samplerate
     total_duration = info.frames / source_sr
+    target_samples = int(sr * duration_s)
 
-    actual_duration = min(duration_s, total_duration - start_s)
+    # Handle negative start: zero-pad the beginning
+    pre_pad_samples = 0
+    read_start_s = start_s
+    if start_s < 0:
+        pre_pad_s = -start_s
+        pre_pad_samples = int(sr * pre_pad_s)
+        read_start_s = 0.0
+        duration_s = duration_s - pre_pad_s
+
+    actual_duration = min(duration_s, total_duration - read_start_s)
     if actual_duration <= 0:
-        return np.zeros(int(sr * duration_s), dtype=np.float32)
+        return np.zeros(target_samples, dtype=np.float32)
 
     audio, _ = sf.read(
         audio_path,
         dtype="float32",
-        start=int(start_s * source_sr),
+        start=int(read_start_s * source_sr),
         frames=int(actual_duration * source_sr) + 2,
     )
     if audio.ndim == 2:
@@ -338,8 +353,11 @@ def load_audio_chunk(audio_path, sr, start_s, duration_s):
     if source_sr != sr:
         audio = librosa.resample(audio, orig_sr=source_sr, target_sr=sr)
 
-    # Pad to full chunk length
-    target_samples = int(sr * duration_s)
+    # Prepend zero-padding for negative start
+    if pre_pad_samples > 0:
+        audio = np.concatenate([np.zeros(pre_pad_samples, dtype=np.float32), audio])
+
+    # Pad/trim to exact target length
     if len(audio) < target_samples:
         audio = np.pad(audio, (0, target_samples - len(audio)))
     elif len(audio) > target_samples:
@@ -373,6 +391,8 @@ def _predict_segment_with_tta(
 
     TTA: run 3 predictions per segment (center, -2.5s, +2.5s) and average.
     Confirmed +0.012 LB from competition analysis.
+    The shift is always 2.5s (half a competition segment), regardless of
+    inference window size.
     """
     audio = load_audio_chunk(audio_path, sr, window_start_s, window_duration)
     mel = compute_mel(audio, mel_cfg)
@@ -381,14 +401,13 @@ def _predict_segment_with_tta(
     if not use_tta:
         return probs
 
-    # TTA: shifted predictions
-    shift_s = window_duration / 2  # 2.5s for 5s windows
+    # TTA: shifted predictions (always 2.5s = half of 5s competition segment)
+    shift_s = 2.5
     tta_preds = [probs]
 
     for shift in [-shift_s, shift_s]:
         shifted_start = window_start_s + shift
-        if shifted_start < 0:
-            shifted_start = 0
+        # load_audio_chunk handles negative start times via zero-padding
         audio_shifted = load_audio_chunk(audio_path, sr, shifted_start, window_duration)
         mel_shifted = compute_mel(audio_shifted, mel_cfg)
         tta_preds.append(_run_onnx(session, mel_shifted, mel_cfg))
@@ -432,11 +451,19 @@ ENABLE_TOPN = True
 def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
     """Process one soundscape file and return prediction rows.
 
-    Each 5s window produces one row with 234 BirdCLEF 2026 species columns.
+    Each 5s segment produces one row with 234 BirdCLEF 2026 species columns.
+
+    If mel_cfg["inference_window"] > 5s (e.g., 10s), loads a wider audio
+    window centered on each 5s target segment. This matches the training
+    window size and provides temporal context (2.5s before + after).
+    2024 1st place confirmed +0.015 LB from this approach.
+
     Applies post-processing: TTA → temporal smoothing → TopN.
     """
     sr = mel_cfg["sr"]
-    window_duration = 5.0
+    segment_duration = 5.0  # competition: predictions every 5s
+    inference_window = mel_cfg.get("inference_window", segment_duration)
+    context_pad = (inference_window - segment_duration) / 2  # 2.5s for 10s window
     soundscape_id = Path(audio_path).stem
 
     info = sf.info(audio_path)
@@ -448,21 +475,24 @@ def predict_soundscape(session, audio_path, mel_cfg, species_mapping):
     # Collect all segment probabilities as a matrix for post-processing
     segment_probs = []
     segment_times = []
-    window_start_s = 0.0
+    segment_start_s = 0.0
 
-    while window_start_s < total_duration:
+    while segment_start_s < total_duration:
+        # Center the inference window on the 5s target segment
+        # For 10s inference: audio_start = segment_start - 2.5s
+        audio_start = segment_start_s - context_pad
         probs = _predict_segment_with_tta(
             session,
             audio_path,
             sr,
-            window_start_s,
-            window_duration,
+            audio_start,
+            inference_window,
             mel_cfg,
             use_tta=ENABLE_TTA,
         )
         segment_probs.append(probs)
-        segment_times.append(int(window_start_s + window_duration))
-        window_start_s += window_duration
+        segment_times.append(int(segment_start_s + segment_duration))
+        segment_start_s += segment_duration
 
     # Stack into (n_segments, n_model_outputs) matrix
     probs_matrix = np.stack(segment_probs)  # (n_segments, n_model_outputs)

@@ -197,24 +197,32 @@ def main():
         json.dump(species_list, f, indent=2)
     logger.info(f"Species list saved: {species_path}")
 
-    # Save mel config (matching NNAudioMelSpectrogram at 32kHz, 10s)
+    # Save mel config (matching NNAudioMelSpectrogram at 32kHz)
+    # inference_window matches training window_duration for consistent mel shapes
+    sample_rate = cfg["data"]["sample_rate"]
+    hop_length = int(0.01 * sample_rate)  # 10ms hop
+    window_duration = cfg["data"]["window_duration"]  # typically 10s
+    inference_window = window_duration  # match training window at inference
+    target_frames = int(inference_window / 0.01)  # 10ms hop → 1000 frames for 10s
+
     mel_config = {
         "type": "mel",
-        "sr": cfg["data"]["sample_rate"],
+        "sr": sample_rate,
         "n_fft": 1024,
-        "hop_length": int(0.01 * cfg["data"]["sample_rate"]),  # 10ms hop
+        "hop_length": hop_length,
         "n_mels": 128,
         "fmin": 0,
         "fmax": None,
         "htk": True,
-        "target_frames": 500,  # 5s inference windows (32kHz, 10ms hop = 500 frames)
+        "target_frames": target_frames,
         "norm_mean": -4.268,
         "norm_std": 4.569,
         "output_type": "probs",
         "architecture": "sed",
         "blend_clip": args.blend_clip,
         "blend_frame": args.blend_frame,
-        "window_duration": cfg["data"]["window_duration"],
+        "window_duration": window_duration,
+        "inference_window": inference_window,
     }
     mel_config_path = output_dir / "mel_config.json"
     with open(mel_config_path, "w") as f:
