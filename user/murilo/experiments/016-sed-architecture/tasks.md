@@ -12,9 +12,9 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 
 - **Branch**: `mg/016-sed-improvements` (PR #18)
 - **Best LB**: **0.823** (v1 + post-processing)
-- **v2 training complete**: NS-JFT + CE loss **regressed** (test/auroc 0.837, LB 0.755)
-- **v3 ablation complete**: v3b LB 0.802 (worse than v1+pp 0.823), v3a/v3c LB pending
-- **v3d (EfficientNetV2-B0) training**: post author (0.889) used V2; 0.908 commenter ambiguous
+- **v1-10s submitted**: 10s overlapping inference (same checkpoint, inference-only change). Awaiting LB.
+- **v3 ablation complete**: all variants regressed vs v1. v1's recipe is a robust local optimum.
+- **v3d (EfficientNetV2-B0)**: regressed offline (0.841 AUROC, −0.070 cmAP)
 - **Key references**:
   - [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
   - [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach-analysis.md) (0.913 LB)
@@ -26,6 +26,7 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 | Exp 012 ProtoCLR | Clip-level baseline | 0.767 |
 | Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 |
 | Exp 016 v1 + pp | + TTA + smoothing + TopN | **0.823** |
+| Exp 016 v1-10s + pp | + 10s overlapping inference | pending |
 | Exp 016 v2 + pp | + NS-JFT + CE + post-processing | 0.755 (regression) |
 | Exp 016 v3b + pp | + raw waveform mixup + pp | 0.802 (regression) |
 | Exp 016 v3a + pp | + TF-ported weights + pp | 0.813 (regression) |
@@ -127,8 +128,9 @@ SED beats all clip-level models: +0.015 AUROC, **+0.112 cmAP** over best clip-le
 ### Key Implementation Notes for SED ONNX
 
 - ONNX outputs **probabilities** (not logits) — submission.py checks `mel_cfg["output_type"] == "probs"` to skip sigmoid
-- mel_config has `target_frames: 500` (5s at 32kHz) for inference, though model trained on 1000 (10s)
 - Dynamic time axis allows both 5s and 10s inference windows
+- v1 mel_config: `target_frames: 500` (5s inference, original)
+- v1-10s mel_config: `target_frames: 1000`, `inference_window: 10.0` (10s overlapping inference)
 - Species mapping uses 234-class identity mapping (same as soundscape/student models)
 
 ### LB Results
@@ -190,7 +192,12 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
       W&B run: `covhhpck`. Best epoch 24, early stopped at 35.
 - [x] 8.5 Export v2 to ONNX + submit to Kaggle LB: **0.755** (−0.068 vs v1+pp 0.823, confirmed regression)
 - [ ] 8.6 Implement raw waveform mixup (move mel to model forward, mixup before mel)
-- [ ] 8.7 Implement 10s overlapping inference (load 10s centered on 5s target)
+- [x] 8.7 Implement 10s overlapping inference (load 10s centered on 5s target)
+      Loads 10s audio centered on each 5s segment (2.5s context before + after),
+      matching the training window. Same ONNX model (dynamic time axis), inference-only
+      change. load_audio_chunk handles negative starts via zero-padding.
+      New slug: `effnet-b0-sed-v1-10s` (v1 preserved for reproducibility).
+      Submitted to Kaggle, awaiting LB. Expected +0.015 (2024 1st place).
 
 ## 9. v3 Ablation Runs — Isolate Individual Changes
 
@@ -232,11 +239,9 @@ Detailed analysis of each item below is in [summary.md](summary.md) § "Potentia
 - [x] ~~**EfficientNetV2-B0**~~: v3d, hurt offline (−0.019 AUROC, −0.070 cmAP).
   V2 not better with our recipe. May need different hyperparameters.
 
-- [ ] **Train/inference window alignment**: We train on 10s but infer on 5s. The model
-  sees 1000 mel frames during training but only 500 at inference. Two options:
-  - **10s overlapping inference** (no retraining): Load 10s centered on each 5s target,
-    overlap-average predictions. 2024 1st place confirmed +0.015 LB.
-  - **Train on 5s** (retraining): Match 2025 1st place who trained AND inferred on 5s.
+- [x] **10s overlapping inference** (v1-10s): Submitted, awaiting LB. Same model,
+  inference-only change. Expected +0.015 (2024 1st place).
+  Remaining option: train on 5s to match 2025 1st place (if 10s doesn't help).
 
 - [ ] **Mel spectrogram parameters**: Our n_fft=1024, 128 mels differs significantly
   from 2025 1st place (n_fft=4096, 224 mels). Higher frequency resolution may help
