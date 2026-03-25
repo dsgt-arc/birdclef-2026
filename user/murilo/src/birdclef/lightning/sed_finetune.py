@@ -247,8 +247,16 @@ class SEDFinetuneModule(pl.LightningModule):
         ):
             m.reset()
 
+    def _to_mel(self, x: torch.Tensor) -> torch.Tensor:
+        """Convert input to mel spectrogram, using GPU mel if available."""
+        if self.mel_transform is not None:
+            with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                return self.mel_transform(x.float())
+        return x
+
     def validation_step(self, batch, batch_idx):
         mel, labels = batch
+        mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
@@ -288,6 +296,7 @@ class SEDFinetuneModule(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         mel, labels = batch
+        mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 

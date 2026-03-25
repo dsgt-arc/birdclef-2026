@@ -204,9 +204,10 @@ def main():
     # Build data module
     # ========================================================================
 
-    # When mel runs on GPU, train datasets return raw waveforms (no CPU mel).
-    # Val/test always use CPU mel via eval_transform (no GPU mel in eval).
+    # When mel runs on GPU, all datasets return raw waveforms (no CPU mel).
+    # The lightning module computes mel on GPU in training_step, validation_step, test_step.
     train_transform = None if gpu_mel_transform is not None else audio_transform
+    eval_transform = None if gpu_mel_transform is not None else audio_transform
 
     data_module = SEDDataModule(
         data_dir=str(data_dir),
@@ -221,7 +222,7 @@ def main():
         soundscape_test_files=config["data"].get("soundscape_test_files", 8),
         seed=config["data"].get("seed", 42),
         transform=train_transform,
-        eval_transform=audio_transform,
+        eval_transform=eval_transform,
     )
 
     # ========================================================================
