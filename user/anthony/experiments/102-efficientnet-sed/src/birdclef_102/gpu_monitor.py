@@ -48,7 +48,11 @@ class GPUUtilizationMonitor(pl.Callback):
         total_time = data_time + compute_time
         data_pct = 100.0 * data_time / total_time if total_time > 0 else 0.0
 
-        batch_size = batch["waveform"].shape[0] if isinstance(batch, dict) else batch[0].shape[0]
+        if isinstance(batch, dict):
+            key = "mel" if "mel" in batch else "waveform"
+            batch_size = batch[key].shape[0]
+        else:
+            batch_size = batch[0].shape[0]
         samples_sec = batch_size / total_time if total_time > 0 else 0.0
 
         pl_module.log("timing/data_time_ms", data_time * 1000, on_step=True, on_epoch=False)

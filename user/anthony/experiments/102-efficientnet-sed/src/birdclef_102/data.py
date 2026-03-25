@@ -13,8 +13,11 @@ Usage:
     )
 """
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -66,8 +69,13 @@ class BirdCLEF102Dataset(Dataset):
     If activity_parquet is provided, uses it for instant chunk enumeration
     (no file scanning). Otherwise falls back to scanning audio files.
 
+    If mel_transform is provided, computes mel spectrogram on CPU in the
+    DataLoader workers (frees GPU VRAM for larger batches). Otherwise
+    returns raw waveforms for GPU-side mel computation.
+
     Each item returns:
-        waveform: (num_samples,) audio tensor
+        waveform: (num_samples,) audio tensor  [if no mel_transform]
+        mel: (1, n_mels, T) mel spectrogram    [if mel_transform provided]
         clip_labels: (num_classes,) multi-hot label vector
         activity_score: float, confidence that chunk contains a call
     """
@@ -80,6 +88,10 @@ class BirdCLEF102Dataset(Dataset):
         sample_rate: int = 32000,
         chunk_duration: float = 5.0,
         activity_parquet: str | None = None,
+        mel_transform: Callable | None = None,
+        target_frames: int | None = None,
+        norm_mean: float = -4.268,
+        norm_std: float = 4.569,
     ):
         self.audio_dir = Path(audio_dir).expanduser()
         self.species_list = species_list
@@ -88,6 +100,10 @@ class BirdCLEF102Dataset(Dataset):
         self.sample_rate = sample_rate
         self.chunk_duration = chunk_duration
         self.chunk_samples = int(chunk_duration * sample_rate)
+        self.mel_transform = mel_transform
+        self.target_frames = target_frames
+        self.norm_mean = norm_mean
+        self.norm_std = norm_std
 
         # Build species label lookup from metadata
         # Key by relative path (e.g., "species/XC12345.ogg") to avoid basename collisions
@@ -208,6 +224,24 @@ class BirdCLEF102Dataset(Dataset):
                 waveform, (0, self.chunk_samples - waveform.shape[0])
             )
 
+        if self.mel_transform is not None:
+            # Compute mel on CPU in dataloader worker
+            mel = self.mel_transform(waveform.unsqueeze(0))  # (1, n_mels, T)
+            mel = torch.log(mel.clamp(min=1e-10))
+            mel = (mel - self.norm_mean) / (self.norm_std * 2)
+            # Pad/trim to target frames
+            if self.target_frames is not None:
+                T = mel.shape[2]
+                if T > self.target_frames:
+                    mel = mel[:, :, :self.target_frames]
+                elif T < self.target_frames:
+                    mel = torch.nn.functional.pad(mel, (0, self.target_frames - T))
+            return {
+                "mel": mel.squeeze(0),  # (n_mels, T) — will be stacked to (B, n_mels, T)
+                "clip_labels": label_vec.clone(),
+                "activity_score": activity,
+            }
+
         return {
             "waveform": waveform,
             "clip_labels": label_vec.clone(),
@@ -216,23 +250,24 @@ class BirdCLEF102Dataset(Dataset):
 
 
 def collate_fn(batch):
-    """Collate batch with activity scores."""
-    waveforms = torch.stack([item["waveform"] for item in batch])
+    """Collate batch with activity scores. Handles both waveform and mel modes."""
     clip_labels = torch.stack([item["clip_labels"] for item in batch])
     activity_scores = torch.tensor(
         [item["activity_score"] for item in batch], dtype=torch.float32
     )
 
-    # Padding mask: all true for fixed 5s chunks
-    num_tokens = waveforms.shape[1]  # not used by EfficientNet but kept for compat
-    padding_mask = torch.ones(len(batch), 625, dtype=torch.bool)
-
-    return {
-        "waveform": waveforms,
+    result = {
         "clip_labels": clip_labels,
-        "padding_mask": padding_mask,
         "activity_scores": activity_scores,
     }
+
+    if "mel" in batch[0]:
+        # Pre-computed mel: (B, n_mels, T) → add channel dim → (B, 1, n_mels, T)
+        result["mel"] = torch.stack([item["mel"] for item in batch]).unsqueeze(1)
+    else:
+        result["waveform"] = torch.stack([item["waveform"] for item in batch])
+
+    return result
 
 
 class BirdCLEF102DataModule(pl.LightningDataModule):
@@ -250,9 +285,13 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         val_fraction: float = 0.1,
         seed: int = 42,
         activity_parquet: str | None = None,
+        mel_transform: Callable | None = None,
+        target_frames: int | None = None,
+        norm_mean: float = -4.268,
+        norm_std: float = 4.569,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["species_list"])
+        self.save_hyperparameters(ignore=["species_list", "mel_transform"])
         self.audio_dir = audio_dir
         self.metadata_csv = metadata_csv
         self.sample_rate = sample_rate
@@ -262,6 +301,10 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         self.val_fraction = val_fraction
         self.seed = seed
         self.activity_parquet = activity_parquet
+        self.mel_transform = mel_transform
+        self.target_frames = target_frames
+        self.norm_mean = norm_mean
+        self.norm_std = norm_std
 
         if species_list is not None:
             self.species_list = species_list
@@ -291,21 +334,22 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
 
             logger.info(f"Train: {len(train_df)} recordings, Val: {len(val_df)} recordings")
 
-            self.train_dataset = BirdCLEF102Dataset(
+            dataset_kwargs = dict(
                 audio_dir=self.audio_dir,
-                metadata_df=train_df,
                 species_list=self.species_list,
                 sample_rate=self.sample_rate,
                 chunk_duration=self.chunk_duration,
                 activity_parquet=self.activity_parquet,
+                mel_transform=self.mel_transform,
+                target_frames=self.target_frames,
+                norm_mean=self.norm_mean,
+                norm_std=self.norm_std,
+            )
+            self.train_dataset = BirdCLEF102Dataset(
+                metadata_df=train_df, **dataset_kwargs,
             )
             self.val_dataset = BirdCLEF102Dataset(
-                audio_dir=self.audio_dir,
-                metadata_df=val_df,
-                species_list=self.species_list,
-                sample_rate=self.sample_rate,
-                chunk_duration=self.chunk_duration,
-                activity_parquet=self.activity_parquet,
+                metadata_df=val_df, **dataset_kwargs,
             )
 
     def train_dataloader(self):

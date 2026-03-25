@@ -87,11 +87,11 @@ class TrainingModule(pl.LightningModule):
             return output  # already probabilities (attention pooling)
 
     def training_step(self, batch, batch_idx):
-        waveforms = batch["waveform"]
         clip_labels = batch["clip_labels"]
 
         output = self.model(
-            waveforms,
+            waveforms=batch.get("waveform"),
+            mel=batch.get("mel"),
             spec_augment=self.spec_augment if self.training else None,
         )
 
@@ -112,10 +112,12 @@ class TrainingModule(pl.LightningModule):
         self.train_cmap.reset()
 
     def validation_step(self, batch, batch_idx):
-        waveforms = batch["waveform"]
         clip_labels = batch["clip_labels"]
 
-        output = self.model(waveforms)
+        output = self.model(
+            waveforms=batch.get("waveform"),
+            mel=batch.get("mel"),
+        )
         loss = self.clip_loss(output, clip_labels)
 
         probs = self._to_probs(output)

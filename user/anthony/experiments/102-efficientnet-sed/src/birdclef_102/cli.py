@@ -51,6 +51,8 @@ def main():
     # Build nnAudio mel layer
     n_fft = data_cfg.get("n_fft", 2048)
     hop_length = data_cfg.get("hop_length", 256)
+    mel_on_cpu = data_cfg.get("mel_on_cpu", False)
+
     mel_spec = MelSpectrogram(
         sr=data_cfg["sample_rate"],
         n_fft=n_fft,
@@ -63,13 +65,13 @@ def main():
         trainable_STFT=False,
     )
 
-    # Build model
+    # Build model — pass mel_spec only if computing on GPU
     backbone_mode = model_cfg.get("backbone_mode", "frozen")
     pooling_mode = model_cfg.get("pooling_mode", "avg")
     model = EfficientNetClassifier(
         model_name=model_cfg["model_name"],
         num_classes=num_classes,
-        mel_spec_layer=mel_spec,
+        mel_spec_layer=None if mel_on_cpu else mel_spec,
         target_frames=data_cfg["target_frames"],
         head_dropout=model_cfg.get("head_dropout", 0.3),
         backbone_mode=backbone_mode,
@@ -80,6 +82,9 @@ def main():
         lora_dropout=lora_cfg.get("dropout", 0.1),
         lora_targets=lora_cfg.get("target_modules"),
     )
+
+    if mel_on_cpu:
+        logger.info("Mel spectrogram computed on CPU in dataloader workers")
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -115,6 +120,8 @@ def main():
         num_workers=data_cfg["num_workers"],
         val_fraction=data_cfg.get("val_fraction", 0.1),
         activity_parquet=data_cfg.get("activity_parquet"),
+        mel_transform=mel_spec if mel_on_cpu else None,
+        target_frames=data_cfg["target_frames"] if mel_on_cpu else None,
     )
 
     # Run name

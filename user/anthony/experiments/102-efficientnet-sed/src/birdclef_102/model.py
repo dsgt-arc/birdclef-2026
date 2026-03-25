@@ -270,22 +270,28 @@ class EfficientNetClassifier(nn.Module):
 
     def forward(
         self,
-        waveforms: torch.Tensor,
+        waveforms: torch.Tensor | None = None,
         padding_mask: torch.Tensor | None = None,
         spec_augment=None,
+        mel: torch.Tensor | None = None,
     ):
-        """Forward pass from raw waveforms to clip-level predictions.
+        """Forward pass to clip-level predictions.
+
+        Accepts either raw waveforms (mel computed on GPU) or pre-computed mel
+        spectrograms (mel computed on CPU in dataloader for better throughput).
 
         Args:
-            waveforms: (B, num_samples) raw audio
+            waveforms: (B, num_samples) raw audio — used if mel is None
             padding_mask: unused, kept for interface compat
             spec_augment: Optional SpecAugment callable (training only)
+            mel: (B, 1, n_mels, T) pre-computed mel — skips GPU mel computation
 
         Returns:
             avg pooling:       (B, C) raw logits — apply sigmoid for probabilities
             attention pooling: (B, C) probabilities in [0, 1] — already sigmoided
         """
-        mel = self.compute_mel(waveforms)
+        if mel is None:
+            mel = self.compute_mel(waveforms)
 
         if spec_augment is not None:
             mel = spec_augment(mel)

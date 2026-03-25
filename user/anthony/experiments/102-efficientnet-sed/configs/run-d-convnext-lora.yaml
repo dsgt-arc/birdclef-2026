@@ -21,8 +21,9 @@ data:
   n_fft: 1024
   hop_length: 320
   target_frames: 500   # 5s * 32000 / 320 = 500
-  batch_size: 64        # ConvNeXt-Base 89M params — 128 OOMs on RTX 6000 22GB
-  num_workers: 8
+  mel_on_cpu: true      # Compute mel in dataloader workers — frees GPU VRAM
+  batch_size: 96        # 128 OOMs even with mel_on_cpu; 96 should fit ~16GB
+  num_workers: 6        # Match cpus-per-task (RTX 6000 has 6:1 CPU:GPU ratio)
   val_fraction: 0.1
   activity_parquet: artifacts/focal_activity.parquet
 
