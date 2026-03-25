@@ -241,7 +241,10 @@ class EfficientNetClassifier(nn.Module):
                     module.eval()
         return self
 
+    @torch.amp.autocast("cuda", enabled=False)
     def compute_mel(self, waveforms: torch.Tensor) -> torch.Tensor:
+        """Compute mel spectrogram in fp32 — nnAudio FFT is not fp16-safe."""
+        waveforms = waveforms.float()
         mel = self.mel_spec(waveforms)
         mel = torch.log(mel.clamp(min=1e-10))
         mel = (mel - self.norm_mean) / (self.norm_std * 2)
