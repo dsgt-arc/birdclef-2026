@@ -8,8 +8,9 @@ Supports both spectrogram-domain mixup (v1/v2) and raw waveform mixup (v3b).
 Inference: 0.75 * sigmoid(clipwise) + 0.25 * sigmoid(framewise_max).
 
 Data flow:
-  - Default: mel spectrogram → backbone features → SED head → dual logits.
-  - With mel_transform: raw waveform → mixup → mel transform (GPU) → backbone → SED head.
+  - Default: mel spectrogram (CPU) → backbone features → SED head → dual logits.
+  - With mel_transform + waveform_mixup: raw waveform → mixup → mel (GPU) → backbone → SED head.
+  - With mel_transform (no waveform_mixup): raw waveform → mel (GPU) → spec mixup → backbone → SED head.
 """
 
 import logging
@@ -54,8 +55,12 @@ class SEDFinetuneModule(pl.LightningModule):
             - "ce": Standard F.cross_entropy on argmax class with label_smoothing.
         label_smoothing: Label smoothing factor for "ce" loss type (default: 0.0).
         mel_transform: Optional nn.Module for GPU-side mel spectrogram transform.
-            When set, training data is raw waveforms and mixup applies before mel.
+            When set, training data is raw waveforms and mel is computed on GPU.
             When None (default), training data is pre-computed mel spectrograms.
+        waveform_mixup: When True AND mel_transform is set, mixup applies on raw
+            waveforms before mel conversion (v3b behavior). When False (default),
+            mixup applies on spectrograms after mel conversion. Only relevant
+            when mel_transform is set.
     """
 
     def __init__(
@@ -78,6 +83,7 @@ class SEDFinetuneModule(pl.LightningModule):
         loss_type: str = "soft_ce",
         label_smoothing: float = 0.05,
         mel_transform: nn.Module | None = None,
+        waveform_mixup: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform"])
@@ -86,8 +92,7 @@ class SEDFinetuneModule(pl.LightningModule):
         self.sed_head = sed_head
         self.num_classes = num_classes
         self.threshold = threshold
-        # GPU-side mel transform for raw waveform mixup mode (v3b).
-        # When set, training_step receives raw waveforms, applies mixup, then mel.
+        # GPU-side mel transform. When set, training_step receives raw waveforms.
         self.mel_transform = mel_transform
 
         # --- Metrics (same as LoRAFinetuneModule) ---
@@ -181,8 +186,8 @@ class SEDFinetuneModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, labels = batch
 
-        if self.mel_transform is not None:
-            # Raw waveform mode: mixup on waveforms, then compute mel on GPU.
+        if self.mel_transform is not None and self.hparams.waveform_mixup:
+            # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
             # Mel computation must run in float32 and outside autograd graph:
             # - float32: nnAudio STFT magnitudes can overflow float16 range
             # - no_grad: mel is a fixed transform, not a learnable layer
@@ -190,8 +195,15 @@ class SEDFinetuneModule(pl.LightningModule):
                 x, labels = self._apply_mixup(x, labels)
             with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
                 mel = self.mel_transform(x.float())
+        elif self.mel_transform is not None:
+            # GPU mel mode: compute mel on GPU first, then spectrogram mixup.
+            # Same training behavior as CPU mel mode but avoids DataLoader bottleneck.
+            with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                mel = self.mel_transform(x.float())
+            if random.random() < self.hparams.mixup_prob:
+                mel, labels = self._apply_mixup(mel, labels)
         else:
-            # Spectrogram mode (default): mixup on pre-computed mel
+            # CPU mel mode (default): input is pre-computed mel, spectrogram mixup
             mel = x
             if random.random() < self.hparams.mixup_prob:
                 mel, labels = self._apply_mixup(mel, labels)

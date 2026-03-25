@@ -158,10 +158,13 @@ def main():
     # ========================================================================
 
     training_cfg = config["training"]
-    raw_waveform_mixup = training_cfg.get("raw_waveform_mixup", False)
+    waveform_mixup = training_cfg.get("raw_waveform_mixup", False)
+    gpu_mel = mel_cfg.get("gpu", True)  # Default: compute mel on GPU
 
+    # GPU mel transform: always used unless explicitly disabled.
+    # With n_fft=4096, CPU-side mel in DataLoader workers is a bottleneck.
     gpu_mel_transform = None
-    if raw_waveform_mixup:
+    if gpu_mel or waveform_mixup:
         gpu_mel_transform = NNAudioMelSpectrogram(
             sample_rate=sample_rate,
             n_mels=mel_cfg.get("n_mels", 128),
@@ -170,7 +173,10 @@ def main():
             hop_length=hop_length,
             fmax=mel_cfg.get("fmax"),
         )
-        logger.info("Raw waveform mixup: mel transform on GPU, mixup before mel")
+        if waveform_mixup:
+            logger.info("GPU mel + waveform mixup: mixup before mel on GPU")
+        else:
+            logger.info("GPU mel + spectrogram mixup: mel on GPU, then mixup")
 
     pl_module = SEDFinetuneModule(
         encoder=encoder,
@@ -191,13 +197,16 @@ def main():
         loss_type=training_cfg.get("loss_type", "soft_ce"),
         label_smoothing=training_cfg.get("label_smoothing", 0.0),
         mel_transform=gpu_mel_transform,
+        waveform_mixup=waveform_mixup,
     )
 
     # ========================================================================
     # Build data module
     # ========================================================================
 
-    train_transform = None if raw_waveform_mixup else audio_transform
+    # When mel runs on GPU, train datasets return raw waveforms (no CPU mel).
+    # Val/test always use CPU mel via eval_transform (no GPU mel in eval).
+    train_transform = None if gpu_mel_transform is not None else audio_transform
 
     data_module = SEDDataModule(
         data_dir=str(data_dir),
