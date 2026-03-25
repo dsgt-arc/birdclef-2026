@@ -84,11 +84,26 @@ Only proceed if Step 1 passes decision gate.
 - [ ] 3.2 v4e: EfficientNet-B3 backbone
 - [ ] 3.3 v4f: ASL loss (γ⁻=4, γ⁺=0, clip=0.05)
 
-## Step 4: Polish — FUTURE
+## Step 4: Fulldata Training — FUTURE
 
-- [ ] 4.1 Model soup on best config
-- [ ] 4.2 Full-signal mel at inference
-- [ ] 4.3 Ensemble best variants
+Train the best recipe from Steps 1-3 on 100% labeled data (no val/test split).
+This adds ~20% more focal recordings + ~16 more soundscape files (~130 segments).
+Lock in the recipe first, then scale.
+
+- [ ] 4.1 Add `train_all` support to SEDDataModule (focal 100% + all soundscape files)
+- [ ] 4.2 Run fulldata with epoch cap from best 80/10/10 run (~1.5× best epoch)
+- [ ] 4.3 No early stopping — save checkpoints every 5 epochs + last
+- [ ] 4.4 Export best + last checkpoints, submit both to LB
+- [ ] 4.5 Record LB results vs 80/10/10 baseline
+
+**Exp 011 reference**: ProtoCLR fulldata gained +0.015 LB, but ConvNeXt regressed
+−0.025 from overfitting. Epoch cap is critical.
+
+## Step 5: Polish — FUTURE
+
+- [ ] 5.1 Model soup on best config (average top checkpoints)
+- [ ] 5.2 Full-signal mel at inference (compute once for 60s, slice)
+- [ ] 5.3 Ensemble best variants
 
 ---
 
