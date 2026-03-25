@@ -86,6 +86,13 @@ def main():
     if mel_on_cpu:
         logger.info("Mel spectrogram computed on CPU in dataloader workers")
 
+    # Optional torch.compile for faster training
+    if train_cfg.get("compile", False):
+        import torch
+        compile_backend = train_cfg.get("compile_backend", "inductor")
+        model = torch.compile(model, backend=compile_backend)
+        logger.info(f"Model compiled with torch.compile(backend={compile_backend!r})")
+
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Total parameters: {total_params:,}")

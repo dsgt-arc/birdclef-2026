@@ -32,6 +32,7 @@ training:
   lr: 3.0e-4
   weight_decay: 0.01
   warmup_epochs: 3
+  # compile: true       # Disabled — triton doesn't work on PACE RTX 6000 nodes
   precision: bf16-mixed
   gamma: 2.0
   augmentation:

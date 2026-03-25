@@ -35,7 +35,7 @@ uv pip install -e "$exp_dir"
 
 cd $exp_dir
 
-echo "=== EfficientNet-B1 Training ==="
+echo "=== Training ==="
 echo "Config: $CONFIG"
 echo "Extra args: $@"
 
