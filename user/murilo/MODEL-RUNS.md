@@ -122,7 +122,7 @@ v2: standard CE with label_smoothing=0.05, NS-JFT pretrained (`tf_efficientnet_b
 
 | Slug | Encoder | Architecture | Classes | Test AUROC | Test cmAP | Best Epoch | LB | Checkpoint |
 |------|---------|-------------|---------|-----------|----------|------------|-----|------------|
-| `effnet-b0-sed-v1` | EfficientNet-B0 | SED (GeM + AttHead) | 234 | **0.860** | **0.593** | 24 | 0.795 / 0.823 (+pp) / **0.826** (+pp +10s) | `016-.../2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
+| `effnet-b0-sed-v1` | EfficientNet-B0 | SED (GeM + AttHead) | 234 | **0.860** | **0.593** | 24 | 0.795 / 0.823 (+pp) / 0.826 (+pp +10s) / **0.827** (+pp2 +10s) | `016-.../2026-effnet-b0-sed-v1/best-epochepoch=24.ckpt` |
 | `effnet-b0-sed-v2` | EfficientNet-B0 (NS-JFT) | SED (GeM + AttHead) + CE | 234 | 0.837 | 0.539 | 24 | **0.755** (+pp) | `016-.../2026-effnet-b0-sed-v2/best-epochepoch=24.ckpt` |
 | `effnet-b0-sed-v3a` | EfficientNet-B0 (TF) | SED (TF-ported weights) | 234 | 0.857 | 0.599 | 25 | **0.813** (+pp) | `016-.../2026-effnet-b0-sed-v3a/best-epochepoch=25.ckpt` |
 | `effnet-b0-sed-v3b` | EfficientNet-B0 | SED + raw waveform mixup | 234 | **0.862** | **0.607** | 25 | **0.802** (+pp) | `016-.../2026-effnet-b0-sed-v3b/best-epochepoch=25.ckpt` |
@@ -154,7 +154,7 @@ max multiplication) added +0.028 LB (0.795 → 0.823) with zero retraining.
 **Competition reference**: EfficientNet-B0 SED = 0.908 LB (competitor). Remaining gap
 0.082 — likely from: mel resolution (n_fft=1024 vs 4096, 128 vs 224 mels),
 standard ImageNet init, spectrogram mixup (vs raw waveform), and head design.
-10s inference alignment added +0.003. See exp 016 summary.md for gap analysis;
+10s inference alignment added +0.003, pp2 (temp scaling + taxa smoothing + metadata priors) added +0.001. See exp 016 summary.md for gap analysis;
 next steps in [concept: strong-baseline-mel-overhaul](docs/concepts/strong-baseline-mel-overhaul.md).
 
 ### Training Dynamics

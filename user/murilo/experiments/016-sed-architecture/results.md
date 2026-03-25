@@ -5,10 +5,11 @@
 **Hypothesis**: SED architecture (GeM + AttHead + dual CE loss + 10s windows) will
 improve LB by ≥0.05 over exp 012 baseline (0.767).
 
-**Result**: **Partially confirmed.** LB improved to **0.795** (+0.028 over baseline),
-but fell far short of the 0.908 competition reference. The SED architecture works —
-it's our best single-model LB score — but significant gaps remain in pretraining,
-augmentation, loss function, and inference strategy.
+**Result**: **Partially confirmed.** LB improved to **0.827** (+0.060 over baseline)
+with post-processing and 10s inference, but fell short of the 0.908 competition reference
+and the ≥0.85 target. The SED architecture is validated and the v3 ablation exhaustively
+ruled out single-variable recipe changes. Remaining gap (0.081) is likely in input
+resolution (mel params) → exp 017.
 
 ---
 
@@ -32,7 +33,9 @@ augmentation, loss function, and inference strategy.
 
 | Model | Architecture | LB | vs Exp 012 Best |
 |-------|-------------|-----|-----------------|
-| **EfficientNet-B0 SED v1 + pp** | **SED + TTA + smoothing + TopN** | **0.823** | **+0.056** |
+| **EfficientNet-B0 SED v1-10s + pp2** | **SED + 10s infer + TTA + smoothing + TopN + temp/taxa/priors** | **0.827** | **+0.060** |
+| EfficientNet-B0 SED v1-10s + pp | SED + 10s infer + TTA + smoothing + TopN | 0.826 | +0.059 |
+| EfficientNet-B0 SED v1 + pp | SED + TTA + smoothing + TopN | 0.823 | +0.056 |
 | EfficientNet-B0 SED v1 | SED | 0.795 | +0.028 |
 | EfficientNet-B0 SED v2 + pp | SED (NS-JFT + CE) + TTA + smoothing + TopN | 0.755 | −0.012 |
 | EfficientNet-B0 SED v3a + pp | SED (TF weights) + pp | 0.813 | +0.046 |
@@ -209,7 +212,7 @@ steps per epoch (29K samples with 10s random crops vs potentially more with
 | 10s inference | +0.01–0.02 | Inference pipeline change |
 | ~~Post-processing~~ | ~~+0.02–0.03~~ | **DONE: +0.028 confirmed** |
 | **Total remaining** | **+0.05–0.10** | |
-| **Remaining gap** | **+0.085** (0.823 → 0.908) | |
+| **Remaining gap** | **+0.081** (0.827 → 0.908) | |
 
 The estimated gains align with the observed 0.113 gap. Closing all gaps
 should bring us to ~0.88–0.92, within range of the 0.908 reference.

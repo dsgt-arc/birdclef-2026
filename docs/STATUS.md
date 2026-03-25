@@ -4,7 +4,7 @@
 
 ## Current State
 
-**Best LB**: **0.826** (EfficientNet-B0 SED v1 + post-processing + 10s inference, exp 016)
+**Best LB**: **0.827** (EfficientNet-B0 SED v1 + pp2 + 10s inference, exp 016)
 **Target**: 0.85+ labeled-data baseline, then 0.90+ with pseudo-labeling
 **Active branch**: `mg/016-sed-improvements`
 **Next experiment**: Exp 017 — mel spectrogram overhaul ([concept](concepts/strong-baseline-mel-overhaul.md))
@@ -16,7 +16,8 @@
 | ProtoCLR clip-level | 012 | 0.767 | Best clip-level model |
 | EfficientNet-B0 SED v1 | 016 | 0.795 | SED architecture validated |
 | + post-processing (TTA + smoothing + TopN) | 016 | 0.823 | +0.028 free gains |
-| **+ 10s overlapping inference** | **016** | **0.826** | **Current best** |
+| **+ pp2 (temp scaling + taxa smoothing + priors)** | **016** | **0.827** | **Current best** |
+| + 10s overlapping inference | 016 | 0.826 | |
 | Competitor SED (single model) | — | 0.908 | Our target |
 | Perch + ProtoSSM | — | 0.913 | Foundation model approach |
 | Pantanal Distill | — | 0.917 | Best public notebook |
@@ -46,7 +47,7 @@ The Perch-based approaches (0.907-0.917) represent a fundamentally different par
 
 | Finding | Source | Implication |
 |---------|--------|-------------|
-| **SED v1 = 0.826 LB** (best single model) | murilo/Exp 016 | SED + post-processing + 10s inference |
+| **SED v1 = 0.827 LB** (best single model) | murilo/Exp 016 | SED + pp2 + 10s inference |
 | SED +0.112 cmAP over clip-level | murilo/Exp 016 | Framewise detection captures brief calls |
 | Every v3 ablation regressed vs v1 | murilo/Exp 016 | Gap is NOT in weights, loss, or mixup domain |
 | Mel resolution gap: 1024 vs 4096 n_fft | Analysis | Largest untested difference vs competitors |
@@ -74,7 +75,7 @@ The Perch-based approaches (0.907-0.917) represent a fundamentally different par
 | 011 | LoRA Baseline 2026 | Complete | ProtoCLR fulldata 0.736 LB |
 | 012 | Soundscape Fine-Tuning | Complete | ProtoCLR **0.767 LB**, all 3 models improved |
 | 015 | Student Training (pseudo-labels) | **Rejected** | Pseudo-labels hurt with clip-level arch |
-| 016 | SED Architecture | **Complete** | **0.826 LB** (v1-10s + pp), v3 ablation done |
+| 016 | SED Architecture | **Complete** | **0.827 LB** (v1-10s + pp2), v3 ablation done |
 | 017 | Strong Baseline (mel overhaul) | **Proposed** | [Concept](concepts/strong-baseline-mel-overhaul.md) ready |
 
 Full experiment history with detailed metrics: [EXPERIMENTS.md](../user/murilo/EXPERIMENTS.md)

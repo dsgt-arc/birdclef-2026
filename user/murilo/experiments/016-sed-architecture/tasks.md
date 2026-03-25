@@ -8,16 +8,13 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 **Competition reference**: EfficientNet-B0 SED single model = 0.908 LB
 **Our baseline** (exp 012): ProtoCLR 0.767, ConvNeXt 0.755, EAT 0.720
 
-### Current Status (2026-03-24)
+### Status: COMPLETE (2026-03-25)
 
 - **Branch**: `mg/016-sed-improvements` (PR #18)
-- **Best LB**: **0.826** (v1-10s + post-processing) — new best, +0.003 from 10s inference alignment
-- **v1-10s complete**: 10s overlapping inference confirmed +0.003 LB (0.823 → 0.826)
-- **v3 ablation complete**: all variants regressed vs v1. v1's recipe is a robust local optimum.
-- **v3d (EfficientNetV2-B0)**: regressed offline (0.841 AUROC, −0.070 cmAP)
-- **Key references**:
-  - [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
-  - [Perch + ProtoSSM analysis](../../docs/references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach-analysis.md) (0.913 LB)
+- **Best LB**: **0.827** (v1-10s + pp2)
+- **Outcome**: SED architecture validated (+0.060 over clip-level baseline). v3 ablation
+  exhaustively ruled out single-variable recipe changes. Remaining gap (0.081 to 0.908)
+  requires input resolution changes (mel overhaul) → exp 017.
 
 ### Score Progression
 
@@ -26,7 +23,8 @@ close the gap to the competition leader. Target: LB ≥0.85 (from 0.767 baseline
 | Exp 012 ProtoCLR | Clip-level baseline | 0.767 |
 | Exp 016 v1 | SED + soft CE + spectrogram mixup | 0.795 |
 | Exp 016 v1 + pp | + TTA + smoothing + TopN | 0.823 |
-| Exp 016 v1-10s + pp | + 10s overlapping inference | **0.826** |
+| Exp 016 v1-10s + pp2 | + temp scaling + taxa smoothing + metadata priors | **0.827** |
+| Exp 016 v1-10s + pp | + 10s overlapping inference | 0.826 |
 | Exp 016 v2 + pp | + NS-JFT + CE + post-processing | 0.755 (regression) |
 | Exp 016 v3b + pp | + raw waveform mixup + pp | 0.802 (regression) |
 | Exp 016 v3a + pp | + TF-ported weights + pp | 0.813 (regression) |
@@ -140,47 +138,19 @@ SED beats all clip-level models: +0.015 AUROC, **+0.112 cmAP** over best clip-le
 | EfficientNet-B0 SED v1 | 0.767 (ProtoCLR) | 0.795 | ≥0.85 |
 | EfficientNet-B0 SED v1 + pp | — | **0.823** | — |
 
-## 6. Extend SED to Existing Encoders (after EfficientNet-B0 validates)
+## 6. Extend SED to Existing Encoders — DEFERRED
 
-If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
+Moved to [Future Work](#future-work).
 
-- [ ] 6.1 Add `forward_features()` to ProtoCLR encoder (returns (B, 384, H, W))
-- [ ] 6.2 Add `forward_features()` to ConvNeXt encoder (timm already has this)
-- [ ] 6.3 Add `forward_features()` to EAT encoder (returns (B, seq_len, 768) tokens — 1D temporal, skip GeM)
-- [ ] 6.4 Create SED configs for ProtoCLR, ConvNeXt, EAT (with LoRA + SED head)
-- [ ] 6.5 Train all 3 encoders with SED head (resume from exp 012 LoRA checkpoints)
-- [ ] 6.6 Submit to Kaggle LB, compare all 4 SED models
-
-### Expected SED Results (all models)
-
-| Model | Params | Exp 012 LB (clip) | Exp 016 LB (SED) | Delta |
-|-------|--------|-------------------|-------------------|-------|
-| EfficientNet-B0 | 3.6M | — | pending | — |
-| ProtoCLR (CvT-13) | 19.9M | 0.767 | pending | — |
-| ConvNeXt-Base | 89M | 0.755 | pending | — |
-| EAT (ViT) | 90M | 0.720 | pending | — |
-
-### Architecture Notes per Encoder
-
-- **ProtoCLR**: CvT produces (B, 384, H, W) feature maps. Apply GeM + AttHead directly.
-  Resume from exp 012 LoRA checkpoint, replace head with AttHead, freeze backbone
-  initially then unfreeze with LoRA.
-- **ConvNeXt**: `backbone.forward_features()` returns (B, 1024, H, W). Straightforward
-  — same pattern as EfficientNet. Resume from exp 012 LoRA checkpoint.
-- **EAT**: ViT outputs (B, seq_len, 768) tokens. No 2D spatial structure — skip GeM,
-  apply 1D temporal attention directly on the token sequence. May need a modified
-  AttHead variant (AttHead1D) that skips GeM and takes (B, T, C) input.
-
-## 7. Quick Wins — Post-Processing (no retraining, est. +0.03 combined)
+## 7. Quick Wins — Post-Processing (no retraining, +0.028 confirmed)
 
 - [x] 7.1 Add TopN postprocessing to submission.py (+0.011)
 - [x] 7.2 Add temporal smoothing to submission.py (+0.010)
 - [x] 7.3 Add TTA 2.5s shifts to submission.py (+0.012)
-- [ ] 7.4 Model soup: average epochs 20-24 checkpoints, re-export ONNX
 - [x] 7.5 LB with post-processing: **0.823** (+0.028 over v1 baseline 0.795)
       TTA + smoothing + TopN confirmed +0.028 gain (estimated was +0.033)
 
-## 8. Training v2 — Close the Gap (est. +0.05–0.08)
+## 8. Training v2 — Close the Gap
 
 - [x] 8.1 Created v2 config: `tf_efficientnet_b0.ns_jft_in1k` + CE loss with label_smoothing=0.05
 - [x] 8.2 Made loss_type configurable in SEDFinetuneModule ("soft_ce" for v1, "ce" for v2)
@@ -191,7 +161,7 @@ If EfficientNet-B0 SED shows significant LB improvement (≥0.05 over baseline):
       v2 underperformed v1 on all metrics. NS-JFT + CE hurt vs ImageNet + soft CE.
       W&B run: `covhhpck`. Best epoch 24, early stopped at 35.
 - [x] 8.5 Export v2 to ONNX + submit to Kaggle LB: **0.755** (−0.068 vs v1+pp 0.823, confirmed regression)
-- [ ] 8.6 Implement raw waveform mixup (move mel to model forward, mixup before mel)
+- [x] 8.6 ~~Implement raw waveform mixup~~ — tested as v3b, regressed on LB (0.802). Ruled out.
 - [x] 8.7 Implement 10s overlapping inference (load 10s centered on 5s target)
       Loads 10s audio centered on each 5s segment (2.5s context before + after),
       matching the training window. Same ONNX model (dynamic time axis), inference-only
@@ -237,11 +207,16 @@ Adds temperature scaling + taxa-aware smoothing + metadata priors.
 - [x] 11.2 Taxa-aware temporal smoothing (local-max for birds, avg-neighbor for frogs/insects)
 - [x] 11.3 Metadata priors (site/hour from soundscape filenames, Bayesian fusion)
 - [x] 11.4 Create build_inference_priors.py, pp2 weights dir, kernel metadata
-- [x] 11.5 Upload to Kaggle + submit for LB score — submitted 2026-03-25, awaiting result
-- [ ] 11.6 Record LB result (baseline: v1-10s 0.826)
-- [ ] 11.7 Model soup: average v1 checkpoints epochs 20-24, re-export ONNX
+- [x] 11.5 Upload to Kaggle + submit for LB score — submitted 2026-03-25
+- [x] 11.6 Record LB result: **0.827** (+0.001 over v1-10s 0.826). Modest gain from pp2.
 
 ---
+
+## Future Work
+
+- [ ] **Model soup**: Average v1 checkpoints epochs 20-24, re-export ONNX. Free stability gain, no retraining.
+- [ ] **Extend SED to other encoders**: Add `forward_features()` to ProtoCLR, ConvNeXt, EAT.
+  Train with SED head for ensemble diversity. Lower priority than mel overhaul (exp 017).
 
 ## Completed / Ruled Out
 
@@ -252,6 +227,7 @@ Adds temperature scaling + taxa-aware smoothing + metadata priors.
 - ~~EfficientNetV2-B0~~: v3d, hurt offline (−0.019 AUROC, −0.070 cmAP).
 - ~~Post-processing v1~~: Done (+0.028 confirmed). TTA + smoothing + TopN.
 - ~~10s overlapping inference~~: Done (+0.003). LB 0.826.
+- ~~Post-processing v2 (pp2)~~: Done (+0.001). Temp scaling + taxa smoothing + metadata priors. LB 0.827.
 
 ## Next Experiments (beyond exp 016)
 
