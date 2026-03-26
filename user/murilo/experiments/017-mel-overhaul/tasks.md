@@ -123,39 +123,32 @@ epochs. Small deltas (≤+0.003) may be the extra data, not the technique.
 using soft CE loss with logit-converted outputs. If v4c underperforms, retry with
 BCE loss before concluding AttBlockV2 doesn't help.
 
-## Step 3: Combine Winners + PP2 Recalibration (v4f) — FUTURE
+## Step 3: Combine Winners + PP2 Recalibration (v4f) — IN PROGRESS
 
-After all 4 ablations have LB results, combine the techniques that improved
-over v4a into a single config. Also recalibrate post-processing for the new
-model's output distribution.
+Step 2 LB results: v4b **0.859** (+0.034), v4e 0.840 (+0.015), v4d 0.808 (−0.017).
+v4b (AmplitudeToDB) and v4e (StochasticDepth) are the winners. v4d (ASL) excluded.
 
-### 3A: PP2 Temperature Sweep (zero retraining cost)
+### 3A: PP2 on v4b (zero retraining cost)
 
-PP2 gained only +0.005 on v4a (vs +0.032 on v1) because T=1.10 was tuned for v1.
-The v4a model is more confident — temperature may need lowering. Can run this on
-the existing v4a ONNX model immediately, no retraining needed.
-
-- [ ] 3.1 Sweep temperature on v4a: T ∈ {0.90, 0.95, 1.00, 1.05, 1.10, 1.15}
-- [ ] 3.2 Record best T for v4a, apply to future submissions
+- [x] 3.1 Create v4b-pp2 weights dir (symlink ONNX, T=1.10, taxa mapping, metadata priors)
+- [x] 3.2 Upload v4b-pp2 to Kaggle + push kernel
+- [ ] 3.3 Record v4b-pp2 LB result (kernel running on Kaggle)
 
 ### 3B: Combine Winning Ablations (v4f)
 
-- [ ] 3.3 Compare v4b/v4c/v4d/v4e LB results vs v4a (0.825/0.830)
-- [ ] 3.4 If v4c failed with soft_ce: retry AttBlockV2 with BCE loss
-- [ ] 3.5 Create v4f config combining all winning changes
-- [ ] 3.6 Train v4f (90/10, 50 epochs, patience=10)
-- [ ] 3.7 Model soup: average top-3 checkpoints from v4f (free, +0.005-0.01)
-- [ ] 3.8 ONNX export + Kaggle submission (raw + recalibrated pp2)
-- [ ] 3.9 Record LB results — this is the best single-model recipe
+- [x] 3.3 Compare v4b/v4c/v4d/v4e LB results vs v4a (0.825/0.830)
+- [x] 3.4 Create v4f config: AmplitudeToDB (v4b) + StochasticDepth 0.15 (v4e)
+- [ ] 3.5 Train v4f (90/10, 50 epochs, patience=10) — **training in progress**
+- [ ] 3.6 ONNX export + Kaggle submission (raw)
+- [ ] 3.7 Record v4f LB result vs v4b (0.859)
 
-### 3C: Consider if ablations disappoint
+### 3C: After v4f results
 
-- If no ablation helps: consider audio-domain MixUp (v3b didn't help at
-  n_fft=1024/128 mels, but may help at 4096/224 — infrastructure already
-  exists via `raw_waveform_mixup=true`). Also consider Perch KD (+0.030
-  in Tom's experiments).
-- If v4f underperforms best individual: techniques may conflict — drop the
-  weakest contributor and re-run.
+- If v4f > v4b: combined recipe is the winner — proceed to Step 4 fulldata
+- If v4f ≈ v4b: techniques may not stack — use v4b recipe for fulldata
+- If v4f < v4b: drop_path may conflict with amplitude_to_db — use v4b alone
+- PP2 temperature sweep: defer until best raw model is identified, then sweep
+  T ∈ {0.90, 0.95, 1.00, 1.05, 1.10, 1.15} on whichever is best
 
 ## Step 4: Fulldata Training — FUTURE
 
