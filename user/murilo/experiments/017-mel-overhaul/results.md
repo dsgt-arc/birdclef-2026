@@ -136,7 +136,7 @@ The LB results (pending) will be the true comparison.
 | Model | LB (raw) | LB (pp2) | vs v4a raw | Notes |
 |-------|----------|----------|------------|-------|
 | v4a | 0.825 | 0.830 | baseline | |
-| **v4b** | **0.859** | pending | **+0.034** | **clear winner** — AmplitudeToDB norm |
+| **v4b** | **0.859** | **0.860** | **+0.034** | **clear winner** — AmplitudeToDB norm |
 | v4c | skipped | — | — | poor offline (0.815), soft CE + sigmoid mismatch |
 | v4d | 0.808 | — | −0.017 | regression — ASL hurts with soft CE base |
 | **v4e** | 0.840 | pending | +0.015 | solid gain — StochasticDepth regularization |

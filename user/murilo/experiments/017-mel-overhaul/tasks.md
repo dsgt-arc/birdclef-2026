@@ -132,7 +132,7 @@ v4b (AmplitudeToDB) and v4e (StochasticDepth) are the winners. v4d (ASL) exclude
 
 - [x] 3.1 Create v4b-pp2 weights dir (symlink ONNX, T=1.10, taxa mapping, metadata priors)
 - [x] 3.2 Upload v4b-pp2 to Kaggle + push kernel
-- [ ] 3.3 Record v4b-pp2 LB result (kernel running on Kaggle)
+- [x] 3.3 Record v4b-pp2 LB result: **0.860** (+0.001 over raw 0.859)
 
 ### 3B: Combine Winning Ablations (v4f)
 

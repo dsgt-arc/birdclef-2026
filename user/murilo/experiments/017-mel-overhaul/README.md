@@ -12,7 +12,7 @@ Upgrade mel spectrogram resolution from (n_fft=1024, n_mels=128) to (n_fft=4096,
 |---------|--------|---------------|----------|----------|
 | v1 (exp 016) | baseline (n_fft=1024, 128 mels) | 0.845 | 0.795 | 0.827 |
 | **v4a** | n_fft=4096, n_mels=224 | 0.846 | **0.825** | **0.830** |
-| **v4b** | + AmplitudeToDB norm | **0.865** | **0.859** | |
+| **v4b** | + AmplitudeToDB norm | **0.865** | **0.859** | **0.860** |
 | v4c | + AttBlockV2 head | 0.815 | skipped | |
 | v4d | + ASL loss | 0.858 | 0.808 | |
 | **v4e** | + StochasticDepth 0.15 | **0.868** | 0.840 | |
