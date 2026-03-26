@@ -18,8 +18,10 @@ it as a structured reference document.
 
 ## Prerequisites
 
-- Python venv with `kagglesdk` installed: `~/clef/birdclef-2026/.venv`
-- Kaggle credentials at `~/.config/kaggle/kaggle.json`
+- Python environment with `kagglesdk` package installed
+  - Check for a project venv or use the system python with kagglesdk available
+  - Known venv locations: `~/clef/birdclef-2026/.venv`, project `.venv`
+- Kaggle credentials configured (typically `~/.config/kaggle/kaggle.json`)
 
 ## Steps
 
@@ -33,7 +35,7 @@ it as a structured reference document.
 Use the search API to find and retrieve the discussion content:
 
 ```python
-source ~/clef/birdclef-2026/.venv/bin/activate
+# Activate a venv with kagglesdk installed, then run:
 python3 -c "
 from kagglesdk import KaggleClient
 from kagglesdk.search.types.search_api_service import (

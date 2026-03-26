@@ -1,7 +1,7 @@
 ---
 name: experiment:context
 description: Load full context for an experiment at session start. Reads the experiment's proposal, tasks, results, README, and key referenced experiments to bootstrap the agent's understanding. Use this at the beginning of a conversation to resume work on an experiment.
-argument-hint: "[experiment-id-or-path]"
+argument-hint: "[user/experiment-id-or-path]"
 ---
 
 # Experiment Context Loader
@@ -14,21 +14,34 @@ experiment, its dependencies, and the current state of play.
 
 - `$ARGUMENTS` - Experiment path or ID. Accepts:
   - Full path: `user/murilo/experiments/017-mel-overhaul`
-  - ID with name: `017-mel-overhaul`
-  - Just ID: `017`
-  - If no argument, list experiments under `user/murilo/experiments/` for selection
+  - User + ID: `murilo/017` or `murilo/017-mel-overhaul`
+  - Just ID: `017` (requires resolving the user — see below)
+  - If no argument, ask which user and list their experiments
 
 ## Steps
 
-### 1. Resolve the experiment path
+### 1. Resolve the user and experiment path
 
-- Default user: `murilo` (check memory for user preferences)
-- Glob for `user/murilo/experiments/$ARGUMENTS*` if partial match
+Experiments live under `user/<name>/experiments/NNN-descriptive-name/`.
+
+**Resolving the user:**
+- If the argument contains a user prefix (e.g., `murilo/017`), use that user
+- If the argument is a full path (e.g., `user/anthony/experiments/...`), extract the user
+- If only an experiment ID is given (e.g., `017`):
+  - Check memory for the current user's name
+  - If unknown, glob across all users: `user/*/experiments/017-*`
+  - If multiple matches, list them and ask the user to clarify
+  - If exactly one match, use it
+- If no argument at all, list available users (`ls user/`) and ask
+
+**Resolving the experiment:**
+- Glob for `user/<name>/experiments/$ID*` to match by prefix
 - Verify the directory exists
+- If multiple matches, list them and ask
 
 ### 2. Read core experiment files
 
-Read these files (not all will exist — that's fine):
+Read these files from the resolved experiment directory (not all will exist):
 
 - **README.md** — Full experiment overview, results summary table, directory structure
 - **proposal.md** — Hypothesis, motivation, approach, references
@@ -46,9 +59,9 @@ Extract and present:
 
 Scan the experiment's README/proposal/tasks for references to other experiments.
 Common patterns:
-- `exp 010-submission-pipeline` — ONNX export and Kaggle submission infrastructure
-- `exp 016-sed-architecture` — Previous SED experiment (baseline comparisons)
-- References in format: `exp NNN`, `experiment NNN`, `../NNN-name`
+- `exp 010`, `experiment 010`, `exp 010-submission-pipeline`
+- `../NNN-name` relative paths
+- Cross-user references: `user/<other>/experiments/NNN-name`
 
 For each referenced experiment, read its **README.md** (or proposal.md if no README)
 to understand:
@@ -57,14 +70,16 @@ to understand:
 - Any shared infrastructure (e.g., submission pipeline, training scripts)
 
 **Priority references to always check:**
-- `010-submission-pipeline` — if the experiment involves Kaggle submissions, read its
-  README to understand the export → upload → submit workflow
-- The immediately preceding experiment (e.g., exp 016 for exp 017) — for baseline context
+- The submission pipeline experiment (commonly `010-submission-pipeline`) — if the
+  experiment involves Kaggle submissions, read its README for the export → upload →
+  submit workflow
+- The immediately preceding experiment — for baseline context
+- Referenced experiments live under the **same user** unless explicitly cross-referenced
 
 ### 4. Check recent git activity
 
 ```bash
-git log --oneline -10 -- user/murilo/experiments/<exp-dir>/
+git log --oneline -10 -- user/<name>/experiments/<exp-dir>/
 ```
 
 This shows what was worked on most recently.
@@ -82,6 +97,8 @@ Structure the output as:
 ```
 ## Experiment Context: NNN-name
 
+**User**: <name>
+**Path**: user/<name>/experiments/NNN-name/
 **Status**: [current step/phase]
 **Branch**: [git branch if noted]
 **Best result**: [best LB score and variant]
@@ -115,3 +132,4 @@ Structure the output as:
 - **Don't read every referenced experiment in full** — just README/proposal for context
 - **Note any pending LB results** or running jobs that affect next steps
 - **Keep it concise but complete** — this replaces reading 5+ files manually
+- **Never hardcode a user name** — always resolve from arguments or ask
