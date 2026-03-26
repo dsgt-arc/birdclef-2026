@@ -139,7 +139,7 @@ v4b (AmplitudeToDB) and v4e (StochasticDepth) are the winners. v4d (ASL) exclude
 - [x] 3.3 Compare v4b/v4c/v4d/v4e LB results vs v4a (0.825/0.830)
 - [x] 3.4 Create v4f config: AmplitudeToDB (v4b) + StochasticDepth 0.15 (v4e)
 - [x] 3.5 Train v4f (90/10, 50 epochs, patience=10) — val/auroc 0.862, epoch 17
-- [ ] 3.6 ONNX export + Kaggle submission (raw)
+- [x] 3.6 ONNX export + Kaggle submission (raw) — submitted, inference running
 - [ ] 3.7 Record v4f LB result vs v4b (0.859)
 
 ### 3C: Re-ablate AttBlockV2 + ASL with correct loss pairing (v4g/v4h)
@@ -158,8 +158,8 @@ These re-ablations use Tom's recipe context: AmplitudeToDB + AttBlockV2 + BCE/AS
 - [x] 3.8 Add `loss_type="bce"` to SEDFinetuneModule (F.binary_cross_entropy_with_logits)
 - [x] 3.9 Create v4g config (AmplitudeToDB + AttBlockV2 + BCE)
 - [x] 3.10 Create v4h config (AmplitudeToDB + AttBlockV2 + ASL)
-- [ ] 3.11 Train v4g and v4h — v4h done (val/auroc 0.858, epoch 12), v4g in progress
-- [ ] 3.12 ONNX export + Kaggle submission (v4h ready, v4g pending)
+- [x] 3.11 Train v4h — val/auroc 0.858, epoch 12. v4g still in progress
+- [ ] 3.12 ONNX export + Kaggle submission — v4h exported, hit daily submission limit (5/5). Submit v4h + v4g tomorrow
 - [ ] 3.13 Record LB results vs v4b (0.859)
 
 ### 3D: After all Step 3 results
