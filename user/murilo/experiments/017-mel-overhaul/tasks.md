@@ -77,55 +77,80 @@ hyperparameters were tuned for v1 — may need recalibration for v4a.
 
 ---
 
-## Step 2: Normalization + Head (single variables from best of Step 1) — FUTURE
+## Step 2: Parallel Ablations (v4b/v4c/v4d/v4e, all from v4a base) — IN PROGRESS
 
-Only proceed if Step 1 passes decision gate.
-**All Step 2+ runs use 90/10 train/val split** (no test holdout — validate on LB directly).
+Step 1 passed decision gate → run 4 single-variable ablations in parallel from v4a.
+**All runs use 90/10 train/val** (test_fraction=0.0), **50 epochs**, patience=10.
 
-- [ ] 2.1 Switch SEDDataModule to 90/10 train/val (drop test_fraction, remove test dataloader)
-- [ ] 2.2 v4b config: AmplitudeToDB(top_db=80) + standardize + min-max [0,1] normalization
-- [ ] 2.3 v4c config: AttBlockV2 head (tanh+softmax attention, sigmoid classification)
-- [ ] 2.4 Run v4b and v4c in parallel on SLURM (50 epochs, patience=10)
-- [ ] 2.5 ONNX export + Kaggle submission for each
-- [ ] 2.6 Record LB results, compare to v4a
+Each variant changes ONE thing from v4a to measure independent impact:
 
-## Step 3: Loss + Regularization (single variables) — FUTURE
+| Variant | Change | Rationale |
+|---------|--------|-----------|
+| v4b | AmplitudeToDB + standardize + min-max [0,1] | Tom uses across all 28 experiments, 2025 1st place |
+| v4c | AttBlockV2 head (tanh+softmax att, sigmoid cls) | PANNs competition-standard SED head |
+| v4d | ASL loss (γ⁻=4, γ⁺=0, clip=0.05) | Tom's biggest single gain: +0.023 AUC |
+| v4e | StochasticDepth (drop_path=0.15) | 2025 1st place regularization |
 
-- [ ] 3.1 v4d: ASL loss (γ⁻=4, γ⁺=0, clip=0.05) — Tom's biggest single gain (+0.023)
-- [ ] 3.2 v4e: StochasticDepth (drop_path=0.15) — 2025 1st place used 0.2
-- [ ] 3.3 Record LB results, pick best recipe from Steps 1-3
+### Implementation
 
-## Step 4: Fulldata Training — FUTURE
+- [x] 2.1 Add `norm_type="amplitude_to_db"` to NNAudioMelSpectrogram (AmplitudeToDB + standardize + min-max)
+- [x] 2.2 Add `AttBlockV2` class to sed_head.py (tanh+softmax attention, sigmoid classification)
+- [x] 2.3 Add `AsymmetricLoss` class + `loss_type="asl"` to SEDFinetuneModule
+- [x] 2.4 Add `drop_path_rate` parameter to EfficientNetEncoder (timm native)
+- [x] 2.5 Create config YAMLs: v4b, v4c, v4d, v4e
+- [x] 2.6 Wire all new params through train.py
+- [x] 2.7 Verify all imports and basic functionality
 
-Train the best recipe from Steps 1-3 on 100% labeled data (no val split).
+### Training
+
+- [ ] 2.8 Submit all 4 jobs to SLURM (`bash sbatch/run.sh --all`)
+- [ ] 2.9 Monitor via W&B: `dsgt-arc/birdclef-2026-mel-overhaul`
+- [ ] 2.10 Record offline metrics for each variant
+
+### ONNX Export & Kaggle
+
+- [ ] 2.11 ONNX export for each winning variant
+- [ ] 2.12 Submit to Kaggle LB (raw + pp2 for best variants)
+- [ ] 2.13 Record LB results, compare to v4a (0.825/0.830)
+
+### 2.14 Decision: Combine Winners
+
+- Pick the variants that show LB improvement over v4a
+- Create a v4f config combining all winning changes
+- Run one final combined training run
+
+## Step 3: Fulldata Training — FUTURE
+
+Train the best combined recipe on 100% labeled data (no val split).
 This adds ~10% more focal recordings + more soundscape files.
 Lock in the recipe first, then scale.
 
-- [ ] 4.1 Add `train_all` support to SEDDataModule (focal 100% + all soundscape files)
-- [ ] 4.2 Run fulldata with epoch cap from best 90/10 run (~1.5× best epoch)
-- [ ] 4.3 No early stopping — save checkpoints every 5 epochs + last
-- [ ] 4.4 Export best + last checkpoints, submit both to LB
-- [ ] 4.5 Record LB results vs 90/10 baseline
+- [ ] 3.1 Add `train_all` support to SEDDataModule (focal 100% + all soundscape files)
+- [ ] 3.2 Run fulldata with epoch cap from best 90/10 run (~1.5× best epoch)
+- [ ] 3.3 No early stopping — save checkpoints every 5 epochs + last
+- [ ] 3.4 Export best + last checkpoints, submit both to LB
+- [ ] 3.5 Record LB results vs 90/10 baseline
 
 **Exp 011 reference**: ProtoCLR fulldata gained +0.015 LB, but ConvNeXt regressed
 −0.025 from overfitting. Epoch cap is critical.
 
-## Step 5: Polish — FUTURE
+## Step 4: Polish — FUTURE
 
-- [ ] 5.1 Model soup on best config (average top checkpoints)
-- [ ] 5.2 Full-signal mel at inference (compute once for 60s, slice)
-- [ ] 5.3 Ensemble best variants
+- [ ] 4.1 Model soup on best config (average top checkpoints)
+- [ ] 4.2 Full-signal mel at inference (compute once for 60s, slice)
+- [ ] 4.3 Ensemble best variants
 
 ---
 
-## Key Config: v4a vs v1
+## Key Config: v4a-v4e Comparison
 
-| Parameter | v1 (exp 016) | v4a (exp 017) | Change |
-|-----------|-------------|---------------|--------|
-| n_fft | 1024 (derived) | **4096** | 4× freq resolution |
-| n_mels | 128 | **224** | 1.75× spectral detail |
-| hop_length | 320 | 320 | unchanged |
-| input shape | (1, 128, 1000) | **(1, 224, 1000)** | 1.75× data |
-| batch_size | 128 | **64** | OOM safety |
-| accumulate_grad_batches | 2 | **4** | same 256 effective |
-| Everything else | v1 | v1 | identical |
+| Parameter | v4a (baseline) | v4b | v4c | v4d | v4e |
+|-----------|---------------|-----|-----|-----|-----|
+| n_fft | 4096 | 4096 | 4096 | 4096 | 4096 |
+| n_mels | 224 | 224 | 224 | 224 | 224 |
+| norm_type | audioset | **amplitude_to_db** | audioset | audioset | audioset |
+| sed_head | AttHead | AttHead | **AttBlockV2** | AttHead | AttHead |
+| loss_type | soft_ce | soft_ce | soft_ce | **asl** | soft_ce |
+| drop_path_rate | 0.0 | 0.0 | 0.0 | 0.0 | **0.15** |
+| test_fraction | 0.1 | 0.0 | 0.0 | 0.0 | 0.0 |
+| max_epochs | 40 | 50 | 50 | 50 | 50 |

@@ -40,7 +40,7 @@ sys.path.insert(0, str(repo_root / "src"))
 from birdclef.data.sed import SEDDataModule  # noqa: E402
 from birdclef.data.soundscape import build_full_species_list  # noqa: E402
 from birdclef.encoders.efficientnet import EfficientNetEncoder  # noqa: E402
-from birdclef.heads.sed_head import AttHead  # noqa: E402
+from birdclef.heads.sed_head import AttBlockV2, AttHead  # noqa: E402
 from birdclef.lightning.sed_finetune import SEDFinetuneModule  # noqa: E402
 from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram  # noqa: E402
 
@@ -109,14 +109,17 @@ def main():
     encoder = EfficientNetEncoder(
         model_name=config["encoder"]["model_name"],
         pretrained=config["encoder"].get("pretrained", True),
+        drop_path_rate=config["encoder"].get("drop_path_rate", 0.0),
     )
 
     # Use encoder's actual embed_dim (not config) — features_only=True may differ
     embed_dim = encoder.embed_dim
     logger.info(f"Encoder embed_dim: {embed_dim}")
 
-    logger.info("Building SED attention head...")
-    sed_head = AttHead(
+    head_type = config["sed_head"].get("type", "att_head")
+    logger.info(f"Building SED head: {head_type}...")
+    head_cls = AttBlockV2 if head_type == "att_block_v2" else AttHead
+    sed_head = head_cls(
         in_channels=embed_dim,
         num_classes=num_classes,
         hidden_dim=config["sed_head"]["hidden_dim"],
@@ -139,6 +142,7 @@ def main():
         hop_length = int(frame_shift_ms / 1000.0 * sample_rate)
     target_frames = int(window_duration * sample_rate / hop_length)
 
+    norm_type = mel_cfg.get("norm_type", "audioset")
     audio_transform = NNAudioMelSpectrogram(
         sample_rate=sample_rate,
         n_mels=mel_cfg.get("n_mels", 128),
@@ -146,11 +150,13 @@ def main():
         n_fft=mel_cfg.get("n_fft"),
         hop_length=hop_length,
         fmax=mel_cfg.get("fmax"),
+        norm_type=norm_type,
+        top_db=mel_cfg.get("top_db", 80.0),
     )
     logger.info(
         f"Mel transform: sr={sample_rate}, n_fft={mel_cfg.get('n_fft', 'auto')}, "
         f"n_mels={mel_cfg.get('n_mels', 128)}, hop={hop_length}, "
-        f"target_frames={target_frames}"
+        f"target_frames={target_frames}, norm={norm_type}"
     )
 
     # ========================================================================
@@ -172,6 +178,8 @@ def main():
             n_fft=mel_cfg.get("n_fft"),
             hop_length=hop_length,
             fmax=mel_cfg.get("fmax"),
+            norm_type=norm_type,
+            top_db=mel_cfg.get("top_db", 80.0),
         )
         if waveform_mixup:
             logger.info("GPU mel + waveform mixup: mixup before mel on GPU")
@@ -196,6 +204,9 @@ def main():
         mixup_alpha=training_cfg.get("mixup_alpha", 0.5),
         loss_type=training_cfg.get("loss_type", "soft_ce"),
         label_smoothing=training_cfg.get("label_smoothing", 0.0),
+        asl_gamma_neg=training_cfg.get("asl_gamma_neg", 4.0),
+        asl_gamma_pos=training_cfg.get("asl_gamma_pos", 0.0),
+        asl_clip=training_cfg.get("asl_clip", 0.05),
         mel_transform=gpu_mel_transform,
         waveform_mixup=waveform_mixup,
     )

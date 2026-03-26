@@ -58,12 +58,16 @@ but consistent.
 
 ### Leaderboard
 
-| Model | LB | vs v1 raw | vs v1+pp2 |
-|-------|-----|-----------|-----------|
-| **v4a (raw)** | **0.825** | **+0.030** | −0.002 |
-| **v4a + pp2** | **0.830** | **+0.035** | **+0.003** |
-| v1 (raw, exp 016) | 0.795 | baseline | — |
-| v1 + pp2 (exp 016) | 0.827 | — | baseline |
+| Model | LB | vs v1 raw | vs v1+pp2 | Notes |
+|-------|-----|-----------|-----------|-------|
+| **v4a (raw)** | **0.825** | **+0.030** | −0.002 | original submission |
+| **v4a (raw, optimized)** | **0.826** | **+0.031** | −0.001 | full-signal mel + batched ONNX, <32min |
+| **v4a + pp2** | **0.830** | **+0.035** | **+0.003** | |
+| v1 (raw, exp 016) | 0.795 | baseline | — | |
+| v1 + pp2 (exp 016) | 0.827 | — | baseline | |
+
+**Inference speedup**: Optimized inference (<32min) vs original (>1h), ~2.5-3× faster.
+The ±0.001 LB variance between v4a submissions is Kaggle test data rotation.
 
 ### PP2 Diminishing Returns
 

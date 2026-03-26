@@ -28,17 +28,28 @@ class EfficientNetEncoder(nn.Module):
     Args:
         model_name: Timm model name (e.g., "efficientnet_b0", "efficientnet_b3")
         pretrained: Whether to load pretrained ImageNet weights
+        drop_path_rate: Stochastic depth rate (default: 0.0 = disabled).
+            Randomly drops entire residual blocks during training.
+            2025 1st place used 0.15, Tom used 0.0 (default).
     """
 
-    def __init__(self, model_name: str = "efficientnet_b0", pretrained: bool = True):
+    def __init__(
+        self,
+        model_name: str = "efficientnet_b0",
+        pretrained: bool = True,
+        drop_path_rate: float = 0.0,
+    ):
         super().__init__()
-        self.backbone = timm.create_model(model_name, pretrained=pretrained, features_only=True)
+        self.backbone = timm.create_model(
+            model_name, pretrained=pretrained, features_only=True, drop_path_rate=drop_path_rate
+        )
         self.embed_dim = self.backbone.feature_info.channels()[-1]  # 1280 for B0
         self._adapt_input_channels(pretrained)
 
+        dp_info = f", drop_path={drop_path_rate}" if drop_path_rate > 0 else ""
         logger.info(
             f"EfficientNetEncoder: {model_name}, embed_dim={self.embed_dim}, "
-            f"stages={len(self.backbone.feature_info.channels())}"
+            f"stages={len(self.backbone.feature_info.channels())}{dp_info}"
         )
 
     def _adapt_input_channels(self, pretrained: bool):

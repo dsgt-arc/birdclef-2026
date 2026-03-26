@@ -37,6 +37,11 @@ class NNAudioMelSpectrogram(nn.Module):
         n_fft: FFT window size. If None, derived from 25ms window (default: None → 1024)
         hop_length: Hop length in samples. If None, derived from frame_shift_ms (default: None)
         fmax: Maximum frequency for mel filterbank. None = Nyquist (default: None)
+        norm_type: Normalization type:
+            - "audioset": log(mel+eps) → (x - mean) / (std * 2). Default, matches v1/v4a.
+            - "amplitude_to_db": AmplitudeToDB(top_db=80) → per-sample standardize → min-max [0,1].
+              Used by Tom's 28 experiments and 2025 1st place.
+        top_db: Dynamic range clipping for amplitude_to_db norm (default: 80.0).
     """
 
     def __init__(
@@ -50,11 +55,15 @@ class NNAudioMelSpectrogram(nn.Module):
         n_fft: int | None = None,
         hop_length: int | None = None,
         fmax: int | None = None,
+        norm_type: str = "audioset",
+        top_db: float = 80.0,
     ):
         super().__init__()
         self.target_frames = target_frames
         self.norm_mean = norm_mean
         self.norm_std = norm_std
+        self.norm_type = norm_type
+        self.top_db = top_db
 
         if hop_length is None:
             hop_length = int(frame_shift_ms / 1000.0 * sample_rate)
@@ -78,6 +87,34 @@ class NNAudioMelSpectrogram(nn.Module):
             trainable_STFT=False,
         )
 
+    def _normalize_audioset(self, mel: torch.Tensor) -> torch.Tensor:
+        """AudioSet log normalization: log(mel+eps) → (x - mean) / (std * 2)."""
+        mel = torch.log(mel + 1e-6)
+        return (mel - self.norm_mean) / (self.norm_std * 2)
+
+    def _normalize_amplitude_to_db(self, mel: torch.Tensor) -> torch.Tensor:
+        """AmplitudeToDB → per-sample standardize → min-max [0,1].
+
+        Matches Tom's experiments and 2025 1st place normalization pipeline.
+        mel input is in linear power scale from nnAudio.
+        """
+        # Power-to-dB: 10 * log10(mel + eps), clipped to top_db range
+        mel = 10.0 * torch.log10(mel + 1e-10)
+        mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+        mel = torch.clamp(mel, min=mel_max - self.top_db)
+
+        # Per-sample standardize (zero mean, unit variance)
+        mean = mel.mean(dim=(-2, -1), keepdim=True)
+        std = mel.std(dim=(-2, -1), keepdim=True).clamp(min=1e-6)
+        mel = (mel - mean) / std
+
+        # Per-sample min-max scale to [0, 1]
+        mel_min = mel.amin(dim=(-2, -1), keepdim=True)
+        mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+        mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
+
+        return mel
+
     def forward(self, waveform: torch.Tensor) -> torch.Tensor:
         """Convert waveform(s) to normalized log-mel spectrogram(s).
 
@@ -95,10 +132,7 @@ class NNAudioMelSpectrogram(nn.Module):
         # nnAudio returns (batch, n_mels, time) in linear power scale
         mel = self.mel_spec(waveform)
 
-        # Log scale (match torchaudio: additive epsilon, not clamp)
-        mel = torch.log(mel + 1e-6)
-
-        # Pad or crop to target_frames
+        # Pad or crop to target_frames (before normalization for consistent shape)
         n_frames = mel.shape[-1]
         if n_frames < self.target_frames:
             mel = F.pad(mel, (0, self.target_frames - n_frames))
@@ -106,8 +140,11 @@ class NNAudioMelSpectrogram(nn.Module):
             start = (n_frames - self.target_frames) // 2
             mel = mel[..., start : start + self.target_frames]
 
-        # Normalize: (mel - mean) / (std * 2)
-        mel = (mel - self.norm_mean) / (self.norm_std * 2)
+        # Normalize
+        if self.norm_type == "amplitude_to_db":
+            mel = self._normalize_amplitude_to_db(mel)
+        else:
+            mel = self._normalize_audioset(mel)
 
         # Add channel dim: (batch, n_mels, T) -> (batch, 1, n_mels, T)
         mel = mel.unsqueeze(-3)
