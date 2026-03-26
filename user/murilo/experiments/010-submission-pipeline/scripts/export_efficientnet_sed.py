@@ -70,15 +70,23 @@ def main():
     num_classes = len(species_list)
     logger.info(f"Species: {num_classes}")
 
-    # Build encoder
-    drop_path_rate = cfg["encoder"].get("drop_path_rate", 0.0)
+    # Build encoder (drop_path_rate=0.0 for export — DropPath is identity in eval
+    # mode and has no parameters, so weights load correctly without it. This avoids
+    # ONNX tracing issues with DropPath modules.)
+    train_drop_path = cfg["encoder"].get("drop_path_rate", 0.0)
     encoder = EfficientNetEncoder(
         model_name=cfg["encoder"]["model_name"],
         pretrained=cfg["encoder"].get("pretrained", True),
-        drop_path_rate=drop_path_rate,
+        drop_path_rate=0.0,
     )
     embed_dim = encoder.embed_dim
-    logger.info(f"Encoder: {cfg['encoder']['model_name']}, embed_dim={embed_dim}")
+    if train_drop_path > 0:
+        logger.info(
+            f"Encoder: {cfg['encoder']['model_name']}, embed_dim={embed_dim} "
+            f"(training drop_path={train_drop_path}, export drop_path=0.0)"
+        )
+    else:
+        logger.info(f"Encoder: {cfg['encoder']['model_name']}, embed_dim={embed_dim}")
 
     # Build SED head (AttHead or AttBlockV2 based on config)
     head_type = cfg["sed_head"].get("type", "att_head")
