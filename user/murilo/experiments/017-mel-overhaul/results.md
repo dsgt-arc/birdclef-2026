@@ -161,6 +161,36 @@ sigmoid→logit→softmax conversion path is a known mismatch. May retry with BC
 
 ---
 
+## Step 3: Combine Winners + Re-ablations — IN PROGRESS
+
+### 3A: PP2 on v4b
+
+v4b-pp2 (T=1.10, taxa smoothing, metadata priors): **0.860 LB** (+0.001 over raw 0.859).
+PP2 diminishing returns continue to shrink as the model improves.
+
+### 3B-C: Training Summary (v4f/v4g/v4h)
+
+| Variant | Changes from v4b | Head | Loss | best val/auroc | best epoch | stopped | W&B run |
+|---------|-----------------|------|------|---------------|------------|---------|---------|
+| **v4b** | baseline | AttHead | soft_ce | **0.865** | 30 | 41 | `q9jdljkt` |
+| v4f | + StochasticDepth 0.15 | AttHead | soft_ce | pending | — | — | — |
+| v4g | + AttBlockV2 | **AttBlockV2** | **bce** | pending | — | — | — |
+| v4h | + AttBlockV2 + ASL | **AttBlockV2** | **asl** | 0.858 | 12 | 23 | `4ck222t9` |
+
+### v4h Observations
+
+**v4h (AttBlockV2 + ASL)** — val/auroc 0.858, peaked early at epoch 12 (early stopped at 23).
+This is lower than v4b (0.865) despite using Tom's "best" recipe (ASL over BCE with AttBlockV2).
+Possible explanations:
+- ASL's aggressive negative suppression (γ⁻=4) may converge too fast and plateau low,
+  similar to v4d's behavior (0.858 val, 0.808 LB)
+- The v4b result suggests AttHead + soft CE is actually a stronger combination for our
+  pipeline than AttBlockV2 + ASL — our soft CE normalizes multi-hot targets effectively
+- LB result pending — offline val may not tell the full story (v4e had highest val 0.868
+  but only 0.840 LB)
+
+---
+
 ## Artifacts
 
 ### Step 1
@@ -180,3 +210,11 @@ sigmoid→logit→softmax conversion path is a known mismatch. May retry with BC
 | v4c | `.../checkpoints/2026-effnet-b0-sed-v4c/best-epochepoch=15.ckpt` | 5496316 |
 | v4d | `.../checkpoints/2026-effnet-b0-sed-v4d/best-epochepoch=16.ckpt` | 5496367 |
 | v4e | `.../checkpoints/2026-effnet-b0-sed-v4e/best-epochepoch=29.ckpt` | 5496368 |
+
+### Step 3
+
+| Variant | Checkpoint | SLURM Job |
+|---------|-----------|-----------|
+| v4f | pending | 5506300 |
+| v4g | pending | 5506698 |
+| v4h | `.../checkpoints/2026-effnet-b0-sed-v4h/best-epochepoch=12.ckpt` | 5506700 |

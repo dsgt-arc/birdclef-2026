@@ -158,8 +158,8 @@ These re-ablations use Tom's recipe context: AmplitudeToDB + AttBlockV2 + BCE/AS
 - [x] 3.8 Add `loss_type="bce"` to SEDFinetuneModule (F.binary_cross_entropy_with_logits)
 - [x] 3.9 Create v4g config (AmplitudeToDB + AttBlockV2 + BCE)
 - [x] 3.10 Create v4h config (AmplitudeToDB + AttBlockV2 + ASL)
-- [ ] 3.11 Train v4g and v4h
-- [ ] 3.12 ONNX export + Kaggle submission
+- [ ] 3.11 Train v4g and v4h — v4h done (val/auroc 0.858, epoch 12), v4g in progress
+- [ ] 3.12 ONNX export + Kaggle submission (v4h ready, v4g pending)
 - [ ] 3.13 Record LB results vs v4b (0.859)
 
 ### 3D: After all Step 3 results
@@ -202,7 +202,7 @@ Lock in the recipe first, then scale.
 | drop_path | 0.0 | 0.0 | 0.0 | 0.0 | **0.15** | **0.15** | 0.0 | 0.0 |
 | split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
 | max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
-| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | **0.868** | pending | pending | pending |
+| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | **0.868** | pending | pending | 0.858 |
 | LB (raw) | 0.825 | **0.859** | skipped | 0.808 | 0.840 | pending | pending | pending |
 
 **a2db** = amplitude_to_db (AmplitudeToDB + standardize + min-max [0,1])

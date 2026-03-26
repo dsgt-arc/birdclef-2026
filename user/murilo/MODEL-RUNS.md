@@ -206,10 +206,17 @@ No test metrics available — only val/auroc from checkpoint callback.
 | `effnet-b0-sed-v4d` | ASL loss | audioset | AttHead | asl | 0.858 | 16 | 0.808 | `017-.../2026-effnet-b0-sed-v4d/best-epochepoch=16.ckpt` |
 | `effnet-b0-sed-v4e` | StochasticDepth | audioset | AttHead | soft_ce | **0.868** | 29 | 0.840 | `017-.../2026-effnet-b0-sed-v4e/best-epochepoch=29.ckpt` |
 
-**v4e (StochasticDepth)** and **v4b (AmplitudeToDB)** are top performers offline.
-**v4c (AttBlockV2)** underperformed — likely due to soft CE + sigmoid mismatch (retry with BCE).
-**v4d (ASL)** is decent but peaked early — ASL's +0.023 gain in Tom's experiments was over BCE,
-not soft CE which already handles multi-label better.
+### Step 3: Combined winners + re-ablations
+
+| Slug | Change | Mel Norm | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|----------|------|------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v4f` | v4b + StochasticDepth | amplitude_to_db | AttHead | soft_ce | pending | — | pending | `017-.../2026-effnet-b0-sed-v4f/` |
+| `effnet-b0-sed-v4g` | v4b + AttBlockV2 + BCE | amplitude_to_db | AttBlockV2 | bce | pending | — | pending | `017-.../2026-effnet-b0-sed-v4g/` |
+| `effnet-b0-sed-v4h` | v4b + AttBlockV2 + ASL | amplitude_to_db | AttBlockV2 | asl | 0.858 | 12 | pending | `017-.../2026-effnet-b0-sed-v4h/best-epochepoch=12.ckpt` |
+
+**v4b (AmplitudeToDB)** is the current best at 0.859 LB (0.860 with pp2).
+**v4h (AttBlockV2 + ASL)** peaked early at epoch 12 with 0.858 val — similar to v4d's pattern.
+v4f and v4g training in progress.
 
 ## Checkpoint Base Path
 
