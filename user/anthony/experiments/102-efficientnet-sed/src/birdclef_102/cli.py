@@ -129,6 +129,9 @@ def main():
         activity_parquet=data_cfg.get("activity_parquet"),
         mel_transform=mel_spec if mel_on_cpu else None,
         target_frames=data_cfg["target_frames"] if mel_on_cpu else None,
+        soundscape_dir=data_cfg.get("soundscape_dir"),
+        soundscape_labels_csv=data_cfg.get("soundscape_labels_csv"),
+        nocall_parquet=data_cfg.get("nocall_parquet"),
     )
 
     # Run name

@@ -92,6 +92,9 @@ class BirdCLEF102Dataset(Dataset):
         target_frames: int | None = None,
         norm_mean: float = -4.268,
         norm_std: float = 4.569,
+        soundscape_dir: str | None = None,
+        soundscape_labels_csv: str | None = None,
+        nocall_parquet: str | None = None,
     ):
         self.audio_dir = Path(audio_dir).expanduser()
         self.species_list = species_list
@@ -121,6 +124,12 @@ class BirdCLEF102Dataset(Dataset):
             self._build_from_parquet(activity_parquet, metadata_df)
         else:
             self._build_from_scan(metadata_df)
+
+        # Append soundscape chunks (labeled windows + no-call windows)
+        if soundscape_dir and soundscape_labels_csv:
+            self._append_soundscape_chunks(soundscape_dir, soundscape_labels_csv)
+        if soundscape_dir and nocall_parquet and Path(nocall_parquet).exists():
+            self._append_nocall_chunks(soundscape_dir, nocall_parquet)
 
     def _build_label_vec(self, row):
         label_vec = torch.zeros(self.num_classes, dtype=torch.float32)
@@ -208,6 +217,73 @@ class BirdCLEF102Dataset(Dataset):
             logger.warning(f"Skipped {skipped} recordings")
         logger.info(f"BirdCLEF102Dataset (scan): {len(self.chunks)} chunks")
 
+    def _append_soundscape_chunks(self, soundscape_dir, labels_csv):
+        """Append labeled soundscape windows (multi-label, semicolon-separated IDs)."""
+        sdir = Path(soundscape_dir)
+        labels = pd.read_csv(labels_csv)
+
+        def time_to_sec(t):
+            parts = t.split(":")
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+
+        # Deduplicate — labels CSV has duplicate rows per (filename, start)
+        labels = labels.drop_duplicates(subset=["filename", "start"])
+
+        count = 0
+        for _, row in labels.iterrows():
+            audio_path = sdir / row["filename"]
+            if not audio_path.exists():
+                continue
+
+            start_sec = time_to_sec(row["start"])
+            start_sample = int(start_sec * self.sample_rate)
+
+            # Build multi-label vector from semicolon-separated species IDs
+            label_vec = torch.zeros(self.num_classes, dtype=torch.float32)
+            for sid in str(row["primary_label"]).split(";"):
+                sid = sid.strip()
+                if sid in self.species_to_idx:
+                    label_vec[self.species_to_idx[sid]] = 1.0
+
+            # Skip windows where no focal species are present
+            if label_vec.sum() == 0:
+                continue
+
+            self.chunks.append((
+                str(audio_path),
+                start_sample,
+                self.chunk_samples,
+                label_vec,
+                1.0,  # high activity — annotator confirmed species present
+            ))
+            count += 1
+
+        logger.info(f"Appended {count} labeled soundscape windows")
+
+    def _append_nocall_chunks(self, soundscape_dir, nocall_parquet):
+        """Append no-call windows (all-zeros labels) from labeled soundscapes."""
+        sdir = Path(soundscape_dir)
+        nocall = pd.read_parquet(nocall_parquet)
+        label_vec = torch.zeros(self.num_classes, dtype=torch.float32)
+
+        count = 0
+        for _, row in nocall.iterrows():
+            audio_path = sdir / row["filename"]
+            if not audio_path.exists():
+                continue
+
+            start_sample = int(row["chunk_start"] * self.sample_rate)
+            self.chunks.append((
+                str(audio_path),
+                start_sample,
+                self.chunk_samples,
+                label_vec.clone(),
+                0.0,  # no activity
+            ))
+            count += 1
+
+        logger.info(f"Appended {count} no-call soundscape windows")
+
     def __len__(self):
         return len(self.chunks)
 
@@ -289,6 +365,9 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         target_frames: int | None = None,
         norm_mean: float = -4.268,
         norm_std: float = 4.569,
+        soundscape_dir: str | None = None,
+        soundscape_labels_csv: str | None = None,
+        nocall_parquet: str | None = None,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["species_list", "mel_transform"])
@@ -305,6 +384,9 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         self.target_frames = target_frames
         self.norm_mean = norm_mean
         self.norm_std = norm_std
+        self.soundscape_dir = soundscape_dir
+        self.soundscape_labels_csv = soundscape_labels_csv
+        self.nocall_parquet = nocall_parquet
 
         if species_list is not None:
             self.species_list = species_list
@@ -345,8 +427,13 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
                 norm_mean=self.norm_mean,
                 norm_std=self.norm_std,
             )
+            # Soundscape data only goes into training (not validation)
             self.train_dataset = BirdCLEF102Dataset(
-                metadata_df=train_df, **dataset_kwargs,
+                metadata_df=train_df,
+                soundscape_dir=self.soundscape_dir,
+                soundscape_labels_csv=self.soundscape_labels_csv,
+                nocall_parquet=self.nocall_parquet,
+                **dataset_kwargs,
             )
             self.val_dataset = BirdCLEF102Dataset(
                 metadata_df=val_df, **dataset_kwargs,
