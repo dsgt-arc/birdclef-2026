@@ -103,13 +103,13 @@ Each variant changes ONE thing from v4a to measure independent impact:
 
 ### Training
 
-- [ ] 2.8 Submit all 4 jobs to SLURM (`bash sbatch/run.sh --all`)
-- [ ] 2.9 Monitor via W&B: `dsgt-arc/birdclef-2026-mel-overhaul`
+- [x] 2.8 Submit all 4 jobs to SLURM (v4b/v4c on gpu-a100, v4d/v4e on gpu-rtx6000)
+- [ ] 2.9 Check training results for all 4 runs (W&B + offline metrics)
 - [ ] 2.10 Record offline metrics for each variant
 
 ### ONNX Export & Kaggle
 
-- [ ] 2.11 ONNX export for each winning variant
+- [ ] 2.11 ONNX export for each variant that trained successfully
 - [ ] 2.12 Submit to Kaggle LB (raw + pp2 for best variants)
 - [ ] 2.13 Record LB results, compare to v4a (0.825/0.830)
 
