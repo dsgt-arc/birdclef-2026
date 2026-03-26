@@ -16,9 +16,13 @@ Upgrade mel spectrogram resolution from (n_fft=1024, n_mels=128) to (n_fft=4096,
 | v4c | + AttBlockV2 head | 0.815 | skipped | |
 | v4d | + ASL loss | 0.858 | 0.808 | |
 | **v4e** | + StochasticDepth 0.15 | **0.868** | 0.840 | |
+| v4f | v4b + StochasticDepth 0.15 | 0.862 | 0.832 | |
+| v4g | v4b + AttBlockV2 + BCE | pending | pending | |
+| v4h | v4b + AttBlockV2 + ASL | 0.858 | pending | |
 
 v4a passed the decision gate (+0.030 LB raw). v4b-v4e are single-variable ablations from v4a.
 **v4b (AmplitudeToDB) is the clear winner**: +0.034 LB over v4a, new best at 0.859.
+v4f (v4b + StochasticDepth) regressed to 0.832 — techniques don't stack.
 
 ## Experiment Design
 

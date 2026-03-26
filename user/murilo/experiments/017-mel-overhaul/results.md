@@ -170,26 +170,24 @@ PP2 diminishing returns continue to shrink as the model improves.
 
 ### 3B-C: Training Summary (v4f/v4g/v4h)
 
-| Variant | Changes from v4b | Head | Loss | best val/auroc | best epoch | stopped | W&B run |
-|---------|-----------------|------|------|---------------|------------|---------|---------|
-| **v4b** | baseline | AttHead | soft_ce | **0.865** | 30 | 41 | `q9jdljkt` |
-| v4f | + StochasticDepth 0.15 | AttHead | soft_ce | 0.862 | 17 | 28 | `v9em250j` |
-| v4g | + AttBlockV2 | **AttBlockV2** | **bce** | pending | — | — | — |
-| v4h | + AttBlockV2 + ASL | **AttBlockV2** | **asl** | 0.858 | 12 | 23 | `4ck222t9` |
+| Variant | Changes from v4b | Head | Loss | val/auroc | best epoch | LB (raw) |
+|---------|-----------------|------|------|-----------|------------|----------|
+| **v4b** | baseline | AttHead | soft_ce | **0.865** | 30 | **0.859** |
+| v4f | + StochasticDepth 0.15 | AttHead | soft_ce | 0.862 | 17 | 0.832 |
+| v4g | + AttBlockV2 | **AttBlockV2** | **bce** | pending | — | pending |
+| v4h | + AttBlockV2 + ASL | **AttBlockV2** | **asl** | 0.858 | 12 | pending |
 
 ### Observations
 
-**v4f (AmplitudeToDB + StochasticDepth)** — val/auroc 0.862, epoch 17. Lower than v4b
-alone (0.865). StochasticDepth helped v4e (+0.022 over v4a with audioset norm) but doesn't
-stack well with AmplitudeToDB — the regularization may be less needed when the normalization
-already preserves better signal.
+**v4f (AmplitudeToDB + StochasticDepth)** — LB **0.832**, a significant −0.027 regression
+from v4b (0.859). StochasticDepth actively hurts when combined with AmplitudeToDB. This
+is a larger LB drop than the offline gap suggested (0.862 vs 0.865 val). The regularization
+that helped v4e (+0.015 LB over v4a with audioset norm) becomes counterproductive with
+AmplitudeToDB's per-sample normalization — the model may be underfitting.
 
-**v4h (AttBlockV2 + ASL)** — val/auroc 0.858, peaked early at epoch 12 (early stopped at 23).
-Lower than v4b (0.865). ASL's aggressive negative suppression (γ⁻=4) converges fast and
-plateaus low — same pattern as v4d (0.858 val, 0.808 LB).
-
-Both v4f and v4h underperform v4b offline. LB results pending — will determine if the
-offline pattern holds on the test distribution.
+**v4h (AttBlockV2 + ASL)** — val/auroc 0.858, peaked early at epoch 12. LB pending.
+ASL's aggressive negative suppression (γ⁻=4) converges fast and plateaus low — same
+pattern as v4d (0.858 val, 0.808 LB).
 
 ---
 

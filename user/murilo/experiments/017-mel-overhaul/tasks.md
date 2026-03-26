@@ -140,7 +140,7 @@ v4b (AmplitudeToDB) and v4e (StochasticDepth) are the winners. v4d (ASL) exclude
 - [x] 3.4 Create v4f config: AmplitudeToDB (v4b) + StochasticDepth 0.15 (v4e)
 - [x] 3.5 Train v4f (90/10, 50 epochs, patience=10) — val/auroc 0.862, epoch 17
 - [x] 3.6 ONNX export + Kaggle submission (raw) — submitted, inference running
-- [ ] 3.7 Record v4f LB result vs v4b (0.859)
+- [x] 3.7 Record v4f LB result: **0.832** (−0.027 vs v4b) — StochasticDepth hurts with AmplitudeToDB
 
 ### 3C: Re-ablate AttBlockV2 + ASL with correct loss pairing (v4g/v4h)
 
@@ -203,7 +203,7 @@ Lock in the recipe first, then scale.
 | split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
 | max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
 | val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | **0.868** | 0.862 | pending | 0.858 |
-| LB (raw) | 0.825 | **0.859** | skipped | 0.808 | 0.840 | pending | pending | pending |
+| LB (raw) | 0.825 | **0.859** | skipped | 0.808 | 0.840 | 0.832 | pending | pending |
 
 **a2db** = amplitude_to_db (AmplitudeToDB + standardize + min-max [0,1])
 
