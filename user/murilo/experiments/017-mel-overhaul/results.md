@@ -88,11 +88,77 @@ Worth revisiting pp2 hyperparameters (especially temperature) for v4a in a futur
 
 ---
 
+## Step 2: Parallel Ablations (v4b/v4c/v4d/v4e) — Training Complete
+
+Four single-variable ablations from the v4a base. All use 90/10 split (no test set)
+and 50 epochs — ~11% more training data than v4a's 80/10/10 + 40 epochs.
+
+### Training Summary
+
+| Variant | Change from v4a | best val/auroc | best epoch | stopped | W&B run |
+|---------|----------------|---------------|------------|---------|---------|
+| **v4a** | baseline (80/10/10, 40ep) | 0.846 | 24 | 34 | `05pylg1y` |
+| **v4b** | AmplitudeToDB + min-max norm | **0.865** | 30 | 41 | `q9jdljkt` |
+| **v4c** | AttBlockV2 head (tanh+softmax) | 0.815 | 15 | 26 | `4kwgh6qs` |
+| **v4d** | ASL loss (γ⁻=4, γ⁺=0) | 0.858 | 16 | 27 | `2b43diog` |
+| **v4e** | StochasticDepth (drop_path=0.15) | **0.868** | 29 | 32 | `07o7zjha` |
+
+### Observations
+
+**v4e (StochasticDepth)** — best val/auroc 0.868. Steady improvement through epoch 29,
+suggesting the regularization helps B0 train longer without overfitting. Consistent with
+2025 1st place using drop_path=0.15.
+
+**v4b (AmplitudeToDB)** — second best val/auroc 0.865. Also trained longer (epoch 30),
+consistent with the normalization preserving more dynamic range information. Tom uses
+this normalization across all 28 experiments.
+
+**v4d (ASL loss)** — val/auroc 0.858. Peaked early (epoch 16), suggesting ASL's aggressive
+negative suppression may converge faster but plateau lower when combined with our soft CE
+base recipe. Tom's ASL gain (+0.023) was over BCE, not soft CE — our soft CE already
+handles the multi-label setting better than BCE.
+
+**v4c (AttBlockV2)** — worst at 0.815, as predicted in risk notes. The soft CE loss applies
+softmax to logit-converted sigmoid probabilities — a mismatch with AttBlockV2's design.
+Should retry with BCE loss before concluding AttBlockV2 doesn't help.
+
+### Confound Note
+
+v4b-v4e val/auroc is not directly comparable to v4a's 0.846 because:
+1. 90/10 vs 80/10/10: ~11% more training data
+2. 50 vs 40 epochs: more training capacity
+3. Different val split composition
+
+The LB results (pending) will be the true comparison.
+
+### Leaderboard
+
+| Model | LB (raw) | LB (pp2) | vs v4a raw | Notes |
+|-------|----------|----------|------------|-------|
+| v4a | 0.825 | 0.830 | baseline | |
+| v4b | pending | pending | | |
+| v4c | pending | pending | | likely skip if offline is poor |
+| v4d | pending | pending | | |
+| v4e | pending | pending | | |
+
+---
+
 ## Artifacts
+
+### Step 1
 
 | Artifact | Path |
 |----------|------|
-| Best checkpoint | `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4a/best-epochepoch=24.ckpt` |
+| Best checkpoint | `.../checkpoints/2026-effnet-b0-sed-v4a/best-epochepoch=24.ckpt` |
 | Metrics JSON | `artifacts/training/efficientnet_b0_sed_v4a/metrics.json` |
 | W&B run | `dsgt-arc/birdclef-2026-mel-overhaul/runs/05pylg1y` |
-| ONNX model | `010-.../artifacts/weights/effnet-b0-sed-v4a/model.onnx` (pending export) |
+| ONNX model | `010-.../artifacts/weights/effnet-b0-sed-v4a/model.onnx` |
+
+### Step 2
+
+| Variant | Checkpoint | SLURM Job |
+|---------|-----------|-----------|
+| v4b | `.../checkpoints/2026-effnet-b0-sed-v4b/best-epochepoch=30.ckpt` | 5496315 |
+| v4c | `.../checkpoints/2026-effnet-b0-sed-v4c/best-epochepoch=15.ckpt` | 5496316 |
+| v4d | `.../checkpoints/2026-effnet-b0-sed-v4d/best-epochepoch=16.ckpt` | 5496367 |
+| v4e | `.../checkpoints/2026-effnet-b0-sed-v4e/best-epochepoch=29.ckpt` | 5496368 |

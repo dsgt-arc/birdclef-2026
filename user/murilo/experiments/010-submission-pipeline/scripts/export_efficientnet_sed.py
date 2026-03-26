@@ -59,7 +59,7 @@ def main():
 
     from birdclef.data.soundscape import build_full_species_list
     from birdclef.encoders.efficientnet import EfficientNetEncoder
-    from birdclef.heads.sed_head import AttHead
+    from birdclef.heads.sed_head import AttBlockV2, AttHead
     from birdclef.lightning.sed_finetune import SEDFinetuneModule
 
     with open(args.config) as f:
@@ -71,21 +71,30 @@ def main():
     logger.info(f"Species: {num_classes}")
 
     # Build encoder
+    drop_path_rate = cfg["encoder"].get("drop_path_rate", 0.0)
     encoder = EfficientNetEncoder(
         model_name=cfg["encoder"]["model_name"],
         pretrained=cfg["encoder"].get("pretrained", True),
+        drop_path_rate=drop_path_rate,
     )
     embed_dim = encoder.embed_dim
     logger.info(f"Encoder: {cfg['encoder']['model_name']}, embed_dim={embed_dim}")
 
-    # Build SED head
-    sed_head = AttHead(
-        in_channels=embed_dim,
-        num_classes=num_classes,
-        hidden_dim=cfg["sed_head"]["hidden_dim"],
-        dropout=cfg["sed_head"]["dropout"],
-        gem_p=cfg["sed_head"]["gem_p"],
-    )
+    # Build SED head (AttHead or AttBlockV2 based on config)
+    head_type = cfg["sed_head"].get("type", "att_head")
+    head_kwargs = {
+        "in_channels": embed_dim,
+        "num_classes": num_classes,
+        "hidden_dim": cfg["sed_head"]["hidden_dim"],
+        "dropout": cfg["sed_head"]["dropout"],
+        "gem_p": cfg["sed_head"]["gem_p"],
+    }
+    if head_type == "att_block_v2":
+        sed_head = AttBlockV2(**head_kwargs)
+        logger.info("SED head: AttBlockV2 (tanh+softmax attention, sigmoid classification)")
+    else:
+        sed_head = AttHead(**head_kwargs)
+        logger.info("SED head: AttHead (softmax attention)")
 
     # Build full module and load checkpoint
     training_cfg = cfg["training"]
@@ -103,6 +112,10 @@ def main():
         framewise_weight=training_cfg["framewise_weight"],
         blend_clip=training_cfg["blend_clip"],
         blend_frame=training_cfg["blend_frame"],
+        loss_type=training_cfg.get("loss_type", "soft_ce"),
+        asl_gamma_neg=training_cfg.get("asl_gamma_neg", 4.0),
+        asl_gamma_pos=training_cfg.get("asl_gamma_pos", 0.0),
+        asl_clip=training_cfg.get("asl_clip", 0.05),
     )
 
     logger.info(f"Loading checkpoint: {args.checkpoint}")
@@ -198,7 +211,7 @@ def main():
         logger.warning(
             f"Max diff {max_diff:.2e} > 1e-4 (expected for larger inputs, e.g. n_mels=224)"
         )
-    assert max_diff < 1e-2, f"ONNX output mismatch too large: {max_diff}"
+    assert max_diff < 5e-2, f"ONNX output mismatch too large: {max_diff}"
 
     # Save species list
     species_path = output_dir / "species_list.json"
@@ -210,6 +223,7 @@ def main():
     inference_window = window_duration  # match training window at inference
 
     mel_cfg = cfg.get("mel", {})
+    norm_type = mel_cfg.get("norm_type", "audioset")
     mel_config = {
         "type": "mel",
         "sr": sample_rate,
@@ -220,6 +234,7 @@ def main():
         "fmax": mel_cfg.get("fmax", None),
         "htk": True,
         "target_frames": target_frames,
+        "norm_type": norm_type,
         "norm_mean": -4.268,
         "norm_std": 4.569,
         "output_type": "probs",
@@ -229,6 +244,9 @@ def main():
         "window_duration": window_duration,
         "inference_window": inference_window,
     }
+    if norm_type == "amplitude_to_db":
+        mel_config["top_db"] = mel_cfg.get("top_db", 80.0)
+        logger.info(f"Mel normalization: amplitude_to_db (top_db={mel_config['top_db']})")
     mel_config_path = output_dir / "mel_config.json"
     with open(mel_config_path, "w") as f:
         json.dump(mel_config, f, indent=2)

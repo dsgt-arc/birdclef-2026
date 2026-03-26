@@ -92,6 +92,12 @@ KAGGLE_USER = "murilogustineli"
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
     # Mel overhaul SED models, 234 classes (exp 017)
+    # Step 2 ablations (v4b-v4e)
+    "birdclef-2026-effnet-b0-sed-v4e-weights",
+    "birdclef-2026-effnet-b0-sed-v4d-weights",
+    "birdclef-2026-effnet-b0-sed-v4c-weights",
+    "birdclef-2026-effnet-b0-sed-v4b-weights",
+    # Step 1 baseline (v4a)
     "birdclef-2026-effnet-b0-sed-v4a-pp2-weights",
     "birdclef-2026-effnet-b0-sed-v4a-weights",
     # SED models, 234 classes (exp 016)
@@ -226,6 +232,52 @@ def compute_mel_standard(audio, mel_cfg):
     return mel[np.newaxis, np.newaxis, :, :].astype(np.float32)  # (1, 1, 128, 500)
 
 
+def compute_mel_amplitude_to_db(audio, mel_cfg):
+    """Compute mel spectrogram with AmplitudeToDB + standardize + min-max [0,1].
+
+    Matches Tom's 28 experiments and 2025 1st place normalization pipeline.
+    """
+    mel = librosa.feature.melspectrogram(
+        y=audio,
+        sr=mel_cfg["sr"],
+        n_fft=mel_cfg["n_fft"],
+        hop_length=mel_cfg["hop_length"],
+        n_mels=mel_cfg["n_mels"],
+        fmin=mel_cfg.get("fmin", 0),
+        fmax=mel_cfg.get("fmax"),
+        htk=mel_cfg.get("htk", True),
+        power=2.0,
+    )
+    # Power-to-dB: 10 * log10(mel + eps)
+    mel_db = 10.0 * np.log10(np.maximum(mel, 1e-10))
+
+    # top_db clipping
+    top_db = mel_cfg.get("top_db", 80.0)
+    mel_max = mel_db.max()
+    mel_db = np.maximum(mel_db, mel_max - top_db)
+
+    # Per-sample standardize (zero mean, unit variance)
+    mean = mel_db.mean()
+    std = max(mel_db.std(), 1e-6)
+    mel_norm = (mel_db - mean) / std
+
+    # Per-sample min-max scale to [0, 1]
+    mel_min = mel_norm.min()
+    mel_max = mel_norm.max()
+    mel_norm = (mel_norm - mel_min) / (mel_max - mel_min + 1e-6)
+
+    # Pad/trim to target frames
+    target_frames = mel_cfg.get("target_frames", 1000)
+    T = mel_norm.shape[1]
+    if T > target_frames:
+        start = (T - target_frames) // 2
+        mel_norm = mel_norm[:, start : start + target_frames]
+    elif T < target_frames:
+        mel_norm = np.pad(mel_norm, ((0, 0), (0, target_frames - T)), mode="constant")
+
+    return mel_norm[np.newaxis, np.newaxis, :, :].astype(np.float32)
+
+
 def compute_mel_kaldi_fbank(audio, mel_cfg):
     """Compute Kaldi fbank features for EAT.
 
@@ -307,10 +359,13 @@ def compute_mel_protoclr(audio, mel_cfg):
 def compute_mel(audio, mel_cfg):
     """Dispatch to model-specific mel computation."""
     mel_type = mel_cfg.get("type", "mel")
+    norm_type = mel_cfg.get("norm_type", "audioset")
     if mel_type == "kaldi_fbank":
         return compute_mel_kaldi_fbank(audio, mel_cfg)
     elif mel_type == "protoclr_mel":
         return compute_mel_protoclr(audio, mel_cfg)
+    elif norm_type == "amplitude_to_db":
+        return compute_mel_amplitude_to_db(audio, mel_cfg)
     else:
         return compute_mel_standard(audio, mel_cfg)
 
@@ -333,8 +388,21 @@ def compute_full_signal_mel(audio, mel_cfg):
         htk=mel_cfg.get("htk", True),
         power=2.0,
     )
-    mel = np.log(mel + 1e-6)
-    mel = (mel - mel_cfg["norm_mean"]) / (mel_cfg["norm_std"] * 2)
+    norm_type = mel_cfg.get("norm_type", "audioset")
+    if norm_type == "amplitude_to_db":
+        # AmplitudeToDB → standardize → min-max [0,1] on the full signal.
+        # Training normalizes per 10s window, but full-signal normalization gives
+        # a consistent view across the file (same approach as 2025 1st place).
+        top_db = mel_cfg.get("top_db", 80.0)
+        mel = 10.0 * np.log10(np.maximum(mel, 1e-10))
+        mel = np.maximum(mel, mel.max() - top_db)
+        mean, std = mel.mean(), max(mel.std(), 1e-6)
+        mel = (mel - mean) / std
+        mel_min, mel_max = mel.min(), mel.max()
+        mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
+    else:
+        mel = np.log(mel + 1e-6)
+        mel = (mel - mel_cfg["norm_mean"]) / (mel_cfg["norm_std"] * 2)
     return mel.astype(np.float32)  # (n_mels, total_frames)
 
 

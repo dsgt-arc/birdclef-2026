@@ -194,6 +194,23 @@ Decision gate passed → continue to Step 2.
 Inference optimized with full-signal mel (compute STFT once per 60s file, slice frames)
 to stay within the 90-minute Kaggle CPU budget at n_fft=4096.
 
+### Step 2: Parallel Ablations (v4b-v4e)
+
+Single-variable ablations from v4a. 90/10 split (no test set), 50 epochs.
+No test metrics available — only val/auroc from checkpoint callback.
+
+| Slug | Change | Mel Norm | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|----------|------|------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v4b` | AmplitudeToDB norm | amplitude_to_db | AttHead | soft_ce | **0.865** | 30 | pending | `017-.../2026-effnet-b0-sed-v4b/best-epochepoch=30.ckpt` |
+| `effnet-b0-sed-v4c` | AttBlockV2 head | audioset | AttBlockV2 | soft_ce | 0.815 | 15 | pending | `017-.../2026-effnet-b0-sed-v4c/best-epochepoch=15.ckpt` |
+| `effnet-b0-sed-v4d` | ASL loss | audioset | AttHead | asl | 0.858 | 16 | pending | `017-.../2026-effnet-b0-sed-v4d/best-epochepoch=16.ckpt` |
+| `effnet-b0-sed-v4e` | StochasticDepth | audioset | AttHead | soft_ce | **0.868** | 29 | pending | `017-.../2026-effnet-b0-sed-v4e/best-epochepoch=29.ckpt` |
+
+**v4e (StochasticDepth)** and **v4b (AmplitudeToDB)** are top performers offline.
+**v4c (AttBlockV2)** underperformed — likely due to soft CE + sigmoid mismatch (retry with BCE).
+**v4d (ASL)** is decent but peaked early — ASL's +0.023 gain in Tom's experiments was over BCE,
+not soft CE which already handles multi-label better.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

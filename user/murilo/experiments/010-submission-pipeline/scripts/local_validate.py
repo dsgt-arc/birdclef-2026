@@ -126,7 +126,35 @@ def compute_mel(audio, mel_cfg):
             mel_std = np.pad(mel_std, ((0, 0), (0, target_frames - T)))
         return mel_std[np.newaxis, np.newaxis, :, :].astype(np.float32)
 
-    else:  # "mel" (ConvNeXt)
+    elif mel_cfg.get("norm_type") == "amplitude_to_db":
+        mel = librosa.feature.melspectrogram(
+            y=audio,
+            sr=mel_cfg["sr"],
+            n_fft=mel_cfg["n_fft"],
+            hop_length=mel_cfg["hop_length"],
+            n_mels=mel_cfg["n_mels"],
+            fmin=mel_cfg.get("fmin", 0),
+            fmax=mel_cfg.get("fmax"),
+            htk=mel_cfg.get("htk", True),
+            power=2.0,
+        )
+        top_db = mel_cfg.get("top_db", 80.0)
+        mel = 10.0 * np.log10(np.maximum(mel, 1e-10))
+        mel = np.maximum(mel, mel.max() - top_db)
+        mean, std = mel.mean(), max(mel.std(), 1e-6)
+        mel = (mel - mean) / std
+        mel_min, mel_max = mel.min(), mel.max()
+        mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
+        target_frames = mel_cfg.get("target_frames", 1000)
+        T = mel.shape[1]
+        if T > target_frames:
+            start = (T - target_frames) // 2
+            mel = mel[:, start : start + target_frames]
+        elif T < target_frames:
+            mel = np.pad(mel, ((0, 0), (0, target_frames - T)))
+        return mel[np.newaxis, np.newaxis, :, :].astype(np.float32)
+
+    else:  # "mel" with audioset normalization (default)
         mel = librosa.feature.melspectrogram(
             y=audio,
             sr=mel_cfg["sr"],

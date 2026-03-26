@@ -175,6 +175,27 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-sed-v4a-pp2",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4a-pp2.json",
     },
+    # Exp 017 Step 2: Parallel ablations from v4a base
+    "effnet-b0-sed-v4b": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4b-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4b",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4b.json",
+    },
+    "effnet-b0-sed-v4c": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4c-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4c",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4c.json",
+    },
+    "effnet-b0-sed-v4d": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4d-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4d",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4d.json",
+    },
+    "effnet-b0-sed-v4e": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4e-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4e",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4e.json",
+    },
 }
 
 
