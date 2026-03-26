@@ -138,7 +138,7 @@ v4b (AmplitudeToDB) and v4e (StochasticDepth) are the winners. v4d (ASL) exclude
 
 - [x] 3.3 Compare v4b/v4c/v4d/v4e LB results vs v4a (0.825/0.830)
 - [x] 3.4 Create v4f config: AmplitudeToDB (v4b) + StochasticDepth 0.15 (v4e)
-- [ ] 3.5 Train v4f (90/10, 50 epochs, patience=10) — **training in progress**
+- [x] 3.5 Train v4f (90/10, 50 epochs, patience=10) — val/auroc 0.862, epoch 17
 - [ ] 3.6 ONNX export + Kaggle submission (raw)
 - [ ] 3.7 Record v4f LB result vs v4b (0.859)
 
@@ -202,7 +202,7 @@ Lock in the recipe first, then scale.
 | drop_path | 0.0 | 0.0 | 0.0 | 0.0 | **0.15** | **0.15** | 0.0 | 0.0 |
 | split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
 | max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
-| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | **0.868** | pending | pending | 0.858 |
+| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | **0.868** | 0.862 | pending | 0.858 |
 | LB (raw) | 0.825 | **0.859** | skipped | 0.808 | 0.840 | pending | pending | pending |
 
 **a2db** = amplitude_to_db (AmplitudeToDB + standardize + min-max [0,1])
