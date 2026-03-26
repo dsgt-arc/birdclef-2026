@@ -41,7 +41,7 @@ def _find_input(slug: str) -> str:
 #   "convnext-avg"        - Run D: ConvNeXt LoRA avg, epoch 8, cmap 0.644
 #   "convnext-attention"  - Run E: ConvNeXt LoRA attention, epoch 5, cmap 0.585
 #   "convnext-soundscape" - Run F: ConvNeXt LoRA attention+SC, epoch 5, cmap 0.591
-MODEL_NAME = "convnext-attention"
+MODEL_NAME = "efficientnet-gpumel"
 
 DEPS_DIR = _find_input("birdclef-2026-deps")
 _weights_base = _find_input("birdclef-2026-efficientnet-weights")
