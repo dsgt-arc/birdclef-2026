@@ -209,6 +209,7 @@ def main():
         "n_fft": data_cfg.get("n_fft", 2048),
         "hop_length": data_cfg.get("hop_length", 256),
         "n_mels": n_mels,
+        "target_frames": target_frames,
         "fmin": 50,
         "fmax": 14000,
         "norm_mean": -4.268,

@@ -35,10 +35,13 @@ def _find_input(slug: str) -> str:
 
 # --- Model selection ---
 # Change this to switch between models:
-#   "frozen"          - Run A: frozen backbone, epoch 25, cmap 0.387
-#   "lora"            - Run B: LoRA r=8, epoch 1, cmap 0.524
-#   "lora-attention"  - Run C: LoRA + attention pooling, epoch 1, cmap 0.531
-MODEL_NAME = "lora-attention"
+#   "frozen"              - Run A: EfficientNet frozen, epoch 25, cmap 0.387
+#   "lora"                - Run B: EfficientNet LoRA, epoch 1, cmap 0.524
+#   "lora-attention"      - Run C: EfficientNet LoRA+attention, epoch 1, cmap 0.531
+#   "convnext-avg"        - Run D: ConvNeXt LoRA avg, epoch 8, cmap 0.644
+#   "convnext-attention"  - Run E: ConvNeXt LoRA attention, epoch 5, cmap 0.585
+#   "convnext-soundscape" - Run F: ConvNeXt LoRA attention+SC, epoch 5, cmap 0.591
+MODEL_NAME = "convnext-attention"
 
 DEPS_DIR = _find_input("birdclef-2026-deps")
 _weights_base = _find_input("birdclef-2026-efficientnet-weights")
@@ -88,7 +91,7 @@ def compute_mel(audio, mel_cfg):
     mel = np.log(np.clip(mel, a_min=1e-10, a_max=None))
     mel = (mel - mel_cfg["norm_mean"]) / (mel_cfg["norm_std"] * 2)
 
-    target_frames = 625
+    target_frames = mel_cfg.get("target_frames", 625)
     T = mel.shape[1]
     if T > target_frames:
         mel = mel[:, :target_frames]
