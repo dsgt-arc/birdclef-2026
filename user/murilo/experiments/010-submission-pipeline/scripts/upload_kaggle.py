@@ -196,6 +196,17 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-sed-v4e",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4e.json",
     },
+    "effnet-b0-sed-v4b-pp2": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4b-pp2-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4b-pp2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4b-pp2.json",
+    },
+    # Exp 017 Step 3: Combined winners (v4b + v4e)
+    "effnet-b0-sed-v4f": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4f-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4f",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4f.json",
+    },
 }
 
 

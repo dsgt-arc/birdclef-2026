@@ -92,7 +92,10 @@ KAGGLE_USER = "murilogustineli"
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
     # Mel overhaul SED models, 234 classes (exp 017)
-    # Step 2 ablations (v4b-v4e)
+    # Step 3: combined winners
+    "birdclef-2026-effnet-b0-sed-v4f-weights",
+    # Step 2 ablations + pp2
+    "birdclef-2026-effnet-b0-sed-v4b-pp2-weights",
     "birdclef-2026-effnet-b0-sed-v4e-weights",
     "birdclef-2026-effnet-b0-sed-v4d-weights",
     "birdclef-2026-effnet-b0-sed-v4c-weights",
