@@ -6,17 +6,24 @@ import torch.nn.functional as F
 
 
 class FocalBCELoss(nn.Module):
-    """Focal binary cross-entropy loss.
+    """Focal binary cross-entropy loss with optional per-class weighting.
 
     Args:
         gamma: Focal modulating factor. 0 = plain BCE.
         from_logits: If True, input is raw logits. If False, input is probabilities.
+        class_weight: Optional per-class weights (C,). E.g. count^(-0.5) for
+            inverse square root frequency weighting.
     """
 
-    def __init__(self, gamma: float = 2.0, from_logits: bool = True):
+    def __init__(self, gamma: float = 2.0, from_logits: bool = True,
+                 class_weight: torch.Tensor | None = None):
         super().__init__()
         self.gamma = gamma
         self.from_logits = from_logits
+        if class_weight is not None:
+            self.register_buffer("class_weight", class_weight)
+        else:
+            self.class_weight = None
 
     def forward(
         self,
@@ -46,6 +53,10 @@ class FocalBCELoss(nn.Module):
             pt = torch.where(target > 0.5, p, 1 - p)
             focal_weight = (1 - pt) ** self.gamma
             bce = focal_weight * bce
+
+        if self.class_weight is not None:
+            # class_weight: (C,) → (1, C) to broadcast over batch
+            bce = bce * self.class_weight.unsqueeze(0)
 
         if sample_weight is not None:
             # sample_weight: (B,) → (B, 1) to broadcast over classes

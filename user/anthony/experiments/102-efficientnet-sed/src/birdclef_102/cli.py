@@ -103,6 +103,27 @@ def main():
     # avg pooling returns logits, attention pooling returns probabilities
     from_logits = pooling_mode == "avg"
     use_activity = train_cfg.get("use_activity_weights", False)
+
+    # Optional per-class weighting (e.g., inverse sqrt frequency)
+    class_weight = None
+    class_weight_mode = train_cfg.get("class_weight")
+    if class_weight_mode:
+        import pandas as pd
+        import torch
+        train_df = pd.read_csv(data_cfg["metadata_csv"])
+        counts = train_df["primary_label"].astype(str).value_counts()
+        weight_vec = torch.ones(num_classes)
+        for i, species in enumerate(species_list):
+            c = counts.get(species, 1)
+            if class_weight_mode == "inv_sqrt":
+                weight_vec[i] = 1.0 / (c ** 0.5)
+            elif class_weight_mode == "inv_freq":
+                weight_vec[i] = 1.0 / c
+        # Normalize so mean weight = 1.0
+        weight_vec = weight_vec / weight_vec.mean()
+        logger.info(f"Class weighting: {class_weight_mode}, range [{weight_vec.min():.2f}, {weight_vec.max():.2f}]")
+        class_weight = weight_vec
+
     lightning_module = TrainingModule(
         model=model,
         num_classes=num_classes,
@@ -114,6 +135,7 @@ def main():
         augmentation=train_cfg.get("augmentation"),
         use_activity_weights=use_activity,
         from_logits=from_logits,
+        class_weight=class_weight,
     )
 
     # Build data module

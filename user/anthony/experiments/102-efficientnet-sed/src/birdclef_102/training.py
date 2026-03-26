@@ -45,9 +45,10 @@ class TrainingModule(pl.LightningModule):
         gamma: float = 2.0,
         use_activity_weights: bool = False,
         from_logits: bool = True,
+        class_weight: torch.Tensor | None = None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["model"])
+        self.save_hyperparameters(ignore=["model", "class_weight"])
 
         self.model = model
         self.num_classes = num_classes
@@ -56,7 +57,8 @@ class TrainingModule(pl.LightningModule):
 
         # avg pooling → from_logits=True (model returns logits)
         # attention pooling → from_logits=False (model returns probabilities)
-        self.clip_loss = FocalBCELoss(gamma=gamma, from_logits=from_logits)
+        self.clip_loss = FocalBCELoss(gamma=gamma, from_logits=from_logits,
+                                      class_weight=class_weight)
 
         if augmentation:
             self.spec_augment = SpecAugment(**augmentation)
