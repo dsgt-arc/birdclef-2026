@@ -211,7 +211,7 @@ No test metrics available — only val/auroc from checkpoint callback.
 | Slug | Change | Mel Norm | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
 |------|--------|----------|------|------|---------------|------------|-----|------------|
 | `effnet-b0-sed-v4f` | v4b + StochasticDepth | amplitude_to_db | AttHead | soft_ce | 0.862 | 17 | 0.832 | `017-.../2026-effnet-b0-sed-v4f/best-epochepoch=17.ckpt` |
-| `effnet-b0-sed-v4g` | v4b + AttBlockV2 + BCE | amplitude_to_db | AttBlockV2 | bce | pending | — | pending | `017-.../2026-effnet-b0-sed-v4g/` |
+| `effnet-b0-sed-v4g` | v4b + AttBlockV2 + BCE | amplitude_to_db | AttBlockV2 | bce | **0.868** | 28 | pending | `017-.../2026-effnet-b0-sed-v4g/best-epochepoch=28.ckpt` |
 | `effnet-b0-sed-v4h` | v4b + AttBlockV2 + ASL | amplitude_to_db | AttBlockV2 | asl | 0.858 | 12 | pending | `017-.../2026-effnet-b0-sed-v4h/best-epochepoch=12.ckpt` |
 
 **v4b (AmplitudeToDB)** is the current best at 0.859 LB (0.860 with pp2).

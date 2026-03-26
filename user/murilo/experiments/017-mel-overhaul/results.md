@@ -174,7 +174,7 @@ PP2 diminishing returns continue to shrink as the model improves.
 |---------|-----------------|------|------|-----------|------------|----------|
 | **v4b** | baseline | AttHead | soft_ce | **0.865** | 30 | **0.859** |
 | v4f | + StochasticDepth 0.15 | AttHead | soft_ce | 0.862 | 17 | 0.832 |
-| v4g | + AttBlockV2 | **AttBlockV2** | **bce** | pending | — | pending |
+| **v4g** | + AttBlockV2 | **AttBlockV2** | **bce** | **0.868** | 28 | pending |
 | v4h | + AttBlockV2 + ASL | **AttBlockV2** | **asl** | 0.858 | 12 | pending |
 
 ### Observations
@@ -185,9 +185,15 @@ is a larger LB drop than the offline gap suggested (0.862 vs 0.865 val). The reg
 that helped v4e (+0.015 LB over v4a with audioset norm) becomes counterproductive with
 AmplitudeToDB's per-sample normalization — the model may be underfitting.
 
+**v4g (AttBlockV2 + BCE)** — val/auroc **0.868**, best epoch 28. Matches v4e for the
+highest offline val/auroc and trained long (stopped at 39). This confirms that AttBlockV2
+works well when paired with its native BCE loss — the v4c failure (0.815 val) was entirely
+due to the soft CE mismatch, not the head itself. BCE + AttBlockV2 is Tom's default recipe
+and it works. LB result will be the decisive test.
+
 **v4h (AttBlockV2 + ASL)** — val/auroc 0.858, peaked early at epoch 12. LB pending.
 ASL's aggressive negative suppression (γ⁻=4) converges fast and plateaus low — same
-pattern as v4d (0.858 val, 0.808 LB).
+pattern as v4d (0.858 val, 0.808 LB). ASL may simply not suit our data distribution.
 
 ---
 

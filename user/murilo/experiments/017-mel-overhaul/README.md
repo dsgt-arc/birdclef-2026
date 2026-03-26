@@ -17,7 +17,7 @@ Upgrade mel spectrogram resolution from (n_fft=1024, n_mels=128) to (n_fft=4096,
 | v4d | + ASL loss | 0.858 | 0.808 | |
 | **v4e** | + StochasticDepth 0.15 | **0.868** | 0.840 | |
 | v4f | v4b + StochasticDepth 0.15 | 0.862 | 0.832 | |
-| v4g | v4b + AttBlockV2 + BCE | pending | pending | |
+| **v4g** | v4b + AttBlockV2 + BCE | **0.868** | pending | |
 | v4h | v4b + AttBlockV2 + ASL | 0.858 | pending | |
 
 v4a passed the decision gate (+0.030 LB raw). v4b-v4e are single-variable ablations from v4a.
