@@ -201,6 +201,17 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-sed-v4b-pp2",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4b-pp2.json",
     },
+    # Exp 017 Step 3: Loss/head re-ablations with correct pairing
+    "effnet-b0-sed-v4g": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4g-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4g",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4g.json",
+    },
+    "effnet-b0-sed-v4h": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4h-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4h",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4h.json",
+    },
     # Exp 017 Step 3: Combined winners (v4b + v4e)
     "effnet-b0-sed-v4f": {
         "slug": "birdclef-2026-effnet-b0-sed-v4f-weights",

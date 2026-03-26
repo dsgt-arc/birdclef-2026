@@ -102,6 +102,7 @@ class SEDFinetuneModule(pl.LightningModule):
         loss_type: Loss function type:
             - "soft_ce": Normalize multi-hot labels to sum-to-1, F.cross_entropy.
             - "ce": Standard F.cross_entropy on argmax class with label_smoothing.
+            - "bce": Binary cross-entropy with logits (native multi-label, sigmoid-based).
             - "asl": Asymmetric Loss (Ridnik et al. 2021) for multi-label classification.
         label_smoothing: Label smoothing factor for "ce" loss type (default: 0.0).
         asl_gamma_neg: ASL focusing for negatives (default: 4.0).
@@ -214,6 +215,8 @@ class SEDFinetuneModule(pl.LightningModule):
         """
         if self.hparams.loss_type == "asl":
             return self.asl_loss(logits, labels)
+        elif self.hparams.loss_type == "bce":
+            return F.binary_cross_entropy_with_logits(logits, labels.float())
         elif self.hparams.loss_type == "ce":
             # Standard CE: use argmax of multi-hot as class index
             targets = labels.argmax(dim=-1)

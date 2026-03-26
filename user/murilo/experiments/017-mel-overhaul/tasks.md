@@ -142,13 +142,31 @@ v4b (AmplitudeToDB) and v4e (StochasticDepth) are the winners. v4d (ASL) exclude
 - [ ] 3.6 ONNX export + Kaggle submission (raw)
 - [ ] 3.7 Record v4f LB result vs v4b (0.859)
 
-### 3C: After v4f results
+### 3C: Re-ablate AttBlockV2 + ASL with correct loss pairing (v4g/v4h)
 
-- If v4f > v4b: combined recipe is the winner — proceed to Step 4 fulldata
-- If v4f ≈ v4b: techniques may not stack — use v4b recipe for fulldata
-- If v4f < v4b: drop_path may conflict with amplitude_to_db — use v4b alone
-- PP2 temperature sweep: defer until best raw model is identified, then sweep
-  T ∈ {0.90, 0.95, 1.00, 1.05, 1.10, 1.15} on whichever is best
+v4c (AttBlockV2) and v4d (ASL) underperformed, but both were tested with soft CE —
+the wrong baseline. Tom's 28 experiments use **BCE** as the base loss with AttBlockV2
+as the default head. ASL's +0.023 gain was specifically BCE → ASL, not soft CE → ASL.
+
+These re-ablations use Tom's recipe context: AmplitudeToDB + AttBlockV2 + BCE/ASL.
+
+| Variant | Base | Head | Loss | Rationale |
+|---------|------|------|------|-----------|
+| v4g | v4b (AmplitudeToDB) | **AttBlockV2** | **BCE** | Tom's default recipe — AttBlockV2 native loss |
+| v4h | v4b (AmplitudeToDB) | **AttBlockV2** | **ASL** | Tom's best: ASL over BCE (+0.023) |
+
+- [x] 3.8 Add `loss_type="bce"` to SEDFinetuneModule (F.binary_cross_entropy_with_logits)
+- [x] 3.9 Create v4g config (AmplitudeToDB + AttBlockV2 + BCE)
+- [x] 3.10 Create v4h config (AmplitudeToDB + AttBlockV2 + ASL)
+- [ ] 3.11 Train v4g and v4h
+- [ ] 3.12 ONNX export + Kaggle submission
+- [ ] 3.13 Record LB results vs v4b (0.859)
+
+### 3D: After all Step 3 results
+
+- Compare v4f, v4g, v4h LB results vs v4b (0.859)
+- Best single model → proceed to Step 4 fulldata
+- PP2 temperature sweep on best model: T ∈ {0.90, 0.95, 1.00, 1.05, 1.10, 1.15}
 
 ## Step 4: Fulldata Training — FUTURE
 
@@ -172,15 +190,22 @@ Lock in the recipe first, then scale.
 
 ---
 
-## Key Config: v4a-v4e Comparison
+## Key Config: All Variants
 
-| Parameter | v4a (baseline) | v4b | v4c | v4d | v4e |
-|-----------|---------------|-----|-----|-----|-----|
-| n_fft | 4096 | 4096 | 4096 | 4096 | 4096 |
-| n_mels | 224 | 224 | 224 | 224 | 224 |
-| norm_type | audioset | **amplitude_to_db** | audioset | audioset | audioset |
-| sed_head | AttHead | AttHead | **AttBlockV2** | AttHead | AttHead |
-| loss_type | soft_ce | soft_ce | soft_ce | **asl** | soft_ce |
-| drop_path_rate | 0.0 | 0.0 | 0.0 | 0.0 | **0.15** |
-| test_fraction | 0.1 | 0.0 | 0.0 | 0.0 | 0.0 |
-| max_epochs | 40 | 50 | 50 | 50 | 50 |
+| Parameter | v4a | v4b | v4c | v4d | v4e | v4f | v4g | v4h |
+|-----------|-----|-----|-----|-----|-----|-----|-----|-----|
+| n_fft | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 |
+| n_mels | 224 | 224 | 224 | 224 | 224 | 224 | 224 | 224 |
+| norm_type | audioset | **a2db** | audioset | audioset | audioset | **a2db** | **a2db** | **a2db** |
+| sed_head | AttHead | AttHead | **AttBlockV2** | AttHead | AttHead | AttHead | **AttBlockV2** | **AttBlockV2** |
+| loss_type | soft_ce | soft_ce | soft_ce | **asl** | soft_ce | soft_ce | **bce** | **asl** |
+| drop_path | 0.0 | 0.0 | 0.0 | 0.0 | **0.15** | **0.15** | 0.0 | 0.0 |
+| split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
+| max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
+| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | **0.868** | pending | pending | pending |
+| LB (raw) | 0.825 | **0.859** | skipped | 0.808 | 0.840 | pending | pending | pending |
+
+**a2db** = amplitude_to_db (AmplitudeToDB + standardize + min-max [0,1])
+
+**Key insight**: v4c and v4d tested AttBlockV2/ASL with soft_ce — the wrong loss pairing.
+v4g/v4h re-test with BCE/ASL, which is how Tom and PANNs actually use these techniques.
