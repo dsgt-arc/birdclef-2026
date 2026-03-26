@@ -77,7 +77,7 @@ hyperparameters were tuned for v1 — may need recalibration for v4a.
 
 ---
 
-## Step 2: Parallel Ablations (v4b/v4c/v4d/v4e, all from v4a base) — IN PROGRESS
+## Step 2: Parallel Ablations (v4b/v4c/v4d/v4e, all from v4a base) — DONE
 
 Step 1 passed decision gate → run 4 single-variable ablations in parallel from v4a.
 **All runs use 90/10 train/val** (test_fraction=0.0), **50 epochs**, patience=10.
@@ -104,14 +104,14 @@ Each variant changes ONE thing from v4a to measure independent impact:
 ### Training
 
 - [x] 2.8 Submit all 4 jobs to SLURM (v4b/v4c on gpu-a100, v4d/v4e on gpu-rtx6000)
-- [ ] 2.9 Check training results for all 4 runs (W&B + offline metrics)
-- [ ] 2.10 Record offline metrics for each variant
+- [x] 2.9 Check training results for all 4 runs (W&B + offline metrics)
+- [x] 2.10 Record offline metrics for each variant
 
 ### ONNX Export & Kaggle
 
-- [ ] 2.11 ONNX export for each variant that trained successfully
-- [ ] 2.12 Submit to Kaggle LB (raw + pp2 for best variants)
-- [ ] 2.13 Record LB results, compare to v4a (0.825/0.830)
+- [x] 2.11 ONNX export for v4b/v4d/v4e (v4c skipped — poor offline)
+- [x] 2.12 Submit to Kaggle LB: v4b=**0.859**, v4d=0.808, v4e=0.840
+- [x] 2.13 Record LB results — v4b is clear winner (+0.034), v4e solid (+0.015), v4d regressed (−0.017)
 
 ### Interpretation Notes
 

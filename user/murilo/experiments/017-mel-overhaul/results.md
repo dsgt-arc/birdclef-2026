@@ -88,7 +88,7 @@ Worth revisiting pp2 hyperparameters (especially temperature) for v4a in a futur
 
 ---
 
-## Step 2: Parallel Ablations (v4b/v4c/v4d/v4e) — Training Complete
+## Step 2: Parallel Ablations (v4b/v4c/v4d/v4e) — DONE
 
 Four single-variable ablations from the v4a base. All use 90/10 split (no test set)
 and 50 epochs — ~11% more training data than v4a's 80/10/10 + 40 epochs.
@@ -136,10 +136,28 @@ The LB results (pending) will be the true comparison.
 | Model | LB (raw) | LB (pp2) | vs v4a raw | Notes |
 |-------|----------|----------|------------|-------|
 | v4a | 0.825 | 0.830 | baseline | |
-| v4b | pending | pending | | |
-| v4c | pending | pending | | likely skip if offline is poor |
-| v4d | pending | pending | | |
-| v4e | pending | pending | | |
+| **v4b** | **0.859** | pending | **+0.034** | **clear winner** — AmplitudeToDB norm |
+| v4c | skipped | — | — | poor offline (0.815), soft CE + sigmoid mismatch |
+| v4d | 0.808 | — | −0.017 | regression — ASL hurts with soft CE base |
+| **v4e** | 0.840 | pending | +0.015 | solid gain — StochasticDepth regularization |
+
+### Interpretation
+
+**v4b (AmplitudeToDB)** — LB 0.859, the standout result. +0.034 over v4a is far larger
+than the ~+0.003 confound from extra data/epochs. AmplitudeToDB normalization preserves
+more dynamic range than log+AudioSet stats, consistent with Tom's usage across all 28
+experiments and the 2025 1st place pipeline.
+
+**v4e (StochasticDepth)** — LB 0.840, a solid +0.015 over v4a. The regularization helps
+the model generalize to the test distribution. Consistent with 2025 1st place using
+drop_path=0.15.
+
+**v4d (ASL loss)** — LB 0.808, a −0.017 regression. ASL's aggressive negative suppression
+conflicts with our soft CE recipe. Tom's +0.023 gain was over BCE, not soft CE — our
+soft CE already handles multi-label better. **Exclude from v4f.**
+
+**v4c (AttBlockV2)** — Skipped due to poor offline val/auroc (0.815). The soft CE +
+sigmoid→logit→softmax conversion path is a known mismatch. May retry with BCE if needed.
 
 ---
 

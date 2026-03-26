@@ -12,12 +12,13 @@ Upgrade mel spectrogram resolution from (n_fft=1024, n_mels=128) to (n_fft=4096,
 |---------|--------|---------------|----------|----------|
 | v1 (exp 016) | baseline (n_fft=1024, 128 mels) | 0.845 | 0.795 | 0.827 |
 | **v4a** | n_fft=4096, n_mels=224 | 0.846 | **0.825** | **0.830** |
-| **v4b** | + AmplitudeToDB norm | **0.865** | pending | |
-| v4c | + AttBlockV2 head | 0.815 | pending | |
-| v4d | + ASL loss | 0.858 | pending | |
-| **v4e** | + StochasticDepth 0.15 | **0.868** | pending | |
+| **v4b** | + AmplitudeToDB norm | **0.865** | **0.859** | |
+| v4c | + AttBlockV2 head | 0.815 | skipped | |
+| v4d | + ASL loss | 0.858 | 0.808 | |
+| **v4e** | + StochasticDepth 0.15 | **0.868** | 0.840 | |
 
 v4a passed the decision gate (+0.030 LB raw). v4b-v4e are single-variable ablations from v4a.
+**v4b (AmplitudeToDB) is the clear winner**: +0.034 LB over v4a, new best at 0.859.
 
 ## Experiment Design
 
@@ -27,7 +28,7 @@ Single-variable change: n_fft 1024->4096, n_mels 128->224. Everything else ident
 - **Result**: LB raw 0.825 (+0.030), cmAP 0.615 (+0.022). Decision gate passed.
 - **Key finding**: PP2 gained only +0.005 on v4a (vs +0.032 on v1) -- model is more confident.
 
-### Step 2: Parallel Ablations (v4b-v4e) -- TRAINING COMPLETE, PENDING LB
+### Step 2: Parallel Ablations (v4b-v4e) -- DONE
 
 Each changes ONE thing from v4a. All use 90/10 split + 50 epochs (vs v4a's 80/10/10 + 40).
 
