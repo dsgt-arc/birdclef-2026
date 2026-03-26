@@ -131,6 +131,40 @@ is lossless.
 
 These optimizations apply to all future v4* submissions automatically.
 
+## Known Risks & Mitigations (Step 2 Ablations)
+
+### v4c (AttBlockV2) + soft CE loss mismatch
+
+AttBlockV2 computes `sigmoid(frame_logits)` internally and produces probabilities
+via attention-weighted sum. We convert back to logits via `torch.logit()` for
+compatibility with the existing soft CE loss. But AttBlockV2 is designed for **BCE
+loss** — Tom and PANNs use BCE with this head, not CE. The soft CE + softmax applied
+to logit-converted probabilities is a different computation path.
+
+**Mitigation**: If v4c underperforms, retry with BCE loss before concluding
+AttBlockV2 doesn't help. The loss pairing may be the issue, not the head.
+
+### v4b-v4e vs v4a comparison confound
+
+v4a used 80/10/10 split + 40 epochs. v4b-v4e use 90/10 + 50 epochs (~11% more
+training data). Small LB deltas (≤+0.003) may be the extra data, not the technique.
+
+### PP2 diminishing returns on v4a
+
+PP2 gained only +0.005 on v4a vs +0.032 on v1. The temperature (T=1.10) and TTA
+params were tuned for v1's output distribution. The v4a model is more confident on
+correct predictions, so the current T over-softens. **A temperature sweep on the
+existing v4a model is a zero-cost opportunity** — sweep T ∈ {0.90, 0.95, 1.00, 1.05,
+1.10, 1.15} before retraining anything.
+
+### Audio-domain MixUp as backup
+
+v3b in exp 016 tested waveform mixup at n_fft=1024/128 mels and it didn't help. But
+with n_fft=4096/224 mels the mel resolution is fundamentally different — mixing in the
+waveform domain may preserve more meaningful signal. The SED improvement plan reports
+audio-domain MixUp at +0.036 Private LB (2025 2nd place). Infrastructure already
+exists (`raw_waveform_mixup=true`). Consider if v4e (StochasticDepth) disappoints.
+
 ## Leads to
 
 - If positive: Exp 018 (recipe alignment on top of improved mel)

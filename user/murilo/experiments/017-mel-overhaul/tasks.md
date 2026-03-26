@@ -113,24 +113,49 @@ Each variant changes ONE thing from v4a to measure independent impact:
 - [ ] 2.12 Submit to Kaggle LB (raw + pp2 for best variants)
 - [ ] 2.13 Record LB results, compare to v4a (0.825/0.830)
 
-## Step 3: Combine Winners (v4f) — FUTURE
+### Interpretation Notes
+
+**Confound**: v4a used 80/10/10 split + 40 epochs. v4b-v4e use 90/10 + 50 epochs.
+Any LB improvement includes both the technique AND ~11% more training data + more
+epochs. Small deltas (≤+0.003) may be the extra data, not the technique.
+
+**v4c risk**: AttBlockV2 is designed for BCE loss (sigmoid probabilities), but we're
+using soft CE loss with logit-converted outputs. If v4c underperforms, retry with
+BCE loss before concluding AttBlockV2 doesn't help.
+
+## Step 3: Combine Winners + PP2 Recalibration (v4f) — FUTURE
 
 After all 4 ablations have LB results, combine the techniques that improved
-over v4a into a single config. This is the sequential stacking that the
-original plan intended — we ran the ablations in parallel to save time, but
-still combine them sequentially based on evidence.
+over v4a into a single config. Also recalibrate post-processing for the new
+model's output distribution.
 
-- [ ] 3.1 Compare v4b/v4c/v4d/v4e LB results vs v4a (0.825/0.830)
-- [ ] 3.2 Create v4f config combining all winning changes
-- [ ] 3.3 Train v4f (90/10, 50 epochs, patience=10)
-- [ ] 3.4 ONNX export + Kaggle submission (raw + pp2)
-- [ ] 3.5 Record LB results — this is the best single-model recipe
+### 3A: PP2 Temperature Sweep (zero retraining cost)
 
-**If no single ablation helps**: the gap may not be in these techniques.
-Consider Perch KD, pseudo-labeling, or metadata priors instead.
+PP2 gained only +0.005 on v4a (vs +0.032 on v1) because T=1.10 was tuned for v1.
+The v4a model is more confident — temperature may need lowering. Can run this on
+the existing v4a ONNX model immediately, no retraining needed.
 
-**If v4f underperforms the best individual**: techniques may conflict.
-Try dropping the weakest contributor and re-run.
+- [ ] 3.1 Sweep temperature on v4a: T ∈ {0.90, 0.95, 1.00, 1.05, 1.10, 1.15}
+- [ ] 3.2 Record best T for v4a, apply to future submissions
+
+### 3B: Combine Winning Ablations (v4f)
+
+- [ ] 3.3 Compare v4b/v4c/v4d/v4e LB results vs v4a (0.825/0.830)
+- [ ] 3.4 If v4c failed with soft_ce: retry AttBlockV2 with BCE loss
+- [ ] 3.5 Create v4f config combining all winning changes
+- [ ] 3.6 Train v4f (90/10, 50 epochs, patience=10)
+- [ ] 3.7 Model soup: average top-3 checkpoints from v4f (free, +0.005-0.01)
+- [ ] 3.8 ONNX export + Kaggle submission (raw + recalibrated pp2)
+- [ ] 3.9 Record LB results — this is the best single-model recipe
+
+### 3C: Consider if ablations disappoint
+
+- If no ablation helps: consider audio-domain MixUp (v3b didn't help at
+  n_fft=1024/128 mels, but may help at 4096/224 — infrastructure already
+  exists via `raw_waveform_mixup=true`). Also consider Perch KD (+0.030
+  in Tom's experiments).
+- If v4f underperforms best individual: techniques may conflict — drop the
+  weakest contributor and re-run.
 
 ## Step 4: Fulldata Training — FUTURE
 
@@ -149,9 +174,8 @@ Lock in the recipe first, then scale.
 
 ## Step 5: Polish — FUTURE
 
-- [ ] 5.1 Model soup on best config (average top checkpoints)
-- [ ] 5.2 Full-signal mel at inference (compute once for 60s, slice)
-- [ ] 5.3 Ensemble best variants
+- [ ] 5.1 Ensemble best variants
+- [x] 5.2 Full-signal mel at inference — **already implemented** in ONNX optimization (proposal.md)
 
 ---
 
