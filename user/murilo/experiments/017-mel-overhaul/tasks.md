@@ -113,32 +113,45 @@ Each variant changes ONE thing from v4a to measure independent impact:
 - [ ] 2.12 Submit to Kaggle LB (raw + pp2 for best variants)
 - [ ] 2.13 Record LB results, compare to v4a (0.825/0.830)
 
-### 2.14 Decision: Combine Winners
+## Step 3: Combine Winners (v4f) — FUTURE
 
-- Pick the variants that show LB improvement over v4a
-- Create a v4f config combining all winning changes
-- Run one final combined training run
+After all 4 ablations have LB results, combine the techniques that improved
+over v4a into a single config. This is the sequential stacking that the
+original plan intended — we ran the ablations in parallel to save time, but
+still combine them sequentially based on evidence.
 
-## Step 3: Fulldata Training — FUTURE
+- [ ] 3.1 Compare v4b/v4c/v4d/v4e LB results vs v4a (0.825/0.830)
+- [ ] 3.2 Create v4f config combining all winning changes
+- [ ] 3.3 Train v4f (90/10, 50 epochs, patience=10)
+- [ ] 3.4 ONNX export + Kaggle submission (raw + pp2)
+- [ ] 3.5 Record LB results — this is the best single-model recipe
+
+**If no single ablation helps**: the gap may not be in these techniques.
+Consider Perch KD, pseudo-labeling, or metadata priors instead.
+
+**If v4f underperforms the best individual**: techniques may conflict.
+Try dropping the weakest contributor and re-run.
+
+## Step 4: Fulldata Training — FUTURE
 
 Train the best combined recipe on 100% labeled data (no val split).
 This adds ~10% more focal recordings + more soundscape files.
 Lock in the recipe first, then scale.
 
-- [ ] 3.1 Add `train_all` support to SEDDataModule (focal 100% + all soundscape files)
-- [ ] 3.2 Run fulldata with epoch cap from best 90/10 run (~1.5× best epoch)
-- [ ] 3.3 No early stopping — save checkpoints every 5 epochs + last
-- [ ] 3.4 Export best + last checkpoints, submit both to LB
-- [ ] 3.5 Record LB results vs 90/10 baseline
+- [ ] 4.1 Add `train_all` support to SEDDataModule (focal 100% + all soundscape files)
+- [ ] 4.2 Run fulldata with epoch cap from best 90/10 run (~1.5× best epoch)
+- [ ] 4.3 No early stopping — save checkpoints every 5 epochs + last
+- [ ] 4.4 Export best + last checkpoints, submit both to LB
+- [ ] 4.5 Record LB results vs 90/10 baseline
 
 **Exp 011 reference**: ProtoCLR fulldata gained +0.015 LB, but ConvNeXt regressed
 −0.025 from overfitting. Epoch cap is critical.
 
-## Step 4: Polish — FUTURE
+## Step 5: Polish — FUTURE
 
-- [ ] 4.1 Model soup on best config (average top checkpoints)
-- [ ] 4.2 Full-signal mel at inference (compute once for 60s, slice)
-- [ ] 4.3 Ensemble best variants
+- [ ] 5.1 Model soup on best config (average top checkpoints)
+- [ ] 5.2 Full-signal mel at inference (compute once for 60s, slice)
+- [ ] 5.3 Ensemble best variants
 
 ---
 
