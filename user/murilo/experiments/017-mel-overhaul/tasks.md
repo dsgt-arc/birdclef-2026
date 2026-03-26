@@ -159,7 +159,7 @@ These re-ablations use Tom's recipe context: AmplitudeToDB + AttBlockV2 + BCE/AS
 - [x] 3.9 Create v4g config (AmplitudeToDB + AttBlockV2 + BCE)
 - [x] 3.10 Create v4h config (AmplitudeToDB + AttBlockV2 + ASL)
 - [x] 3.11 Train v4g — val/auroc **0.868**, epoch 28 (highest with v4e). v4h done (0.858, epoch 12)
-- [ ] 3.12 ONNX export + Kaggle submission — v4h exported. v4g needs export. Submit both tomorrow (daily limit)
+- [x] 3.12 ONNX export for v4f/v4g/v4h complete. v4f submitted (0.832 LB). v4g/v4h kernels pushed, submit when daily limit resets
 - [ ] 3.13 Record LB results vs v4b (0.859)
 
 ### 3D: After all Step 3 results
