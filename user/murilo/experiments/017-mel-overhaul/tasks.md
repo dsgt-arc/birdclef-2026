@@ -172,20 +172,26 @@ All Step 3 combinations regressed vs v4b on LB:
 **v4b's recipe wins.** Proceed to Step 4 fulldata with v4b config.
 Offline val/auroc is a poor LB predictor — v4g had highest val (0.868) but worst LB after v4h.
 
-## Step 4: Fulldata Training — FUTURE
+## Step 4: Fulldata Training — IN PROGRESS
 
-Train the best combined recipe on 100% labeled data (no val split).
-This adds ~10% more focal recordings + more soundscape files.
-Lock in the recipe first, then scale.
+Train v4b recipe on 100% labeled data (val_fraction=0.0). Adds ~11% more focal
+recordings + all labeled soundscapes to training. No validation monitoring.
 
-- [ ] 4.1 Add `train_all` support to SEDDataModule (focal 100% + all soundscape files)
-- [ ] 4.2 Run fulldata with epoch cap from best 90/10 run (~1.5× best epoch)
-- [ ] 4.3 No early stopping — save checkpoints every 5 epochs + last
-- [ ] 4.4 Export best + last checkpoints, submit both to LB
-- [ ] 4.5 Record LB results vs 90/10 baseline
+**Epoch cap rationale**: v4b best epoch was 30 (90/10 split, stopped at 41).
+Cap at **45 epochs** (~1.5×) to provide margin. Save every 5 epochs so we can
+pick the best checkpoint by submitting to LB.
 
-**Exp 011 reference**: ProtoCLR fulldata gained +0.015 LB, but ConvNeXt regressed
-−0.025 from overfitting. Epoch cap is critical.
+**Overfitting risk**: Exp 011 ConvNeXt regressed −0.025 on fulldata. But
+EfficientNet-B0 is lightweight (3.6M params) and v4b trained long (epoch 30)
+suggesting it's not prone to early overfitting.
+
+- [x] 4.1 Add fulldata support to SEDDataModule (val_fraction=0.0 → 100% train)
+- [x] 4.2 Update train.py: skip early stopping, periodic checkpoints (every 5 epochs)
+- [x] 4.3 Create v4b-fulldata config (45 epochs, save every 5 + last)
+- [x] 4.4 Wire export/upload/kernel pipeline for v4b-fulldata
+- [ ] 4.5 Submit fulldata training job
+- [ ] 4.6 Export last checkpoint + submit to LB
+- [ ] 4.7 Record LB result vs v4b 90/10 (0.859)
 
 ## Step 5: Polish — FUTURE
 

@@ -41,9 +41,10 @@ def _split_focal_dataframe(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Stratified split of focal data by primary_label.
 
-    Supports both 80/10/10 (test_fraction>0) and 90/10 (test_fraction=0) modes.
-    When test_fraction=0, returns an empty test DataFrame to preserve the 3-tuple
-    interface for backward compatibility.
+    Supports three modes:
+    - 80/10/10 (test_fraction>0, val_fraction>0): train/val/test split
+    - 90/10 (test_fraction=0, val_fraction>0): train/val only
+    - 100/0/0 (val_fraction=0): fulldata training, all samples in train
     """
     rng = np.random.RandomState(seed)
     train_indices = []
@@ -51,6 +52,11 @@ def _split_focal_dataframe(
     test_indices = []
 
     has_test = test_fraction > 0
+    has_val = val_fraction > 0
+
+    # Fulldata mode: everything goes to train
+    if not has_val:
+        return df, df.iloc[:0], df.iloc[:0]
 
     for _species, group in df.groupby("primary_label"):
         indices = group.index.tolist()
@@ -410,14 +416,19 @@ class SEDDataModule(pl.LightningDataModule):
         focal_df = pd.read_csv(focal_csv)
 
         has_test = self.test_fraction > 0
+        has_val = self.val_fraction > 0
+        fulldata = not has_val
 
         focal_train_df, focal_val_df, focal_test_df = _split_focal_dataframe(
             focal_df, self.val_fraction, self.test_fraction, self.seed
         )
-        logger.info(
-            f"Focal split: {len(focal_train_df)} train, {len(focal_val_df)} val"
-            + (f", {len(focal_test_df)} test" if has_test else " (no test holdout)")
-        )
+        if fulldata:
+            logger.info(f"Focal fulldata: {len(focal_train_df)} train (100%, no val/test)")
+        else:
+            logger.info(
+                f"Focal split: {len(focal_train_df)} train, {len(focal_val_df)} val"
+                + (f", {len(focal_test_df)} test" if has_test else " (no test holdout)")
+            )
 
         focal_train_206 = SEDFocalDataset(
             audio_dir=str(focal_audio_dir),
@@ -427,18 +438,20 @@ class SEDDataModule(pl.LightningDataModule):
             window_duration=self.window_duration,
             transform=self.transform,
         )
-        focal_val_206 = SEDFocalDataset(
-            audio_dir=str(focal_audio_dir),
-            metadata_df=focal_val_df,
-            species_list=self.species_206,
-            sample_rate=self.sample_rate,
-            window_duration=self.window_duration,
-            transform=self.eval_transform,
-        )
-
         # Remap 206→234
         focal_train = FocalDataset234(focal_train_206, self.species_206, self.species_list)
-        focal_val = FocalDataset234(focal_val_206, self.species_206, self.species_list)
+
+        focal_val = None
+        if not fulldata:
+            focal_val_206 = SEDFocalDataset(
+                audio_dir=str(focal_audio_dir),
+                metadata_df=focal_val_df,
+                species_list=self.species_206,
+                sample_rate=self.sample_rate,
+                window_duration=self.window_duration,
+                transform=self.eval_transform,
+            )
+            focal_val = FocalDataset234(focal_val_206, self.species_206, self.species_list)
 
         if has_test:
             focal_test_206 = SEDFocalDataset(
@@ -456,10 +469,11 @@ class SEDDataModule(pl.LightningDataModule):
         soundscape_labels_csv = self.data_dir / "train_soundscapes_labels.csv"
         soundscape_df = load_soundscape_labels(soundscape_labels_csv)
 
+        soundscape_val_files = 0 if fulldata else self.soundscape_val_files
         soundscape_test_files = self.soundscape_test_files if has_test else 0
         sc_train_df, sc_val_df, sc_test_df = _split_soundscape_by_file(
             soundscape_df,
-            self.soundscape_val_files,
+            soundscape_val_files,
             soundscape_test_files,
             self.seed + 1,
         )
@@ -473,19 +487,23 @@ class SEDDataModule(pl.LightningDataModule):
             context_duration=self.window_duration,
             transform=self.transform,
         )
-        sc_val = SEDSoundscapeDataset(
-            soundscape_dir=str(soundscape_dir),
-            labels_df=sc_val_df,
-            species_list=self.species_list,
-            sample_rate=self.sample_rate,
-            target_duration=5.0,
-            context_duration=self.window_duration,
-            transform=self.eval_transform,
-        )
 
         # --- Combine ---
-        self.train_dataset = ConcatDataset([focal_train, sc_train])
-        self.val_dataset = ConcatDataset([focal_val, sc_val])
+        if fulldata:
+            self.train_dataset = ConcatDataset([focal_train, sc_train])
+            self.val_dataset = None
+        else:
+            sc_val = SEDSoundscapeDataset(
+                soundscape_dir=str(soundscape_dir),
+                labels_df=sc_val_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                target_duration=5.0,
+                context_duration=self.window_duration,
+                transform=self.eval_transform,
+            )
+            self.train_dataset = ConcatDataset([focal_train, sc_train])
+            self.val_dataset = ConcatDataset([focal_val, sc_val])
 
         if has_test:
             sc_test = SEDSoundscapeDataset(
@@ -501,15 +519,19 @@ class SEDDataModule(pl.LightningDataModule):
         else:
             self.test_dataset = None
 
-        logger.info(
-            f"SED datasets: {len(self.train_dataset)} train, "
-            f"{len(self.val_dataset)} val"
-            + (f", {len(self.test_dataset)} test" if self.test_dataset else " (no test)")
-        )
-        logger.info(
-            f"  Focal: {len(focal_train)}+{len(focal_val)}"
-            + (f"+{len(focal_test)}" if has_test else "")
-        )
+        if fulldata:
+            logger.info(f"SED datasets: {len(self.train_dataset)} train (fulldata, no val/test)")
+            logger.info(f"  Focal: {len(focal_train)}")
+        else:
+            logger.info(
+                f"SED datasets: {len(self.train_dataset)} train, "
+                f"{len(self.val_dataset)} val"
+                + (f", {len(self.test_dataset)} test" if self.test_dataset else " (no test)")
+            )
+            logger.info(
+                f"  Focal: {len(focal_train)}+{len(focal_val)}"
+                + (f"+{len(focal_test)}" if has_test else "")
+            )
         logger.info(
             f"  Soundscape: {len(sc_train)}+{len(sc_val)}"
             + (f"+{len(sc_test)}" if has_test else "")
@@ -528,6 +550,8 @@ class SEDDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
+        if self.val_dataset is None:
+            return None
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,

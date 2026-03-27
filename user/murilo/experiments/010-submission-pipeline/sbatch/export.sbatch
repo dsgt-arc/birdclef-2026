@@ -413,6 +413,24 @@ export_effnet_b0_sed_v4f() {
         --output-dir artifacts/weights/effnet-b0-sed-v4f/
 }
 
+export_effnet_b0_sed_v4b_fulldata() {
+    echo "=== Exporting EfficientNet-B0 SED v4b-fulldata (AmplitudeToDB, fulldata, 234 classes) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4b-fulldata"
+    local CKPT
+    # Use last.ckpt for fulldata (no "best" since no val monitoring)
+    CKPT="$(ls -t "$CKPT_DIR"/last*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No last*.ckpt found in $CKPT_DIR" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4b_fulldata.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4b-fulldata/
+}
+
 export_effnet_b0_sed_v4g() {
     echo "=== Exporting EfficientNet-B0 SED v4g (AttBlockV2 + BCE, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4g"
@@ -492,7 +510,7 @@ case "$MODEL" in
     eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
     protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student|\
     effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3a|effnet-b0-sed-v3b|effnet-b0-sed-v3c|effnet-b0-sed-v3d|\
-    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|all-017-ablations|all-2026-sed)
+    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TAXONOMY_CSV_2026" \
@@ -573,7 +591,8 @@ case "$MODEL" in
     effnet-b0-sed-v4c)         export_effnet_b0_sed_v4c ;;
     effnet-b0-sed-v4d)         export_effnet_b0_sed_v4d ;;
     effnet-b0-sed-v4e)         export_effnet_b0_sed_v4e ;;
-    effnet-b0-sed-v4f)         export_effnet_b0_sed_v4f ;;
+    effnet-b0-sed-v4f)             export_effnet_b0_sed_v4f ;;
+    effnet-b0-sed-v4b-fulldata)    export_effnet_b0_sed_v4b_fulldata ;;
     effnet-b0-sed-v4g)         export_effnet_b0_sed_v4g ;;
     effnet-b0-sed-v4h)         export_effnet_b0_sed_v4h ;;
     all-017-ablations)

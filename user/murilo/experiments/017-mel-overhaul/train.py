@@ -256,26 +256,44 @@ def main():
         checkpoint_dir = project_dir / "experiments" / EXPERIMENT_NAME / "checkpoints" / run_name
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-        checkpoint_callback = ModelCheckpoint(
-            monitor=config["callbacks"]["model_checkpoint"]["monitor"],
-            mode=config["callbacks"]["model_checkpoint"]["mode"],
-            save_top_k=config["callbacks"]["model_checkpoint"]["save_top_k"],
-            save_last=config["callbacks"]["model_checkpoint"]["save_last"],
-            filename=config["callbacks"]["model_checkpoint"]["filename"],
-            dirpath=checkpoint_dir,
-            verbose=True,
-        )
-        callbacks.append(checkpoint_callback)
-        logger.info(f"Checkpoints: {checkpoint_dir}")
+        fulldata = config["data"].get("val_fraction", 0.1) == 0.0
 
-        early_stopping = EarlyStopping(
-            monitor=config["callbacks"]["early_stopping"]["monitor"],
-            mode=config["callbacks"]["early_stopping"]["mode"],
-            patience=config["callbacks"]["early_stopping"]["patience"],
-            min_delta=config["callbacks"]["early_stopping"]["min_delta"],
-            verbose=True,
-        )
-        callbacks.append(early_stopping)
+        if fulldata:
+            # Fulldata mode: no val set, no early stopping.
+            # Save checkpoints every N epochs + last. No "best" monitoring.
+            every_n = config["callbacks"]["model_checkpoint"].get("every_n_epochs", 5)
+            checkpoint_callback = ModelCheckpoint(
+                every_n_epochs=every_n,
+                save_top_k=-1,  # keep all periodic checkpoints
+                save_last=True,
+                filename="epoch{epoch:02d}",
+                dirpath=checkpoint_dir,
+                verbose=True,
+            )
+            callbacks.append(checkpoint_callback)
+            logger.info(f"Fulldata mode: saving every {every_n} epochs + last (no early stopping)")
+            logger.info(f"Checkpoints: {checkpoint_dir}")
+        else:
+            checkpoint_callback = ModelCheckpoint(
+                monitor=config["callbacks"]["model_checkpoint"]["monitor"],
+                mode=config["callbacks"]["model_checkpoint"]["mode"],
+                save_top_k=config["callbacks"]["model_checkpoint"]["save_top_k"],
+                save_last=config["callbacks"]["model_checkpoint"]["save_last"],
+                filename=config["callbacks"]["model_checkpoint"]["filename"],
+                dirpath=checkpoint_dir,
+                verbose=True,
+            )
+            callbacks.append(checkpoint_callback)
+            logger.info(f"Checkpoints: {checkpoint_dir}")
+
+            early_stopping = EarlyStopping(
+                monitor=config["callbacks"]["early_stopping"]["monitor"],
+                mode=config["callbacks"]["early_stopping"]["mode"],
+                patience=config["callbacks"]["early_stopping"]["patience"],
+                min_delta=config["callbacks"]["early_stopping"]["min_delta"],
+                verbose=True,
+            )
+            callbacks.append(early_stopping)
 
         lr_monitor = LearningRateMonitor(logging_interval="epoch")
         callbacks.append(lr_monitor)
@@ -388,10 +406,15 @@ def main():
             "encoder": config["encoder"]["model_name"],
             "best_val_score": (
                 float(checkpoint_callback.best_model_score)
-                if checkpoint_callback.best_model_score is not None
+                if hasattr(checkpoint_callback, "best_model_score")
+                and checkpoint_callback.best_model_score is not None
                 else None
             ),
-            "best_checkpoint_path": str(checkpoint_callback.best_model_path),
+            "best_checkpoint_path": str(
+                checkpoint_callback.best_model_path
+                if checkpoint_callback.best_model_path
+                else checkpoint_callback.last_model_path or ""
+            ),
             "stopped_epoch": trainer.current_epoch,
             "test_metrics": test_results[0] if test_results else None,
         }

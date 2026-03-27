@@ -96,6 +96,8 @@ MODEL_SLUGS = [
     "birdclef-2026-effnet-b0-sed-v4h-weights",
     "birdclef-2026-effnet-b0-sed-v4g-weights",
     "birdclef-2026-effnet-b0-sed-v4f-weights",
+    # Step 4: fulldata
+    "birdclef-2026-effnet-b0-sed-v4b-fulldata-weights",
     # Step 2 ablations + pp2
     "birdclef-2026-effnet-b0-sed-v4b-pp2-weights",
     "birdclef-2026-effnet-b0-sed-v4e-weights",
