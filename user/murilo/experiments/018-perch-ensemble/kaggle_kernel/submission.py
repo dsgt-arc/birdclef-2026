@@ -80,6 +80,9 @@ import soundfile as sf  # noqa: E402
 # ---------------------------------------------------------------------------
 # Constants and post-processing flags
 # ---------------------------------------------------------------------------
+# Mode: set to True for Phase A (Perch-only baseline), False for Phase B (ensemble)
+PERCH_ONLY = True
+
 ENABLE_TTA = True
 ENABLE_SED_TEMPORAL_SMOOTHING = True
 ENABLE_SED_TOPN = True
@@ -987,9 +990,13 @@ def main():
     if not output_path.parent.exists():
         output_path = Path("predictions/submission.csv")
 
-    # SED model
-    sed_weights_dir = find_sed_weights_dir()
-    sed_available = sed_weights_dir is not None and (sed_weights_dir / "model.onnx").exists()
+    # SED model (skip entirely in PERCH_ONLY mode)
+    if PERCH_ONLY:
+        sed_weights_dir = None
+        sed_available = False
+    else:
+        sed_weights_dir = find_sed_weights_dir()
+        sed_available = sed_weights_dir is not None and (sed_weights_dir / "model.onnx").exists()
 
     # Perch model
     perch_model_dir = find_perch_model_dir()

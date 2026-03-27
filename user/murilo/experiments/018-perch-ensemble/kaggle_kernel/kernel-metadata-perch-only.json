@@ -1,0 +1,18 @@
+{
+  "id": "murilogustineli/birdclef-2026-perch-only-v1",
+  "title": "BirdCLEF 2026 Perch Only v1",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-2026-perch-ensemble-v1"
+  ],
+  "model_sources": [
+    "google/bird-vocalization-classifier/TensorFlow2/perch_v2/1"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}
