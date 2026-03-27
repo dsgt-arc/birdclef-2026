@@ -649,12 +649,18 @@ def run_perch_inference(infer_fn, waveform_batch):
     import tensorflow as tf
 
     input_tensor = tf.constant(waveform_batch, dtype=tf.float32)
-    output = infer_fn(input_tensor)
+
+    # Perch v2 serving_default expects 'inputs' as keyword argument
+    try:
+        output = infer_fn(inputs=input_tensor)
+    except TypeError:
+        output = infer_fn(input_tensor)
 
     # Handle different output formats
     if isinstance(output, dict):
+        # Perch v2 outputs: 'embedding', 'label', 'spectrogram', 'spatial_embedding'
         embedding_keys = ["embedding", "embeddings", "output_0"]
-        logit_keys = ["logits", "logit", "output_1"]
+        logit_keys = ["label", "logits", "logit", "output_1"]
 
         embeddings = None
         logits = None
@@ -699,17 +705,19 @@ def run_perch_inference(infer_fn, waveform_batch):
 
 
 def compute_perch_mapped_scores(logits, perch_species_mapping):
-    """Map Perch logits (14795) to BirdCLEF species scores (234).
+    """Map Perch logits to BirdCLEF species scores (234).
 
-    Direct matches: sigmoid(logit[perch_idx])
-    Genus proxies: max(sigmoid(logits[proxy_indices]))
-    Unmapped: 0.0
+    The species mapping indices come from labels.csv line numbers where
+    line 0 = 'inat2024_fsd50k' (non-bird catch-all). But Perch v2 outputs
+    14,795 logits (dropping index 0), so model_output[i] = labels.csv[i+1].
+    We subtract 1 from all mapping indices to align with model output.
     """
     birdclef_species = perch_species_mapping["birdclef_species"]
     direct_map = perch_species_mapping["direct_map"]
     genus_proxy_map = perch_species_mapping["genus_proxy_map"]
     n_species = len(birdclef_species)
     n_samples = logits.shape[0]
+    n_logits = logits.shape[1]
 
     # Compute sigmoid of all logits once
     sigmoid_logits = 1.0 / (1.0 + np.exp(-logits.astype(np.float64)))
@@ -719,11 +727,15 @@ def compute_perch_mapped_scores(logits, perch_species_mapping):
 
     for i, label in enumerate(birdclef_species):
         if label in direct_map:
-            perch_idx = direct_map[label]
-            scores[:, i] = sigmoid_logits[:, perch_idx]
+            # Offset by -1: labels.csv index -> model output index
+            model_idx = direct_map[label] - 1
+            if 0 <= model_idx < n_logits:
+                scores[:, i] = sigmoid_logits[:, model_idx]
         elif label in genus_proxy_map:
-            proxy_indices = genus_proxy_map[label]
-            scores[:, i] = sigmoid_logits[:, proxy_indices].max(axis=1)
+            proxy_model_indices = [idx - 1 for idx in genus_proxy_map[label] if idx - 1 >= 0]
+            valid_indices = [idx for idx in proxy_model_indices if idx < n_logits]
+            if valid_indices:
+                scores[:, i] = sigmoid_logits[:, valid_indices].max(axis=1)
         # else: unmapped -> stays 0.0
 
     return scores

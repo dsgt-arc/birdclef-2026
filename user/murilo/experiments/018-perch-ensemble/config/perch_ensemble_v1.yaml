@@ -50,7 +50,7 @@ kaggle:
 
 perch:
   embedding_dim: 1536
-  num_perch_classes: 14796       # 14,795 species + 1 non-bird class at idx 0
+  num_perch_classes: 14795       # Model outputs 14,795 logits (labels.csv has 14,796 entries but idx 0 is dropped)
   sample_rate: 32000
   window_sec: 5.0
 
