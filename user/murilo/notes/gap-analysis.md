@@ -1,4 +1,4 @@
-# Gap Analysis: v4b (0.859) vs Competition
+# Gap Analysis: v4b (0.859) vs Competition — 2026-03-26
 
 Cross-reference of our best model against competitor approaches and winning solutions.
 Identifies what we're missing, what's working, and a prioritized improvement path.
