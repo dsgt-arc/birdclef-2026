@@ -154,6 +154,7 @@ def main():
         soundscape_dir=data_cfg.get("soundscape_dir"),
         soundscape_labels_csv=data_cfg.get("soundscape_labels_csv"),
         nocall_parquet=data_cfg.get("nocall_parquet"),
+        val_on_soundscape=data_cfg.get("val_on_soundscape", False),
     )
 
     # Run name

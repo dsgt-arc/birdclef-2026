@@ -368,6 +368,7 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         soundscape_dir: str | None = None,
         soundscape_labels_csv: str | None = None,
         nocall_parquet: str | None = None,
+        val_on_soundscape: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["species_list", "mel_transform"])
@@ -387,6 +388,7 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         self.soundscape_dir = soundscape_dir
         self.soundscape_labels_csv = soundscape_labels_csv
         self.nocall_parquet = nocall_parquet
+        self.val_on_soundscape = val_on_soundscape
 
         if species_list is not None:
             self.species_list = species_list
@@ -427,7 +429,7 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
                 norm_mean=self.norm_mean,
                 norm_std=self.norm_std,
             )
-            # Soundscape data only goes into training (not validation)
+            # Soundscape data goes into training
             self.train_dataset = BirdCLEF102Dataset(
                 metadata_df=train_df,
                 soundscape_dir=self.soundscape_dir,
@@ -435,9 +437,23 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
                 nocall_parquet=self.nocall_parquet,
                 **dataset_kwargs,
             )
-            self.val_dataset = BirdCLEF102Dataset(
-                metadata_df=val_df, **dataset_kwargs,
-            )
+
+            if self.val_on_soundscape and self.soundscape_dir and self.soundscape_labels_csv:
+                # Validate on labeled soundscape windows — measures what Kaggle tests
+                # Use empty focal df so only soundscape chunks are in val
+                empty_df = train_df.iloc[:0]
+                self.val_dataset = BirdCLEF102Dataset(
+                    metadata_df=empty_df,
+                    soundscape_dir=self.soundscape_dir,
+                    soundscape_labels_csv=self.soundscape_labels_csv,
+                    nocall_parquet=self.nocall_parquet,
+                    **dataset_kwargs,
+                )
+                logger.info(f"Validation on soundscape: {len(self.val_dataset)} windows")
+            else:
+                self.val_dataset = BirdCLEF102Dataset(
+                    metadata_df=val_df, **dataset_kwargs,
+                )
 
     def train_dataloader(self):
         return DataLoader(
