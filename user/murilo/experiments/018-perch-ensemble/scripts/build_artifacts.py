@@ -1,14 +1,27 @@
-"""Verify and package artifacts for Kaggle upload.
+"""Verify probe artifacts in shared storage and package for Kaggle upload.
 
-Checks that all required artifacts exist in artifacts/perch_probes/
-and creates dataset-metadata.json for Kaggle dataset upload.
+Checks that all required probe artifacts exist in the shared probe artifacts
+directory (from config paths.probe_artifacts_dir), copies the species mapping
+from the local experiment artifacts/ dir, and creates dataset-metadata.json
+for Kaggle dataset upload.
+
+Reads:
+  - config YAML (paths.probe_artifacts_dir, kaggle slugs)
+  - local artifacts/perch_species_mapping.json
+
+Outputs (to shared probe_artifacts_dir):
+  - perch_species_mapping.json (copied from local)
+  - dataset-metadata.json (for Kaggle upload)
 """
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
-REQUIRED_FILES = [
+import yaml
+
+REQUIRED_PROBE_FILES = [
     "pca_transformer.pkl",
     "probe_models.pkl",
     "probe_alphas.json",
@@ -21,12 +34,14 @@ SPECIES_MAPPING_FILE = "perch_species_mapping.json"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Verify and package artifacts for Kaggle upload")
+    parser = argparse.ArgumentParser(
+        description="Verify probe artifacts in shared storage and package for Kaggle upload"
+    )
     parser.add_argument(
-        "--artifacts-dir",
+        "--config",
         type=str,
         default=None,
-        help="Path to artifacts directory (default: artifacts/ relative to experiment dir)",
+        help="Path to config YAML (default: config/perch_ensemble_v1.yaml)",
     )
     return parser.parse_args()
 
@@ -44,110 +59,129 @@ def format_size(size_bytes: int) -> str:
 def main() -> None:
     args = parse_args()
 
-    # Resolve paths
-    if args.artifacts_dir is None:
-        experiment_dir = Path(__file__).resolve().parent.parent
-        artifacts_dir = experiment_dir / "artifacts"
+    # Resolve config path
+    experiment_dir = Path(__file__).resolve().parent.parent
+    if args.config is None:
+        config_path = experiment_dir / "config" / "perch_ensemble_v1.yaml"
     else:
-        artifacts_dir = Path(args.artifacts_dir)
+        config_path = Path(args.config)
 
-    probes_dir = artifacts_dir / "perch_probes"
+    # Load config
+    print(f"Loading config from: {config_path}")
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    paths = config["paths"]
+    kaggle = config["kaggle"]
+
+    # Resolve directories
+    probe_artifacts_dir = Path(paths["probe_artifacts_dir"])
+    local_artifacts_dir = experiment_dir / paths["local_artifacts_dir"]
 
     print("=" * 60)
     print("Experiment 018: Perch Ensemble Artifact Verification")
     print("=" * 60)
-    print(f"\nArtifacts directory: {artifacts_dir}")
-    print(f"Probes directory:   {probes_dir}")
+    print(f"\nShared probe artifacts dir: {probe_artifacts_dir}")
+    print(f"Local artifacts dir:        {local_artifacts_dir}")
 
-    # Check species mapping in artifacts/
-    print("\n--- Species Mapping ---")
-    mapping_path = artifacts_dir / SPECIES_MAPPING_FILE
-    if mapping_path.exists():
-        size = mapping_path.stat().st_size
-        print(f"  [OK] {SPECIES_MAPPING_FILE} ({format_size(size)})")
-
-        # Quick validation
-        with open(mapping_path) as f:
-            mapping = json.load(f)
-        n_direct = len(mapping.get("direct_map", {}))
-        n_genus = len(mapping.get("genus_proxy_map", {}))
-        n_unmapped = len(mapping.get("unmapped", []))
-        n_species = len(mapping.get("birdclef_species", []))
-        print(
-            f"       {n_species} species: {n_direct} direct, {n_genus} genus proxy, {n_unmapped} unmapped"
-        )
-    else:
-        print(f"  [MISSING] {SPECIES_MAPPING_FILE}")
-
-    # Check probe artifacts in artifacts/perch_probes/
-    print("\n--- Probe Artifacts ---")
+    # ── Verify required probe files in shared dir ───────────────
+    print("\n--- Probe Artifacts (shared storage) ---")
     all_ok = True
     total_size = 0
 
-    for filename in REQUIRED_FILES:
-        filepath = probes_dir / filename
+    for filename in REQUIRED_PROBE_FILES:
+        filepath = probe_artifacts_dir / filename
         if filepath.exists():
             size = filepath.stat().st_size
             total_size += size
-            print(f"  [OK] {filename} ({format_size(size)})")
+            print(f"  [OK]      {filename} ({format_size(size)})")
         else:
             print(f"  [MISSING] {filename}")
             all_ok = False
 
-    # Also include species mapping in the upload
-    if mapping_path.exists():
-        total_size += mapping_path.stat().st_size
-
-    print(f"\n  Total artifact size: {format_size(total_size)}")
-
     if not all_ok:
-        print("\n[ERROR] Some required artifacts are missing!")
+        print("\n[ERROR] Some required probe artifacts are missing from shared storage!")
+        print(f"  Expected location: {probe_artifacts_dir}")
         print("  Run the following scripts first:")
-        print("    python scripts/build_species_mapping.py")
-        print("    python scripts/extract_perch_embeddings.py")
-        print("    python scripts/train_probes.py")
+        print(
+            "    python scripts/extract_perch_embeddings.py --config config/perch_ensemble_v1.yaml"
+        )
+        print("    python scripts/train_probes.py --config config/perch_ensemble_v1.yaml")
         raise SystemExit(1)
 
-    # Copy species mapping into probes dir for Kaggle upload
-    if mapping_path.exists():
-        import shutil
+    # ── Verify and copy species mapping ─────────────────────────
+    print("\n--- Species Mapping ---")
+    local_mapping_path = local_artifacts_dir / SPECIES_MAPPING_FILE
 
-        dest = probes_dir / SPECIES_MAPPING_FILE
-        if not dest.exists() or dest.stat().st_mtime < mapping_path.stat().st_mtime:
-            shutil.copy2(mapping_path, dest)
-            print(f"\n  Copied {SPECIES_MAPPING_FILE} -> perch_probes/")
+    if not local_mapping_path.exists():
+        print(f"  [MISSING] {local_mapping_path}")
+        print(
+            "  Run: python scripts/build_species_mapping.py --config config/perch_ensemble_v1.yaml"
+        )
+        raise SystemExit(1)
 
-    # Create Kaggle dataset-metadata.json
+    size = local_mapping_path.stat().st_size
+    print(f"  [OK] {SPECIES_MAPPING_FILE} ({format_size(size)})")
+
+    # Quick validation
+    with open(local_mapping_path) as f:
+        mapping = json.load(f)
+    n_direct = len(mapping.get("direct_map", {}))
+    n_genus = len(mapping.get("genus_proxy_map", {}))
+    n_unmapped = len(mapping.get("unmapped", []))
+    n_species = len(mapping.get("birdclef_species", []))
+    print(
+        f"       {n_species} species: {n_direct} direct, {n_genus} genus proxy, {n_unmapped} unmapped"
+    )
+
+    # Copy into shared probe artifacts dir
+    dest_mapping_path = probe_artifacts_dir / SPECIES_MAPPING_FILE
+    if (
+        not dest_mapping_path.exists()
+        or dest_mapping_path.stat().st_mtime < local_mapping_path.stat().st_mtime
+    ):
+        shutil.copy2(local_mapping_path, dest_mapping_path)
+        print(f"  Copied -> {dest_mapping_path}")
+    else:
+        print("  Already up-to-date in shared dir")
+
+    total_size += dest_mapping_path.stat().st_size
+
+    # ── Create Kaggle dataset-metadata.json ─────────────────────
+    kaggle_slug = f"{kaggle['user']}/{kaggle['perch_artifacts_slug']}"
     dataset_metadata = {
-        "id": "murilogustineli/birdclef-2026-perch-ensemble-v1",
+        "id": kaggle_slug,
         "title": "BirdCLEF 2026 Perch Ensemble v1",
         "licenses": [{"name": "CC0-1.0"}],
     }
 
-    metadata_path = probes_dir / "dataset-metadata.json"
+    metadata_path = probe_artifacts_dir / "dataset-metadata.json"
     with open(metadata_path, "w") as f:
         json.dump(dataset_metadata, f, indent=2)
 
     print("\n--- Kaggle Dataset Metadata ---")
     print(f"  Created: {metadata_path}")
-    print(f"  ID: {dataset_metadata['id']}")
-    print(f"  Title: {dataset_metadata['title']}")
+    print(f"  ID:      {dataset_metadata['id']}")
+    print(f"  Title:   {dataset_metadata['title']}")
 
-    # Final summary
+    # ── Final summary ───────────────────────────────────────────
     print(f"\n{'=' * 60}")
     print("All artifacts verified and packaged!")
     print(f"{'=' * 60}")
+    print(f"\n  Total artifact size: {format_size(total_size)}")
 
-    print("\nTo upload to Kaggle:")
-    print(f"  cd {probes_dir}")
-    print("  kaggle datasets create -p . --dir-mode zip")
-    print("\nOr use the upload script:")
-    print(f"  python scripts/upload_kaggle.py --artifact-dir {probes_dir}")
-
-    # List all files in probes dir
-    print(f"\nFiles in {probes_dir}:")
-    for p in sorted(probes_dir.iterdir()):
+    # List all files in shared probe artifacts dir
+    print(f"\nFiles in {probe_artifacts_dir}:")
+    for p in sorted(probe_artifacts_dir.iterdir()):
         print(f"  {p.name} ({format_size(p.stat().st_size)})")
+
+    # Print Kaggle upload commands
+    print("\nTo upload to Kaggle:")
+    print(f"  cd {probe_artifacts_dir}")
+    print("  kaggle datasets create -p . --dir-mode zip")
+    print("\nOr to update an existing dataset:")
+    print(f"  cd {probe_artifacts_dir}")
+    print("  kaggle datasets version -p . -m 'Update probe artifacts' --dir-mode zip")
 
 
 if __name__ == "__main__":

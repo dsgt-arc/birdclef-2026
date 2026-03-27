@@ -1,14 +1,17 @@
-"""Extract Perch v2 embeddings and logits from labeled soundscapes.
+"""Extract Perch v2 embeddings and logits from soundscapes.
 
-Loads the Perch v2 TF SavedModel and processes all labeled soundscapes
-(66 files, each 60s -> 12 x 5s windows at 32kHz).
+Loads the Perch v2 TF SavedModel and processes soundscape files.
 
-Outputs:
-  - outputs/perch_embeddings.parquet (792 rows x 1536 embedding dims)
-  - outputs/perch_logits.parquet (792 rows x 14795 Perch logit dims)
-  - outputs/perch_mapped_scores.parquet (792 rows x 234 BirdCLEF species scores)
+Splits:
+  - labeled (default): filenames from train_soundscapes_labels.csv
+  - unlabeled: all files in soundscape_dir NOT in labels CSV
 
-Requires: tensorflow, librosa, pandas, numpy
+Outputs (saved to config paths.embeddings_dir / <split>):
+  - perch_embeddings.parquet (N rows x 1536 embedding dims)
+  - perch_logits.parquet (N rows x 14795 Perch logit dims)
+  - perch_mapped_scores.parquet (N rows x 234 BirdCLEF species scores)
+
+Requires: tensorflow, librosa, pandas, numpy, pyyaml
 """
 
 import argparse
@@ -20,41 +23,60 @@ from pathlib import Path
 import librosa
 import numpy as np
 import pandas as pd
+import yaml
+
+
+def load_config(config_path: Path) -> dict:
+    with open(config_path) as f:
+        return yaml.safe_load(f)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Extract Perch v2 embeddings and logits from labeled soundscapes"
+        description="Extract Perch v2 embeddings and logits from soundscapes"
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config YAML (default: config/perch_ensemble_v1.yaml)",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="labeled",
+        choices=["labeled", "unlabeled"],
+        help="Which split to extract: labeled (from labels CSV) or unlabeled (remaining files)",
     )
     parser.add_argument(
         "--model-dir",
         type=str,
-        default="/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2",
-        help="Path to Perch v2 TF SavedModel directory",
+        default=None,
+        help="Override Perch v2 TF SavedModel directory from config",
     )
     parser.add_argument(
         "--soundscape-dir",
         type=str,
-        default="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes",
-        help="Path to train_soundscapes audio directory",
+        default=None,
+        help="Override train_soundscapes audio directory from config",
     )
     parser.add_argument(
         "--labels-csv",
         type=str,
-        default="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv",
-        help="Path to train_soundscapes_labels.csv",
+        default=None,
+        help="Override train_soundscapes_labels.csv path from config",
     )
     parser.add_argument(
         "--species-mapping",
         type=str,
         default=None,
-        help="Path to perch_species_mapping.json (default: artifacts/perch_species_mapping.json)",
+        help="Override perch_species_mapping.json path from config",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
-        help="Output directory (default: outputs/ relative to experiment dir)",
+        help="Override output directory from config (default: config embeddings_dir)",
     )
     parser.add_argument(
         "--sample-rate",
@@ -219,36 +241,68 @@ def compute_mapped_scores(
 def main() -> None:
     args = parse_args()
 
-    # Resolve paths
+    # Resolve config
     experiment_dir = Path(__file__).resolve().parent.parent
-
-    if args.species_mapping is None:
-        species_mapping_path = experiment_dir / "artifacts" / "perch_species_mapping.json"
+    if args.config is None:
+        config_path = experiment_dir / "config" / "perch_ensemble_v1.yaml"
     else:
+        config_path = Path(args.config)
+
+    config = load_config(config_path)
+    paths = config["paths"]
+
+    # Resolve paths (CLI overrides > config)
+    model_dir = args.model_dir or paths["perch_model_dir"]
+    soundscape_dir = args.soundscape_dir or paths["soundscape_dir"]
+    labels_csv = args.labels_csv or paths["soundscape_labels_csv"]
+
+    if args.species_mapping is not None:
         species_mapping_path = Path(args.species_mapping)
-
-    if args.output_dir is None:
-        output_dir = experiment_dir / "outputs"
     else:
+        species_mapping_path = (
+            experiment_dir / paths["local_artifacts_dir"] / "perch_species_mapping.json"
+        )
+
+    if args.output_dir is not None:
         output_dir = Path(args.output_dir)
+    else:
+        # Config embeddings_dir already includes /labeled; strip it and re-append split
+        base_embeddings_dir = Path(paths["embeddings_dir"]).parent
+        output_dir = base_embeddings_dir / args.split
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    print(f"Config:  {config_path}")
+    print(f"Split:   {args.split}")
+    print(f"Output:  {output_dir}")
+
     # Load species mapping
-    print(f"Loading species mapping from: {species_mapping_path}")
+    print(f"\nLoading species mapping from: {species_mapping_path}")
     with open(species_mapping_path) as f:
         species_mapping = json.load(f)
 
     birdclef_species = species_mapping["birdclef_species"]
     print(f"  BirdCLEF species: {len(birdclef_species)}")
 
-    # Get unique filenames from labels CSV
-    labels_df = pd.read_csv(args.labels_csv)
-    filenames = labels_df["filename"].unique().tolist()
-    print(f"\nFound {len(filenames)} unique soundscape files in labels CSV")
+    # Get filenames based on split
+    labels_df = pd.read_csv(labels_csv)
+    labeled_filenames = set(labels_df["filename"].unique())
+
+    if args.split == "labeled":
+        filenames = sorted(labeled_filenames)
+        print(f"\nFound {len(filenames)} labeled soundscape files from labels CSV")
+    else:
+        # unlabeled: all files in soundscape_dir NOT in labels CSV
+        all_files = {f.name for f in Path(soundscape_dir).iterdir() if f.suffix == ".ogg"}
+        unlabeled_filenames = all_files - labeled_filenames
+        filenames = sorted(unlabeled_filenames)
+        print(
+            f"\nFound {len(all_files)} total files, {len(labeled_filenames)} labeled, "
+            f"{len(filenames)} unlabeled"
+        )
 
     # Load Perch model
-    model, infer_fn = load_perch_model(args.model_dir)
+    model, infer_fn = load_perch_model(model_dir)
 
     # Probe model with dummy input to confirm shapes
     window_samples = int(args.sample_rate * args.window_sec)
@@ -273,7 +327,7 @@ def main() -> None:
     t_start = time.time()
 
     for file_idx, filename in enumerate(filenames):
-        audio_path = os.path.join(args.soundscape_dir, filename)
+        audio_path = os.path.join(soundscape_dir, filename)
 
         if not os.path.exists(audio_path):
             print(f"  WARNING: File not found: {audio_path}, skipping")

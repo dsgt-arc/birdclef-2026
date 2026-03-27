@@ -5,19 +5,58 @@
 # for the Perch component: LogReg probes on PCA-compressed embeddings
 # + site/hour metadata priors.
 
+# ─────────────────────────────────────────────────────────────
+# Paths: PACE shared storage
+# ─────────────────────────────────────────────────────────────
+
+paths:
+  # Project root on PACE shared storage
+  shared_root: "/storage/project/ps-clef2026_birdclef-0/shared"
+
+  # Input data
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  taxonomy_csv: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/taxonomy.csv"
+  soundscape_labels_csv: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv"
+  soundscape_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes"
+
+  # Perch v2 model
+  perch_model_dir: "/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2"
+  perch_labels_csv: "/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2/assets/labels.csv"
+
+  # Output: embeddings (shared, reusable across experiments)
+  embeddings_dir: "/storage/project/ps-clef2026_birdclef-0/shared/embeddings/birdclef-2026/perch-v2/labeled"
+
+  # Output: probe artifacts (shared, uploaded to Kaggle)
+  probe_artifacts_dir: "/storage/project/ps-clef2026_birdclef-0/shared/artifacts/birdclef-2026/perch-ensemble-v1"
+
+  # Local experiment artifacts (lightweight, committed to repo)
+  local_artifacts_dir: "artifacts"  # relative to experiment dir
+
+# ─────────────────────────────────────────────────────────────
+# Kaggle: model sources and dataset slugs
+# ─────────────────────────────────────────────────────────────
+
+kaggle:
+  user: "murilogustineli"
+  perch_model_source: "google/bird-vocalization-classifier/TensorFlow2/perch_v2/1"
+  sed_weights_slug: "birdclef-2026-effnet-b0-sed-v4b-weights"
+  perch_artifacts_slug: "birdclef-2026-perch-ensemble-v1"
+  deps_slug: "birdclef-deps"
+  kernel_slug: "birdclef-2026-perch-ensemble-v1"
+
+# ─────────────────────────────────────────────────────────────
+# Perch v2 model
+# ─────────────────────────────────────────────────────────────
+
 perch:
-  model_source: "google/bird-vocalization-classifier/TensorFlow2/perch_v2/1"
-  local_model_path: "/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2"
   embedding_dim: 1536
-  num_perch_classes: 14795
+  num_perch_classes: 14796       # 14,795 species + 1 non-bird class at idx 0
   sample_rate: 32000
   window_sec: 5.0
 
-data:
-  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
-  taxonomy_csv: "taxonomy.csv"
-  soundscape_labels_csv: "train_soundscapes_labels.csv"
-  soundscape_dir: "train_soundscapes"
+# ─────────────────────────────────────────────────────────────
+# Probe training hyperparameters
+# ─────────────────────────────────────────────────────────────
 
 probes:
   pca_components: 32
@@ -30,23 +69,32 @@ probes:
   alpha_threshold: 40
   n_folds: 5
 
+# ─────────────────────────────────────────────────────────────
+# Metadata priors
+# ─────────────────────────────────────────────────────────────
+
 priors:
-  lambda_event: 0.4          # Aves, Mammalia, Reptilia
-  lambda_texture: 1.0        # Amphibia, Insecta
-  lambda_proxy_texture: 0.8  # Genus-proxy species
+  lambda_event: 0.4              # Aves, Mammalia, Reptilia
+  lambda_texture: 1.0            # Amphibia, Insecta
+  lambda_proxy_texture: 0.8      # Genus-proxy species
   bayesian_k_site: 8
   bayesian_k_hour: 8
   bayesian_k_interaction: 4
   laplace_alpha: 0.01
 
+# ─────────────────────────────────────────────────────────────
+# Temporal smoothing
+# ─────────────────────────────────────────────────────────────
+
 smoothing:
-  alpha_event: 0.15          # Birds: local-max propagation (preserve transient peaks)
-  alpha_texture: 0.35        # Frogs/insects: average-neighbor (solidify continuous textures)
+  alpha_event: 0.15              # Birds: local-max propagation (preserve transient peaks)
+  alpha_texture: 0.35            # Frogs/insects: average-neighbor (solidify continuous textures)
+
+# ─────────────────────────────────────────────────────────────
+# Ensemble
+# ─────────────────────────────────────────────────────────────
 
 ensemble:
   sed_weight: 0.3
   perch_weight: 0.7
-  temperature: 1.10          # Applied to Perch scores before blending
-
-sed:
-  model_slug: "birdclef-2026-effnet-b0-sed-v4b-weights"
+  temperature: 1.10              # Applied to Perch scores before blending

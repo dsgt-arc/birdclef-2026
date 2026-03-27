@@ -33,6 +33,11 @@ from sklearn.metrics import roc_auc_score
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
+def load_config(config_path: Path) -> dict:
+    with open(config_path) as f:
+        return yaml.safe_load(f)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Local validation of Perch ensemble on labeled soundscapes"
@@ -41,31 +46,31 @@ def parse_args() -> argparse.Namespace:
         "--embeddings-parquet",
         type=str,
         default=None,
-        help="Path to perch_embeddings.parquet (default: outputs/perch_embeddings.parquet)",
+        help="Override perch_embeddings.parquet path from config",
     )
     parser.add_argument(
         "--mapped-scores-parquet",
         type=str,
         default=None,
-        help="Path to perch_mapped_scores.parquet (default: outputs/perch_mapped_scores.parquet)",
+        help="Override perch_mapped_scores.parquet path from config",
     )
     parser.add_argument(
         "--labels-csv",
         type=str,
-        default="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv",
-        help="Path to train_soundscapes_labels.csv",
+        default=None,
+        help="Override train_soundscapes_labels.csv path from config",
     )
     parser.add_argument(
         "--species-mapping",
         type=str,
         default=None,
-        help="Path to perch_species_mapping.json (default: artifacts/perch_species_mapping.json)",
+        help="Override perch_species_mapping.json path from config",
     )
     parser.add_argument(
         "--probes-dir",
         type=str,
         default=None,
-        help="Path to probe artifacts directory (default: artifacts/perch_probes/)",
+        help="Override probe artifacts directory from config",
     )
     parser.add_argument(
         "--config",
@@ -380,39 +385,42 @@ def print_metrics(label: str, metrics: dict) -> None:
 def main() -> None:
     args = parse_args()
 
-    # Resolve paths
+    # Resolve config
     experiment_dir = Path(__file__).resolve().parent.parent
-
-    embeddings_path = (
-        Path(args.embeddings_parquet)
-        if args.embeddings_parquet
-        else experiment_dir / "outputs" / "perch_embeddings.parquet"
-    )
-    mapped_scores_path = (
-        Path(args.mapped_scores_parquet)
-        if args.mapped_scores_parquet
-        else experiment_dir / "outputs" / "perch_mapped_scores.parquet"
-    )
-    species_mapping_path = (
-        Path(args.species_mapping)
-        if args.species_mapping
-        else experiment_dir / "artifacts" / "perch_species_mapping.json"
-    )
-    probes_dir = (
-        Path(args.probes_dir) if args.probes_dir else experiment_dir / "artifacts" / "perch_probes"
-    )
     config_path = (
         Path(args.config) if args.config else experiment_dir / "config" / "perch_ensemble_v1.yaml"
     )
 
-    # Load config
+    config = load_config(config_path)
+    cfg_paths = config["paths"]
+
+    # Resolve paths (CLI overrides > config values)
+    embeddings_path = (
+        Path(args.embeddings_parquet)
+        if args.embeddings_parquet
+        else Path(cfg_paths["embeddings_dir"]) / "perch_embeddings.parquet"
+    )
+    mapped_scores_path = (
+        Path(args.mapped_scores_parquet)
+        if args.mapped_scores_parquet
+        else Path(cfg_paths["embeddings_dir"]) / "perch_mapped_scores.parquet"
+    )
+    species_mapping_path = (
+        Path(args.species_mapping)
+        if args.species_mapping
+        else experiment_dir / cfg_paths["local_artifacts_dir"] / "perch_species_mapping.json"
+    )
+    probes_dir = (
+        Path(args.probes_dir) if args.probes_dir else Path(cfg_paths["probe_artifacts_dir"])
+    )
+    labels_csv = args.labels_csv or cfg_paths["soundscape_labels_csv"]
+
+    # Print header
     print("=" * 60)
     print("Experiment 018: Perch Ensemble Local Validation")
     print("=" * 60)
 
     print(f"\nConfig: {config_path}")
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
 
     # Load species mapping
     print(f"Species mapping: {species_mapping_path}")
@@ -448,8 +456,8 @@ def main() -> None:
     print(f"  Shape: {mapped_scores.shape}")
 
     # Load ground truth labels
-    print(f"\nLoading labels: {args.labels_csv}")
-    labels_df = pd.read_csv(args.labels_csv)
+    print(f"\nLoading labels: {labels_csv}")
+    labels_df = pd.read_csv(labels_csv)
     labels_matrix = build_labels_matrix(metadata_df, labels_df, birdclef_species)
     n_positive = labels_matrix.sum()
     n_species_present = (labels_matrix.sum(axis=0) > 0).sum()

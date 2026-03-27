@@ -19,6 +19,10 @@
 #   3. Train LogReg probes + metadata priors
 #   4. Verify and package artifacts for Kaggle
 #
+# All paths are read from config/perch_ensemble_v1.yaml.
+# Embeddings → shared/embeddings/birdclef-2026/perch-v2/labeled/
+# Probes     → shared/artifacts/birdclef-2026/perch-ensemble-v1/
+#
 # Usage:
 #   cd user/murilo/experiments/018-perch-ensemble
 #   sbatch sbatch/extract_embeddings.sh
@@ -35,6 +39,8 @@ else
     EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 fi
 
+CONFIG="${EXPERIMENT_DIR}/config/perch_ensemble_v1.yaml"
+
 echo "=============================================="
 echo "Job: Experiment 018 - Perch Embedding Extraction"
 echo "=============================================="
@@ -42,6 +48,7 @@ echo "Job ID: ${SLURM_JOB_ID:-local}"
 echo "Node: $(hostname)"
 echo "Date: $(date)"
 echo "Experiment dir: ${EXPERIMENT_DIR}"
+echo "Config: ${CONFIG}"
 echo ""
 
 # ──────────────────────────────────────────────────────────────
@@ -71,10 +78,15 @@ python -c "import sklearn; print(f'scikit-learn: {sklearn.__version__}')"
 echo ""
 
 # ──────────────────────────────────────────────────────────────
-# Prepare output directories
+# Prepare output directories (shared storage)
 # ──────────────────────────────────────────────────────────────
 cd "$EXPERIMENT_DIR"
-mkdir -p logs outputs artifacts/perch_probes
+mkdir -p logs artifacts
+
+# Shared storage directories (created by scripts from config, but ensure parents exist)
+SHARED_ROOT="/storage/project/ps-clef2026_birdclef-0/shared"
+mkdir -p "$SHARED_ROOT/embeddings/birdclef-2026/perch-v2/labeled"
+mkdir -p "$SHARED_ROOT/artifacts/birdclef-2026/perch-ensemble-v1"
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
@@ -84,16 +96,16 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 echo "=============================================="
 echo "Step 1: Build species mapping"
 echo "=============================================="
-python scripts/build_species_mapping.py
+python scripts/build_species_mapping.py --config "$CONFIG"
 echo ""
 
 # ──────────────────────────────────────────────────────────────
 # Step 2: Extract Perch embeddings + logits
 # ──────────────────────────────────────────────────────────────
 echo "=============================================="
-echo "Step 2: Extract Perch embeddings"
+echo "Step 2: Extract Perch embeddings (labeled split)"
 echo "=============================================="
-python scripts/extract_perch_embeddings.py
+python scripts/extract_perch_embeddings.py --config "$CONFIG" --split labeled
 echo ""
 
 # ──────────────────────────────────────────────────────────────
@@ -102,7 +114,7 @@ echo ""
 echo "=============================================="
 echo "Step 3: Train probes + metadata priors"
 echo "=============================================="
-python scripts/train_probes.py
+python scripts/train_probes.py --config "$CONFIG"
 echo ""
 
 # ──────────────────────────────────────────────────────────────
@@ -111,7 +123,7 @@ echo ""
 echo "=============================================="
 echo "Step 4: Verify and package artifacts"
 echo "=============================================="
-python scripts/build_artifacts.py
+python scripts/build_artifacts.py --config "$CONFIG"
 echo ""
 
 echo "=============================================="

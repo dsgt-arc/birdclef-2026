@@ -220,14 +220,17 @@ The 0.3/0.7 split is an initial estimate. `scripts/local_validate.py` sweeps fro
 
 ### Phase A: Perch-only baseline
 
-**Offline (PACE)**:
+**Offline (PACE)** — all paths read from `config/perch_ensemble_v1.yaml`:
 ```
-build_species_mapping.py → perch_species_mapping.json
-extract_perch_embeddings.py → embeddings + mapped scores (parquet files)
-train_probes.py → PCA model, ~200 LogReg probes, priors, alphas
-build_artifacts.py → verify + package for Kaggle upload
+build_species_mapping.py → artifacts/perch_species_mapping.json (local, in repo)
+extract_perch_embeddings.py → shared/embeddings/.../perch-v2/labeled/*.parquet (shared, reusable)
+train_probes.py → shared/artifacts/.../perch-ensemble-v1/ (shared, uploaded to Kaggle)
+build_artifacts.py → verify + dataset-metadata.json in shared artifacts dir
 local_validate.py → evaluate Perch-only (raw → +probes → +priors → +smoothing)
 ```
+
+Embeddings are extracted once to shared storage and reused across experiments.
+Probe artifacts live in shared storage and are uploaded directly to Kaggle.
 
 **Kaggle**: Submit Perch-only kernel → get LB score. Should be ~0.910 if our
 pipeline matches chiranjithdharma. This validates the entire Perch pipeline before

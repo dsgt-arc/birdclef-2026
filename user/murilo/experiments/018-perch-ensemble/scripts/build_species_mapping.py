@@ -2,7 +2,7 @@
 
 Reads:
   - BirdCLEF 2026 taxonomy.csv (234 species with scientific_name, class_name)
-  - Perch v2 assets/labels.csv (14,795 scientific names, one per line)
+  - Perch v2 assets/labels.csv (14,796 scientific names, one per line)
 
 Outputs:
   - artifacts/perch_species_mapping.json with:
@@ -19,29 +19,41 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import yaml
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build Perch v2 -> BirdCLEF 2026 species mapping")
     parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config YAML (default: config/perch_ensemble_v1.yaml)",
+    )
+    parser.add_argument(
         "--taxonomy-csv",
         type=str,
-        default="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/taxonomy.csv",
-        help="Path to BirdCLEF 2026 taxonomy.csv",
+        default=None,
+        help="Override taxonomy CSV path from config",
     )
     parser.add_argument(
         "--perch-labels",
         type=str,
-        default="/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2/assets/labels.csv",
-        help="Path to Perch v2 labels.csv",
+        default=None,
+        help="Override Perch labels CSV path from config",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
-        help="Output directory (default: artifacts/ relative to experiment dir)",
+        help="Override output directory from config",
     )
     return parser.parse_args()
+
+
+def load_config(config_path: Path) -> dict:
+    with open(config_path) as f:
+        return yaml.safe_load(f)
 
 
 def load_perch_labels(labels_path: str) -> dict[str, int]:
@@ -76,17 +88,27 @@ def build_genus_index(perch_labels: dict[str, int]) -> dict[str, list[int]]:
 def main() -> None:
     args = parse_args()
 
-    # Resolve output directory
-    if args.output_dir is None:
-        experiment_dir = Path(__file__).resolve().parent.parent
-        output_dir = experiment_dir / "artifacts"
+    # Resolve config
+    experiment_dir = Path(__file__).resolve().parent.parent
+    if args.config is None:
+        config_path = experiment_dir / "config" / "perch_ensemble_v1.yaml"
     else:
-        output_dir = Path(args.output_dir)
+        config_path = Path(args.config)
+
+    config = load_config(config_path)
+    paths = config["paths"]
+
+    # Resolve paths (CLI overrides > config)
+    taxonomy_csv = args.taxonomy_csv or paths["taxonomy_csv"]
+    perch_labels_path = args.perch_labels or paths["perch_labels_csv"]
+    output_dir = (
+        Path(args.output_dir) if args.output_dir else experiment_dir / paths["local_artifacts_dir"]
+    )
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load BirdCLEF 2026 taxonomy
-    taxonomy = pd.read_csv(args.taxonomy_csv)
+    taxonomy = pd.read_csv(taxonomy_csv)
     print(f"Loaded taxonomy: {len(taxonomy)} species")
     print(f"  Columns: {list(taxonomy.columns)}")
     print("  Class distribution:")
@@ -94,7 +116,7 @@ def main() -> None:
         print(f"    {cls}: {count}")
 
     # Load Perch v2 labels
-    perch_labels = load_perch_labels(args.perch_labels)
+    perch_labels = load_perch_labels(perch_labels_path)
     print(f"\nLoaded Perch labels: {len(perch_labels)} entries (including non-bird class at idx 0)")
 
     # Build genus index for proxy matching

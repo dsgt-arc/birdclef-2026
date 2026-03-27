@@ -40,6 +40,12 @@ from sklearn.model_selection import GroupKFold
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
+def load_config(config_path: Path) -> dict:
+    """Load experiment config from YAML file."""
+    with open(config_path) as f:
+        return yaml.safe_load(f)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Train per-class LogReg probes and build metadata priors"
@@ -59,8 +65,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--labels-csv",
         type=str,
-        default="/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv",
-        help="Path to train_soundscapes_labels.csv",
+        default=None,
+        help="Path to train_soundscapes_labels.csv (default: from config paths.soundscape_labels_csv)",
     )
     parser.add_argument(
         "--species-mapping",
@@ -328,40 +334,49 @@ def build_metadata_priors(
 def main() -> None:
     args = parse_args()
 
-    # Resolve paths
+    # Resolve experiment dir and load config (CLI overrides > config defaults)
     experiment_dir = Path(__file__).resolve().parent.parent
-
-    if args.embeddings_parquet is None:
-        embeddings_path = experiment_dir / "outputs" / "perch_embeddings.parquet"
-    else:
-        embeddings_path = Path(args.embeddings_parquet)
-
-    if args.mapped_scores_parquet is None:
-        mapped_scores_path = experiment_dir / "outputs" / "perch_mapped_scores.parquet"
-    else:
-        mapped_scores_path = Path(args.mapped_scores_parquet)
-
-    if args.species_mapping is None:
-        species_mapping_path = experiment_dir / "artifacts" / "perch_species_mapping.json"
-    else:
-        species_mapping_path = Path(args.species_mapping)
 
     if args.config is None:
         config_path = experiment_dir / "config" / "perch_ensemble_v1.yaml"
     else:
         config_path = Path(args.config)
 
-    if args.output_dir is None:
-        output_dir = experiment_dir / "artifacts" / "perch_probes"
+    print(f"Loading config from: {config_path}")
+    config = load_config(config_path)
+    paths = config["paths"]
+
+    # Resolve paths: CLI args override config defaults
+    if args.embeddings_parquet:
+        embeddings_path = Path(args.embeddings_parquet)
     else:
+        embeddings_path = Path(paths["embeddings_dir"]) / "perch_embeddings.parquet"
+
+    if args.mapped_scores_parquet:
+        mapped_scores_path = Path(args.mapped_scores_parquet)
+    else:
+        mapped_scores_path = Path(paths["embeddings_dir"]) / "perch_mapped_scores.parquet"
+
+    if args.species_mapping:
+        species_mapping_path = Path(args.species_mapping)
+    else:
+        local_artifacts = paths["local_artifacts_dir"]
+        if not Path(local_artifacts).is_absolute():
+            species_mapping_path = experiment_dir / local_artifacts / "perch_species_mapping.json"
+        else:
+            species_mapping_path = Path(local_artifacts) / "perch_species_mapping.json"
+
+    if args.labels_csv:
+        labels_csv_path = Path(args.labels_csv)
+    else:
+        labels_csv_path = Path(paths["soundscape_labels_csv"])
+
+    if args.output_dir:
         output_dir = Path(args.output_dir)
+    else:
+        output_dir = Path(paths["probe_artifacts_dir"])
 
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Load config
-    print(f"Loading config from: {config_path}")
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
 
     probe_config = config["probes"]
     prior_config = config["priors"]
@@ -392,8 +407,8 @@ def main() -> None:
     print(f"  Shape: {mapped_scores.shape}")
 
     # Load labels
-    print(f"\nLoading labels from: {args.labels_csv}")
-    labels_df = pd.read_csv(args.labels_csv)
+    print(f"\nLoading labels from: {labels_csv_path}")
+    labels_df = pd.read_csv(labels_csv_path)
     print(f"  {len(labels_df)} label rows")
 
     # Build binary label matrix
