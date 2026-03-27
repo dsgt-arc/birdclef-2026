@@ -243,6 +243,7 @@ def main():
     callbacks = []
     checkpoint_callback = None
     gpu_monitor = None
+    fulldata = config["data"].get("val_fraction", 0.1) == 0.0
 
     if gpu_check_mode:
         from birdclef.callbacks.gpu_monitor import GPUUtilizationMonitor
@@ -255,8 +256,6 @@ def main():
     else:
         checkpoint_dir = project_dir / "experiments" / EXPERIMENT_NAME / "checkpoints" / run_name
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-        fulldata = config["data"].get("val_fraction", 0.1) == 0.0
 
         if fulldata:
             # Fulldata mode: no val set, no early stopping.
@@ -349,6 +348,8 @@ def main():
         logger=loggers,
         log_every_n_steps=config["logging"]["log_every_n_steps"],
         fast_dev_run=5 if args.fast_dev_run else False,
+        limit_val_batches=0 if fulldata else 1.0,
+        num_sanity_val_steps=0 if fulldata else 2,
         enable_progress_bar=True,
         enable_model_summary=True,
     )

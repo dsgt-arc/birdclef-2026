@@ -552,7 +552,7 @@ class SEDDataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         if self.val_dataset is None:
-            return None
+            return []
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
