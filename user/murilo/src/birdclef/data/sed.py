@@ -522,6 +522,7 @@ class SEDDataModule(pl.LightningDataModule):
         if fulldata:
             logger.info(f"SED datasets: {len(self.train_dataset)} train (fulldata, no val/test)")
             logger.info(f"  Focal: {len(focal_train)}")
+            logger.info(f"  Soundscape: {len(sc_train)}")
         else:
             logger.info(
                 f"SED datasets: {len(self.train_dataset)} train, "
@@ -532,10 +533,10 @@ class SEDDataModule(pl.LightningDataModule):
                 f"  Focal: {len(focal_train)}+{len(focal_val)}"
                 + (f"+{len(focal_test)}" if has_test else "")
             )
-        logger.info(
-            f"  Soundscape: {len(sc_train)}+{len(sc_val)}"
-            + (f"+{len(sc_test)}" if has_test else "")
-        )
+            logger.info(
+                f"  Soundscape: {len(sc_train)}+{len(sc_val)}"
+                + (f"+{len(sc_test)}" if has_test else "")
+            )
 
     def train_dataloader(self):
         return DataLoader(
