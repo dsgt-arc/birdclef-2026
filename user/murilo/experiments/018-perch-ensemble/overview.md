@@ -32,8 +32,8 @@ the ensemble would mask it.
 - For each 5s audio window, it outputs two things:
   - **Logits** (14,795-dim): "how likely is each of 14,795 species"
   - **Embeddings** (1536-dim): a rich feature vector summarizing the audio content
-- Strong at: species identification from massive pretraining, soundscape robustness
-- Weak at: 25 insect sonotypes it has never heard, no temporal reasoning across windows
+- **Strong at:** species identification from massive pretraining, soundscape robustness
+- **Weak at:** 25 insect sonotypes it has never heard, no temporal reasoning across windows
 
 ### Why Ensemble?
 
@@ -43,7 +43,7 @@ the ensemble would mask it.
 | Training data | BirdCLEF 2026 only | Global bird audio (10K+ species) |
 | Audio frontend | High-res mel (n_fft=4096) | PCEN mel |
 | Temporal modeling | Frame-level attention across 10s | Independent 5s windows |
-| Insect coverage | All 234 species | 209 species (25 unmapped) |
+| Species coverage | All 234 species | 209 species (25 unmapped) |
 
 They're fundamentally different models looking at audio in different ways. When SED
 is wrong, Perch might be right (and vice versa). That diversity is what makes
