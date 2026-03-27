@@ -161,20 +161,60 @@ def find_perch_artifacts_dir() -> Path | None:
 
 
 def find_perch_model_dir() -> Path | None:
-    """Find Perch v2 TF SavedModel directory."""
+    """Find Perch v2 TF SavedModel directory.
+
+    Kaggle mounts model sources at paths that vary by layout version.
+    We search candidates and also walk /kaggle/input/ to find saved_model.pb.
+    """
+    # First try explicit candidates
     for candidate in PERCH_MODEL_CANDIDATES:
         p = Path(candidate)
         if p.exists():
-            # Check if it has saved_model.pb (could be in subdir)
             if (p / "saved_model.pb").exists():
                 return p
             # Check one level deeper
             for subdir in sorted(p.iterdir()):
                 if subdir.is_dir() and (subdir / "saved_model.pb").exists():
                     return subdir
-            # If directory exists but no saved_model.pb found, still return it
-            # TF will handle the error
             return p
+
+    # Fallback: walk /kaggle/input/ looking for saved_model.pb (discovers any mount path)
+    kaggle_input = Path("/kaggle/input")
+    if kaggle_input.exists():
+        print("\n  DEBUG: Walking /kaggle/input/ to find Perch saved_model.pb...")
+        # List top 3 levels to find the model
+        for depth1 in sorted(kaggle_input.iterdir()):
+            if depth1.name.startswith("."):
+                continue
+            if (depth1 / "saved_model.pb").exists():
+                print(f"  DEBUG: Found at {depth1}")
+                return depth1
+            if depth1.is_dir():
+                for depth2 in sorted(depth1.iterdir()):
+                    if (depth2 / "saved_model.pb").exists():
+                        print(f"  DEBUG: Found at {depth2}")
+                        return depth2
+                    if depth2.is_dir():
+                        for depth3 in sorted(depth2.iterdir()):
+                            if (depth3 / "saved_model.pb").exists():
+                                print(f"  DEBUG: Found at {depth3}")
+                                return depth3
+                            if depth3.is_dir():
+                                for depth4 in sorted(depth3.iterdir()):
+                                    if (depth4 / "saved_model.pb").exists():
+                                        print(f"  DEBUG: Found at {depth4}")
+                                        return depth4
+
+        # If still not found, print what we see for debugging
+        print("  DEBUG: saved_model.pb not found. Directory listing:")
+        for depth1 in sorted(kaggle_input.iterdir()):
+            print(f"    {depth1.name}/")
+            if depth1.is_dir():
+                for depth2 in sorted(depth1.iterdir()):
+                    print(f"      {depth2.name}/")
+                    if depth2.is_dir():
+                        for depth3 in sorted(depth2.iterdir()):
+                            print(f"        {depth3.name}/")
 
     # Local testing fallback
     local = Path("/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2")
