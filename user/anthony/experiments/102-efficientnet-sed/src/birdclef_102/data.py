@@ -397,6 +397,54 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
 
         self.num_classes = len(self.species_list)
 
+    def _split_soundscape_files(self, seed):
+        """Split soundscape labels CSV by file into train/val (50/50).
+
+        Returns (train_csv_path, val_csv_path, train_nocall_path, val_nocall_path).
+        Writes temporary split CSVs to the same directory as the original.
+        """
+        import tempfile
+
+        labels = pd.read_csv(self.soundscape_labels_csv)
+        files = sorted(labels["filename"].unique())
+        rng = np.random.RandomState(seed)
+        rng.shuffle(files)
+
+        mid = len(files) // 2
+        train_files = set(files[:mid])
+        val_files = set(files[mid:])
+
+        logger.info(f"Soundscape split: {len(train_files)} train files, {len(val_files)} val files")
+
+        # Split labels
+        train_labels = labels[labels["filename"].isin(train_files)]
+        val_labels = labels[labels["filename"].isin(val_files)]
+
+        # Write split CSVs to temp files
+        train_csv = tempfile.NamedTemporaryFile(suffix="_sc_train.csv", delete=False, mode="w")
+        val_csv = tempfile.NamedTemporaryFile(suffix="_sc_val.csv", delete=False, mode="w")
+        train_labels.to_csv(train_csv.name, index=False)
+        val_labels.to_csv(val_csv.name, index=False)
+
+        # Split nocall parquet if it exists
+        train_nocall = None
+        val_nocall = None
+        if self.nocall_parquet and Path(self.nocall_parquet).exists():
+            nocall = pd.read_parquet(self.nocall_parquet)
+            nc_train = nocall[nocall["filename"].isin(train_files)]
+            nc_val = nocall[nocall["filename"].isin(val_files)]
+
+            train_pq = tempfile.NamedTemporaryFile(suffix="_nc_train.parquet", delete=False)
+            val_pq = tempfile.NamedTemporaryFile(suffix="_nc_val.parquet", delete=False)
+            nc_train.to_parquet(train_pq.name, index=False)
+            nc_val.to_parquet(val_pq.name, index=False)
+            train_nocall = train_pq.name
+            val_nocall = val_pq.name
+
+            logger.info(f"Nocall split: {len(nc_train)} train, {len(nc_val)} val")
+
+        return train_csv.name, val_csv.name, train_nocall, val_nocall
+
     def setup(self, stage=None):
         if stage == "fit" or stage is None:
             df = pd.read_csv(self.metadata_csv)
@@ -429,24 +477,33 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
                 norm_mean=self.norm_mean,
                 norm_std=self.norm_std,
             )
+            # Split soundscape files for train/val if using soundscape validation
+            sc_labels_train = self.soundscape_labels_csv
+            sc_labels_val = None
+            nocall_train = self.nocall_parquet
+            nocall_val = None
+
+            if self.val_on_soundscape and self.soundscape_labels_csv:
+                sc_labels_train, sc_labels_val, nocall_train, nocall_val = \
+                    self._split_soundscape_files(self.seed)
+
             # Soundscape data goes into training
             self.train_dataset = BirdCLEF102Dataset(
                 metadata_df=train_df,
                 soundscape_dir=self.soundscape_dir,
-                soundscape_labels_csv=self.soundscape_labels_csv,
-                nocall_parquet=self.nocall_parquet,
+                soundscape_labels_csv=sc_labels_train,
+                nocall_parquet=nocall_train,
                 **dataset_kwargs,
             )
 
-            if self.val_on_soundscape and self.soundscape_dir and self.soundscape_labels_csv:
-                # Validate on labeled soundscape windows — measures what Kaggle tests
-                # Use empty focal df so only soundscape chunks are in val
+            if self.val_on_soundscape and sc_labels_val is not None:
+                # Validate on held-out soundscape files
                 empty_df = train_df.iloc[:0]
                 self.val_dataset = BirdCLEF102Dataset(
                     metadata_df=empty_df,
                     soundscape_dir=self.soundscape_dir,
-                    soundscape_labels_csv=self.soundscape_labels_csv,
-                    nocall_parquet=self.nocall_parquet,
+                    soundscape_labels_csv=sc_labels_val,
+                    nocall_parquet=nocall_val,
                     **dataset_kwargs,
                 )
                 logger.info(f"Validation on soundscape: {len(self.val_dataset)} windows")
