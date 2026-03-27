@@ -1,0 +1,91 @@
+# Experiment 017, Step 3: AttBlockV2 + ASL (v4h — Tom's best recipe)
+#
+# Tom's best single-technique gain: ASL (+0.023 over BCE). His entire experiment
+# series uses AttBlockV2 + AmplitudeToDB as the base, then swaps BCE → ASL.
+#
+# Our v4d tested ASL replacing soft_ce with AttHead — wrong baseline and wrong head.
+# This config tests ASL in the context it was designed for: replacing BCE with
+# AttBlockV2 head and AmplitudeToDB norm.
+#
+# Changes from v4g (AttBlockV2 + BCE):
+#   - training.loss_type: bce → asl
+#
+# References:
+#   - Tom's v5→v9: BCE 0.7527 → ASL 0.7755 (+0.023)
+#   - ASL (Ridnik et al. 2021): γ⁻=4, γ⁺=0, clip=0.05
+
+run_name: "2026-effnet-b0-sed-v4h"
+
+encoder:
+  type: "efficientnet"
+  model_name: "efficientnet_b0"
+  pretrained: true
+  embed_dim: 320
+
+sed_head:
+  type: "att_block_v2"
+  hidden_dim: 512
+  dropout: 0.5
+  gem_p: 3.0
+
+mel:
+  n_fft: 4096
+  n_mels: 224
+  hop_length: 320
+  fmax: null
+  gpu: true
+  norm_type: "amplitude_to_db"
+  top_db: 80.0
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 10.0
+  batch_size: 64
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 8
+  soundscape_test_files: 0
+  seed: 42
+
+training:
+  max_epochs: 50
+  lr: 1.0e-4
+  head_lr: 1.0e-3
+  weight_decay: 0.01
+  warmup_epochs: 5
+  threshold: 0.5
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 4
+  clipwise_weight: 0.5
+  framewise_weight: 0.5
+  blend_clip: 0.75
+  blend_frame: 0.25
+  mixup_prob: 0.5
+  mixup_alpha: 0.5
+  loss_type: "asl"
+  asl_gamma_neg: 4.0
+  asl_gamma_pos: 0.0
+  asl_clip: 0.05
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/auroc"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/auroc"
+    mode: "max"
+    patience: 10
+    min_delta: 0.001
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-mel-overhaul"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

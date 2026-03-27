@@ -165,6 +165,64 @@ Strong learning curve from random init:
 - Epoch 18: val/auroc 0.844 (plateauing)
 - Epoch 24: val/auroc 0.845 (best, early stopped at epoch 34)
 
+## BirdCLEF 2026 Models — Mel Overhaul (exp 017)
+
+EfficientNet-B0 SED with high-resolution mel: n_fft=4096, n_mels=224 (vs v1's 1024/128).
+All other parameters identical to exp 016 v1 to isolate the mel resolution variable.
+Mel computed on GPU (n_fft=4096 too slow on CPU DataLoader workers).
+
+| Slug | Encoder | Architecture | Mel | Classes | Test AUROC | Test cmAP | Best Epoch | LB | Checkpoint |
+|------|---------|-------------|-----|---------|-----------|----------|------------|-----|------------|
+| `effnet-b0-sed-v4a` | EfficientNet-B0 | SED (GeM + AttHead) | n_fft=4096, n_mels=224 | 234 | **0.862** | **0.615** | 24 | 0.825 / **0.830** (+pp2) | `017-.../2026-effnet-b0-sed-v4a/best-epochepoch=24.ckpt` |
+
+### Comparison: v4a vs v1
+
+| Metric | v1 (exp 016) | v4a (exp 017) | Delta |
+|--------|-------------|---------------|-------|
+| test/auroc | 0.860 | **0.862** | +0.002 |
+| test/cmap | 0.593 | **0.615** | **+0.022** |
+| test/top1_acc | 0.762 | 0.772 | +0.010 |
+| test/top5_acc | 0.887 | 0.894 | +0.007 |
+| LB (raw) | 0.795 | **0.825** | **+0.030** |
+| LB (+pp2) | 0.827 | **0.830** | **+0.003** |
+
+**Mel resolution is a major lever.** v4a raw (0.825) nearly matches v1+pp2 (0.827) with
+zero post-processing. PP2 adds only +0.005 on v4a (vs +0.032 on v1) — diminishing returns
+as the model already captures distinctions that post-processing was compensating for.
+Decision gate passed → continue to Step 2.
+
+Inference optimized with full-signal mel (compute STFT once per 60s file, slice frames)
+to stay within the 90-minute Kaggle CPU budget at n_fft=4096.
+
+### Step 2: Parallel Ablations (v4b-v4e)
+
+Single-variable ablations from v4a. 90/10 split (no test set), 50 epochs.
+No test metrics available — only val/auroc from checkpoint callback.
+
+| Slug | Change | Mel Norm | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|----------|------|------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v4b` | AmplitudeToDB norm | amplitude_to_db | AttHead | soft_ce | **0.865** | 30 | **0.859** / **0.860** (+pp2) | `017-.../2026-effnet-b0-sed-v4b/best-epochepoch=30.ckpt` |
+| `effnet-b0-sed-v4c` | AttBlockV2 head | audioset | AttBlockV2 | soft_ce | 0.815 | 15 | skipped | `017-.../2026-effnet-b0-sed-v4c/best-epochepoch=15.ckpt` |
+| `effnet-b0-sed-v4d` | ASL loss | audioset | AttHead | asl | 0.858 | 16 | 0.808 | `017-.../2026-effnet-b0-sed-v4d/best-epochepoch=16.ckpt` |
+| `effnet-b0-sed-v4e` | StochasticDepth | audioset | AttHead | soft_ce | **0.868** | 29 | 0.840 | `017-.../2026-effnet-b0-sed-v4e/best-epochepoch=29.ckpt` |
+
+### Step 3: Combined winners + re-ablations
+
+| Slug | Change | Mel Norm | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|----------|------|------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v4f` | v4b + StochasticDepth | amplitude_to_db | AttHead | soft_ce | 0.862 | 17 | 0.832 | `017-.../2026-effnet-b0-sed-v4f/best-epochepoch=17.ckpt` |
+| `effnet-b0-sed-v4g` | v4b + AttBlockV2 + BCE | amplitude_to_db | AttBlockV2 | bce | **0.868** | 28 | 0.819 | `017-.../2026-effnet-b0-sed-v4g/best-epochepoch=28.ckpt` |
+| `effnet-b0-sed-v4h` | v4b + AttBlockV2 + ASL | amplitude_to_db | AttBlockV2 | asl | 0.858 | 12 | 0.800 | `017-.../2026-effnet-b0-sed-v4h/best-epochepoch=12.ckpt` |
+
+### Step 4: Fulldata Training
+
+| Slug | Change | Mel Norm | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|----------|------|------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v4b-fulldata` | v4b on 100% data | amplitude_to_db | AttHead | soft_ce | — (no val) | 44 (last) | 0.853 | `017-.../2026-effnet-b0-sed-v4b-fulldata/last.ckpt` |
+
+**v4b (AmplitudeToDB)** is the current best at 0.859 LB (0.860 with pp2).
+Fulldata training regressed −0.006 (0.853 vs 0.859) — likely overtrained without val monitoring.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

@@ -20,10 +20,10 @@ If no argument is provided, list available experiments for selection.
 **Arguments**
 
 - `$ARGUMENTS` - Experiment path or ID. Accepts:
-  - Full path: `user/murilo/experiments/003-model-training`
-  - ID with name: `003-model-training`
-  - Just ID: `003`
-  - If ambiguous, list matches and ask the user
+  - Full path: `user/<name>/experiments/003-model-training`
+  - User + ID: `<name>/003` or `<name>/003-model-training`
+  - Just ID: `003` (glob across `user/*/experiments/003-*`, ask if ambiguous)
+  - If ambiguous or no user specified, list matches and ask
 
 **Steps**
 
@@ -105,8 +105,8 @@ If no argument is provided, list available experiments for selection.
 ```
 ## Experiment Summary: 003-model-training
 
-**Path**: user/murilo/experiments/003-model-training/
-**Status**: completed | **Author**: Murilo
+**Path**: user/<name>/experiments/003-model-training/
+**Status**: completed | **Author**: <name>
 **Created**: 2026-02-08
 
 ### Hypothesis

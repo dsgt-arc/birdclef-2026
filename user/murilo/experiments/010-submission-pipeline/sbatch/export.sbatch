@@ -340,6 +340,131 @@ export_effnet_b0_sed_v3d() {
         --output-dir artifacts/weights/effnet-b0-sed-v3d/
 }
 
+# ============================================================================
+# Exp 017: Mel overhaul SED model exports (n_fft=4096, n_mels=224)
+# ============================================================================
+
+EXP017_DIR="$(dirname "$EXPERIMENT_DIR")/017-mel-overhaul"
+
+export_effnet_b0_sed_v4a() {
+    echo "=== Exporting EfficientNet-B0 SED v4a (mel overhaul, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4a/best-epochepoch=24.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4a.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4a/
+}
+
+export_effnet_b0_sed_v4b() {
+    echo "=== Exporting EfficientNet-B0 SED v4b (AmplitudeToDB norm, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4b/best-epochepoch=30.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4b.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4b/
+}
+
+export_effnet_b0_sed_v4c() {
+    echo "=== Exporting EfficientNet-B0 SED v4c (AttBlockV2, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4c/best-epochepoch=15.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4c.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4c/
+}
+
+export_effnet_b0_sed_v4d() {
+    echo "=== Exporting EfficientNet-B0 SED v4d (ASL loss, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4d/best-epochepoch=16.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4d.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4d/
+}
+
+export_effnet_b0_sed_v4e() {
+    echo "=== Exporting EfficientNet-B0 SED v4e (StochasticDepth, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4e/best-epochepoch=29.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4e.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4e/
+}
+
+export_effnet_b0_sed_v4f() {
+    echo "=== Exporting EfficientNet-B0 SED v4f (AmplitudeToDB + StochasticDepth, 234 classes) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4f"
+    local CKPT
+    CKPT="$(ls -t "$CKPT_DIR"/best-epoch*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No best-epoch*.ckpt found in $CKPT_DIR" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4f.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4f/
+}
+
+export_effnet_b0_sed_v4b_fulldata() {
+    echo "=== Exporting EfficientNet-B0 SED v4b-fulldata (AmplitudeToDB, fulldata, 234 classes) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4b-fulldata"
+    local CKPT
+    # Use last.ckpt for fulldata (no "best" since no val monitoring)
+    CKPT="$(ls -t "$CKPT_DIR"/last*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No last*.ckpt found in $CKPT_DIR" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4b_fulldata.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4b-fulldata/
+}
+
+export_effnet_b0_sed_v4g() {
+    echo "=== Exporting EfficientNet-B0 SED v4g (AttBlockV2 + BCE, 234 classes) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4g"
+    local CKPT
+    CKPT="$(ls -t "$CKPT_DIR"/best-epoch*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No best-epoch*.ckpt found in $CKPT_DIR" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4g.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4g/
+}
+
+export_effnet_b0_sed_v4h() {
+    echo "=== Exporting EfficientNet-B0 SED v4h (AttBlockV2 + ASL, 234 classes) ==="
+    local CKPT_DIR="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4h"
+    local CKPT
+    CKPT="$(ls -t "$CKPT_DIR"/best-epoch*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No best-epoch*.ckpt found in $CKPT_DIR" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4h.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4h/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -384,7 +509,8 @@ esac
 case "$MODEL" in
     eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
     protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student|\
-    effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3a|effnet-b0-sed-v3b|effnet-b0-sed-v3c|effnet-b0-sed-v3d|all-2026-sed)
+    effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3a|effnet-b0-sed-v3b|effnet-b0-sed-v3c|effnet-b0-sed-v3d|\
+    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TAXONOMY_CSV_2026" \
@@ -459,6 +585,22 @@ case "$MODEL" in
         export_effnet_b0_sed_v3c
         echo ""
         export_effnet_b0_sed_v3d
+        ;;
+    effnet-b0-sed-v4a)         export_effnet_b0_sed_v4a ;;
+    effnet-b0-sed-v4b)         export_effnet_b0_sed_v4b ;;
+    effnet-b0-sed-v4c)         export_effnet_b0_sed_v4c ;;
+    effnet-b0-sed-v4d)         export_effnet_b0_sed_v4d ;;
+    effnet-b0-sed-v4e)         export_effnet_b0_sed_v4e ;;
+    effnet-b0-sed-v4f)             export_effnet_b0_sed_v4f ;;
+    effnet-b0-sed-v4b-fulldata)    export_effnet_b0_sed_v4b_fulldata ;;
+    effnet-b0-sed-v4g)         export_effnet_b0_sed_v4g ;;
+    effnet-b0-sed-v4h)         export_effnet_b0_sed_v4h ;;
+    all-017-ablations)
+        export_effnet_b0_sed_v4b
+        echo ""
+        export_effnet_b0_sed_v4d
+        echo ""
+        export_effnet_b0_sed_v4e
         ;;
     *)
         echo "Unknown model: $MODEL"

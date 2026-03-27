@@ -1,0 +1,93 @@
+# Experiment 017, Step 4: Fulldata training with v4b recipe
+#
+# Trains the winning v4b recipe (AmplitudeToDB + AttHead + soft CE) on 100%
+# of the labeled data (no val split). All focal recordings + all labeled
+# soundscapes go to training.
+#
+# Epoch cap: 45 = ~1.5× v4b's best epoch (30). v4b trained on 90/10 split
+# and peaked at epoch 30 with patience=10 (stopped at 41). With ~11% more
+# training data, we expect the optimal point to shift slightly earlier,
+# so 45 epochs provides a safe margin.
+#
+# Checkpoints saved every 5 epochs + last. No early stopping (no val set).
+# Submit epoch 30 (matching v4b) and last to LB to find the sweet spot.
+#
+# IMPORTANT: Fulldata risks overfitting. Exp 011 showed ConvNeXt regressed
+# -0.025 LB on fulldata while ProtoCLR gained +0.015. EfficientNet-B0 is
+# lightweight (3.6M params) so should be less prone to overfitting, but the
+# epoch cap is critical.
+#
+# Changes from v4b:
+#   - data.val_fraction: 0.1 → 0.0 (fulldata, no validation)
+#   - data.soundscape_val_files: 8 → 0
+#   - training.max_epochs: 50 → 45 (capped at ~1.5× v4b best epoch)
+#   - callbacks.model_checkpoint: save every 5 epochs (no val monitoring)
+#   - callbacks.early_stopping: removed (no val set)
+
+run_name: "2026-effnet-b0-sed-v4b-fulldata"
+
+encoder:
+  type: "efficientnet"
+  model_name: "efficientnet_b0"
+  pretrained: true
+  embed_dim: 320
+
+sed_head:
+  hidden_dim: 512
+  dropout: 0.5
+  gem_p: 3.0
+
+mel:
+  n_fft: 4096
+  n_mels: 224
+  hop_length: 320
+  fmax: null
+  gpu: true
+  norm_type: "amplitude_to_db"
+  top_db: 80.0
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 10.0
+  batch_size: 64
+  num_workers: 8
+  val_fraction: 0.0
+  test_fraction: 0.0
+  soundscape_val_files: 0
+  soundscape_test_files: 0
+  seed: 42
+
+training:
+  max_epochs: 45
+  lr: 1.0e-4
+  head_lr: 1.0e-3
+  weight_decay: 0.01
+  warmup_epochs: 5
+  threshold: 0.5
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 4
+  clipwise_weight: 0.5
+  framewise_weight: 0.5
+  blend_clip: 0.75
+  blend_frame: 0.25
+  mixup_prob: 0.5
+  mixup_alpha: 0.5
+
+callbacks:
+  model_checkpoint:
+    every_n_epochs: 5
+    save_last: true
+  early_stopping:
+    monitor: "val/auroc"
+    mode: "max"
+    patience: 10
+    min_delta: 0.001
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-mel-overhaul"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

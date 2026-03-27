@@ -73,6 +73,9 @@ Use slash commands to create properly structured documents:
 | `/experiment:result` | Experiment results | `docs/_templates/experiment-result.md` |
 | `/experiment:validate` | Validate experiment structure | - |
 | `/experiment:summary` | Experiment status summary for session context | - |
+| `/experiment:context` | Full experiment context loader for session start | - |
+| `/kaggle:discussion` | Fetch + document a Kaggle discussion post | `docs/references/kaggle/` |
+| `/kaggle:notebook` | Pull + analyze a Kaggle notebook | - |
 
 ## Tooling
 

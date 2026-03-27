@@ -8,8 +8,9 @@ Supports both spectrogram-domain mixup (v1/v2) and raw waveform mixup (v3b).
 Inference: 0.75 * sigmoid(clipwise) + 0.25 * sigmoid(framewise_max).
 
 Data flow:
-  - Default: mel spectrogram → backbone features → SED head → dual logits.
-  - With mel_transform: raw waveform → mixup → mel transform (GPU) → backbone → SED head.
+  - Default: mel spectrogram (CPU) → backbone features → SED head → dual logits.
+  - With mel_transform + waveform_mixup: raw waveform → mixup → mel (GPU) → backbone → SED head.
+  - With mel_transform (no waveform_mixup): raw waveform → mel (GPU) → spec mixup → backbone → SED head.
 """
 
 import logging
@@ -25,6 +26,55 @@ import torchmetrics
 from birdclef.classifiers import MultiLabelTopKAccuracy
 
 logger = logging.getLogger(__name__)
+
+
+class AsymmetricLoss(nn.Module):
+    """Asymmetric Loss for multi-label classification (Ridnik et al. 2021).
+
+    Decouples focusing for positive and negative samples. Suppresses easy
+    negatives aggressively while preserving positive gradients — critical for
+    the 234-class BirdCLEF setting where >99% of labels are negative.
+
+    Args:
+        gamma_neg: Focusing parameter for negatives (default: 4).
+        gamma_pos: Focusing parameter for positives (default: 0).
+        clip: Probability clipping for negatives to prevent gradient explosion (default: 0.05).
+    """
+
+    def __init__(self, gamma_neg: float = 4.0, gamma_pos: float = 0.0, clip: float = 0.05):
+        super().__init__()
+        self.gamma_neg = gamma_neg
+        self.gamma_pos = gamma_pos
+        self.clip = clip
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Compute ASL loss.
+
+        Args:
+            logits: (B, C) raw logits.
+            targets: (B, C) multi-hot labels (0s and 1s, or soft labels).
+        """
+        probs = torch.sigmoid(logits)
+
+        # Positive and negative parts
+        pos_probs = probs
+        neg_probs = 1.0 - probs
+
+        # Probability margin clipping for negatives
+        if self.clip > 0:
+            neg_probs = (neg_probs + self.clip).clamp(max=1.0)
+
+        # Basic CE terms
+        pos_loss = -targets * torch.log(pos_probs.clamp(min=1e-8))
+        neg_loss = -(1.0 - targets) * torch.log(neg_probs.clamp(min=1e-8))
+
+        # Asymmetric focusing
+        if self.gamma_pos > 0:
+            pos_loss = pos_loss * (1.0 - pos_probs).pow(self.gamma_pos)
+        if self.gamma_neg > 0:
+            neg_loss = neg_loss * probs.pow(self.gamma_neg)
+
+        return (pos_loss + neg_loss).sum(dim=-1).mean()
 
 
 class SEDFinetuneModule(pl.LightningModule):
@@ -52,10 +102,19 @@ class SEDFinetuneModule(pl.LightningModule):
         loss_type: Loss function type:
             - "soft_ce": Normalize multi-hot labels to sum-to-1, F.cross_entropy.
             - "ce": Standard F.cross_entropy on argmax class with label_smoothing.
+            - "bce": Binary cross-entropy with logits (native multi-label, sigmoid-based).
+            - "asl": Asymmetric Loss (Ridnik et al. 2021) for multi-label classification.
         label_smoothing: Label smoothing factor for "ce" loss type (default: 0.0).
+        asl_gamma_neg: ASL focusing for negatives (default: 4.0).
+        asl_gamma_pos: ASL focusing for positives (default: 0.0).
+        asl_clip: ASL probability clipping for negatives (default: 0.05).
         mel_transform: Optional nn.Module for GPU-side mel spectrogram transform.
-            When set, training data is raw waveforms and mixup applies before mel.
+            When set, training data is raw waveforms and mel is computed on GPU.
             When None (default), training data is pre-computed mel spectrograms.
+        waveform_mixup: When True AND mel_transform is set, mixup applies on raw
+            waveforms before mel conversion (v3b behavior). When False (default),
+            mixup applies on spectrograms after mel conversion. Only relevant
+            when mel_transform is set.
     """
 
     def __init__(
@@ -77,7 +136,11 @@ class SEDFinetuneModule(pl.LightningModule):
         mixup_alpha: float = 0.5,
         loss_type: str = "soft_ce",
         label_smoothing: float = 0.05,
+        asl_gamma_neg: float = 4.0,
+        asl_gamma_pos: float = 0.0,
+        asl_clip: float = 0.05,
         mel_transform: nn.Module | None = None,
+        waveform_mixup: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform"])
@@ -86,9 +149,14 @@ class SEDFinetuneModule(pl.LightningModule):
         self.sed_head = sed_head
         self.num_classes = num_classes
         self.threshold = threshold
-        # GPU-side mel transform for raw waveform mixup mode (v3b).
-        # When set, training_step receives raw waveforms, applies mixup, then mel.
+        # GPU-side mel transform. When set, training_step receives raw waveforms.
         self.mel_transform = mel_transform
+
+        # ASL loss instance (created once, reused)
+        if loss_type == "asl":
+            self.asl_loss = AsymmetricLoss(
+                gamma_neg=asl_gamma_neg, gamma_pos=asl_gamma_pos, clip=asl_clip
+            )
 
         # --- Metrics (same as LoRAFinetuneModule) ---
         for split in ("train", "val", "test"):
@@ -136,6 +204,7 @@ class SEDFinetuneModule(pl.LightningModule):
         Supports:
         - "soft_ce": Normalize multi-hot to sum-to-1 soft targets, F.cross_entropy.
         - "ce": Standard CE with label_smoothing on argmax class (single-label approx).
+        - "asl": Asymmetric Loss for multi-label classification.
 
         Args:
             logits: (B, num_classes) raw logits.
@@ -144,7 +213,11 @@ class SEDFinetuneModule(pl.LightningModule):
         Returns:
             Scalar loss.
         """
-        if self.hparams.loss_type == "ce":
+        if self.hparams.loss_type == "asl":
+            return self.asl_loss(logits, labels)
+        elif self.hparams.loss_type == "bce":
+            return F.binary_cross_entropy_with_logits(logits, labels.float())
+        elif self.hparams.loss_type == "ce":
             # Standard CE: use argmax of multi-hot as class index
             targets = labels.argmax(dim=-1)
             return F.cross_entropy(logits, targets, label_smoothing=self.hparams.label_smoothing)
@@ -181,8 +254,8 @@ class SEDFinetuneModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, labels = batch
 
-        if self.mel_transform is not None:
-            # Raw waveform mode: mixup on waveforms, then compute mel on GPU.
+        if self.mel_transform is not None and self.hparams.waveform_mixup:
+            # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
             # Mel computation must run in float32 and outside autograd graph:
             # - float32: nnAudio STFT magnitudes can overflow float16 range
             # - no_grad: mel is a fixed transform, not a learnable layer
@@ -190,8 +263,15 @@ class SEDFinetuneModule(pl.LightningModule):
                 x, labels = self._apply_mixup(x, labels)
             with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
                 mel = self.mel_transform(x.float())
+        elif self.mel_transform is not None:
+            # GPU mel mode: compute mel on GPU first, then spectrogram mixup.
+            # Same training behavior as CPU mel mode but avoids DataLoader bottleneck.
+            with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                mel = self.mel_transform(x.float())
+            if random.random() < self.hparams.mixup_prob:
+                mel, labels = self._apply_mixup(mel, labels)
         else:
-            # Spectrogram mode (default): mixup on pre-computed mel
+            # CPU mel mode (default): input is pre-computed mel, spectrogram mixup
             mel = x
             if random.random() < self.hparams.mixup_prob:
                 mel, labels = self._apply_mixup(mel, labels)
@@ -235,8 +315,16 @@ class SEDFinetuneModule(pl.LightningModule):
         ):
             m.reset()
 
+    def _to_mel(self, x: torch.Tensor) -> torch.Tensor:
+        """Convert input to mel spectrogram, using GPU mel if available."""
+        if self.mel_transform is not None:
+            with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                return self.mel_transform(x.float())
+        return x
+
     def validation_step(self, batch, batch_idx):
         mel, labels = batch
+        mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
@@ -276,6 +364,7 @@ class SEDFinetuneModule(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         mel, labels = batch
+        mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
