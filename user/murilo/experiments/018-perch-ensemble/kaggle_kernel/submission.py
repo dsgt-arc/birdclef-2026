@@ -47,6 +47,26 @@ if os.path.exists("/kaggle/input"):
     print(f"Kaggle input contents: {os.listdir('/kaggle/input')}")
 print(f"PERCH_ONLY mode: {PERCH_ONLY}")
 
+# Install TensorFlow 2.20 from pre-built wheel (Kaggle's default TF is too old for Perch v2)
+# Wheel source: kdmitrie/bc26-tensorflow-2-20-0 (kernel_sources in metadata)
+TF_WHEEL_CANDIDATES = [
+    "/kaggle/input/notebooks/kdmitrie/bc26-tensorflow-2-20-0/wheel",
+    "/kaggle/input/bc26-tensorflow-2-20-0/wheel",
+    "/kaggle/input/bc26-tensorflow-2-20-0",
+]
+for tf_wheel_dir in TF_WHEEL_CANDIDATES:
+    if os.path.exists(tf_wheel_dir):
+        print(f"Installing TensorFlow 2.20 from {tf_wheel_dir}")
+        # Install tensorboard first (dependency), then tensorflow
+        for whl in sorted(os.listdir(tf_wheel_dir)):
+            if whl.endswith(".whl"):
+                whl_path = os.path.join(tf_wheel_dir, whl)
+                print(f"  Installing {whl}")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", whl_path])
+        break
+else:
+    print("WARNING: TF 2.20 wheel not found, using Kaggle default TensorFlow")
+
 # Install onnxruntime only when SED is needed (not in PERCH_ONLY mode)
 if not PERCH_ONLY:
     DEPS_DIR = _find_input_early("birdclef-deps")

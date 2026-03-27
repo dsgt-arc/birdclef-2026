@@ -14,5 +14,7 @@
     "google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
   ],
   "competition_sources": ["birdclef-2026"],
-  "kernel_sources": []
+  "kernel_sources": [
+    "kdmitrie/bc26-tensorflow-2-20-0"
+  ]
 }
