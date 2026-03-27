@@ -18,41 +18,66 @@ different models pushes past 0.92.
 
 ## Phase A: Perch-Only Baseline (reproduce chiranjithdharma ~0.910)
 
-### Step 1: Species Mapping
+### Step 1: Offline Pipeline (PACE)
 
-- [ ] 1.1 Run `scripts/build_species_mapping.py`
-- [ ] 1.2 Verify: 203 direct, 6 genus proxy, 25 unmapped insect sonotypes
-- [ ] 1.3 Inspect genus proxy species (which amphibians? which genus matches?)
+Run all steps via a single sbatch job:
 
-### Step 2: Extract Perch Embeddings
+```bash
+cd user/murilo/experiments/018-perch-ensemble
+sbatch sbatch/extract_embeddings.sh   # cpu-small, ~1hr
+```
 
-- [ ] 2.1 Submit sbatch job: `sbatch sbatch/extract_embeddings.sh`
-- [ ] 2.2 Verify embeddings shape: (792, 1536) — 66 files × 12 windows
-- [ ] 2.3 Verify mapped scores shape: (792, 234)
-- [ ] 2.4 Sanity check: mapped_nonzero should be ~209 species (203 direct + 6 proxy)
+Or run individually:
 
-### Step 3: Train Probes + Priors
+```bash
+python scripts/build_species_mapping.py       # → artifacts/perch_species_mapping.json
+python scripts/extract_perch_embeddings.py    # → shared/embeddings/.../labeled/*.parquet
+python scripts/train_probes.py                # → shared/artifacts/.../perch-ensemble-v1/
+python scripts/build_artifacts.py             # → verify + dataset-metadata.json
+```
 
-- [ ] 3.1 Verify probe training completes (PCA, ~200 LogReg models, priors)
-- [ ] 3.2 Check CV AUC summary (mean, median, top/bottom species)
-- [ ] 3.3 Verify artifacts serialized in `artifacts/perch_probes/`
-- [ ] 3.4 Run `scripts/build_artifacts.py` to verify + package
+All scripts read paths from `config/perch_ensemble_v1.yaml`.
 
-### Step 4: Local Validation (Perch-only)
+- [ ] 1.1 Run species mapping — verify 203 direct, 6 genus proxy, 25 unmapped
+- [ ] 1.2 Run Perch extraction — verify embeddings (792, 1536), mapped scores (792, 234)
+- [ ] 1.3 Run probe training — check CV AUC summary, verify artifacts in shared storage
+- [ ] 1.4 Run build_artifacts — verify all files present + dataset-metadata.json created
 
-- [ ] 4.1 Run `scripts/local_validate.py` (no --sed-predictions)
-- [ ] 4.2 Record incremental metrics: raw → +probes → +priors → +smoothing
-- [ ] 4.3 Compare local AUROC to chiranjithdharma's expected ~0.910
+### Step 2: Local Validation (Perch-only)
 
-### Step 5: Perch-Only Kaggle Submission
+```bash
+python scripts/local_validate.py
+```
 
-- [ ] 5.1 Create Perch-only kernel variant (disable SED in submission.py)
-- [ ] 5.2 Upload probe artifacts as Kaggle dataset
-- [ ] 5.3 Push Perch-only kernel to Kaggle
-- [ ] 5.4 Verify submission completes within 90min budget
-- [ ] 5.5 Record Perch-only LB result
+- [ ] 2.1 Record incremental metrics: raw → +probes → +priors → +smoothing
+- [ ] 2.2 Compare local AUROC to chiranjithdharma's expected ~0.910
 
-### Step 5 Decision Gate
+### Step 3: Perch-Only Kaggle Submission
+
+Kernel uses `PERCH_ONLY = True` (already set in submission.py).
+Uses `kernel-metadata-perch-only.json` (no SED weights or birdclef-deps needed).
+
+```bash
+# Upload probe artifacts as Kaggle dataset
+PROBE_DIR="/storage/project/ps-clef2026_birdclef-0/shared/artifacts/birdclef-2026/perch-ensemble-v1"
+cd "$PROBE_DIR"
+kaggle datasets create -p . --dir-mode zip
+
+# Push Perch-only kernel
+cd user/murilo/experiments/018-perch-ensemble/kaggle_kernel
+kaggle kernels push -p . --metadata kernel-metadata-perch-only.json
+
+# Check results
+kaggle kernels status murilogustineli/birdclef-2026-perch-only-v1
+kaggle competitions submissions birdclef-2026 | head -20
+```
+
+- [ ] 3.1 Upload probe artifacts to Kaggle
+- [ ] 3.2 Push Perch-only kernel
+- [ ] 3.3 Verify submission completes within 90min budget
+- [ ] 3.4 Record Perch-only LB result
+
+### Phase A Decision Gate
 
 - If Perch-only LB >= 0.900: pipeline works → continue to Phase B (ensemble)
 - If Perch-only LB 0.850-0.900: partially works → debug probes/priors before ensemble
@@ -62,21 +87,38 @@ different models pushes past 0.92.
 
 ## Phase B: SED + Perch Ensemble
 
-Only proceed after Perch-only baseline is validated.
+Only proceed after Phase A Perch-only baseline is validated.
 
-### Step 6: Local Ensemble Validation
+### Step 4: Local Ensemble Validation
 
-- [ ] 6.1 Generate SED predictions on labeled soundscapes (or use existing exports)
-- [ ] 6.2 Run `scripts/local_validate.py --sed-predictions <path> --sweep-weights`
-- [ ] 6.3 Record optimal blend weights and per-taxa breakdown
-- [ ] 6.4 Compare ensemble AUROC vs Perch-only AUROC vs SED-only AUROC
+```bash
+python scripts/local_validate.py --sed-predictions <path> --sweep-weights
+```
 
-### Step 7: Ensemble Kaggle Submission
+- [ ] 4.1 Generate SED predictions on labeled soundscapes (or use existing exports)
+- [ ] 4.2 Run local validation with weight sweep
+- [ ] 4.3 Record optimal blend weights and per-taxa breakdown
+- [ ] 4.4 Compare ensemble AUROC vs Perch-only AUROC vs SED-only AUROC
 
-- [ ] 7.1 Update kernel with optimal blend weights from sweep
-- [ ] 7.2 Push ensemble kernel to Kaggle
-- [ ] 7.3 Verify submission completes within 90min budget
-- [ ] 7.4 Record ensemble LB result vs Perch-only and SED baselines
+### Step 5: Ensemble Kaggle Submission
+
+Set `PERCH_ONLY = False` in submission.py, update blend weights from sweep.
+Uses `kernel-metadata-ensemble-v1.json` (includes SED weights + birdclef-deps).
+
+```bash
+# Push ensemble kernel
+cd user/murilo/experiments/018-perch-ensemble/kaggle_kernel
+kaggle kernels push -p . --metadata kernel-metadata-ensemble-v1.json
+
+# Check results
+kaggle kernels status murilogustineli/birdclef-2026-perch-ensemble-v1
+kaggle competitions submissions birdclef-2026 | head -20
+```
+
+- [ ] 5.1 Set `PERCH_ONLY = False`, update blend weights in submission.py
+- [ ] 5.2 Push ensemble kernel
+- [ ] 5.3 Verify submission completes within 90min budget
+- [ ] 5.4 Record ensemble LB result vs Perch-only and SED baselines
 
 ---
 
