@@ -258,7 +258,9 @@ class BirdCLEF102Dataset(Dataset):
             ))
             count += 1
 
-        logger.info(f"Appended {count} labeled soundscape windows")
+        # Count how many chunks actually have positive labels
+        pos_count = sum(1 for c in self.chunks[-count:] if c[3].sum() > 0) if count > 0 else 0
+        logger.info(f"Appended {count} labeled soundscape windows ({pos_count} with focal species)")
 
     def _append_nocall_chunks(self, soundscape_dir, nocall_parquet):
         """Append no-call windows (all-zeros labels) from labeled soundscapes."""

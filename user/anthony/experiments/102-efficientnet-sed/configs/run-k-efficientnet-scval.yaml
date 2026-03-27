@@ -47,5 +47,5 @@ training:
     num_time_masks: 2
 
 callbacks:
-  early_stopping: { monitor: val/cmap, mode: max, patience: 10 }
-  model_checkpoint: { monitor: val/cmap, mode: max, save_top_k: 1 }
+  early_stopping: { monitor: val/auroc, mode: max, patience: 10 }
+  model_checkpoint: { monitor: val/auroc, mode: max, save_top_k: 1 }
