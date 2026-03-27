@@ -5,24 +5,29 @@ Upgrade mel spectrogram resolution from (n_fft=1024, n_mels=128) to (n_fft=4096,
 **Branch**: `mg/017-mel-overhaul` (PR #19)
 **Baseline**: Exp 016 v1+pp2 = 0.827 LB
 **Architecture**: EfficientNet-B0 SED (GeM + AttHead), 234 classes
+**Current best**: **v4b = 0.859 LB** (AmplitudeToDB norm)
 
 ## Results Summary
 
-| Variant | Change | best val/auroc | LB (raw) | LB (pp2) |
-|---------|--------|---------------|----------|----------|
+| Variant | Change | val/auroc | LB (raw) | LB (pp2) |
+|---------|--------|-----------|----------|----------|
 | v1 (exp 016) | baseline (n_fft=1024, 128 mels) | 0.845 | 0.795 | 0.827 |
 | **v4a** | n_fft=4096, n_mels=224 | 0.846 | **0.825** | **0.830** |
 | **v4b** | + AmplitudeToDB norm | **0.865** | **0.859** | **0.860** |
-| v4c | + AttBlockV2 head | 0.815 | skipped | |
+| v4c | + AttBlockV2 head (soft CE) | 0.815 | skipped | |
 | v4d | + ASL loss | 0.858 | 0.808 | |
-| **v4e** | + StochasticDepth 0.15 | **0.868** | 0.840 | |
+| v4e | + StochasticDepth 0.15 | **0.868** | 0.840 | |
 | v4f | v4b + StochasticDepth 0.15 | 0.862 | 0.832 | |
 | v4g | v4b + AttBlockV2 + BCE | **0.868** | 0.819 | |
 | v4h | v4b + AttBlockV2 + ASL | 0.858 | 0.800 | |
+| v4b-fulldata | v4b on 100% data | pending | pending | |
 
-v4a passed the decision gate (+0.030 LB raw). v4b-v4e are single-variable ablations from v4a.
-**v4b (AmplitudeToDB) is the clear winner**: +0.034 LB over v4a, new best at 0.859.
-Step 3 complete: v4f 0.832, v4g 0.819, v4h 0.800 — all regressed. **v4b is the winner.**
+**Key findings:**
+- Mel resolution is a major lever: v4a raw (0.825) nearly matches v1+pp2 (0.827)
+- AmplitudeToDB normalization is the single biggest gain: +0.034 LB
+- Techniques don't stack: v4f, v4g, v4h all regressed vs v4b alone
+- Offline val/auroc is a poor LB predictor: v4g had best val (0.868) but 0.819 LB
+- PP2 diminishing returns: +0.032 on v1, +0.005 on v4a, +0.001 on v4b
 
 ## Experiment Design
 
@@ -36,48 +41,64 @@ Single-variable change: n_fft 1024->4096, n_mels 128->224. Everything else ident
 
 Each changes ONE thing from v4a. All use 90/10 split + 50 epochs (vs v4a's 80/10/10 + 40).
 
-| Variant | Change | Rationale |
-|---------|--------|-----------|
-| v4b | `norm_type: amplitude_to_db` (AmplitudeToDB + standardize + min-max) | Tom's 28 experiments, 2025 1st place |
-| v4c | `sed_head.type: att_block_v2` (tanh+softmax att, sigmoid cls) | PANNs standard SED head |
-| v4d | `loss_type: asl` (gamma_neg=4, gamma_pos=0, clip=0.05) | Tom's biggest single gain: +0.023 |
-| v4e | `drop_path_rate: 0.15` (stochastic depth) | 2025 1st place regularization |
+| Variant | Change | Rationale | LB |
+|---------|--------|-----------|-----|
+| **v4b** | `norm_type: amplitude_to_db` | Tom's 28 experiments, 2025 1st place | **0.859** |
+| v4c | `sed_head.type: att_block_v2` | PANNs standard SED head | skipped (0.815 val) |
+| v4d | `loss_type: asl` (γ⁻=4, γ⁺=0) | Tom's biggest single gain: +0.023 | 0.808 |
+| v4e | `drop_path_rate: 0.15` | 2025 1st place regularization | 0.840 |
 
-### Step 3: Combine Winners (v4f) -- FUTURE
+### Step 3: Combine Winners + Re-ablations -- DONE
 
-Combine winning ablations into one config. Also sweep PP2 temperature on v4a.
+Attempted to combine winning techniques and re-test AttBlockV2/ASL with correct loss pairing.
+**None beat v4b.**
 
-### Step 4: Fulldata Training -- FUTURE
+| Variant | Change from v4b | val/auroc | LB | vs v4b |
+|---------|----------------|-----------|-----|--------|
+| v4f | + StochasticDepth 0.15 | 0.862 | 0.832 | −0.027 |
+| v4g | + AttBlockV2 + BCE | **0.868** | 0.819 | −0.040 |
+| v4h | + AttBlockV2 + ASL | 0.858 | 0.800 | −0.059 |
 
-Train best recipe on 100% data (no val split).
+**Conclusion**: v4b's simple recipe (AmplitudeToDB + AttHead + soft CE) generalizes best.
+AttBlockV2 + BCE trains well (highest val) but overfits to training temporal patterns.
+
+### Step 4: Fulldata Training -- IN PROGRESS
+
+Train v4b recipe on 100% labeled data (val_fraction=0.0). Epoch cap: 45 (~1.5× v4b's
+best epoch 30). Save checkpoints every 5 epochs + last. No early stopping.
 
 ## Directory Structure
 
 ```
 017-mel-overhaul/
 ├── README.md
-├── proposal.md              # Hypothesis, motivation, references
-├── tasks.md                 # Step-by-step checklist
-├── results.md               # Offline + LB results
-├── train.py                 # Training script (adapted from exp 016)
-├── save_metrics.py          # Record structured metrics after training
+├── proposal.md                          # Hypothesis, motivation, references
+├── tasks.md                             # Step-by-step checklist
+├── results.md                           # Offline + LB results
+├── onnx-inference-optimization.md       # Full-signal mel + batched ONNX docs
+├── train.py                             # Training script (supports fulldata mode)
+├── save_metrics.py                      # Record structured metrics after training
 ├── pyproject.toml
 ├── config/
-│   ├── efficientnet_b0_sed_v4a.yaml   # Step 1: mel resolution only
-│   ├── efficientnet_b0_sed_v4b.yaml   # Step 2: AmplitudeToDB norm
-│   ├── efficientnet_b0_sed_v4c.yaml   # Step 2: AttBlockV2 head
-│   ├── efficientnet_b0_sed_v4d.yaml   # Step 2: ASL loss
-│   └── efficientnet_b0_sed_v4e.yaml   # Step 2: StochasticDepth
+│   ├── efficientnet_b0_sed_v4a.yaml     # Step 1: mel resolution only
+│   ├── efficientnet_b0_sed_v4b.yaml     # Step 2: AmplitudeToDB norm (winner)
+│   ├── efficientnet_b0_sed_v4c.yaml     # Step 2: AttBlockV2 head
+│   ├── efficientnet_b0_sed_v4d.yaml     # Step 2: ASL loss
+│   ├── efficientnet_b0_sed_v4e.yaml     # Step 2: StochasticDepth
+│   ├── efficientnet_b0_sed_v4f.yaml     # Step 3: v4b + StochasticDepth
+│   ├── efficientnet_b0_sed_v4g.yaml     # Step 3: v4b + AttBlockV2 + BCE
+│   ├── efficientnet_b0_sed_v4h.yaml     # Step 3: v4b + AttBlockV2 + ASL
+│   └── efficientnet_b0_sed_v4b_fulldata.yaml  # Step 4: v4b on 100% data
 ├── sbatch/
-│   ├── _job.sh              # SLURM job template
-│   └── run.sh               # Training launcher
-├── artifacts/training/      # Structured metrics JSON per variant
+│   ├── _job.sh                          # SLURM job template
+│   └── run.sh                           # Training launcher
+├── artifacts/training/                  # Structured metrics JSON per variant
 ├── outputs/
-│   ├── tensorboard/         # TB logs per run
-│   ├── wandb/               # W&B artifacts
-│   ├── test_results/        # Raw test result JSONs
-│   └── gpu_check/           # GPU utilization snapshots
-└── logs/                    # SLURM training logs
+│   ├── tensorboard/                     # TB logs per run
+│   ├── wandb/                           # W&B artifacts
+│   ├── test_results/                    # Raw test result JSONs
+│   └── gpu_check/                       # GPU utilization snapshots
+└── logs/                                # SLURM training logs
 ```
 
 ## Training
@@ -88,90 +109,37 @@ All training runs from this experiment directory:
 cd user/murilo/experiments/017-mel-overhaul
 
 # Single model
-bash sbatch/run.sh --config config/efficientnet_b0_sed_v4a.yaml
+bash sbatch/run.sh config/efficientnet_b0_sed_v4b.yaml
+
+# Fulldata (no val set, epoch cap)
+bash sbatch/run.sh config/efficientnet_b0_sed_v4b_fulldata.yaml
 
 # GPU check (1 epoch, no W&B)
-bash sbatch/run.sh --config config/efficientnet_b0_sed_v4a.yaml --gpu-check 1
+bash sbatch/run.sh config/efficientnet_b0_sed_v4b.yaml --gpu-check 1
+
+# Specify GPU partition
+bash sbatch/run.sh config/efficientnet_b0_sed_v4b.yaml --gpu a100
 ```
-
-### Key Training Config
-
-| Parameter | v4a | v4b-v4e |
-|-----------|-----|---------|
-| n_fft | 4096 | 4096 |
-| n_mels | 224 | 224 |
-| hop_length | 320 | 320 |
-| batch_size | 64 | 64 |
-| accumulate_grad_batches | 4 | 4 |
-| effective batch | 256 | 256 |
-| split | 80/10/10 | **90/10** |
-| max_epochs | 40 | **50** |
-| patience | 10 | 10 |
-| mel.gpu | true | true |
 
 ## ONNX Export + Kaggle Submission
 
 Exports and submissions are managed through **exp 010-submission-pipeline**.
-
-### Export (SLURM GPU job)
-
-```bash
-cd user/murilo/experiments/010-submission-pipeline
-
-# Export all three ablations in one job
-bash sbatch/run.sh export --model all-017-ablations
-
-# Or export individually
-bash sbatch/run.sh export --model effnet-b0-sed-v4e   # StochasticDepth (best val 0.868)
-bash sbatch/run.sh export --model effnet-b0-sed-v4b   # AmplitudeToDB (val 0.865)
-bash sbatch/run.sh export --model effnet-b0-sed-v4d   # ASL loss (val 0.858)
-
-# Also available
-bash sbatch/run.sh export --model effnet-b0-sed-v4a   # Mel baseline
-bash sbatch/run.sh export --model effnet-b0-sed-v4c   # AttBlockV2 (poor offline, optional)
-
-# Dry run (preview without submitting)
-bash sbatch/run.sh export --model effnet-b0-sed-v4e --dry-run
-```
-
-This submits a GPU job that:
-1. Creates a venv in `$TMPDIR` with torch + dependencies
-2. Loads the checkpoint and config
-3. Builds encoder (with drop_path_rate if applicable) + SED head (AttHead or AttBlockV2)
-4. Exports to ONNX with blended sigmoid output (0.75 clip + 0.25 frame)
-5. Saves `model.onnx`, `mel_config.json`, `species_list.json` to `artifacts/weights/effnet-b0-sed-v4X/`
-
-### Upload Weights + Push Kernel to Kaggle
-
-After the export job completes:
+Uses optimized inference: full-signal mel + batched ONNX + session options
+(see [onnx-inference-optimization.md](onnx-inference-optimization.md)).
 
 ```bash
 cd user/murilo/experiments/010-submission-pipeline
 
-# Upload weights dataset + push kernel (one command does both)
-python scripts/upload_kaggle.py --model effnet-b0-sed-v4e --push-kernel
+# Export
+bash sbatch/run.sh export --model effnet-b0-sed-v4b
+bash sbatch/run.sh export --model effnet-b0-sed-v4b-fulldata
+
+# Upload weights + push kernel
 python scripts/upload_kaggle.py --model effnet-b0-sed-v4b --push-kernel
-python scripts/upload_kaggle.py --model effnet-b0-sed-v4d --push-kernel
+python scripts/upload_kaggle.py --model effnet-b0-sed-v4b-fulldata --push-kernel
 
-# Upload only (no kernel push)
-python scripts/upload_kaggle.py --model effnet-b0-sed-v4e
-
-# Dry run
-python scripts/upload_kaggle.py --model effnet-b0-sed-v4e --push-kernel --dry-run
-```
-
-This:
-1. Uploads `artifacts/weights/effnet-b0-sed-v4X/` as a Kaggle dataset (create or version)
-2. Copies the model's species_mapping.json into the weights dir
-3. If `--push-kernel`: copies the model-specific kernel metadata and pushes the unified `submission.py`
-
-### Check Submission Results
-
-```bash
-# Kernel status
-kaggle kernels status murilogustineli/birdclef-2026-effnet-b0-sed-v4e
-
-# All submissions
+# Check results
+kaggle kernels status murilogustineli/birdclef-2026-effnet-b0-sed-v4b
 kaggle competitions submissions birdclef-2026 | head -20
 ```
 
@@ -186,6 +154,10 @@ All checkpoints stored under: `/storage/project/ps-clef2026_birdclef-0/mgustinel
 | v4c | `2026-effnet-b0-sed-v4c/best-epochepoch=15.ckpt` | 15 | 5496316 |
 | v4d | `2026-effnet-b0-sed-v4d/best-epochepoch=16.ckpt` | 16 | 5496367 |
 | v4e | `2026-effnet-b0-sed-v4e/best-epochepoch=29.ckpt` | 29 | 5496368 |
+| v4f | `2026-effnet-b0-sed-v4f/best-epochepoch=17.ckpt` | 17 | 5506300 |
+| v4g | `2026-effnet-b0-sed-v4g/best-epochepoch=28.ckpt` | 28 | 5506698 |
+| v4h | `2026-effnet-b0-sed-v4h/best-epochepoch=12.ckpt` | 12 | 5506700 |
+| v4b-fulldata | `2026-effnet-b0-sed-v4b-fulldata/last.ckpt` | — (no val) | pending |
 
 ## W&B Tracking
 
@@ -198,18 +170,31 @@ Project: `dsgt-arc/birdclef-2026-mel-overhaul`
 | v4c | `4kwgh6qs` |
 | v4d | `2b43diog` |
 | v4e | `07o7zjha` |
+| v4f | `v9em250j` |
+| v4g | `zklk0fv2` |
+| v4h | `4ck222t9` |
 
 ## Key References
 
 - [Concept: strong-baseline-mel-overhaul](../../docs/concepts/strong-baseline-mel-overhaul.md)
 - [Tom's SED model comparison (28 experiments)](../../docs/references/kaggle/birdclef-2026/discussions/sed-model-comparison-tom.md)
+- [HGNetV2-B0 baseline (Tawara)](../../docs/references/kaggle/birdclef-2026/discussions/hgnetv2-b0-baseline-tawara.md)
 - [SED improvement plan](../../docs/references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
 - [2025 1st place inference](../../docs/references/kaggle/birdclef-2025/birdclef2025-1st-place-inference.md)
 - [Gemini strategic framework](../../docs/references/deep-research/2026-03-24-gemini-strategic-framework.md)
 - [Exp 016 SED summary](../016-sed-architecture/summary.md)
+- [ONNX inference optimization](onnx-inference-optimization.md)
 
-## Known Issues
+## Key Learnings
 
-- **v4c (AttBlockV2) underperformed** (0.815 val): soft CE loss + sigmoid mismatch. Retry with BCE before concluding.
-- **v4b-v4e confound**: 90/10 + 50ep vs v4a's 80/10/10 + 40ep means ~11% more data. Small deltas may be the extra data.
-- **PP2 diminishing returns**: T=1.10 was tuned for v1. Temperature sweep on v4a is a zero-cost opportunity.
+1. **AmplitudeToDB normalization is universal among top performers** — Tom, Tawara, 2025 1st place all use it. Our biggest single-technique gain (+0.034 LB).
+
+2. **Techniques don't combine additively** — StochasticDepth helped alone (+0.015) but hurt with AmplitudeToDB (−0.027). AttBlockV2+BCE had best val (0.868) but worst LB after v4h (0.819).
+
+3. **Offline val/auroc is a poor LB predictor** — v4g (0.868 val → 0.819 LB) vs v4b (0.865 val → 0.859 LB). The val set overestimates generalization for some architectures.
+
+4. **ASL loss doesn't suit our pipeline** — Consistent early convergence + plateau in both v4d (0.808 LB) and v4h (0.800 LB). Our soft CE already handles multi-label effectively.
+
+5. **Loss/head pairing matters** — AttBlockV2 + soft CE = 0.815 val (v4c, catastrophic). AttBlockV2 + BCE = 0.868 val (v4g, good offline). Same head, completely different results.
+
+6. **PP2 returns shrink with better models** — v1: +0.032, v4a: +0.005, v4b: +0.001. As the model improves, post-processing adds less.
