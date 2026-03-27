@@ -11,7 +11,7 @@
     "murilogustineli/birdclef-2026-perch-ensemble-v1"
   ],
   "model_sources": [
-    "google/bird-vocalization-classifier/TensorFlow2/perch_v2/1"
+    "google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
   ],
   "competition_sources": ["birdclef-2026"],
   "kernel_sources": []

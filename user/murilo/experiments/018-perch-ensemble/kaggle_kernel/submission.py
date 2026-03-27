@@ -108,15 +108,14 @@ PERCH_ARTIFACTS_SLUG = "birdclef-2026-perch-ensemble-v1"
 # Perch v2 model (from google/bird-vocalization-classifier)
 # On Kaggle, model sources are mounted under /kaggle/input/
 PERCH_MODEL_CANDIDATES = [
-    # Kaggle model source mount points (various layouts)
-    "/kaggle/input/bird-vocalization-classifier/tensorflow2/perch_v2/1",
-    "/kaggle/input/bird-vocalization-classifier/tensorflow2/perch-v2/1",
-    "/kaggle/input/bird-vocalization-classifier/TensorFlow2/perch_v2/1",
-    "/kaggle/input/bird-vocalization-classifier/TensorFlow2/perch-v2/1",
-    "/kaggle/input/bird-vocalization-classifier",
-    # Alternate Kaggle layouts
-    "/kaggle/input/models/google/bird-vocalization-classifier/TensorFlow2/perch_v2/1",
+    # Confirmed working path from kdmitrie/birdclef26-google-perch-starter:
+    # Uses perch_v2_cpu variant (CPU-only, no XLA/CUDA dependency)
+    "/kaggle/input/models/google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1",
+    # Other possible mount paths
+    "/kaggle/input/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1",
     "/kaggle/input/models/google/bird-vocalization-classifier/tensorflow2/perch_v2/1",
+    "/kaggle/input/bird-vocalization-classifier/tensorflow2/perch_v2/1",
+    "/kaggle/input/bird-vocalization-classifier",
 ]
 
 
