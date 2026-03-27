@@ -123,7 +123,7 @@ epochs. Small deltas (≤+0.003) may be the extra data, not the technique.
 using soft CE loss with logit-converted outputs. If v4c underperforms, retry with
 BCE loss before concluding AttBlockV2 doesn't help.
 
-## Step 3: Combine Winners + PP2 Recalibration (v4f) — IN PROGRESS
+## Step 3: Combine Winners + PP2 Recalibration (v4f) — DONE
 
 Step 2 LB results: v4b **0.859** (+0.034), v4e 0.840 (+0.015), v4d 0.808 (−0.017).
 v4b (AmplitudeToDB) and v4e (StochasticDepth) are the winners. v4d (ASL) excluded.
@@ -159,14 +159,18 @@ These re-ablations use Tom's recipe context: AmplitudeToDB + AttBlockV2 + BCE/AS
 - [x] 3.9 Create v4g config (AmplitudeToDB + AttBlockV2 + BCE)
 - [x] 3.10 Create v4h config (AmplitudeToDB + AttBlockV2 + ASL)
 - [x] 3.11 Train v4g — val/auroc **0.868**, epoch 28 (highest with v4e). v4h done (0.858, epoch 12)
-- [x] 3.12 ONNX export for v4f/v4g/v4h complete. v4f submitted (0.832 LB). v4g/v4h kernels pushed, submit when daily limit resets
-- [ ] 3.13 Record LB results vs v4b (0.859)
+- [x] 3.12 ONNX export for v4f/v4g/v4h complete. All submitted to Kaggle
+- [x] 3.13 Record LB: v4f=0.832, v4g=0.819, v4h=0.800 — all regressed vs v4b (0.859)
 
-### 3D: After all Step 3 results
+### 3D: Step 3 Conclusion — DONE
 
-- Compare v4f, v4g, v4h LB results vs v4b (0.859)
-- Best single model → proceed to Step 4 fulldata
-- PP2 temperature sweep on best model: T ∈ {0.90, 0.95, 1.00, 1.05, 1.10, 1.15}
+All Step 3 combinations regressed vs v4b on LB:
+- v4f (+ StochasticDepth): 0.832 (−0.027)
+- v4g (+ AttBlockV2 + BCE): 0.819 (−0.040)
+- v4h (+ AttBlockV2 + ASL): 0.800 (−0.059)
+
+**v4b's recipe wins.** Proceed to Step 4 fulldata with v4b config.
+Offline val/auroc is a poor LB predictor — v4g had highest val (0.868) but worst LB after v4h.
 
 ## Step 4: Fulldata Training — FUTURE
 
@@ -203,7 +207,7 @@ Lock in the recipe first, then scale.
 | split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
 | max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
 | val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | **0.868** | 0.862 | **0.868** | 0.858 |
-| LB (raw) | 0.825 | **0.859** | skipped | 0.808 | 0.840 | 0.832 | pending | pending |
+| LB (raw) | 0.825 | **0.859** | skipped | 0.808 | 0.840 | 0.832 | 0.819 | 0.800 |
 
 **a2db** = amplitude_to_db (AmplitudeToDB + standardize + min-max [0,1])
 

@@ -174,8 +174,8 @@ PP2 diminishing returns continue to shrink as the model improves.
 |---------|-----------------|------|------|-----------|------------|----------|
 | **v4b** | baseline | AttHead | soft_ce | **0.865** | 30 | **0.859** |
 | v4f | + StochasticDepth 0.15 | AttHead | soft_ce | 0.862 | 17 | 0.832 |
-| **v4g** | + AttBlockV2 | **AttBlockV2** | **bce** | **0.868** | 28 | pending |
-| v4h | + AttBlockV2 + ASL | **AttBlockV2** | **asl** | 0.858 | 12 | pending |
+| v4g | + AttBlockV2 | **AttBlockV2** | **bce** | **0.868** | 28 | 0.819 |
+| v4h | + AttBlockV2 + ASL | **AttBlockV2** | **asl** | 0.858 | 12 | 0.800 |
 
 ### Observations
 
@@ -185,15 +185,30 @@ is a larger LB drop than the offline gap suggested (0.862 vs 0.865 val). The reg
 that helped v4e (+0.015 LB over v4a with audioset norm) becomes counterproductive with
 AmplitudeToDB's per-sample normalization — the model may be underfitting.
 
-**v4g (AttBlockV2 + BCE)** — val/auroc **0.868**, best epoch 28. Matches v4e for the
-highest offline val/auroc and trained long (stopped at 39). This confirms that AttBlockV2
-works well when paired with its native BCE loss — the v4c failure (0.815 val) was entirely
-due to the soft CE mismatch, not the head itself. BCE + AttBlockV2 is Tom's default recipe
-and it works. LB result will be the decisive test.
+**v4g (AttBlockV2 + BCE)** — LB **0.819**, a −0.040 regression from v4b despite the
+highest offline val/auroc (0.868). AttBlockV2 + BCE trains well (long convergence, high
+val) but generalizes poorly to the test distribution. The attention mechanism that
+performed best offline (tanh+softmax over time) apparently overfits to training
+temporal patterns. Our simpler AttHead + soft CE (v4b) is more robust.
 
-**v4h (AttBlockV2 + ASL)** — val/auroc 0.858, peaked early at epoch 12. LB pending.
-ASL's aggressive negative suppression (γ⁻=4) converges fast and plateaus low — same
-pattern as v4d (0.858 val, 0.808 LB). ASL may simply not suit our data distribution.
+**v4h (AttBlockV2 + ASL)** — LB **0.800**, a −0.059 regression from v4b. Worst LB of all
+Step 3 variants. ASL + AttBlockV2 is a double penalty: early convergence (epoch 12)
++ poor generalization. Consistent with v4d (ASL + AttHead = 0.808 LB).
+
+### Step 3 Conclusion
+
+**None of the Step 3 combinations beat v4b.** All regressed on LB:
+
+| Variant | val/auroc | LB | vs v4b LB |
+|---------|-----------|-----|-----------|
+| **v4b** (baseline) | 0.865 | **0.859** | — |
+| v4f (+ StochasticDepth) | 0.862 | 0.832 | −0.027 |
+| v4g (+ AttBlockV2 + BCE) | **0.868** | 0.819 | −0.040 |
+| v4h (+ AttBlockV2 + ASL) | 0.858 | 0.800 | −0.059 |
+
+**v4b's recipe (AmplitudeToDB + AttHead + soft CE) is the winner.** The offline val/auroc
+metric is a poor predictor of LB — v4g had the highest val (0.868) but second-worst LB
+(0.819). Proceed to Step 4 fulldata training with v4b's recipe. ASL may simply not suit our data distribution.
 
 ---
 
