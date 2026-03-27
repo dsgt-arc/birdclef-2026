@@ -71,9 +71,9 @@ class TrainingModule(pl.LightningModule):
         self.val_cmap = torchmetrics.AveragePrecision(
             task="multilabel", num_labels=num_classes, average="macro"
         )
-        self.val_auroc = torchmetrics.AUROC(
-            task="multilabel", num_labels=num_classes, average="macro"
-        )
+        # Collect val predictions for Kaggle-style AUROC (excludes absent species)
+        self._val_probs = []
+        self._val_targets = []
 
     def on_before_optimizer_step(self, optimizer):
         grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -124,16 +124,34 @@ class TrainingModule(pl.LightningModule):
 
         probs = self._to_probs(output)
         self.val_cmap.update(probs, clip_labels.int())
-        self.val_auroc.update(probs, clip_labels.int())
+        self._val_probs.append(probs.detach().cpu())
+        self._val_targets.append(clip_labels.int().detach().cpu())
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def on_validation_epoch_end(self):
         self.log("val/cmap", self.val_cmap.compute(), prog_bar=True)
-        self.log("val/auroc", self.val_auroc.compute(), prog_bar=True)
         self.val_cmap.reset()
-        self.val_auroc.reset()
+
+        # Kaggle-style AUROC: macro-averaged, excluding species with no positive labels
+        all_probs = torch.cat(self._val_probs, dim=0).numpy()
+        all_targets = torch.cat(self._val_targets, dim=0).numpy()
+        self._val_probs.clear()
+        self._val_targets.clear()
+
+        col_sums = all_targets.sum(axis=0)
+        scored_cols = col_sums > 0
+        if scored_cols.sum() > 0:
+            from sklearn.metrics import roc_auc_score
+            auroc = roc_auc_score(
+                all_targets[:, scored_cols],
+                all_probs[:, scored_cols],
+                average="macro",
+            )
+        else:
+            auroc = 0.0
+        self.log("val/auroc", auroc, prog_bar=True)
 
     def configure_optimizers(self):
         trainable_params = [p for p in self.model.parameters() if p.requires_grad]
