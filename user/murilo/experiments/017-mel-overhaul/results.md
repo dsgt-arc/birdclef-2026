@@ -212,6 +212,28 @@ metric is a poor predictor of LB — v4g had the highest val (0.868) but second-
 
 ---
 
+## Step 4: Fulldata Training — DONE
+
+Trained v4b recipe on 100% labeled data (val_fraction=0.0, 45 epoch cap, no early stopping).
+
+### Leaderboard
+
+| Model | LB (raw) | vs v4b 90/10 | Notes |
+|-------|----------|-------------|-------|
+| **v4b** (90/10) | **0.859** | baseline | best epoch 30, early stopped at 41 |
+| v4b-fulldata (100%) | 0.853 | **−0.006** | last checkpoint (epoch 44), no val monitoring |
+
+### Interpretation
+
+Fulldata training **regressed** −0.006 LB (0.853 vs 0.859). This is consistent with
+exp 011's ConvNeXt fulldata regression (−0.025). Without validation monitoring, the
+model likely overtrained past the optimal point — v4b's best epoch was 30 but fulldata
+ran to 45 with no early stopping signal.
+
+The 90/10 v4b checkpoint remains the best model from exp 017.
+
+---
+
 ## Artifacts
 
 ### Step 1

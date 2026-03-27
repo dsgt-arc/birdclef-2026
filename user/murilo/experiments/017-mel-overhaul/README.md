@@ -20,7 +20,7 @@ Upgrade mel spectrogram resolution from (n_fft=1024, n_mels=128) to (n_fft=4096,
 | v4f | v4b + StochasticDepth 0.15 | 0.862 | 0.832 | |
 | v4g | v4b + AttBlockV2 + BCE | **0.868** | 0.819 | |
 | v4h | v4b + AttBlockV2 + ASL | 0.858 | 0.800 | |
-| v4b-fulldata | v4b on 100% data | pending | pending | |
+| v4b-fulldata | v4b on 100% data | — | 0.853 | — |
 
 **Key findings:**
 - Mel resolution is a major lever: v4a raw (0.825) nearly matches v1+pp2 (0.827)
@@ -62,10 +62,11 @@ Attempted to combine winning techniques and re-test AttBlockV2/ASL with correct 
 **Conclusion**: v4b's simple recipe (AmplitudeToDB + AttHead + soft CE) generalizes best.
 AttBlockV2 + BCE trains well (highest val) but overfits to training temporal patterns.
 
-### Step 4: Fulldata Training -- IN PROGRESS
+### Step 4: Fulldata Training -- DONE
 
-Train v4b recipe on 100% labeled data (val_fraction=0.0). Epoch cap: 45 (~1.5× v4b's
+Trained v4b recipe on 100% labeled data (val_fraction=0.0). Epoch cap: 45 (~1.5× v4b's
 best epoch 30). Save checkpoints every 5 epochs + last. No early stopping.
+- **Result**: LB 0.853 (−0.006 vs v4b 90/10). Fulldata regressed — likely overtrained without val monitoring.
 
 ## Directory Structure
 
@@ -157,7 +158,7 @@ All checkpoints stored under: `/storage/project/ps-clef2026_birdclef-0/mgustinel
 | v4f | `2026-effnet-b0-sed-v4f/best-epochepoch=17.ckpt` | 17 | 5506300 |
 | v4g | `2026-effnet-b0-sed-v4g/best-epochepoch=28.ckpt` | 28 | 5506698 |
 | v4h | `2026-effnet-b0-sed-v4h/best-epochepoch=12.ckpt` | 12 | 5506700 |
-| v4b-fulldata | `2026-effnet-b0-sed-v4b-fulldata/last.ckpt` | — (no val) | pending |
+| v4b-fulldata | `2026-effnet-b0-sed-v4b-fulldata/last.ckpt` | — (no val) | 5514462 |
 
 ## W&B Tracking
 

@@ -172,7 +172,7 @@ All Step 3 combinations regressed vs v4b on LB:
 **v4b's recipe wins.** Proceed to Step 4 fulldata with v4b config.
 Offline val/auroc is a poor LB predictor — v4g had highest val (0.868) but worst LB after v4h.
 
-## Step 4: Fulldata Training — IN PROGRESS
+## Step 4: Fulldata Training — DONE
 
 Train v4b recipe on 100% labeled data (val_fraction=0.0). Adds ~11% more focal
 recordings + all labeled soundscapes to training. No validation monitoring.
@@ -189,9 +189,9 @@ suggesting it's not prone to early overfitting.
 - [x] 4.2 Update train.py: skip early stopping, periodic checkpoints (every 5 epochs)
 - [x] 4.3 Create v4b-fulldata config (45 epochs, save every 5 + last)
 - [x] 4.4 Wire export/upload/kernel pipeline for v4b-fulldata
-- [ ] 4.5 Submit fulldata training job
-- [ ] 4.6 Export last checkpoint + submit to LB
-- [ ] 4.7 Record LB result vs v4b 90/10 (0.859)
+- [x] 4.5 Submit fulldata training job — SLURM 5514462, 45 epochs complete
+- [x] 4.6 Export last checkpoint (epoch 44) + submit to LB — submitted to Kaggle
+- [x] 4.7 Record LB result: **0.853** (−0.006 vs v4b 90/10 0.859) — fulldata regressed
 
 ## Step 5: Polish — FUTURE
 

@@ -214,9 +214,14 @@ No test metrics available — only val/auroc from checkpoint callback.
 | `effnet-b0-sed-v4g` | v4b + AttBlockV2 + BCE | amplitude_to_db | AttBlockV2 | bce | **0.868** | 28 | 0.819 | `017-.../2026-effnet-b0-sed-v4g/best-epochepoch=28.ckpt` |
 | `effnet-b0-sed-v4h` | v4b + AttBlockV2 + ASL | amplitude_to_db | AttBlockV2 | asl | 0.858 | 12 | 0.800 | `017-.../2026-effnet-b0-sed-v4h/best-epochepoch=12.ckpt` |
 
+### Step 4: Fulldata Training
+
+| Slug | Change | Mel Norm | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|----------|------|------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v4b-fulldata` | v4b on 100% data | amplitude_to_db | AttHead | soft_ce | — (no val) | 44 (last) | 0.853 | `017-.../2026-effnet-b0-sed-v4b-fulldata/last.ckpt` |
+
 **v4b (AmplitudeToDB)** is the current best at 0.859 LB (0.860 with pp2).
-**v4h (AttBlockV2 + ASL)** peaked early at epoch 12 with 0.858 val — similar to v4d's pattern.
-v4f and v4g training in progress.
+Fulldata training regressed −0.006 (0.853 vs 0.859) — likely overtrained without val monitoring.
 
 ## Checkpoint Base Path
 
