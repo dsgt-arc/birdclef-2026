@@ -1,60 +1,63 @@
 # Project Status
 
-> **Last Updated**: 2026-03-25
+> **Last Updated**: 2026-03-30
 
 ## Current State
 
-**Best LB**: **0.827** (EfficientNet-B0 SED v1 + pp2 + 10s inference, exp 016)
+**Best LB**: **0.827** (EfficientNet-B0 SED v1 + pp2 + 10s inference, murilo/exp 016)
+**Anthony's best**: **0.794** (EfficientNet-B1 LoRA + attention pooling, exp 102 run C)
 **Target**: 0.85+ labeled-data baseline, then 0.90+ with pseudo-labeling
-**Active branch**: `mg/016-sed-improvements`
-**Next experiment**: Exp 017 — mel spectrogram overhaul ([concept](concepts/strong-baseline-mel-overhaul.md))
 
 ### Score Progression
 
 | Model | Experiment | LB | Notes |
 |-------|-----------|-----|-------|
-| ProtoCLR clip-level | 012 | 0.767 | Best clip-level model |
-| EfficientNet-B0 SED v1 | 016 | 0.795 | SED architecture validated |
-| + post-processing (TTA + smoothing + TopN) | 016 | 0.823 | +0.028 free gains |
-| **+ pp2 (temp scaling + taxa smoothing + priors)** | **016** | **0.827** | **Current best** |
-| + 10s overlapping inference | 016 | 0.826 | |
+| EfficientNet-B1 frozen probe | anthony/012 | 0.649 | Frozen backbone + linear head |
+| ProtoCLR clip-level | murilo/012 | 0.767 | Best clip-level model |
+| **EfficientNet-B1 LoRA + attention** | **anthony/102** | **0.794** | **2 epochs, attention pooling critical** |
+| EfficientNet-B0 SED v1 | murilo/016 | 0.795 | SED architecture validated |
+| + post-processing (TTA + smoothing + TopN) | murilo/016 | 0.823 | +0.028 free gains |
+| **+ pp2 (temp scaling + taxa smoothing + priors)** | **murilo/016** | **0.827** | **Overall best** |
 | Competitor SED (single model) | — | 0.908 | Our target |
 | Perch + ProtoSSM | — | 0.913 | Foundation model approach |
 | Pantanal Distill | — | 0.917 | Best public notebook |
 
+### Key Findings
+
+**From Exp 102 (Anthony):**
+1. **Attention pooling is critical for soundscape performance** — 0.794 LB vs 0.754 for avg pooling (framewise max catches brief calls)
+2. **Focal overfitting is the main problem** — more training epochs improves val/cmap but hurts Kaggle LB (2-epoch model > 13-epoch model on LB)
+3. **ConvNeXt-Base overfits worse than EfficientNet-B1** — 0.644 val/cmap but only 0.603 Kaggle LB (89M params + 128 mels)
+4. **Soundscape validation tracks Kaggle LB** — peaks at epoch 2-3 then declines
+5. **bf16 emulated on RTX 6000 (sm_75)** — fp16 gives 3x throughput; torch.compile works with 2.11+cu126
+6. **Teacher predictions**: 5.4% of focal chunks are noise (species not present), 29% potential mislabels
+
+**From Exp 016 (Murilo):**
+1. **SED +0.112 cmAP over clip-level** — framewise detection captures brief calls
+2. **Every v3 ablation regressed vs v1** — gap is NOT in weights, loss, or mixup domain
+3. **Mel resolution gap**: 1024 vs 4096 n_fft is the largest untested difference vs competitors
+4. **Post-processing is free gains** — TTA + smoothing + TopN + taxa priors adds +0.032
+
 ### What's Next
 
-**Exp 017: Strong Baseline via Mel Overhaul** — close the 0.082 gap to 0.908 using only labeled data.
+**Pseudo-labeling soundscapes** — run trained attention model on 10,592 unlabeled soundscape files. Key design questions: threshold vs ranking vs soft labels for uncalibrated probabilities. Design doc in progress.
 
-The v3 ablation (exp 016) proved no single recipe tweak helps — the gap is likely cumulative,
-starting with **mel spectrogram resolution** (n_fft=1024/128 mels vs 2025 1st place n_fft=4096/224 mels).
-Phased plan: mel overhaul → normalization → AttBlockV2 head → backbone scaling → ASL loss.
-See [concept doc](concepts/strong-baseline-mel-overhaul.md) for full details.
-
-After establishing a strong labeled-data baseline, **Phase 2** will leverage the 10,592 unlabeled
-soundscapes via iterative pseudo-labeling with PowerTransform (2025 1st place: +0.06 from this alone).
-
-### Honest Assessment
-
-Our SED architecture (GeM + AttHead) matches 3/4 BirdCLEF winners. The v3 ablation
-exhaustively tested weight variants, loss functions, and mixup domains — all regressed.
-The remaining gap is likely in input resolution (mel params), training recipe details
-(regularization, head design), and data leverage (pseudo-labeling, metadata priors).
-The Perch-based approaches (0.907-0.917) represent a fundamentally different paradigm
-(frozen foundation model + lightweight heads) that is complementary to our trained SED approach.
+**Exp 017: Strong Baseline via Mel Overhaul** — close the gap to 0.908 using mel resolution (n_fft=4096/224 mels). See [concept doc](concepts/strong-baseline-mel-overhaul.md).
 
 ## Key Findings
 
 | Finding | Source | Implication |
 |---------|--------|-------------|
 | **SED v1 = 0.827 LB** (best single model) | murilo/Exp 016 | SED + pp2 + 10s inference |
+| **EfficientNet LoRA+attention: 0.794 Kaggle** | Exp 102 | 2 epochs, attention pooling critical |
 | SED +0.112 cmAP over clip-level | murilo/Exp 016 | Framewise detection captures brief calls |
+| Focal overfitting hurts LB | Exp 102 | More training epochs → lower Kaggle LB |
+| ConvNeXt overfits focal data | Exp 102 | 0.644 val/cmap → 0.603 Kaggle LB |
 | Every v3 ablation regressed vs v1 | murilo/Exp 016 | Gap is NOT in weights, loss, or mixup domain |
 | Mel resolution gap: 1024 vs 4096 n_fft | Analysis | Largest untested difference vs competitors |
-| ProtoCLR 0.767 (best clip-level) | murilo/Exp 012 | Soundscape fine-tuning universally helps |
 | LoRA equalizes pretraining domains | murilo/Exps 006-009 | 5× smaller ProtoCLR matches 90M models |
 | Soft labels hurt as training targets | Exp 014 | −0.098 cmAP; don't replace hard labels |
-| Pseudo-labels (round 0) didn't help | murilo/Exp 015 | Clip-level architecture was the bottleneck |
+| Activity scores predict calls (0.913 AUROC) | Exp 101/102 | Spectral contrast 0.888, LR with 4 indices 0.913 |
 | Perch alone = 0.825 LB | Competition | Foundation model matches our best trained model |
 | Metadata priors are free gains | Competition analysis | Site/hour tables, inference-only, +0.01-0.02 est. |
 | 2025 1st: pseudo-labeling = +0.06 | Winning solutions | PowerTransform × 4 rounds on strong baseline |
@@ -93,7 +96,10 @@ All model runs and checkpoints: [MODEL-RUNS.md](../user/murilo/MODEL-RUNS.md)
 | 013 | Weak Supervision (FlyingSquid) | Complete | Soft labels generated |
 | 014 | EfficientNet + Soft Labels | Rejected | Soft labels hurt (−0.098 cmAP) |
 | 015 | EfficientNet SED + Soft Labels | Rejected | SED needs trainable backbone |
-| 016 | Contrastive SED / Prototypical | In Progress | Step 0 awaiting results |
+| 016 | Contrastive SED / Prototypical | Complete | Step 0 done |
+| 100 | BirdCLEF 2026 EDA | Complete | 206 species, amphibian-dominated, 499x imbalance |
+| 101 | Soundscape Label Calibration | Complete | Ensemble 0.880 AUROC, spectral contrast 0.888 |
+| 102 | Multi-Backbone LoRA Ladder | **In Progress** | **0.794 Kaggle LB**, attention pooling, teacher filtering |
 
 ## Concept Docs
 
@@ -121,11 +127,11 @@ All model runs and checkpoints: [MODEL-RUNS.md](../user/murilo/MODEL-RUNS.md)
 
 ## Priority Stack
 
-1. **Exp 017: Mel spectrogram overhaul** — n_fft=4096, 224 mels, single-variable test from v1
-2. **Exp 017: Recipe alignment** — normalization, AttBlockV2 head, StochasticDepth, backbone scaling
-3. **Free inference wins** — model soup, metadata priors (site/hour), temperature scaling
-4. **Pseudo-labeling** (Phase 2) — PowerTransform × 3-4 rounds on the strongest baseline
-5. **Ensemble** — SED + Perch hybrid, OpenVINO for CPU budget
+1. **Pseudo-labeling soundscapes** — run teacher on 10,592 unlabeled files, design labeling strategy
+2. **Exp 017: Mel spectrogram overhaul** — n_fft=4096, 224 mels, single-variable test from v1
+3. **Recipe alignment** — normalization, AttBlockV2 head, StochasticDepth, backbone scaling
+4. **Free inference wins** — model soup, metadata priors (site/hour), temperature scaling
+5. **Ensemble** — SED + LoRA attention + Perch hybrid
 
 ## Quick Links
 
