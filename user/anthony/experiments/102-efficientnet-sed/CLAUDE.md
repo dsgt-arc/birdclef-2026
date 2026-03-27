@@ -1,101 +1,156 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## What this experiment does
 
-Unfreeze the EfficientNet-B1 backbone (frozen in exp 012, 0.649 Kaggle LB) and
-train on BirdCLEF 2026 focal data. This is the single highest-impact Track 1
-change not yet tried. Progressive runs: frozen baseline → unfrozen + attention
-→ mixup with soundscapes.
+Multi-backbone LoRA fine-tuning experiment ladder for BirdCLEF 2026. Tests
+EfficientNet-B1 and ConvNeXt-Base with attention pooling, soundscape data,
+class weighting, and soundscape validation. Best result: **0.794 Kaggle public LB**.
 
 ## Current status
 
-- Proposal written, activity scores computed
-- Model implementation not yet started
+- **Best Kaggle LB: 0.794** (EfficientNet LoRA + attention, 2 epochs)
+- Experiment ladder runs A-K completed or running
+- Key finding: focal overfitting — more training hurts Kaggle LB
+- Soundscape validation peaks at epoch 2-3, matching Kaggle LB pattern
+- ConvNeXt overfits worse than EfficientNet (0.603 LB despite 0.644 val/cmap)
+- Next: clean focal data using trained attention model's frame-level predictions
 
-## Run matrix
+## Experiment ladder
 
-| Run | Backbone | Head | Data | Purpose |
-|-----|----------|------|------|---------|
-| A | Frozen | Linear + GAP | Focal only | Reproduce exp 012 baseline on 2026 |
-| B | Unfrozen | Attention + GAP | Focal only | Main hypothesis |
-| C | Unfrozen | Attention + GAP | Focal + soundscape mixup | Domain adaptation |
+| Run | Config | What | Best cmap | Kaggle LB |
+|-----|--------|------|-----------|-----------|
+| A | run-a-frozen | EfficientNet frozen baseline | 0.387 | 0.672 |
+| B (old) | — | EfficientNet LoRA avg (2ep, bf16) | 0.524 | 0.754 |
+| C (old) | — | EfficientNet LoRA+attention (2ep, bf16) | 0.531 | **0.794** |
+| B | run-b-lora-gpumel | EfficientNet LoRA avg (fp16+compile) | 0.619 | 0.618 |
+| D | run-d-convnext-gpumel | ConvNeXt LoRA avg | 0.644 | 0.603 |
+| E | run-e-convnext-attention | ConvNeXt LoRA attention | 0.585 | 0.571 |
+| F | run-f-convnext-soundscape | ConvNeXt attention + SC data | 0.591 | 0.586 |
+| G | run-g-convnext-weighted | ConvNeXt attention + SC + activity wt | 0.583 | — |
+| H | run-h-convnext-classweight | ConvNeXt attention + SC + inv_sqrt | 0.596 | — |
+| I | run-i-efficientnet-attention | EfficientNet attention + SC | 0.581 | TBD |
+| J | run-j-efficientnet-classweight | EfficientNet attention + SC + inv_sqrt | 0.592 | TBD |
+| K | run-k-efficientnet-scval | EfficientNet attention + SC val | — | running |
 
-## Key data
+## Key findings
 
-- Focal recordings: 35,549 files, 206 species, 5s chunks @ 32kHz
-- Activity scores: `artifacts/focal_activity.parquet` (244,875 chunks)
-  - Per-clip normalized spectral contrast (`activity_score`)
-  - Global normalized (`activity_score_global`)
-  - See `docs/activity-scores.md` for details and known issues
-- Labeled soundscapes (for Run C): 739 windows from exp 100/101
-- Evaluation: 739 labeled soundscape windows (exp 101 pipeline)
+1. **Attention pooling critical**: framewise max at inference catches brief calls in soundscapes (0.794 vs 0.754 LB)
+2. **Focal overfitting**: val/cmap improves with more epochs but Kaggle LB degrades (soundscape val peaks ep 2)
+3. **EfficientNet > ConvNeXt on Kaggle**: 256 mels + smaller model generalizes better than 128 mels + 89M params
+4. **bf16 emulated on RTX 6000**: fp16 gives 3x throughput (sm_75 has no native bf16)
+5. **torch.compile works**: torch 2.11+cu126, needs setuptools+triton, compiles full LoRA backbone
+6. **GPU mel > CPU mel**: sustained 96-100% GPU utilization, no idle gaps
+7. **Kaggle metric**: macro AUROC excluding species with no positive labels (not standard torchmetrics)
+8. **Activity scores predict calls**: 0.913 AUROC from logistic regression on acoustic indices
+9. **ONNX export verified correct**: mel and output mismatch < 0.002
 
-## Architecture
+## Next step: Clean focal data with frame-level predictions
 
-This experiment forks exp 012's `EfficientNetClassifier`. The key code relationships:
+The trained attention model produces per-frame, per-species probabilities on focal
+recordings. Use this to:
+1. **Identify which frames contain the actual call** (vs silence/noise in labeled chunks)
+2. **Hard-filter**: drop chunks where model says the labeled species isn't calling
+3. **Soft-relabel**: replace binary clip labels with frame-level temporal predictions
+4. Goal: cleaner training data → less overfitting → better soundscape generalization
 
-- **Model**: `src/birdclef_102/model.py` — forked from `012-efficientnet-linear-probe/src/birdclef_012/model.py`
-- **Data module**: reuses `birdclef_009.data.finetune.BirdCLEFDataModule` from exp 009
-- **Training loop**: reuses `birdclef_009.training.finetune.FinetuneLightningModule` from exp 009
-- **Activity scores**: pre-computed from exp 010-2026 acoustic indices
-- **Evaluation**: exp 101 labeled soundscape pipeline (739 windows, 42 evaluable species)
-
-The exp 012 model does: `waveform → nnAudio mel → frozen EfficientNet-B1 → GAP → Linear`.
-This experiment modifies it to: `waveform → nnAudio mel → UNFROZEN EfficientNet-B1 → attention head`.
+This is complementary to pseudo-labeling soundscapes (exp 101 Strategy A), but
+addresses the root cause: noisy focal labels that the model memorizes.
 
 ## Running
 
-Analysis scripts run via sbatch (CPU-only, use exp 010 venv):
 ```bash
-sbatch sbatch/build-activity.sbatch    # Build activity scores parquet
-sbatch sbatch/spot-check.sbatch        # Spot check activity scores
+# Training
+sbatch sbatch/train.sbatch configs/run-X.yaml --run-name my-run
+sbatch sbatch/train.sbatch configs/run-X.yaml --run-name test --fast-dev-run
+
+# ONNX export
+sbatch sbatch/export-onnx.sbatch <checkpoint> <config> <run-name>
+
+# Validation
+sbatch sbatch/validate-onnx.sbatch <checkpoint> <config> <onnx-dir>
+
+# Analysis
+sbatch sbatch/analyze-activity.sbatch
+
+# Kaggle submission
+cd kaggle_kernel && kaggle kernels push -p .
+kaggle competitions submit birdclef-2026 -k acmiyaguchi/birdclef-2026-efficientnet -f submission.csv -v N -m "message"
 ```
 
-Training (GPU, needs own venv — not yet implemented):
-```bash
-# Will be: sbatch sbatch/train-{a,b,c}.sbatch
-```
+## Architecture
 
-Venv for analysis: `~/scratch/birdclef-2026/.venv-010`
-Venv for training: needs GPU venv with torch + transformers (create per CLAUDE.md venv policy)
+- **Backbone-agnostic**: auto-detects EfficientNet vs ConvNeXt from HF config
+- **LoRA**: EfficientNet targets `[project_conv, expand_conv, reduce, expand]`, ConvNeXt targets `[pwconv1, pwconv2]`
+- **Pooling**: avg (logits) or attention (SED-style, probabilities via framewise max at inference)
+- **Loss**: focal BCE with optional class weights and activity sample weights
+- **Data**: parquet-based chunk index + optional soundscape windows + no-call windows
+- **Mel**: nnAudio on GPU with `@autocast(enabled=False)` fp32 wrapper for fp16 training
+- **Validation**: focal split or soundscape split (50/50 by file)
+- **Metric**: Kaggle-style macro AUROC excluding absent species
 
-## Key context
+## sbatch environment
 
-- BirdCLEF 2026 focal data has **clip-level labels only** — no per-frame annotations
-- No nocall/background class — all 206 dirs are species
-- Activity scores have known issues with short recordings (1-2 chunks get degenerate scores)
-- Murilo's exp 015 showed pseudo-labels + GAP didn't help → possible GAP bottleneck
-- Murilo's branch `origin/mg/012-soundscape-finetune` has related SED work (exp 016)
+- `cuda/12.6.1`, `torch 2.11+cu126`, `triton`, `setuptools`
+- `--gres=gpu:RTX_6000:1`, 6 CPUs, 60G mem
+- Venv in `$TMPDIR/birdclef-$SLURM_JOB_ID/.venv`
 
-## Baselines
+## Key data
 
-| Method | val/cmap | Kaggle LB |
-|--------|----------|-----------|
-| Frozen EfficientNet + linear (exp 012) | 0.336 | 0.649 |
-| ProtoCLR LoRA + soundscapes (murilo/012) | 0.481 | 0.767 |
-
-## Target
-
-Kaggle LB ≥ 0.75 (match Murilo's best single model).
+- Focal: 35,549 files, 206 species, 244,875 chunks × 5s (340h)
+- Activity scores: `artifacts/focal_activity.parquet`
+- Soundscape labels: 66 files, 739 labeled windows + 53 no-call
+- No-call index: `artifacts/nocall_index.parquet`
+- ONNX weights: `artifacts/weights/{model-name}/`
+- Kaggle datasets: `acmiyaguchi/birdclef-2026-efficientnet-weights`, `birdclef-2026-deps`
 
 ## Directory structure
 
 ```
-├── proposal.md
-├── tasks.md
 ├── CLAUDE.md
-├── docs/
-│   └── activity-scores.md
+├── proposal.md
+├── configs/                    # YAML configs for each run
+│   ├── run-a-frozen.yaml
+│   ├── run-b-lora-gpumel.yaml
+│   ├── run-d-convnext-gpumel.yaml
+│   ├── run-e-convnext-attention.yaml
+│   ├── run-f-convnext-soundscape.yaml
+│   ├── run-g-convnext-weighted.yaml
+│   ├── run-h-convnext-classweight.yaml
+│   ├── run-i-efficientnet-attention.yaml
+│   ├── run-j-efficientnet-classweight.yaml
+│   └── run-k-efficientnet-scval.yaml
+├── src/birdclef_102/
+│   ├── model.py                # Backbone-agnostic classifier + LoRA
+│   ├── data.py                 # Parquet loader + soundscape + no-call
+│   ├── training.py             # Lightning module + Kaggle AUROC metric
+│   ├── losses.py               # Focal BCE + class weights
+│   ├── cli.py                  # Config-driven entry point
+│   ├── spec_augment.py
+│   └── gpu_monitor.py
 ├── scripts/
+│   ├── export_onnx.py          # ONNX export (handles LoRA merge)
+│   ├── validate_onnx.py        # Compare PyTorch vs ONNX predictions
 │   ├── build_activity_scores.py
-│   └── spot_check_activity.py
+│   ├── build_nocall_index.py
+│   ├── analyze_activity_vs_labels.py
+│   ├── kaggle_metric.py        # Reference: official BirdCLEF metric
+│   └── build_deps.sh           # Download Kaggle offline deps
 ├── sbatch/
-│   ├── build-activity.sbatch
-│   └── spot-check.sbatch
-├── src/birdclef_102/          (not yet created)
-├── configs/                   (not yet created)
+│   ├── train.sbatch
+│   ├── export-onnx.sbatch
+│   ├── validate-onnx.sbatch
+│   └── analyze-activity.sbatch
+├── kaggle_kernel/
+│   ├── submission.py           # MODEL_NAME selects model subdir
+│   └── kernel-metadata.json
+├── docs/
+│   ├── architecture.md
+│   ├── experiment-ladder.md
+│   └── activity-scores.md
+├── logs/                       # Per-run training logs + checkpoints
 └── artifacts/
-    └── focal_activity.parquet
+    ├── focal_activity.parquet
+    ├── nocall_index.parquet
+    ├── deps/                   # Kaggle offline wheels
+    └── weights/                # ONNX exports per model
 ```
