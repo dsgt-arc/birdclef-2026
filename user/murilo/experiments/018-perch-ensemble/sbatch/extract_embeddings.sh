@@ -87,16 +87,24 @@ mkdir -p "$JOB_VENV_DIR"
 uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
+echo "  Loading CUDA module..."
+module load cuda/12.6.1 cudnn/9.2.0.82-12-cuda
+echo "  CUDA: $(nvcc --version 2>/dev/null | tail -1 || echo 'nvcc not found')"
+
 echo "  Installing experiment dependencies..."
 uv pip install -e "$EXPERIMENT_DIR"
 
-echo "  Installing TensorFlow with CUDA support..."
+echo "  Installing TensorFlow (uses system CUDA via module)..."
 uv pip install "tensorflow[and-cuda]"
+
+# Point TF to the CUDA libs from the loaded module + pip-installed nvidia packages
+NVIDIA_SITE_PACKAGES="$JOB_VENV/lib/python3.11/site-packages/nvidia"
+export LD_LIBRARY_PATH="${NVIDIA_SITE_PACKAGES}/cublas/lib:${NVIDIA_SITE_PACKAGES}/cuda_cupti/lib:${NVIDIA_SITE_PACKAGES}/cuda_nvrtc/lib:${NVIDIA_SITE_PACKAGES}/cuda_runtime/lib:${NVIDIA_SITE_PACKAGES}/cudnn/lib:${NVIDIA_SITE_PACKAGES}/cufft/lib:${NVIDIA_SITE_PACKAGES}/cusolver/lib:${NVIDIA_SITE_PACKAGES}/cusparse/lib:${NVIDIA_SITE_PACKAGES}/nccl/lib:${NVIDIA_SITE_PACKAGES}/nvjitlink/lib:${LD_LIBRARY_PATH:-}"
 
 echo "  Virtual environment ready!"
 echo ""
 
-python -c "import tensorflow as tf; print(f'TensorFlow: {tf.__version__}'); print(f'GPU devices: {tf.config.list_physical_devices(\"GPU\")}')"
+python -c "import tensorflow as tf; print(f'TensorFlow: {tf.__version__}'); gpus = tf.config.list_physical_devices('GPU'); print(f'GPU devices: {gpus}'); assert len(gpus) > 0, 'No GPU detected!'"
 python -c "import sklearn; print(f'scikit-learn: {sklearn.__version__}')"
 echo ""
 
