@@ -38,10 +38,10 @@ python scripts/build_artifacts.py             # → verify + dataset-metadata.js
 
 All scripts read paths from `config/perch_ensemble_v1.yaml`.
 
-- [ ] 1.1 Run species mapping — verify 203 direct, 6 genus proxy, 25 unmapped
-- [ ] 1.2 Run Perch extraction — verify embeddings (792, 1536), mapped scores (792, 234)
-- [ ] 1.3 Run probe training — check CV AUC summary, verify artifacts in shared storage
-- [ ] 1.4 Run build_artifacts — verify all files present + dataset-metadata.json created
+- [x] 1.1 Run species mapping — 203 direct, 6 genus proxy, 25 unmapped (verified)
+- [x] 1.2 Run Perch extraction — embeddings (792, 1536), mapped scores (792, 234), 209 non-zero species (SLURM 5532998)
+- [x] 1.3 Run probe training — 53 probes trained, CV AUC mean 0.7285, artifacts in shared storage
+- [x] 1.4 Run build_artifacts — all 8 files verified, dataset-metadata.json created, 510.7 KB total
 
 ### Step 2: Local Validation (Perch-only)
 
@@ -49,23 +49,19 @@ All scripts read paths from `config/perch_ensemble_v1.yaml`.
 python scripts/local_validate.py
 ```
 
-- [ ] 2.1 Record incremental metrics: raw → +probes → +priors → +smoothing
-- [ ] 2.2 Compare local AUROC to chiranjithdharma's expected ~0.910
+- [x] 2.1 Record incremental metrics: raw 0.7521 → +probes 0.9453 → +priors 0.9604 → +smoothing 0.9604
+- [x] 2.2 Local AUROC 0.9604 — probes are the biggest jump (+0.193), priors add +0.015, smoothing neutral
 
 ### Step 3: Perch-Only Kaggle Submission
 
 Kernel uses `PERCH_ONLY = True` (already set in submission.py).
-Uses `kernel-metadata-perch-only.json` (no SED weights or birdclef-deps needed).
 
 ```bash
-# Upload probe artifacts as Kaggle dataset
-PROBE_DIR="/storage/project/ps-clef2026_birdclef-0/shared/artifacts/birdclef-2026/perch-ensemble-v1"
-cd "$PROBE_DIR"
-kaggle datasets create -p . --dir-mode zip
+# Upload artifacts + push Perch-only kernel (single command)
+python scripts/upload_kaggle.py --push-kernel --perch-only
 
-# Push Perch-only kernel
-cd user/murilo/experiments/018-perch-ensemble/kaggle_kernel
-kaggle kernels push -p . --metadata kernel-metadata-perch-only.json
+# Dry run first to verify
+python scripts/upload_kaggle.py --push-kernel --perch-only --dry-run
 
 # Check results
 kaggle kernels status murilogustineli/birdclef-2026-perch-only-v1
@@ -106,9 +102,8 @@ Set `PERCH_ONLY = False` in submission.py, update blend weights from sweep.
 Uses `kernel-metadata-ensemble-v1.json` (includes SED weights + birdclef-deps).
 
 ```bash
-# Push ensemble kernel
-cd user/murilo/experiments/018-perch-ensemble/kaggle_kernel
-kaggle kernels push -p . --metadata kernel-metadata-ensemble-v1.json
+# Upload artifacts + push ensemble kernel (single command)
+python scripts/upload_kaggle.py --push-kernel
 
 # Check results
 kaggle kernels status murilogustineli/birdclef-2026-perch-ensemble-v1
