@@ -514,7 +514,7 @@ def main() -> None:
 
             if fold_aucs:
                 mean_auc = np.mean(fold_aucs)
-                cv_scores[species] = round(mean_auc, 4)
+                cv_scores[species] = round(float(mean_auc), 4)
 
     print(f"\n  Trained: {n_trained} probes")
     print(f"  Skipped (n_pos < {min_positive}): {n_skipped}")
