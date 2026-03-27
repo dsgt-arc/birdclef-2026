@@ -549,7 +549,7 @@ def main() -> None:
     # Build config summary
     config_summary = {
         "pca_components": pca_components,
-        "pca_explained_variance": round(explained_var, 6),
+        "pca_explained_variance": round(float(explained_var), 6),
         "logreg_C": logreg_C,
         "logreg_solver": logreg_solver,
         "class_weight": class_weight,
