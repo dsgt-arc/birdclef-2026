@@ -8,13 +8,12 @@
   "enable_gpu": false,
   "enable_internet": false,
   "dataset_sources": [
-    "murilogustineli/birdclef-2026-perch-ensemble-v1"
+    "murilogustineli/birdclef-2026-perch-ensemble-v1",
+    "murilogustineli/birdclef-tf220-wheel"
   ],
   "model_sources": [
     "google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
   ],
   "competition_sources": ["birdclef-2026"],
-  "kernel_sources": [
-    "kdmitrie/bc26-tensorflow-2-20-0"
-  ]
+  "kernel_sources": []
 }

@@ -48,11 +48,11 @@ if os.path.exists("/kaggle/input"):
 print(f"PERCH_ONLY mode: {PERCH_ONLY}")
 
 # Install TensorFlow 2.20 from pre-built wheel (Kaggle's default TF is too old for Perch v2)
-# Wheel source: kdmitrie/bc26-tensorflow-2-20-0 (kernel_sources in metadata)
+# Wheel source: murilogustineli/birdclef-tf220-wheel (dataset_sources in metadata)
 TF_WHEEL_CANDIDATES = [
-    "/kaggle/input/notebooks/kdmitrie/bc26-tensorflow-2-20-0/wheel",
-    "/kaggle/input/bc26-tensorflow-2-20-0/wheel",
-    "/kaggle/input/bc26-tensorflow-2-20-0",
+    _find_input_early("birdclef-tf220-wheel"),
+    "/kaggle/input/birdclef-tf220-wheel",
+    f"/kaggle/input/datasets/{KAGGLE_USER}/birdclef-tf220-wheel",
 ]
 for tf_wheel_dir in TF_WHEEL_CANDIDATES:
     if os.path.exists(tf_wheel_dir):
