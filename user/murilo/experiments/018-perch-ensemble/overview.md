@@ -216,40 +216,75 @@ nothing).
 The 0.3/0.7 split is an initial estimate. `scripts/local_validate.py` sweeps from
 0.0 to 1.0 on labeled soundscapes to find the actual optimum before Kaggle submission.
 
+## Why a Two-Notebook Chain?
+
+Running Perch v2 on ~600 test soundscapes takes ~80 minutes on Kaggle CPU. That
+leaves no room for probes, smoothing, or SED inference within the 90-minute budget.
+
+Every top-scoring notebook (0.910+) solves this with a **two-notebook chain**:
+
+1. **Notebook A (Perch cache)**: Runs Perch v2 on all test soundscapes and saves
+   the embeddings (1536-dim) + logits (14,795-dim) as kernel output. Takes ~80 min
+   but runs as a separate kernel, not counted against the scoring kernel's budget.
+
+2. **Notebook B (scoring)**: Loads the cached embeddings from Notebook A's output,
+   applies pre-trained probes + metadata priors + temporal smoothing, and submits.
+   Takes ~5-10 minutes — plenty of room to also run SED for ensemble.
+
+The probe models are trained **offline on PACE** using the 66 labeled soundscapes
+(same labeled data, just a different compute environment). At submission time,
+Notebook B just loads the serialized probes and applies them to the new test
+embeddings — no training happens during submission.
+
+```
+PACE (offline, one-time):
+  66 labeled soundscapes → Perch v2 → embeddings
+  embeddings + ground truth → train PCA + LogReg probes → serialize to Kaggle dataset
+
+Kaggle Notebook A (per submission):
+  600 test soundscapes → Perch v2 → embeddings + logits → save as kernel output
+
+Kaggle Notebook B (per submission, reads Notebook A output):
+  load cached test embeddings → apply PCA → apply probes → apply priors → smooth
+  (optionally) run SED on test audio → blend with Perch scores
+  → submit
+```
+
 ## Execution Order
 
-### Phase A: Perch-only baseline
+### Phase A: Offline pipeline (PACE) — DONE
 
-**Offline (PACE)** — all paths read from `config/perch_ensemble_v1.yaml`:
 ```
-build_species_mapping.py → artifacts/perch_species_mapping.json (local, in repo)
-extract_perch_embeddings.py → shared/embeddings/.../perch-v2/labeled/*.parquet (shared, reusable)
-train_probes.py → shared/artifacts/.../perch-ensemble-v1/ (shared, uploaded to Kaggle)
-build_artifacts.py → verify + dataset-metadata.json in shared artifacts dir
-local_validate.py → evaluate Perch-only (raw → +probes → +priors → +smoothing)
-```
-
-Embeddings are extracted once to shared storage and reused across experiments.
-Probe artifacts live in shared storage and are uploaded directly to Kaggle.
-
-**Kaggle**: Submit Perch-only kernel → get LB score. Should be ~0.910 if our
-pipeline matches chiranjithdharma. This validates the entire Perch pipeline before
-adding SED complexity.
-
-### Phase B: Ensemble (after Phase A validates)
-
-**Offline (PACE)**:
-```
-local_validate.py --sed-predictions <path> --sweep-weights
-  → find optimal blend weights, verify ensemble beats Perch-only locally
+build_species_mapping.py → artifacts/perch_species_mapping.json
+extract_perch_embeddings.py → shared/embeddings/.../perch-v2/labeled/*.parquet
+train_probes.py → shared/artifacts/.../perch-ensemble-v1/ (uploaded to Kaggle)
+build_artifacts.py → verify + dataset-metadata.json
+local_validate.py → raw 0.7521 → +probes 0.9453 → +priors 0.9604
 ```
 
-**Kaggle**: Submit ensemble kernel with optimal weights → compare LB vs Perch-only.
+Raw Perch inference validated on Kaggle: **0.825 LB** (matches starter notebook).
 
-### Runtime Budget
+### Phase B: Two-notebook chain (NEXT)
 
-| Configuration | Est. Time | Fits in 90min? |
-|---------------|-----------|----------------|
-| Perch-only | ~15 min | Yes |
-| SED-only (v4b) | ~30 min | Yes |
-| Ensemble (SED + Perch) | ~45 min | Yes |
+1. Create + push Notebook A (Perch cache) — runs Perch, saves embeddings
+2. Create + push Notebook B (scoring) — loads cache, applies probes, submits
+3. Validate Perch + probes LB score (target ~0.910)
+
+### Phase C: SED + Perch ensemble
+
+Add SED inference to Notebook B. Sweep blend weights. Submit ensemble.
+
+### Phase D: Perch pipeline improvements
+
+Cherry-pick techniques from 0.921-0.926 notebooks (focal loss, file-level
+scaling, TTA, per-taxon temperature) if ensemble alone isn't enough.
+
+### Runtime Budget (with two-notebook chain)
+
+| Component | Notebook | Est. Time |
+|-----------|----------|-----------|
+| Perch inference (600 files) | A (cache) | ~80 min |
+| Load cache + apply probes | B (scoring) | ~5 min |
+| SED inference (600 files) | B (scoring) | ~30 min |
+| Blend + submit | B (scoring) | ~1 min |
+| **Total Notebook B** | | **~36 min** (fits easily) |
