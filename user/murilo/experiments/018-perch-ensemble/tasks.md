@@ -138,7 +138,7 @@ cd /storage/project/.../shared/datasets/birdclef-2026/perch-labeled-embeddings
 kaggle datasets create -p . -r zip
 
 # 2. Push single-kernel notebook
-kaggle_kernel/push.sh single
+kaggle_kernel/push.sh perch-probes
 kaggle competitions submissions birdclef-2026 | head -20
 ```
 

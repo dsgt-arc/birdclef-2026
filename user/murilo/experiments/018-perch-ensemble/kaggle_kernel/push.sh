@@ -2,8 +2,8 @@
 # Build datasets and push Kaggle kernels for experiment 018.
 #
 # Usage (from experiment root):
-#   kaggle_kernel/push.sh single           # Build dataset + push single-kernel (recommended)
-#   kaggle_kernel/push.sh single --skip-dataset  # Push kernel only (dataset already uploaded)
+#   kaggle_kernel/push.sh perch-probes           # Build dataset + push perch-probes-kernel (recommended)
+#   kaggle_kernel/push.sh perch-probes --skip-dataset  # Push kernel only (dataset already uploaded)
 #   kaggle_kernel/push.sh cache            # Push Notebook A (Perch cache)
 #   kaggle_kernel/push.sh perch-raw        # Push raw Perch baseline
 #
@@ -20,7 +20,7 @@ usage() {
     echo "Usage: $0 <mode> [--skip-dataset]"
     echo ""
     echo "Modes:"
-    echo "  single      Build labeled embeddings dataset + push single-kernel scoring"
+    echo "  perch-probes      Build labeled embeddings dataset + push perch-probes-kernel scoring"
     echo "  cache       Push Notebook A — Perch cache (embeddings + mapped scores)"
     echo "  scoring     Push Notebook B — Scoring (two-notebook chain, deprecated)"
     echo "  ensemble    Push Notebook B — Scoring (SED + Perch, Phase C)"
@@ -47,7 +47,7 @@ done
 
 # Resolve kernel metadata
 case "$MODE" in
-    single)     META="kernel-metadata-single.json" ;;
+    perch-probes)     META="kernel-metadata-perch-probes.json" ;;
     cache)      META="kernel-metadata-perch-cache.json" ;;
     scoring)    META="kernel-metadata-scoring.json" ;;
     ensemble)   META="kernel-metadata-scoring-ensemble.json" ;;
@@ -63,8 +63,8 @@ if [[ ! -f "$META" ]]; then
     exit 1
 fi
 
-# --- Step 1: Build + upload dataset (for 'single' mode) ---
-if [[ "$MODE" == "single" && "$SKIP_DATASET" == "false" ]]; then
+# --- Step 1: Build + upload dataset (for 'perch-probes' mode) ---
+if [[ "$MODE" == "perch-probes" && "$SKIP_DATASET" == "false" ]]; then
     echo "=== Step 1: Build labeled embeddings dataset ==="
     cd "$EXPERIMENT_DIR"
     python scripts/build_labeled_embeddings_dataset.py
