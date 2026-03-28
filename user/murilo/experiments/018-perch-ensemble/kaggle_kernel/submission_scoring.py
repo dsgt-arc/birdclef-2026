@@ -108,9 +108,11 @@ def _find_input(slug: str) -> str | None:
     candidates = [
         f"/kaggle/input/{slug}",
         f"/kaggle/input/datasets/{KAGGLE_USER}/{slug}",
-        # kernel_sources output paths
-        f"/kaggle/input/kernels/{KAGGLE_USER}/{slug}/output",
+        # kernel_sources output paths (Kaggle mounts under "notebooks", not "kernels")
+        f"/kaggle/input/notebooks/{KAGGLE_USER}/{slug}",
+        f"/kaggle/input/notebooks/{KAGGLE_USER}/{slug}/output",
         f"/kaggle/input/kernels/{KAGGLE_USER}/{slug}",
+        f"/kaggle/input/kernels/{KAGGLE_USER}/{slug}/output",
     ]
     for c in candidates:
         if os.path.exists(c):
@@ -122,7 +124,7 @@ def find_perch_cache_dir() -> Path | None:
     """Find Perch cache output from Notebook A.
 
     When Notebook B lists Notebook A in kernel_sources, Kaggle mounts A's
-    /kaggle/working/ output at /kaggle/input/<kernel-slug>/.
+    /kaggle/working/ output at /kaggle/input/notebooks/<user>/<slug>/.
     """
     path = _find_input(PERCH_CACHE_SLUG)
     if path:
@@ -134,6 +136,25 @@ def find_perch_cache_dir() -> Path | None:
         for sub in p.iterdir():
             if sub.is_dir() and (sub / "perch_cache.npz").exists():
                 return sub
+
+    # Brute-force: walk /kaggle/input/notebooks/ looking for perch_cache.npz
+    notebooks_dir = Path("/kaggle/input/notebooks")
+    if notebooks_dir.exists():
+        print(f"  DEBUG: Walking {notebooks_dir} to find perch_cache.npz...")
+        for root, _dirs, files in os.walk(str(notebooks_dir)):
+            if "perch_cache.npz" in files:
+                print(f"  DEBUG: Found at {root}")
+                return Path(root)
+        # Print what we see for debugging
+        print(f"  DEBUG: perch_cache.npz not found. Contents of {notebooks_dir}:")
+        for d1 in sorted(notebooks_dir.iterdir()):
+            print(f"    {d1.name}/")
+            if d1.is_dir():
+                for d2 in sorted(d1.iterdir()):
+                    print(f"      {d2.name}/")
+                    if d2.is_dir():
+                        for d3 in sorted(d2.iterdir()):
+                            print(f"        {d3.name}")
 
     # Local testing fallback
     local = Path(os.environ.get("PERCH_CACHE_DIR", "predictions"))
