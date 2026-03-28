@@ -77,7 +77,7 @@ if [[ "$MODE" == "perch-probes" && "$SKIP_DATASET" == "false" ]]; then
 
     # Try create first; if dataset already exists, create a new version
     CREATE_OUTPUT=$(kaggle datasets create -p . -r zip 2>&1) || true
-    if echo "$CREATE_OUTPUT" | grep -qi "already exists\|403\|409"; then
+    if echo "$CREATE_OUTPUT" | grep -qi "already exists\|already in use\|403\|409"; then
         echo "  Dataset already exists, creating new version..."
         kaggle datasets version -p . -m "Update labeled embeddings" -r zip
     elif echo "$CREATE_OUTPUT" | grep -qi "error\|fail"; then
