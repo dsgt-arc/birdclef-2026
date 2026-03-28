@@ -82,8 +82,14 @@ kaggle kernels status murilogustineli/birdclef-2026-perch-cache-v1
 
 - [x] 4.1 Create `submission_perch_cache.py` — runs Perch, saves embeddings/logits as output
 - [x] 4.2 Create `kernel-metadata-perch-cache.json` (needs TF wheel + Perch model, no probes)
-- [ ] 4.3 Push cache notebook and verify it completes within 90 min
-- [ ] 4.4 Verify output files: embeddings + logits for all test soundscapes
+- [x] 4.3 Push cache notebook and verify it completes within 90 min — **completed**
+- [x] 4.4 Verify output files: embeddings + mapped scores for all test soundscapes
+- [x] 4.5 Submit cache notebook to competition — **0.836 LB** (raw Perch, no probes)
+
+**Finding**: Cache notebook scores +0.011 over perch-raw (0.825 → 0.836). The gain
+comes from **genus proxy mapping**: 6 species (e.g., Caiman yacare) mapped via
+max(sigmoid(logits[same_genus])) instead of zeros in the raw notebook. Confirms
+the species mapping work adds real value.
 
 ### Step 5: Create Scoring Notebook (Notebook B)
 
@@ -150,9 +156,10 @@ Cherry-pick techniques from 0.921-0.926 notebooks if ensemble alone isn't enough
 | Submission | LB | Notes |
 |------------|-----|-------|
 | SED v4b (exp 017) | 0.859 | EfficientNet-B0, AmplitudeToDB, single model |
-| Perch raw (no probes) | **0.825** | Matches starter notebook — inference validated |
+| Perch raw (no probes) | 0.825 | Matches starter notebook — inference validated |
+| Perch cache v1 (no probes) | **0.836** | +0.011 from genus proxy mapping (6 species) |
 | Perch + probes (wrong model) | 0.699 | Bug: probes from perch_v2, inference on perch_v2_cpu |
-| Perch + probes (fixed) | pending | Re-extracted with perch_v2_cpu, needs two-notebook arch |
+| Perch + probes (scoring v1) | pending | Two-notebook chain, probes re-trained on perch_v2_cpu |
 | Ensemble v1 | pending | After Perch probes validated |
 
 ---
