@@ -222,25 +222,31 @@ sbatch sbatch/run.sh config/efficientnet_b0_sed_v4k.yaml
 
 ### 5.1 Training
 
-- [x] 5.1.1 Fast-dev-run all 3 variants — passed (no NaN, no shape errors)
-- [x] 5.1.2 Submit v4i (standard CE) to SLURM — still training
-- [x] 5.1.3 Submit v4j (waveform MixUp) to SLURM — still training
-- [x] 5.1.4 Submit v4k (CE + waveform MixUp) to SLURM — **done: val/auroc 0.846** (−0.019 vs v4b)
-- [ ] 5.1.5 Monitor W&B: check loss curves converge, no NaN
-- [ ] 5.1.6 Record offline metrics for v4i and v4j when complete
+- [x] 5.1.1 Fast-dev-run all 3 variants — passed
+- [x] 5.1.2 Submit v4i (fixed CE, primary_label) — **val/auroc 0.835** (−0.030 vs v4b)
+- [x] 5.1.3 Submit v4j (waveform MixUp) — **val/auroc 0.868** (+0.003 vs v4b, best offline)
+- [x] 5.1.4 Submit v4k (CE + waveform MixUp) — **val/auroc 0.835** (−0.030 vs v4b)
+- [x] 5.1.5 All 3 complete. v4i/v4k CE loss regresses even with primary_label fix.
 
-### 5.2 ONNX Export & Kaggle
+**Results**: CE loss hurts regardless of MixUp domain. Waveform MixUp alone (v4j)
+shows the best offline score. The gap to Salman's 0.908 is likely from factors
+beyond loss function + augmentation (pretrained weights? different head? different
+post-processing? different training data composition?).
 
-- [ ] 5.2.1 Export best checkpoint to ONNX for each variant
-- [ ] 5.2.2 Upload weights to Kaggle datasets
-- [ ] 5.2.3 Submit to Kaggle LB (raw, no pp2)
-- [ ] 5.2.4 Record LB results
+### 5.2 ONNX Export & Kaggle (v4j only — only variant that improved)
+
+- [ ] 5.2.1 Export v4j best checkpoint to ONNX
+- [ ] 5.2.2 Upload v4j weights to Kaggle
+- [ ] 5.2.3 Submit v4j to Kaggle LB
+- [ ] 5.2.4 Record LB result (v4b=0.859, target: ≥0.865)
 
 ### 5.3 Decision Gate
 
-- If v4i or v4j ≥ 0.880: significant gain → continue to fulldata + ensemble
-- If v4k ≥ 0.900: close to Salman's 0.908 → update as new best SED model
-- If all regress: the gap is elsewhere (pretrained weights? hidden post-processing?)
+v4j (waveform MixUp) is the only improvement: +0.003 val/auroc over v4b.
+CE loss (v4i, v4k) regressed −0.030 — even with primary_label fix, standard CE
+underperforms our soft CE for this multi-label task. The 0.908 gap to Salman is
+likely from other factors (NS-JFT pretrained weights, different SED head design,
+or undisclosed post-processing).
 
 ---
 
@@ -264,7 +270,7 @@ sbatch sbatch/run.sh config/efficientnet_b0_sed_v4k.yaml
 | drop_path | 0.0 | 0.0 | 0.0 | 0.0 | 0.15 | 0.15 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
 | split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
 | max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
-| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | 0.868 | 0.862 | 0.868 | 0.858 | pending | pending | **0.846** |
-| LB (raw) | 0.825 | **0.859** | skip | 0.808 | 0.840 | 0.832 | 0.819 | 0.800 | pending | pending | skip |
+| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | 0.868 | 0.862 | 0.868 | 0.858 | 0.835 | **0.868** | 0.835 |
+| LB (raw) | 0.825 | **0.859** | skip | 0.808 | 0.840 | 0.832 | 0.819 | 0.800 | skip | pending | skip |
 
 **a2db** = amplitude_to_db (AmplitudeToDB + standardize + min-max [0,1])
