@@ -95,6 +95,8 @@ class BirdCLEF102Dataset(Dataset):
         soundscape_dir: str | None = None,
         soundscape_labels_csv: str | None = None,
         nocall_parquet: str | None = None,
+        teacher_predictions: str | None = None,
+        teacher_threshold: float = 0.0,
     ):
         self.audio_dir = Path(audio_dir).expanduser()
         self.species_list = species_list
@@ -107,6 +109,8 @@ class BirdCLEF102Dataset(Dataset):
         self.target_frames = target_frames
         self.norm_mean = norm_mean
         self.norm_std = norm_std
+        self.teacher_predictions = teacher_predictions
+        self.teacher_threshold = teacher_threshold
 
         # Build species label lookup from metadata
         # Key by relative path (e.g., "species/XC12345.ogg") to avoid basename collisions
@@ -155,8 +159,18 @@ class BirdCLEF102Dataset(Dataset):
         valid_basenames = set(self.file_to_relpath.keys())
         activity = activity[activity["filename"].isin(valid_basenames)]
 
+        # Optional: join with teacher predictions for filtering
+        teacher_lookup = None
+        if self.teacher_predictions and Path(self.teacher_predictions).exists() and self.teacher_threshold > 0:
+            teacher = pd.read_parquet(self.teacher_predictions)
+            teacher_lookup = {}
+            for _, row in teacher.iterrows():
+                teacher_lookup[(row["filename"], row["chunk_start"])] = float(row["teacher_prob"])
+            logger.info(f"Loaded teacher predictions: {len(teacher_lookup)} chunks, threshold={self.teacher_threshold}")
+
         # Build chunks using relpath for correct label lookup
         self.chunks = []
+        filtered_count = 0
         for basename, group in activity.groupby("filename"):
             relpath = self.file_to_relpath.get(basename)
             if relpath is None or relpath not in self.file_to_labels:
@@ -166,7 +180,16 @@ class BirdCLEF102Dataset(Dataset):
             label_vec = self.file_to_labels[relpath]
 
             for _, row in group.iterrows():
-                start_sample = int(row["chunk_start"] * self.sample_rate)
+                chunk_start = float(row["chunk_start"])
+
+                # Filter by teacher prediction
+                if teacher_lookup is not None:
+                    tp = teacher_lookup.get((basename, chunk_start))
+                    if tp is not None and tp < self.teacher_threshold:
+                        filtered_count += 1
+                        continue
+
+                start_sample = int(chunk_start * self.sample_rate)
                 activity_score = float(row.get("activity_score", 0.5))
                 self.chunks.append((
                     audio_path,
@@ -175,6 +198,9 @@ class BirdCLEF102Dataset(Dataset):
                     label_vec,
                     activity_score,
                 ))
+
+        if filtered_count > 0:
+            logger.info(f"Teacher filtering: dropped {filtered_count} chunks (threshold={self.teacher_threshold})")
 
         logger.info(f"BirdCLEF102Dataset (parquet): {len(self.chunks)} chunks")
 
@@ -371,6 +397,8 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         soundscape_labels_csv: str | None = None,
         nocall_parquet: str | None = None,
         val_on_soundscape: bool = False,
+        teacher_predictions: str | None = None,
+        teacher_threshold: float = 0.0,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["species_list", "mel_transform"])
@@ -391,6 +419,8 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         self.soundscape_labels_csv = soundscape_labels_csv
         self.nocall_parquet = nocall_parquet
         self.val_on_soundscape = val_on_soundscape
+        self.teacher_predictions = teacher_predictions
+        self.teacher_threshold = teacher_threshold
 
         if species_list is not None:
             self.species_list = species_list
@@ -478,6 +508,8 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
                 target_frames=self.target_frames,
                 norm_mean=self.norm_mean,
                 norm_std=self.norm_std,
+                teacher_predictions=self.teacher_predictions,
+                teacher_threshold=self.teacher_threshold,
             )
             # Split soundscape files for train/val if using soundscape validation
             sc_labels_train = self.soundscape_labels_csv
