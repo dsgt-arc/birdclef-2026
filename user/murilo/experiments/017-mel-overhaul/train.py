@@ -399,6 +399,21 @@ def main():
         results_dir.mkdir(parents=True, exist_ok=True)
         results_file = results_dir / f"{run_name}.json"
 
+        # Capture val metrics from trainer's logged values
+        val_metrics = {}
+        for key in [
+            "val/auroc",
+            "val/cmap",
+            "val/f1_macro",
+            "val/f1_micro",
+            "val/top1_acc",
+            "val/top5_acc",
+            "val/loss",
+        ]:
+            val = trainer.callback_metrics.get(key)
+            if val is not None:
+                val_metrics[key] = float(val)
+
         raw_results = {
             "config_path": str(config_path),
             "run_name": run_name,
@@ -418,6 +433,7 @@ def main():
             ),
             "stopped_epoch": trainer.current_epoch,
             "test_metrics": test_results[0] if test_results else None,
+            "val_metrics": val_metrics if val_metrics else None,
         }
         with open(results_file, "w") as f:
             json.dump(raw_results, f, indent=2)
