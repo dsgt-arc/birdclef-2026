@@ -43,15 +43,21 @@ def main():
     variant_name = Path(args.config).stem
     mel_cfg = config.get("mel", {})
 
+    # Use test metrics if available (80/10/10 split), fall back to val metrics (90/10 split)
+    has_test = bool(test_metrics)
+    metrics_source = "test" if has_test else "val"
+    best_val_score = raw.get("best_val_score")
+
     metrics = {
-        # Primary metrics
-        "auroc": test_metrics.get("test/auroc"),
+        # Primary metrics (test if available, val otherwise)
+        "auroc": test_metrics.get("test/auroc") if has_test else best_val_score,
         "cmap": test_metrics.get("test/cmap"),
         "f1_macro": test_metrics.get("test/f1_macro"),
         "f1_micro": test_metrics.get("test/f1_micro"),
         "top1_accuracy": test_metrics.get("test/top1_acc"),
         "top5_accuracy": test_metrics.get("test/top5_acc"),
         "loss": test_metrics.get("test/loss"),
+        "metrics_source": metrics_source,
         # Architecture
         "architecture": "sed",
         "encoder_type": config["encoder"]["type"],
