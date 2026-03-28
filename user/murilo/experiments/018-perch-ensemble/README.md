@@ -67,31 +67,51 @@ python scripts/build_artifacts.py             # → verify + dataset-metadata.js
 python scripts/local_validate.py --sweep-weights  # → evaluate + find optimal blend
 ```
 
-### Kaggle: Upload + submit
+### Kaggle: Upload datasets
 
 ```bash
-# Upload probe artifacts as Kaggle dataset
+# Upload probe artifacts as Kaggle dataset (one-time)
 PROBE_DIR="/storage/project/ps-clef2026_birdclef-0/shared/artifacts/birdclef-2026/perch-ensemble-v1"
 cd "$PROBE_DIR"
 kaggle datasets create -p . --dir-mode zip
+```
 
-# Push kernel
-cd user/murilo/experiments/018-perch-ensemble/kaggle_kernel
-kaggle kernels push -p .
+### Kaggle: Push kernels (two-notebook chain)
+
+All commands run from the experiment root:
+
+```bash
+cd user/murilo/experiments/018-perch-ensemble
+
+# Phase B: Perch-only validation
+kaggle_kernel/push.sh cache      # Notebook A — Perch inference + save cache (~80 min)
+kaggle_kernel/push.sh scoring    # Notebook B — Load cache + probes + submit (~10 min)
+
+# Phase C: SED + Perch ensemble (after Phase B validates)
+kaggle_kernel/push.sh ensemble   # Notebook B — with SED inference + blend (~36 min)
+
+# Other modes
+kaggle_kernel/push.sh perch-raw  # Raw Perch baseline (no probes, ~0.825 LB)
 
 # Check results
-kaggle kernels status murilogustineli/birdclef-2026-perch-ensemble-v1
+kaggle kernels status murilogustineli/birdclef-2026-perch-cache-v1
+kaggle kernels status murilogustineli/birdclef-2026-scoring-v1
 kaggle competitions submissions birdclef-2026 | head -20
 ```
 
+**Two-notebook chain**: Notebook B lists Notebook A in `kernel_sources`. Kaggle runs A
+first (~80 min), then mounts its output for B. Each gets its own 90 min budget.
+
 ### Kaggle Kernel Data Sources
 
-| Dataset | Content |
-|---------|---------|
-| `murilogustineli/birdclef-deps` | onnxruntime wheels |
-| `murilogustineli/birdclef-2026-effnet-b0-sed-v4b-weights` | SED ONNX model + mel config |
-| `murilogustineli/birdclef-2026-perch-ensemble-v1` | Probe artifacts (PCA, models, priors) |
-| `google/bird-vocalization-classifier/TensorFlow2/perch_v2/1` | Frozen Perch v2 (Kaggle model source) |
+| Dataset / Source | Notebook A | Notebook B | Content |
+|-----------------|:---:|:---:|---------|
+| `murilogustineli/birdclef-2026-perch-ensemble-v1` | Yes | Yes | Probe artifacts (PCA, models, priors, species mapping) |
+| `murilogustineli/birdclef-tf220-wheel` | Yes | — | TensorFlow 2.20 wheels |
+| `google/.../perch_v2_cpu/1` | Yes | — | Frozen Perch v2 model |
+| `murilogustineli/birdclef-deps` | — | Phase C | onnxruntime wheels |
+| `murilogustineli/birdclef-2026-effnet-b0-sed-v4b-weights` | — | Phase C | SED ONNX model + mel config |
+| `murilogustineli/birdclef-2026-perch-cache-v1` (kernel) | — | Yes | Cached embeddings + mapped scores from Notebook A |
 
 ## Directory Structure
 
@@ -113,8 +133,14 @@ kaggle competitions submissions birdclef-2026 | head -20
 ├── sbatch/
 │   └── extract_embeddings.sh            # CPU job: chains all offline steps
 ├── kaggle_kernel/
-│   ├── submission.py                    # Unified SED + Perch kernel
-│   └── kernel-metadata-ensemble-v1.json
+│   ├── push.sh                          # Push helper: ./push.sh cache|scoring|ensemble
+│   ├── submission_perch_cache.py        # Notebook A: Perch inference → cache
+│   ├── submission_scoring.py            # Notebook B: Load cache → probes → submit
+│   ├── submission.py                    # Monolithic kernel (reference, pre-split)
+│   ├── submission_perch_raw.py          # Raw Perch baseline (no probes)
+│   ├── kernel-metadata-perch-cache.json # Metadata for Notebook A
+│   ├── kernel-metadata-scoring.json     # Metadata for Notebook B (Perch-only)
+│   └── kernel-metadata-ensemble-v1.json # Metadata for monolithic kernel (old)
 └── artifacts/
     └── perch_species_mapping.json       # Species mapping (lightweight, in repo)
 

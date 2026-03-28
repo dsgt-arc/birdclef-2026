@@ -11,7 +11,7 @@ feature sources.
 **Perch + Probes Target**: ~0.910 LB (chiranjithdharma reference)
 **Ensemble Target**: 0.92+ LB
 
-### Status: IN PROGRESS — Phase A validated, debugging probes
+### Status: IN PROGRESS — Phase B: two-notebook chain created, cache kernel pushed
 
 - **Branch**: `mg/018-perch-ensemble` (PR #20)
 
@@ -75,15 +75,13 @@ Creates a kernel that runs Perch v2 on all test soundscapes and saves
 embeddings + logits as kernel output. This runs separately from the scoring kernel.
 
 ```bash
-# Create + push cache notebook
-cd user/murilo/experiments/018-perch-ensemble/kaggle_kernel
-cp kernel-metadata-perch-cache.json kernel-metadata.json
-kaggle kernels push -p .
-rm kernel-metadata.json
+cd user/murilo/experiments/018-perch-ensemble
+kaggle_kernel/push.sh cache
+kaggle kernels status murilogustineli/birdclef-2026-perch-cache-v1
 ```
 
-- [ ] 4.1 Create `submission_perch_cache.py` — runs Perch, saves embeddings/logits as output
-- [ ] 4.2 Create `kernel-metadata-perch-cache.json` (needs TF wheel + Perch model, no probes)
+- [x] 4.1 Create `submission_perch_cache.py` — runs Perch, saves embeddings/logits as output
+- [x] 4.2 Create `kernel-metadata-perch-cache.json` (needs TF wheel + Perch model, no probes)
 - [ ] 4.3 Push cache notebook and verify it completes within 90 min
 - [ ] 4.4 Verify output files: embeddings + logits for all test soundscapes
 
@@ -91,8 +89,15 @@ rm kernel-metadata.json
 
 Loads cached embeddings from Notebook A, applies probes + priors + smoothing.
 
-- [ ] 5.1 Create `submission_scoring.py` — loads cache, applies probes, submits
-- [ ] 5.2 Create `kernel-metadata-scoring.json` (references cache notebook output + probe artifacts)
+```bash
+cd user/murilo/experiments/018-perch-ensemble
+kaggle_kernel/push.sh scoring
+kaggle kernels status murilogustineli/birdclef-2026-scoring-v1
+kaggle competitions submissions birdclef-2026 | head -20
+```
+
+- [x] 5.1 Create `submission_scoring.py` — loads cache, applies probes, submits
+- [x] 5.2 Create `kernel-metadata-scoring.json` (references cache notebook output + probe artifacts)
 - [ ] 5.3 Push scoring notebook and record Perch-only LB result
 - [ ] 5.4 Compare to chiranjithdharma (0.910) — this is the real Phase A validation
 
@@ -110,10 +115,18 @@ Only proceed after Phase B validates Perch + probes.
 
 ### Step 6: Add SED to Scoring Notebook
 
-- [ ] 6.1 Add SED inference to scoring notebook (ONNX, ~30 min)
-- [ ] 6.2 Sweep blend weights locally
-- [ ] 6.3 Push ensemble scoring kernel
-- [ ] 6.4 Record ensemble LB vs Perch-only and SED baselines
+```bash
+cd user/murilo/experiments/018-perch-ensemble
+# Set PERCH_ONLY=False in submission_scoring.py, then:
+kaggle_kernel/push.sh ensemble
+kaggle competitions submissions birdclef-2026 | head -20
+```
+
+- [ ] 6.1 Set `PERCH_ONLY=False` in `submission_scoring.py`
+- [ ] 6.2 Create `kernel-metadata-scoring-ensemble.json` (adds birdclef-deps + SED weights)
+- [ ] 6.3 Sweep blend weights locally with `scripts/local_validate.py --sweep-weights`
+- [ ] 6.4 Push ensemble scoring kernel
+- [ ] 6.5 Record ensemble LB vs Perch-only and SED baselines
 
 ---
 
