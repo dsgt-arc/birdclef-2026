@@ -193,29 +193,78 @@ suggesting it's not prone to early overfitting.
 - [x] 4.6 Export last checkpoint (epoch 44) + submit to LB — submitted to Kaggle
 - [x] 4.7 Record LB result: **0.853** (−0.006 vs v4b 90/10 0.859) — fulldata regressed
 
-## Step 5: Polish — FUTURE
+## Step 5: Loss & Augmentation Ablations (v4i/v4j/v4k)
 
-- [ ] 5.1 Ensemble best variants
-- [x] 5.2 Full-signal mel at inference — **already implemented** in ONNX optimization (proposal.md)
+Motivated by Salman Ahmed's 0.908 LB with a single EfficientNet-B0 SED using
+standard CE loss + raw waveform MixUp ([discussion #683791](https://www.kaggle.com/competitions/birdclef-2026/discussion/683791)).
+Our v4b scores 0.859 with soft CE + spectrogram MixUp — a 0.049 gap.
+
+**Key insight**: Standard CE (primary_label only + sigmoid at inference) was never
+tested with the v4b recipe. The 2024 1st place found CE > BCE by +0.044 LB.
+Our soft CE creates artificial species-competition via softmax normalization.
+
+All 3 variants are single-variable (or two-variable) changes from v4b. Run in parallel.
+
+| Variant | Change from v4b | Hypothesis |
+|---------|----------------|------------|
+| v4i | loss_type: soft_ce → **ce** (label_smoothing=0.05) | CE avoids species competition, +0.02-0.04 expected |
+| v4j | **waveform_mixup: true** | Realistic acoustic interference, +0.01-0.03 expected |
+| v4k | **ce** + **waveform_mixup** (both) | Combined recipe matching Salman's 0.908 approach |
+
+```bash
+cd user/murilo/experiments/017-mel-overhaul
+
+# Run all 3 in parallel on PACE
+sbatch sbatch/run.sh config/efficientnet_b0_sed_v4i.yaml
+sbatch sbatch/run.sh config/efficientnet_b0_sed_v4j.yaml
+sbatch sbatch/run.sh config/efficientnet_b0_sed_v4k.yaml
+```
+
+### 5.1 Training
+
+- [x] 5.1.1 Fast-dev-run all 3 variants — passed (no NaN, no shape errors)
+- [x] 5.1.2 Submit v4i (standard CE) to SLURM — training
+- [x] 5.1.3 Submit v4j (waveform MixUp) to SLURM — training
+- [x] 5.1.4 Submit v4k (CE + waveform MixUp) to SLURM — training
+- [ ] 5.1.5 Monitor W&B: check loss curves converge, no NaN
+- [ ] 5.1.6 Record offline metrics for all 3 variants
+
+### 5.2 ONNX Export & Kaggle
+
+- [ ] 5.2.1 Export best checkpoint to ONNX for each variant
+- [ ] 5.2.2 Upload weights to Kaggle datasets
+- [ ] 5.2.3 Submit to Kaggle LB (raw, no pp2)
+- [ ] 5.2.4 Record LB results
+
+### 5.3 Decision Gate
+
+- If v4i or v4j ≥ 0.880: significant gain → continue to fulldata + ensemble
+- If v4k ≥ 0.900: close to Salman's 0.908 → update as new best SED model
+- If all regress: the gap is elsewhere (pretrained weights? hidden post-processing?)
+
+---
+
+## Step 6: Polish — FUTURE
+
+- [ ] 6.1 Ensemble best variants
+- [x] 6.2 Full-signal mel at inference — **already implemented** in ONNX optimization (proposal.md)
 
 ---
 
 ## Key Config: All Variants
 
-| Parameter | v4a | v4b | v4c | v4d | v4e | v4f | v4g | v4h |
-|-----------|-----|-----|-----|-----|-----|-----|-----|-----|
-| n_fft | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 |
-| n_mels | 224 | 224 | 224 | 224 | 224 | 224 | 224 | 224 |
-| norm_type | audioset | **a2db** | audioset | audioset | audioset | **a2db** | **a2db** | **a2db** |
-| sed_head | AttHead | AttHead | **AttBlockV2** | AttHead | AttHead | AttHead | **AttBlockV2** | **AttBlockV2** |
-| loss_type | soft_ce | soft_ce | soft_ce | **asl** | soft_ce | soft_ce | **bce** | **asl** |
-| drop_path | 0.0 | 0.0 | 0.0 | 0.0 | **0.15** | **0.15** | 0.0 | 0.0 |
-| split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
-| max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
-| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | **0.868** | 0.862 | **0.868** | 0.858 |
-| LB (raw) | 0.825 | **0.859** | skipped | 0.808 | 0.840 | 0.832 | 0.819 | 0.800 |
+| Parameter | v4a | v4b | v4c | v4d | v4e | v4f | v4g | v4h | v4i | v4j | v4k |
+|-----------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|
+| n_fft | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 |
+| n_mels | 224 | 224 | 224 | 224 | 224 | 224 | 224 | 224 | 224 | 224 | 224 |
+| norm_type | audioset | **a2db** | audioset | audioset | audioset | **a2db** | **a2db** | **a2db** | **a2db** | **a2db** | **a2db** |
+| sed_head | AttHead | AttHead | AttBlockV2 | AttHead | AttHead | AttHead | AttBlockV2 | AttBlockV2 | AttHead | AttHead | AttHead |
+| loss_type | soft_ce | soft_ce | soft_ce | asl | soft_ce | soft_ce | bce | asl | **ce** | soft_ce | **ce** |
+| raw_waveform_mixup | — | — | — | — | — | — | — | — | — | **true** | **true** |
+| drop_path | 0.0 | 0.0 | 0.0 | 0.0 | 0.15 | 0.15 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
+| max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
+| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | 0.868 | 0.862 | 0.868 | 0.858 | pending | pending | pending |
+| LB (raw) | 0.825 | **0.859** | skip | 0.808 | 0.840 | 0.832 | 0.819 | 0.800 | pending | pending | pending |
 
 **a2db** = amplitude_to_db (AmplitudeToDB + standardize + min-max [0,1])
-
-**Key insight**: v4c and v4d tested AttBlockV2/ASL with soft_ce — the wrong loss pairing.
-v4g/v4h re-test with BCE/ASL, which is how Tom and PANNs actually use these techniques.
