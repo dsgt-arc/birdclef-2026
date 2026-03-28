@@ -142,9 +142,12 @@ kaggle_kernel/push.sh perch-probes
 kaggle competitions submissions birdclef-2026 | head -20
 ```
 
-- [ ] 5b.1 Build labeled embeddings dataset (NPZ + parquet)
-- [ ] 5b.2 Upload `birdclef-2026-perch-labeled-embeddings` to Kaggle
-- [ ] 5b.3 Push single-kernel notebook
+- [x] 5b.1 Build labeled embeddings dataset (NPZ + parquet, ~5 MB)
+- [x] 5b.2 Upload `birdclef-2026-perch-labeled-embeddings` to Kaggle
+- [x] 5b.3 Push `birdclef-2026-perch-probes-v1` notebook — submitted, awaiting score
+      - Phase 1: labeled embeddings loaded + 53 probes trained in 2.2s
+      - Phase 2: Perch on ~600 test files (~80 min with ThreadPoolExecutor)
+      - Phase 3: apply probes + priors + smoothing (~1s)
 - [ ] 5b.4 Record LB result
 - [ ] 5b.5 Compare to chiranjithdharma (0.910)
 
