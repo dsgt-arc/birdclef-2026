@@ -2,127 +2,145 @@
 
 ## Goal
 
-First reproduce chiranjithdharma's Perch-only pipeline (~0.910 LB) as a validated
-baseline, then ensemble with SED v4b (0.859 LB) to see if combining fundamentally
-different models pushes past 0.92.
+Build a Perch v2 pipeline that matches or exceeds the public notebook baselines
+(~0.910+), then ensemble with SED v4b (0.859 LB) to combine fundamentally different
+feature sources.
 
 **SED Baseline**: v4b = 0.859 LB
-**Perch Baseline**: chiranjithdharma = 0.910 LB
-**Target**: 0.92+ LB (ensemble)
+**Perch Raw Baseline**: 0.825 LB (validated — matches starter notebook)
+**Perch + Probes Target**: ~0.910 LB (chiranjithdharma reference)
+**Ensemble Target**: 0.92+ LB
 
-### Status: IN PROGRESS
+### Status: IN PROGRESS — Phase A validated, debugging probes
 
 - **Branch**: `mg/018-perch-ensemble` (PR #20)
 
+### Architecture: Two-Notebook Chain
+
+The 0.910+ notebooks use a **two-notebook chain** to solve the 90-min budget problem:
+
+1. **Notebook A (Perch cache)**: Runs Perch v2 on all ~600 test soundscapes, saves
+   embeddings + logits as kernel output (~80 min, runs separately)
+2. **Notebook B (scoring)**: Loads cached embeddings → applies probes + priors + smoothing
+   → optionally blends with SED → submits (~5-10 min)
+
+This is how chiranjithdharma (0.910) and all higher-scoring notebooks work — they reference
+`jaejohn/perch-meta` (a cache notebook output) as an input dataset.
+
+We need to implement the same pattern. Running Perch + probes + SED in a single kernel
+exceeds the 90-min budget.
+
 ---
 
-## Phase A: Perch-Only Baseline (reproduce chiranjithdharma ~0.910)
+## Phase A: Perch Baseline (DONE — raw inference validated)
 
-### Step 1: Offline Pipeline (PACE)
-
-Run all steps via a single sbatch job:
+### Step 1: Offline Pipeline (PACE) — DONE
 
 ```bash
 cd user/murilo/experiments/018-perch-ensemble
-sbatch sbatch/extract_embeddings.sh   # cpu-small, ~1hr
+sbatch sbatch/extract_embeddings.sh
 ```
 
-Or run individually:
+- [x] 1.1 Species mapping — 203 direct, 6 genus proxy, 25 unmapped
+- [x] 1.2 Perch extraction (perch_v2_cpu) — embeddings (792, 1536), mapped scores (792, 234)
+- [x] 1.3 Probe training — 53 probes, CV AUC mean 0.7285
+- [x] 1.4 Artifacts packaged in shared storage
 
-```bash
-python scripts/build_species_mapping.py       # → artifacts/perch_species_mapping.json
-python scripts/extract_perch_embeddings.py    # → shared/embeddings/.../labeled/*.parquet
-python scripts/train_probes.py                # → shared/artifacts/.../perch-ensemble-v1/
-python scripts/build_artifacts.py             # → verify + dataset-metadata.json
-```
+### Step 2: Local Validation — DONE
 
-All scripts read paths from `config/perch_ensemble_v1.yaml`.
+- [x] 2.1 Raw 0.7521 → +probes 0.9453 → +priors 0.9604 → +smoothing 0.9604
+- [x] 2.2 Probes are the biggest lift (+0.193), priors add +0.015
 
-- [x] 1.1 Run species mapping — 203 direct, 6 genus proxy, 25 unmapped (verified)
-- [x] 1.2 Run Perch extraction — embeddings (792, 1536), mapped scores (792, 234), 209 non-zero species (SLURM 5532998)
-- [x] 1.3 Run probe training — 53 probes trained, CV AUC mean 0.7285, artifacts in shared storage
-- [x] 1.4 Run build_artifacts — all 8 files verified, dataset-metadata.json created, 510.7 KB total
+### Step 3: Raw Perch LB Validation — DONE
 
-### Step 2: Local Validation (Perch-only)
+- [x] 3.1 Raw Perch kernel (no probes) — **0.825 LB** (matches starter notebook exactly)
+- [x] 3.2 Confirms base Perch inference is correct
 
-```bash
-python scripts/local_validate.py
-```
+### Step 3b: Perch + Probes LB — FAILED (0.699)
 
-- [x] 2.1 Record incremental metrics: raw 0.7521 → +probes 0.9453 → +priors 0.9604 → +smoothing 0.9604
-- [x] 2.2 Local AUROC 0.9604 — probes are the biggest jump (+0.193), priors add +0.015, smoothing neutral
+- [x] 3.3 Perch + probes kernel — **0.699 LB** (probes actively hurting)
+- [x] 3.4 Root cause: probes trained on perch_v2 (CUDA), inference on perch_v2_cpu → **FIXED**
+      (re-extracted embeddings with perch_v2_cpu, but haven't re-tested on LB yet)
 
-### Step 3: Perch-Only Kaggle Submission
-
-Kernel uses `PERCH_ONLY = True` (already set in submission.py).
-
-```bash
-# Upload artifacts + push Perch-only kernel (single command)
-python scripts/upload_kaggle.py --push-kernel --perch-only
-
-# Dry run first to verify
-python scripts/upload_kaggle.py --push-kernel --perch-only --dry-run
-
-# Check results
-kaggle kernels status murilogustineli/birdclef-2026-perch-only-v1
-kaggle competitions submissions birdclef-2026 | head -20
-```
-
-- [ ] 3.1 Upload probe artifacts to Kaggle
-- [ ] 3.2 Push Perch-only kernel
-- [ ] 3.3 Verify submission completes within 90min budget
-- [ ] 3.4 Record Perch-only LB result
-
-### Phase A Decision Gate
-
-- If Perch-only LB >= 0.900: pipeline works → continue to Phase B (ensemble)
-- If Perch-only LB 0.850-0.900: partially works → debug probes/priors before ensemble
-- If Perch-only LB < 0.850: something is wrong → fix before proceeding
+**Note**: The 0.699 submission also took ~85 min (single-kernel Perch inference on 600 files).
+Even if probes work correctly, we need the two-notebook architecture to fit in 90 min.
 
 ---
 
-## Phase B: SED + Perch Ensemble
+## Phase B: Two-Notebook Architecture (NEXT)
 
-Only proceed after Phase A Perch-only baseline is validated.
+### Step 4: Create Perch Cache Notebook (Notebook A)
 
-### Step 4: Local Ensemble Validation
-
-```bash
-python scripts/local_validate.py --sed-predictions <path> --sweep-weights
-```
-
-- [ ] 4.1 Generate SED predictions on labeled soundscapes (or use existing exports)
-- [ ] 4.2 Run local validation with weight sweep
-- [ ] 4.3 Record optimal blend weights and per-taxa breakdown
-- [ ] 4.4 Compare ensemble AUROC vs Perch-only AUROC vs SED-only AUROC
-
-### Step 5: Ensemble Kaggle Submission
-
-Set `PERCH_ONLY = False` in submission.py, update blend weights from sweep.
-Uses `kernel-metadata-ensemble-v1.json` (includes SED weights + birdclef-deps).
+Creates a kernel that runs Perch v2 on all test soundscapes and saves
+embeddings + logits as kernel output. This runs separately from the scoring kernel.
 
 ```bash
-# Upload artifacts + push ensemble kernel (single command)
-python scripts/upload_kaggle.py --push-kernel
-
-# Check results
-kaggle kernels status murilogustineli/birdclef-2026-perch-ensemble-v1
-kaggle competitions submissions birdclef-2026 | head -20
+# Create + push cache notebook
+cd user/murilo/experiments/018-perch-ensemble/kaggle_kernel
+cp kernel-metadata-perch-cache.json kernel-metadata.json
+kaggle kernels push -p .
+rm kernel-metadata.json
 ```
 
-- [ ] 5.1 Set `PERCH_ONLY = False`, update blend weights in submission.py
-- [ ] 5.2 Push ensemble kernel
-- [ ] 5.3 Verify submission completes within 90min budget
-- [ ] 5.4 Record ensemble LB result vs Perch-only and SED baselines
+- [ ] 4.1 Create `submission_perch_cache.py` — runs Perch, saves embeddings/logits as output
+- [ ] 4.2 Create `kernel-metadata-perch-cache.json` (needs TF wheel + Perch model, no probes)
+- [ ] 4.3 Push cache notebook and verify it completes within 90 min
+- [ ] 4.4 Verify output files: embeddings + logits for all test soundscapes
+
+### Step 5: Create Scoring Notebook (Notebook B)
+
+Loads cached embeddings from Notebook A, applies probes + priors + smoothing.
+
+- [ ] 5.1 Create `submission_scoring.py` — loads cache, applies probes, submits
+- [ ] 5.2 Create `kernel-metadata-scoring.json` (references cache notebook output + probe artifacts)
+- [ ] 5.3 Push scoring notebook and record Perch-only LB result
+- [ ] 5.4 Compare to chiranjithdharma (0.910) — this is the real Phase A validation
+
+### Phase B Decision Gate
+
+- If Perch + probes LB >= 0.900: probes work → continue to ensemble
+- If Perch + probes LB 0.850-0.900: probes partially work → debug
+- If Perch + probes LB < 0.850: probe pipeline has bugs → fix before ensemble
+
+---
+
+## Phase C: SED + Perch Ensemble
+
+Only proceed after Phase B validates Perch + probes.
+
+### Step 6: Add SED to Scoring Notebook
+
+- [ ] 6.1 Add SED inference to scoring notebook (ONNX, ~30 min)
+- [ ] 6.2 Sweep blend weights locally
+- [ ] 6.3 Push ensemble scoring kernel
+- [ ] 6.4 Record ensemble LB vs Perch-only and SED baselines
+
+---
+
+## Phase D: Perch Pipeline Improvements (from reference notebooks)
+
+Cherry-pick techniques from 0.921-0.926 notebooks if ensemble alone isn't enough.
+
+| Technique | Source | Expected Gain | Effort |
+|-----------|--------|---------------|--------|
+| Focal loss (gamma=2.0) | maryna 0.921 | +0.002-0.004 | Low |
+| File-level confidence scaling | maryna 0.921 | +0.002-0.003 | Low |
+| Per-taxon temperature | maryna 0.921 | +0.001-0.002 | Low |
+| Temporal-shift TTA | maryna 0.921 | +0.001-0.002 | Low |
+| ProtoSSM temporal model | zirach 0.913 | +0.003-0.010 | High |
+| ResidualSSM boosting | pantanal-distill 0.917 | +0.003-0.005 | High |
 
 ---
 
 ## Results Tracking
 
-| Submission | LB | vs SED (0.859) | vs Perch chiranjithdharma (0.910) |
-|------------|-----|----------------|----------------------------------|
-| Perch-only (ours) | pending | | |
-| Ensemble v1 | pending | | |
+| Submission | LB | Notes |
+|------------|-----|-------|
+| SED v4b (exp 017) | 0.859 | EfficientNet-B0, AmplitudeToDB, single model |
+| Perch raw (no probes) | **0.825** | Matches starter notebook — inference validated |
+| Perch + probes (wrong model) | 0.699 | Bug: probes from perch_v2, inference on perch_v2_cpu |
+| Perch + probes (fixed) | pending | Re-extracted with perch_v2_cpu, needs two-notebook arch |
+| Ensemble v1 | pending | After Perch probes validated |
 
 ---
 
@@ -130,7 +148,8 @@ kaggle competitions submissions birdclef-2026 | head -20
 
 | Parameter | Value |
 |-----------|-------|
-| Perch model | `google/bird-vocalization-classifier/TensorFlow2/perch_v2/1` |
+| Perch model (Kaggle) | `google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1` |
+| Perch model (PACE) | `/storage/.../shared/models/perch-v2-cpu` |
 | PCA components | 32 |
 | LogReg C | 0.25 |
 | Min positive samples | 8 |
