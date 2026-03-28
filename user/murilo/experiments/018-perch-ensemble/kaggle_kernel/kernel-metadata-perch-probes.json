@@ -1,7 +1,7 @@
 {
   "id": "murilogustineli/birdclef-2026-perch-probes-v1",
   "title": "BirdCLEF 2026 Perch Probes v1",
-  "code_file": "submission_single.py",
+  "code_file": "submission_perch_probes.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,

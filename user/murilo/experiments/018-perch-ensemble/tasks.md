@@ -144,12 +144,44 @@ kaggle competitions submissions birdclef-2026 | head -20
 
 - [x] 5b.1 Build labeled embeddings dataset (NPZ + parquet, ~5 MB)
 - [x] 5b.2 Upload `birdclef-2026-perch-labeled-embeddings` to Kaggle
-- [x] 5b.3 Push `birdclef-2026-perch-probes-v1` notebook — submitted, awaiting score
-      - Phase 1: labeled embeddings loaded + 53 probes trained in 2.2s
-      - Phase 2: Perch on ~600 test files (~80 min with ThreadPoolExecutor)
-      - Phase 3: apply probes + priors + smoothing (~1s)
-- [ ] 5b.4 Record LB result
-- [ ] 5b.5 Compare to chiranjithdharma (0.910)
+- [x] 5b.3 Push `birdclef-2026-perch-probes-v1` notebook (probability-space pipeline)
+- [x] 5b.4 Record LB: **0.757** (WORSE than raw 0.836 — probes destroying signal)
+
+**Root cause**: Analysis of chiranjithdharma (0.910) and jaejohn source notebooks
+revealed 3 critical bugs in our pipeline:
+1. **Probability space**: We applied sigmoid to Perch scores immediately.
+   Reference keeps everything as raw logits until final submission.
+2. **Multiplicative priors**: We did `probs *= prior^lambda` (can zero out scores).
+   Reference does `logits += lambda * prior_logits` (additive, can't zero out).
+3. **No StandardScaler**: Reference applies StandardScaler before PCA to normalize
+   embedding dimensions. We skipped this.
+
+### Step 5c: Logit-Space Pipeline (fix all 3 bugs)
+
+Rewrite scoring notebook to match chiranjithdharma exactly:
+
+```bash
+cd user/murilo/experiments/018-perch-ensemble
+
+# 1. Re-build dataset with raw logits (not sigmoid)
+python scripts/build_labeled_embeddings_dataset.py
+# Upload: kaggle datasets version -p <dir> -m 'Raw logits' -r zip
+
+# 2. Push fixed notebook
+kaggle_kernel/push.sh perch-probes
+```
+
+- [x] 5c.1 Fix A: Re-build labeled dataset with raw logits (scores_raw, not sigmoid)
+- [x] 5c.2 Fix B: Rewrite `submission_perch_probes.py` in logit space
+      - StandardScaler → PCA on embeddings
+      - Additive priors: `logits += lambda * prior_logits`
+      - 39-dim features: PCA + raw_logit + prior_logit + base_logit + temporal
+      - `decision_function()` for probes (logit output)
+      - Logit-space blending: `(1-alpha)*base_logit + alpha*probe_logit`
+      - Sigmoid only at final submission
+- [ ] 5c.3 Upload updated dataset to Kaggle
+- [ ] 5c.4 Push perch-probes-v1 (logit pipeline) and record LB
+- [ ] 5c.5 Compare to chiranjithdharma (0.910)
 
 ### Phase B Decision Gate
 
@@ -205,7 +237,8 @@ Cherry-pick techniques from 0.921-0.926 notebooks if ensemble alone isn't enough
 | Perch + probes (wrong model) | 0.699 | Bug: probes from perch_v2, inference on perch_v2_cpu |
 | Perch + probes (scoring v1) | 0.500 | FAILED: sklearn version mismatch (pickled PCA from 1.8.0, Kaggle 1.6.1) |
 | Perch + probes (scoring v2) | 0.500 | FAILED: kernel_sources uses push-run cache (train row_ids, not test) |
-| Perch + probes (single) | pending | Single-kernel: labeled dataset + live Perch on test |
+| Perch + probes (prob-space) | 0.757 | FAILED: sigmoid scores, multiplicative priors, no StandardScaler |
+| Perch + probes (logit-space) | pending | Fix: raw logits, additive priors, StandardScaler, decision_function |
 | Ensemble v1 | pending | After Perch probes validated |
 
 ---
