@@ -198,17 +198,25 @@ class SEDFinetuneModule(pl.LightningModule):
         features = self.encoder.forward_features(mel)
         return self.sed_head(features)
 
-    def _compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def _compute_loss(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        primary_idx: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Compute loss based on configured loss_type.
 
         Supports:
         - "soft_ce": Normalize multi-hot to sum-to-1 soft targets, F.cross_entropy.
-        - "ce": Standard CE with label_smoothing on argmax class (single-label approx).
-        - "asl": Asymmetric Loss for multi-label classification.
+        - "ce": Standard CE on primary_label class index (+ sigmoid at inference).
+        - "bce": Binary cross-entropy with logits (native multi-label).
+        - "asl": Asymmetric Loss (Ridnik et al. 2021) for multi-label classification.
 
         Args:
             logits: (B, num_classes) raw logits.
             labels: (B, num_classes) multi-hot labels (0s and 1s).
+            primary_idx: (B,) integer tensor with primary species index per sample.
+                Used by "ce" loss. Ignored by other loss types.
 
         Returns:
             Scalar loss.
@@ -218,8 +226,8 @@ class SEDFinetuneModule(pl.LightningModule):
         elif self.hparams.loss_type == "bce":
             return F.binary_cross_entropy_with_logits(logits, labels.float())
         elif self.hparams.loss_type == "ce":
-            # Standard CE: use argmax of multi-hot as class index
-            targets = labels.argmax(dim=-1)
+            # Standard CE on primary label (not argmax of multi-hot)
+            targets = primary_idx if primary_idx is not None else labels.argmax(dim=-1)
             return F.cross_entropy(logits, targets, label_smoothing=self.hparams.label_smoothing)
         else:
             # soft_ce: normalize multi-hot to soft distribution
@@ -252,7 +260,7 @@ class SEDFinetuneModule(pl.LightningModule):
         ) + self.hparams.blend_frame * torch.sigmoid(framewise_max)
 
     def training_step(self, batch, batch_idx):
-        x, labels = batch
+        x, labels, primary_idx = batch
 
         if self.mel_transform is not None and self.hparams.waveform_mixup:
             # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
@@ -279,10 +287,12 @@ class SEDFinetuneModule(pl.LightningModule):
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
-        # Dual soft CE loss
+        # Dual loss (CE uses primary_idx, other losses use multi-hot labels)
         loss = self.hparams.clipwise_weight * self._compute_loss(
-            clipwise_logits, labels
-        ) + self.hparams.framewise_weight * self._compute_loss(framewise_max_logits, labels)
+            clipwise_logits, labels, primary_idx
+        ) + self.hparams.framewise_weight * self._compute_loss(
+            framewise_max_logits, labels, primary_idx
+        )
 
         # Blended probabilities for metrics
         probs = self._blended_probs(clipwise_logits, framewise_logits)
@@ -323,14 +333,16 @@ class SEDFinetuneModule(pl.LightningModule):
         return x
 
     def validation_step(self, batch, batch_idx):
-        mel, labels = batch
+        mel, labels, primary_idx = batch
         mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
         loss = self.hparams.clipwise_weight * self._compute_loss(
-            clipwise_logits, labels
-        ) + self.hparams.framewise_weight * self._compute_loss(framewise_max_logits, labels)
+            clipwise_logits, labels, primary_idx
+        ) + self.hparams.framewise_weight * self._compute_loss(
+            framewise_max_logits, labels, primary_idx
+        )
 
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()
@@ -363,14 +375,16 @@ class SEDFinetuneModule(pl.LightningModule):
             m.reset()
 
     def test_step(self, batch, batch_idx):
-        mel, labels = batch
+        mel, labels, primary_idx = batch
         mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
         loss = self.hparams.clipwise_weight * self._compute_loss(
-            clipwise_logits, labels
-        ) + self.hparams.framewise_weight * self._compute_loss(framewise_max_logits, labels)
+            clipwise_logits, labels, primary_idx
+        ) + self.hparams.framewise_weight * self._compute_loss(
+            framewise_max_logits, labels, primary_idx
+        )
 
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()

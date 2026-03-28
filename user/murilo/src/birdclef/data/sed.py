@@ -199,7 +199,9 @@ class SEDFocalDataset(Dataset):
                 continue
 
             label_vec = self._build_label_vec(row)
-            self.recordings.append((str(audio_path), total_samples, label_vec))
+            primary = row.get("primary_label", "")
+            primary_idx = self.species_to_idx.get(primary, 0)
+            self.recordings.append((str(audio_path), total_samples, label_vec, primary_idx))
 
         if skipped > 0:
             logger.warning(f"Skipped {skipped} recordings (file not found or unreadable)")
@@ -230,7 +232,7 @@ class SEDFocalDataset(Dataset):
         return len(self.recordings)
 
     def __getitem__(self, idx):
-        audio_path, total_samples, label_vec = self.recordings[idx]
+        audio_path, total_samples, label_vec, primary_idx = self.recordings[idx]
 
         # Random start position for the window
         if total_samples > self.window_samples:
@@ -254,7 +256,7 @@ class SEDFocalDataset(Dataset):
         if self.transform is not None:
             waveform = self.transform(waveform)
 
-        return waveform, label_vec.clone()
+        return waveform, label_vec.clone(), primary_idx
 
 
 class SEDSoundscapeDataset(Dataset):
@@ -304,12 +306,15 @@ class SEDSoundscapeDataset(Dataset):
 
             # Build multi-hot label vector
             label_vec = torch.zeros(self.num_classes, dtype=torch.float32)
-            for species_id in str(row["primary_label"]).split(";"):
+            primary_idx = 0  # default fallback
+            for i, species_id in enumerate(str(row["primary_label"]).split(";")):
                 species_id = species_id.strip()
                 if species_id in self.species_to_idx:
                     label_vec[self.species_to_idx[species_id]] = 1.0
+                    if i == 0:  # first species is primary
+                        primary_idx = self.species_to_idx[species_id]
 
-            self.chunks.append((str(audio_path), start_sample, label_vec))
+            self.chunks.append((str(audio_path), start_sample, label_vec, primary_idx))
 
         if skipped > 0:
             logger.warning(f"Skipped {skipped} segments (audio file not found)")
@@ -323,7 +328,7 @@ class SEDSoundscapeDataset(Dataset):
         return len(self.chunks)
 
     def __getitem__(self, idx):
-        audio_path, segment_start_sample, label_vec = self.chunks[idx]
+        audio_path, segment_start_sample, label_vec, primary_idx = self.chunks[idx]
 
         # Load 10s centered on the 5s segment (2.5s before + 2.5s after)
         load_start = max(0, segment_start_sample - self.extra_context_samples)
@@ -344,7 +349,7 @@ class SEDSoundscapeDataset(Dataset):
         if self.transform is not None:
             waveform = self.transform(waveform)
 
-        return waveform, label_vec.clone()
+        return waveform, label_vec.clone(), primary_idx
 
 
 # ============================================================================
