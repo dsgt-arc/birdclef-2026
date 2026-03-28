@@ -59,6 +59,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import tensorflow as tf  # noqa: E402
 
+tf.experimental.numpy.experimental_enable_numpy_behavior()
 print(f"TensorFlow: {tf.__version__}")
 
 # ---------------------------------------------------------------------------
