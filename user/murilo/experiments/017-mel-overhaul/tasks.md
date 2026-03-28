@@ -223,11 +223,11 @@ sbatch sbatch/run.sh config/efficientnet_b0_sed_v4k.yaml
 ### 5.1 Training
 
 - [x] 5.1.1 Fast-dev-run all 3 variants — passed (no NaN, no shape errors)
-- [x] 5.1.2 Submit v4i (standard CE) to SLURM — training
-- [x] 5.1.3 Submit v4j (waveform MixUp) to SLURM — training
-- [x] 5.1.4 Submit v4k (CE + waveform MixUp) to SLURM — training
+- [x] 5.1.2 Submit v4i (standard CE) to SLURM — still training
+- [x] 5.1.3 Submit v4j (waveform MixUp) to SLURM — still training
+- [x] 5.1.4 Submit v4k (CE + waveform MixUp) to SLURM — **done: val/auroc 0.846** (−0.019 vs v4b)
 - [ ] 5.1.5 Monitor W&B: check loss curves converge, no NaN
-- [ ] 5.1.6 Record offline metrics for all 3 variants
+- [ ] 5.1.6 Record offline metrics for v4i and v4j when complete
 
 ### 5.2 ONNX Export & Kaggle
 
@@ -264,7 +264,7 @@ sbatch sbatch/run.sh config/efficientnet_b0_sed_v4k.yaml
 | drop_path | 0.0 | 0.0 | 0.0 | 0.0 | 0.15 | 0.15 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
 | split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
 | max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
-| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | 0.868 | 0.862 | 0.868 | 0.858 | pending | pending | pending |
-| LB (raw) | 0.825 | **0.859** | skip | 0.808 | 0.840 | 0.832 | 0.819 | 0.800 | pending | pending | pending |
+| val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | 0.868 | 0.862 | 0.868 | 0.858 | pending | pending | **0.846** |
+| LB (raw) | 0.825 | **0.859** | skip | 0.808 | 0.840 | 0.832 | 0.819 | 0.800 | pending | pending | skip |
 
 **a2db** = amplitude_to_db (AmplitudeToDB + standardize + min-max [0,1])

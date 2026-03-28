@@ -223,6 +223,20 @@ No test metrics available — only val/auroc from checkpoint callback.
 **v4b (AmplitudeToDB)** is the current best at 0.859 LB (0.860 with pp2).
 Fulldata training regressed −0.006 (0.853 vs 0.859) — likely overtrained without val monitoring.
 
+### Step 5: Loss & Augmentation Ablations
+
+Motivated by Salman Ahmed's 0.908 LB (single EfficientNet-B0 SED with CE + raw waveform MixUp).
+
+| Slug | Change | Mel Norm | Head | Loss | Waveform MixUp | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|----------|------|------|---------------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v4i` | Standard CE loss | amplitude_to_db | AttHead | ce | No | pending | — | pending | pending |
+| `effnet-b0-sed-v4j` | Raw waveform MixUp | amplitude_to_db | AttHead | soft_ce | Yes | pending | — | pending | pending |
+| `effnet-b0-sed-v4k` | CE + waveform MixUp | amplitude_to_db | AttHead | ce | Yes | **0.846** | 12 | skip | `017-.../2026-effnet-b0-sed-v4k/best-epochepoch=12.ckpt` |
+
+**v4k regressed** −0.019 val/auroc vs v4b (0.846 vs 0.865). CE + waveform MixUp combined
+hurts with our setup. Early stopped at epoch 23 (patience=10). Skipping LB submission.
+Waiting for v4i and v4j individual results to isolate which change is responsible.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
