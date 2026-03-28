@@ -264,11 +264,18 @@ local_validate.py → raw 0.7521 → +probes 0.9453 → +priors 0.9604
 
 Raw Perch inference validated on Kaggle: **0.825 LB** (matches starter notebook).
 
-### Phase B: Two-notebook chain (NEXT)
+### Phase B: Two-notebook chain — IN PROGRESS
 
-1. Create + push Notebook A (Perch cache) — runs Perch, saves embeddings
-2. Create + push Notebook B (scoring) — loads cache, applies probes, submits
+1. ~~Create + push Notebook A (Perch cache) — runs Perch, saves embeddings~~
+2. Push Notebook B (scoring) — loads cache, applies probes, submits
 3. Validate Perch + probes LB score (target ~0.910)
+
+**Notebook A result: 0.836 LB** (raw Perch with genus proxy mapping, no probes).
+This is +0.011 over the perch-raw baseline (0.825). The improvement comes from
+the **genus proxy mapping**: 6 species (e.g., Caiman yacare) that have no direct
+match in Perch's label set are now mapped via `max(sigmoid(logits[same_genus]))`.
+The raw baseline mapped these as zeros. This confirms the species mapping work
+in `build_species_mapping.py` adds real predictive value.
 
 ### Phase C: SED + Perch ensemble
 
