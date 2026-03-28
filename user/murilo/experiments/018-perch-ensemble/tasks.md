@@ -116,8 +116,11 @@ kaggle competitions submissions birdclef-2026 | head -20
       - Adds TF wheel + Perch model to Notebook B dependencies
       - Runs Perch on 66 labeled files → PCA + probes + priors from scratch
       - Eliminates all cross-environment pickle issues
-- [ ] 5.5 Push scoring v2 and record Perch + probes LB result
-- [ ] 5.6 Compare to chiranjithdharma (0.910) — this is the real Phase A validation
+- [x] 5.5 Push scoring v2 — submitted, running inference (~12 min Notebook B budget)
+      - Perch on 66 labeled files: 619s (~10 min), probe training: 1.5s, 53 probes
+      - Total Notebook B: ~12 min (well within 90 min)
+- [ ] 5.6 Record scoring v2 LB result
+- [ ] 5.7 Compare to chiranjithdharma (0.910) — this is the real Phase A validation
 
 ### Phase B Decision Gate
 
