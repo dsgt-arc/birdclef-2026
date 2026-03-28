@@ -119,8 +119,34 @@ kaggle competitions submissions birdclef-2026 | head -20
 - [x] 5.5 Push scoring v2 — submitted, running inference (~12 min Notebook B budget)
       - Perch on 66 labeled files: 619s (~10 min), probe training: 1.5s, 53 probes
       - Total Notebook B: ~12 min (well within 90 min)
-- [ ] 5.6 Record scoring v2 LB result
-- [ ] 5.7 Compare to chiranjithdharma (0.910) — this is the real Phase A validation
+- [x] 5.6 Record scoring v2 LB result — **0.500 LB** (FAILED again)
+      - Root cause: kernel_sources uses cached push-run output (3 train files),
+        not competition test data. Row_ids mismatch → all zeros → 0.500.
+
+### Step 5b: Single-Kernel Architecture (fix for kernel_sources failure)
+
+Abandon two-notebook chain. Match reference notebook pattern (Yuriy, chiranjithdharma):
+single kernel loads pre-extracted labeled embeddings from dataset, runs Perch on test
+data live, trains probes in-notebook, applies + submits.
+
+```bash
+cd user/murilo/experiments/018-perch-ensemble
+
+# 1. Build + upload labeled embeddings dataset
+python scripts/build_labeled_embeddings_dataset.py
+cd /storage/project/.../shared/datasets/birdclef-2026/perch-labeled-embeddings
+kaggle datasets create -p . -r zip
+
+# 2. Push single-kernel notebook
+kaggle_kernel/push.sh single
+kaggle competitions submissions birdclef-2026 | head -20
+```
+
+- [ ] 5b.1 Build labeled embeddings dataset (NPZ + parquet)
+- [ ] 5b.2 Upload `birdclef-2026-perch-labeled-embeddings` to Kaggle
+- [ ] 5b.3 Push single-kernel notebook
+- [ ] 5b.4 Record LB result
+- [ ] 5b.5 Compare to chiranjithdharma (0.910)
 
 ### Phase B Decision Gate
 
@@ -175,7 +201,8 @@ Cherry-pick techniques from 0.921-0.926 notebooks if ensemble alone isn't enough
 | Perch cache v1 (no probes) | **0.836** | +0.011 from genus proxy mapping (6 species) |
 | Perch + probes (wrong model) | 0.699 | Bug: probes from perch_v2, inference on perch_v2_cpu |
 | Perch + probes (scoring v1) | 0.500 | FAILED: sklearn version mismatch (pickled PCA from 1.8.0, Kaggle 1.6.1) |
-| Perch + probes (scoring v2) | pending | In-notebook training: Perch on labeled → PCA + probes from scratch |
+| Perch + probes (scoring v2) | 0.500 | FAILED: kernel_sources uses push-run cache (train row_ids, not test) |
+| Perch + probes (single) | pending | Single-kernel: labeled dataset + live Perch on test |
 | Ensemble v1 | pending | After Perch probes validated |
 
 ---

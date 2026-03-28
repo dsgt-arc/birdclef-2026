@@ -216,39 +216,35 @@ nothing).
 The 0.3/0.7 split is an initial estimate. `scripts/local_validate.py` sweeps from
 0.0 to 1.0 on labeled soundscapes to find the actual optimum before Kaggle submission.
 
-## Why a Two-Notebook Chain?
+## Architecture: Single-Kernel (current)
 
-Running Perch v2 on ~600 test soundscapes takes ~80 minutes on Kaggle CPU. That
-leaves no room for probes, smoothing, or SED inference within the 90-minute budget.
+Running Perch v2 on ~600 test soundscapes takes ~80 minutes on Kaggle CPU.
+Reference notebooks (chiranjithdharma 0.910, yuriygreben 0.925) solve this with
+a single kernel that loads pre-extracted labeled embeddings from a dataset and
+runs Perch live on test data only.
 
-Every top-scoring notebook (0.910+) solves this with a **two-notebook chain**:
+**Why not a two-notebook chain?** We tried kernel_sources chaining (Notebook A
+cache + Notebook B scoring) but it failed: Kaggle's kernel_sources uses cached
+output from the push run (3 train files, train row_ids), not from the competition
+submission. Both attempts scored 0.500 because row_ids didn't match test data.
 
-1. **Notebook A (Perch cache)**: Runs Perch v2 on all test soundscapes and saves
-   the embeddings (1536-dim) + logits (14,795-dim) as kernel output. Takes ~80 min
-   but runs as a separate kernel, not counted against the scoring kernel's budget.
-
-2. **Notebook B (scoring)**: Runs Perch on the 66 labeled soundscapes (~11 min),
-   trains PCA + LogReg probes + metadata priors from scratch, then applies them
-   to the cached test embeddings from Notebook A. Takes ~20 min total — plenty
-   of room to also run SED for ensemble.
-
-**Why train probes in-notebook?** Our first attempt loaded pre-trained sklearn
-pickles from PACE, but sklearn 1.8.0 (PACE) vs 1.6.1 (Kaggle) caused the PCA
-transform to produce garbage → 0.500 LB. The reference notebooks (chiranjithdharma,
-zirach) all train probes inside the submission notebook. Training takes ~30 seconds
-(just PCA + LogReg on 792 samples) — the bottleneck is Perch inference on the
-66 labeled files (~11 min), which runs once at the start of Notebook B.
+**Current approach** (matching reference notebooks):
+1. Upload pre-extracted labeled embeddings as a Kaggle dataset (from PACE)
+2. Single kernel loads labeled embeddings (~1s), trains probes (~2s)
+3. Runs Perch on ~600 test soundscapes live (~80 min with ThreadPoolExecutor)
+4. Applies probes + priors + smoothing to test embeddings (~5s)
 
 ```
-Kaggle Notebook A (per submission):
-  600 test soundscapes → Perch v2 → embeddings + logits → save as kernel output
+PACE (one-time):
+  66 labeled soundscapes → Perch v2 → embeddings + mapped_scores
+  → upload as birdclef-2026-perch-labeled-embeddings dataset
 
-Kaggle Notebook B (per submission, reads Notebook A output):
-  66 labeled soundscapes → Perch v2 → embeddings (~11 min)
-  embeddings + ground truth → fit PCA + train LogReg probes + build priors (~30s)
-  load cached test embeddings → apply PCA → apply probes → apply priors → smooth
-  (optionally) run SED on test audio → blend with Perch scores
-  → submit
+Kaggle Single Kernel (per submission):
+  load labeled embeddings from dataset (~1s)
+  train_soundscapes_labels.csv → build labels matrix
+  fit PCA + train LogReg probes + build priors (~2s)
+  600 test soundscapes → Perch v2 → embeddings + mapped_scores (~80 min)
+  apply PCA → apply probes → apply priors → smooth → submit
 ```
 
 ## Execution Order

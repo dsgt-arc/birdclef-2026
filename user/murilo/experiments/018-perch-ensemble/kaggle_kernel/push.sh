@@ -2,6 +2,7 @@
 # Push a Kaggle kernel using one of the pre-configured metadata files.
 #
 # Usage (from experiment root):
+#   kaggle_kernel/push.sh single      # Single-kernel scoring (recommended)
 #   kaggle_kernel/push.sh cache       # Push Notebook A (Perch cache)
 #   kaggle_kernel/push.sh scoring     # Push Notebook B (scoring, Perch-only)
 #   kaggle_kernel/push.sh ensemble    # Push Notebook B (scoring, SED+Perch ensemble)
@@ -17,6 +18,7 @@ usage() {
     echo "Usage: $0 <mode>"
     echo ""
     echo "Modes:"
+    echo "  single      Single-kernel scoring (recommended, no chain)"
     echo "  cache       Notebook A — Perch cache (embeddings + mapped scores)"
     echo "  scoring     Notebook B — Scoring (Perch-only, Phase B)"
     echo "  ensemble    Notebook B — Scoring (SED + Perch, Phase C)"
@@ -28,6 +30,7 @@ usage() {
 [[ $# -lt 1 ]] && usage
 
 case "$1" in
+    single)     META="kernel-metadata-single.json" ;;
     cache)      META="kernel-metadata-perch-cache.json" ;;
     scoring)    META="kernel-metadata-scoring.json" ;;
     ensemble)   META="kernel-metadata-scoring-ensemble.json" ;;
