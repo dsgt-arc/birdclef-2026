@@ -85,7 +85,7 @@ cd user/murilo/experiments/018-perch-ensemble
 
 # Phase B: Perch-only validation
 kaggle_kernel/push.sh cache      # Notebook A — Perch inference + save cache (~80 min)
-kaggle_kernel/push.sh scoring    # Notebook B — Load cache + probes + submit (~10 min)
+kaggle_kernel/push.sh scoring    # Notebook B — Perch on labeled + train probes + submit (~20 min)
 
 # Phase C: SED + Perch ensemble (after Phase B validates)
 kaggle_kernel/push.sh ensemble   # Notebook B — with SED inference + blend (~36 min)
@@ -106,9 +106,9 @@ first (~80 min), then mounts its output for B. Each gets its own 90 min budget.
 
 | Dataset / Source | Notebook A | Notebook B | Content |
 |-----------------|:---:|:---:|---------|
-| `murilogustineli/birdclef-2026-perch-ensemble-v1` | Yes | Yes | Probe artifacts (PCA, models, priors, species mapping) |
-| `murilogustineli/birdclef-tf220-wheel` | Yes | — | TensorFlow 2.20 wheels |
-| `google/.../perch_v2_cpu/1` | Yes | — | Frozen Perch v2 model |
+| `murilogustineli/birdclef-2026-perch-ensemble-v1` | Yes | Yes | Species mapping + config JSON (probes trained in-notebook) |
+| `murilogustineli/birdclef-tf220-wheel` | Yes | Yes | TensorFlow 2.20 wheels |
+| `google/.../perch_v2_cpu/1` | Yes | Yes | Frozen Perch v2 model (B runs on labeled data) |
 | `murilogustineli/birdclef-deps` | — | Phase C | onnxruntime wheels |
 | `murilogustineli/birdclef-2026-effnet-b0-sed-v4b-weights` | — | Phase C | SED ONNX model + mel config |
 | `murilogustineli/birdclef-2026-perch-cache-v1` (kernel) | — | Yes | Cached embeddings + mapped scores from Notebook A |

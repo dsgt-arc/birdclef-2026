@@ -227,24 +227,25 @@ Every top-scoring notebook (0.910+) solves this with a **two-notebook chain**:
    the embeddings (1536-dim) + logits (14,795-dim) as kernel output. Takes ~80 min
    but runs as a separate kernel, not counted against the scoring kernel's budget.
 
-2. **Notebook B (scoring)**: Loads the cached embeddings from Notebook A's output,
-   applies pre-trained probes + metadata priors + temporal smoothing, and submits.
-   Takes ~5-10 minutes — plenty of room to also run SED for ensemble.
+2. **Notebook B (scoring)**: Runs Perch on the 66 labeled soundscapes (~11 min),
+   trains PCA + LogReg probes + metadata priors from scratch, then applies them
+   to the cached test embeddings from Notebook A. Takes ~20 min total — plenty
+   of room to also run SED for ensemble.
 
-The probe models are trained **offline on PACE** using the 66 labeled soundscapes
-(same labeled data, just a different compute environment). At submission time,
-Notebook B just loads the serialized probes and applies them to the new test
-embeddings — no training happens during submission.
+**Why train probes in-notebook?** Our first attempt loaded pre-trained sklearn
+pickles from PACE, but sklearn 1.8.0 (PACE) vs 1.6.1 (Kaggle) caused the PCA
+transform to produce garbage → 0.500 LB. The reference notebooks (chiranjithdharma,
+zirach) all train probes inside the submission notebook. Training takes ~30 seconds
+(just PCA + LogReg on 792 samples) — the bottleneck is Perch inference on the
+66 labeled files (~11 min), which runs once at the start of Notebook B.
 
 ```
-PACE (offline, one-time):
-  66 labeled soundscapes → Perch v2 → embeddings
-  embeddings + ground truth → train PCA + LogReg probes → serialize to Kaggle dataset
-
 Kaggle Notebook A (per submission):
   600 test soundscapes → Perch v2 → embeddings + logits → save as kernel output
 
 Kaggle Notebook B (per submission, reads Notebook A output):
+  66 labeled soundscapes → Perch v2 → embeddings (~11 min)
+  embeddings + ground truth → fit PCA + train LogReg probes + build priors (~30s)
   load cached test embeddings → apply PCA → apply probes → apply priors → smooth
   (optionally) run SED on test audio → blend with Perch scores
   → submit

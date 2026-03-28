@@ -93,7 +93,14 @@ the species mapping work adds real value.
 
 ### Step 5: Create Scoring Notebook (Notebook B)
 
-Loads cached embeddings from Notebook A, applies probes + priors + smoothing.
+Runs Perch on 66 labeled soundscapes (~11 min), trains PCA + LogReg probes +
+metadata priors from scratch inside the notebook, then applies to cached test
+embeddings from Notebook A.
+
+**Why in-notebook training**: v1 loaded pre-trained pickles from PACE (sklearn 1.8.0)
+but Kaggle has sklearn 1.6.1. The version mismatch caused PCA/probes to produce
+garbage → 0.500 LB. Reference notebooks (chiranjithdharma, zirach) all train
+probes inside the notebook, avoiding cross-environment issues.
 
 ```bash
 cd user/murilo/experiments/018-perch-ensemble
@@ -104,8 +111,13 @@ kaggle competitions submissions birdclef-2026 | head -20
 
 - [x] 5.1 Create `submission_scoring.py` — loads cache, applies probes, submits
 - [x] 5.2 Create `kernel-metadata-scoring.json` (references cache notebook output + probe artifacts)
-- [ ] 5.3 Push scoring notebook and record Perch-only LB result
-- [ ] 5.4 Compare to chiranjithdharma (0.910) — this is the real Phase A validation
+- [x] 5.3 Push scoring v1 — **0.500 LB** (FAILED: sklearn version mismatch on pickled PCA/probes)
+- [x] 5.4 Rewrite scoring notebook: train probes in-notebook on labeled soundscapes (~11 min)
+      - Adds TF wheel + Perch model to Notebook B dependencies
+      - Runs Perch on 66 labeled files → PCA + probes + priors from scratch
+      - Eliminates all cross-environment pickle issues
+- [ ] 5.5 Push scoring v2 and record Perch + probes LB result
+- [ ] 5.6 Compare to chiranjithdharma (0.910) — this is the real Phase A validation
 
 ### Phase B Decision Gate
 
@@ -159,7 +171,8 @@ Cherry-pick techniques from 0.921-0.926 notebooks if ensemble alone isn't enough
 | Perch raw (no probes) | 0.825 | Matches starter notebook — inference validated |
 | Perch cache v1 (no probes) | **0.836** | +0.011 from genus proxy mapping (6 species) |
 | Perch + probes (wrong model) | 0.699 | Bug: probes from perch_v2, inference on perch_v2_cpu |
-| Perch + probes (scoring v1) | pending | Two-notebook chain, probes re-trained on perch_v2_cpu |
+| Perch + probes (scoring v1) | 0.500 | FAILED: sklearn version mismatch (pickled PCA from 1.8.0, Kaggle 1.6.1) |
+| Perch + probes (scoring v2) | pending | In-notebook training: Perch on labeled → PCA + probes from scratch |
 | Ensemble v1 | pending | After Perch probes validated |
 
 ---
