@@ -1,9 +1,8 @@
 #!/bin/bash
 #SBATCH -J exp018-perch-extract
 #SBATCH -A paceship-clef2026_birdclef
-#SBATCH -p gpu-rtx6000
+#SBATCH -p cpu-small
 #SBATCH -q inferno
-#SBATCH --gres=gpu:1
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=12
@@ -15,15 +14,7 @@
 #
 # Experiment 018: Perch Ensemble — Extract Embeddings + Train Probes
 #
-# Runs all offline preparation steps:
-#   1. Build species mapping (Perch -> BirdCLEF 2026)
-#   2. Extract Perch embeddings + logits from soundscapes (GPU-accelerated TF)
-#   3. Train LogReg probes + metadata priors
-#   4. Verify and package artifacts for Kaggle
-#
-# All paths are read from config/perch_ensemble_v1.yaml.
-# Embeddings → shared/embeddings/birdclef-2026/perch-v2/labeled/
-# Probes     → shared/artifacts/birdclef-2026/perch-ensemble-v1/
+# Uses perch_v2_cpu model (same variant as Kaggle) — runs on CPU, no GPU needed.
 #
 # Usage:
 #   cd user/murilo/experiments/018-perch-ensemble
@@ -71,8 +62,6 @@ echo "Split: ${SPLIT}"
 echo "Experiment dir: ${EXPERIMENT_DIR}"
 echo "Config: ${CONFIG}"
 echo ""
-nvidia-smi
-echo ""
 
 # ──────────────────────────────────────────────────────────────
 # Setup per-job virtual environment (NEVER in home dir!)
@@ -87,25 +76,39 @@ mkdir -p "$JOB_VENV_DIR"
 uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
-echo "  Loading CUDA module..."
-module load cuda/12.6.1 cudnn/9.2.0.82-12-cuda
-echo "  CUDA: $(nvcc --version 2>/dev/null | tail -1 || echo 'nvcc not found')"
-
 echo "  Installing experiment dependencies..."
 uv pip install -e "$EXPERIMENT_DIR"
 
-echo "  Installing TensorFlow (uses system CUDA via module)..."
-uv pip install "tensorflow[and-cuda]"
-
-# Point TF to the CUDA libs from the loaded module + pip-installed nvidia packages
-NVIDIA_SITE_PACKAGES="$JOB_VENV/lib/python3.11/site-packages/nvidia"
-export LD_LIBRARY_PATH="${NVIDIA_SITE_PACKAGES}/cublas/lib:${NVIDIA_SITE_PACKAGES}/cuda_cupti/lib:${NVIDIA_SITE_PACKAGES}/cuda_nvrtc/lib:${NVIDIA_SITE_PACKAGES}/cuda_runtime/lib:${NVIDIA_SITE_PACKAGES}/cudnn/lib:${NVIDIA_SITE_PACKAGES}/cufft/lib:${NVIDIA_SITE_PACKAGES}/cusolver/lib:${NVIDIA_SITE_PACKAGES}/cusparse/lib:${NVIDIA_SITE_PACKAGES}/nccl/lib:${NVIDIA_SITE_PACKAGES}/nvjitlink/lib:${LD_LIBRARY_PATH:-}"
+# perch_v2_cpu runs on CPU — no CUDA needed, plain tensorflow is fine
+echo "  Installing TensorFlow (CPU)..."
+uv pip install tensorflow-cpu
 
 echo "  Virtual environment ready!"
 echo ""
 
-python -c "import tensorflow as tf; print(f'TensorFlow: {tf.__version__}'); gpus = tf.config.list_physical_devices('GPU'); print(f'GPU devices: {gpus}'); assert len(gpus) > 0, 'No GPU detected!'"
+python -c "import tensorflow as tf; print(f'TensorFlow: {tf.__version__}')"
 python -c "import sklearn; print(f'scikit-learn: {sklearn.__version__}')"
+echo ""
+
+# ──────────────────────────────────────────────────────────────
+# Download perch_v2_cpu if not already present
+# ──────────────────────────────────────────────────────────────
+PERCH_MODEL_DIR="/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2-cpu"
+
+if [ ! -f "$PERCH_MODEL_DIR/saved_model.pb" ]; then
+    echo "=============================================="
+    echo "Downloading perch_v2_cpu model..."
+    echo "=============================================="
+    mkdir -p "$PERCH_MODEL_DIR"
+    cd "$PERCH_MODEL_DIR"
+    kaggle models instances versions download \
+        google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1 \
+        --untar
+    echo "  Model downloaded to: $PERCH_MODEL_DIR"
+    ls -la "$PERCH_MODEL_DIR"
+else
+    echo "perch_v2_cpu model already exists at: $PERCH_MODEL_DIR"
+fi
 echo ""
 
 # ──────────────────────────────────────────────────────────────
@@ -114,7 +117,6 @@ echo ""
 cd "$EXPERIMENT_DIR"
 mkdir -p logs artifacts
 
-# Shared storage directories
 SHARED_ROOT="/storage/project/ps-clef2026_birdclef-0/shared"
 mkdir -p "$SHARED_ROOT/embeddings/birdclef-2026/perch-v2/labeled"
 mkdir -p "$SHARED_ROOT/embeddings/birdclef-2026/perch-v2/unlabeled"
@@ -123,24 +125,16 @@ mkdir -p "$SHARED_ROOT/artifacts/birdclef-2026/perch-ensemble-v1"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # ──────────────────────────────────────────────────────────────
-# Step 1: Build species mapping (skip if already exists)
+# Step 1: Build species mapping (re-run with CPU model labels)
 # ──────────────────────────────────────────────────────────────
-MAPPING_FILE="${EXPERIMENT_DIR}/artifacts/perch_species_mapping.json"
-if [ -f "$MAPPING_FILE" ]; then
-    echo "=============================================="
-    echo "Step 1: Species mapping already exists, skipping"
-    echo "  $MAPPING_FILE"
-    echo "=============================================="
-else
-    echo "=============================================="
-    echo "Step 1: Build species mapping"
-    echo "=============================================="
-    python scripts/build_species_mapping.py --config "$CONFIG"
-fi
+echo "=============================================="
+echo "Step 1: Build species mapping"
+echo "=============================================="
+python scripts/build_species_mapping.py --config "$CONFIG"
 echo ""
 
 # ──────────────────────────────────────────────────────────────
-# Step 2: Extract Perch embeddings + logits (GPU-accelerated)
+# Step 2: Extract Perch embeddings + logits (CPU)
 # ──────────────────────────────────────────────────────────────
 echo "=============================================="
 echo "Step 2: Extract Perch embeddings (${SPLIT} split)"
