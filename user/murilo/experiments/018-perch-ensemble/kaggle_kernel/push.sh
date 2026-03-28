@@ -72,11 +72,25 @@ if [[ "$MODE" == "perch-probes" && "$SKIP_DATASET" == "false" ]]; then
     echo ""
     echo "=== Step 2: Upload dataset to Kaggle ==="
     cd "$LABELED_EMB_DATASET_DIR"
-    # Try create first, then version if it already exists
-    if ! kaggle datasets create -p . -r zip 2>/dev/null; then
-        echo "  Dataset exists, creating new version..."
+    echo "  Files to upload:"
+    ls -lh *.npz *.parquet *.json 2>/dev/null
+
+    # Try create first; if dataset already exists, create a new version
+    CREATE_OUTPUT=$(kaggle datasets create -p . -r zip 2>&1) || true
+    if echo "$CREATE_OUTPUT" | grep -qi "already exists\|403\|409"; then
+        echo "  Dataset already exists, creating new version..."
         kaggle datasets version -p . -m "Update labeled embeddings" -r zip
+    elif echo "$CREATE_OUTPUT" | grep -qi "error\|fail"; then
+        echo "  ERROR during dataset upload:"
+        echo "$CREATE_OUTPUT"
+        exit 1
+    else
+        echo "$CREATE_OUTPUT"
     fi
+
+    # Wait for dataset to process before pushing kernel
+    echo "  Waiting 30s for dataset to process..."
+    sleep 30
     echo ""
 fi
 
