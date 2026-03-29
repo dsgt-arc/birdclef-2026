@@ -134,6 +134,8 @@ class SEDFinetuneModule(pl.LightningModule):
         blend_frame: float = 0.25,
         mixup_prob: float = 0.5,
         mixup_alpha: float = 0.5,
+        mixup_warmup_epochs: int = 0,
+        mixup_theta: float = 1.0,
         loss_type: str = "soft_ce",
         label_smoothing: float = 0.05,
         asl_gamma_neg: float = 4.0,
@@ -240,14 +242,23 @@ class SEDFinetuneModule(pl.LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply mixup augmentation on input tensor (mel spectrogram or raw waveform).
 
-        Shuffles the batch and mixes inputs with a random lambda.
-        Labels are unioned (multi-hot OR) to preserve all active species.
+        Shuffles the batch and mixes inputs with a random lambda from
+        Beta(alpha, alpha). Lambda is enforced >= 0.5 so the dominant
+        sample stays dominant. Labels are weighted-mixed (not OR union).
+
+        If mixup_theta < 1.0, labels >= theta are clipped to 1.0 (ttahara's
+        approach: prevents soft labels from diluting strong positive signal).
+
         Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N).
         """
         indices = torch.randperm(x.size(0), device=x.device)
         lam = np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
+        lam = max(lam, 1.0 - lam)  # Enforce lam >= 0.5
         x = lam * x + (1 - lam) * x[indices]
-        labels = torch.clamp(labels + labels[indices], max=1.0)
+        labels = lam * labels + (1 - lam) * labels[indices]
+        theta = self.hparams.mixup_theta
+        if theta < 1.0:
+            labels = torch.where(labels >= theta, torch.ones_like(labels), labels)
         return x, labels
 
     def _blended_probs(
@@ -259,29 +270,34 @@ class SEDFinetuneModule(pl.LightningModule):
             clipwise_logits
         ) + self.hparams.blend_frame * torch.sigmoid(framewise_max)
 
+    def _mixup_active(self) -> bool:
+        """Check if mixup should be applied this epoch (respects warmup)."""
+        if self.hparams.mixup_prob <= 0:
+            return False
+        warmup = self.hparams.mixup_warmup_epochs
+        if warmup > 0 and self.current_epoch < warmup:
+            return False
+        return random.random() < self.hparams.mixup_prob
+
     def training_step(self, batch, batch_idx):
         x, labels, primary_idx = batch
 
         if self.mel_transform is not None and self.hparams.waveform_mixup:
             # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
-            # Mel computation must run in float32 and outside autograd graph:
-            # - float32: nnAudio STFT magnitudes can overflow float16 range
-            # - no_grad: mel is a fixed transform, not a learnable layer
-            if random.random() < self.hparams.mixup_prob:
+            if self._mixup_active():
                 x, labels = self._apply_mixup(x, labels)
             with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
                 mel = self.mel_transform(x.float())
         elif self.mel_transform is not None:
             # GPU mel mode: compute mel on GPU first, then spectrogram mixup.
-            # Same training behavior as CPU mel mode but avoids DataLoader bottleneck.
             with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
                 mel = self.mel_transform(x.float())
-            if random.random() < self.hparams.mixup_prob:
+            if self._mixup_active():
                 mel, labels = self._apply_mixup(mel, labels)
         else:
             # CPU mel mode (default): input is pre-computed mel, spectrogram mixup
             mel = x
-            if random.random() < self.hparams.mixup_prob:
+            if self._mixup_active():
                 mel, labels = self._apply_mixup(mel, labels)
 
         clipwise_logits, framewise_logits = self(mel)

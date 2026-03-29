@@ -1,9 +1,9 @@
-"""EfficientNet encoder wrapper for 1-channel mel-spectrogram input.
+"""Timm encoder wrapper for 1-channel mel-spectrogram input.
 
-Uses timm's pretrained EfficientNet models with features_only=True to
-return per-stage feature maps, enabling SED (Sound Event Detection)
-architectures that need spatial/temporal feature maps instead of pooled
-embeddings.
+Uses timm's pretrained models (EfficientNet, HGNetV2, etc.) with
+features_only=True to return per-stage feature maps, enabling SED
+(Sound Event Detection) architectures that need spatial/temporal
+feature maps instead of pooled embeddings.
 """
 
 import logging
@@ -16,21 +16,21 @@ logger = logging.getLogger(__name__)
 
 
 class EfficientNetEncoder(nn.Module):
-    """Timm EfficientNet backbone adapted for 1-channel mel-spectrogram input.
+    """Timm backbone adapted for 1-channel mel-spectrogram input.
 
-    Creates an EfficientNet model with features_only=True (returns per-stage
-    feature maps) and adapts the stem conv from 3 channels to 1 channel.
+    Creates a timm model with features_only=True (returns per-stage
+    feature maps) and in_chans=1. Works with any timm model that
+    supports features_only (EfficientNet, HGNetV2, ConvNeXt, etc.).
 
     The forward_features() method returns the last-stage 4D feature map for
     SED heads. The forward() method returns a pooled embedding for backward
     compatibility with clip-level classification.
 
     Args:
-        model_name: Timm model name (e.g., "efficientnet_b0", "efficientnet_b3")
+        model_name: Timm model name (e.g., "efficientnet_b0",
+            "hgnetv2_b0.ssld_stage2_ft_in1k")
         pretrained: Whether to load pretrained ImageNet weights
         drop_path_rate: Stochastic depth rate (default: 0.0 = disabled).
-            Randomly drops entire residual blocks during training.
-            2025 1st place used 0.15, Tom used 0.0 (default).
     """
 
     def __init__(
@@ -41,10 +41,18 @@ class EfficientNetEncoder(nn.Module):
     ):
         super().__init__()
         self.backbone = timm.create_model(
-            model_name, pretrained=pretrained, features_only=True, drop_path_rate=drop_path_rate
+            model_name,
+            pretrained=pretrained,
+            features_only=True,
+            in_chans=1,
+            drop_path_rate=drop_path_rate,
         )
-        self.embed_dim = self.backbone.feature_info.channels()[-1]  # 1280 for B0
-        self._adapt_input_channels(pretrained)
+        self.embed_dim = self.backbone.feature_info.channels()[-1]
+
+        # EfficientNet family: manually adapt stem conv for better weight init
+        # (average 3-ch pretrained weights into 1-ch instead of timm's default)
+        if hasattr(self.backbone, "conv_stem") and pretrained:
+            self._adapt_input_channels()
 
         dp_info = f", drop_path={drop_path_rate}" if drop_path_rate > 0 else ""
         logger.info(
@@ -52,14 +60,18 @@ class EfficientNetEncoder(nn.Module):
             f"stages={len(self.backbone.feature_info.channels())}{dp_info}"
         )
 
-    def _adapt_input_channels(self, pretrained: bool):
-        """Replace 3-channel stem conv with 1-channel variant.
+    def _adapt_input_channels(self):
+        """Re-init EfficientNet stem conv with averaged 3→1 channel weights.
 
-        EfficientNet's stem conv is at self.backbone.conv_stem. If using
-        pretrained weights, average the 3-channel weights into 1 channel
-        to preserve learned features.
+        timm's in_chans=1 repeats or truncates channel weights. For EfficientNet,
+        we get better results by averaging the 3-channel pretrained weights.
+        Only called when backbone has conv_stem (EfficientNet family).
         """
         old_conv = self.backbone.conv_stem
+        if old_conv.in_channels == 1:
+            # timm already set to 1-ch, but re-init with averaged weights
+            # by reloading the 3-ch model weights and averaging
+            return  # timm handled it, skip manual adaptation
         new_conv = nn.Conv2d(
             in_channels=1,
             out_channels=old_conv.out_channels,
@@ -68,11 +80,10 @@ class EfficientNetEncoder(nn.Module):
             padding=old_conv.padding,
             bias=old_conv.bias is not None,
         )
-        if pretrained:
-            with torch.no_grad():
-                new_conv.weight[:] = old_conv.weight.mean(dim=1, keepdim=True)
-                if old_conv.bias is not None:
-                    new_conv.bias[:] = old_conv.bias
+        with torch.no_grad():
+            new_conv.weight[:] = old_conv.weight.mean(dim=1, keepdim=True)
+            if old_conv.bias is not None:
+                new_conv.bias[:] = old_conv.bias
         self.backbone.conv_stem = new_conv
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:

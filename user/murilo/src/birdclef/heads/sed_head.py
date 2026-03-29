@@ -22,6 +22,8 @@ Training uses dual supervision on clipwise and framewise-max predictions.
 Inference blends 75% clipwise + 25% framewise-max.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 
@@ -180,3 +182,66 @@ class AttBlockV2(nn.Module):
         clipwise_logits = torch.logit(clipwise_probs.clamp(1e-7, 1.0 - 1e-7))
 
         return clipwise_logits, frame_logits
+
+
+class LSEPooling(nn.Module):
+    """Log-Sum-Exp temporal pooling — smooth approximation to max.
+
+    T→0: hard max, T→∞: mean. T=1.0 is a balanced default.
+    Cross-ref: ttahara-hgnetv2-b0-training.py lines 633-646.
+    """
+
+    def __init__(self, temperature: float = 1.0):
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: (B, T, C) -> (B, C)."""
+        return self.temperature * (
+            torch.logsumexp(x / self.temperature, dim=1) - math.log(x.shape[1])
+        )
+
+
+class LSEHead(nn.Module):
+    """SED head with Log-Sum-Exp temporal pooling.
+
+    Architecture: GeM(freq) → permute → Linear+ReLU+Dropout+Linear → LSEPool(time).
+    Returns (clipwise_logits, framewise_logits) tuple matching AttHead contract.
+
+    Cross-ref: ttahara-hgnetv2-b0-training.py lines 648-701.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        num_classes: int,
+        hidden_dim: int = 512,
+        dropout: float = 0.5,
+        gem_p: float = 3.0,
+        lse_temperature: float = 1.0,
+    ):
+        super().__init__()
+        self.gem = GeM(p=gem_p)
+        self.cls_fc = nn.Sequential(
+            nn.Linear(in_channels, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_classes),
+        )
+        self.lse_pool = LSEPooling(temperature=lse_temperature)
+
+    def forward(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass.
+
+        Args:
+            features: (B, C, F, T) from backbone
+
+        Returns:
+            clipwise_logits: (B, num_classes)
+            framewise_logits: (B, num_classes, T) — for dual supervision
+        """
+        h = self.gem(features)  # (B, C, T)
+        h = h.permute(0, 2, 1)  # (B, T, C)
+        framewise_logits = self.cls_fc(h)  # (B, T, num_classes)
+        clipwise_logits = self.lse_pool(framewise_logits)  # (B, num_classes)
+        return clipwise_logits, framewise_logits.permute(0, 2, 1)  # (B, num_classes, T)
