@@ -26,7 +26,6 @@ import os
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 START_TIME = time.time()
 TIMEOUT_SECONDS = 88 * 60  # 88 min safety cutoff
@@ -2598,34 +2597,35 @@ def main():
             print(f"  No test files, using {len(audio_files)} train files")
     print(f"  Processing {len(audio_files)} soundscapes")
 
-    def process_file(args):
-        file_idx, audio_path = args
-        if time.time() - START_TIME > TIMEOUT_SECONDS:
-            return (file_idx, audio_path, None, None, True)
-        waveform = load_and_window_audio(audio_path)
-        emb, logits = run_perch_inference(infer_fn, waveform)
-        mapped = compute_perch_mapped_logits(logits, species_mapping)
-        return file_idx, audio_path, emb, mapped, False
+    # Batched inference: process BATCH_FILES files per TF call (matching Yuriy)
+    # This is ~10x faster than file-by-file because TF amortizes session overhead.
+    BATCH_FILES = 16
+    n_files_total = len(audio_files)
 
     test_emb_list = []
     test_scores_list = []
     test_meta = []
     n_timeout = 0
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for result in executor.map(process_file, enumerate(audio_files)):
-            file_idx, audio_path, emb, mapped, timed_out = result
-            if timed_out:
-                n_timeout += 1
-                continue
+    for batch_start in range(0, n_files_total, BATCH_FILES):
+        if time.time() - START_TIME > TIMEOUT_SECONDS:
+            n_timeout += n_files_total - batch_start
+            break
 
-            test_emb_list.append(emb)
-            test_scores_list.append(mapped)
+        batch_paths = audio_files[batch_start : batch_start + BATCH_FILES]
+        batch_n = len(batch_paths)
+
+        # Read all files in batch into a single waveform array
+        waveforms = np.empty((batch_n * N_WINDOWS, WINDOW_SAMPLES), dtype=np.float32)
+        batch_meta = []
+        for i, audio_path in enumerate(batch_paths):
+            waveform = load_and_window_audio(audio_path)  # (12, WINDOW_SAMPLES)
+            waveforms[i * N_WINDOWS : (i + 1) * N_WINDOWS] = waveform
 
             site, hour = _parse_soundscape_metadata(str(audio_path))
             sid = audio_path.stem
             for w in range(N_WINDOWS):
-                test_meta.append(
+                batch_meta.append(
                     {
                         "soundscape_id": sid,
                         "end_time": (w + 1) * WINDOW_SECONDS,
@@ -2634,10 +2634,18 @@ def main():
                     }
                 )
 
-            n_done = len(test_emb_list)
-            if n_done % 50 == 0 or n_done == 1 or n_done == len(audio_files):
-                elapsed = time.time() - START_TIME
-                print(f"  [{n_done}/{len(audio_files)}] {elapsed / 60:.1f}min elapsed")
+        # Single TF call for entire batch
+        emb, logits = run_perch_inference(infer_fn, waveforms)
+        mapped = compute_perch_mapped_logits(logits, species_mapping)
+
+        test_emb_list.append(emb)
+        test_scores_list.append(mapped)
+        test_meta.extend(batch_meta)
+
+        n_done = batch_start + batch_n
+        if n_done % (BATCH_FILES * 3) == 0 or n_done == batch_n or n_done == n_files_total:
+            elapsed = time.time() - START_TIME
+            print(f"  [{n_done}/{n_files_total}] {elapsed / 60:.1f}min elapsed")
 
     if n_timeout:
         print(f"  *** {n_timeout} files timed out ***")
