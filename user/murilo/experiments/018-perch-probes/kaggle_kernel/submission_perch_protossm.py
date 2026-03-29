@@ -2126,9 +2126,11 @@ def main():
 
     bc_labels_path = perch_model_dir / "assets" / "labels.csv"
     if bc_labels_path.exists():
-        bc_labels_df = pd.read_csv(bc_labels_path)
-        # Add bc_index column (0-based row index)
-        bc_labels_df["bc_index"] = range(len(bc_labels_df))
+        bc_labels_df = (
+            pd.read_csv(bc_labels_path)
+            .reset_index()
+            .rename(columns={"index": "bc_index", "inat2024_fsd50k": "scientific_name"})
+        )
 
         taxonomy_df = pd.read_csv(competition_dir / "taxonomy.csv")
         sci_name_map = taxonomy_df.set_index("primary_label")["scientific_name"].to_dict()
