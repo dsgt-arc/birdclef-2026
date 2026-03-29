@@ -465,6 +465,16 @@ export_effnet_b0_sed_v4h() {
         --output-dir artifacts/weights/effnet-b0-sed-v4h/
 }
 
+export_effnet_b0_sed_v4j() {
+    echo "=== Exporting EfficientNet-B0 SED v4j (waveform MixUp, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4j/best-epochepoch=34.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4j/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -510,7 +520,7 @@ case "$MODEL" in
     eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
     protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student|\
     effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3a|effnet-b0-sed-v3b|effnet-b0-sed-v3c|effnet-b0-sed-v3d|\
-    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|all-017-ablations|all-2026-sed)
+    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|effnet-b0-sed-v4j|all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TAXONOMY_CSV_2026" \
@@ -595,6 +605,7 @@ case "$MODEL" in
     effnet-b0-sed-v4b-fulldata)    export_effnet_b0_sed_v4b_fulldata ;;
     effnet-b0-sed-v4g)         export_effnet_b0_sed_v4g ;;
     effnet-b0-sed-v4h)         export_effnet_b0_sed_v4h ;;
+    effnet-b0-sed-v4j)         export_effnet_b0_sed_v4j ;;
     all-017-ablations)
         export_effnet_b0_sed_v4b
         echo ""
