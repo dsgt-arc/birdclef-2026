@@ -179,9 +179,13 @@ kaggle_kernel/push.sh perch-probes
       - `decision_function()` for probes (logit output)
       - Logit-space blending: `(1-alpha)*base_logit + alpha*probe_logit`
       - Sigmoid only at final submission
-- [ ] 5c.3 Upload updated dataset to Kaggle
-- [ ] 5c.4 Push perch-probes-v1 (logit pipeline) and record LB
-- [ ] 5c.5 Compare to chiranjithdharma (0.910)
+- [x] 5c.3 Upload updated dataset to Kaggle (raw logits, scores_raw key)
+- [x] 5c.4 Push perch-probes-v1 (logit pipeline) — submitted, awaiting LB score
+      - Phase 1: labeled logits loaded (range [-10, 12.8]), 53 probes trained in 2.5s
+      - Phase 2: Perch on test files (~80 min with ThreadPoolExecutor)
+      - Phase 3: logit-space probes + additive priors + smoothing + sigmoid at end
+- [ ] 5c.5 Record LB result
+- [ ] 5c.6 Compare to chiranjithdharma (0.910)
 
 ### Phase B Decision Gate
 

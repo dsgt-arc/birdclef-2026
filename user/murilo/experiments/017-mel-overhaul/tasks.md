@@ -235,9 +235,9 @@ post-processing? different training data composition?).
 
 ### 5.2 ONNX Export & Kaggle (v4j only — only variant that improved)
 
-- [ ] 5.2.1 Export v4j best checkpoint to ONNX
-- [ ] 5.2.2 Upload v4j weights to Kaggle
-- [ ] 5.2.3 Submit v4j to Kaggle LB
+- [x] 5.2.1 Export v4j best checkpoint to ONNX (via exp 010 pipeline)
+- [x] 5.2.2 Upload v4j weights to Kaggle (`birdclef-2026-effnet-b0-sed-v4j-weights`)
+- [x] 5.2.3 Submit v4j to Kaggle LB — submitted, awaiting score
 - [ ] 5.2.4 Record LB result (v4b=0.859, target: ≥0.865)
 
 ### 5.3 Decision Gate
