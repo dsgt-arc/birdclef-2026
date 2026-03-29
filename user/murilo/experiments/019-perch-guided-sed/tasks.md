@@ -51,19 +51,28 @@ All ablations start from v4b (0.860 LB) with a single change.
 - [ ] 1.5 **v5e — HGNetV2-B0 backbone**: Drop-in replacement via timm
       `hgnetv2_b0.ssld_stage2_ft_in1k`. Keep our SED head + training pipeline.
 
-### Step 2: Combine winners
+### Step 2: Combine winners (two tracks in parallel)
+
+Run both backbone tracks with the winning ablation settings. The goal is to
+find the best overall model — HGNet may win on architecture while EfficientNet
+may win on specific improvements, or one may dominate.
 
 - [ ] 2.1 Analyze ablation results: which improvements stack?
-- [ ] 2.2 Train combined model with all positive ablations
-- [ ] 2.3 Validate on LB — target: ≥0.870 single fold
+- [ ] 2.2 **EfficientNet track**: Train EfficientNet-B0 with all positive ablations
+- [ ] 2.3 **HGNet track**: Train HGNetV2-B0 with all positive ablations
+      (HGNet may respond differently to BCE/MixUp/LSEHead than EfficientNet)
+- [ ] 2.4 Compare both tracks on LB — pick the best backbone for Phase C
+- [ ] 2.5 Target: ≥0.870 single fold (either backbone)
 
 ### Step 3: 4-fold ensemble
 
 - [ ] 3.1 Implement MultiLabel Stratified GroupKFold (from ttahara, group by audio_id)
-- [ ] 3.2 Train 4 folds of the best variant on PACE (~16h total)
-- [ ] 3.3 Export all 4 models to ONNX (or OpenVINO if faster)
-- [ ] 3.4 Implement fold-averaged inference kernel
-- [ ] 3.5 Validate on LB — target: ≥0.885 ensemble
+- [ ] 3.2 Train 4 folds of the **winning backbone** on PACE (~16h total)
+- [ ] 3.3 Optionally train 4 folds of the **other backbone** too — mixed-backbone
+      ensemble (EfficientNet + HGNet) may outperform single-backbone ensemble
+- [ ] 3.4 Export all models to ONNX (or OpenVINO if faster)
+- [ ] 3.5 Implement fold-averaged inference kernel
+- [ ] 3.6 Validate on LB — target: ≥0.885 ensemble
 
 ---
 
