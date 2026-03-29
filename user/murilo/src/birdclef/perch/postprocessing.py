@@ -202,17 +202,20 @@ def run_postprocessing_pipeline(
     # Stage 1: Temperature scaling (logit space) → probabilities
     probs = temperature_scale(final_scores, class_temperatures)
 
-    # Stage 2: File-level confidence scaling
+    # Stage 2: File-level confidence scaling (clip after, matching Yuriy line 2848)
     if file_level_top_k > 0:
         probs = file_level_confidence_scale(probs, n_windows=n_windows, top_k=file_level_top_k)
+        np.clip(probs, 0.0, 1.0, out=probs)
 
-    # Stage 3: Rank-aware scaling
+    # Stage 3: Rank-aware scaling (clip after, matching Yuriy line 2855)
     if rank_aware_power > 0:
         probs = rank_aware_scaling(probs, n_windows=n_windows, power=rank_aware_power)
+        np.clip(probs, 0.0, 1.0, out=probs)
 
-    # Stage 4: Delta shift smoothing
+    # Stage 4: Delta shift smoothing (clip after, matching Yuriy line 2862)
     if delta_shift_alpha > 0:
         probs = delta_shift_smooth(probs, n_windows=n_windows, alpha=delta_shift_alpha)
+        np.clip(probs, 0.0, 1.0, out=probs)
 
     # Stage 5: Per-class threshold sharpening
     if per_class_thresholds is not None:

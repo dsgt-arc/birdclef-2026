@@ -2024,17 +2024,20 @@ def run_postprocessing_pipeline(
     # Stage 1: Temperature scaling (logit space) -> probabilities
     probs = temperature_scale(final_scores, class_temperatures)
 
-    # Stage 2: File-level confidence scaling
+    # Stage 2: File-level confidence scaling (clip after, matching Yuriy line 2848)
     if file_level_top_k > 0:
         probs = file_level_confidence_scale(probs, n_windows=n_windows, top_k=file_level_top_k)
+        np.clip(probs, 0.0, 1.0, out=probs)
 
-    # Stage 3: Rank-aware scaling
+    # Stage 3: Rank-aware scaling (clip after, matching Yuriy line 2855)
     if rank_aware_power > 0:
         probs = rank_aware_scaling(probs, n_windows=n_windows, power=rank_aware_power)
+        np.clip(probs, 0.0, 1.0, out=probs)
 
-    # Stage 4: Delta shift smoothing
+    # Stage 4: Delta shift smoothing (clip after, matching Yuriy line 2862)
     if delta_shift_alpha > 0:
         probs = delta_shift_smooth(probs, n_windows=n_windows, alpha=delta_shift_alpha)
+        np.clip(probs, 0.0, 1.0, out=probs)
 
     # Stage 5: Per-class threshold sharpening
     if per_class_thresholds is not None:
@@ -2578,26 +2581,17 @@ def main():
     )
     final_model.init_family_head(n_families, class_to_family)
 
-    # For final training, use 15% val split
-    n_val = max(1, int(len(file_list) * 0.15))
-    perm_idx = torch.randperm(len(file_list), generator=torch.Generator().manual_seed(42))
-    val_file_idx = perm_idx[:n_val].numpy()
-    train_file_idx = perm_idx[n_val:].numpy()
-
+    # Train final model on ALL data (no val split, matching Yuriy line 2251-2259)
+    # When has_val=False, training uses train loss for early stopping and SWA
+    # accumulates more aggressively (more epochs before stopping)
     final_model, final_hist = train_proto_ssm_single(
         final_model,
-        emb_files[train_file_idx],
-        logits_files[train_file_idx],
-        labels_files[train_file_idx].astype(np.float32),
-        site_ids_train=site_ids_all[train_file_idx],
-        hours_train=hours_all[train_file_idx],
-        emb_val=emb_files[val_file_idx],
-        logits_val=logits_files[val_file_idx],
-        labels_val=labels_files[val_file_idx].astype(np.float32),
-        site_ids_val=site_ids_all[val_file_idx],
-        hours_val=hours_all[val_file_idx],
-        file_families_train=file_families[train_file_idx],
-        file_families_val=file_families[val_file_idx],
+        emb_files,
+        logits_files,
+        labels_files.astype(np.float32),
+        site_ids_train=site_ids_all,
+        hours_train=hours_all,
+        file_families_train=file_families,
         cfg=train_cfg,
     )
 
