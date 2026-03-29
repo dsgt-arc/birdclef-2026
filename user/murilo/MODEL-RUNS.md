@@ -243,6 +243,30 @@ setup consistently underperforms — the gap to Salman's 0.908 is from other fac
 not argmax of multi-hot). The original broken CE (argmax) gave similar results (v4k
 first run: 0.846), confirming the low mismatch rate (0.2% for focal recordings).
 
+## BirdCLEF 2026 — Perch Probes (exp 018)
+
+Frozen Perch v2 as feature extractor + LogReg probe classifiers. No GPU training —
+probes train in ~2s on CPU. All inference on Kaggle CPU kernel (~85 min for ~600 test files).
+
+| Slug | Pipeline | Probe Features | OOF | LB | Kaggle Kernel |
+|------|----------|---------------|-----|-----|---------------|
+| `perch-raw` | Perch logits only | — | No | 0.825 | `submission_perch_raw.py` |
+| `perch-cache-v1` | + genus proxy mapping | — | No | 0.836 | `submission_perch_cache.py` |
+| `perch-probes-v1` | + LogReg probes, logit-space | 39-dim (PCA32 + 7) | No | 0.893 | `submission_perch_probes.py` v1 |
+| `perch-probes-v2` | + OOF fold-safe priors | 39-dim (PCA32 + 7) | 5-fold | 0.898 | `submission_perch_probes.py` v2 (buggy) |
+| **`perch-probes-v2-fix`** | **+ 6-cat fuse, sc_clean priors** | **39-dim (PCA32 + 7)** | **5-fold** | **0.911** | **`submission_perch_probes.py` v2-fix** |
+
+### v2-fix Details (0.911 LB)
+
+Pipeline: Perch v2 frozen → StandardScaler + PCA(32) → 5-fold OOF GroupKFold by site →
+52 LogReg probes (39-dim, C=0.25, class_weight='balanced') → Gaussian smoothing → sigmoid.
+
+Key fixes over buggy v2 (0.898):
+- K_HOUR = 8 (was 4)
+- Prior tables from ALL 739 soundscape annotations (was labeled subset only)
+- 6-category fuse_scores: proxy λ=0.8, prior-only REPLACE, inactive = -8.0
+- Filtered to 59 fully-labeled files / 708 windows (was 66 files / 792 windows)
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

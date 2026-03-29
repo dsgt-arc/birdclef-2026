@@ -2,7 +2,7 @@
 slug: "yuriygreben/birdclef-2026-protossm-v5-time-optimised"
 type: "notebook"
 competition: "birdclef-2026"
-date_captured: "2026-03-28"
+date_captured: "2026-03-29"
 votes: 0
 ---
 
@@ -12,6 +12,13 @@ votes: 0
 **Competition**: BirdCLEF+ 2026
 **Score**: 0.925 LB
 **Author**: yuriygreben
+
+> **Version note (2026-03-29)**: Notebook updated by author ~8h ago. Key changes
+> from prior version (also 0.925): d_model 256→128, n_ssm_layers 3→2, probe C
+> 0.15→0.50, probe alpha 0.30→0.40, OOF grouping corrected to by-filename.
+> Smaller model, same score — author likely optimized for compute budget.
+> See `user/murilo/notes/yuriy-protossm-v5-annotated.md` for line-by-line
+> implementation details verified against pulled source code.
 
 ## Summary
 
@@ -46,15 +53,15 @@ Perch v2 (frozen) → embeddings (1536-dim) + logits (14795-dim)
 
 ## ProtoSSM v5 (v4 in code)
 
-d_model=256, d_state=16, 3 BiSSM layers + 4-head cross-attention.
+d_model=128, d_state=16, 2 BiSSM layers + 4-head cross-attention.
 
 **Components**:
-1. **Input projection**: Linear(1536 → 256) + LayerNorm + GELU + Dropout(0.15)
-2. **Positional encoding**: Learnable (1, 12, 256)
-3. **Metadata embeddings**: Site Embedding(20, 16) + Hour Embedding(24, 16) → Linear(32 → 256)
-4. **3x Bidirectional SSM layers**: Each has forward SSM + backward SSM (flipped) → Linear(512 → 256) + LayerNorm + residual
-5. **Cross-attention** (after SSM): 4-head MultiheadAttention + FFN(256→512→256, GELU) with pre-norm residual
-6. **Prototypical classification**: Cosine similarity to learnable prototypes (234, 256) × learned temperature + per-class bias
+1. **Input projection**: Linear(1536 → 128) + LayerNorm + GELU + Dropout(0.15)
+2. **Positional encoding**: Learnable (1, 12, 128)
+3. **Metadata embeddings**: Site Embedding(20, 16) + Hour Embedding(24, 16) → Linear(32 → 128)
+4. **2x Bidirectional SSM layers**: Each has forward SSM + backward SSM (flipped) → Linear(256 → 128) + LayerNorm + residual
+5. **Cross-attention** (after SSM): 4-head MultiheadAttention + FFN(128→256→128, GELU) with pre-norm residual
+6. **Prototypical classification**: Cosine similarity to learnable prototypes (234, 128) × learned temperature + per-class bias
 7. **Gated fusion**: `alpha * ProtoSSM_logits + (1-alpha) * Perch_logits` where alpha is per-class learned sigmoid gate
 8. **Taxonomic auxiliary head**: Linear(256 → n_families) on mean-pooled temporal features
 
@@ -75,7 +82,7 @@ d_model=256, d_state=16, 3 BiSSM layers + 4-head cross-attention.
 - SWA: start at 70% of epochs, average if ≥3 checkpoints
 - Early stopping: patience=15, monitor val_loss
 - Gradient clip: 1.0
-- 3-fold OOF GroupKFold by site
+- 3-fold OOF GroupKFold by filename (not site)
 
 **Prototype initialization**: Class-mean embeddings from training data (normalized).
 
@@ -98,9 +105,9 @@ Total: 77 features (64 PCA + 13 context/interaction)
 
 **Class balancing**: Positive oversampling (repeat positives to match negatives).
 
-**Probe blending**: `(1 - 0.30) * base_score + 0.30 * probe_logit` (alpha=0.30)
+**Probe blending**: `(1 - 0.40) * base_score + 0.40 * probe_logit` (alpha=0.40)
 
-**Frozen best probe params**: pca_dim=64, min_pos=8, C=0.15, alpha=0.30
+**Frozen best probe params**: pca_dim=64, min_pos=8, C=0.50, alpha=0.40
 
 ## ResidualSSM (Second-Pass Boosting)
 
@@ -170,8 +177,8 @@ Prior applied as **additive in logit space**: `scores += lambda * prior_logits`
 | Feature | This notebook | Yaroslav v5 (0.925) | Pantanal-distill (0.917) |
 |---------|--------------|---------------------|--------------------------|
 | Training code | **Inline (visible)** | Pre-trained artifacts only | Pre-trained artifacts only |
-| ProtoSSM d_model | 256 | 256 | 128 |
-| SSM layers | 3 | 3 | 2 |
+| ProtoSSM d_model | 128 | 256 | 128 |
+| SSM layers | 2 | 3 | 2 |
 | Cross-attention | 4-head | 4-head | None |
 | Probe backend | **MLP** (sklearn) | MLP | MLP / LogReg |
 | Probe features | **77-dim** (PCA64 + 13 context/interaction) | PCA64 + context | PCA64 + context |

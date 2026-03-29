@@ -8,20 +8,21 @@ needed. The progression is: better OOF training → richer features → MLP prob
 ProtoSSM temporal modeling → post-processing.
 
 **Perch Raw Baseline**: 0.836 LB (with genus proxy mapping)
-**Current Best**: 0.898 LB (LogReg probes, buggy OOF — v2-fix submitted, awaiting LB)
+**Current Best**: 0.911 LB (LogReg probes, OOF v2-fix, matching chiranjithdharma)
 
 ### Leaderboard Reference Chain
 
 | Score | Notebook | Key technique over previous |
 |-------|----------|---------------------------|
-| 0.893 | **Ours (perch-probes-v1)** | Perch + LogReg probes, no OOF |
+| 0.893 | Ours (perch-probes-v1) | Perch + LogReg probes, no OOF |
 | 0.910 | chiranjithdharma | + OOF 5-fold GroupKFold, fold-safe priors |
+| 0.911 | **Ours (perch-probes-v2-fix)** | + 6-cat fuse, sc_clean priors, K_HOUR fix |
 | 0.913 | zirach | + ProtoSSM temporal modeling (BiSSM) |
 | 0.917 | pantanal-distill | + ResidualSSM boosting, knowledge distillation |
 | 0.921 | maryna | + focal loss, mixup, cross-attn, SWA, TTA |
 | 0.925 | yuriy/yaroslav | + wider SSM (d=256, 3 layers), 6-stage post-proc |
 
-### Status: Phase C — v2 buggy=0.898, v2-fix submitted (perch-probes-v2 ver.2), awaiting LB
+### Status: Phase C — v2-fix = **0.911 LB** (beat chiranjithdharma 0.910), next: v3 (77-dim + MLP)
 
 - **Branch**: `mg/018-perch-ensemble` (PR #20)
 
@@ -124,7 +125,7 @@ Raw code: `kaggle_kernel/ref_jaejohn_perch_meta.py`
       - 8 sites, 5-fold GroupKFold (S22 still 468/708 = 66%)
       - 52 probes trained, Phase 1: 2.0s
 - [x] 6.12 Submit v2-fix to competition (2026-03-29) — running inference
-- [ ] 6.13 Check v2-fix LB result, target: ~0.910
+- [x] 6.13 Check v2-fix LB result: **0.911 LB** (+0.013 over buggy v2, +0.018 over v1, beat chiranjithdharma 0.910)
 
 ### Step 7: Richer features (39-dim → 77-dim)
 
@@ -207,7 +208,7 @@ Cherry-pick techniques from maryna (0.921) and yuriy (0.925):
 | Perch + probes (prob-space) | 0.757 | FAILED: sigmoid scores, multiplicative priors |
 | Perch + probes v1 (logit) | **0.893** | Logit pipeline, 39-dim LogReg, no OOF |
 | Perch + probes v2 (OOF) | **0.898** | + OOF fold-safe priors, Gaussian smoothing — **buggy** (K_HOUR=4, subset priors, missing fuse categories, partial files) |
-| Perch + probes v2-fix | pending | Fixes: K_HOUR=8, sc_clean priors, 6-cat fuse, 59 fully-labeled files (perch-probes-v2 ver.2) |
+| Perch + probes v2-fix | **0.911** | Fixes: K_HOUR=8, sc_clean priors, 6-cat fuse, 59 fully-labeled files (perch-probes-v2 ver.2) |
 | Perch + probes v3 (MLP) | pending | + 77-dim features, MLP probes |
 | ProtoSSM v1 | pending | + temporal modeling, ResidualSSM |
 
