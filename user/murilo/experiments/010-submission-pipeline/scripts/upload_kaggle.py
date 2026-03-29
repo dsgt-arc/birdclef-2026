@@ -225,7 +225,7 @@ MODELS = {
     },
     # Exp 017 Step 5: Waveform MixUp
     "effnet-b0-sed-v4j": {
-        "slug": "birdclef-2026-effnet-b0-sed-v4j-model",
+        "slug": "birdclef-2026-effnet-b0-sed-v4j-weights",
         "weights_dir": "artifacts/weights/effnet-b0-sed-v4j",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4j.json",
     },

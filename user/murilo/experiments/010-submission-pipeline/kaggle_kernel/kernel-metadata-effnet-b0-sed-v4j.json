@@ -9,7 +9,7 @@
   "enable_internet": false,
   "dataset_sources": [
     "murilogustineli/birdclef-deps",
-    "murilogustineli/birdclef-2026-effnet-b0-sed-v4j-model"
+    "murilogustineli/birdclef-2026-effnet-b0-sed-v4j-weights"
   ],
   "competition_sources": ["birdclef-2026"],
   "kernel_sources": []
