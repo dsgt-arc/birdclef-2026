@@ -8,7 +8,7 @@ needed. The progression is: better OOF training → richer features → MLP prob
 ProtoSSM temporal modeling → post-processing.
 
 **Perch Raw Baseline**: 0.836 LB (with genus proxy mapping)
-**Current Best**: 0.911 LB (LogReg probes, OOF v2-fix, matching chiranjithdharma)
+**Current Best**: 0.911 LB (MLP probes, OOF v2-fix, beat chiranjithdharma)
 
 ### Leaderboard Reference Chain
 
@@ -22,7 +22,7 @@ ProtoSSM temporal modeling → post-processing.
 | 0.921 | maryna | + focal loss, mixup, cross-attn, SWA, TTA |
 | 0.925 | yuriy/yaroslav | + wider SSM (d=256, 3 layers), 6-stage post-proc |
 
-### Status: Phase C — v2-fix = **0.911 LB** (beat chiranjithdharma 0.910), next: v3 (77-dim + MLP)
+### Status: v4 (ProtoSSM) submitted, awaiting LB — v2-fix = **0.911 LB**, v4 target ~0.920-0.925
 
 - **Branch**: `mg/018-perch-ensemble` (PR #20)
 
@@ -127,71 +127,78 @@ Raw code: `kaggle_kernel/ref_jaejohn_perch_meta.py`
 - [x] 6.12 Submit v2-fix to competition (2026-03-29) — running inference
 - [x] 6.13 Check v2-fix LB result: **0.911 LB** (+0.013 over buggy v2, +0.018 over v1, beat chiranjithdharma 0.910)
 
-### Step 7: Richer features (39-dim → 77-dim)
+### Step 7: Richer features (39-dim → 77-dim) — DONE (in v3)
 
-Upgrade from our 39-dim features to Yuriy's 77-dim feature set. Requires PCA 64
-(up from 32) plus additional context and interaction features.
+- [x] 7.1 Increase PCA from 32 → 64 dimensions
+- [x] 7.2 Add features: std_base, diff_mean, diff_prev, diff_next (4 new)
+- [x] 7.3 Add interaction features: raw*prior, raw*base, prior*base (3 new)
+- [x] 7.4 Total: 64 PCA + 13 context = 77-dim (matching Yuriy)
+- [x] 7.5 Using C=0.50, alpha=0.40 (jaejohn/Yuriy optimal)
 
-Note: jaejohn's grid search found pca_dim=64 and C=0.50 as optimal (vs our
-current pca_dim=32, C=0.25 from chiranjithdharma). Worth testing both.
+### Step 8: MLP probes (LogReg → MLPClassifier) — DONE (in v3)
 
-- [ ] 7.1 Increase PCA from 32 → 64 dimensions
-- [ ] 7.2 Add features: std_base, diff_mean, diff_prev, diff_next (4 new)
-- [ ] 7.3 Add interaction features: raw*prior, raw*base, prior*base (3 new)
-- [ ] 7.4 Total: 64 PCA + 13 context = 77-dim (matching Yuriy)
-- [ ] 7.5 Try C=0.50 (jaejohn optimal) vs C=0.25 (chiranjithdharma)
-
-### Step 8: MLP probes (LogReg → MLPClassifier)
-
-Replace LogisticRegression with sklearn MLPClassifier, matching reference notebooks.
-
-- [ ] 8.1 Implement MLPClassifier probes (hidden=(128,), ReLU, early_stopping)
-- [ ] 8.2 Add positive oversampling for class balance
-- [ ] 8.3 Submit perch-probes-v3 (OOF + 77-dim + MLP) — target: ~0.913
+- [x] 8.1 Implement MLPClassifier probes (hidden=(128,), ReLU, early_stopping)
+- [x] 8.2 Add positive oversampling for class balance
+- [x] 8.3 v3 kernel ready (submission_perch_probes.py), not yet submitted separately
 
 ---
 
-## Phase D: ProtoSSM Temporal Modeling (~0.913 → ~0.917)
+## Phase D: Full ProtoSSM v4 Pipeline (0.911 → ~0.925) — IN PROGRESS
 
-Add a lightweight bidirectional SSM that models temporal patterns across the 12
-windows per soundscape. Trains in ~10s on 66 labeled files. Fits in kernel budget.
+Ported Yuriy's ProtoSSM v5 (0.925 LB) into modular codebase under
+`src/birdclef/perch/` (8 modules, 140 pytest tests). Assembled into
+self-contained kernel `submission_perch_protossm.py` (2756 lines).
 
-- [ ] 9.1 Implement ProtoSSM v2 (d_model=128, 2 BiSSM layers, prototypical head)
-      - Input projection: 1536 → 128 + LayerNorm + GELU
-      - Learnable positional encoding (12 positions)
-      - Site/hour metadata embeddings
-      - Gated fusion with Perch logits
-- [ ] 9.2 Multi-task training: focal BCE + 0.1*MSE distillation + 0.1*taxonomy aux
-- [ ] 9.3 3-fold OOF GroupKFold training
-- [ ] 9.4 Ensemble: W * ProtoSSM + (1-W) * MLP probes (OOF-optimized W)
-- [ ] 9.5 Add ResidualSSM second-pass boosting (d_model=64, correction_weight=0.3)
-- [ ] 9.6 Submit — target: ~0.917
+Reference: `user/murilo/notes/yuriy-protossm-v5-annotated.md`
+Source: `user/murilo/src/birdclef/perch/` (models, training, losses,
+postprocessing, ensemble, data_utils, config)
 
-## Phase E: Post-Processing Pipeline (~0.917 → ~0.925)
+### Step 9: ProtoSSM v4 implementation
 
-Cherry-pick techniques from maryna (0.921) and yuriy (0.925):
+- [x] 9.1 Build `src/birdclef/perch/` module package:
+      - `models.py`: SelectiveSSM (Mamba-style), TemporalCrossAttention,
+        ProtoSSMv2 (d=128, 2 BiSSM + 4-head cross-attn + prototypical head
+        + gated Perch fusion + taxonomy aux head), ResidualSSM (d=64, zero-init)
+      - `training.py`: train_proto_ssm_single (focal BCE + distillation +
+        mixup after epoch 5 + SWA from 70% + gradient clip + early stopping),
+        run_proto_ssm_oof (3-fold GroupKFold by site),
+        train_residual_ssm (MSE on residuals, wall-time gated)
+      - `losses.py`: focal_bce_with_logits, mixup_files
+      - `postprocessing.py`: 6-stage pipeline (temperature, file-level
+        confidence, rank-aware, delta-shift, threshold sharpening)
+      - `ensemble.py`: temporal_shift_tta, optimize_ensemble_weight
+      - `data_utils.py`: reshape_to_files, site mapping, taxonomy groups
+      - `config.py`: all frozen hyperparameters matching Yuriy
+- [x] 9.2 Shape tests: all models pass (ProtoSSM 722K params, ResidualSSM 176K)
+- [x] 9.3 140 pytest tests passing (models, losses, training, postprocessing,
+      ensemble, data_utils, config, batched inference, kernel-module parity)
+- [x] 9.4 Assemble self-contained kernel `submission_perch_protossm.py`
+- [x] 9.5 Changes vs v2-fix:
+      - Proxy taxa: {Amphibia} → {Amphibia, Insecta, Aves}
+      - OOF grouping: site → filename (matching Yuriy)
+      - Event smoothing added in fuse_scores (α=0.15)
+      - Gaussian smoothing → 6-stage post-processing pipeline
+- [x] 9.6 Batched Perch inference (16 files/batch, single TF call) — v2 kernel
+- [x] 9.7 Push v4 kernel (v1: ThreadPoolExecutor, v2: batched TF) — awaiting LB
+      - v1 dry-run: 219s (3 files), Phase 2 (ProtoSSM): 33.5s
+      - Ensemble weight: 0.50 proto / 0.50 MLP, OOF AUC=0.9133
+      - ResidualSSM: 1.6s training, correction weight=0.3
+- [ ] 9.8 Check v4 LB result — target: ~0.920-0.925
 
-| Stage | Technique | Source | Config |
-|-------|-----------|--------|--------|
-| 1 | TTA (temporal shifts) | yuriy | shifts=[0, +1, -1], circular roll |
-| 2 | Per-taxon temperature | maryna | Aves=1.10, Texture=0.95 |
-| 3 | File-level confidence scaling | 2025 Rank 1 | top_k=2 |
-| 4 | Rank-aware scaling | 2025 Rank 3 | power=0.5 |
-| 5 | Delta shift smoothing | 2025 Rank 1 | alpha=0.15 |
-| 6 | Per-class threshold sharpening | yuriy | OOF-optimized F1 thresholds |
+---
 
-- [ ] 10.1 Add TTA (3 temporal shifts through ProtoSSM, no extra Perch cost)
-- [ ] 10.2 Add per-taxon temperature scaling
-- [ ] 10.3 Add file-level confidence scaling + rank-aware scaling
-- [ ] 10.4 Add delta shift smoothing
-- [ ] 10.5 Submit — target: ~0.921-0.925
+## Future Work (if needed after v4 LB result)
 
-## Phase F: Scale ProtoSSM (if needed)
+### Scale ProtoSSM
+- [ ] Scale d_model: 128 → 256, layers: 2 → 3
+- [ ] OOF-optimized per-class thresholds (currently fixed at 0.5 in submit mode)
+- [ ] Proxy taxa expansion: build genus proxies dynamically at inference
+      (Yuriy does this; we use static genus_proxy_map from species_mapping.json)
 
-- [ ] 11.1 Scale ProtoSSM: d_model=128 → 256, 2 → 3 SSM layers
-- [ ] 11.2 Add cross-attention after SSM (4-head)
-- [ ] 11.3 Add focal loss (gamma=2.0) + file-level mixup (alpha=0.3) + SWA
-- [ ] 11.4 Submit — target: match yuriy (0.925)
+### Additional techniques from other top notebooks
+- [ ] Cross-attention refinements from maryna (0.921)
+- [ ] Knowledge distillation from stronger teacher models
+- [ ] Ensemble with SED models (exp 017 v4b = 0.860 LB)
 
 ---
 
@@ -209,23 +216,26 @@ Cherry-pick techniques from maryna (0.921) and yuriy (0.925):
 | Perch + probes v1 (logit) | **0.893** | Logit pipeline, 39-dim LogReg, no OOF |
 | Perch + probes v2 (OOF) | **0.898** | + OOF fold-safe priors, Gaussian smoothing — **buggy** (K_HOUR=4, subset priors, missing fuse categories, partial files) |
 | Perch + probes v2-fix | **0.911** | Fixes: K_HOUR=8, sc_clean priors, 6-cat fuse, 59 fully-labeled files (perch-probes-v2 ver.2) |
-| Perch + probes v3 (MLP) | pending | + 77-dim features, MLP probes |
-| ProtoSSM v1 | pending | + temporal modeling, ResidualSSM |
+| Perch + probes v3 (MLP) | not submitted | + 77-dim features, MLP probes (included in v4) |
+| **ProtoSSM v4** | **pending** | + BiSSM×2 + cross-attn + TTA + ResidualSSM + 6-stage PP, ensemble 0.50/0.50 |
 
 ---
 
 ## Key Config Comparison
 
-| Parameter | v1 (0.893) | v2 target | v3 target | Reference |
-|-----------|-----------|-----------|-----------|-----------|
-| PCA dims | 32 | 32 | **64** | Yuriy: 64 |
-| Features | 39-dim | 39-dim | **77-dim** | Yuriy: 77 |
-| Probe type | LogReg | LogReg | **MLP(128)** | Yuriy: MLP(128) |
-| Probe C | 0.25 | 0.25 | — | — |
-| OOF folds | None | **5-fold** | 5-fold | chiranjithdharma: 5 |
-| Fold-safe priors | No | **Yes** | Yes | chiranjithdharma: Yes |
-| Alpha blend | 0.25+scale | OOF-calibrated | OOF-calibrated | — |
-| Min positive | 8 | 8 | 8 | Same |
-| Lambda event | 0.4 | 0.4 | 0.4 | Same |
-| Lambda texture | 1.0 | 1.0 | 1.0 | Same |
-| Temperature | — | 1.10 | 1.10 | Yuriy: Aves=1.10 |
+| Parameter | v1 (0.893) | v2-fix (0.911) | v4 (ProtoSSM) | Yuriy (0.925) |
+|-----------|-----------|----------------|---------------|---------------|
+| PCA dims | 32 | 32 | **64** | 64 |
+| Features | 39-dim | 39-dim | **77-dim** | 77 |
+| Probe type | LogReg | LogReg | **MLP(128)** | MLP(128) |
+| Probe alpha | dynamic | dynamic | **0.40 fixed** | 0.40 |
+| OOF grouping | — | site (5-fold) | **filename (5-fold)** | filename (5-fold) |
+| ProtoSSM | — | — | **BiSSM×2 + cross-attn** | same |
+| ProtoSSM OOF | — | — | **3-fold by site** | 3-fold by site |
+| Ensemble | — | — | **0.50 proto / 0.50 MLP** | OOF-optimized |
+| ResidualSSM | — | — | **d=64, w=0.3** | d=64, w=0.3 |
+| TTA | — | — | **shifts [0, ±1]** | [0, ±1] |
+| Post-processing | — | Gaussian | **6-stage pipeline** | 6-stage |
+| Event smoothing | — | no | **yes (α=0.15)** | yes |
+| Proxy taxa | Amphibia | Amphibia | **Amphibia+Insecta+Aves** | same |
+| Inference | ThreadPool | ThreadPool | **batched TF (16 files)** | batched (16) |
