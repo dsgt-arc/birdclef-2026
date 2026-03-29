@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """BirdCLEF 2026 Perch + Probes v3 Submission (OOF logit-space pipeline).
 
-Matches chiranjithdharma (0.910) pipeline exactly (verified line-by-line):
-  1. Load ALL soundscape annotations for prior tables (richer priors)
-  2. Filter labeled embeddings to 59 fully-labeled files (clean labels)
-  3. StandardScaler + PCA fit ONCE on all data (global)
-  4. 5-fold GroupKFold by site: fold-safe priors from ALL annotations
-  5. Train final probes on all data using OOF features (oof_base, oof_prior)
-  6. Run Perch v2 live on test soundscapes → raw logits
-  7. 6-category fuse_scores (proxy, prior-only replacement, -8.0 inactive)
-  8. Gaussian smoothing on all species + sigmoid at submission
+v3 upgrades over v2-fix (0.911 LB):
+  1. PCA 32 → 64 (matching Yuriy/jaejohn optimal)
+  2. 77-dim features: +std, +diff_mean/prev/next, +3 interaction terms
+  3. MLPClassifier(128,) probes with positive oversampling (replaces LogReg)
+  4. Fixed alpha=0.40 (Yuriy/jaejohn) instead of dynamic alpha
+  5. C=0.50 probe regularization (jaejohn grid-search optimal)
 
-Key v3 fixes vs v2 (0.898):
-  - K_HOUR fixed: 4 → 8 (matching chiranjithdharma)
-  - Prior tables from ALL soundscape annotations, not just labeled subset
-  - 6-category fuse_scores: proxy λ=0.8, prior-only replacement, -8.0 inactive
-  - Filtered to 59 fully-labeled files (removed 7 noisy partial files)
+Pipeline (unchanged from v2-fix):
+  - StandardScaler + PCA fit ONCE on all data (global)
+  - 5-fold GroupKFold by site: fold-safe priors from ALL annotations
+  - Train final probes on all data using OOF features (oof_base, oof_prior)
+  - 6-category fuse_scores (proxy, prior-only replacement, -8.0 inactive)
+  - Gaussian smoothing on all species + sigmoid at submission
 
 CRITICAL: Everything stays in LOGIT SPACE until sigmoid at submission.
 """
@@ -82,8 +80,8 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import soundfile as sf  # noqa: E402
 from sklearn.decomposition import PCA  # noqa: E402
-from sklearn.linear_model import LogisticRegression  # noqa: E402
 from sklearn.model_selection import GroupKFold  # noqa: E402
+from sklearn.neural_network import MLPClassifier  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -112,13 +110,19 @@ PERCH_MODEL_CANDIDATES = [
 # OOF cross-validation (matching chiranjithdharma)
 OOF_N_SPLITS = 5
 
-# Probe hyperparameters (matching chiranjithdharma)
-PCA_DIM = 32
+# Probe hyperparameters (v3: Yuriy/jaejohn optimal)
+PCA_DIM = 64
 PROBE_MIN_POS = 8
-PROBE_C = 0.25
-PROBE_ALPHA_BASE = 0.25
-PROBE_ALPHA_SCALE = 0.25
-PROBE_ALPHA_THRESHOLD = 40
+PROBE_ALPHA = 0.40  # fixed (Yuriy/jaejohn), replaces dynamic formula
+
+# MLP probe params (matching Yuriy)
+MLP_HIDDEN = (128,)
+MLP_ACTIVATION = "relu"
+MLP_MAX_ITER = 300
+MLP_EARLY_STOPPING = True
+MLP_VALIDATION_FRACTION = 0.15
+MLP_LR_INIT = 0.001
+MLP_ALPHA = 0.01  # L2 regularization
 
 # Prior lambdas
 LAMBDA_EVENT = 0.4
@@ -513,15 +517,24 @@ def seq_features_1d(v):
     next_v = np.concatenate([x[:, 1:], x[:, -1:]], axis=1).reshape(-1)
     mean_v = np.repeat(x.mean(axis=1), N_WINDOWS)
     max_v = np.repeat(x.max(axis=1), N_WINDOWS)
-    return prev_v, next_v, mean_v, max_v
+    std_v = np.repeat(x.std(axis=1), N_WINDOWS)
+    return prev_v, next_v, mean_v, max_v, std_v
 
 
 def build_class_features(Z, raw_col, prior_col, base_col):
-    """Build 39-dim feature vector per class (matching chiranjithdharma)."""
-    prev_b, next_b, mean_b, max_b = seq_features_1d(base_col)
+    """Build 77-dim feature vector per class (matching Yuriy ProtoSSM v5).
+
+    Features: PCA(64) + raw(1) + prior(1) + base(1) + prev(1) + next(1) +
+              mean(1) + max(1) + std(1) + diff_mean(1) + diff_prev(1) +
+              diff_next(1) + raw*prior(1) + raw*base(1) + prior*base(1) = 77
+    """
+    prev_b, next_b, mean_b, max_b, std_b = seq_features_1d(base_col)
+    diff_mean = base_col - mean_b
+    diff_prev = base_col - prev_b
+    diff_next = base_col - next_b
     return np.concatenate(
         [
-            Z,  # PCA embeddings (32)
+            Z,  # PCA embeddings (64)
             raw_col[:, None],  # raw Perch logit (1)
             prior_col[:, None],  # prior logit (1)
             base_col[:, None],  # fused base logit (1)
@@ -529,6 +542,13 @@ def build_class_features(Z, raw_col, prior_col, base_col):
             next_b[:, None],  # next window base (1)
             mean_b[:, None],  # file mean base (1)
             max_b[:, None],  # file max base (1)
+            std_b[:, None],  # file std base (1)
+            diff_mean[:, None],  # deviation from mean (1)
+            diff_prev[:, None],  # onset detection (1)
+            diff_next[:, None],  # offset detection (1)
+            (raw_col * prior_col)[:, None],  # interaction (1)
+            (raw_col * base_col)[:, None],  # interaction (1)
+            (prior_col * base_col)[:, None],  # interaction (1)
         ],
         axis=1,
     ).astype(np.float32)
@@ -584,7 +604,7 @@ def sigmoid(x):
 
 def main():
     print("=" * 70)
-    print("BirdCLEF 2026 Perch + Probes v3 (OOF logit-space pipeline)")
+    print("BirdCLEF 2026 Perch + Probes v3 (77-dim MLP, OOF logit-space pipeline)")
     print("=" * 70)
 
     # -------------------------------------------------------------------
@@ -870,7 +890,6 @@ def main():
     prior_tables = fit_prior_tables(Y_SC, sc_meta_rows, birdclef_species)
 
     probe_models = {}
-    probe_alphas = {}
 
     for cls_idx in probe_candidate_idx:
         y = labels_matrix[:, cls_idx]
@@ -885,20 +904,31 @@ def main():
             base_col=oof_base[:, cls_idx],
         )
 
-        clf = LogisticRegression(
-            C=PROBE_C, max_iter=1000, solver="liblinear", class_weight="balanced"
+        # Positive oversampling (MLPClassifier doesn't support class_weight)
+        n_pos = int(y.sum())
+        n_neg = len(y) - n_pos
+        if n_pos > 0 and n_neg > n_pos:
+            repeat = max(1, n_neg // n_pos)
+            pos_idx = np.where(y == 1)[0]
+            X_bal = np.vstack([X, np.tile(X[pos_idx], (repeat, 1))])
+            y_bal = np.concatenate([y, np.ones(len(pos_idx) * repeat)])
+        else:
+            X_bal, y_bal = X, y
+
+        clf = MLPClassifier(
+            hidden_layer_sizes=MLP_HIDDEN,
+            activation=MLP_ACTIVATION,
+            max_iter=MLP_MAX_ITER,
+            early_stopping=MLP_EARLY_STOPPING,
+            validation_fraction=MLP_VALIDATION_FRACTION,
+            learning_rate_init=MLP_LR_INIT,
+            alpha=MLP_ALPHA,
         )
-        clf.fit(X, y)
+        clf.fit(X_bal, y_bal)
         probe_models[cls_idx] = clf
 
-        n_pos = int(n_positive[cls_idx])
-        alpha = PROBE_ALPHA_BASE + PROBE_ALPHA_SCALE * min(
-            1.0, (n_pos - PROBE_MIN_POS) / PROBE_ALPHA_THRESHOLD
-        )
-        probe_alphas[cls_idx] = alpha
-
     print(
-        f"  Final probes: {len(probe_models)} trained, {len(birdclef_species) - len(probe_models)} skipped"
+        f"  Final probes: {len(probe_models)} MLP trained, {len(birdclef_species) - len(probe_models)} skipped"
     )
     print(f"  Phase 1: {time.time() - t1:.1f}s")
 
@@ -1000,7 +1030,7 @@ def main():
         species_idx,
     )
 
-    # Apply probes (logit blending)
+    # Apply probes (MLP predict_proba → manual log-odds, fixed alpha blending)
     final_scores = test_base.copy()
     for cls_idx, clf in probe_models.items():
         X = build_class_features(
@@ -1009,9 +1039,12 @@ def main():
             prior_col=test_prior[:, cls_idx],
             base_col=test_base[:, cls_idx],
         )
-        pred = clf.decision_function(X).astype(np.float32)  # LOGIT output
-        alpha = probe_alphas[cls_idx]
-        final_scores[:, cls_idx] = (1.0 - alpha) * test_base[:, cls_idx] + alpha * pred
+        # MLP: predict_proba → manual log-odds conversion (matching Yuriy)
+        pred_prob = clf.predict_proba(X)[:, 1].astype(np.float32)
+        pred_logit = np.log(pred_prob + 1e-7) - np.log(1.0 - pred_prob + 1e-7)
+        final_scores[:, cls_idx] = (1.0 - PROBE_ALPHA) * test_base[
+            :, cls_idx
+        ] + PROBE_ALPHA * pred_logit
 
     # Gaussian final smoothing on ALL species (matching chiranjithdharma)
     final_scores = gauss_smooth_final(final_scores)
