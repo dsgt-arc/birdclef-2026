@@ -2113,6 +2113,61 @@ def main():
     print(f"  Species: {len(birdclef_species)}, unmapped: {len(unmapped_set)}")
 
     # -------------------------------------------------------------------
+    # Build DYNAMIC genus proxy map from Perch labels (matching Yuriy)
+    # The static genus_proxy_map in species_mapping.json only has 6 entries
+    # (all Amphibia). Yuriy builds proxies for ALL unmapped non-sonotype
+    # species in {Amphibia, Insecta, Aves} by matching genus names against
+    # Perch's 14,795 label vocabulary.
+    # -------------------------------------------------------------------
+    import re
+
+    bc_labels_path = perch_model_dir / "assets" / "labels.csv"
+    if bc_labels_path.exists():
+        bc_labels_df = pd.read_csv(bc_labels_path)
+        # Add bc_index column (0-based row index)
+        bc_labels_df["bc_index"] = range(len(bc_labels_df))
+
+        taxonomy_df = pd.read_csv(competition_dir / "taxonomy.csv")
+        sci_name_map = taxonomy_df.set_index("primary_label")["scientific_name"].to_dict()
+
+        # Find unmapped non-sonotype species
+        direct_map = species_mapping.get("direct_map", {})
+        dynamic_proxy_map = {}
+        for sp in birdclef_species:
+            if sp in direct_map:
+                continue  # already directly mapped
+            if "son" in str(sp):
+                continue  # sonotype — no genus proxy possible
+            sci = sci_name_map.get(sp, "")
+            if not sci:
+                continue
+            genus = str(sci).split()[0]
+            # Find Perch labels with matching genus
+            hits = bc_labels_df[
+                bc_labels_df["scientific_name"]
+                .astype(str)
+                .str.match(rf"^{re.escape(genus)}\s", na=False)
+            ]
+            if len(hits) > 0:
+                # Store as 1-based indices (matching static genus_proxy_map format)
+                bc_indices = (hits["bc_index"].astype(int) + 1).tolist()
+                taxa = taxa_classes.get(sp, "Aves")
+                if taxa in PROXY_TAXA:
+                    dynamic_proxy_map[sp] = bc_indices
+
+        # Merge: static proxy_map + dynamic additions
+        static_proxy_map = species_mapping.get("genus_proxy_map", {})
+        print(
+            f"  Dynamic proxies: {len(dynamic_proxy_map)} species "
+            f"(static had {len(static_proxy_map)})"
+        )
+
+        # Update species_mapping to use the richer dynamic proxy map
+        species_mapping["genus_proxy_map"] = dynamic_proxy_map
+    else:
+        print("  WARNING: Perch labels.csv not found, using static proxy map")
+
+    # -------------------------------------------------------------------
     # Load ALL soundscape annotations (for richer prior tables)
     # -------------------------------------------------------------------
     print("\n--- Loading Soundscape Annotations ---")
@@ -2160,8 +2215,6 @@ def main():
     sc_meta_rows = [
         {"site": s, "hour": h} for s, h in zip(sc_sites_list, sc_hours_list, strict=False)
     ]
-    sc_sites_arr = np.array(sc_sites_list, dtype=object)
-
     print(f"  Soundscape rows: {len(sc_clean)}, files: {sc_clean['filename'].nunique()}")
     print(f"  Fully-labeled: {len(full_files)} files")
 
@@ -2175,6 +2228,7 @@ def main():
     idx_mapped_event = []
     idx_mapped_texture = []
     idx_proxy_texture = []
+    idx_proxy_event = []  # NEW: proxy Aves species (keep proxy score, no prior fusion)
     idx_prioronly_event = []
     idx_prioronly_texture = []
     idx_unmapped_inactive = []
@@ -2191,6 +2245,8 @@ def main():
             idx_mapped_texture.append(i)
         elif is_proxy and is_active and is_texture:
             idx_proxy_texture.append(i)
+        elif is_proxy and is_active and not is_texture:
+            idx_proxy_event.append(i)  # Aves with genus proxy — no prior fusion
         elif not is_direct and is_active and not is_texture:
             idx_prioronly_event.append(i)
         elif not is_direct and is_active and is_texture:
@@ -2202,18 +2258,22 @@ def main():
         "mapped_event": np.array(idx_mapped_event, dtype=np.int32),
         "mapped_texture": np.array(idx_mapped_texture, dtype=np.int32),
         "proxy_texture": np.array(idx_proxy_texture, dtype=np.int32),
+        "proxy_event": np.array(idx_proxy_event, dtype=np.int32),
         "prioronly_event": np.array(idx_prioronly_event, dtype=np.int32),
         "prioronly_texture": np.array(idx_prioronly_texture, dtype=np.int32),
         "unmapped_inactive": np.array(idx_unmapped_inactive, dtype=np.int32),
         "all_active_texture": np.array(
             idx_mapped_texture + idx_proxy_texture + idx_prioronly_texture, dtype=np.int32
         ),
-        "all_active_event": np.array(idx_mapped_event + idx_prioronly_event, dtype=np.int32),
+        "all_active_event": np.array(
+            idx_mapped_event + idx_proxy_event + idx_prioronly_event, dtype=np.int32
+        ),
     }
 
     print(
         f"  Categories: mapped_event={len(idx_mapped_event)}, mapped_texture={len(idx_mapped_texture)}, "
-        f"proxy_texture={len(idx_proxy_texture)}, prioronly_event={len(idx_prioronly_event)}, "
+        f"proxy_texture={len(idx_proxy_texture)}, proxy_event={len(idx_proxy_event)}, "
+        f"prioronly_event={len(idx_prioronly_event)}, "
         f"prioronly_texture={len(idx_prioronly_texture)}, unmapped_inactive={len(idx_unmapped_inactive)}"
     )
 
@@ -2295,12 +2355,16 @@ def main():
 
     print(f"\n  OOF: {n_splits}-fold GroupKFold by filename ({len(unique_groups)} groups)")
 
+    # Build filename array for sc_clean (for fold-safe file exclusion)
+    sc_filenames_arr = np.array(sc_clean["filename"].tolist(), dtype=object)
+
     for fold_idx, (train_idx, val_idx) in enumerate(gkf.split(labeled_emb, groups=groups)):
         val_idx = np.sort(val_idx)
-        fold_sites_val = {meta_rows[i]["site"] for i in val_idx}
+        fold_files_val = {meta_rows[i]["filename"] for i in val_idx}
 
-        # Fold-safe priors from ALL soundscape annotations (minus val sites)
-        prior_mask = ~np.isin(sc_sites_arr, list(fold_sites_val))
+        # Fold-safe priors: exclude val FILENAMES (not sites) from prior tables
+        # Matching Yuriy: sc_clean["filename"].isin(val_files)
+        prior_mask = ~np.isin(sc_filenames_arr, list(fold_files_val))
         fold_sc_meta = [sc_meta_rows[i] for i in np.where(prior_mask)[0]]
         fold_prior_tables = fit_prior_tables(Y_SC[prior_mask], fold_sc_meta, birdclef_species)
 
@@ -2317,7 +2381,7 @@ def main():
 
         print(
             f"    Fold {fold_idx}: train={len(train_idx)}, val={len(val_idx)}, "
-            f"val_sites={fold_sites_val}"
+            f"val_files={len(fold_files_val)}"
         )
 
     # OOF evaluation (AUROC on fold-safe base scores -- before probes)
