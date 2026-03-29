@@ -19,9 +19,9 @@ improvements with Perch pseudo-labels on 10K+ unlabeled soundscapes.
 | ~0.920 | Our Perch ProtoSSM | Teacher for pseudo-labels |
 | 0.939 | Competition #1 | Likely ensemble + pseudo-labels |
 
-### Status: Proposed — ready to start Phase A
+### Status: Phase A Step 1 — 5 ablation runs submitted to PACE (2026-03-30)
 
-- **Branch**: `mg/019-perch-guided-sed`
+- **Branch**: `mg/018-perch-ensemble` (shared with exp 018 for now)
 
 ---
 
@@ -37,19 +37,27 @@ Reference: `user/murilo/notes/gap-analysis-hgnet-vs-effnet.md`
 All ablations start from v4b (0.860 LB) with a single change.
 90/10 split, 50 epochs, same data pipeline.
 
-- [ ] 1.1 **v5a — BCEWithLogitsLoss**: Replace soft CE with standard BCE.
-      Different from v4i (which used single-label CE, not multi-label BCE).
-      Config: `loss=bce`, everything else from v4b.
-- [ ] 1.2 **v5b — Stronger MixUp**: α=1.0 (uniform), θ=0.8 label clipping,
-      5-epoch warmup (no mixup during warmup). Config: `mixup_alpha=1.0,
-      mixup_theta=0.8, mixup_warmup=5`.
-- [ ] 1.3 **v5c — Lower weight_decay**: 1e-4 (from 0.01). Config:
-      `weight_decay=1e-4`.
-- [ ] 1.4 **v5d — LSEHead**: Replace AttHead with Log-Sum-Exp pooling head.
-      mean(freq) → Linear+ReLU+Dropout+Linear → LSEPool(time, T=1.0).
-      Requires implementing LSEHead in `src/birdclef/heads/`.
-- [ ] 1.5 **v5e — HGNetV2-B0 backbone**: Drop-in replacement via timm
-      `hgnetv2_b0.ssld_stage2_ft_in1k`. Keep our SED head + training pipeline.
+Code changes implemented (all backward compatible with exp 017):
+- `src/birdclef/encoders/efficientnet.py`: generic timm support via `in_chans=1`
+- `src/birdclef/heads/sed_head.py`: added `LSEPooling` + `LSEHead`
+- `src/birdclef/lightning/sed_finetune.py`: added `mixup_warmup_epochs`,
+  `mixup_theta`, weighted label mixing, `lam >= 0.5` enforcement
+- `experiments/017-mel-overhaul/train.py`: registered LSEHead + new mixup params
+
+Fast-dev-run: all 5 configs passed. GPU check: >95% utilization on all.
+
+- [x] 1.1 **v5a — BCEWithLogitsLoss**: Replace soft CE with standard BCE.
+      Config: `loss_type: "bce"`. Submitted to PACE (2026-03-30).
+- [x] 1.2 **v5b — Stronger MixUp**: α=1.0 (uniform), θ=0.8 label clipping,
+      5-epoch warmup. Config: `mixup_alpha=1.0, mixup_theta=0.8,
+      mixup_warmup_epochs=5`. Submitted to PACE (2026-03-30).
+- [x] 1.3 **v5c — Lower weight_decay**: 1e-4 (from 0.01). Config:
+      `weight_decay: 1.0e-4`. Submitted to PACE (2026-03-30).
+- [x] 1.4 **v5d — LSEHead**: Log-Sum-Exp pooling head (GeM freq + LSE time).
+      Config: `sed_head.type: "lse_head"`. Submitted to PACE (2026-03-30).
+- [x] 1.5 **v5e — HGNetV2-B0 backbone**: `hgnetv2_b0.ssld_stage2_ft_in1k`
+      (embed_dim=1024). Submitted to PACE (2026-03-30).
+- [ ] 1.6 Collect results: val/auroc, val/cmap for all 5 runs (~4h each)
 
 ### Step 2: Combine winners (two tracks in parallel)
 
@@ -170,19 +178,20 @@ After each phase, decide whether to continue:
 
 ## Results Tracking
 
-| Submission | LB | Phase | Notes |
-|------------|-----|-------|-------|
-| SED v4b (baseline) | 0.860 | — | EfficientNet-B0, AmplitudeToDB |
-| v5a (BCE) | pending | A | |
-| v5b (MixUp) | pending | A | |
-| v5c (weight_decay) | pending | A | |
-| v5d (LSEHead) | pending | A | |
-| v5e (HGNetV2) | pending | A | |
-| Combined winner | pending | A | |
-| 4-fold ensemble | pending | A | |
-| Round 1 pseudo | pending | C | |
-| Round 2 pseudo | pending | C | |
-| Round 3 pseudo + 4-fold | pending | C | |
+| Submission | val/auroc | LB | Phase | Notes |
+|------------|----------|-----|-------|-------|
+| SED v4b (baseline) | 0.865 | 0.860 | — | EfficientNet-B0, AmplitudeToDB, AttHead, soft CE |
+| v5a (BCE) | training | — | A | `loss_type: "bce"` |
+| v5b (MixUp) | training | — | A | `mixup_alpha=1.0, theta=0.8, warmup=5` |
+| v5c (weight_decay) | training | — | A | `weight_decay=1e-4` |
+| v5d (LSEHead) | training | — | A | `sed_head.type: "lse_head"` |
+| v5e (HGNetV2) | training | — | A | `hgnetv2_b0.ssld_stage2_ft_in1k`, embed=1024 |
+| Combined EfficientNet | — | — | A | Best ablation combo |
+| Combined HGNet | — | — | A | Best ablation combo on HGNet |
+| 4-fold ensemble | — | — | A | |
+| Round 1 pseudo | — | — | C | |
+| Round 2 pseudo | — | — | C | |
+| Round 3 pseudo + 4-fold | — | — | C | |
 
 ---
 
