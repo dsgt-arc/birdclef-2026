@@ -1,0 +1,1122 @@
+# ruff: noqa
+# Source: kaggle kernels pull jaejohn/perch-v2-starter-train-infer
+# Raw notebook code — vendored for reference only
+
+# Cell 0
+# !pip install -q --no-deps /kaggle/input/notebooks/kdmitrie/bc26-tensorflow-2-20-0/wheel/tensorboard-2.20.0-py3-none-any.whl
+# !pip install -q --no-deps /kaggle/input/notebooks/kdmitrie/bc26-tensorflow-2-20-0/wheel/tensorflow-2.20.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+# Cell 1 — Mode switch
+MODE = "submit"
+
+assert MODE in {"train", "submit"}
+
+print("MODE =", MODE)
+# Cell 2 — Imports and run config
+import os
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+import gc
+import json
+import re
+import warnings
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import soundfile as sf
+import tensorflow as tf
+
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import GroupKFold
+from sklearn.preprocessing import StandardScaler
+
+from tqdm.auto import tqdm
+
+warnings.filterwarnings("ignore")
+tf.experimental.numpy.experimental_enable_numpy_behavior()
+
+BASE = Path("/kaggle/input/competitions/birdclef-2026")
+MODEL_DIR = Path(
+    "/kaggle/input/models/google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
+)
+
+SR = 32000
+WINDOW_SEC = 5
+WINDOW_SAMPLES = SR * WINDOW_SEC
+FILE_SAMPLES = 60 * SR
+N_WINDOWS = 12
+
+CFG = {
+    "mode": MODE,
+    "verbose": MODE == "train",
+    # expensive research blocks
+    "run_oof_baseline": MODE == "train",
+    "run_probe_check": MODE == "train",
+    "run_probe_grid": MODE == "train",
+    # inference
+    "batch_files": 16,
+    "dryrun_n_files": 50 if MODE == "train" else 20,
+    # cache behavior
+    "require_full_cache_in_submit": True,
+    "full_cache_input_dir": Path(
+        "/kaggle/input/datasets/jaejohn/perch-meta"
+    ),  # attach this dataset
+    "full_cache_work_dir": Path("/kaggle/working/perch_cache"),
+    # frozen baseline fusion params
+    "best_fusion": {
+        "lambda_event": 0.4,
+        "lambda_texture": 1.0,
+        "lambda_proxy_texture": 0.8,
+        "smooth_texture": 0.35,
+    },
+    # frozen probe params from OOF tuning
+    "frozen_best_probe": {
+        "pca_dim": 64,
+        "min_pos": 8,
+        "C": 0.50,
+        "alpha": 0.40,
+    },
+}
+
+CFG["full_cache_work_dir"].mkdir(parents=True, exist_ok=True)
+
+print("TensorFlow:", tf.__version__)
+print("Competition dir exists:", BASE.exists())
+print("Model dir exists:", MODEL_DIR.exists())
+print(json.dumps({k: (str(v) if isinstance(v, Path) else v) for k, v in CFG.items()}, indent=2))
+taxonomy = pd.read_csv(BASE / "taxonomy.csv")
+sample_sub = pd.read_csv(BASE / "sample_submission.csv")
+soundscape_labels = pd.read_csv(BASE / "train_soundscapes_labels.csv")
+
+PRIMARY_LABELS = sample_sub.columns[1:].tolist()
+N_CLASSES = len(PRIMARY_LABELS)
+
+taxonomy["primary_label"] = taxonomy["primary_label"].astype(str)
+soundscape_labels["primary_label"] = soundscape_labels["primary_label"].astype(str)
+
+
+def parse_soundscape_labels(x):
+    if pd.isna(x):
+        return []
+    return [t.strip() for t in str(x).split(";") if t.strip()]
+
+
+FNAME_RE = re.compile(r"BC2026_(?:Train|Test)_(\d+)_(S\d+)_(\d{8})_(\d{6})\.ogg")
+
+
+def parse_soundscape_filename(name):
+    m = FNAME_RE.match(name)
+    if not m:
+        return {
+            "file_id": None,
+            "site": None,
+            "date": pd.NaT,
+            "time_utc": None,
+            "hour_utc": -1,
+            "month": -1,
+        }
+    file_id, site, ymd, hms = m.groups()
+    dt = pd.to_datetime(ymd, format="%Y%m%d", errors="coerce")
+    return {
+        "file_id": file_id,
+        "site": site,
+        "date": dt,
+        "time_utc": hms,
+        "hour_utc": int(hms[:2]),
+        "month": int(dt.month) if pd.notna(dt) else -1,
+    }
+
+
+def union_labels(series):
+    return sorted(set(lbl for x in series for lbl in parse_soundscape_labels(x)))
+
+
+# Deduplicate duplicated rows and aggregate labels per 5s window
+sc_clean = (
+    soundscape_labels.groupby(["filename", "start", "end"])["primary_label"]
+    .apply(union_labels)
+    .reset_index(name="label_list")
+)
+
+sc_clean["start_sec"] = pd.to_timedelta(sc_clean["start"]).dt.total_seconds().astype(int)
+sc_clean["end_sec"] = pd.to_timedelta(sc_clean["end"]).dt.total_seconds().astype(int)
+sc_clean["row_id"] = (
+    sc_clean["filename"].str.replace(".ogg", "", regex=False)
+    + "_"
+    + sc_clean["end_sec"].astype(str)
+)
+
+meta = sc_clean["filename"].apply(parse_soundscape_filename).apply(pd.Series)
+sc_clean = pd.concat([sc_clean, meta], axis=1)
+
+# Fully-labeled files
+windows_per_file = sc_clean.groupby("filename").size()
+full_files = sorted(windows_per_file[windows_per_file == N_WINDOWS].index.tolist())
+sc_clean["file_fully_labeled"] = sc_clean["filename"].isin(full_files)
+
+# Multi-hot label matrix aligned with sc_clean row order
+label_to_idx = {c: i for i, c in enumerate(PRIMARY_LABELS)}
+Y_SC = np.zeros((len(sc_clean), N_CLASSES), dtype=np.uint8)
+
+for i, labels in enumerate(sc_clean["label_list"]):
+    idxs = [label_to_idx[lbl] for lbl in labels if lbl in label_to_idx]
+    if idxs:
+        Y_SC[i, idxs] = 1
+
+full_truth = (
+    sc_clean[sc_clean["file_fully_labeled"]]
+    .sort_values(["filename", "end_sec"])
+    .reset_index(drop=False)
+)
+
+Y_FULL_TRUTH = Y_SC[full_truth["index"].to_numpy()]
+
+print("sc_clean:", sc_clean.shape)
+print("Y_SC:", Y_SC.shape, Y_SC.dtype)
+print("Full files:", len(full_files))
+print("Trusted full windows:", len(full_truth))
+print("Active classes in full windows:", int((Y_FULL_TRUTH.sum(axis=0) > 0).sum()))
+# Cell 3 — Load Perch, mapping, and selective frog proxies
+BEST = CFG["best_fusion"]
+birdclassifier = tf.saved_model.load(str(MODEL_DIR))
+infer_fn = birdclassifier.signatures["serving_default"]
+
+bc_labels = (
+    pd.read_csv(MODEL_DIR / "assets" / "labels.csv")
+    .reset_index()
+    .rename(columns={"index": "bc_index", "inat2024_fsd50k": "scientific_name"})
+)
+
+NO_LABEL_INDEX = len(bc_labels)
+
+MANUAL_SCIENTIFIC_NAME_MAP = {
+    # Optional future synonym fixes
+}
+
+taxonomy = taxonomy.copy()
+taxonomy["scientific_name_lookup"] = taxonomy["scientific_name"].replace(MANUAL_SCIENTIFIC_NAME_MAP)
+
+bc_lookup = bc_labels.rename(columns={"scientific_name": "scientific_name_lookup"})
+
+mapping = taxonomy.merge(
+    bc_lookup[["scientific_name_lookup", "bc_index"]], on="scientific_name_lookup", how="left"
+)
+
+mapping["bc_index"] = mapping["bc_index"].fillna(NO_LABEL_INDEX).astype(int)
+
+label_to_bc_index = mapping.set_index("primary_label")["bc_index"]
+BC_INDICES = np.array([int(label_to_bc_index.loc[c]) for c in PRIMARY_LABELS], dtype=np.int32)
+
+MAPPED_MASK = BC_INDICES != NO_LABEL_INDEX
+MAPPED_POS = np.where(MAPPED_MASK)[0].astype(np.int32)
+UNMAPPED_POS = np.where(~MAPPED_MASK)[0].astype(np.int32)
+MAPPED_BC_INDICES = BC_INDICES[MAPPED_MASK].astype(np.int32)
+
+CLASS_NAME_MAP = taxonomy.set_index("primary_label")["class_name"].to_dict()
+TEXTURE_TAXA = {"Amphibia", "Insecta"}
+
+ACTIVE_CLASSES = [PRIMARY_LABELS[i] for i in np.where(Y_SC.sum(axis=0) > 0)[0]]
+
+idx_active_texture = np.array(
+    [label_to_idx[c] for c in ACTIVE_CLASSES if CLASS_NAME_MAP.get(c) in TEXTURE_TAXA],
+    dtype=np.int32,
+)
+idx_active_event = np.array(
+    [label_to_idx[c] for c in ACTIVE_CLASSES if CLASS_NAME_MAP.get(c) not in TEXTURE_TAXA],
+    dtype=np.int32,
+)
+
+idx_mapped_active_texture = idx_active_texture[MAPPED_MASK[idx_active_texture]]
+idx_mapped_active_event = idx_active_event[MAPPED_MASK[idx_active_event]]
+
+idx_unmapped_active_texture = idx_active_texture[~MAPPED_MASK[idx_active_texture]]
+idx_unmapped_active_event = idx_active_event[~MAPPED_MASK[idx_active_event]]
+
+idx_unmapped_inactive = np.array(
+    [i for i in UNMAPPED_POS if PRIMARY_LABELS[i] not in ACTIVE_CLASSES], dtype=np.int32
+)
+
+# Build automatic genus proxies for unmapped non-sonotypes
+unmapped_df = mapping[mapping["bc_index"] == NO_LABEL_INDEX].copy()
+unmapped_non_sonotype = unmapped_df[
+    ~unmapped_df["primary_label"].astype(str).str.contains("son", na=False)
+].copy()
+
+
+def get_genus_hits(scientific_name):
+    genus = str(scientific_name).split()[0]
+    hits = bc_labels[
+        bc_labels["scientific_name"].astype(str).str.match(rf"^{re.escape(genus)}\s", na=False)
+    ].copy()
+    return genus, hits
+
+
+proxy_map = {}
+for _, row in unmapped_non_sonotype.iterrows():
+    target = row["primary_label"]
+    sci = row["scientific_name"]
+    genus, hits = get_genus_hits(sci)
+    if len(hits) > 0:
+        proxy_map[target] = {
+            "target_scientific_name": sci,
+            "genus": genus,
+            "bc_indices": hits["bc_index"].astype(int).tolist(),
+            "proxy_scientific_names": hits["scientific_name"].tolist(),
+        }
+
+# Keep only amphibian proxies for now
+SELECTED_PROXY_TARGETS = sorted(
+    [t for t in proxy_map.keys() if CLASS_NAME_MAP.get(t) == "Amphibia"]
+)
+
+selected_proxy_pos = np.array([label_to_idx[c] for c in SELECTED_PROXY_TARGETS], dtype=np.int32)
+
+selected_proxy_pos_to_bc = {
+    label_to_idx[target]: np.array(proxy_map[target]["bc_indices"], dtype=np.int32)
+    for target in SELECTED_PROXY_TARGETS
+}
+
+idx_selected_proxy_active_texture = np.intersect1d(selected_proxy_pos, idx_active_texture)
+idx_selected_prioronly_active_texture = np.setdiff1d(
+    idx_unmapped_active_texture, selected_proxy_pos
+)
+idx_selected_prioronly_active_event = np.setdiff1d(idx_unmapped_active_event, selected_proxy_pos)
+
+print(f"Mapped classes: {MAPPED_MASK.sum()} / {N_CLASSES}")
+print(f"Unmapped classes: {(~MAPPED_MASK).sum()}")
+print("Selected frog proxy targets:", SELECTED_PROXY_TARGETS)
+print("Active texture classes:", len(idx_active_texture))
+print("Selected proxy active texture:", len(idx_selected_proxy_active_texture))
+print("Prior-only active texture:", len(idx_selected_prioronly_active_texture))
+print("Prior-only active event:", len(idx_selected_prioronly_active_event))
+
+
+# Cell 4 — Metrics and helper utilities
+def macro_auc_skip_empty(y_true, y_score):
+    keep = y_true.sum(axis=0) > 0
+    return roc_auc_score(y_true[:, keep], y_score[:, keep], average="macro")
+
+
+def smooth_cols_fixed12(scores, cols, alpha=0.35):
+    if alpha <= 0 or len(cols) == 0:
+        return scores.copy()
+
+    s = scores.copy()
+    assert len(s) % N_WINDOWS == 0, "Expected full-file blocks of 12 windows"
+    view = s.reshape(-1, N_WINDOWS, s.shape[1])
+
+    x = view[:, :, cols]
+    prev_x = np.concatenate([x[:, :1, :], x[:, :-1, :]], axis=1)
+    next_x = np.concatenate([x[:, 1:, :], x[:, -1:, :]], axis=1)
+
+    view[:, :, cols] = (1.0 - alpha) * x + 0.5 * alpha * (prev_x + next_x)
+    return s
+
+
+def seq_features_1d(v):
+    """
+    v: shape (n_rows,), ordered as full-file blocks of 12 windows
+    """
+    assert len(v) % N_WINDOWS == 0, "Expected full-file blocks of 12 windows"
+    x = v.reshape(-1, N_WINDOWS)
+
+    prev_v = np.concatenate([x[:, :1], x[:, :-1]], axis=1).reshape(-1)
+    next_v = np.concatenate([x[:, 1:], x[:, -1:]], axis=1).reshape(-1)
+    mean_v = np.repeat(x.mean(axis=1), N_WINDOWS)
+    max_v = np.repeat(x.max(axis=1), N_WINDOWS)
+
+    return prev_v, next_v, mean_v, max_v
+
+
+# Cell 5 — Perch inference with embeddings + selective proxies
+def read_soundscape_60s(path):
+    y, sr = sf.read(path, dtype="float32", always_2d=False)
+    if y.ndim == 2:
+        y = y.mean(axis=1)
+    if sr != SR:
+        raise ValueError(f"Unexpected sample rate {sr} in {path}; expected {SR}")
+    if len(y) < FILE_SAMPLES:
+        y = np.pad(y, (0, FILE_SAMPLES - len(y)))
+    elif len(y) > FILE_SAMPLES:
+        y = y[:FILE_SAMPLES]
+    return y
+
+
+def infer_perch_with_embeddings(paths, batch_files=16, verbose=True, proxy_reduce="max"):
+    paths = [Path(p) for p in paths]
+    n_files = len(paths)
+    n_rows = n_files * N_WINDOWS
+
+    row_ids = np.empty(n_rows, dtype=object)
+    filenames = np.empty(n_rows, dtype=object)
+    sites = np.empty(n_rows, dtype=object)
+    hours = np.empty(n_rows, dtype=np.int16)
+
+    scores = np.zeros((n_rows, N_CLASSES), dtype=np.float32)
+    embeddings = np.zeros((n_rows, 1536), dtype=np.float32)
+
+    write_row = 0
+    iterator = range(0, n_files, batch_files)
+    if verbose:
+        iterator = tqdm(
+            iterator, total=(n_files + batch_files - 1) // batch_files, desc="Perch batches"
+        )
+
+    for start in iterator:
+        batch_paths = paths[start : start + batch_files]
+        batch_n = len(batch_paths)
+
+        x = np.empty((batch_n * N_WINDOWS, WINDOW_SAMPLES), dtype=np.float32)
+        batch_row_start = write_row
+        x_pos = 0
+
+        for path in batch_paths:
+            y = read_soundscape_60s(path)
+            x[x_pos : x_pos + N_WINDOWS] = y.reshape(N_WINDOWS, WINDOW_SAMPLES)
+
+            meta = parse_soundscape_filename(path.name)
+            stem = path.stem
+
+            row_ids[write_row : write_row + N_WINDOWS] = [f"{stem}_{t}" for t in range(5, 65, 5)]
+            filenames[write_row : write_row + N_WINDOWS] = path.name
+            sites[write_row : write_row + N_WINDOWS] = meta["site"]
+            hours[write_row : write_row + N_WINDOWS] = int(meta["hour_utc"])
+
+            x_pos += N_WINDOWS
+            write_row += N_WINDOWS
+
+        outputs = infer_fn(inputs=tf.convert_to_tensor(x))
+        logits = outputs["label"].numpy().astype(np.float32, copy=False)
+        emb = outputs["embedding"].numpy().astype(np.float32, copy=False)
+
+        scores[batch_row_start:write_row, MAPPED_POS] = logits[:, MAPPED_BC_INDICES]
+        embeddings[batch_row_start:write_row] = emb
+
+        # Selected frog proxies
+        for pos, bc_idx_arr in selected_proxy_pos_to_bc.items():
+            sub = logits[:, bc_idx_arr]
+            if proxy_reduce == "max":
+                proxy_score = sub.max(axis=1)
+            elif proxy_reduce == "mean":
+                proxy_score = sub.mean(axis=1)
+            else:
+                raise ValueError("proxy_reduce must be 'max' or 'mean'")
+            scores[batch_row_start:write_row, pos] = proxy_score.astype(np.float32)
+
+        del x, outputs, logits, emb
+        gc.collect()
+
+    meta_df = pd.DataFrame(
+        {
+            "row_id": row_ids,
+            "filename": filenames,
+            "site": sites,
+            "hour_utc": hours,
+        }
+    )
+
+    return meta_df, scores, embeddings
+
+
+# Cell 6 — Load or compute full-file Perch cache
+def resolve_full_cache_paths():
+    candidates = []
+
+    # Working dir cache
+    candidates.append(
+        (
+            CFG["full_cache_work_dir"] / "full_perch_meta.parquet",
+            CFG["full_cache_work_dir"] / "full_perch_arrays.npz",
+        )
+    )
+
+    # Legacy working paths
+    candidates.append(
+        (
+            Path("/kaggle/working/full_perch_meta.parquet"),
+            Path("/kaggle/working/full_perch_arrays.npz"),
+        )
+    )
+
+    # Attached input dataset
+    if CFG["full_cache_input_dir"].exists():
+        candidates.append(
+            (
+                CFG["full_cache_input_dir"] / "full_perch_meta.parquet",
+                CFG["full_cache_input_dir"] / "full_perch_arrays.npz",
+            )
+        )
+
+    for meta_path, npz_path in candidates:
+        if meta_path.exists() and npz_path.exists():
+            return meta_path, npz_path
+
+    return None, None
+
+
+cache_meta, cache_npz = resolve_full_cache_paths()
+
+if cache_meta is not None and cache_npz is not None:
+    print("Loading cached full-file Perch outputs from:")
+    print("  ", cache_meta)
+    print("  ", cache_npz)
+
+    meta_full = pd.read_parquet(cache_meta)
+    arr = np.load(cache_npz)
+    scores_full_raw = arr["scores_full_raw"].astype(np.float32)
+    emb_full = arr["emb_full"].astype(np.float32)
+
+else:
+    if CFG["mode"] == "submit" and CFG["require_full_cache_in_submit"]:
+        raise FileNotFoundError(
+            "Submit mode requires cached full-file Perch outputs. "
+            "Attach the cache dataset or place full_perch_meta.parquet/full_perch_arrays.npz in working dir."
+        )
+
+    print("No cache found. Running Perch on trusted full files...")
+    full_paths = [BASE / "train_soundscapes" / fn for fn in full_files]
+
+    meta_full, scores_full_raw, emb_full = infer_perch_with_embeddings(
+        full_paths, batch_files=CFG["batch_files"], verbose=CFG["verbose"], proxy_reduce="max"
+    )
+
+    out_meta = CFG["full_cache_work_dir"] / "full_perch_meta.parquet"
+    out_npz = CFG["full_cache_work_dir"] / "full_perch_arrays.npz"
+
+    meta_full.to_parquet(out_meta, index=False)
+    np.savez_compressed(
+        out_npz,
+        scores_full_raw=scores_full_raw,
+        emb_full=emb_full,
+    )
+
+    print("Saved cache to:")
+    print("  ", out_meta)
+    print("  ", out_npz)
+
+# Align truth to cached order
+full_truth_aligned = full_truth.set_index("row_id").loc[meta_full["row_id"]].reset_index()
+Y_FULL = Y_SC[full_truth_aligned["index"].to_numpy()]
+
+assert np.all(full_truth_aligned["filename"].values == meta_full["filename"].values)
+assert np.all(full_truth_aligned["row_id"].values == meta_full["row_id"].values)
+
+print("meta_full:", meta_full.shape)
+print("scores_full_raw:", scores_full_raw.shape, scores_full_raw.dtype)
+print("emb_full:", emb_full.shape, emb_full.dtype)
+print("Y_FULL:", Y_FULL.shape, Y_FULL.dtype)
+
+
+# Cell 7 — Fold-safe metadata prior tables
+def fit_prior_tables(prior_df, Y_prior):
+    prior_df = prior_df.reset_index(drop=True)
+
+    global_p = Y_prior.mean(axis=0).astype(np.float32)
+
+    # Site
+    site_keys = sorted(prior_df["site"].dropna().astype(str).unique().tolist())
+    site_to_i = {k: i for i, k in enumerate(site_keys)}
+    site_n = np.zeros(len(site_keys), dtype=np.float32)
+    site_p = np.zeros((len(site_keys), Y_prior.shape[1]), dtype=np.float32)
+
+    for s in site_keys:
+        i = site_to_i[s]
+        mask = prior_df["site"].astype(str).values == s
+        site_n[i] = mask.sum()
+        site_p[i] = Y_prior[mask].mean(axis=0)
+
+    # Hour
+    hour_keys = sorted(prior_df["hour_utc"].dropna().astype(int).unique().tolist())
+    hour_to_i = {h: i for i, h in enumerate(hour_keys)}
+    hour_n = np.zeros(len(hour_keys), dtype=np.float32)
+    hour_p = np.zeros((len(hour_keys), Y_prior.shape[1]), dtype=np.float32)
+
+    for h in hour_keys:
+        i = hour_to_i[h]
+        mask = prior_df["hour_utc"].astype(int).values == h
+        hour_n[i] = mask.sum()
+        hour_p[i] = Y_prior[mask].mean(axis=0)
+
+    # Site-hour
+    sh_to_i = {}
+    sh_n_list = []
+    sh_p_list = []
+
+    for (s, h), idx in prior_df.groupby(["site", "hour_utc"]).groups.items():
+        sh_to_i[(str(s), int(h))] = len(sh_n_list)
+        idx = np.array(list(idx))
+        sh_n_list.append(len(idx))
+        sh_p_list.append(Y_prior[idx].mean(axis=0))
+
+    sh_n = np.array(sh_n_list, dtype=np.float32)
+    sh_p = (
+        np.stack(sh_p_list).astype(np.float32)
+        if len(sh_p_list)
+        else np.zeros((0, Y_prior.shape[1]), dtype=np.float32)
+    )
+
+    return {
+        "global_p": global_p,
+        "site_to_i": site_to_i,
+        "site_n": site_n,
+        "site_p": site_p,
+        "hour_to_i": hour_to_i,
+        "hour_n": hour_n,
+        "hour_p": hour_p,
+        "sh_to_i": sh_to_i,
+        "sh_n": sh_n,
+        "sh_p": sh_p,
+    }
+
+
+def prior_logits_from_tables(sites, hours, tables, eps=1e-4):
+    n = len(sites)
+    p = np.repeat(tables["global_p"][None, :], n, axis=0).astype(np.float32, copy=True)
+
+    site_idx = np.fromiter(
+        (tables["site_to_i"].get(str(s), -1) for s in sites), dtype=np.int32, count=n
+    )
+    hour_idx = np.fromiter(
+        (tables["hour_to_i"].get(int(h), -1) if int(h) >= 0 else -1 for h in hours),
+        dtype=np.int32,
+        count=n,
+    )
+    sh_idx = np.fromiter(
+        (
+            tables["sh_to_i"].get((str(s), int(h)), -1) if int(h) >= 0 else -1
+            for s, h in zip(sites, hours)
+        ),
+        dtype=np.int32,
+        count=n,
+    )
+
+    valid = hour_idx >= 0
+    if valid.any():
+        nh = tables["hour_n"][hour_idx[valid]][:, None]
+        wh = nh / (nh + 8.0)
+        p[valid] = wh * tables["hour_p"][hour_idx[valid]] + (1.0 - wh) * p[valid]
+
+    valid = site_idx >= 0
+    if valid.any():
+        ns = tables["site_n"][site_idx[valid]][:, None]
+        ws = ns / (ns + 8.0)
+        p[valid] = ws * tables["site_p"][site_idx[valid]] + (1.0 - ws) * p[valid]
+
+    valid = sh_idx >= 0
+    if valid.any():
+        nsh = tables["sh_n"][sh_idx[valid]][:, None]
+        wsh = nsh / (nsh + 4.0)
+        p[valid] = wsh * tables["sh_p"][sh_idx[valid]] + (1.0 - wsh) * p[valid]
+
+    np.clip(p, eps, 1.0 - eps, out=p)
+    return (np.log(p) - np.log1p(-p)).astype(np.float32, copy=False)
+
+
+def fuse_scores_with_tables(
+    base_scores,
+    sites,
+    hours,
+    tables,
+    lambda_event=BEST["lambda_event"],
+    lambda_texture=BEST["lambda_texture"],
+    lambda_proxy_texture=BEST["lambda_proxy_texture"],
+    smooth_texture=BEST["smooth_texture"],
+):
+    scores = base_scores.copy()
+    prior = prior_logits_from_tables(sites, hours, tables)
+
+    # mapped active
+    if len(idx_mapped_active_event):
+        scores[:, idx_mapped_active_event] += lambda_event * prior[:, idx_mapped_active_event]
+
+    if len(idx_mapped_active_texture):
+        scores[:, idx_mapped_active_texture] += lambda_texture * prior[:, idx_mapped_active_texture]
+
+    # selected frog proxies
+    if len(idx_selected_proxy_active_texture):
+        scores[:, idx_selected_proxy_active_texture] += (
+            lambda_proxy_texture * prior[:, idx_selected_proxy_active_texture]
+        )
+
+    # prior-only active unmapped
+    if len(idx_selected_prioronly_active_event):
+        scores[:, idx_selected_prioronly_active_event] = (
+            lambda_event * prior[:, idx_selected_prioronly_active_event]
+        )
+
+    if len(idx_selected_prioronly_active_texture):
+        scores[:, idx_selected_prioronly_active_texture] = (
+            lambda_texture * prior[:, idx_selected_prioronly_active_texture]
+        )
+
+    # inactive unmapped
+    if len(idx_unmapped_inactive):
+        scores[:, idx_unmapped_inactive] = -8.0
+
+    scores = smooth_cols_fixed12(scores, idx_active_texture, alpha=smooth_texture)
+    return scores.astype(np.float32, copy=False), prior
+
+
+# Cell 8 — Honest OOF base/prior meta-features (required for final stacker fit)
+def build_oof_base_prior(scores_full_raw, meta_full, sc_clean, Y_SC, n_splits=5, verbose=True):
+    groups_full = meta_full["filename"].to_numpy()
+    gkf = GroupKFold(n_splits=n_splits)
+
+    oof_base = np.zeros_like(scores_full_raw, dtype=np.float32)
+    oof_prior = np.zeros_like(scores_full_raw, dtype=np.float32)
+    fold_id = np.full(len(meta_full), -1, dtype=np.int16)
+
+    splits = list(gkf.split(scores_full_raw, groups=groups_full))
+    iterator = tqdm(splits, desc="OOF base/prior folds", disable=not verbose)
+
+    for fold, (tr_idx, va_idx) in enumerate(iterator, 1):
+        tr_idx = np.sort(tr_idx)
+        va_idx = np.sort(va_idx)
+
+        val_files = set(meta_full.iloc[va_idx]["filename"].tolist())
+
+        # Fold-safe prior tables: exclude all validation files
+        prior_mask = ~sc_clean["filename"].isin(val_files).values
+        prior_df_fold = sc_clean.loc[prior_mask].reset_index(drop=True)
+        Y_prior_fold = Y_SC[prior_mask]
+
+        tables = fit_prior_tables(prior_df_fold, Y_prior_fold)
+
+        va_base, va_prior = fuse_scores_with_tables(
+            scores_full_raw[va_idx],
+            sites=meta_full.iloc[va_idx]["site"].to_numpy(),
+            hours=meta_full.iloc[va_idx]["hour_utc"].to_numpy(),
+            tables=tables,
+        )
+
+        oof_base[va_idx] = va_base
+        oof_prior[va_idx] = va_prior
+        fold_id[va_idx] = fold
+
+    assert (fold_id >= 0).all()
+    return oof_base, oof_prior, fold_id
+
+
+OOF_META_CACHE = CFG["full_cache_work_dir"] / "full_oof_meta_features.npz"
+
+if OOF_META_CACHE.exists():
+    print("Loading cached OOF meta-features from:", OOF_META_CACHE)
+    arr = np.load(OOF_META_CACHE)
+    oof_base = arr["oof_base"].astype(np.float32)
+    oof_prior = arr["oof_prior"].astype(np.float32)
+    oof_fold_id = arr["fold_id"].astype(np.int16)
+else:
+    print("Building OOF meta-features...")
+    oof_base, oof_prior, oof_fold_id = build_oof_base_prior(
+        scores_full_raw=scores_full_raw,
+        meta_full=meta_full,
+        sc_clean=sc_clean,
+        Y_SC=Y_SC,
+        n_splits=5,
+        verbose=CFG["verbose"],
+    )
+
+    np.savez_compressed(
+        OOF_META_CACHE,
+        oof_base=oof_base,
+        oof_prior=oof_prior,
+        fold_id=oof_fold_id,
+    )
+    print("Saved OOF meta-features to:", OOF_META_CACHE)
+
+baseline_oof_auc = macro_auc_skip_empty(Y_FULL, oof_base)
+
+if MODE == "train":
+    raw_local_auc = macro_auc_skip_empty(Y_FULL, scores_full_raw)
+    print(f"Raw local AUC (not OOF-dependent): {raw_local_auc:.6f}")
+    print(f"Honest OOF baseline AUC: {baseline_oof_auc:.6f}")
+
+
+# Cell 9 — Classwise embedding-probe helpers
+def build_class_features(emb_proj, raw_col, prior_col, base_col):
+    """
+    emb_proj: (n, d)
+    raw_col, prior_col, base_col: (n,)
+    returns: (n, d + 7)
+    """
+    prev_base, next_base, mean_base, max_base = seq_features_1d(base_col)
+
+    feats = np.concatenate(
+        [
+            emb_proj,
+            raw_col[:, None],
+            prior_col[:, None],
+            base_col[:, None],
+            prev_base[:, None],
+            next_base[:, None],
+            mean_base[:, None],
+            max_base[:, None],
+        ],
+        axis=1,
+    )
+
+    return feats.astype(np.float32, copy=False)
+
+
+def run_oof_embedding_probe(
+    scores_raw,
+    emb,
+    meta_df,
+    y_true,
+    pca_dim=64,
+    min_pos=8,
+    C=0.25,
+    alpha=0.5,
+):
+    groups = meta_df["filename"].to_numpy()
+    gkf = GroupKFold(n_splits=5)
+
+    oof_base_local = np.zeros_like(scores_raw, dtype=np.float32)
+    oof_final = np.zeros_like(scores_raw, dtype=np.float32)
+
+    modeled_counts = np.zeros(scores_raw.shape[1], dtype=np.int32)
+
+    split_list = list(gkf.split(scores_raw, groups=groups))
+
+    for fold, (tr_idx, va_idx) in enumerate(
+        tqdm(split_list, desc="Embedding-probe folds", disable=not CFG["verbose"]), 1
+    ):
+        # for fold, (tr_idx, va_idx) in enumerate(tqdm(split_list, desc="Embedding-probe folds"), 1):
+        tr_idx = np.sort(tr_idx)
+        va_idx = np.sort(va_idx)
+
+        val_files = set(meta_df.iloc[va_idx]["filename"].tolist())
+
+        # Fold-safe priors
+        prior_mask = ~sc_clean["filename"].isin(val_files).values
+        prior_df_fold = sc_clean.loc[prior_mask].reset_index(drop=True)
+        Y_prior_fold = Y_SC[prior_mask]
+        tables = fit_prior_tables(prior_df_fold, Y_prior_fold)
+
+        base_tr, prior_tr = fuse_scores_with_tables(
+            scores_raw[tr_idx],
+            sites=meta_df.iloc[tr_idx]["site"].to_numpy(),
+            hours=meta_df.iloc[tr_idx]["hour_utc"].to_numpy(),
+            tables=tables,
+        )
+        base_va, prior_va = fuse_scores_with_tables(
+            scores_raw[va_idx],
+            sites=meta_df.iloc[va_idx]["site"].to_numpy(),
+            hours=meta_df.iloc[va_idx]["hour_utc"].to_numpy(),
+            tables=tables,
+        )
+
+        oof_base_local[va_idx] = base_va
+        oof_final[va_idx] = base_va
+
+        # Embedding preprocessing on train fold only
+        scaler = StandardScaler()
+        emb_tr_s = scaler.fit_transform(emb[tr_idx])
+        emb_va_s = scaler.transform(emb[va_idx])
+
+        n_comp = min(pca_dim, emb_tr_s.shape[0] - 1, emb_tr_s.shape[1])
+        pca = PCA(n_components=n_comp)
+        Z_tr = pca.fit_transform(emb_tr_s).astype(np.float32)
+        Z_va = pca.transform(emb_va_s).astype(np.float32)
+
+        class_iterator = np.where(y_true[tr_idx].sum(axis=0) >= min_pos)[0].tolist()
+
+        for cls_idx in tqdm(
+            class_iterator, desc=f"Fold {fold} classes", leave=False, disable=not CFG["verbose"]
+        ):
+            # for cls_idx in tqdm(class_iterator, desc=f"Fold {fold} classes", leave=False):
+            y_tr = y_true[tr_idx, cls_idx]
+
+            if y_tr.sum() == 0 or y_tr.sum() == len(y_tr):
+                continue
+
+            X_tr_cls = build_class_features(
+                Z_tr,
+                raw_col=scores_raw[tr_idx, cls_idx],
+                prior_col=prior_tr[:, cls_idx],
+                base_col=base_tr[:, cls_idx],
+            )
+            X_va_cls = build_class_features(
+                Z_va,
+                raw_col=scores_raw[va_idx, cls_idx],
+                prior_col=prior_va[:, cls_idx],
+                base_col=base_va[:, cls_idx],
+            )
+
+            clf = LogisticRegression(
+                C=C,
+                max_iter=400,
+                solver="liblinear",
+                class_weight="balanced",
+            )
+            clf.fit(X_tr_cls, y_tr)
+
+            pred_va = clf.decision_function(X_va_cls).astype(np.float32)
+
+            oof_final[va_idx, cls_idx] = (1.0 - alpha) * base_va[:, cls_idx] + alpha * pred_va
+
+            modeled_counts[cls_idx] += 1
+
+    score_base = macro_auc_skip_empty(y_true, oof_base_local)
+    score_final = macro_auc_skip_empty(y_true, oof_final)
+
+    return {
+        "oof_base": oof_base_local,
+        "oof_final": oof_final,
+        "modeled_counts": modeled_counts,
+        "score_base": score_base,
+        "score_final": score_final,
+    }
+
+
+# Cell 10 — Probe tuning (train mode only)
+grid_results = None
+BEST_PROBE = None
+
+if CFG["run_probe_check"]:
+    probe_result = run_oof_embedding_probe(
+        scores_raw=scores_full_raw,
+        emb=emb_full,
+        meta_df=meta_full,
+        y_true=Y_FULL,
+        pca_dim=64,
+        min_pos=8,
+        C=0.25,
+        alpha=0.5,
+    )
+
+    print(f"Honest OOF baseline AUC: {probe_result['score_base']:.6f}")
+    print(f"Honest OOF embedding-probe AUC: {probe_result['score_final']:.6f}")
+    print(f"Delta: {probe_result['score_final'] - probe_result['score_base']:.6f}")
+
+    modeled_classes = np.where(probe_result["modeled_counts"] > 0)[0]
+    print("Modeled classes:", len(modeled_classes))
+    print([PRIMARY_LABELS[i] for i in modeled_classes[:20]])
+
+if CFG["run_probe_grid"]:
+    param_grid = [
+        {"pca_dim": 32, "min_pos": 8, "C": 0.25, "alpha": 0.4},
+        {"pca_dim": 64, "min_pos": 8, "C": 0.25, "alpha": 0.4},
+        {"pca_dim": 64, "min_pos": 8, "C": 0.25, "alpha": 0.5},
+        {"pca_dim": 64, "min_pos": 12, "C": 0.25, "alpha": 0.4},
+        {"pca_dim": 96, "min_pos": 8, "C": 0.25, "alpha": 0.4},
+        {"pca_dim": 64, "min_pos": 8, "C": 0.50, "alpha": 0.4},
+    ]
+
+    results = []
+    for params in tqdm(param_grid, desc="Probe grid", disable=not CFG["verbose"]):
+        out = run_oof_embedding_probe(
+            scores_raw=scores_full_raw,
+            emb=emb_full,
+            meta_df=meta_full,
+            y_true=Y_FULL,
+            pca_dim=params["pca_dim"],
+            min_pos=params["min_pos"],
+            C=params["C"],
+            alpha=params["alpha"],
+        )
+        results.append(
+            {
+                **params,
+                "baseline_oof_auc": out["score_base"],
+                "probe_oof_auc": out["score_final"],
+                "delta": out["score_final"] - out["score_base"],
+                "n_modeled_classes": int((out["modeled_counts"] > 0).sum()),
+            }
+        )
+
+    grid_results = (
+        pd.DataFrame(results).sort_values("probe_oof_auc", ascending=False).reset_index(drop=True)
+    )
+    display(grid_results)
+
+    BEST_PROBE = {
+        "pca_dim": int(grid_results.iloc[0]["pca_dim"]),
+        "min_pos": int(grid_results.iloc[0]["min_pos"]),
+        "C": float(grid_results.iloc[0]["C"]),
+        "alpha": float(grid_results.iloc[0]["alpha"]),
+    }
+
+    # Save best params for future freezing
+    best_probe_path = CFG["full_cache_work_dir"] / "best_probe_params.json"
+    best_probe_path.write_text(json.dumps(BEST_PROBE, indent=2))
+    print("Saved best probe params to:", best_probe_path)
+
+else:
+    BEST_PROBE = CFG["frozen_best_probe"]
+    print("Using frozen BEST_PROBE in submit mode:")
+    print(BEST_PROBE)
+
+if grid_results is not None:
+    grid_results.to_csv(CFG["full_cache_work_dir"] / "probe_grid_results.csv", index=False)
+# Cell 11 — Freeze final probe params
+if BEST_PROBE is None:
+    BEST_PROBE = CFG["frozen_best_probe"]
+
+print("Final BEST_PROBE =", BEST_PROBE)
+
+# Optional — rerun best OOF probe once for diagnostics / caching
+BEST_OOF_RESULT = None
+
+if MODE == "train":
+    BEST_OOF_RESULT = run_oof_embedding_probe(
+        scores_raw=scores_full_raw,
+        emb=emb_full,
+        meta_df=meta_full,
+        y_true=Y_FULL,
+        pca_dim=int(BEST_PROBE["pca_dim"]),
+        min_pos=int(BEST_PROBE["min_pos"]),
+        C=float(BEST_PROBE["C"]),
+        alpha=float(BEST_PROBE["alpha"]),
+    )
+
+    print(f"Honest OOF baseline AUC (BEST_PROBE rerun): {BEST_OOF_RESULT['score_base']:.6f}")
+    print(f"Honest OOF probe AUC   (BEST_PROBE rerun): {BEST_OOF_RESULT['score_final']:.6f}")
+# Cell 12 — Fit final prior tables on all labeled soundscapes
+final_prior_tables = fit_prior_tables(sc_clean.reset_index(drop=True), Y_SC)
+
+print("Built final prior tables for inference.")
+print("OOF baseline AUC used for stacker training:", baseline_oof_auc)
+# Cell 13 — Fit embedding scaler + PCA on all trusted full windows
+emb_scaler = StandardScaler()
+emb_full_scaled = emb_scaler.fit_transform(emb_full)
+
+n_comp = min(int(BEST_PROBE["pca_dim"]), emb_full_scaled.shape[0] - 1, emb_full_scaled.shape[1])
+
+emb_pca = PCA(n_components=n_comp)
+Z_FULL = emb_pca.fit_transform(emb_full_scaled).astype(np.float32)
+
+print("emb_full:", emb_full.shape)
+print("Z_FULL:", Z_FULL.shape)
+print("Explained variance ratio sum:", emb_pca.explained_variance_ratio_.sum())
+# Cell 14 — Train final classwise probes on OOF meta-features (proper stacking)
+full_pos_counts = Y_FULL.sum(axis=0)
+PROBE_CLASS_IDX = np.where(full_pos_counts >= int(BEST_PROBE["min_pos"]))[0].astype(np.int32)
+PROBE_CLASS_LABELS = [PRIMARY_LABELS[i] for i in PROBE_CLASS_IDX]
+
+probe_models = {}
+
+for cls_idx in tqdm(
+    PROBE_CLASS_IDX, desc="Training final classwise probes", disable=not CFG["verbose"]
+):
+    y = Y_FULL[:, cls_idx]
+
+    if y.sum() == 0 or y.sum() == len(y):
+        continue
+
+    X_cls = build_class_features(
+        Z_FULL,
+        raw_col=scores_full_raw[:, cls_idx],  # safe: frozen external model output
+        prior_col=oof_prior[:, cls_idx],  # honest OOF meta-feature
+        base_col=oof_base[:, cls_idx],  # honest OOF meta-feature
+    )
+
+    clf = LogisticRegression(
+        C=float(BEST_PROBE["C"]),
+        max_iter=400,
+        solver="liblinear",
+        class_weight="balanced",
+    )
+    clf.fit(X_cls, y)
+    probe_models[cls_idx] = clf
+
+print("Trained final probe models:", len(probe_models))
+print("Example probe classes:", [PRIMARY_LABELS[i] for i in list(probe_models.keys())[:20]])
+# Cell 15 — Diagnostics
+if MODE == "train":
+    if grid_results is not None:
+        best_row = grid_results.iloc[0]
+        print(f"Best honest OOF probe AUC: {best_row['probe_oof_auc']:.6f}")
+        print(f"Delta over honest OOF baseline: {best_row['delta']:.6f}")
+else:
+    print("Skipping train diagnostics in submit mode.")
+# Cell 16 — Infer Perch on hidden test with embeddings
+test_paths = sorted((BASE / "test_soundscapes").glob("*.ogg"))
+
+if len(test_paths) == 0:
+    print(f"Hidden test not mounted. Dry-run on first {CFG['dryrun_n_files']} train soundscapes.")
+    test_paths = sorted((BASE / "train_soundscapes").glob("*.ogg"))[: CFG["dryrun_n_files"]]
+else:
+    print(f"Hidden test files: {len(test_paths)}")
+
+meta_test, scores_test_raw, emb_test = infer_perch_with_embeddings(
+    test_paths,
+    batch_files=CFG["batch_files"],
+    verbose=CFG["verbose"],
+    proxy_reduce="max",
+)
+
+print("meta_test:", meta_test.shape)
+print("scores_test_raw:", scores_test_raw.shape)
+print("emb_test:", emb_test.shape)
+# Cell 17 — Build final test scores
+test_base_scores, test_prior_scores = fuse_scores_with_tables(
+    scores_test_raw,
+    sites=meta_test["site"].to_numpy(),
+    hours=meta_test["hour_utc"].to_numpy(),
+    tables=final_prior_tables,
+)
+
+emb_test_scaled = emb_scaler.transform(emb_test)
+Z_TEST = emb_pca.transform(emb_test_scaled).astype(np.float32)
+
+final_test_scores = test_base_scores.copy()
+
+for cls_idx, clf in tqdm(
+    probe_models.items(), desc="Applying classwise probes to test", disable=not CFG["verbose"]
+):
+    X_cls_test = build_class_features(
+        Z_TEST,
+        raw_col=scores_test_raw[:, cls_idx],
+        prior_col=test_prior_scores[:, cls_idx],
+        base_col=test_base_scores[:, cls_idx],
+    )
+
+    pred = clf.decision_function(X_cls_test).astype(np.float32)
+
+    final_test_scores[:, cls_idx] = (1.0 - float(BEST_PROBE["alpha"])) * test_base_scores[
+        :, cls_idx
+    ] + float(BEST_PROBE["alpha"]) * pred
+
+print("final_test_scores:", final_test_scores.shape)
+print("Score range:", float(final_test_scores.min()), "to", float(final_test_scores.max()))
+
+
+# Cell 18 — Build submission
+def sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+submission = pd.DataFrame(sigmoid(final_test_scores), columns=PRIMARY_LABELS)
+submission.insert(0, "row_id", meta_test["row_id"].values)
+submission[PRIMARY_LABELS] = submission[PRIMARY_LABELS].astype(np.float32)
+
+expected_rows = len(test_paths) * N_WINDOWS
+assert len(submission) == expected_rows, f"Expected {expected_rows}, got {len(submission)}"
+assert submission.columns.tolist() == ["row_id"] + PRIMARY_LABELS
+assert not submission.isna().any().any()
+
+submission.to_csv("submission.csv", index=False)
+
+print("Saved submission.csv")
+print("Submission shape:", submission.shape)
+print(submission.iloc[:3, :8])
+# Cell 19 — Diagnostics
+if MODE == "train":
+    modeled_labels = [PRIMARY_LABELS[i] for i in sorted(probe_models.keys())]
+
+    print("Modeled class count:", len(modeled_labels))
+    print("First modeled labels:", modeled_labels[:25])
+
+    print("\nSubmission probability stats:")
+    print(submission.iloc[:, 1:].stack().describe())
+
+    print("\nAny NaNs:", submission.isna().any().any())
+    print("Any probs < 0:", bool((submission.iloc[:, 1:] < 0).any().any()))
+    print("Any probs > 1:", bool((submission.iloc[:, 1:] > 1).any().any()))
+else:
+    print("Submit mode completed.")
