@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=exp017-mel
+#SBATCH --job-name=exp019-sed
 #SBATCH --account=paceship-clef2026_birdclef
 # --partition is set by run.sh (default: gpu-rtx6000,gpu-v100; override with --gpu)
 #SBATCH --gres=gpu:1
@@ -10,12 +10,12 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=mgustineli3@gatech.edu
 #
-# Experiment 017: Mel Spectrogram Overhaul
+# Experiment 019: Perch-Guided SED Training
 #
 # Usage:
-#   cd user/murilo/experiments/017-mel-overhaul
-#   bash sbatch/run.sh config/efficientnet_b0_sed_v4a.yaml
-#   bash sbatch/run.sh config/efficientnet_b0_sed_v4a.yaml --fast-dev-run
+#   cd user/murilo/experiments/019-perch-guided-sed
+#   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml
+#   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml --fast-dev-run
 
 set -eu
 
@@ -36,7 +36,7 @@ USER_DIR="$(dirname "$(dirname "$EXPERIMENT_DIR")")"
 REPO_DIR="$(dirname "$(dirname "$USER_DIR")")"
 
 echo "=============================================="
-echo "Job: Experiment 017 - Mel Overhaul"
+echo "Job: Experiment 019 - Perch-Guided SED"
 echo "=============================================="
 echo "Job ID: ${SLURM_JOB_ID:-local}"
 echo "Node: $(hostname)"

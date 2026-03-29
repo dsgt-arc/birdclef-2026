@@ -1,7 +1,7 @@
 [project]
-name = "mel-overhaul"
+name = "perch-guided-sed"
 version = "0.1.0"
-description = "Exp 017: Mel spectrogram overhaul — n_fft=4096, 224 mels, strong baseline"
+description = "Exp 019: Perch-guided SED training — HGNet/EfficientNet ablations + pseudo-labels"
 authors = [
     {name = "Murilo Gustineli", email = "mgustineli3@gatech.edu"}
 ]

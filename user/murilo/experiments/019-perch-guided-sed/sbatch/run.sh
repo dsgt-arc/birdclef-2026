@@ -1,15 +1,14 @@
 #!/bin/bash
-# Launcher script for Experiment 017 mel overhaul jobs.
+# Launcher script for Experiment 019 Perch-guided SED jobs.
 #
 # Usage:
-#   cd user/murilo/experiments/017-mel-overhaul
+#   cd user/murilo/experiments/019-perch-guided-sed
 #
-#   bash sbatch/run.sh config/efficientnet_b0_sed_v4b.yaml
-#   bash sbatch/run.sh config/efficientnet_b0_sed_v4b.yaml --gpu a100
-#   bash sbatch/run.sh config/efficientnet_b0_sed_v4b.yaml --gpu a100,h200
-#   bash sbatch/run.sh config/efficientnet_b0_sed_v4b.yaml --fast-dev-run
-#   bash sbatch/run.sh config/efficientnet_b0_sed_v4b.yaml --gpu-check
-#   bash sbatch/run.sh config/efficientnet_b0_sed_v4b.yaml --dry-run
+#   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml
+#   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml --gpu a100
+#   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml --fast-dev-run
+#   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml --gpu-check
+#   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml --dry-run
 
 set -eu
 
@@ -120,7 +119,7 @@ EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 RUN_NAME="$(basename "$CONFIG" .yaml)"
 
 echo "=============================================="
-echo "Experiment 017: Mel Overhaul"
+echo "Experiment 019: Perch-Guided SED"
 echo "=============================================="
 echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
@@ -146,7 +145,7 @@ CMD="sbatch \
     --partition=${PARTITION} \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
     --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK},NUM_WORKERS=${NUM_WORKERS} \
-    --job-name=exp017-${RUN_NAME} \
+    --job-name=exp019-${RUN_NAME} \
     ${CPUS_OVERRIDE} \
     ${JOB_SCRIPT}"
 

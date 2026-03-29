@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Training script for Experiment 017: Mel Spectrogram Overhaul.
+"""Training script for SED experiments (shared by exp 017 and 019).
 
-Tests the mel resolution hypothesis: n_fft=4096 + 224 mels (vs v1's 1024/128)
-while keeping all other training parameters identical to exp 016 v1.
+Supports EfficientNet-B0, HGNetV2-B0, and other timm backbones with
+AttHead, AttBlockV2, or LSEHead. Configurable via YAML configs.
 
 Usage:
-    python train.py --config config/efficientnet_b0_sed_v4a.yaml
-    python train.py --config config/efficientnet_b0_sed_v4a.yaml --fast-dev-run
-    python train.py --config config/efficientnet_b0_sed_v4a.yaml --gpu-check
+    python train.py --config config/effnet_b0_sed_v5a.yaml
+    python train.py --config config/effnet_b0_sed_v5a.yaml --fast-dev-run
+    python train.py --config config/effnet_b0_sed_v5a.yaml --gpu-check
 """
 
 import argparse

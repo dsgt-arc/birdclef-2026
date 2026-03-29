@@ -5,7 +5,7 @@ Reads the raw test results from train.py and the config YAML, combines them
 into a structured metrics.json in the artifacts directory.
 
 Usage:
-    python save_metrics.py --config config/efficientnet_b0_sed_v4a.yaml
+    python save_metrics.py --config config/effnet_b0_sed_v5a.yaml
 """
 
 import argparse
