@@ -2,7 +2,7 @@
 experiment: "018-perch-probes"
 status: in-progress
 date: 2026-03-27
-updated: 2026-03-29
+updated: 2026-03-30
 author: Murilo Gustineli
 ---
 
@@ -38,11 +38,11 @@ budget. The Perch-only path reaches 0.925 without SED, and our SED at 0.859 woul
 add minimal signal on top of a 0.920+ Perch pipeline. The Perch-only approach is
 simpler, faster to iterate, and has a proven progression path.
 
-### Our current gap
+### Progress
 
-Our perch-probes-v1 (0.893) matches chiranjithdharma on every hyperparameter but
-lacks OOF cross-validation for probes. This causes probes to overfit the 66 labeled
-files and alpha blending to be too aggressive. Closing this gap is the first step.
+- v1 (0.893): probes work but no OOF
+- v2-fix (0.911): OOF + bug fixes, beat chiranjithdharma (0.910)
+- v4 (pending): full ProtoSSM pipeline ported from Yuriy, targeting 0.925
 
 ## Perch v2 Model
 
@@ -62,44 +62,47 @@ files and alpha blending to be too aggressive. Closing this gap is the first ste
 
 ## Approach — Progressive Improvement
 
-### Phase C (current): OOF probes + richer features → ~0.910
+### Phase C (done): OOF probes → 0.911 LB
 
-1. 5-fold GroupKFold by file with fold-safe priors
-2. Upgrade features from 39-dim → 77-dim (PCA 64 + context + interactions)
-3. MLP probes (sklearn MLPClassifier) replacing LogReg
+1. 5-fold GroupKFold with fold-safe priors from ALL soundscape annotations
+2. 6-category fuse_scores (proxy λ=0.8, prior-only replacement, -8.0 inactive)
+3. K_HOUR=8, 59 fully-labeled files, sc_clean priors
 
-### Phase D: ProtoSSM temporal modeling → ~0.917
+### Phase D (done, awaiting LB): Full ProtoSSM v4 → target ~0.925
 
-4. Bidirectional SSM across 12 windows (d_model=128, 2 layers)
-5. Gated fusion with Perch logits + prototypical classification head
-6. ResidualSSM second-pass boosting
+4. 77-dim features (PCA 64 + std/diff/interaction) + MLPClassifier(128)
+5. ProtoSSMv2: 2-layer BiSSM + 4-head cross-attn + prototypical head + gated fusion
+6. Training: focal BCE + distillation + mixup + SWA, 3-fold OOF
+7. ResidualSSM second-pass correction (d=64, zero-init, w=0.3)
+8. TTA (circular shifts [0, ±1]), OOF-optimized ensemble weight
+9. 6-stage post-processing (temperature, confidence, rank-aware, delta-shift, thresholds)
 
-### Phase E: Post-processing pipeline → ~0.925
-
-7. TTA (temporal shifts through ProtoSSM, no extra Perch cost)
-8. Per-taxon temperature, file-level scaling, rank-aware scaling
-9. Delta shift smoothing, per-class threshold sharpening
+Implemented as modular `src/birdclef/perch/` package (8 modules, 140 tests).
+Assembled into self-contained kernel `submission_perch_protossm.py` (2756 lines).
 
 ## Runtime Budget
 
 | Component | Est. Time | Notes |
 |-----------|-----------|-------|
-| Load labeled embeddings | ~1s | Pre-extracted from PACE |
-| Train probes/ProtoSSM | ~10-30s | On 66 labeled files |
-| Perch v2 on test files | ~80 min | ~600 files, ThreadPoolExecutor |
-| Apply probes + post-proc | ~5s | numpy/sklearn predict |
+| Phase 1: Data + MLP probes | ~15s | OOF priors + 52 MLP probes |
+| Phase 2: ProtoSSM training | ~35s | OOF + final model + ResidualSSM |
+| Phase 3: Perch v2 on test | ~80 min | ~600 files, batched TF (16/batch) |
+| Phase 4: Fusion + post-proc | ~1s | Ensemble + TTA + 6-stage PP |
 | **Total** | **~82 min** | **Fits in 90-min budget** |
 
-## Baseline
+## Results
 
-- Perch raw (no probes): 0.836 LB
-- Perch + probes v1 (logit, no OOF): **0.893 LB**
+| Submission | LB | Delta |
+|------------|-----|-------|
+| Perch raw (no probes) | 0.836 | — |
+| Perch + probes v1 (no OOF) | 0.893 | +0.057 |
+| Perch + probes v2-fix (OOF) | **0.911** | +0.018 |
+| ProtoSSM v4 (full pipeline) | **pending** | target +0.014 |
 
 ## Success Criteria
 
-- **Phase C**: Match chiranjithdharma (0.910)
-- **Phase D**: Match pantanal-distill (0.917)
-- **Phase E**: Approach yuriy (0.925)
+- ~~**Phase C**: Match chiranjithdharma (0.910)~~ **DONE** (0.911)
+- **Phase D**: Approach yuriy (0.925) — **submitted, awaiting LB**
 
 ## Dependencies
 
