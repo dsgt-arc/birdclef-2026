@@ -19,7 +19,7 @@ IMPORTANT: scores_raw contains RAW LOGITS, not sigmoid probabilities.
 The scoring notebook applies sigmoid only at the final submission step.
 
 Usage:
-  cd user/murilo/experiments/018-perch-ensemble
+  cd user/murilo/experiments/018-perch-probes
   python scripts/build_labeled_embeddings_dataset.py
 """
 
@@ -41,7 +41,7 @@ EMBEDDINGS_DIR = Path(
 # Species mapping (for logit → 234 BirdCLEF mapping)
 SPECIES_MAPPING_PATH = Path(
     "/storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026"
-    "/user/murilo/experiments/018-perch-ensemble/artifacts/perch_species_mapping.json"
+    "/user/murilo/experiments/018-perch-probes/artifacts/perch_species_mapping.json"
 )
 
 # Output directory

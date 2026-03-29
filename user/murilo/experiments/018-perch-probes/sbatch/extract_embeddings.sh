@@ -17,7 +17,7 @@
 # Uses perch_v2_cpu model (same variant as Kaggle) — runs on CPU, no GPU needed.
 #
 # Usage:
-#   cd user/murilo/experiments/018-perch-ensemble
+#   cd user/murilo/experiments/018-perch-probes
 #   sbatch sbatch/extract_embeddings.sh                    # labeled (66 files)
 #   sbatch sbatch/extract_embeddings.sh --split unlabeled  # unlabeled (10,592 files)
 

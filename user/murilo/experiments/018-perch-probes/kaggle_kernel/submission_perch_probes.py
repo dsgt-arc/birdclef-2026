@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""BirdCLEF 2026 Perch + Probes Submission (logit-space pipeline).
+"""BirdCLEF 2026 Perch + Probes v2 Submission (OOF logit-space pipeline).
 
-Matches the chiranjithdharma (0.910) pipeline exactly:
+Matches chiranjithdharma (0.910) pipeline exactly (verified against source):
   1. Load pre-extracted labeled embeddings + raw logits from dataset
-  2. StandardScaler → PCA on embeddings
-  3. Additive prior fusion in logit space
-  4. Train LogReg probes on fused logits (decision_function = logit output)
+  2. StandardScaler + PCA fit ONCE on all data (global)
+  3. 5-fold GroupKFold by site: fold-safe priors only → oof_base, oof_prior
+  4. Train final probes on all data using OOF features (oof_base, oof_prior)
   5. Run Perch v2 live on test soundscapes → raw logits
-  6. Apply trained probes in logit space
-  7. Sigmoid only at final submission
+  6. Apply probes with all-data priors at test time
+  7. Gaussian smoothing on all species + sigmoid at submission
+
+Key v2 changes vs v1 (0.893):
+  - OOF fold-safe priors: probes see honest prior features, not leaked ones
+  - Final probes trained with oof_base/oof_prior features (critical!)
+  - Gaussian final smoothing [0.1, 0.2, 0.4, 0.2, 0.1] on all species
+  - Only texture smoothing in fuse_scores (removed event smoothing)
 
 CRITICAL: Everything stays in LOGIT SPACE until sigmoid at submission.
-- Perch outputs: raw logits (unbounded)
-- Priors: additive in logit space (log(p/(1-p)))
-- Probes: decision_function() returns logits
-- Blending: (1-alpha)*base_logit + alpha*probe_logit
-- Smoothing: on logits
-- Sigmoid: applied ONCE at the very end
 """
 
 # ---------------------------------------------------------------------------
@@ -82,6 +82,7 @@ import pandas as pd  # noqa: E402
 import soundfile as sf  # noqa: E402
 from sklearn.decomposition import PCA  # noqa: E402
 from sklearn.linear_model import LogisticRegression  # noqa: E402
+from sklearn.model_selection import GroupKFold  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -106,6 +107,9 @@ PERCH_MODEL_CANDIDATES = [
     "/kaggle/input/bird-vocalization-classifier/tensorflow2/perch_v2/1",
     "/kaggle/input/bird-vocalization-classifier",
 ]
+
+# OOF cross-validation (matching chiranjithdharma)
+OOF_N_SPLITS = 5
 
 # Probe hyperparameters (matching chiranjithdharma)
 PCA_DIM = 32
@@ -460,9 +464,9 @@ def fuse_scores_with_priors(
     if mapped_texture:
         scores[:, mapped_texture] += LAMBDA_TEXTURE * prior[:, mapped_texture]
 
-    # Temporal smoothing in logit space
+    # Temporal smoothing in logit space (texture only — matching chiranjithdharma)
     scores = smooth_texture_cols(scores, mapped_texture, SMOOTH_TEXTURE)
-    scores = smooth_event_cols(scores, mapped_event, SMOOTH_EVENT)
+    # Note: no event smoothing here. Gaussian final smoothing applied after probes.
 
     return scores.astype(np.float32), prior
 
@@ -562,13 +566,23 @@ def build_labels_matrix(meta_rows, labels_df, birdclef_species):
 # ===========================================================================
 
 
+def gauss_smooth_final(scores, weights=np.array([0.1, 0.2, 0.4, 0.2, 0.1])):
+    """Gaussian temporal smoothing on ALL species after probes (matching chiranjithdharma)."""
+    from scipy.ndimage import convolve1d
+
+    smoothed = scores.reshape(-1, N_WINDOWS, scores.shape[1]).copy()
+    for i in range(smoothed.shape[0]):
+        smoothed[i] = convolve1d(smoothed[i], weights, axis=0, mode="nearest")
+    return smoothed.reshape(-1, scores.shape[1])
+
+
 def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-np.clip(x, -30, 30)))
 
 
 def main():
     print("=" * 70)
-    print("BirdCLEF 2026 Perch + Probes (logit-space pipeline)")
+    print("BirdCLEF 2026 Perch + Probes v2 (OOF logit-space pipeline)")
     print("=" * 70)
 
     # -------------------------------------------------------------------
@@ -612,9 +626,9 @@ def main():
     print(f"  Species: {len(birdclef_species)}, unmapped: {len(unmapped_set)}")
 
     # -------------------------------------------------------------------
-    # Phase 1: Load labeled data + train probes
+    # Phase 1: Load labeled data + OOF probe training + final fit
     # -------------------------------------------------------------------
-    print("\n--- Phase 1: Load Labeled Data + Train Probes ---")
+    print("\n--- Phase 1: Load Labeled Data + Train Probes (OOF) ---")
     t1 = time.time()
 
     # Load pre-extracted labeled embeddings (RAW LOGITS + embeddings)
@@ -645,11 +659,15 @@ def main():
     # Build labels
     labels_df = pd.read_csv(competition_dir / "train_soundscapes_labels.csv")
     labels_matrix = build_labels_matrix(meta_rows, labels_df, birdclef_species)
-    print(
-        f"  Labels: {labels_matrix.sum():.0f} positives, {(labels_matrix.sum(axis=0) > 0).sum()} species"
-    )
+    n_positive = labels_matrix.sum(axis=0)
+    print(f"  Labels: {labels_matrix.sum():.0f} positives, {(n_positive > 0).sum()} species")
 
-    # StandardScaler + PCA on embeddings
+    # -------------------------------------------------------------------
+    # Phase 1a: Global StandardScaler + PCA (fit once on all data)
+    # -------------------------------------------------------------------
+    sites_arr = np.array([r["site"] for r in meta_rows])
+    hours_arr = np.array([r["hour"] for r in meta_rows])
+
     emb_scaler = StandardScaler()
     emb_scaled = emb_scaler.fit_transform(labeled_emb)
     pca = PCA(n_components=min(PCA_DIM, emb_scaled.shape[0] - 1, emb_scaled.shape[1]))
@@ -658,38 +676,100 @@ def main():
         f"  PCA: {labeled_emb.shape[1]} → {pca.n_components_} dims ({pca.explained_variance_ratio_.sum():.3f} var)"
     )
 
-    # Fit prior tables
-    prior_tables = fit_prior_tables(labels_matrix, meta_rows, birdclef_species)
-    sites_arr = np.array([r["site"] for r in meta_rows])
-    hours_arr = np.array([r["hour"] for r in meta_rows])
+    # -------------------------------------------------------------------
+    # Phase 1b: OOF fold-safe priors (fills oof_base and oof_prior)
+    # -------------------------------------------------------------------
+    # Key insight from chiranjithdharma source: PCA is global, but priors
+    # are fold-safe. The OOF loop fills oof_base/oof_prior arrays which
+    # are then used as FEATURES for the final probe training. This prevents
+    # probes from learning to exploit leaked prior signal.
 
-    # Fuse scores with priors (additive logit space)
-    labeled_base, labeled_prior = fuse_scores_with_priors(
-        labeled_scores_raw,
-        sites_arr,
-        hours_arr,
-        prior_tables,
-        taxa_classes,
-        birdclef_species,
-        unmapped_set,
+    unique_sites = sorted({s for s in sites_arr if s is not None})
+    site_to_group = {s: i for i, s in enumerate(unique_sites)}
+    groups = np.array([site_to_group.get(s, 0) for s in sites_arr])
+
+    n_splits = min(OOF_N_SPLITS, len(unique_sites))
+    gkf = GroupKFold(n_splits=n_splits)
+    probe_candidate_idx = np.where(n_positive >= PROBE_MIN_POS)[0]
+
+    # These arrays collect fold-safe scores — used as features for final probes
+    oof_base = np.zeros_like(labeled_scores_raw, dtype=np.float32)
+    oof_prior = np.zeros_like(labeled_scores_raw, dtype=np.float32)
+
+    print(f"\n  OOF: {n_splits}-fold GroupKFold by site ({len(unique_sites)} sites)")
+
+    for fold_idx, (train_idx, val_idx) in enumerate(gkf.split(labeled_emb, groups=groups)):
+        val_idx = np.sort(val_idx)
+        fold_sites_val = {meta_rows[i]["site"] for i in val_idx}
+
+        # Fold-safe priors: build tables excluding val sites
+        fold_meta_train = [meta_rows[i] for i in train_idx]
+        fold_prior_tables = fit_prior_tables(
+            labels_matrix[train_idx], fold_meta_train, birdclef_species
+        )
+
+        # Fuse val scores with fold-safe priors → fills oof_base, oof_prior
+        fold_val_base, fold_val_prior = fuse_scores_with_priors(
+            labeled_scores_raw[val_idx],
+            sites_arr[val_idx],
+            hours_arr[val_idx],
+            fold_prior_tables,
+            taxa_classes,
+            birdclef_species,
+            unmapped_set,
+        )
+        oof_base[val_idx] = fold_val_base
+        oof_prior[val_idx] = fold_val_prior
+
+        print(
+            f"    Fold {fold_idx}: train={len(train_idx)}, val={len(val_idx)}, "
+            f"val_sites={fold_sites_val}"
+        )
+
+    # OOF evaluation (AUROC on fold-safe base scores — before probes)
+    oof_probs = sigmoid(oof_base)
+    species_with_labels = np.where(n_positive > 0)[0]
+    per_species_auroc = []
+    for cls_idx in species_with_labels:
+        y_true = labels_matrix[:, cls_idx]
+        y_pred = oof_probs[:, cls_idx]
+        if y_true.sum() > 0 and y_true.sum() < len(y_true):
+            pos = y_pred[y_true == 1]
+            neg = y_pred[y_true == 0]
+            auroc = np.mean(pos[:, None] > neg[None, :]) + 0.5 * np.mean(
+                pos[:, None] == neg[None, :]
+            )
+            per_species_auroc.append(auroc)
+    oof_mean_auroc = np.mean(per_species_auroc) if per_species_auroc else 0.0
+    print(
+        f"\n  OOF baseline AUROC (prior fusion only): {oof_mean_auroc:.4f} "
+        f"(mean over {len(per_species_auroc)} species)"
     )
 
-    # Train per-class probes
+    # -------------------------------------------------------------------
+    # Phase 1c: Train final probes on ALL data with OOF features
+    # -------------------------------------------------------------------
+    # CRITICAL: probes see oof_base/oof_prior as features (fold-safe),
+    # NOT all-data priors. This is what chiranjithdharma does.
+    print("\n  --- Training final probes (OOF features) ---")
+
+    # Also fit all-data prior tables (used at test time)
+    prior_tables = fit_prior_tables(labels_matrix, meta_rows, birdclef_species)
+
     probe_models = {}
     probe_alphas = {}
-    n_positive = labels_matrix.sum(axis=0)
 
-    probe_idx = np.where(n_positive >= PROBE_MIN_POS)[0]
-    for cls_idx in probe_idx:
+    for cls_idx in probe_candidate_idx:
         y = labels_matrix[:, cls_idx]
-        if y.sum() == 0 or y.sum() == len(y):
+        if y.sum() < PROBE_MIN_POS or y.sum() == len(y):
             continue
 
+        # Features use OOF base/prior (fold-safe), not all-data base/prior
         X = build_class_features(
             Z_FULL,
             raw_col=labeled_scores_raw[:, cls_idx],
-            prior_col=labeled_prior[:, cls_idx],
-            base_col=labeled_base[:, cls_idx],
+            prior_col=oof_prior[:, cls_idx],
+            base_col=oof_base[:, cls_idx],
         )
 
         clf = LogisticRegression(
@@ -705,7 +785,7 @@ def main():
         probe_alphas[cls_idx] = alpha
 
     print(
-        f"  Probes: {len(probe_models)} trained, {len(birdclef_species) - len(probe_models)} skipped"
+        f"  Final probes: {len(probe_models)} trained, {len(birdclef_species) - len(probe_models)} skipped"
     )
     print(f"  Phase 1: {time.time() - t1:.1f}s")
 
@@ -821,6 +901,9 @@ def main():
         pred = clf.decision_function(X).astype(np.float32)  # LOGIT output
         alpha = probe_alphas[cls_idx]
         final_scores[:, cls_idx] = (1.0 - alpha) * test_base[:, cls_idx] + alpha * pred
+
+    # Gaussian final smoothing on ALL species (matching chiranjithdharma)
+    final_scores = gauss_smooth_final(final_scores)
 
     # Sigmoid ONLY at submission
     final_probs = sigmoid(final_scores)

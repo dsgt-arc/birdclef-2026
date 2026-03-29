@@ -1,7 +1,7 @@
 [project]
-name = "birdclef-018-perch-ensemble"
-version = "0.1.0"
-description = "Perch v2 + EfficientNet-B0 SED ensemble for BirdCLEF 2026"
+name = "birdclef-018-perch-probes"
+version = "0.2.0"
+description = "Perch v2 probe pipeline for BirdCLEF 2026"
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.24",
