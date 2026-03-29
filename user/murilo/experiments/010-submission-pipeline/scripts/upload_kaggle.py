@@ -264,7 +264,7 @@ def run_cmd(cmd: list[str], dry_run: bool = False) -> bool:
         return True
     except subprocess.CalledProcessError as e:
         combined = e.stdout + e.stderr
-        if "already exists" in combined or "403" in combined:
+        if "already exists" in combined or "already in use" in combined or "403" in combined:
             return False
         if e.stdout:
             print(f"  stdout: {e.stdout.strip()}")
@@ -425,6 +425,11 @@ def main():
     for model_name in models:
         upload_weights(model_name, args.kaggle_user, args.dry_run)
         if args.push_kernel:
+            if not args.dry_run:
+                import time
+
+                print("\n  Waiting 30s for dataset to process before pushing kernel...")
+                time.sleep(30)
             push_kernel(model_name, args.dry_run)
 
     print(f"\nDone! Uploaded deps + {len(models)} model(s).")
