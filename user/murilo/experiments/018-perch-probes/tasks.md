@@ -8,7 +8,7 @@ needed. The progression is: better OOF training → richer features → MLP prob
 ProtoSSM temporal modeling → post-processing.
 
 **Perch Raw Baseline**: 0.836 LB (with genus proxy mapping)
-**Current Best**: 0.893 LB (LogReg probes, no OOF, 39-dim features)
+**Current Best**: 0.898 LB (LogReg probes, buggy OOF — v2-fix submitted, awaiting LB)
 
 ### Leaderboard Reference Chain
 
@@ -21,7 +21,7 @@ ProtoSSM temporal modeling → post-processing.
 | 0.921 | maryna | + focal loss, mixup, cross-attn, SWA, TTA |
 | 0.925 | yuriy/yaroslav | + wider SSM (d=256, 3 layers), 6-stage post-proc |
 
-### Status: Phase C — v2 (OOF) pushed, awaiting LB result
+### Status: Phase C — v2 buggy=0.898, v2-fix submitted (perch-probes-v2 ver.2), awaiting LB
 
 - **Branch**: `mg/018-perch-ensemble` (PR #20)
 
@@ -104,7 +104,27 @@ Raw code: `kaggle_kernel/ref_jaejohn_perch_meta.py`
       - 53 probes trained, Phase 1 total: 1.5s
       - **Note**: S22 imbalance means fold 0's prior tables miss the dominant site
 - [x] 6.8 Submit perch-probes-v2 to competition (2026-03-29 evening) — running inference
-- [ ] 6.9 **NEXT SESSION**: Check LB result (`kaggle competitions submissions birdclef-2026 | head -10`), target: ~0.910
+- [x] 6.9 Check LB result: **0.898 LB** (only +0.005 over v1, expected ~0.910)
+      - Gap analysis revealed 4 bugs in our v2 vs chiranjithdharma:
+        1. K_HOUR=4 (should be 8) — never actually fixed despite notes saying so
+        2. Prior tables built from labeled subset only (792 rows), not ALL soundscape
+           annotations (~800+ rows) — chiranjithdharma uses sc_clean/Y_SC
+        3. Missing 6-category fuse_scores: no proxy λ=0.8, no prior-only REPLACE
+           for unmapped active species (stuck at -10.0), no -8.0 for inactive
+        4. Included 7 partially-labeled files (noisy labels as false negatives)
+- [x] 6.10 Implement v2-fix with all 4 fixes:
+      - K_HOUR = 8
+      - Load train_soundscapes_labels.csv → sc_clean/Y_SC for all prior tables
+      - 6-category fuse_scores matching chiranjithdharma exactly
+      - Filter to 59 fully-labeled files (708 windows) for probe training
+- [x] 6.11 Push v2-fix as perch-probes-v2 version 2 (dry-run passed, 153s)
+      - 739 soundscape rows, 59 fully-labeled files, 708 windows
+      - Categories: mapped_event=31, mapped_texture=15, proxy_texture=2,
+        prioronly_event=2, prioronly_texture=25, unmapped_inactive=2
+      - 8 sites, 5-fold GroupKFold (S22 still 468/708 = 66%)
+      - 52 probes trained, Phase 1: 2.0s
+- [x] 6.12 Submit v2-fix to competition (2026-03-29) — running inference
+- [ ] 6.13 Check v2-fix LB result, target: ~0.910
 
 ### Step 7: Richer features (39-dim → 77-dim)
 
@@ -186,7 +206,8 @@ Cherry-pick techniques from maryna (0.921) and yuriy (0.925):
 | Perch + probes (scoring v2) | 0.500 | FAILED: kernel_sources uses push-run cache |
 | Perch + probes (prob-space) | 0.757 | FAILED: sigmoid scores, multiplicative priors |
 | Perch + probes v1 (logit) | **0.893** | Logit pipeline, 39-dim LogReg, no OOF |
-| Perch + probes v2 (OOF) | pending | + OOF fold-safe priors, Gaussian smoothing, no event smooth |
+| Perch + probes v2 (OOF) | **0.898** | + OOF fold-safe priors, Gaussian smoothing — **buggy** (K_HOUR=4, subset priors, missing fuse categories, partial files) |
+| Perch + probes v2-fix | pending | Fixes: K_HOUR=8, sc_clean priors, 6-cat fuse, 59 fully-labeled files (perch-probes-v2 ver.2) |
 | Perch + probes v3 (MLP) | pending | + 77-dim features, MLP probes |
 | ProtoSSM v1 | pending | + temporal modeling, ResidualSSM |
 

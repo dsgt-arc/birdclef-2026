@@ -49,6 +49,7 @@ done
 case "$MODE" in
     perch-probes)     META="kernel-metadata-perch-probes.json" ;;
     perch-probes-v2)  META="kernel-metadata-perch-probes-v2.json" ;;
+    perch-probes-v3)  META="kernel-metadata-perch-probes-v3.json" ;;
     cache)      META="kernel-metadata-perch-cache.json" ;;
     scoring)    META="kernel-metadata-scoring.json" ;;
     ensemble)   META="kernel-metadata-scoring-ensemble.json" ;;

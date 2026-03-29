@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""BirdCLEF 2026 Perch + Probes v2 Submission (OOF logit-space pipeline).
+"""BirdCLEF 2026 Perch + Probes v3 Submission (OOF logit-space pipeline).
 
-Matches chiranjithdharma (0.910) pipeline exactly (verified against source):
-  1. Load pre-extracted labeled embeddings + raw logits from dataset
-  2. StandardScaler + PCA fit ONCE on all data (global)
-  3. 5-fold GroupKFold by site: fold-safe priors only → oof_base, oof_prior
-  4. Train final probes on all data using OOF features (oof_base, oof_prior)
-  5. Run Perch v2 live on test soundscapes → raw logits
-  6. Apply probes with all-data priors at test time
-  7. Gaussian smoothing on all species + sigmoid at submission
+Matches chiranjithdharma (0.910) pipeline exactly (verified line-by-line):
+  1. Load ALL soundscape annotations for prior tables (richer priors)
+  2. Filter labeled embeddings to 59 fully-labeled files (clean labels)
+  3. StandardScaler + PCA fit ONCE on all data (global)
+  4. 5-fold GroupKFold by site: fold-safe priors from ALL annotations
+  5. Train final probes on all data using OOF features (oof_base, oof_prior)
+  6. Run Perch v2 live on test soundscapes → raw logits
+  7. 6-category fuse_scores (proxy, prior-only replacement, -8.0 inactive)
+  8. Gaussian smoothing on all species + sigmoid at submission
 
-Key v2 changes vs v1 (0.893):
-  - OOF fold-safe priors: probes see honest prior features, not leaked ones
-  - Final probes trained with oof_base/oof_prior features (critical!)
-  - Gaussian final smoothing [0.1, 0.2, 0.4, 0.2, 0.1] on all species
-  - Only texture smoothing in fuse_scores (removed event smoothing)
+Key v3 fixes vs v2 (0.898):
+  - K_HOUR fixed: 4 → 8 (matching chiranjithdharma)
+  - Prior tables from ALL soundscape annotations, not just labeled subset
+  - 6-category fuse_scores: proxy λ=0.8, prior-only replacement, -8.0 inactive
+  - Filtered to 59 fully-labeled files (removed 7 noisy partial files)
 
 CRITICAL: Everything stays in LOGIT SPACE until sigmoid at submission.
 """
@@ -130,7 +131,7 @@ SMOOTH_EVENT = 0.15
 
 # Bayesian smoothing k values (matching chiranjithdharma)
 K_SITE = 8
-K_HOUR = 4
+K_HOUR = 8
 K_INTERACTION = 4
 
 TEXTURE_TAXA = {"Amphibia", "Insecta"}
@@ -440,33 +441,34 @@ def prior_logits_from_tables(sites, hours, tables, eps=1e-4):
     return (np.log(p) - np.log1p(-p)).astype(np.float32)
 
 
-def fuse_scores_with_priors(
-    base_logits, sites, hours, tables, taxa_classes, birdclef_species, unmapped_set
-):
-    """Add priors to base logits. Returns (fused_logits, prior_logits)."""
+def fuse_scores_with_priors(base_logits, sites, hours, tables, species_idx):
+    """Add priors to base logits (6-category, matching chiranjithdharma). Returns (fused, prior)."""
     scores = base_logits.copy()
     prior = prior_logits_from_tables(sites, hours, tables)
 
-    # Build index sets
-    mapped_event = []
-    mapped_texture = []
-    unmapped_idx = []
-    for i, sp in enumerate(birdclef_species):
-        if sp in unmapped_set:
-            unmapped_idx.append(i)
-        elif taxa_classes.get(sp, "Aves") in TEXTURE_TAXA:
-            mapped_texture.append(i)
-        else:
-            mapped_event.append(i)
+    idx = species_idx
 
-    if mapped_event:
-        scores[:, mapped_event] += LAMBDA_EVENT * prior[:, mapped_event]
-    if mapped_texture:
-        scores[:, mapped_texture] += LAMBDA_TEXTURE * prior[:, mapped_texture]
+    # Mapped active event: additive prior (λ=0.4)
+    if len(idx["mapped_event"]):
+        scores[:, idx["mapped_event"]] += LAMBDA_EVENT * prior[:, idx["mapped_event"]]
+    # Mapped active texture: additive prior (λ=1.0)
+    if len(idx["mapped_texture"]):
+        scores[:, idx["mapped_texture"]] += LAMBDA_TEXTURE * prior[:, idx["mapped_texture"]]
+    # Proxy active texture: additive prior (λ=0.8)
+    if len(idx["proxy_texture"]):
+        scores[:, idx["proxy_texture"]] += LAMBDA_PROXY_TEXTURE * prior[:, idx["proxy_texture"]]
+    # Prior-only active event: REPLACE score with scaled prior
+    if len(idx["prioronly_event"]):
+        scores[:, idx["prioronly_event"]] = LAMBDA_EVENT * prior[:, idx["prioronly_event"]]
+    # Prior-only active texture: REPLACE score with scaled prior
+    if len(idx["prioronly_texture"]):
+        scores[:, idx["prioronly_texture"]] = LAMBDA_TEXTURE * prior[:, idx["prioronly_texture"]]
+    # Unmapped inactive: flat -8.0
+    if len(idx["unmapped_inactive"]):
+        scores[:, idx["unmapped_inactive"]] = -8.0
 
-    # Temporal smoothing in logit space (texture only — matching chiranjithdharma)
-    scores = smooth_texture_cols(scores, mapped_texture, SMOOTH_TEXTURE)
-    # Note: no event smoothing here. Gaussian final smoothing applied after probes.
+    # Temporal smoothing in logit space (all active texture — matching chiranjithdharma)
+    scores = smooth_texture_cols(scores, idx["all_active_texture"].tolist(), SMOOTH_TEXTURE)
 
     return scores.astype(np.float32), prior
 
@@ -582,7 +584,7 @@ def sigmoid(x):
 
 def main():
     print("=" * 70)
-    print("BirdCLEF 2026 Perch + Probes v2 (OOF logit-space pipeline)")
+    print("BirdCLEF 2026 Perch + Probes v3 (OOF logit-space pipeline)")
     print("=" * 70)
 
     # -------------------------------------------------------------------
@@ -626,6 +628,110 @@ def main():
     print(f"  Species: {len(birdclef_species)}, unmapped: {len(unmapped_set)}")
 
     # -------------------------------------------------------------------
+    # Load ALL soundscape annotations (for richer prior tables)
+    # -------------------------------------------------------------------
+    print("\n--- Loading Soundscape Annotations ---")
+    sc_labels_raw = pd.read_csv(competition_dir / "train_soundscapes_labels.csv")
+    sc_labels = sc_labels_raw.drop_duplicates().reset_index(drop=True)
+
+    def _union_labels(series):
+        out = set()
+        for x in series:
+            if pd.notna(x):
+                for t in str(x).split(";"):
+                    t = t.strip()
+                    if t:
+                        out.add(t)
+        return sorted(out)
+
+    sc_clean = (
+        sc_labels.groupby(["filename", "start", "end"])["primary_label"]
+        .apply(_union_labels)
+        .reset_index(name="label_list")
+    )
+
+    # Parse site/hour from filenames
+    sc_sites_list, sc_hours_list = [], []
+    for fn in sc_clean["filename"]:
+        site, hour = _parse_soundscape_metadata(fn)
+        sc_sites_list.append(site)
+        sc_hours_list.append(hour)
+    sc_clean["site"] = sc_sites_list
+    sc_clean["hour_utc"] = sc_hours_list
+
+    # Multi-hot label matrix for ALL soundscape rows
+    species_to_idx = {s: i for i, s in enumerate(birdclef_species)}
+    Y_SC = np.zeros((len(sc_clean), len(birdclef_species)), dtype=np.float32)
+    for i, labels in enumerate(sc_clean["label_list"]):
+        for lbl in labels:
+            if lbl in species_to_idx:
+                Y_SC[i, species_to_idx[lbl]] = 1.0
+
+    # Identify fully-labeled files (all 12 windows annotated)
+    windows_per_file = sc_clean.groupby("filename").size()
+    full_files = sorted(windows_per_file[windows_per_file == N_WINDOWS].index.tolist())
+
+    # Build meta_rows format for fit_prior_tables compatibility
+    sc_meta_rows = [
+        {"site": s, "hour": h} for s, h in zip(sc_sites_list, sc_hours_list, strict=False)
+    ]
+    sc_sites_arr = np.array(sc_sites_list, dtype=object)
+
+    print(f"  Soundscape rows: {len(sc_clean)}, files: {sc_clean['filename'].nunique()}")
+    print(f"  Fully-labeled: {len(full_files)} files")
+
+    # -------------------------------------------------------------------
+    # Species category indices (6-way split matching chiranjithdharma)
+    # -------------------------------------------------------------------
+    direct_map_set = set(species_mapping.get("direct_map", {}).keys())
+    proxy_map_set = set(species_mapping.get("genus_proxy_map", {}).keys())
+    active_species = {birdclef_species[i] for i in np.where(Y_SC.sum(axis=0) > 0)[0]}
+
+    idx_mapped_event = []
+    idx_mapped_texture = []
+    idx_proxy_texture = []
+    idx_prioronly_event = []
+    idx_prioronly_texture = []
+    idx_unmapped_inactive = []
+
+    for i, sp in enumerate(birdclef_species):
+        is_direct = sp in direct_map_set
+        is_proxy = sp in proxy_map_set
+        is_active = sp in active_species
+        is_texture = taxa_classes.get(sp, "Aves") in TEXTURE_TAXA
+
+        if is_direct and is_active and not is_texture:
+            idx_mapped_event.append(i)
+        elif is_direct and is_active and is_texture:
+            idx_mapped_texture.append(i)
+        elif is_proxy and is_active and is_texture:
+            idx_proxy_texture.append(i)
+        elif not is_direct and is_active and not is_texture:
+            idx_prioronly_event.append(i)
+        elif not is_direct and is_active and is_texture:
+            idx_prioronly_texture.append(i)
+        elif not is_direct and not is_active:
+            idx_unmapped_inactive.append(i)
+
+    species_idx = {
+        "mapped_event": np.array(idx_mapped_event, dtype=np.int32),
+        "mapped_texture": np.array(idx_mapped_texture, dtype=np.int32),
+        "proxy_texture": np.array(idx_proxy_texture, dtype=np.int32),
+        "prioronly_event": np.array(idx_prioronly_event, dtype=np.int32),
+        "prioronly_texture": np.array(idx_prioronly_texture, dtype=np.int32),
+        "unmapped_inactive": np.array(idx_unmapped_inactive, dtype=np.int32),
+        "all_active_texture": np.array(
+            idx_mapped_texture + idx_proxy_texture + idx_prioronly_texture, dtype=np.int32
+        ),
+    }
+
+    print(
+        f"  Categories: mapped_event={len(idx_mapped_event)}, mapped_texture={len(idx_mapped_texture)}, "
+        f"proxy_texture={len(idx_proxy_texture)}, prioronly_event={len(idx_prioronly_event)}, "
+        f"prioronly_texture={len(idx_prioronly_texture)}, unmapped_inactive={len(idx_unmapped_inactive)}"
+    )
+
+    # -------------------------------------------------------------------
     # Phase 1: Load labeled data + OOF probe training + final fit
     # -------------------------------------------------------------------
     print("\n--- Phase 1: Load Labeled Data + Train Probes (OOF) ---")
@@ -641,6 +747,16 @@ def main():
         f"  Labeled: scores_raw {labeled_scores_raw.shape} (range [{labeled_scores_raw.min():.1f}, {labeled_scores_raw.max():.1f}])"
     )
     print(f"  Labeled: emb {labeled_emb.shape}")
+
+    # Filter to fully-labeled files only (matching chiranjithdharma)
+    full_file_mask = labeled_meta_df["filename"].isin(full_files).values
+    labeled_scores_raw = labeled_scores_raw[full_file_mask]
+    labeled_emb = labeled_emb[full_file_mask]
+    labeled_meta_df = labeled_meta_df[full_file_mask].reset_index(drop=True)
+    print(
+        f"  Filtered to fully-labeled: {labeled_scores_raw.shape[0]} windows "
+        f"from {labeled_meta_df['filename'].nunique()} files"
+    )
 
     # Build meta_rows
     meta_rows = []
@@ -702,11 +818,10 @@ def main():
         val_idx = np.sort(val_idx)
         fold_sites_val = {meta_rows[i]["site"] for i in val_idx}
 
-        # Fold-safe priors: build tables excluding val sites
-        fold_meta_train = [meta_rows[i] for i in train_idx]
-        fold_prior_tables = fit_prior_tables(
-            labels_matrix[train_idx], fold_meta_train, birdclef_species
-        )
+        # Fold-safe priors from ALL soundscape annotations (minus val sites)
+        prior_mask = ~np.isin(sc_sites_arr, list(fold_sites_val))
+        fold_sc_meta = [sc_meta_rows[i] for i in np.where(prior_mask)[0]]
+        fold_prior_tables = fit_prior_tables(Y_SC[prior_mask], fold_sc_meta, birdclef_species)
 
         # Fuse val scores with fold-safe priors → fills oof_base, oof_prior
         fold_val_base, fold_val_prior = fuse_scores_with_priors(
@@ -714,9 +829,7 @@ def main():
             sites_arr[val_idx],
             hours_arr[val_idx],
             fold_prior_tables,
-            taxa_classes,
-            birdclef_species,
-            unmapped_set,
+            species_idx,
         )
         oof_base[val_idx] = fold_val_base
         oof_prior[val_idx] = fold_val_prior
@@ -753,8 +866,8 @@ def main():
     # NOT all-data priors. This is what chiranjithdharma does.
     print("\n  --- Training final probes (OOF features) ---")
 
-    # Also fit all-data prior tables (used at test time)
-    prior_tables = fit_prior_tables(labels_matrix, meta_rows, birdclef_species)
+    # All-data prior tables from ALL soundscape annotations (used at test time)
+    prior_tables = fit_prior_tables(Y_SC, sc_meta_rows, birdclef_species)
 
     probe_models = {}
     probe_alphas = {}
@@ -884,9 +997,7 @@ def main():
         test_sites,
         test_hours,
         prior_tables,
-        taxa_classes,
-        birdclef_species,
-        unmapped_set,
+        species_idx,
     )
 
     # Apply probes (logit blending)
