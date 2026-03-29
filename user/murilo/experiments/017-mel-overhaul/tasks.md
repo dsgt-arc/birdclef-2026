@@ -237,8 +237,8 @@ post-processing? different training data composition?).
 
 - [x] 5.2.1 Export v4j best checkpoint to ONNX (via exp 010 pipeline)
 - [x] 5.2.2 Upload v4j weights to Kaggle (`birdclef-2026-effnet-b0-sed-v4j-weights`)
-- [x] 5.2.3 Submit v4j to Kaggle LB — submitted, awaiting score
-- [ ] 5.2.4 Record LB result (v4b=0.859, target: ≥0.865)
+- [x] 5.2.3 Submit v4j to Kaggle LB
+- [x] 5.2.4 Record LB: **0.853** (−0.006 vs v4b 0.859) — waveform MixUp regressed on LB
 
 ### 5.3 Decision Gate
 
@@ -271,6 +271,6 @@ or undisclosed post-processing).
 | split | 80/10/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 | 90/10 |
 | max_epochs | 40 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 | 50 |
 | val/auroc | 0.846 | **0.865** | 0.815 | 0.858 | 0.868 | 0.862 | 0.868 | 0.858 | 0.835 | **0.868** | 0.835 |
-| LB (raw) | 0.825 | **0.859** | skip | 0.808 | 0.840 | 0.832 | 0.819 | 0.800 | skip | pending | skip |
+| LB (raw) | 0.825 | **0.859** | skip | 0.808 | 0.840 | 0.832 | 0.819 | 0.800 | skip | 0.853 | skip |
 
 **a2db** = amplitude_to_db (AmplitudeToDB + standardize + min-max [0,1])

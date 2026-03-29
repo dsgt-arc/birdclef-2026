@@ -230,10 +230,11 @@ Motivated by Salman Ahmed's 0.908 LB (single EfficientNet-B0 SED with CE + raw w
 | Slug | Change | Mel Norm | Head | Loss | Waveform MixUp | Best val/auroc | Best Epoch | LB | Checkpoint |
 |------|--------|----------|------|------|---------------|---------------|------------|-----|------------|
 | `effnet-b0-sed-v4i` | Standard CE loss (primary_label) | amplitude_to_db | AttHead | ce | No | 0.835 | 12 | skip | `017-.../2026-effnet-b0-sed-v4i/best-epochepoch=12.ckpt` |
-| **`effnet-b0-sed-v4j`** | **Raw waveform MixUp** | amplitude_to_db | AttHead | soft_ce | **Yes** | **0.868** | 34 | pending | `017-.../2026-effnet-b0-sed-v4j/best-epochepoch=34.ckpt` |
+| **`effnet-b0-sed-v4j`** | **Raw waveform MixUp** | amplitude_to_db | AttHead | soft_ce | **Yes** | **0.868** | 34 | 0.853 | `017-.../2026-effnet-b0-sed-v4j/best-epochepoch=34.ckpt` |
 | `effnet-b0-sed-v4k` | CE + waveform MixUp | amplitude_to_db | AttHead | ce | Yes | 0.835 | 18 | skip | `017-.../2026-effnet-b0-sed-v4k/best-epochepoch=18.ckpt` |
 
-**v4j (waveform MixUp)** is the only improvement: +0.003 val/auroc over v4b (0.868 vs 0.865).
+**v4j (waveform MixUp)** had best offline (+0.003 val/auroc) but regressed −0.006 on LB (0.853 vs 0.859).
+Offline val/auroc continues to be a poor LB predictor (v4j: 0.868 val → 0.853 LB).
 Standard CE loss (v4i, v4k) regressed −0.030 val/auroc even with the primary_label fix
 (using actual primary label index instead of argmax of multi-hot). CE loss with our soft CE
 setup consistently underperforms — the gap to Salman's 0.908 is from other factors.

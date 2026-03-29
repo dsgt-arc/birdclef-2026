@@ -184,8 +184,8 @@ kaggle_kernel/push.sh perch-probes
       - Phase 1: labeled logits loaded (range [-10, 12.8]), 53 probes trained in 2.5s
       - Phase 2: Perch on test files (~80 min with ThreadPoolExecutor)
       - Phase 3: logit-space probes + additive priors + smoothing + sigmoid at end
-- [ ] 5c.5 Record LB result
-- [ ] 5c.6 Compare to chiranjithdharma (0.910)
+- [x] 5c.5 Record LB: **0.893** (+0.057 over raw Perch 0.836, probes now helping)
+- [ ] 5c.6 Compare to chiranjithdharma (0.910) — gap of 0.017 remains
 
 ### Phase B Decision Gate
 
@@ -242,7 +242,7 @@ Cherry-pick techniques from 0.921-0.926 notebooks if ensemble alone isn't enough
 | Perch + probes (scoring v1) | 0.500 | FAILED: sklearn version mismatch (pickled PCA from 1.8.0, Kaggle 1.6.1) |
 | Perch + probes (scoring v2) | 0.500 | FAILED: kernel_sources uses push-run cache (train row_ids, not test) |
 | Perch + probes (prob-space) | 0.757 | FAILED: sigmoid scores, multiplicative priors, no StandardScaler |
-| Perch + probes (logit-space) | pending | Fix: raw logits, additive priors, StandardScaler, decision_function |
+| Perch + probes (logit-space) | **0.893** | Logit pipeline: +0.057 over raw, 0.017 gap to chiranjithdharma (0.910) |
 | Ensemble v1 | pending | After Perch probes validated |
 
 ---
