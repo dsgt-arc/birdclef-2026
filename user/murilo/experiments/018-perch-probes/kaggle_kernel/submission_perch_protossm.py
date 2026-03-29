@@ -100,7 +100,6 @@ N_SPECIES = 234
 
 # Slugs
 LABELED_EMB_SLUG = "birdclef-2026-perch-labeled-embeddings"
-PERCH_CACHE_SLUG = "perch-meta"  # jaejohn/perch-meta (public, used by Yuriy)
 PERCH_ARTIFACTS_SLUG = "birdclef-2026-perch-ensemble-v1"
 
 # Perch model candidates
@@ -2285,29 +2284,10 @@ def main():
     t1 = time.time()
 
     # Load pre-extracted labeled embeddings (RAW LOGITS + embeddings)
-    # Prefer jaejohn/perch-meta (has dynamic proxies baked in, same as Yuriy)
-    perch_cache_dir = _find_input(PERCH_CACHE_SLUG)
-    if perch_cache_dir and os.path.exists(os.path.join(perch_cache_dir, "full_perch_arrays.npz")):
-        print(f"  Using jaejohn/perch-meta cache: {perch_cache_dir}")
-        cache_npz = np.load(os.path.join(perch_cache_dir, "full_perch_arrays.npz"))
-        labeled_scores_raw = cache_npz["scores_full_raw"].astype(np.float32)
-        labeled_emb = cache_npz["emb_full"].astype(np.float32)
-        labeled_meta_df = pd.read_parquet(os.path.join(perch_cache_dir, "full_perch_meta.parquet"))
-        # Rename columns to match our expected format
-        if "hour_utc" in labeled_meta_df.columns and "hour" not in labeled_meta_df.columns:
-            labeled_meta_df["hour"] = labeled_meta_df["hour_utc"]
-        if "window_idx" not in labeled_meta_df.columns:
-            labeled_meta_df["window_idx"] = labeled_meta_df.groupby("filename").cumcount()
-        if "window_start" not in labeled_meta_df.columns:
-            labeled_meta_df["window_start"] = labeled_meta_df["window_idx"] * WINDOW_SECONDS
-        if "window_end" not in labeled_meta_df.columns:
-            labeled_meta_df["window_end"] = (labeled_meta_df["window_idx"] + 1) * WINDOW_SECONDS
-    else:
-        print(f"  Using our labeled embeddings: {labeled_emb_dir}")
-        npz = np.load(labeled_emb_dir / "labeled_perch_arrays.npz")
-        labeled_scores_raw = npz["scores_raw"]  # (792, 234) RAW LOGITS
-        labeled_emb = npz["emb"]  # (792, 1536)
-        labeled_meta_df = pd.read_parquet(labeled_emb_dir / "labeled_perch_meta.parquet")
+    npz = np.load(labeled_emb_dir / "labeled_perch_arrays.npz")
+    labeled_scores_raw = npz["scores_raw"]  # (792, 234) RAW LOGITS
+    labeled_emb = npz["emb"]  # (792, 1536)
+    labeled_meta_df = pd.read_parquet(labeled_emb_dir / "labeled_perch_meta.parquet")
 
     print(
         f"  Labeled: scores_raw {labeled_scores_raw.shape} (range [{labeled_scores_raw.min():.1f}, {labeled_scores_raw.max():.1f}])"
