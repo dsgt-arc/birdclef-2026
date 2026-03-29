@@ -187,47 +187,76 @@ kaggle_kernel/push.sh perch-probes
 - [x] 5c.5 Record LB: **0.893** (+0.057 over raw Perch 0.836, probes now helping)
 - [ ] 5c.6 Compare to chiranjithdharma (0.910) — gap of 0.017 remains
 
-### Phase B Decision Gate
+### Phase B Result
 
-- If Perch + probes LB >= 0.900: probes work → continue to ensemble
-- If Perch + probes LB 0.850-0.900: probes partially work → debug
-- If Perch + probes LB < 0.850: probe pipeline has bugs → fix before ensemble
+**0.893 LB** — probes work (+0.057 over raw 0.836). Three critical fixes validated:
+logit space, additive priors, StandardScaler. Gap to chiranjithdharma (0.910) = 0.017.
 
----
-
-## Phase C: SED + Perch Ensemble
-
-Only proceed after Phase B validates Perch + probes.
-
-### Step 6: Add SED to Scoring Notebook
-
-```bash
-cd user/murilo/experiments/018-perch-ensemble
-# Set PERCH_ONLY=False in submission_scoring.py, then:
-kaggle_kernel/push.sh ensemble
-kaggle competitions submissions birdclef-2026 | head -20
-```
-
-- [ ] 6.1 Set `PERCH_ONLY=False` in `submission_scoring.py`
-- [ ] 6.2 Create `kernel-metadata-scoring-ensemble.json` (adds birdclef-deps + SED weights)
-- [ ] 6.3 Sweep blend weights locally with `scripts/local_validate.py --sweep-weights`
-- [ ] 6.4 Push ensemble scoring kernel
-- [ ] 6.5 Record ensemble LB vs Perch-only and SED baselines
+Remaining gap likely from: PACE vs Kaggle embedding mismatch (PCA/probes trained on
+PACE embeddings but applied to Kaggle test embeddings), simpler features (39-dim vs
+77-dim in reference notebooks), LogReg vs MLP probes.
 
 ---
 
-## Phase D: Perch Pipeline Improvements (from reference notebooks)
+## Phase C: Close the Gap to 0.910+ (Kaggle-native embeddings + probe improvements)
 
-Cherry-pick techniques from 0.921-0.926 notebooks if ensemble alone isn't enough.
+Focus: eliminate cross-environment embedding mismatch and optimize inference time
+by caching embeddings. The perch-cache-v1 notebook already runs Perch on Kaggle —
+extend it to also cache labeled soundscape embeddings as a reusable dataset.
+
+### Step 6: Create Kaggle-native labeled embeddings dataset
+
+Use `perch-cache-v1` notebook (already runs on Kaggle) to extract embeddings for
+BOTH labeled AND test soundscapes. Save labeled output as a Kaggle dataset
+(like jaejohn/perch-meta). This eliminates the PACE/Kaggle embedding mismatch.
+
+- [ ] 6.1 Modify perch-cache-v1 to also process 66 labeled soundscapes
+      - Save labeled embeddings + raw logits as `labeled_perch_arrays.npz`
+      - Save labeled metadata as `labeled_perch_meta.parquet`
+      - Still produces submission.csv (raw Perch scores) for competition
+- [ ] 6.2 Submit modified cache notebook to competition
+- [ ] 6.3 Download output, upload as `birdclef-2026-perch-labeled-embeddings` v3
+- [ ] 6.4 Re-run perch-probes-v1 with Kaggle-native labeled embeddings
+- [ ] 6.5 Record LB result — target: close to 0.910
+
+### Step 7: Improve probe pipeline (close remaining gap)
+
+Cherry-pick techniques from 0.910-0.925 reference notebooks:
 
 | Technique | Source | Expected Gain | Effort |
 |-----------|--------|---------------|--------|
-| Focal loss (gamma=2.0) | maryna 0.921 | +0.002-0.004 | Low |
+| **Richer features (77-dim)** | Yuriy 0.925 | +0.005-0.010 | Low |
+| **MLP probes** (sklearn MLPClassifier) | Yuriy 0.925 | +0.003-0.005 | Low |
+| **Fold-safe priors** (OOF) | chiranjithdharma 0.910 | +0.002-0.004 | Medium |
 | File-level confidence scaling | maryna 0.921 | +0.002-0.003 | Low |
 | Per-taxon temperature | maryna 0.921 | +0.001-0.002 | Low |
 | Temporal-shift TTA | maryna 0.921 | +0.001-0.002 | Low |
+
+- [ ] 7.1 Add richer features: std, diff_mean, diff_prev, diff_next, interactions
+- [ ] 7.2 Test MLP probes vs LogReg
+- [ ] 7.3 Add fold-safe priors (exclude val files when building prior tables)
+- [ ] 7.4 Add post-processing: file-level scaling, rank-aware scaling, delta smoothing
+- [ ] 7.5 Record LB results for each improvement
+
+---
+
+## Phase D: SED + Perch Ensemble (after Phase C closes gap)
+
+Combine best Perch pipeline (target 0.910+) with best SED model (v4b 0.859).
+
+- [ ] 8.1 Add SED inference to scoring notebook
+- [ ] 8.2 Sweep blend weights
+- [ ] 8.3 Submit ensemble — target 0.92+
+
+---
+
+## Phase E: Advanced Improvements (if needed)
+
+| Technique | Source | Expected Gain | Effort |
+|-----------|--------|---------------|--------|
 | ProtoSSM temporal model | zirach 0.913 | +0.003-0.010 | High |
 | ResidualSSM boosting | pantanal-distill 0.917 | +0.003-0.005 | High |
+| Focal loss (gamma=2.0) | maryna 0.921 | +0.002-0.004 | Low |
 
 ---
 
