@@ -21,6 +21,7 @@ usage() {
     echo ""
     echo "Modes:"
     echo "  perch-probes      Build labeled embeddings dataset + push perch-probes-kernel scoring"
+    echo "  protossm          Push ProtoSSM v4 kernel (full pipeline)"
     echo "  cache       Push Notebook A — Perch cache (embeddings + mapped scores)"
     echo "  scoring     Push Notebook B — Scoring (two-notebook chain, deprecated)"
     echo "  ensemble    Push Notebook B — Scoring (SED + Perch, Phase C)"
@@ -50,6 +51,7 @@ case "$MODE" in
     perch-probes)     META="kernel-metadata-perch-probes.json" ;;
     perch-probes-v2)  META="kernel-metadata-perch-probes-v2.json" ;;
     perch-probes-v3)  META="kernel-metadata-perch-probes-v3.json" ;;
+    protossm)         META="kernel-metadata-perch-protossm.json" ;;
     cache)      META="kernel-metadata-perch-cache.json" ;;
     scoring)    META="kernel-metadata-scoring.json" ;;
     ensemble)   META="kernel-metadata-scoring-ensemble.json" ;;
