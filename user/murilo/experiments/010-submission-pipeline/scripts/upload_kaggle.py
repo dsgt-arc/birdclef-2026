@@ -230,10 +230,30 @@ MODELS = {
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4j.json",
     },
     # Exp 019 Step 1: SED ablations
+    "effnet-b0-sed-v5a": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5a-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5a",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5a.json",
+    },
+    "effnet-b0-sed-v5b": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5b-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5b",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5b.json",
+    },
+    "effnet-b0-sed-v5c": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5c-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5c",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5c.json",
+    },
     "effnet-b0-sed-v5d": {
         "slug": "birdclef-2026-effnet-b0-sed-v5d-weights",
         "weights_dir": "artifacts/weights/effnet-b0-sed-v5d",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5d.json",
+    },
+    "hgnet-b0-sed-v5e": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5e-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5e",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5e.json",
     },
 }
 

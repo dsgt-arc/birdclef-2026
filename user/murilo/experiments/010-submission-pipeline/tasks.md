@@ -87,6 +87,39 @@ Implementation done in exp 011 (tasks 8.1–8.7).
 - [x] 9.3 Upload + push EAT-soundscape: **0.720 LB** (+0.022 vs fulldata 0.698) (2026-03-22)
 - [x] 9.4 Upload + push ConvNeXt-soundscape: **0.755 LB** (+0.060 vs fulldata 0.695) (2026-03-22)
 
+## 11. Kaggle Submissions — SED Ablations (exp 019)
+
+Adding a new model requires changes in **4 files** (checklist):
+
+1. **`sbatch/export.sbatch`** — add export function (checkpoint path + config path) + case pattern
+2. **`scripts/upload_kaggle.py`** — add MODELS dict entry (slug, weights_dir, kernel_metadata)
+3. **`kaggle_kernel/kernel-metadata-{model}.json`** — create kernel metadata (dataset_sources with weight slug)
+4. **`kaggle_kernel/submission.py`** — add weight slug to MODEL_SLUGS list
+
+Pipeline per model: `run.sh export` → `upload_kaggle.py` → `upload_kaggle.py --push-kernel`
+
+| Model | Export | Upload | Kernel Metadata | MODEL_SLUGS | ONNX Export | Kaggle Upload | LB |
+|-------|--------|--------|----------------|-------------|-------------|--------------|-----|
+| effnet-b0-sed-v5a (BCE) | [x] | [x] | [x] | [x] | [ ] | [ ] | — |
+| effnet-b0-sed-v5b (MixUp) | [x] | [x] | [x] | [x] | [ ] | [ ] | — |
+| effnet-b0-sed-v5c (weight_decay) | [x] | [x] | [x] | [x] | [ ] | [ ] | — |
+| effnet-b0-sed-v5d (LSEHead) | [x] | [x] | [x] | [x] | [x] | [x] | pending |
+| hgnet-b0-sed-v5e (HGNetV2-B0) | [x] | [x] | [x] | [x] | [ ] | [ ] | — |
+
+Once training completes for each model:
+```bash
+cd user/murilo/experiments/010-submission-pipeline
+
+# 1. Export to ONNX (GPU job)
+bash sbatch/run.sh export --model effnet-b0-sed-v5a
+
+# 2. Upload weights to Kaggle
+python scripts/upload_kaggle.py --model effnet-b0-sed-v5a
+
+# 3. Push kernel (wait ~2 min for new datasets)
+python scripts/upload_kaggle.py --model effnet-b0-sed-v5a --push-kernel
+```
+
 ## 10. Documentation
 
 - [x] 10.1 Write proposal.md

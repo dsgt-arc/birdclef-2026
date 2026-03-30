@@ -476,6 +476,53 @@ export_effnet_b0_sed_v4j() {
         --output-dir artifacts/weights/effnet-b0-sed-v4j/
 }
 
+_find_best_ckpt() {
+    local DIR="$1"
+    local CKPT
+    CKPT="$(ls -t "$DIR"/best-epoch*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No best-epoch*.ckpt found in $DIR" >&2
+        exit 1
+    fi
+    echo "$CKPT"
+}
+
+export_effnet_b0_sed_v5a() {
+    echo "=== Exporting EfficientNet-B0 SED v5a (BCE loss, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5a")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/effnet_b0_sed_v5a.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v5a/
+}
+
+export_effnet_b0_sed_v5b() {
+    echo "=== Exporting EfficientNet-B0 SED v5b (stronger MixUp, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5b")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/effnet_b0_sed_v5b.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v5b/
+}
+
+export_effnet_b0_sed_v5c() {
+    echo "=== Exporting EfficientNet-B0 SED v5c (low weight_decay, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5c")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/effnet_b0_sed_v5c.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v5c/
+}
+
 export_effnet_b0_sed_v5d() {
     echo "=== Exporting EfficientNet-B0 SED v5d (LSEHead, 234 classes) ==="
     local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5d/best-epochepoch=21.ckpt"
@@ -484,6 +531,18 @@ export_effnet_b0_sed_v5d() {
         --config "${EXP019_DIR}/config/effnet_b0_sed_v5d.yaml" \
         --train-csv "$TAXONOMY_CSV_2026" \
         --output-dir artifacts/weights/effnet-b0-sed-v5d/
+}
+
+export_hgnet_b0_sed_v5e() {
+    echo "=== Exporting HGNetV2-B0 SED v5e (HGNet backbone, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5e")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5e.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5e/
 }
 
 export_convnext_2026_soundscape() {
@@ -531,7 +590,9 @@ case "$MODEL" in
     eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
     protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student|\
     effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3a|effnet-b0-sed-v3b|effnet-b0-sed-v3c|effnet-b0-sed-v3d|\
-    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|effnet-b0-sed-v4j|effnet-b0-sed-v5d|all-017-ablations|all-2026-sed)
+    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|effnet-b0-sed-v4j|\
+    effnet-b0-sed-v5a|effnet-b0-sed-v5b|effnet-b0-sed-v5c|effnet-b0-sed-v5d|hgnet-b0-sed-v5e|all-019-ablations|\
+    all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TAXONOMY_CSV_2026" \
@@ -617,7 +678,22 @@ case "$MODEL" in
     effnet-b0-sed-v4g)         export_effnet_b0_sed_v4g ;;
     effnet-b0-sed-v4h)         export_effnet_b0_sed_v4h ;;
     effnet-b0-sed-v4j)         export_effnet_b0_sed_v4j ;;
+    effnet-b0-sed-v5a)         export_effnet_b0_sed_v5a ;;
+    effnet-b0-sed-v5b)         export_effnet_b0_sed_v5b ;;
+    effnet-b0-sed-v5c)         export_effnet_b0_sed_v5c ;;
     effnet-b0-sed-v5d)         export_effnet_b0_sed_v5d ;;
+    hgnet-b0-sed-v5e)          export_hgnet_b0_sed_v5e ;;
+    all-019-ablations)
+        export_effnet_b0_sed_v5a
+        echo ""
+        export_effnet_b0_sed_v5b
+        echo ""
+        export_effnet_b0_sed_v5c
+        echo ""
+        export_effnet_b0_sed_v5d
+        echo ""
+        export_hgnet_b0_sed_v5e
+        ;;
     all-017-ablations)
         export_effnet_b0_sed_v4b
         echo ""
