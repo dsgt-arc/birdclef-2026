@@ -55,6 +55,33 @@ def _get_embed_dim(backbone, backbone_type: str) -> int:
         raise ValueError(f"Unknown backbone_type: {backbone_type}")
 
 
+def normalize_mel(mel: torch.Tensor, mel_norm: str = "audioset",
+                   norm_mean: float = -4.268, norm_std: float = 4.569) -> torch.Tensor:
+    """Normalize a mel spectrogram. Shared by GPU (model) and CPU (dataloader) paths.
+
+    Args:
+        mel: Raw power mel spectrogram, shape (..., n_mels, T)
+        mel_norm: "audioset" (log + global normalize) or
+            "amplitude_to_db" (dB + 80dB clamp + standardize + min-max [0,1])
+        norm_mean: Global mean for audioset normalization
+        norm_std: Global std for audioset normalization
+    """
+    if mel_norm == "amplitude_to_db":
+        mel = 10.0 * torch.log10(mel.clamp(min=1e-10))
+        mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+        mel = torch.clamp(mel, min=mel_max - 80.0)
+        mean = mel.mean(dim=(-2, -1), keepdim=True)
+        std = mel.std(dim=(-2, -1), keepdim=True).clamp(min=1e-6)
+        mel = (mel - mean) / std
+        mel_min = mel.amin(dim=(-2, -1), keepdim=True)
+        mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+        mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
+    else:
+        mel = torch.log(mel.clamp(min=1e-10))
+        mel = (mel - norm_mean) / (norm_std * 2)
+    return mel
+
+
 class GeM(nn.Module):
     """Generalized Mean Pooling on the frequency dimension.
 
@@ -372,24 +399,7 @@ class EfficientNetClassifier(nn.Module):
         """Compute mel spectrogram in fp32 — nnAudio FFT is not fp16-safe."""
         waveforms = waveforms.float()
         mel = self.mel_spec(waveforms)
-
-        if self.mel_norm == "amplitude_to_db":
-            # Power-to-dB: 10 * log10(mel), clipped to top 80dB dynamic range
-            mel = 10.0 * torch.log10(mel.clamp(min=1e-10))
-            mel_max = mel.amax(dim=(-2, -1), keepdim=True)
-            mel = torch.clamp(mel, min=mel_max - 80.0)
-            # Per-sample standardize (zero mean, unit variance)
-            mean = mel.mean(dim=(-2, -1), keepdim=True)
-            std = mel.std(dim=(-2, -1), keepdim=True).clamp(min=1e-6)
-            mel = (mel - mean) / std
-            # Per-sample min-max scale to [0, 1]
-            mel_min = mel.amin(dim=(-2, -1), keepdim=True)
-            mel_max = mel.amax(dim=(-2, -1), keepdim=True)
-            mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
-        else:
-            # AudioSet-style: log + global normalize
-            mel = torch.log(mel.clamp(min=1e-10))
-            mel = (mel - self.norm_mean) / (self.norm_std * 2)
+        mel = normalize_mel(mel, self.mel_norm, self.norm_mean, self.norm_std)
 
         T_mel = mel.shape[2]
         if T_mel > self.target_frames:

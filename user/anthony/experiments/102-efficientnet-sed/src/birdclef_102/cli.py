@@ -164,6 +164,7 @@ def main():
         train_on_soundscape=data_cfg.get("train_on_soundscape", True),
         teacher_predictions=data_cfg.get("teacher_predictions"),
         teacher_threshold=data_cfg.get("teacher_threshold", 0.0),
+        mel_norm=model_cfg.get("mel_norm", "audioset"),
     )
 
     # Run name

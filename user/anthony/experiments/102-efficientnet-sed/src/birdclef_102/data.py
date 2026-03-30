@@ -97,6 +97,7 @@ class BirdCLEF102Dataset(Dataset):
         nocall_parquet: str | None = None,
         teacher_predictions: str | None = None,
         teacher_threshold: float = 0.0,
+        mel_norm: str = "audioset",
     ):
         self.audio_dir = Path(audio_dir).expanduser()
         self.species_list = species_list
@@ -109,6 +110,7 @@ class BirdCLEF102Dataset(Dataset):
         self.target_frames = target_frames
         self.norm_mean = norm_mean
         self.norm_std = norm_std
+        self.mel_norm = mel_norm
         self.teacher_predictions = teacher_predictions
         self.teacher_threshold = teacher_threshold
 
@@ -330,9 +332,9 @@ class BirdCLEF102Dataset(Dataset):
 
         if self.mel_transform is not None:
             # Compute mel on CPU in dataloader worker
+            from .model import normalize_mel
             mel = self.mel_transform(waveform.unsqueeze(0))  # (1, n_mels, T)
-            mel = torch.log(mel.clamp(min=1e-10))
-            mel = (mel - self.norm_mean) / (self.norm_std * 2)
+            mel = normalize_mel(mel, self.mel_norm, self.norm_mean, self.norm_std)
             # Pad/trim to target frames
             if self.target_frames is not None:
                 T = mel.shape[2]
@@ -400,6 +402,7 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         train_on_soundscape: bool = True,
         teacher_predictions: str | None = None,
         teacher_threshold: float = 0.0,
+        mel_norm: str = "audioset",
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["species_list", "mel_transform"])
@@ -416,6 +419,7 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         self.target_frames = target_frames
         self.norm_mean = norm_mean
         self.norm_std = norm_std
+        self.mel_norm = mel_norm
         self.soundscape_dir = soundscape_dir
         self.soundscape_labels_csv = soundscape_labels_csv
         self.nocall_parquet = nocall_parquet
@@ -510,6 +514,7 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
                 target_frames=self.target_frames,
                 norm_mean=self.norm_mean,
                 norm_std=self.norm_std,
+                mel_norm=self.mel_norm,
                 teacher_predictions=self.teacher_predictions,
                 teacher_threshold=self.teacher_threshold,
             )
