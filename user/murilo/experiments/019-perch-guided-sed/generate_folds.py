@@ -171,27 +171,30 @@ def main():
         )
     focal_combined = pd.DataFrame(focal_records)
 
-    # Soundscape: audio_id from filename stem, grouped by file
-    # Aggregate species per file (not per segment) for label array
-    sc_grouped = sc_df.groupby("filename")["primary_label"].apply(list).reset_index()
+    # Soundscape: per-segment rows (matching ttahara), grouped by filename.
+    # Each segment is a separate row for better stratification granularity,
+    # but audio_id = filename stem so all segments from the same file share
+    # a group and always end up in the same fold.
     sc_records = []
-    for _, row in sc_grouped.iterrows():
+    for _, row in sc_df.iterrows():
         audio_id = Path(row["filename"]).stem
         sc_records.append(
             {
                 "audio_id": audio_id,
                 "filename": row["filename"],
                 "source": "soundscape",
-                "labels": list(set(row["primary_label"])),  # unique species per file
+                "labels": [row["primary_label"]],
             }
         )
     sc_combined = pd.DataFrame(sc_records)
 
     combined = pd.concat([focal_combined, sc_combined], ignore_index=True)
+    n_sc_files = sc_combined["audio_id"].nunique()
     print(
-        f"Combined: {len(combined)} entries ({len(focal_combined)} focal + {len(sc_combined)} soundscape files)"
+        f"Combined: {len(combined)} entries "
+        f"({len(focal_combined)} focal + {len(sc_combined)} soundscape segments from {n_sc_files} files)"
     )
-    print(f"Unique audio_ids: {combined['audio_id'].nunique()}")
+    print(f"Unique audio_ids (groups): {combined['audio_id'].nunique()}")
 
     # ========================================================================
     # Build multi-hot label array
