@@ -196,7 +196,7 @@ postprocessing, ensemble, data_utils, config)
 - [x] 9.10 Check v4.1 LB result: **0.918 LB** (same as v4 — bug fixes had no effect)
       - OOF improvements (0.6656→0.8061 baseline, 0.9133→0.9447 ensemble) did NOT translate to LB
       - Gap to Yuriy (0.925) remains at 0.007 — root cause is elsewhere
-- [ ] 9.11 Push v4.2 kernel with 4 new fixes from line-by-line diff vs Yuriy:
+- [x] 9.11 Push v4.2 kernel with 4 new fixes from line-by-line diff vs Yuriy:
       1. **Taxonomy aux head**: genus (161 groups) → class_name (5 groups) — biggest fix.
          Our 161-way genus classifier was noisy on 59 files. Yuriy uses 5-way class_name
          (Aves/Amphibia/Insecta/Mammalia/Reptilia) for clean regularization.
@@ -206,6 +206,8 @@ postprocessing, ensemble, data_utils, config)
       4. **Site mapping**: 0-based → 1-based (index 0 = unknown sites, matching Yuriy).
       - All 142 tests passing after fixes
       - Estimated impact: +0.004 to +0.008 LB
+      - Pushed as nb version 5, dry-run passed (145s, families=5, sites=9)
+      - Submitted to competition (2026-03-30), running inference (~90 min)
 - [ ] 9.12 Check v4.2 LB result — target: 0.920-0.925
 
 ---
