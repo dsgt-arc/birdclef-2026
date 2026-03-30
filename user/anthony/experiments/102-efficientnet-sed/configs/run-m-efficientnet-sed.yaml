@@ -1,15 +1,15 @@
-# Run M: EfficientNet-B1 LoRA + SED head (GeM + Conv1d) + AmplitudeToDB
+# Run M: EfficientNet-B1 LoRA + SED head (GeM + dual Conv1d branches)
 # Based on Run C (best LB 0.794) with SED architecture from Murilo's exp 016-017.
-# Changes vs Run I: pooling_mode=sed, mel_norm=amplitude_to_db, no soundscape data.
-# Focal-only training to match Run C conditions.
+# Changes vs Run C: pooling_mode=sed (GeM + projection + dual supervision).
+# Same mel config (audioset normalization). Focal-only training.
 
 model:
   model_name: "DBD-research-group/EfficientNet-B1-BirdSet-XCL"
   backbone_mode: lora
   pooling_mode: sed
   head_hidden_dim: 512
-  head_dropout: 0.5
-  mel_norm: amplitude_to_db
+  head_dropout: 0.0
+  mel_norm: audioset
   gem_p: 3.0
   blend_clip: 0.75
   blend_frame: 0.25
