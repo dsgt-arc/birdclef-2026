@@ -204,6 +204,64 @@ def get_gpu_info(partitions):
     return results
 
 
+def _fmt_mem(mb):
+    """Format memory in MB to human-readable string."""
+    if mb >= 1024:
+        return f"{mb / 1024:.0f} GB"
+    return f"{mb:.0f} MB"
+
+
+def _parse_cpus_state(s):
+    """Parse sinfo cpusstate 'A/I/O/T' → (allocated, idle, other, total)."""
+    try:
+        parts = s.split("/")
+        return int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+    except (ValueError, IndexError):
+        return 0, 0, 0, 0
+
+
+def get_free_gpu_nodes(partitions):
+    """Get per-node details for nodes that have at least one free GPU."""
+    nodes = []
+    for p in partitions:
+        out = run(
+            f"sinfo -p {p} -N "
+            f"--Format='nodelist:40,gres:50,gresused:50,cpusstate:20,freemem:15,memory:15' "
+            f"--noheader"
+        )
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            node_name = parts[0]
+            total_gpu = parse_gpu_count(parts[1])
+            used_gpu = parse_gpu_count(parts[2])
+            free_gpu = max(0, total_gpu - used_gpu)
+            if free_gpu == 0:
+                continue
+            _, idle_cpus, _, total_cpus = _parse_cpus_state(parts[3])
+            try:
+                free_mem_mb = int(parts[4])
+            except ValueError:
+                free_mem_mb = 0
+            try:
+                total_mem_mb = int(parts[5])
+            except ValueError:
+                total_mem_mb = 0
+            nodes.append(
+                {
+                    "node": node_name,
+                    "partition": p,
+                    "free_gpu": free_gpu,
+                    "idle_cpus": idle_cpus,
+                    "total_cpus": total_cpus,
+                    "free_mem_mb": free_mem_mb,
+                    "total_mem_mb": total_mem_mb,
+                }
+            )
+    return nodes
+
+
 def get_jobs(partitions):
     partition_str = ",".join(partitions)
     out = run(f"squeue -p {partition_str} --json")
@@ -424,6 +482,46 @@ def main():
         )
 
     print_table(headers, rows, colored_rows)
+
+    # ── Section 1b: Nodes with free GPUs (per-node detail) ──────────────────
+    free_nodes = get_free_gpu_nodes(partitions)
+    if free_nodes:
+        print(f"\n{bold('Nodes with Free GPUs')}  {dim('(why is my job pending?)')}")
+        headers = ["Node", "Partition", "Free GPUs", "Idle CPUs", "Free Mem"]
+        rows, colored_rows = [], []
+        for n in sorted(free_nodes, key=lambda x: (-x["free_gpu"], x["partition"])):
+            cpus_str = f"{n['idle_cpus']}/{n['total_cpus']}"
+            mem_str = _fmt_mem(n["free_mem_mb"])
+            rows.append([n["node"], n["partition"], str(n["free_gpu"]), cpus_str, mem_str])
+
+            # Color idle CPUs: red if <4, yellow if <8, green if >=8
+            idle = n["idle_cpus"]
+            if idle < 4:
+                cpu_c = red(cpus_str)
+            elif idle < 8:
+                cpu_c = yellow(cpus_str)
+            else:
+                cpu_c = green(cpus_str)
+
+            # Color free mem: red if <32GB, yellow if <64GB, green if >=64GB
+            mem_gb = n["free_mem_mb"] / 1024
+            if mem_gb < 32:
+                mem_c = red(mem_str)
+            elif mem_gb < 64:
+                mem_c = yellow(mem_str)
+            else:
+                mem_c = green(mem_str)
+
+            colored_rows.append(
+                [
+                    dim(n["node"]),
+                    cyan(n["partition"]),
+                    gpu_color(n["free_gpu"]),
+                    cpu_c,
+                    mem_c,
+                ]
+            )
+        print_table(headers, rows, colored_rows)
 
     # ── Section 2: Queue depth ───────────────────────────────────────────────
     print(f"\n{bold('Queue Depth')}  {dim('(inferno · Priority + Resources only)')}")
