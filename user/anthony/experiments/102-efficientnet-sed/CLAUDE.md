@@ -44,6 +44,34 @@ class weighting, and soundscape validation. Best result: **0.794 Kaggle public L
 8. **Activity scores predict calls**: 0.913 AUROC from logistic regression on acoustic indices
 9. **ONNX export verified correct**: mel and output mismatch < 0.002
 
+## Next improvements (from Murilo's exp 016-019 results)
+
+Validated changes to port into this codebase, in priority order:
+
+1. **AmplitudeToDB normalization** — replace `log(mel) + normalize` with
+   `torchaudio.transforms.AmplitudeToDB` (decibel scale + dynamic range clamp).
+   Floors quiet values to a flat silence instead of spreading noise across a wide
+   negative range. The model gets cleaner contrast between calls and silence without
+   having to learn where the noise floor is. Murilo measured +0.034 LB from this alone.
+   One-line change in `compute_mel`.
+
+2. **Mel resolution** — n_fft 1024→4096, n_mels 256→224. Higher n_fft = narrower
+   frequency bins = better separation of bird calls. The backbone handles arbitrary
+   input shapes (HF EfficientNet adapts internally, `adaptive_avg_pool2d` collapses
+   spatial dims), so this is just a config change. Murilo measured +0.030 LB.
+
+3. **SED head** — full SED formulation with GeM frequency pooling + attention +
+   framewise max, rather than current attention pooling. This was the biggest
+   architectural jump in Murilo's work (+0.060 LB over clip-level in exp 016).
+
+4. **Soft CE loss** — replace focal BCE. Part of Murilo's best SED config (v4b, 0.859 LB).
+
+Things Murilo tested that **did NOT help on LB** (skip these):
+- MixUp (regressed LB twice despite improving offline metrics)
+- Stacking multiple techniques (no additive gains)
+- Fulldata training without epoch caps (regressed)
+- Pseudo-labeling with weak teacher (exp 015, but revisit if teacher > student)
+
 ## Next step: Clean focal data with frame-level predictions
 
 The trained attention model produces per-frame, per-species probabilities on focal
