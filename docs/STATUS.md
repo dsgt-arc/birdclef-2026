@@ -15,6 +15,8 @@
 | EfficientNet-B1 frozen probe | anthony/012 | 0.649 | Frozen backbone + linear head |
 | ProtoCLR clip-level | murilo/012 | 0.767 | Best clip-level model |
 | **EfficientNet-B1 LoRA + attention** | **anthony/102** | **0.794** | **2 epochs, attention pooling critical** |
+| EfficientNet-B1 attention + SC val | anthony/102 | 0.609 | SC validation didn't predict LB |
+| EfficientNet-B1 attention + teacher filter + SC val | anthony/102 | 0.528 | Teacher filtering + SC val hurt LB |
 | EfficientNet-B0 SED v1 | murilo/016 | 0.795 | SED architecture validated |
 | + post-processing (TTA + smoothing + TopN) | murilo/016 | 0.823 | +0.028 free gains |
 | **+ pp2 (temp scaling + taxa smoothing + priors)** | **murilo/016** | **0.827** | **Overall best** |
@@ -28,7 +30,7 @@
 1. **Attention pooling is critical for soundscape performance** — 0.794 LB vs 0.754 for avg pooling (framewise max catches brief calls)
 2. **Focal overfitting is the main problem** — more training epochs improves val/cmap but hurts Kaggle LB (2-epoch model > 13-epoch model on LB)
 3. **ConvNeXt-Base overfits worse than EfficientNet-B1** — 0.644 val/cmap but only 0.603 Kaggle LB (89M params + 128 mels)
-4. **Soundscape validation tracks Kaggle LB** — peaks at epoch 2-3 then declines
+4. **Soundscape validation did NOT predict Kaggle LB** — SC auroc 0.870 → 0.528 LB. The 50/50 site split may cause train/val site mismatch. The 2-epoch model (0.794 LB) trained without any soundscape validation remains best.
 5. **bf16 emulated on RTX 6000 (sm_75)** — fp16 gives 3x throughput; torch.compile works with 2.11+cu126
 6. **Teacher predictions**: 5.4% of focal chunks are noise (species not present), 29% potential mislabels
 
