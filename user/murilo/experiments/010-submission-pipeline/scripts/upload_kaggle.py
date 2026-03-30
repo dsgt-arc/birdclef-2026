@@ -223,6 +223,55 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-sed-v4f",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4f.json",
     },
+    # Exp 017 Step 5: Waveform MixUp
+    "effnet-b0-sed-v4j": {
+        "slug": "birdclef-2026-effnet-b0-sed-v4j-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v4j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4j.json",
+    },
+    # Exp 019 Step 1: SED ablations
+    "effnet-b0-sed-v5a": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5a-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5a",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5a.json",
+    },
+    "effnet-b0-sed-v5b": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5b-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5b",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5b.json",
+    },
+    "effnet-b0-sed-v5c": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5c-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5c",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5c.json",
+    },
+    "effnet-b0-sed-v5d": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5d-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5d",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5d.json",
+    },
+    "hgnet-b0-sed-v5e": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5e-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5e",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5e.json",
+    },
+    # Exp 019 Step 2: ttahara full recipe reproduction
+    "effnet-b0-sed-v5f": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5f-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5f",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5f.json",
+    },
+    "hgnet-b0-sed-v5g": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5g-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5g",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5g.json",
+    },
+    # Exp 019 Step 3: 4-fold ensemble
+    "hgnet-b0-sed-v5g-4fold": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5g-4fold-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5g-4fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5g-4fold.json",
+    },
 }
 
 
@@ -258,7 +307,7 @@ def run_cmd(cmd: list[str], dry_run: bool = False) -> bool:
         return True
     except subprocess.CalledProcessError as e:
         combined = e.stdout + e.stderr
-        if "already exists" in combined or "403" in combined:
+        if "already exists" in combined or "already in use" in combined or "403" in combined:
             return False
         if e.stdout:
             print(f"  stdout: {e.stdout.strip()}")
@@ -278,7 +327,7 @@ def upload_dataset(slug: str, path: Path, kaggle_user: str, dry_run: bool = Fals
         print(f"  WARNING: {path} is empty, skipping")
         return
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Uploading: {kaggle_user}/{slug}")
     print(f"  Source: {path}")
     print("  Files:")
@@ -419,6 +468,11 @@ def main():
     for model_name in models:
         upload_weights(model_name, args.kaggle_user, args.dry_run)
         if args.push_kernel:
+            if not args.dry_run:
+                import time
+
+                print("\n  Waiting 30s for dataset to process before pushing kernel...")
+                time.sleep(30)
             push_kernel(model_name, args.dry_run)
 
     print(f"\nDone! Uploaded deps + {len(models)} model(s).")

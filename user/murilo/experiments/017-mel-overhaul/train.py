@@ -40,7 +40,7 @@ sys.path.insert(0, str(repo_root / "src"))
 from birdclef.data.sed import SEDDataModule  # noqa: E402
 from birdclef.data.soundscape import build_full_species_list  # noqa: E402
 from birdclef.encoders.efficientnet import EfficientNetEncoder  # noqa: E402
-from birdclef.heads.sed_head import AttBlockV2, AttHead  # noqa: E402
+from birdclef.heads.sed_head import AttBlockV2, AttHead, LSEHead  # noqa: E402
 from birdclef.lightning.sed_finetune import SEDFinetuneModule  # noqa: E402
 from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram  # noqa: E402
 
@@ -118,14 +118,19 @@ def main():
 
     head_type = config["sed_head"].get("type", "att_head")
     logger.info(f"Building SED head: {head_type}...")
-    head_cls = AttBlockV2 if head_type == "att_block_v2" else AttHead
-    sed_head = head_cls(
-        in_channels=embed_dim,
-        num_classes=num_classes,
-        hidden_dim=config["sed_head"]["hidden_dim"],
-        dropout=config["sed_head"]["dropout"],
-        gem_p=config["sed_head"]["gem_p"],
+    head_cls = {"att_head": AttHead, "att_block_v2": AttBlockV2, "lse_head": LSEHead}.get(
+        head_type, AttHead
     )
+    head_kwargs = {
+        "in_channels": embed_dim,
+        "num_classes": num_classes,
+        "hidden_dim": config["sed_head"]["hidden_dim"],
+        "dropout": config["sed_head"]["dropout"],
+        "gem_p": config["sed_head"]["gem_p"],
+    }
+    if head_type == "lse_head":
+        head_kwargs["lse_temperature"] = config["sed_head"].get("lse_temperature", 1.0)
+    sed_head = head_cls(**head_kwargs)
 
     # ========================================================================
     # Build mel spectrogram transform
@@ -202,6 +207,8 @@ def main():
         blend_frame=training_cfg["blend_frame"],
         mixup_prob=training_cfg.get("mixup_prob", 0.5),
         mixup_alpha=training_cfg.get("mixup_alpha", 0.5),
+        mixup_warmup_epochs=training_cfg.get("mixup_warmup_epochs", 0),
+        mixup_theta=training_cfg.get("mixup_theta", 1.0),
         loss_type=training_cfg.get("loss_type", "soft_ce"),
         label_smoothing=training_cfg.get("label_smoothing", 0.0),
         asl_gamma_neg=training_cfg.get("asl_gamma_neg", 4.0),
@@ -399,6 +406,21 @@ def main():
         results_dir.mkdir(parents=True, exist_ok=True)
         results_file = results_dir / f"{run_name}.json"
 
+        # Capture val metrics from trainer's logged values
+        val_metrics = {}
+        for key in [
+            "val/auroc",
+            "val/cmap",
+            "val/f1_macro",
+            "val/f1_micro",
+            "val/top1_acc",
+            "val/top5_acc",
+            "val/loss",
+        ]:
+            val = trainer.callback_metrics.get(key)
+            if val is not None:
+                val_metrics[key] = float(val)
+
         raw_results = {
             "config_path": str(config_path),
             "run_name": run_name,
@@ -418,6 +440,7 @@ def main():
             ),
             "stopped_epoch": trainer.current_epoch,
             "test_metrics": test_results[0] if test_results else None,
+            "val_metrics": val_metrics if val_metrics else None,
         }
         with open(results_file, "w") as f:
             json.dump(raw_results, f, indent=2)

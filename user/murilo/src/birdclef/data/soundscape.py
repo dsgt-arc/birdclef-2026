@@ -180,11 +180,17 @@ class FocalDataset234(Dataset):
         return len(self.focal_dataset)
 
     def __getitem__(self, idx):
-        waveform, label_206 = self.focal_dataset[idx]
+        waveform, label_206, primary_idx_206 = self.focal_dataset[idx]
         label_234 = torch.zeros(self.num_classes, dtype=torch.float32)
 
         for old_idx, new_idx in enumerate(self.remap_indices):
             if new_idx >= 0:
                 label_234[new_idx] = label_206[old_idx]
 
-        return waveform, label_234
+        # Remap primary_idx from 206-space to 234-space
+        if 0 <= primary_idx_206 < len(self.remap_indices):
+            primary_idx_234 = self.remap_indices[primary_idx_206]
+        else:
+            primary_idx_234 = 0  # fallback
+
+        return waveform, label_234, primary_idx_234

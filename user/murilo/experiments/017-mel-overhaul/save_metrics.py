@@ -40,18 +40,30 @@ def main():
         raw = json.load(f)
 
     test_metrics = raw.get("test_metrics") or {}
+    val_metrics = raw.get("val_metrics") or {}
     variant_name = Path(args.config).stem
     mel_cfg = config.get("mel", {})
 
+    # Use test metrics if available (80/10/10 split), fall back to val metrics (90/10 split)
+    has_test = bool(test_metrics)
+    metrics_source = "test" if has_test else "val"
+
+    def get_metric(test_key, val_key):
+        """Get metric from test set first, fall back to val set."""
+        if has_test:
+            return test_metrics.get(test_key)
+        return val_metrics.get(val_key)
+
     metrics = {
-        # Primary metrics
-        "auroc": test_metrics.get("test/auroc"),
-        "cmap": test_metrics.get("test/cmap"),
-        "f1_macro": test_metrics.get("test/f1_macro"),
-        "f1_micro": test_metrics.get("test/f1_micro"),
-        "top1_accuracy": test_metrics.get("test/top1_acc"),
-        "top5_accuracy": test_metrics.get("test/top5_acc"),
-        "loss": test_metrics.get("test/loss"),
+        # Primary metrics (test if available, val otherwise)
+        "auroc": get_metric("test/auroc", "val/auroc"),
+        "cmap": get_metric("test/cmap", "val/cmap"),
+        "f1_macro": get_metric("test/f1_macro", "val/f1_macro"),
+        "f1_micro": get_metric("test/f1_micro", "val/f1_micro"),
+        "top1_accuracy": get_metric("test/top1_acc", "val/top1_acc"),
+        "top5_accuracy": get_metric("test/top5_acc", "val/top5_acc"),
+        "loss": get_metric("test/loss", "val/loss"),
+        "metrics_source": metrics_source,
         # Architecture
         "architecture": "sed",
         "encoder_type": config["encoder"]["type"],

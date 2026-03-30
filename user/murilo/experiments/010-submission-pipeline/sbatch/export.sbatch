@@ -345,6 +345,7 @@ export_effnet_b0_sed_v3d() {
 # ============================================================================
 
 EXP017_DIR="$(dirname "$EXPERIMENT_DIR")/017-mel-overhaul"
+EXP019_DIR="$(dirname "$EXPERIMENT_DIR")/019-perch-guided-sed"
 
 export_effnet_b0_sed_v4a() {
     echo "=== Exporting EfficientNet-B0 SED v4a (mel overhaul, 234 classes) ==="
@@ -465,6 +466,149 @@ export_effnet_b0_sed_v4h() {
         --output-dir artifacts/weights/effnet-b0-sed-v4h/
 }
 
+export_effnet_b0_sed_v4j() {
+    echo "=== Exporting EfficientNet-B0 SED v4j (waveform MixUp, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v4j/best-epochepoch=34.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP017_DIR}/config/efficientnet_b0_sed_v4j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v4j/
+}
+
+_find_best_ckpt() {
+    local DIR="$1"
+    local CKPT
+    CKPT="$(ls -t "$DIR"/best-epoch*.ckpt 2>/dev/null | head -1)"
+    if [ -z "$CKPT" ]; then
+        echo "ERROR: No best-epoch*.ckpt found in $DIR" >&2
+        exit 1
+    fi
+    echo "$CKPT"
+}
+
+export_effnet_b0_sed_v5a() {
+    echo "=== Exporting EfficientNet-B0 SED v5a (BCE loss, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5a")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/effnet_b0_sed_v5a.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v5a/
+}
+
+export_effnet_b0_sed_v5b() {
+    echo "=== Exporting EfficientNet-B0 SED v5b (stronger MixUp, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5b")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/effnet_b0_sed_v5b.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v5b/
+}
+
+export_effnet_b0_sed_v5c() {
+    echo "=== Exporting EfficientNet-B0 SED v5c (low weight_decay, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5c")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/effnet_b0_sed_v5c.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v5c/
+}
+
+export_effnet_b0_sed_v5d() {
+    echo "=== Exporting EfficientNet-B0 SED v5d (LSEHead, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5d/best-epochepoch=21.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/effnet_b0_sed_v5d.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v5d/
+}
+
+export_hgnet_b0_sed_v5e() {
+    echo "=== Exporting HGNetV2-B0 SED v5e (HGNet backbone, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5e")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5e.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5e/
+}
+
+export_effnet_b0_sed_v5f() {
+    echo "=== Exporting EfficientNet-B0 SED v5f (ttahara recipe, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5f")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/effnet_b0_sed_v5f.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v5f/
+}
+
+export_hgnet_b0_sed_v5g() {
+    echo "=== Exporting HGNetV2-B0 SED v5g (ttahara full reproduction, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5g")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5g.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5g/
+}
+
+export_hgnet_b0_sed_v5g_4fold() {
+    echo "=== Exporting HGNetV2-B0 SED v5g 4-fold ensemble (234 classes) ==="
+    local OUTPUT_DIR="artifacts/weights/hgnet-b0-sed-v5g-4fold"
+    mkdir -p "$OUTPUT_DIR"
+
+    for FOLD in 0 1 2 3; do
+        local CKPT_DIR="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5g/fold${FOLD}"
+        local CKPT
+        CKPT="$(_find_best_ckpt "$CKPT_DIR")"
+        echo ""
+        echo "--- Fold ${FOLD}: $CKPT ---"
+        python scripts/export_efficientnet_sed.py \
+            --checkpoint "$CKPT" \
+            --config "${EXP019_DIR}/config/hgnet_b0_sed_v5g.yaml" \
+            --train-csv "$TAXONOMY_CSV_2026" \
+            --output-dir "${OUTPUT_DIR}/fold${FOLD}/"
+    done
+
+    # Copy shared artifacts to top-level and rename per-fold ONNX models
+    cp "${OUTPUT_DIR}/fold0/species_list.json" "${OUTPUT_DIR}/"
+    cp "${OUTPUT_DIR}/fold0/mel_config.json" "${OUTPUT_DIR}/"
+    # species_mapping.json is built by build_species_mapping.py, not by export.
+    # Copy from single-model export if available, or from the mapping build step.
+    local SINGLE_MAPPING="artifacts/weights/hgnet-b0-sed-v5g/species_mapping.json"
+    local MAPPING_2026="artifacts/weights/species_mapping_2026.json"
+    if [ -f "$SINGLE_MAPPING" ]; then
+        cp "$SINGLE_MAPPING" "${OUTPUT_DIR}/"
+    elif [ -f "$MAPPING_2026" ]; then
+        cp "$MAPPING_2026" "${OUTPUT_DIR}/species_mapping.json"
+    else
+        echo "WARNING: species_mapping.json not found. Run single-model export first or build_species_mapping.py."
+    fi
+    for FOLD in 0 1 2 3; do
+        cp "${OUTPUT_DIR}/fold${FOLD}/model.onnx" "${OUTPUT_DIR}/model_fold${FOLD}.onnx"
+    done
+    echo ""
+    echo "4-fold ensemble exported to ${OUTPUT_DIR}/"
+    ls -lh "${OUTPUT_DIR}"/model_fold*.onnx
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -510,7 +654,9 @@ case "$MODEL" in
     eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
     protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student|\
     effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3a|effnet-b0-sed-v3b|effnet-b0-sed-v3c|effnet-b0-sed-v3d|\
-    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|all-017-ablations|all-2026-sed)
+    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|effnet-b0-sed-v4j|\
+    effnet-b0-sed-v5a|effnet-b0-sed-v5b|effnet-b0-sed-v5c|effnet-b0-sed-v5d|hgnet-b0-sed-v5e|effnet-b0-sed-v5f|hgnet-b0-sed-v5g|hgnet-b0-sed-v5g-4fold|all-019-ablations|\
+    all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TAXONOMY_CSV_2026" \
@@ -595,6 +741,26 @@ case "$MODEL" in
     effnet-b0-sed-v4b-fulldata)    export_effnet_b0_sed_v4b_fulldata ;;
     effnet-b0-sed-v4g)         export_effnet_b0_sed_v4g ;;
     effnet-b0-sed-v4h)         export_effnet_b0_sed_v4h ;;
+    effnet-b0-sed-v4j)         export_effnet_b0_sed_v4j ;;
+    effnet-b0-sed-v5a)         export_effnet_b0_sed_v5a ;;
+    effnet-b0-sed-v5b)         export_effnet_b0_sed_v5b ;;
+    effnet-b0-sed-v5c)         export_effnet_b0_sed_v5c ;;
+    effnet-b0-sed-v5d)         export_effnet_b0_sed_v5d ;;
+    hgnet-b0-sed-v5e)          export_hgnet_b0_sed_v5e ;;
+    effnet-b0-sed-v5f)         export_effnet_b0_sed_v5f ;;
+    hgnet-b0-sed-v5g)          export_hgnet_b0_sed_v5g ;;
+    hgnet-b0-sed-v5g-4fold)    export_hgnet_b0_sed_v5g_4fold ;;
+    all-019-ablations)
+        export_effnet_b0_sed_v5a
+        echo ""
+        export_effnet_b0_sed_v5b
+        echo ""
+        export_effnet_b0_sed_v5c
+        echo ""
+        export_effnet_b0_sed_v5d
+        echo ""
+        export_hgnet_b0_sed_v5e
+        ;;
     all-017-ablations)
         export_effnet_b0_sed_v4b
         echo ""

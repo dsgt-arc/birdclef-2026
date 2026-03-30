@@ -59,7 +59,7 @@ def main():
 
     from birdclef.data.soundscape import build_full_species_list
     from birdclef.encoders.efficientnet import EfficientNetEncoder
-    from birdclef.heads.sed_head import AttBlockV2, AttHead
+    from birdclef.heads.sed_head import AttBlockV2, AttHead, LSEHead
     from birdclef.lightning.sed_finetune import SEDFinetuneModule
 
     with open(args.config) as f:
@@ -100,6 +100,11 @@ def main():
     if head_type == "att_block_v2":
         sed_head = AttBlockV2(**head_kwargs)
         logger.info("SED head: AttBlockV2 (tanh+softmax attention, sigmoid classification)")
+    elif head_type == "lse_head":
+        head_kwargs["lse_temperature"] = cfg["sed_head"].get("lse_temperature", 1.0)
+        head_kwargs["freq_pool"] = cfg["sed_head"].get("freq_pool", "gem")
+        sed_head = LSEHead(**head_kwargs)
+        logger.info(f"SED head: LSEHead (freq_pool={head_kwargs['freq_pool']}, LSE time pooling)")
     else:
         sed_head = AttHead(**head_kwargs)
         logger.info("SED head: AttHead (softmax attention)")
@@ -231,30 +236,55 @@ def main():
     inference_window = window_duration  # match training window at inference
 
     mel_cfg = cfg.get("mel", {})
+    mel_type = mel_cfg.get("type", "nnaudio")
     norm_type = mel_cfg.get("norm_type", "audioset")
-    mel_config = {
-        "type": "mel",
-        "sr": sample_rate,
-        "n_fft": mel_cfg.get("n_fft", 1024),
-        "hop_length": hop_length_cfg,
-        "n_mels": n_mels,
-        "fmin": 0,
-        "fmax": mel_cfg.get("fmax", None),
-        "htk": True,
-        "target_frames": target_frames,
-        "norm_type": norm_type,
-        "norm_mean": -4.268,
-        "norm_std": 4.569,
-        "output_type": "probs",
-        "architecture": "sed",
-        "blend_clip": args.blend_clip,
-        "blend_frame": args.blend_frame,
-        "window_duration": window_duration,
-        "inference_window": inference_window,
-    }
-    if norm_type == "amplitude_to_db":
-        mel_config["top_db"] = mel_cfg.get("top_db", 80.0)
-        logger.info(f"Mel normalization: amplitude_to_db (top_db={mel_config['top_db']})")
+
+    if mel_type == "ttahara":
+        # ttahara mel: torchaudio params, resize to square, per-segment min-max
+        mel_config = {
+            "type": "ttahara",
+            "sr": sample_rate,
+            "n_fft": mel_cfg.get("n_fft", 2048),
+            "win_length": mel_cfg.get("win_length", 626),
+            "hop_length": mel_cfg.get("hop_length", 313),
+            "n_mels": mel_cfg.get("n_mels", 256),
+            "fmin": mel_cfg.get("f_min", 20),
+            "top_db": mel_cfg.get("top_db", 80.0),
+            "target_shape": mel_cfg.get("target_shape", [256, 256]),
+            "output_type": "probs",
+            "architecture": "sed",
+            "blend_clip": args.blend_clip,
+            "blend_frame": args.blend_frame,
+            "window_duration": window_duration,
+            "inference_window": window_duration,  # no context padding for ttahara
+        }
+        logger.info(
+            f"Mel normalization: ttahara (resize {mel_config['target_shape']}, per-segment min-max)"
+        )
+    else:
+        mel_config = {
+            "type": "mel",
+            "sr": sample_rate,
+            "n_fft": mel_cfg.get("n_fft", 1024),
+            "hop_length": hop_length_cfg,
+            "n_mels": n_mels,
+            "fmin": 0,
+            "fmax": mel_cfg.get("fmax", None),
+            "htk": True,
+            "target_frames": target_frames,
+            "norm_type": norm_type,
+            "norm_mean": -4.268,
+            "norm_std": 4.569,
+            "output_type": "probs",
+            "architecture": "sed",
+            "blend_clip": args.blend_clip,
+            "blend_frame": args.blend_frame,
+            "window_duration": window_duration,
+            "inference_window": inference_window,
+        }
+        if norm_type == "amplitude_to_db":
+            mel_config["top_db"] = mel_cfg.get("top_db", 80.0)
+            logger.info(f"Mel normalization: amplitude_to_db (top_db={mel_config['top_db']})")
     mel_config_path = output_dir / "mel_config.json"
     with open(mel_config_path, "w") as f:
         json.dump(mel_config, f, indent=2)

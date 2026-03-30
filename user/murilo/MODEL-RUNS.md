@@ -223,6 +223,83 @@ No test metrics available — only val/auroc from checkpoint callback.
 **v4b (AmplitudeToDB)** is the current best at 0.859 LB (0.860 with pp2).
 Fulldata training regressed −0.006 (0.853 vs 0.859) — likely overtrained without val monitoring.
 
+### Step 5: Loss & Augmentation Ablations
+
+Motivated by Salman Ahmed's 0.908 LB (single EfficientNet-B0 SED with CE + raw waveform MixUp).
+
+| Slug | Change | Mel Norm | Head | Loss | Waveform MixUp | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|----------|------|------|---------------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v4i` | Standard CE loss (primary_label) | amplitude_to_db | AttHead | ce | No | 0.835 | 12 | skip | `017-.../2026-effnet-b0-sed-v4i/best-epochepoch=12.ckpt` |
+| **`effnet-b0-sed-v4j`** | **Raw waveform MixUp** | amplitude_to_db | AttHead | soft_ce | **Yes** | **0.868** | 34 | 0.853 | `017-.../2026-effnet-b0-sed-v4j/best-epochepoch=34.ckpt` |
+| `effnet-b0-sed-v4k` | CE + waveform MixUp | amplitude_to_db | AttHead | ce | Yes | 0.835 | 18 | skip | `017-.../2026-effnet-b0-sed-v4k/best-epochepoch=18.ckpt` |
+
+**v4j (waveform MixUp)** had best offline (+0.003 val/auroc) but regressed −0.006 on LB (0.853 vs 0.859).
+Offline val/auroc continues to be a poor LB predictor (v4j: 0.868 val → 0.853 LB).
+Standard CE loss (v4i, v4k) regressed −0.030 val/auroc even with the primary_label fix
+(using actual primary label index instead of argmax of multi-hot). CE loss with our soft CE
+setup consistently underperforms — the gap to Salman's 0.908 is from other factors.
+
+**Note**: v4i and v4k used the fixed CE implementation (primary_label_idx from dataloader,
+not argmax of multi-hot). The original broken CE (argmax) gave similar results (v4k
+first run: 0.846), confirming the low mismatch rate (0.2% for focal recordings).
+
+## BirdCLEF 2026 Models — SED Ablations (exp 019)
+
+Single-variable ablations from v4b (0.860 LB). 90/10 split, 50 epochs, same data pipeline.
+Goal: push SED from 0.860 → 0.885+ LB before pseudo-labeling.
+
+### Step 1: Quick wins ablation
+
+| Slug | Change | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|------|------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v5a` | BCEWithLogitsLoss | AttHead | bce | **0.875** | 29 | **0.851** | `017-.../2026-effnet-b0-sed-v5a/best-epochepoch=29.ckpt` |
+| `effnet-b0-sed-v5b` | Stronger MixUp (α=1.0, θ=0.8, warmup=5) | AttHead | soft_ce | **0.869** | 31 | **0.840** | `017-.../2026-effnet-b0-sed-v5b/best-epochepoch=31.ckpt` |
+| `effnet-b0-sed-v5c` | weight_decay=1e-4 | AttHead | soft_ce | **0.867** | 35 | pending | `017-.../2026-effnet-b0-sed-v5c/best-epochepoch=35.ckpt` |
+| `effnet-b0-sed-v5d` | LSEHead (GeM+LSE pooling) | **LSEHead** | soft_ce | **0.861** | 21 | pending | `017-.../2026-effnet-b0-sed-v5d/best-epochepoch=21.ckpt` |
+| `effnet-b0-sed-v5e` | HGNetV2-B0 backbone (embed=1024) | AttHead | soft_ce | 0.861 | 23 | pending | `017-.../2026-hgnet-b0-sed-v5e/best-epochepoch=23.ckpt` |
+
+**v5d (LSEHead)**: −0.004 val/auroc vs v4b baseline (0.861 vs 0.865). LSE pooling slightly
+regresses compared to attention head on EfficientNet-B0.
+
+### Step 2: ttahara full recipe reproduction
+
+Faithful reproduction of ttahara's 0.884 LB pipeline: LSEHead(mean freq), BCE, per-sample
+MixUp(α=1.0, θ=0.8), OneCycleLR(lr=5e-4, wd=1e-4), torchaudio mel(n_fft=2048, resize
+256x256, min-max), 5s segments, 20 epochs. Ref: `user/murilo/notes/ttahara-hgnetv2-b0-annotated.md`.
+
+| Slug | Backbone | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|----------|------|------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v5f` | EfficientNet-B0 | LSEHead(mean) | bce | **0.866** | 14 | **0.855** | `017-.../2026-effnet-b0-sed-v5f/best-epochepoch=14.ckpt` |
+| `hgnet-b0-sed-v5g` | HGNetV2-B0 | LSEHead(mean) | bce | **0.872** | 18 | pending | `017-.../2026-hgnet-b0-sed-v5g/best-epochepoch=18.ckpt` |
+| `hgnet-b0-sed-v5g-4fold` | HGNetV2-B0 ×4 | LSEHead(mean) | bce | 0.939/0.842/0.826/0.802 | 14/19/18/16 | pending | `017-.../2026-hgnet-b0-sed-v5g/fold{0-3}/` |
+
+## BirdCLEF 2026 — Perch Probes (exp 018)
+
+Frozen Perch v2 as feature extractor + LogReg probe classifiers. No GPU training —
+probes train in ~2s on CPU. All inference on Kaggle CPU kernel (~85 min for ~600 test files).
+
+| Slug | Pipeline | Probe Features | OOF | LB | Kaggle Kernel |
+|------|----------|---------------|-----|-----|---------------|
+| `perch-raw` | Perch logits only | — | No | 0.825 | `submission_perch_raw.py` |
+| `perch-cache-v1` | + genus proxy mapping | — | No | 0.836 | `submission_perch_cache.py` |
+| `perch-probes-v1` | + LogReg probes, logit-space | 39-dim (PCA32 + 7) | No | 0.893 | `submission_perch_probes.py` v1 |
+| `perch-probes-v2` | + OOF fold-safe priors | 39-dim (PCA32 + 7) | 5-fold | 0.898 | `submission_perch_probes.py` v2 (buggy) |
+| **`perch-probes-v2-fix`** | **+ 6-cat fuse, sc_clean priors** | **39-dim (PCA32 + 7)** | **5-fold** | **0.911** | **`submission_perch_probes.py` v2-fix** |
+| `perch-protossm-v4` | + BiSSM×2 + cross-attn + TTA + ResidualSSM + 6-stage PP | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.918** | `submission_perch_protossm.py` v1 |
+| `perch-protossm-v4.1` | v4 + OOF prior by filename, per-stage clipping, all-data train | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.918** | `submission_perch_protossm.py` v4 (no improvement) |
+| `perch-protossm-v4.2` | v4.1 + taxonomy 5-way, fixed ensemble 0.5, MLP seed, 1-based sites | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.899** | `submission_perch_protossm.py` v5 (**REGRESSED −0.019**) |
+
+### v2-fix Details (0.911 LB)
+
+Pipeline: Perch v2 frozen → StandardScaler + PCA(32) → 5-fold OOF GroupKFold by site →
+52 LogReg probes (39-dim, C=0.25, class_weight='balanced') → Gaussian smoothing → sigmoid.
+
+Key fixes over buggy v2 (0.898):
+- K_HOUR = 8 (was 4)
+- Prior tables from ALL 739 soundscape annotations (was labeled subset only)
+- 6-category fuse_scores: proxy λ=0.8, prior-only REPLACE, inactive = -8.0
+- Filtered to 59 fully-labeled files / 708 windows (was 66 files / 792 windows)
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

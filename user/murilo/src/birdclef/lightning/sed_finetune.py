@@ -115,6 +115,14 @@ class SEDFinetuneModule(pl.LightningModule):
             waveforms before mel conversion (v3b behavior). When False (default),
             mixup applies on spectrograms after mel conversion. Only relevant
             when mel_transform is set.
+        mixup_per_sample: When True, sample a separate lambda for each sample in
+            the batch (ttahara's approach). When False (default), use a single
+            scalar lambda for the entire batch.
+        scheduler_type: LR scheduler type. "cosine" (default) uses CosineAnnealing
+            with linear warmup (per-epoch). "one_cycle" uses OneCycleLR with a
+            single param group and per-step updates (ttahara's approach).
+        onecycle_div_factor: OneCycleLR initial_lr = max_lr / div_factor (default: 25.0).
+        onecycle_final_div_factor: OneCycleLR final_lr = initial_lr / final_div_factor (default: 4.0).
     """
 
     def __init__(
@@ -134,6 +142,9 @@ class SEDFinetuneModule(pl.LightningModule):
         blend_frame: float = 0.25,
         mixup_prob: float = 0.5,
         mixup_alpha: float = 0.5,
+        mixup_warmup_epochs: int = 0,
+        mixup_theta: float = 1.0,
+        mixup_per_sample: bool = False,
         loss_type: str = "soft_ce",
         label_smoothing: float = 0.05,
         asl_gamma_neg: float = 4.0,
@@ -141,6 +152,9 @@ class SEDFinetuneModule(pl.LightningModule):
         asl_clip: float = 0.05,
         mel_transform: nn.Module | None = None,
         waveform_mixup: bool = False,
+        scheduler_type: str = "cosine",
+        onecycle_div_factor: float = 25.0,
+        onecycle_final_div_factor: float = 4.0,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform"])
@@ -198,17 +212,25 @@ class SEDFinetuneModule(pl.LightningModule):
         features = self.encoder.forward_features(mel)
         return self.sed_head(features)
 
-    def _compute_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def _compute_loss(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        primary_idx: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Compute loss based on configured loss_type.
 
         Supports:
         - "soft_ce": Normalize multi-hot to sum-to-1 soft targets, F.cross_entropy.
-        - "ce": Standard CE with label_smoothing on argmax class (single-label approx).
-        - "asl": Asymmetric Loss for multi-label classification.
+        - "ce": Standard CE on primary_label class index (+ sigmoid at inference).
+        - "bce": Binary cross-entropy with logits (native multi-label).
+        - "asl": Asymmetric Loss (Ridnik et al. 2021) for multi-label classification.
 
         Args:
             logits: (B, num_classes) raw logits.
             labels: (B, num_classes) multi-hot labels (0s and 1s).
+            primary_idx: (B,) integer tensor with primary species index per sample.
+                Used by "ce" loss. Ignored by other loss types.
 
         Returns:
             Scalar loss.
@@ -218,8 +240,8 @@ class SEDFinetuneModule(pl.LightningModule):
         elif self.hparams.loss_type == "bce":
             return F.binary_cross_entropy_with_logits(logits, labels.float())
         elif self.hparams.loss_type == "ce":
-            # Standard CE: use argmax of multi-hot as class index
-            targets = labels.argmax(dim=-1)
+            # Standard CE on primary label (not argmax of multi-hot)
+            targets = primary_idx if primary_idx is not None else labels.argmax(dim=-1)
             return F.cross_entropy(logits, targets, label_smoothing=self.hparams.label_smoothing)
         else:
             # soft_ce: normalize multi-hot to soft distribution
@@ -232,14 +254,43 @@ class SEDFinetuneModule(pl.LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply mixup augmentation on input tensor (mel spectrogram or raw waveform).
 
-        Shuffles the batch and mixes inputs with a random lambda.
-        Labels are unioned (multi-hot OR) to preserve all active species.
+        Shuffles the batch and mixes inputs with a random lambda from
+        Beta(alpha, alpha). Lambda is enforced >= 0.5 so the dominant
+        sample stays dominant. Labels are weighted-mixed (not OR union).
+
+        If mixup_theta < 1.0, labels >= theta are clipped to 1.0 (ttahara's
+        approach: prevents soft labels from diluting strong positive signal).
+
+        If mixup_per_sample is True, each sample in the batch gets its own
+        lambda (ttahara's approach). Otherwise, a single lambda is used for
+        the entire batch.
+
         Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N).
         """
         indices = torch.randperm(x.size(0), device=x.device)
-        lam = np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
-        x = lam * x + (1 - lam) * x[indices]
-        labels = torch.clamp(labels + labels[indices], max=1.0)
+
+        if self.hparams.mixup_per_sample:
+            beta_dist = torch.distributions.Beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
+            lam = beta_dist.sample(sample_shape=(x.size(0),)).to(x.device)
+            lam = torch.maximum(lam, 1 - lam).float()
+
+            if x.dim() == 4:  # spectrogram (B, 1, F, T)
+                x_lam = lam[:, None, None, None]
+            else:  # waveform (B, N)
+                x_lam = lam[:, None]
+            label_lam = lam[:, None]
+
+            x = x_lam * x + (1 - x_lam) * x[indices]
+            labels = label_lam * labels + (1 - label_lam) * labels[indices]
+        else:
+            lam = np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
+            lam = max(lam, 1.0 - lam)  # Enforce lam >= 0.5
+            x = lam * x + (1 - lam) * x[indices]
+            labels = lam * labels + (1 - lam) * labels[indices]
+
+        theta = self.hparams.mixup_theta
+        if theta < 1.0:
+            labels = torch.where(labels >= theta, torch.ones_like(labels), labels)
         return x, labels
 
     def _blended_probs(
@@ -251,38 +302,45 @@ class SEDFinetuneModule(pl.LightningModule):
             clipwise_logits
         ) + self.hparams.blend_frame * torch.sigmoid(framewise_max)
 
+    def _mixup_active(self) -> bool:
+        """Check if mixup should be applied this epoch (respects warmup)."""
+        if self.hparams.mixup_prob <= 0:
+            return False
+        warmup = self.hparams.mixup_warmup_epochs
+        if warmup > 0 and self.current_epoch < warmup:
+            return False
+        return random.random() < self.hparams.mixup_prob
+
     def training_step(self, batch, batch_idx):
-        x, labels = batch
+        x, labels, primary_idx = batch
 
         if self.mel_transform is not None and self.hparams.waveform_mixup:
             # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
-            # Mel computation must run in float32 and outside autograd graph:
-            # - float32: nnAudio STFT magnitudes can overflow float16 range
-            # - no_grad: mel is a fixed transform, not a learnable layer
-            if random.random() < self.hparams.mixup_prob:
+            if self._mixup_active():
                 x, labels = self._apply_mixup(x, labels)
             with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
                 mel = self.mel_transform(x.float())
         elif self.mel_transform is not None:
             # GPU mel mode: compute mel on GPU first, then spectrogram mixup.
-            # Same training behavior as CPU mel mode but avoids DataLoader bottleneck.
             with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
                 mel = self.mel_transform(x.float())
-            if random.random() < self.hparams.mixup_prob:
+            if self._mixup_active():
                 mel, labels = self._apply_mixup(mel, labels)
         else:
             # CPU mel mode (default): input is pre-computed mel, spectrogram mixup
             mel = x
-            if random.random() < self.hparams.mixup_prob:
+            if self._mixup_active():
                 mel, labels = self._apply_mixup(mel, labels)
 
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
-        # Dual soft CE loss
+        # Dual loss (CE uses primary_idx, other losses use multi-hot labels)
         loss = self.hparams.clipwise_weight * self._compute_loss(
-            clipwise_logits, labels
-        ) + self.hparams.framewise_weight * self._compute_loss(framewise_max_logits, labels)
+            clipwise_logits, labels, primary_idx
+        ) + self.hparams.framewise_weight * self._compute_loss(
+            framewise_max_logits, labels, primary_idx
+        )
 
         # Blended probabilities for metrics
         probs = self._blended_probs(clipwise_logits, framewise_logits)
@@ -323,14 +381,16 @@ class SEDFinetuneModule(pl.LightningModule):
         return x
 
     def validation_step(self, batch, batch_idx):
-        mel, labels = batch
+        mel, labels, primary_idx = batch
         mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
         loss = self.hparams.clipwise_weight * self._compute_loss(
-            clipwise_logits, labels
-        ) + self.hparams.framewise_weight * self._compute_loss(framewise_max_logits, labels)
+            clipwise_logits, labels, primary_idx
+        ) + self.hparams.framewise_weight * self._compute_loss(
+            framewise_max_logits, labels, primary_idx
+        )
 
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()
@@ -363,14 +423,16 @@ class SEDFinetuneModule(pl.LightningModule):
             m.reset()
 
     def test_step(self, batch, batch_idx):
-        mel, labels = batch
+        mel, labels, primary_idx = batch
         mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
         framewise_max_logits = framewise_logits.max(dim=-1).values
 
         loss = self.hparams.clipwise_weight * self._compute_loss(
-            clipwise_logits, labels
-        ) + self.hparams.framewise_weight * self._compute_loss(framewise_max_logits, labels)
+            clipwise_logits, labels, primary_idx
+        ) + self.hparams.framewise_weight * self._compute_loss(
+            framewise_max_logits, labels, primary_idx
+        )
 
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()
@@ -403,7 +465,42 @@ class SEDFinetuneModule(pl.LightningModule):
             m.reset()
 
     def configure_optimizers(self):
-        """Two param groups: backbone at lower LR, SED head at higher LR."""
+        """Configure optimizer and LR scheduler.
+
+        Supports two modes:
+        - "cosine" (default): Two param groups (encoder/head) with CosineAnnealing + warmup, per-epoch.
+        - "one_cycle": Single param group with OneCycleLR, per-step (ttahara's approach).
+        """
+        if self.hparams.scheduler_type == "one_cycle":
+            # Single param group, uniform LR (matching ttahara)
+            all_params = [p for p in self.parameters() if p.requires_grad]
+            optimizer = torch.optim.AdamW(
+                all_params,
+                lr=self.hparams.lr,
+                weight_decay=self.hparams.weight_decay,
+            )
+
+            steps_per_epoch = self.trainer.estimated_stepping_batches // self.trainer.max_epochs
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=self.hparams.lr,
+                epochs=self.hparams.max_epochs,
+                steps_per_epoch=steps_per_epoch,
+                pct_start=self.hparams.warmup_epochs / self.hparams.max_epochs,
+                div_factor=self.hparams.onecycle_div_factor,
+                final_div_factor=self.hparams.onecycle_final_div_factor,
+            )
+
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "interval": "step",
+                    "frequency": 1,
+                },
+            }
+
+        # Default: two param groups with CosineAnnealing + warmup (per-epoch)
         encoder_params = [p for p in self.encoder.parameters() if p.requires_grad]
         head_params = list(self.sed_head.parameters())
 
