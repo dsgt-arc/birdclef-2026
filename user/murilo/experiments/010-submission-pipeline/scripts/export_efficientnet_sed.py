@@ -59,7 +59,7 @@ def main():
 
     from birdclef.data.soundscape import build_full_species_list
     from birdclef.encoders.efficientnet import EfficientNetEncoder
-    from birdclef.heads.sed_head import AttBlockV2, AttHead
+    from birdclef.heads.sed_head import AttBlockV2, AttHead, LSEHead
     from birdclef.lightning.sed_finetune import SEDFinetuneModule
 
     with open(args.config) as f:
@@ -100,6 +100,10 @@ def main():
     if head_type == "att_block_v2":
         sed_head = AttBlockV2(**head_kwargs)
         logger.info("SED head: AttBlockV2 (tanh+softmax attention, sigmoid classification)")
+    elif head_type == "lse_head":
+        head_kwargs["lse_temperature"] = cfg["sed_head"].get("lse_temperature", 1.0)
+        sed_head = LSEHead(**head_kwargs)
+        logger.info("SED head: LSEHead (GeM freq + LSE time pooling)")
     else:
         sed_head = AttHead(**head_kwargs)
         logger.info("SED head: AttHead (softmax attention)")

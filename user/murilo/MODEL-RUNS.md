@@ -243,6 +243,24 @@ setup consistently underperforms — the gap to Salman's 0.908 is from other fac
 not argmax of multi-hot). The original broken CE (argmax) gave similar results (v4k
 first run: 0.846), confirming the low mismatch rate (0.2% for focal recordings).
 
+## BirdCLEF 2026 Models — SED Ablations (exp 019)
+
+Single-variable ablations from v4b (0.860 LB). 90/10 split, 50 epochs, same data pipeline.
+Goal: push SED from 0.860 → 0.885+ LB before pseudo-labeling.
+
+### Step 1: Quick wins ablation
+
+| Slug | Change | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|------|------|---------------|------------|-----|------------|
+| `effnet-b0-sed-v5a` | BCEWithLogitsLoss | AttHead | bce | training | — | — | `017-.../2026-effnet-b0-sed-v5a/` |
+| `effnet-b0-sed-v5b` | Stronger MixUp (α=1.0, θ=0.8, warmup=5) | AttHead | soft_ce | training | — | — | `017-.../2026-effnet-b0-sed-v5b/` |
+| `effnet-b0-sed-v5c` | weight_decay=1e-4 | AttHead | soft_ce | training | — | — | `017-.../2026-effnet-b0-sed-v5c/` |
+| `effnet-b0-sed-v5d` | LSEHead (GeM+LSE pooling) | **LSEHead** | soft_ce | **0.861** | 21 | pending | `017-.../2026-effnet-b0-sed-v5d/best-epochepoch=21.ckpt` |
+| `effnet-b0-sed-v5e` | HGNetV2-B0 backbone (embed=1024) | AttHead | soft_ce | training | — | — | `017-.../2026-effnet-b0-sed-v5e/` |
+
+**v5d (LSEHead)**: −0.004 val/auroc vs v4b baseline (0.861 vs 0.865). LSE pooling slightly
+regresses compared to attention head on EfficientNet-B0.
+
 ## BirdCLEF 2026 — Perch Probes (exp 018)
 
 Frozen Perch v2 as feature extractor + LogReg probe classifiers. No GPU training —

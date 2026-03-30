@@ -185,7 +185,7 @@ After each phase, decide whether to continue:
 | v5a (BCE) | training | — | A | `loss_type: "bce"` |
 | v5b (MixUp) | training | — | A | `mixup_alpha=1.0, theta=0.8, warmup=5` |
 | v5c (weight_decay) | training | — | A | `weight_decay=1e-4` |
-| v5d (LSEHead) | training | — | A | `sed_head.type: "lse_head"` |
+| v5d (LSEHead) | **0.861** | pending | A | `sed_head.type: "lse_head"`, epoch 21, **-0.004 vs baseline** |
 | v5e (HGNetV2) | training | — | A | `hgnetv2_b0.ssld_stage2_ft_in1k`, embed=1024 |
 | Combined EfficientNet | — | — | A | Best ablation combo |
 | Combined HGNet | — | — | A | Best ablation combo on HGNet |

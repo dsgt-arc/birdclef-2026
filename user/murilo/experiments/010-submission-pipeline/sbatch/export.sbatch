@@ -345,6 +345,7 @@ export_effnet_b0_sed_v3d() {
 # ============================================================================
 
 EXP017_DIR="$(dirname "$EXPERIMENT_DIR")/017-mel-overhaul"
+EXP019_DIR="$(dirname "$EXPERIMENT_DIR")/019-perch-guided-sed"
 
 export_effnet_b0_sed_v4a() {
     echo "=== Exporting EfficientNet-B0 SED v4a (mel overhaul, 234 classes) ==="
@@ -475,6 +476,16 @@ export_effnet_b0_sed_v4j() {
         --output-dir artifacts/weights/effnet-b0-sed-v4j/
 }
 
+export_effnet_b0_sed_v5d() {
+    echo "=== Exporting EfficientNet-B0 SED v5d (LSEHead, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-effnet-b0-sed-v5d/best-epochepoch=21.ckpt"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/effnet_b0_sed_v5d.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-sed-v5d/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -520,7 +531,7 @@ case "$MODEL" in
     eat-2026-soundscape|convnext-2026-soundscape|protoclr-2026-soundscape|all-2026-soundscape|\
     protoclr-2026-student-v1|eat-2026-student-v1|all-2026-student|\
     effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3a|effnet-b0-sed-v3b|effnet-b0-sed-v3c|effnet-b0-sed-v3d|\
-    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|effnet-b0-sed-v4j|all-017-ablations|all-2026-sed)
+    effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|effnet-b0-sed-v4j|effnet-b0-sed-v5d|all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
             --train-csv "$TAXONOMY_CSV_2026" \
@@ -606,6 +617,7 @@ case "$MODEL" in
     effnet-b0-sed-v4g)         export_effnet_b0_sed_v4g ;;
     effnet-b0-sed-v4h)         export_effnet_b0_sed_v4h ;;
     effnet-b0-sed-v4j)         export_effnet_b0_sed_v4j ;;
+    effnet-b0-sed-v5d)         export_effnet_b0_sed_v5d ;;
     all-017-ablations)
         export_effnet_b0_sed_v4b
         echo ""

@@ -229,6 +229,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-sed-v4j",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v4j.json",
     },
+    # Exp 019 Step 1: SED ablations
+    "effnet-b0-sed-v5d": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5d-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5d",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5d.json",
+    },
 }
 
 
