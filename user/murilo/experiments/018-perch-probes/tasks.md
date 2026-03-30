@@ -208,11 +208,29 @@ postprocessing, ensemble, data_utils, config)
       - Estimated impact: +0.004 to +0.008 LB
       - Pushed as nb version 5, dry-run passed (145s, families=5, sites=9)
       - Submitted to competition (2026-03-30), running inference (~90 min)
-- [ ] 9.12 Check v4.2 LB result — target: 0.920-0.925
+- [x] 9.12 Check v4.2 LB result: **0.899 LB** — MASSIVE REGRESSION (−0.019 from v4's 0.918)
+      - v4.2 changes broke the pipeline. One or more of the 4 "fixes" caused harm.
+      - Most likely culprits: taxonomy aux head (5-way vs 161-way), or site mapping
+        (0-based → 1-based indexing may have shifted all site features).
+
+### !! CRITICAL: Revert to v4 baseline (0.918 LB) !!
+
+**This is the #1 priority for the next session.** Our best Perch score dropped
+from 0.918 → 0.899. We MUST recover the 0.918 baseline before any further work.
+
+Two options (pick one):
+1. **Revert to v4 kernel** (submission_perch_protossm.py version 1, nb version 1)
+   — the exact kernel that scored 0.918. Re-submit to confirm it still scores 0.918.
+2. **Port Yuriy's pipeline directly** — stop trying to match his code piecemeal.
+   Copy his notebook, adapt to our species mapping, and submit. This guarantees
+   we match his 0.925 if our mapping is correct.
+
+Do NOT attempt further incremental fixes on v4.2. The piecemeal approach has
+failed twice (v4.1 no improvement, v4.2 regressed). Either revert or rewrite.
 
 ---
 
-## Future Work (if needed after v4.2 LB result)
+## Future Work
 
 ### Scale ProtoSSM
 - [ ] Scale d_model: 128 → 256, layers: 2 → 3
@@ -244,6 +262,7 @@ postprocessing, ensemble, data_utils, config)
 | Perch + probes v3 (MLP) | not submitted | + 77-dim features, MLP probes (included in v4) |
 | **ProtoSSM v4** | **0.918** | + BiSSM×2 + cross-attn + TTA + ResidualSSM + 6-stage PP, ensemble 0.45/0.55 |
 | **ProtoSSM v4.1** | **0.918** | Bug fixes: OOF prior by filename, per-stage clipping, train on all data — **no improvement** |
+| ProtoSSM v4.2 | **0.899** | **REGRESSED −0.019**: taxonomy 5-way, fixed ensemble 0.5, MLP seed, 1-based sites — one or more broke it |
 
 ---
 

@@ -65,20 +65,20 @@ Frozen foundation model → probes → OOF → temporal modeling
 | + LogReg probes | 52 per-species probes (39-dim features) | 0.893 | +0.057 |
 | + OOF + fold-safe priors | 5-fold GroupKFold, 6-category fusion | 0.911 | +0.018 |
 | **+ ProtoSSM v4** | **BiSSM + cross-attn + ResidualSSM + TTA + 6-stage PP** | **0.918** | **+0.007** |
-| ProtoSSM v4.2 | Taxonomy fix, ensemble weight fix | pending | — |
+| ProtoSSM v4.2 | Taxonomy fix, ensemble weight fix | 0.899 (-0.019) | regressed |
 | Target | Match top LB (Yuriy/Yaroslav) | 0.925 | — |
 
 **Key takeaways:**
 
 - No GPU training — probes train in ~2s on CPU, all inference on Kaggle CPU
 - +0.093 LB from raw Perch to ProtoSSM through systematic feature engineering
-- Current best: **0.918 LB** (v4.2 pending, targeting 0.920–0.925)
+- Current best: **0.918 LB** (v4.2 regressed to 0.899 — reverting to v4 baseline next)
 
 ---
 
 ## Next Steps
 
 - **SED track (exp 019)**: 5 ablations training now (BCE, MixUp, weight decay, LSEHead, HGNetV2-B0), targeting 0.870+ single fold → 0.885+ with 4-fold ensemble
-- **Perch track (exp 018)**: v4.2 submitted, awaiting LB; if <0.920 → scale ProtoSSM (d=256, 3 layers)
+- **Perch track (exp 018)**: v4.2 regressed to 0.899; next step: revert to v4 (0.918) or port Yuriy's pipeline directly
 - **Pseudo-labels (exp 019 Phase C)**: Use Perch ProtoSSM (~0.920 teacher) to label 127K unlabeled soundscape windows → train SED, targeting 0.900–0.915
 - **Endgame**: Perch + SED ensemble in a single 90-min kernel

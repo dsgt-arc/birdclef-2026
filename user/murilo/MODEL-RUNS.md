@@ -275,6 +275,7 @@ probes train in ~2s on CPU. All inference on Kaggle CPU kernel (~85 min for ~600
 | **`perch-probes-v2-fix`** | **+ 6-cat fuse, sc_clean priors** | **39-dim (PCA32 + 7)** | **5-fold** | **0.911** | **`submission_perch_probes.py` v2-fix** |
 | `perch-protossm-v4` | + BiSSM×2 + cross-attn + TTA + ResidualSSM + 6-stage PP | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.918** | `submission_perch_protossm.py` v1 |
 | `perch-protossm-v4.1` | v4 + OOF prior by filename, per-stage clipping, all-data train | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.918** | `submission_perch_protossm.py` v4 (no improvement) |
+| `perch-protossm-v4.2` | v4.1 + taxonomy 5-way, fixed ensemble 0.5, MLP seed, 1-based sites | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.899** | `submission_perch_protossm.py` v5 (**REGRESSED −0.019**) |
 
 ### v2-fix Details (0.911 LB)
 
