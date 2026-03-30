@@ -183,7 +183,7 @@ After each phase, decide whether to continue:
 |------------|----------|-----|-------|-------|
 | SED v4b (baseline) | 0.865 | 0.860 | — | EfficientNet-B0, AmplitudeToDB, AttHead, soft CE |
 | v5a (BCE) | training | — | A | `loss_type: "bce"` |
-| v5b (MixUp) | training | — | A | `mixup_alpha=1.0, theta=0.8, warmup=5` |
+| v5b (MixUp) | **0.869** | pending | A | `mixup_alpha=1.0, theta=0.8, warmup=5`, epoch 31, **+0.004 vs baseline** |
 | v5c (weight_decay) | training | — | A | `weight_decay=1e-4` |
 | v5d (LSEHead) | **0.861** | pending | A | `sed_head.type: "lse_head"`, epoch 21, **-0.004 vs baseline** |
 | v5e (HGNetV2) | training | — | A | `hgnetv2_b0.ssld_stage2_ft_in1k`, embed=1024 |
