@@ -161,6 +161,7 @@ def main():
         soundscape_labels_csv=data_cfg.get("soundscape_labels_csv"),
         nocall_parquet=data_cfg.get("nocall_parquet"),
         val_on_soundscape=data_cfg.get("val_on_soundscape", False),
+        train_on_soundscape=data_cfg.get("train_on_soundscape", True),
         teacher_predictions=data_cfg.get("teacher_predictions"),
         teacher_threshold=data_cfg.get("teacher_threshold", 0.0),
     )

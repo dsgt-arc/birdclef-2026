@@ -26,37 +26,38 @@ One attention map shared across all species. No per-frame output.
 
 ```
 backbone features (B, 1280, F, T)
+    → ReLU (ensure non-negative for GeM)
     → GeM pool frequency → (B, 1280, T)
     → Linear(1280, 512) + ReLU + Dropout → (B, 512, T)
-    → Conv1d(512, 234) → frame_logits (B, 234, T)
+    → TWO parallel Conv1d(512, 234) branches:
+        ├─ frame_conv → frame_logits (B, 234, T)   "what species at each frame?"
+        └─ att_conv → softmax(tanh(·)) → att_weights (B, 234, T)  "which frames matter?"
                           ↓
               ┌───────────┴───────────┐
               │                       │
-        softmax(dim=T)           max(dim=T)
+    sum(att_weights * frame_logits)  max(frame_logits, dim=T)
               ↓                       ↓
-    attention weights (B, 234, T)   framewise_max (B, 234)
+        clipwise (B, 234)        framewise_max (B, 234)
               ↓
-    sum(weights * frame_logits)
-              ↓
-        clipwise (B, 234)
-              ↓
-    blend: 0.75 * clipwise + 0.25 * framewise_max
+    inference blend: 0.75 * clipwise + 0.25 * framewise_max
 ```
 
-### Single branch vs dual branch
+### Dual branch design
 
-Murilo uses two parallel Conv1d layers: one for frame_logits, one for attention
-weights. We propose a **single Conv1d** instead — the attention weights are
-just `softmax(frame_logits, dim=time)`. Rationale:
+Two parallel Conv1d layers after the projection:
 
-- Simpler (one branch, fewer params)
-- The attention is derived from the predictions: "the frame where I'm most
-  confident is also the frame that matters most"
-- The dual branch was never ablated — we don't know if separate attention helps
-- If we want different behavior, the 75/25 clip/max blend already handles
-  the "brief call" case via framewise max
+- **frame_conv**: per-species, per-frame logits ("what species at each frame?")
+- **att_conv**: per-species, per-frame attention weights ("which frames matter?")
 
-If this underperforms, adding a second branch is trivial (one more Conv1d).
+The attention branch uses `softmax(tanh(att_logits), dim=time)` — tanh bounds
+the raw attention logits to [-1, 1] which prevents peaky softmax distributions.
+This matches the PANNs/AttBlockV2 pattern used by BirdCLEF winning solutions and
+the existing AttentionPoolingHead in this codebase.
+
+Using separate branches avoids self-reinforcing feedback where large logits get
+exponentially more attention weight (which happens with single-branch
+`softmax(frame_logits) * frame_logits`). The attention branch learns independently
+which frames are informative, while the frame branch learns what species are present.
 
 ### Key components
 

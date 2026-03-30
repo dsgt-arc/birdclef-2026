@@ -34,6 +34,7 @@ data:
   activity_parquet: artifacts/focal_activity.parquet
   soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
   soundscape_labels_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv
+  train_on_soundscape: false  # focal-only training; soundscapes used for auxiliary val only
 
 training:
   max_epochs: 50

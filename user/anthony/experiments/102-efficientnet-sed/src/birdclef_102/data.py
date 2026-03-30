@@ -397,6 +397,7 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         soundscape_labels_csv: str | None = None,
         nocall_parquet: str | None = None,
         val_on_soundscape: bool = False,
+        train_on_soundscape: bool = True,
         teacher_predictions: str | None = None,
         teacher_threshold: float = 0.0,
     ):
@@ -419,6 +420,7 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         self.soundscape_labels_csv = soundscape_labels_csv
         self.nocall_parquet = nocall_parquet
         self.val_on_soundscape = val_on_soundscape
+        self.train_on_soundscape = train_on_soundscape
         self.teacher_predictions = teacher_predictions
         self.teacher_threshold = teacher_threshold
 
@@ -512,19 +514,20 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
                 teacher_threshold=self.teacher_threshold,
             )
             # Split soundscape files for train/val if using soundscape validation
-            sc_labels_train = self.soundscape_labels_csv
+            sc_labels_train = self.soundscape_labels_csv if self.train_on_soundscape else None
+            sc_dir_train = self.soundscape_dir if self.train_on_soundscape else None
             sc_labels_val = None
-            nocall_train = self.nocall_parquet
+            nocall_train = self.nocall_parquet if self.train_on_soundscape else None
             nocall_val = None
 
             if self.val_on_soundscape and self.soundscape_labels_csv:
                 sc_labels_train, sc_labels_val, nocall_train, nocall_val = \
                     self._split_soundscape_files(self.seed)
 
-            # Soundscape data goes into training
+            # Soundscape data goes into training only if train_on_soundscape=True
             self.train_dataset = BirdCLEF102Dataset(
                 metadata_df=train_df,
-                soundscape_dir=self.soundscape_dir,
+                soundscape_dir=sc_dir_train,
                 soundscape_labels_csv=sc_labels_train,
                 nocall_parquet=nocall_train,
                 **dataset_kwargs,

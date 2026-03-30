@@ -73,11 +73,14 @@ class GeM(nn.Module):
 
 
 class SEDHead(nn.Module):
-    """SED head with GeM frequency pooling, projection bottleneck, and Conv1d frame logits.
+    """SED head with GeM frequency pooling, projection bottleneck, and dual Conv1d branches.
 
-    Produces per-species, per-frame logits. Clip-level prediction is derived from
-    softmax-weighted sum of frame logits (training) blended with framewise max
-    (inference) to catch brief calls.
+    Two parallel branches after projection:
+      - frame_conv: per-species, per-frame logits ("what species at each frame?")
+      - att_conv: per-species, per-frame attention weights ("which frames matter?")
+
+    Clip-level prediction: attention-weighted sum of frame logits.
+    Inference blends clipwise + framewise max to catch brief calls.
 
     Args:
         embed_dim: Input feature dimension from backbone (e.g. 1280)
@@ -110,6 +113,7 @@ class SEDHead(nn.Module):
             nn.Dropout(dropout),
         )
         self.frame_conv = nn.Conv1d(hidden_dim, num_classes, kernel_size=1)
+        self.att_conv = nn.Conv1d(hidden_dim, num_classes, kernel_size=1)
 
     def forward(self, features: torch.Tensor) -> dict[str, torch.Tensor]:
         """Forward pass from backbone features to dual logits.
@@ -122,6 +126,10 @@ class SEDHead(nn.Module):
                 clipwise_logits: (B, C) clip-level predictions
                 framewise_logits: (B, C, T) per-frame logits
         """
+        # ReLU before GeM: backbone features can be negative, GeM needs non-negative
+        # input for the power mean to be well-defined
+        features = torch.relu(features)
+
         # GeM pool frequency: (B, D, F, T) → (B, D, T)
         x = self.gem(features)
 
@@ -130,11 +138,13 @@ class SEDHead(nn.Module):
         x = self.project(x)           # (B, T, hidden)
         x = x.permute(0, 2, 1)       # (B, hidden, T)
 
-        # Per-frame logits
+        # Dual branches: frame logits + attention weights
         frame_logits = self.frame_conv(x)  # (B, C, T)
+        att_logits = self.att_conv(x)      # (B, C, T)
 
-        # Clip-level: softmax-weighted sum
-        att_weights = torch.softmax(frame_logits, dim=-1)  # (B, C, T)
+        # Clip-level: tanh-bounded attention weighted sum of frame logits
+        # tanh bounds attention to [-1, 1], preventing peaky softmax
+        att_weights = torch.softmax(torch.tanh(att_logits), dim=-1)  # (B, C, T)
         clipwise_logits = (att_weights * frame_logits).sum(dim=-1)  # (B, C)
 
         if not self.training:
