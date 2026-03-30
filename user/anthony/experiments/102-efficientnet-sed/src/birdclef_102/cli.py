@@ -81,6 +81,10 @@ def main():
         lora_alpha=lora_cfg.get("alpha", 16),
         lora_dropout=lora_cfg.get("dropout", 0.1),
         lora_targets=lora_cfg.get("target_modules"),
+        mel_norm=model_cfg.get("mel_norm", "audioset"),
+        gem_p=model_cfg.get("gem_p", 3.0),
+        blend_clip=model_cfg.get("blend_clip", 0.75),
+        blend_frame=model_cfg.get("blend_frame", 0.25),
     )
 
     if mel_on_cpu:
@@ -100,8 +104,8 @@ def main():
     logger.info(f"Backbone mode: {backbone_mode}")
 
     # Build training module
-    # avg pooling returns logits, attention pooling returns probabilities
-    from_logits = pooling_mode == "avg"
+    # avg/sed pooling returns logits, attention pooling returns probabilities
+    from_logits = pooling_mode in ("avg", "sed")
     use_activity = train_cfg.get("use_activity_weights", False)
 
     # Optional per-class weighting (e.g., inverse sqrt frequency)
@@ -136,6 +140,8 @@ def main():
         use_activity_weights=use_activity,
         from_logits=from_logits,
         class_weight=class_weight,
+        clipwise_weight=train_cfg.get("clipwise_weight", 0.5),
+        framewise_weight=train_cfg.get("framewise_weight", 0.5),
     )
 
     # Build data module

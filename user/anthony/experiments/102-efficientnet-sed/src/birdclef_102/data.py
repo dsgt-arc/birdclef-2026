@@ -546,6 +546,19 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
                     metadata_df=val_df, **dataset_kwargs,
                 )
 
+            # Auxiliary soundscape validation on ALL labeled soundscapes (no split)
+            # Used for monitoring only — not for early stopping or checkpointing.
+            self.sc_val_dataset = None
+            if self.soundscape_dir and self.soundscape_labels_csv:
+                empty_df = train_df.iloc[:0]
+                self.sc_val_dataset = BirdCLEF102Dataset(
+                    metadata_df=empty_df,
+                    soundscape_dir=self.soundscape_dir,
+                    soundscape_labels_csv=self.soundscape_labels_csv,
+                    **dataset_kwargs,
+                )
+                logger.info(f"Auxiliary soundscape validation: {len(self.sc_val_dataset)} windows")
+
     def train_dataloader(self):
         return DataLoader(
             self.train_dataset,
@@ -560,13 +573,27 @@ class BirdCLEF102DataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            collate_fn=collate_fn,
-            pin_memory=True,
-            persistent_workers=self.num_workers > 0,
-            prefetch_factor=4 if self.num_workers > 0 else None,
-        )
+        loaders = [
+            DataLoader(
+                self.val_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.num_workers,
+                collate_fn=collate_fn,
+                pin_memory=True,
+                persistent_workers=self.num_workers > 0,
+                prefetch_factor=4 if self.num_workers > 0 else None,
+            )
+        ]
+        if self.sc_val_dataset is not None:
+            loaders.append(
+                DataLoader(
+                    self.sc_val_dataset,
+                    batch_size=self.batch_size,
+                    shuffle=False,
+                    num_workers=min(self.num_workers, 2),
+                    collate_fn=collate_fn,
+                    pin_memory=True,
+                )
+            )
+        return loaders if len(loaders) > 1 else loaders[0]

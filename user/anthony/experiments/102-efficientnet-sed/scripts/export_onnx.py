@@ -32,7 +32,7 @@ import yaml
 from transformers import AutoModel
 
 from birdclef_102.data import build_species_list
-from birdclef_102.model import _get_backbone_type, _get_embed_dim, LORA_TARGETS
+from birdclef_102.model import _get_backbone_type, _get_embed_dim, LORA_TARGETS, SEDHead
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,11 @@ class MelInputWrapper(nn.Module):
                 frame_features = self.head.projection(frame_features)
             frame_logits = self.head.frame_head(frame_features)
             logits = torch.sigmoid(frame_logits).max(dim=1).values  # (B, C)
+        elif self.pooling_mode == "sed":
+            # SED head in inference mode returns blended clip logits
+            self.head.eval()
+            result = self.head(features)
+            logits = result["clipwise_logits"]
         else:
             raise ValueError(f"Unknown pooling_mode: {self.pooling_mode}")
 
@@ -147,6 +152,7 @@ def main():
 
     # Build head
     pooling_mode = model_cfg.get("pooling_mode", "avg")
+    head_hidden_dim = model_cfg.get("head_hidden_dim", 0)
     if pooling_mode == "avg":
         head = nn.Sequential(
             nn.Dropout(0.0),
@@ -154,8 +160,16 @@ def main():
         )
     elif pooling_mode == "attention":
         from birdclef_102.model import AttentionPoolingHead
-        head_hidden_dim = model_cfg.get("head_hidden_dim", 0)
         head = AttentionPoolingHead(embed_dim, num_classes, hidden_dim=head_hidden_dim, dropout=0.0)
+    elif pooling_mode == "sed":
+        head = SEDHead(
+            embed_dim, num_classes,
+            hidden_dim=head_hidden_dim if head_hidden_dim > 0 else 512,
+            dropout=0.0,
+            gem_p=model_cfg.get("gem_p", 3.0),
+            blend_clip=model_cfg.get("blend_clip", 0.75),
+            blend_frame=model_cfg.get("blend_frame", 0.25),
+        )
     else:
         raise ValueError(f"Unknown pooling_mode: {pooling_mode}")
 
@@ -200,7 +214,7 @@ def main():
         json.dump(species_list, f, indent=2)
 
     # Save mel config
-    # avg pooling outputs logits (need sigmoid in kernel)
+    # avg/sed pooling outputs logits (need sigmoid in kernel)
     # attention pooling outputs probabilities (sigmoid already in ONNX graph)
     output_is_probs = pooling_mode == "attention"
 
@@ -215,6 +229,7 @@ def main():
         "norm_mean": -4.268,
         "norm_std": 4.569,
         "output_is_probs": output_is_probs,
+        "mel_norm": model_cfg.get("mel_norm", "audioset"),
     }
     with open(output_dir / "mel_config.json", "w") as f:
         json.dump(mel_config, f, indent=2)

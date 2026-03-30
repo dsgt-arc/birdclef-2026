@@ -21,16 +21,22 @@ class weighting, and soundscape validation. Best result: **0.794 Kaggle public L
 |-----|--------|------|-----------|-----------|
 | A | run-a-frozen | EfficientNet frozen baseline | 0.387 | 0.672 |
 | B (old) | — | EfficientNet LoRA avg (2ep, bf16) | 0.524 | 0.754 |
-| C (old) | — | EfficientNet LoRA+attention (2ep, bf16) | 0.531 | **0.794** |
+| **C (old)** | — | **EfficientNet LoRA+attention (2ep, bf16)** | 0.531 | **0.794** |
 | B | run-b-lora-gpumel | EfficientNet LoRA avg (fp16+compile) | 0.619 | 0.618 |
 | D | run-d-convnext-gpumel | ConvNeXt LoRA avg | 0.644 | 0.603 |
 | E | run-e-convnext-attention | ConvNeXt LoRA attention | 0.585 | 0.571 |
 | F | run-f-convnext-soundscape | ConvNeXt attention + SC data | 0.591 | 0.586 |
 | G | run-g-convnext-weighted | ConvNeXt attention + SC + activity wt | 0.583 | — |
 | H | run-h-convnext-classweight | ConvNeXt attention + SC + inv_sqrt | 0.596 | — |
-| I | run-i-efficientnet-attention | EfficientNet attention + SC | 0.581 | TBD |
-| J | run-j-efficientnet-classweight | EfficientNet attention + SC + inv_sqrt | 0.592 | TBD |
-| K | run-k-efficientnet-scval | EfficientNet attention + SC val | — | running |
+| I | run-i-efficientnet-attention | EfficientNet attention + SC | 0.581 | — |
+| J | run-j-efficientnet-classweight | EfficientNet attention + SC + inv_sqrt | 0.592 | — |
+| K | run-k-efficientnet-scval | EfficientNet attention + SC val | 0.866 SC | 0.609 |
+| L | run-l-efficientnet-cleaned | EfficientNet attention + teacher filter + SC val | 0.870 SC | 0.528 |
+
+**Best model: Run C (old) at 0.794 LB.** Runs K and L demonstrated that soundscape
+validation does not predict Kaggle LB — higher SC auroc correlated with *worse* LB.
+Teacher filtering made it even worse (0.528). The 2-epoch model with no SC validation
+remains best.
 
 ## Key findings
 

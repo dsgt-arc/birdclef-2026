@@ -1,0 +1,56 @@
+# Run M: EfficientNet-B1 LoRA + SED head (GeM + Conv1d) + AmplitudeToDB
+# Based on Run C (best LB 0.794) with SED architecture from Murilo's exp 016-017.
+# Changes vs Run I: pooling_mode=sed, mel_norm=amplitude_to_db, no soundscape data.
+# Focal-only training to match Run C conditions.
+
+model:
+  model_name: "DBD-research-group/EfficientNet-B1-BirdSet-XCL"
+  backbone_mode: lora
+  pooling_mode: sed
+  head_hidden_dim: 512
+  head_dropout: 0.5
+  mel_norm: amplitude_to_db
+  gem_p: 3.0
+  blend_clip: 0.75
+  blend_frame: 0.25
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+
+data:
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
+  metadata_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
+  sample_rate: 32000
+  chunk_duration: 5.0
+  n_mels: 256
+  n_fft: 2048
+  hop_length: 256
+  target_frames: 625
+  batch_size: 32
+  num_workers: 6
+  val_fraction: 0.1
+  activity_parquet: artifacts/focal_activity.parquet
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+  soundscape_labels_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv
+
+training:
+  max_epochs: 50
+  lr: 3.0e-4
+  weight_decay: 0.01
+  warmup_epochs: 3
+  compile: true
+  precision: 16-mixed
+  gamma: 2.0
+  clipwise_weight: 0.5
+  framewise_weight: 0.5
+  augmentation:
+    freq_mask_param: 40
+    time_mask_param: 50
+    num_freq_masks: 2
+    num_time_masks: 2
+
+callbacks:
+  early_stopping: { monitor: val/cmap, mode: max, patience: 10 }
+  model_checkpoint: { monitor: val/cmap, mode: max, save_top_k: 1 }

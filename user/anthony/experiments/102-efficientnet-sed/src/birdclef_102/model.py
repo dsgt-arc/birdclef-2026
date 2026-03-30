@@ -7,15 +7,16 @@ Supports three backbone modes:
   - lora: backbone frozen + LoRA adapters
   - full: backbone fully unfrozen
 
-Supports two pooling modes:
+Supports three pooling modes:
   - avg: global average pooling (simple, fast)
   - attention: attention-weighted pooling (train) / framewise max (inference)
+  - sed: SED head with GeM freq pooling + projection + Conv1d frame logits
+         Returns dict with clipwise_logits and framewise_logits for dual supervision.
 
 Architecture:
     waveform → nnAudio mel → SpecAugment (train)
     → backbone (+ optional LoRA)
-    → mean over freq → (B, D, T) frame features
-    → pooling → (B, C) clip logits
+    → pooling → (B, C) clip logits (or dict for sed mode)
 """
 
 import logging
@@ -52,6 +53,102 @@ def _get_embed_dim(backbone, backbone_type: str) -> int:
         return backbone.config.hidden_sizes[-1]  # 1024
     else:
         raise ValueError(f"Unknown backbone_type: {backbone_type}")
+
+
+class GeM(nn.Module):
+    """Generalized Mean Pooling on the frequency dimension.
+
+    Collapses (B, C, F, T) → (B, C, T) with a learnable power parameter p.
+    At p=1 this is average pooling; as p→∞ it approaches max pooling.
+    """
+
+    def __init__(self, p: float = 3.0, eps: float = 1e-6):
+        super().__init__()
+        self.p = nn.Parameter(torch.tensor(p, dtype=torch.float32))
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Pool frequency dimension: (B, C, F, T) → (B, C, T)."""
+        return x.clamp(min=self.eps).pow(self.p).mean(dim=-2).pow(1.0 / self.p)
+
+
+class SEDHead(nn.Module):
+    """SED head with GeM frequency pooling, projection bottleneck, and Conv1d frame logits.
+
+    Produces per-species, per-frame logits. Clip-level prediction is derived from
+    softmax-weighted sum of frame logits (training) blended with framewise max
+    (inference) to catch brief calls.
+
+    Args:
+        embed_dim: Input feature dimension from backbone (e.g. 1280)
+        num_classes: Number of output species
+        hidden_dim: Projection bottleneck dimension (default: 512)
+        dropout: Dropout rate in projection layer (default: 0.5)
+        gem_p: Initial GeM power parameter (default: 3.0)
+        blend_clip: Weight for clipwise prediction at inference (default: 0.75)
+        blend_frame: Weight for framewise max at inference (default: 0.25)
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_classes: int,
+        hidden_dim: int = 512,
+        dropout: float = 0.5,
+        gem_p: float = 3.0,
+        blend_clip: float = 0.75,
+        blend_frame: float = 0.25,
+    ):
+        super().__init__()
+        self.blend_clip = blend_clip
+        self.blend_frame = blend_frame
+
+        self.gem = GeM(p=gem_p)
+        self.project = nn.Sequential(
+            nn.Linear(embed_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+        )
+        self.frame_conv = nn.Conv1d(hidden_dim, num_classes, kernel_size=1)
+
+    def forward(self, features: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Forward pass from backbone features to dual logits.
+
+        Args:
+            features: (B, D, F, T) feature map from backbone.
+
+        Returns:
+            dict with:
+                clipwise_logits: (B, C) clip-level predictions
+                framewise_logits: (B, C, T) per-frame logits
+        """
+        # GeM pool frequency: (B, D, F, T) → (B, D, T)
+        x = self.gem(features)
+
+        # Project: (B, D, T) → (B, hidden, T)
+        x = x.permute(0, 2, 1)       # (B, T, D)
+        x = self.project(x)           # (B, T, hidden)
+        x = x.permute(0, 2, 1)       # (B, hidden, T)
+
+        # Per-frame logits
+        frame_logits = self.frame_conv(x)  # (B, C, T)
+
+        # Clip-level: softmax-weighted sum
+        att_weights = torch.softmax(frame_logits, dim=-1)  # (B, C, T)
+        clipwise_logits = (att_weights * frame_logits).sum(dim=-1)  # (B, C)
+
+        if not self.training:
+            # Blend with framewise max for brief call detection
+            frame_max = frame_logits.max(dim=-1).values  # (B, C)
+            clipwise_logits = (
+                self.blend_clip * clipwise_logits
+                + self.blend_frame * frame_max
+            )
+
+        return {
+            "clipwise_logits": clipwise_logits,
+            "framewise_logits": frame_logits,
+        }
 
 
 class AttentionPoolingHead(nn.Module):
@@ -143,11 +240,16 @@ class EfficientNetClassifier(nn.Module):
         norm_std: Mel normalization std
         head_dropout: Dropout probability before classification head
         backbone_mode: "frozen" | "lora" | "full"
-        pooling_mode: "avg" | "attention"
+        pooling_mode: "avg" | "attention" | "sed"
         lora_rank: LoRA rank (only used if backbone_mode="lora")
         lora_alpha: LoRA alpha scaling (only used if backbone_mode="lora")
         lora_dropout: LoRA dropout (only used if backbone_mode="lora")
         lora_targets: List of module name patterns to apply LoRA to
+        mel_norm: Mel normalization type: "audioset" (log + normalize) or
+            "amplitude_to_db" (dB scale + dynamic range clamp + standardize)
+        gem_p: Initial GeM power parameter (only used if pooling_mode="sed")
+        blend_clip: Clipwise blend weight at inference (only used if pooling_mode="sed")
+        blend_frame: Framewise max blend weight at inference (only used if pooling_mode="sed")
     """
 
     def __init__(
@@ -166,6 +268,10 @@ class EfficientNetClassifier(nn.Module):
         lora_alpha: int = 16,
         lora_dropout: float = 0.1,
         lora_targets: list[str] | None = None,
+        mel_norm: str = "audioset",
+        gem_p: float = 3.0,
+        blend_clip: float = 0.75,
+        blend_frame: float = 0.25,
     ):
         super().__init__()
         self.mel_spec = mel_spec_layer
@@ -174,6 +280,7 @@ class EfficientNetClassifier(nn.Module):
         self.norm_std = norm_std
         self.backbone_mode = backbone_mode
         self.pooling_mode = pooling_mode
+        self.mel_norm = mel_norm
 
         # Auto-detect and load pretrained backbone
         self.backbone_type = _get_backbone_type(model_name)
@@ -199,6 +306,15 @@ class EfficientNetClassifier(nn.Module):
         elif pooling_mode == "attention":
             self.head = AttentionPoolingHead(
                 embed_dim, num_classes, hidden_dim=head_hidden_dim, dropout=head_dropout,
+            )
+        elif pooling_mode == "sed":
+            self.head = SEDHead(
+                embed_dim, num_classes,
+                hidden_dim=head_hidden_dim if head_hidden_dim > 0 else 512,
+                dropout=head_dropout,
+                gem_p=gem_p,
+                blend_clip=blend_clip,
+                blend_frame=blend_frame,
             )
         else:
             raise ValueError(f"Unknown pooling_mode: {pooling_mode}")
@@ -246,8 +362,25 @@ class EfficientNetClassifier(nn.Module):
         """Compute mel spectrogram in fp32 — nnAudio FFT is not fp16-safe."""
         waveforms = waveforms.float()
         mel = self.mel_spec(waveforms)
-        mel = torch.log(mel.clamp(min=1e-10))
-        mel = (mel - self.norm_mean) / (self.norm_std * 2)
+
+        if self.mel_norm == "amplitude_to_db":
+            # Power-to-dB: 10 * log10(mel), clipped to top 80dB dynamic range
+            mel = 10.0 * torch.log10(mel.clamp(min=1e-10))
+            mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+            mel = torch.clamp(mel, min=mel_max - 80.0)
+            # Per-sample standardize (zero mean, unit variance)
+            mean = mel.mean(dim=(-2, -1), keepdim=True)
+            std = mel.std(dim=(-2, -1), keepdim=True).clamp(min=1e-6)
+            mel = (mel - mean) / std
+            # Per-sample min-max scale to [0, 1]
+            mel_min = mel.amin(dim=(-2, -1), keepdim=True)
+            mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+            mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
+        else:
+            # AudioSet-style: log + global normalize
+            mel = torch.log(mel.clamp(min=1e-10))
+            mel = (mel - self.norm_mean) / (self.norm_std * 2)
+
         T_mel = mel.shape[2]
         if T_mel > self.target_frames:
             mel = mel[:, :, :self.target_frames]
@@ -307,3 +440,5 @@ class EfficientNetClassifier(nn.Module):
         elif self.pooling_mode == "attention":
             frame_features = features.mean(dim=2).permute(0, 2, 1)  # (B, T, D)
             return self.head(frame_features)  # probabilities
+        elif self.pooling_mode == "sed":
+            return self.head(features)  # dict with clipwise_logits, framewise_logits

@@ -77,7 +77,12 @@ def sigmoid(x):
 
 
 def compute_mel(audio, mel_cfg):
-    """Compute normalized log-mel matching training pipeline."""
+    """Compute normalized mel matching training pipeline.
+
+    Supports two normalization modes (set in mel_config.json):
+      - "audioset" (default): log(mel) + global mean/std normalize
+      - "amplitude_to_db": dB scale + 80dB clamp + per-sample standardize + min-max [0,1]
+    """
     mel = librosa.feature.melspectrogram(
         y=audio,
         sr=mel_cfg["sr"],
@@ -88,8 +93,19 @@ def compute_mel(audio, mel_cfg):
         fmax=mel_cfg["fmax"],
         power=2.0,
     )
-    mel = np.log(np.clip(mel, a_min=1e-10, a_max=None))
-    mel = (mel - mel_cfg["norm_mean"]) / (mel_cfg["norm_std"] * 2)
+
+    mel_norm = mel_cfg.get("mel_norm", "audioset")
+    if mel_norm == "amplitude_to_db":
+        mel = 10.0 * np.log10(np.clip(mel, a_min=1e-10, a_max=None))
+        mel_max = mel.max()
+        mel = np.clip(mel, a_min=mel_max - 80.0, a_max=None)
+        mean, std = mel.mean(), max(mel.std(), 1e-6)
+        mel = (mel - mean) / std
+        mel_min, mel_max = mel.min(), mel.max()
+        mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
+    else:
+        mel = np.log(np.clip(mel, a_min=1e-10, a_max=None))
+        mel = (mel - mel_cfg["norm_mean"]) / (mel_cfg["norm_std"] * 2)
 
     target_frames = mel_cfg.get("target_frames", 625)
     T = mel.shape[1]
