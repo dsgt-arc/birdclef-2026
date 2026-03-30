@@ -252,11 +252,11 @@ Goal: push SED from 0.860 → 0.885+ LB before pseudo-labeling.
 
 | Slug | Change | Head | Loss | Best val/auroc | Best Epoch | LB | Checkpoint |
 |------|--------|------|------|---------------|------------|-----|------------|
-| `effnet-b0-sed-v5a` | BCEWithLogitsLoss | AttHead | bce | training | — | — | `017-.../2026-effnet-b0-sed-v5a/` |
-| `effnet-b0-sed-v5b` | Stronger MixUp (α=1.0, θ=0.8, warmup=5) | AttHead | soft_ce | **0.869** | 31 | pending | `017-.../2026-effnet-b0-sed-v5b/best-epochepoch=31.ckpt` |
+| `effnet-b0-sed-v5a` | BCEWithLogitsLoss | AttHead | bce | **0.875** | 29 | **0.851** | `017-.../2026-effnet-b0-sed-v5a/best-epochepoch=29.ckpt` |
+| `effnet-b0-sed-v5b` | Stronger MixUp (α=1.0, θ=0.8, warmup=5) | AttHead | soft_ce | **0.869** | 31 | **0.840** | `017-.../2026-effnet-b0-sed-v5b/best-epochepoch=31.ckpt` |
 | `effnet-b0-sed-v5c` | weight_decay=1e-4 | AttHead | soft_ce | training | — | — | `017-.../2026-effnet-b0-sed-v5c/` |
 | `effnet-b0-sed-v5d` | LSEHead (GeM+LSE pooling) | **LSEHead** | soft_ce | **0.861** | 21 | pending | `017-.../2026-effnet-b0-sed-v5d/best-epochepoch=21.ckpt` |
-| `effnet-b0-sed-v5e` | HGNetV2-B0 backbone (embed=1024) | AttHead | soft_ce | training | — | — | `017-.../2026-effnet-b0-sed-v5e/` |
+| `effnet-b0-sed-v5e` | HGNetV2-B0 backbone (embed=1024) | AttHead | soft_ce | 0.861 | 23 | pending | `017-.../2026-hgnet-b0-sed-v5e/best-epochepoch=23.ckpt` |
 
 **v5d (LSEHead)**: −0.004 val/auroc vs v4b baseline (0.861 vs 0.865). LSE pooling slightly
 regresses compared to attention head on EfficientNet-B0.

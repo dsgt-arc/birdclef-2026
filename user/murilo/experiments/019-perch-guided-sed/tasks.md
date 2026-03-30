@@ -182,11 +182,11 @@ After each phase, decide whether to continue:
 | Submission | val/auroc | LB | Phase | Notes |
 |------------|----------|-----|-------|-------|
 | SED v4b (baseline) | 0.865 | 0.860 | — | EfficientNet-B0, AmplitudeToDB, AttHead, soft CE |
-| v5a (BCE) | training | — | A | `loss_type: "bce"` |
-| v5b (MixUp) | **0.869** | pending | A | `mixup_alpha=1.0, theta=0.8, warmup=5`, epoch 31, **+0.004 vs baseline** |
+| v5a (BCE) | **0.875** | **0.851** | A | `loss_type: "bce"`, epoch 29, **+0.010 val but −0.009 LB vs baseline** |
+| v5b (MixUp) | **0.869** | **0.840** | A | `mixup_alpha=1.0, theta=0.8, warmup=5`, epoch 31, **+0.004 val but −0.020 LB vs baseline** |
 | v5c (weight_decay) | training | — | A | `weight_decay=1e-4` |
 | v5d (LSEHead) | **0.861** | pending | A | `sed_head.type: "lse_head"`, epoch 21, **-0.004 vs baseline** |
-| v5e (HGNetV2) | training | — | A | `hgnetv2_b0.ssld_stage2_ft_in1k`, embed=1024 |
+| v5e (HGNetV2) | 0.861 | pending | A | `hgnetv2_b0.ssld_stage2_ft_in1k`, embed=1024, epoch 23, **-0.004 vs baseline** |
 | Combined EfficientNet | — | — | A | Best ablation combo |
 | Combined HGNet | — | — | A | Best ablation combo on HGNet |
 | 4-fold ensemble | — | — | A | |
