@@ -42,16 +42,20 @@ def build_site_mapping(
     meta_df: pd.DataFrame,
     n_sites_max: int = 20,
 ) -> tuple[dict[str, int], int]:
-    """Map unique sites to integer indices.
+    """Map unique sites to integer indices (1-based, 0 = unknown).
+
+    Matches Yuriy: index 0 is reserved for unknown/unseen sites at test time.
+    Training sites get indices 1..N, capped at n_sites_max - 1.
 
     Returns:
-        site_to_idx: mapping from site name to integer index
-        n_sites: number of unique sites (capped at n_sites_max)
+        site_to_idx: mapping from site name to integer index (1-based)
+        n_sites: number of unique sites + 1, capped at n_sites_max
     """
     sites = meta_df["site"].dropna().unique().tolist() if "site" in meta_df.columns else []
     sites = sorted({str(s) for s in sites})
-    site_to_idx = {s: min(i, n_sites_max - 1) for i, s in enumerate(sites)}
-    return site_to_idx, min(len(sites), n_sites_max)
+    site_to_idx = {s: min(i + 1, n_sites_max - 1) for i, s in enumerate(sites)}
+    n_sites = min(len(sites) + 1, n_sites_max)
+    return site_to_idx, n_sites
 
 
 def get_file_metadata(
@@ -99,30 +103,28 @@ def build_taxonomy_groups(
 ) -> tuple[int, list[int], dict[str, int]]:
     """Build family grouping for auxiliary taxonomic head.
 
+    Matches Yuriy: tries family → order → class_name columns from taxonomy.csv.
+    BirdCLEF 2026 taxonomy has class_name → 5 groups (Aves, Amphibia, etc.).
+
     Returns:
         n_families: number of unique families
         class_to_family: list mapping class index to family index
         family_to_idx: mapping from family name to integer index
     """
-    # Get family for each species
-    label_to_family = {}
-    if "primary_label" in taxonomy_df.columns:
-        for _, row in taxonomy_df.iterrows():
-            label = row.get("primary_label", "")
-            sci_name = str(row.get("scientific_name", ""))
-            # Use genus (first word of scientific name) as family proxy
-            family = sci_name.split()[0] if sci_name else "unknown"
-            label_to_family[label] = family
+    group_map = {}
+    for col in ["family", "order", "class_name"]:
+        if col in taxonomy_df.columns:
+            group_map = taxonomy_df.set_index("primary_label")[col].to_dict()
+            break
 
-    # Build family index
-    families = sorted({label_to_family.get(lbl, "unknown") for lbl in primary_labels})
-    family_to_idx = {f: i for i, f in enumerate(families)}
+    groups = sorted(set(group_map.values())) if group_map else ["Unknown"]
+    family_to_idx = {g: i for i, g in enumerate(groups)}
 
     class_to_family = [
-        family_to_idx.get(label_to_family.get(lbl, "unknown"), 0) for lbl in primary_labels
+        family_to_idx.get(group_map.get(lbl, "Unknown"), 0) for lbl in primary_labels
     ]
 
-    return len(families), class_to_family, family_to_idx
+    return len(groups), class_to_family, family_to_idx
 
 
 def build_file_families(

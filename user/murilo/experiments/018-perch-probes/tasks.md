@@ -22,7 +22,7 @@ ProtoSSM temporal modeling → post-processing.
 | 0.921 | maryna | + focal loss, mixup, cross-attn, SWA, TTA |
 | 0.925 | yuriy/yaroslav | + wider SSM (d=256, 3 layers), 6-stage post-proc |
 
-### Status: v4.1 submitted (2026-03-30), running inference — v4 = **0.918 LB**, v4.1 target ~0.920-0.923
+### Status: v4.1 = **0.918 LB** (same as v4, bug fixes had no effect). Gap to Yuriy (0.925) = 0.007.
 
 - **Branch**: `mg/018-perch-ensemble` (PR #20)
 
@@ -193,11 +193,24 @@ postprocessing, ensemble, data_utils, config)
       - OOF baseline AUROC: 0.6656 → 0.8061 (filename exclusion fix)
       - OOF ensemble AUC: 0.9133 → 0.9447
       - SWA applied: 6 checkpoints (vs 0 before, all-data training)
-- [ ] 9.10 Check v4.1 LB result — target: ~0.920-0.923
+- [x] 9.10 Check v4.1 LB result: **0.918 LB** (same as v4 — bug fixes had no effect)
+      - OOF improvements (0.6656→0.8061 baseline, 0.9133→0.9447 ensemble) did NOT translate to LB
+      - Gap to Yuriy (0.925) remains at 0.007 — root cause is elsewhere
+- [ ] 9.11 Push v4.2 kernel with 4 new fixes from line-by-line diff vs Yuriy:
+      1. **Taxonomy aux head**: genus (161 groups) → class_name (5 groups) — biggest fix.
+         Our 161-way genus classifier was noisy on 59 files. Yuriy uses 5-way class_name
+         (Aves/Amphibia/Insecta/Mammalia/Reptilia) for clean regularization.
+      2. **Ensemble weight**: Always OOF-optimized → fixed 0.5 in submit mode (matching Yuriy).
+         OOF optimization is not fold-safe since MLP probes train on all data.
+      3. **MLP probes**: Added n_iter_no_change=15, random_state=42 (matching Yuriy).
+      4. **Site mapping**: 0-based → 1-based (index 0 = unknown sites, matching Yuriy).
+      - All 142 tests passing after fixes
+      - Estimated impact: +0.004 to +0.008 LB
+- [ ] 9.12 Check v4.2 LB result — target: 0.920-0.925
 
 ---
 
-## Future Work (if needed after v4 LB result)
+## Future Work (if needed after v4.2 LB result)
 
 ### Scale ProtoSSM
 - [ ] Scale d_model: 128 → 256, layers: 2 → 3
@@ -228,7 +241,7 @@ postprocessing, ensemble, data_utils, config)
 | Perch + probes v2-fix | **0.911** | Fixes: K_HOUR=8, sc_clean priors, 6-cat fuse, 59 fully-labeled files (perch-probes-v2 ver.2) |
 | Perch + probes v3 (MLP) | not submitted | + 77-dim features, MLP probes (included in v4) |
 | **ProtoSSM v4** | **0.918** | + BiSSM×2 + cross-attn + TTA + ResidualSSM + 6-stage PP, ensemble 0.45/0.55 |
-| **ProtoSSM v4.1** | **pending** | Bug fixes: OOF prior by filename, per-stage clipping, train on all data, labels.csv parsing |
+| **ProtoSSM v4.1** | **0.918** | Bug fixes: OOF prior by filename, per-stage clipping, train on all data — **no improvement** |
 
 ---
 

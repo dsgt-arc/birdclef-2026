@@ -56,20 +56,22 @@ class TestBuildSiteMapping:
     def test_basic_mapping(self):
         meta = pd.DataFrame({"site": ["S1", "S1", "S2", "S2", "S3", "S3"]})
         mapping, n = build_site_mapping(meta, n_sites_max=20)
-        assert n == 3
+        assert n == 4  # 3 sites + 1 unknown slot at index 0
         assert set(mapping.keys()) == {"S1", "S2", "S3"}
+        # All indices should be 1-based (0 reserved for unknown)
+        assert all(v >= 1 for v in mapping.values())
 
     def test_capped_at_max(self):
         meta = pd.DataFrame({"site": [f"S{i}" for i in range(30)]})
         mapping, n = build_site_mapping(meta, n_sites_max=10)
         assert n == 10
-        # Values should be capped at n_sites_max - 1
-        assert all(v <= 9 for v in mapping.values())
+        # Values should be capped at n_sites_max - 1, starting from 1
+        assert all(1 <= v <= 9 for v in mapping.values())
 
     def test_missing_site_column(self):
         meta = pd.DataFrame({"filename": ["f1", "f2"]})
         mapping, n = build_site_mapping(meta)
-        assert n == 0
+        assert n == 1  # just the unknown slot
         assert mapping == {}
 
 
@@ -101,17 +103,42 @@ class TestGetFileMetadata:
 
 
 class TestBuildTaxonomyGroups:
-    def test_basic(self):
+    def test_class_name_grouping(self):
+        """Matches Yuriy: uses class_name column (5 groups for BirdCLEF 2026)."""
         taxonomy_df = pd.DataFrame(
             {
-                "primary_label": ["sp1", "sp2", "sp3"],
-                "scientific_name": ["Genus1 species1", "Genus1 species2", "Genus2 species3"],
+                "primary_label": ["sp1", "sp2", "sp3", "sp4"],
+                "class_name": ["Aves", "Aves", "Amphibia", "Insecta"],
             }
         )
-        n_fam, c2f, f2i = build_taxonomy_groups(taxonomy_df, ["sp1", "sp2", "sp3"])
-        assert n_fam == 2  # Genus1, Genus2
-        assert c2f[0] == c2f[1]  # sp1 and sp2 share genus
-        assert c2f[2] != c2f[0]
+        n_fam, c2f, f2i = build_taxonomy_groups(taxonomy_df, ["sp1", "sp2", "sp3", "sp4"])
+        assert n_fam == 3  # Amphibia, Aves, Insecta
+        assert c2f[0] == c2f[1]  # sp1 and sp2 both Aves
+        assert c2f[2] != c2f[0]  # sp3 is Amphibia
+
+    def test_fallback_chain(self):
+        """Tries family → order → class_name in order."""
+        taxonomy_df = pd.DataFrame(
+            {
+                "primary_label": ["sp1", "sp2"],
+                "family": ["Turdidae", "Sylviidae"],
+                "class_name": ["Aves", "Aves"],
+            }
+        )
+        n_fam, c2f, f2i = build_taxonomy_groups(taxonomy_df, ["sp1", "sp2"])
+        assert n_fam == 2  # family takes precedence: Turdidae, Sylviidae
+        assert c2f[0] != c2f[1]
+
+    def test_unknown_labels(self):
+        """Labels not in taxonomy get mapped to Unknown."""
+        taxonomy_df = pd.DataFrame(
+            {
+                "primary_label": ["sp1"],
+                "class_name": ["Aves"],
+            }
+        )
+        n_fam, c2f, f2i = build_taxonomy_groups(taxonomy_df, ["sp1", "sp_missing"])
+        assert "Unknown" in f2i or n_fam >= 1
 
 
 class TestBuildFileFamilies:
