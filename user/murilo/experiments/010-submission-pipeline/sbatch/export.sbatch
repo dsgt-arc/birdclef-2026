@@ -590,7 +590,17 @@ export_hgnet_b0_sed_v5g_4fold() {
     # Copy shared artifacts to top-level and rename per-fold ONNX models
     cp "${OUTPUT_DIR}/fold0/species_list.json" "${OUTPUT_DIR}/"
     cp "${OUTPUT_DIR}/fold0/mel_config.json" "${OUTPUT_DIR}/"
-    cp "${OUTPUT_DIR}/fold0/species_mapping.json" "${OUTPUT_DIR}/"
+    # species_mapping.json is built by build_species_mapping.py, not by export.
+    # Copy from single-model export if available, or from the mapping build step.
+    local SINGLE_MAPPING="artifacts/weights/hgnet-b0-sed-v5g/species_mapping.json"
+    local MAPPING_2026="artifacts/weights/species_mapping_2026.json"
+    if [ -f "$SINGLE_MAPPING" ]; then
+        cp "$SINGLE_MAPPING" "${OUTPUT_DIR}/"
+    elif [ -f "$MAPPING_2026" ]; then
+        cp "$MAPPING_2026" "${OUTPUT_DIR}/species_mapping.json"
+    else
+        echo "WARNING: species_mapping.json not found. Run single-model export first or build_species_mapping.py."
+    fi
     for FOLD in 0 1 2 3; do
         cp "${OUTPUT_DIR}/fold${FOLD}/model.onnx" "${OUTPUT_DIR}/model_fold${FOLD}.onnx"
     done
