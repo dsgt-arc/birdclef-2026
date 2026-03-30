@@ -232,11 +232,24 @@ failed twice (v4.1 no improvement, v4.2 regressed). Either revert or rewrite.
 
 ## Future Work
 
-### Scale ProtoSSM
-- [ ] Scale d_model: 128 → 256, layers: 2 → 3
-- [ ] OOF-optimized per-class thresholds (currently fixed at 0.5 in submit mode)
-- [ ] Proxy taxa expansion: build genus proxies dynamically at inference
-      (Yuriy does this; we use static genus_proxy_map from species_mapping.json)
+### Scale ProtoSSM (informed by pantanal-distill V18, 0.930 LB)
+
+Reference: `user/murilo/notes/pantanal-distill-0930-annotated.md`
+
+**Step 1: Recover baseline**
+- [ ] Revert to v4 kernel (0.918) OR binary-search v4.2's 4 changes to find regression
+- [ ] Confirm 0.918 still holds on current LB
+
+**Step 2: Scale up (targeting 0.925-0.930)**
+- [ ] Scale d_model: 128 → 256 → 320, layers: 2 → 4 (pantanal V18)
+- [ ] 5-fold OOF (currently 3-fold) for better model selection
+- [ ] 2-layer MLP probes (256,128) with PCA-128 (currently 1-layer, PCA-64)
+- [ ] OOF-optimized ensemble weight (V18 found MLP-only beat ProtoSSM+MLP)
+- [ ] OOF-optimized per-class thresholds (10-value grid)
+- [ ] Wider TTA shifts [0, ±1, ±2] (currently [0, ±1])
+- [ ] Cosine restart scheduler (T=20 epochs)
+- [ ] ResidualSSM: d=128, 2 layers (currently d=64, 1 layer)
+- [ ] Adaptive delta shift smoothing (confidence-weighted)
 
 ### Additional techniques from other top notebooks
 - [ ] Cross-attention refinements from maryna (0.921)

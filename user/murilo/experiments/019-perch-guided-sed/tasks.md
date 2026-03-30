@@ -19,7 +19,7 @@ improvements with Perch pseudo-labels on 10K+ unlabeled soundscapes.
 | ~0.920 | Our Perch ProtoSSM | Teacher for pseudo-labels |
 | 0.939 | Competition #1 | Likely ensemble + pseudo-labels |
 
-### Status: Phase A Step 2 complete. v5f submitted to LB, v5g blocked by daily quota (resets 2026-03-31 AM). Decision gate passed: v5g 0.872 ≥ 0.870 → Step 3 (4-fold) next.
+### Status: Phase A Step 3 (4-fold) trained + exported. Awaiting Kaggle submission quota reset (2026-03-31 AM) to submit v5g + v5g-4fold.
 
 - **Branch**: `mg/018-perch-ensemble` (shared with exp 018 for now)
 - **Parallel**: Exp 018 ProtoSSM v4.1 running inference on Kaggle (~90 min)
