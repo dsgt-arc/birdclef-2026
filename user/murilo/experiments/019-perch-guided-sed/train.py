@@ -68,6 +68,13 @@ def main():
     parser.add_argument("--gpu-check", type=int, nargs="?", const=1, default=0)
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--devices", type=int, default=1)
+    parser.add_argument(
+        "--fold",
+        type=int,
+        default=None,
+        choices=[0, 1, 2, 3],
+        help="Fold ID for cross-validation (0-3). Uses fold_assignments.json.",
+    )
     args = parser.parse_args()
 
     if args.fast_dev_run and args.gpu_check > 0:
@@ -130,6 +137,7 @@ def main():
     }
     if head_type == "lse_head":
         head_kwargs["lse_temperature"] = config["sed_head"].get("lse_temperature", 1.0)
+        head_kwargs["freq_pool"] = config["sed_head"].get("freq_pool", "gem")
     sed_head = head_cls(**head_kwargs)
 
     # ========================================================================
@@ -139,30 +147,50 @@ def main():
     sample_rate = config["data"]["sample_rate"]
     window_duration = config["data"]["window_duration"]
     mel_cfg = config.get("mel", {})
+    mel_type = mel_cfg.get("type", "nnaudio")
 
-    # Derive hop_length and target_frames
-    hop_length = mel_cfg.get("hop_length")
-    if hop_length is None:
-        frame_shift_ms = mel_cfg.get("frame_shift_ms", 10)
-        hop_length = int(frame_shift_ms / 1000.0 * sample_rate)
-    target_frames = int(window_duration * sample_rate / hop_length)
+    if mel_type == "ttahara":
+        from birdclef.preprocessing.ttahara_mel import TtaharaMelTransform
 
-    norm_type = mel_cfg.get("norm_type", "audioset")
-    audio_transform = NNAudioMelSpectrogram(
-        sample_rate=sample_rate,
-        n_mels=mel_cfg.get("n_mels", 128),
-        target_frames=target_frames,
-        n_fft=mel_cfg.get("n_fft"),
-        hop_length=hop_length,
-        fmax=mel_cfg.get("fmax"),
-        norm_type=norm_type,
-        top_db=mel_cfg.get("top_db", 80.0),
-    )
-    logger.info(
-        f"Mel transform: sr={sample_rate}, n_fft={mel_cfg.get('n_fft', 'auto')}, "
-        f"n_mels={mel_cfg.get('n_mels', 128)}, hop={hop_length}, "
-        f"target_frames={target_frames}, norm={norm_type}"
-    )
+        audio_transform = TtaharaMelTransform(
+            sample_rate=sample_rate,
+            n_fft=mel_cfg.get("n_fft", 2048),
+            win_length=mel_cfg.get("win_length", 626),
+            hop_length=mel_cfg.get("hop_length", 313),
+            f_min=mel_cfg.get("f_min", 20),
+            n_mels=mel_cfg.get("n_mels", 256),
+            top_db=mel_cfg.get("top_db", 80.0),
+            target_shape=tuple(mel_cfg.get("target_shape", [256, 256])),
+        )
+        logger.info(
+            f"Mel transform (ttahara): sr={sample_rate}, n_fft={mel_cfg.get('n_fft', 2048)}, "
+            f"win_length={mel_cfg.get('win_length', 626)}, hop={mel_cfg.get('hop_length', 313)}, "
+            f"n_mels={mel_cfg.get('n_mels', 256)}, target_shape={mel_cfg.get('target_shape', [256, 256])}"
+        )
+    else:
+        # Default: NNAudio mel spectrogram
+        hop_length = mel_cfg.get("hop_length")
+        if hop_length is None:
+            frame_shift_ms = mel_cfg.get("frame_shift_ms", 10)
+            hop_length = int(frame_shift_ms / 1000.0 * sample_rate)
+        target_frames = int(window_duration * sample_rate / hop_length)
+
+        norm_type = mel_cfg.get("norm_type", "audioset")
+        audio_transform = NNAudioMelSpectrogram(
+            sample_rate=sample_rate,
+            n_mels=mel_cfg.get("n_mels", 128),
+            target_frames=target_frames,
+            n_fft=mel_cfg.get("n_fft"),
+            hop_length=hop_length,
+            fmax=mel_cfg.get("fmax"),
+            norm_type=norm_type,
+            top_db=mel_cfg.get("top_db", 80.0),
+        )
+        logger.info(
+            f"Mel transform: sr={sample_rate}, n_fft={mel_cfg.get('n_fft', 'auto')}, "
+            f"n_mels={mel_cfg.get('n_mels', 128)}, hop={hop_length}, "
+            f"target_frames={target_frames}, norm={norm_type}"
+        )
 
     # ========================================================================
     # Build Lightning module
@@ -176,16 +204,30 @@ def main():
     # With n_fft=4096, CPU-side mel in DataLoader workers is a bottleneck.
     gpu_mel_transform = None
     if gpu_mel or waveform_mixup:
-        gpu_mel_transform = NNAudioMelSpectrogram(
-            sample_rate=sample_rate,
-            n_mels=mel_cfg.get("n_mels", 128),
-            target_frames=target_frames,
-            n_fft=mel_cfg.get("n_fft"),
-            hop_length=hop_length,
-            fmax=mel_cfg.get("fmax"),
-            norm_type=norm_type,
-            top_db=mel_cfg.get("top_db", 80.0),
-        )
+        if mel_type == "ttahara":
+            from birdclef.preprocessing.ttahara_mel import TtaharaMelTransform
+
+            gpu_mel_transform = TtaharaMelTransform(
+                sample_rate=sample_rate,
+                n_fft=mel_cfg.get("n_fft", 2048),
+                win_length=mel_cfg.get("win_length", 626),
+                hop_length=mel_cfg.get("hop_length", 313),
+                f_min=mel_cfg.get("f_min", 20),
+                n_mels=mel_cfg.get("n_mels", 256),
+                top_db=mel_cfg.get("top_db", 80.0),
+                target_shape=tuple(mel_cfg.get("target_shape", [256, 256])),
+            )
+        else:
+            gpu_mel_transform = NNAudioMelSpectrogram(
+                sample_rate=sample_rate,
+                n_mels=mel_cfg.get("n_mels", 128),
+                target_frames=target_frames,
+                n_fft=mel_cfg.get("n_fft"),
+                hop_length=hop_length,
+                fmax=mel_cfg.get("fmax"),
+                norm_type=norm_type,
+                top_db=mel_cfg.get("top_db", 80.0),
+            )
         if waveform_mixup:
             logger.info("GPU mel + waveform mixup: mixup before mel on GPU")
         else:
@@ -209,6 +251,7 @@ def main():
         mixup_alpha=training_cfg.get("mixup_alpha", 0.5),
         mixup_warmup_epochs=training_cfg.get("mixup_warmup_epochs", 0),
         mixup_theta=training_cfg.get("mixup_theta", 1.0),
+        mixup_per_sample=training_cfg.get("mixup_per_sample", False),
         loss_type=training_cfg.get("loss_type", "soft_ce"),
         label_smoothing=training_cfg.get("label_smoothing", 0.0),
         asl_gamma_neg=training_cfg.get("asl_gamma_neg", 4.0),
@@ -216,6 +259,9 @@ def main():
         asl_clip=training_cfg.get("asl_clip", 0.05),
         mel_transform=gpu_mel_transform,
         waveform_mixup=waveform_mixup,
+        scheduler_type=training_cfg.get("scheduler_type", "cosine"),
+        onecycle_div_factor=training_cfg.get("onecycle_div_factor", 25.0),
+        onecycle_final_div_factor=training_cfg.get("onecycle_final_div_factor", 4.0),
     )
 
     # ========================================================================
@@ -226,6 +272,20 @@ def main():
     # The lightning module computes mel on GPU in training_step, validation_step, test_step.
     train_transform = None if gpu_mel_transform is not None else audio_transform
     eval_transform = None if gpu_mel_transform is not None else audio_transform
+
+    # Fold-based CV: override test settings, load fold assignments
+    fold_id = args.fold
+    fold_assignments_path = None
+    if fold_id is not None:
+        fold_assignments_path = Path(__file__).parent / "fold_assignments.json"
+        if not fold_assignments_path.exists():
+            raise FileNotFoundError(
+                f"fold_assignments.json not found at {fold_assignments_path}. "
+                "Run: python generate_folds.py"
+            )
+        config["data"]["test_fraction"] = 0.0
+        config["data"]["soundscape_test_files"] = 0
+        logger.info(f"Fold mode: fold_id={fold_id}, assignments={fold_assignments_path}")
 
     data_module = SEDDataModule(
         data_dir=str(data_dir),
@@ -241,6 +301,8 @@ def main():
         seed=config["data"].get("seed", 42),
         transform=train_transform,
         eval_transform=eval_transform,
+        fold_id=fold_id,
+        fold_assignments_path=str(fold_assignments_path) if fold_assignments_path else None,
     )
 
     # ========================================================================
@@ -261,7 +323,19 @@ def main():
         callbacks.append(lr_monitor)
         logger.info("GPU check mode: skipping checkpoints, early stopping, and device stats")
     else:
-        checkpoint_dir = project_dir / "experiments" / EXPERIMENT_NAME / "checkpoints" / run_name
+        if fold_id is not None:
+            checkpoint_dir = (
+                project_dir
+                / "experiments"
+                / EXPERIMENT_NAME
+                / "checkpoints"
+                / run_name
+                / f"fold{fold_id}"
+            )
+        else:
+            checkpoint_dir = (
+                project_dir / "experiments" / EXPERIMENT_NAME / "checkpoints" / run_name
+            )
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         if fulldata:
@@ -312,6 +386,8 @@ def main():
 
     loggers = []
     experiment_name = f"exp017-{run_name}"
+    if fold_id is not None:
+        experiment_name = f"{experiment_name}-fold{fold_id}"
 
     tb_logger = TensorBoardLogger(
         save_dir=Path(__file__).parent / "outputs",

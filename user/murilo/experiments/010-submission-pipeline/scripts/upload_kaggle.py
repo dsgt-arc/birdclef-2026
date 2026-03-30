@@ -255,6 +255,23 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5e",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5e.json",
     },
+    # Exp 019 Step 2: ttahara full recipe reproduction
+    "effnet-b0-sed-v5f": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5f-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5f",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5f.json",
+    },
+    "hgnet-b0-sed-v5g": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5g-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5g",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5g.json",
+    },
+    # Exp 019 Step 3: 4-fold ensemble
+    "hgnet-b0-sed-v5g-4fold": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5g-4fold-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5g-4fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5g-4fold.json",
+    },
 }
 
 
@@ -310,7 +327,7 @@ def upload_dataset(slug: str, path: Path, kaggle_user: str, dry_run: bool = Fals
         print(f"  WARNING: {path} is empty, skipping")
         return
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Uploading: {kaggle_user}/{slug}")
     print(f"  Source: {path}")
     print("  Files:")

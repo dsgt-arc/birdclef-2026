@@ -115,6 +115,14 @@ class SEDFinetuneModule(pl.LightningModule):
             waveforms before mel conversion (v3b behavior). When False (default),
             mixup applies on spectrograms after mel conversion. Only relevant
             when mel_transform is set.
+        mixup_per_sample: When True, sample a separate lambda for each sample in
+            the batch (ttahara's approach). When False (default), use a single
+            scalar lambda for the entire batch.
+        scheduler_type: LR scheduler type. "cosine" (default) uses CosineAnnealing
+            with linear warmup (per-epoch). "one_cycle" uses OneCycleLR with a
+            single param group and per-step updates (ttahara's approach).
+        onecycle_div_factor: OneCycleLR initial_lr = max_lr / div_factor (default: 25.0).
+        onecycle_final_div_factor: OneCycleLR final_lr = initial_lr / final_div_factor (default: 4.0).
     """
 
     def __init__(
@@ -136,6 +144,7 @@ class SEDFinetuneModule(pl.LightningModule):
         mixup_alpha: float = 0.5,
         mixup_warmup_epochs: int = 0,
         mixup_theta: float = 1.0,
+        mixup_per_sample: bool = False,
         loss_type: str = "soft_ce",
         label_smoothing: float = 0.05,
         asl_gamma_neg: float = 4.0,
@@ -143,6 +152,9 @@ class SEDFinetuneModule(pl.LightningModule):
         asl_clip: float = 0.05,
         mel_transform: nn.Module | None = None,
         waveform_mixup: bool = False,
+        scheduler_type: str = "cosine",
+        onecycle_div_factor: float = 25.0,
+        onecycle_final_div_factor: float = 4.0,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform"])
@@ -249,13 +261,33 @@ class SEDFinetuneModule(pl.LightningModule):
         If mixup_theta < 1.0, labels >= theta are clipped to 1.0 (ttahara's
         approach: prevents soft labels from diluting strong positive signal).
 
+        If mixup_per_sample is True, each sample in the batch gets its own
+        lambda (ttahara's approach). Otherwise, a single lambda is used for
+        the entire batch.
+
         Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N).
         """
         indices = torch.randperm(x.size(0), device=x.device)
-        lam = np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
-        lam = max(lam, 1.0 - lam)  # Enforce lam >= 0.5
-        x = lam * x + (1 - lam) * x[indices]
-        labels = lam * labels + (1 - lam) * labels[indices]
+
+        if self.hparams.mixup_per_sample:
+            beta_dist = torch.distributions.Beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
+            lam = beta_dist.sample(sample_shape=(x.size(0),)).to(x.device)
+            lam = torch.maximum(lam, 1 - lam).float()
+
+            if x.dim() == 4:  # spectrogram (B, 1, F, T)
+                x_lam = lam[:, None, None, None]
+            else:  # waveform (B, N)
+                x_lam = lam[:, None]
+            label_lam = lam[:, None]
+
+            x = x_lam * x + (1 - x_lam) * x[indices]
+            labels = label_lam * labels + (1 - label_lam) * labels[indices]
+        else:
+            lam = np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
+            lam = max(lam, 1.0 - lam)  # Enforce lam >= 0.5
+            x = lam * x + (1 - lam) * x[indices]
+            labels = lam * labels + (1 - lam) * labels[indices]
+
         theta = self.hparams.mixup_theta
         if theta < 1.0:
             labels = torch.where(labels >= theta, torch.ones_like(labels), labels)
@@ -433,7 +465,42 @@ class SEDFinetuneModule(pl.LightningModule):
             m.reset()
 
     def configure_optimizers(self):
-        """Two param groups: backbone at lower LR, SED head at higher LR."""
+        """Configure optimizer and LR scheduler.
+
+        Supports two modes:
+        - "cosine" (default): Two param groups (encoder/head) with CosineAnnealing + warmup, per-epoch.
+        - "one_cycle": Single param group with OneCycleLR, per-step (ttahara's approach).
+        """
+        if self.hparams.scheduler_type == "one_cycle":
+            # Single param group, uniform LR (matching ttahara)
+            all_params = [p for p in self.parameters() if p.requires_grad]
+            optimizer = torch.optim.AdamW(
+                all_params,
+                lr=self.hparams.lr,
+                weight_decay=self.hparams.weight_decay,
+            )
+
+            steps_per_epoch = self.trainer.estimated_stepping_batches // self.trainer.max_epochs
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=self.hparams.lr,
+                epochs=self.hparams.max_epochs,
+                steps_per_epoch=steps_per_epoch,
+                pct_start=self.hparams.warmup_epochs / self.hparams.max_epochs,
+                div_factor=self.hparams.onecycle_div_factor,
+                final_div_factor=self.hparams.onecycle_final_div_factor,
+            )
+
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "interval": "step",
+                    "frequency": 1,
+                },
+            }
+
+        # Default: two param groups with CosineAnnealing + warmup (per-epoch)
         encoder_params = [p for p in self.encoder.parameters() if p.requires_grad]
         head_params = list(self.sed_head.parameters())
 

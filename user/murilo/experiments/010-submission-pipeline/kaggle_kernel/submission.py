@@ -97,6 +97,11 @@ MODEL_SLUGS = [
     "birdclef-2026-effnet-b0-sed-v5c-weights",
     "birdclef-2026-effnet-b0-sed-v5d-weights",
     "birdclef-2026-hgnet-b0-sed-v5e-weights",
+    # SED 4-fold ensemble (exp 019 step 3)
+    "birdclef-2026-hgnet-b0-sed-v5g-4fold-weights",
+    # SED ttahara recipe reproduction, 234 classes (exp 019 step 2)
+    "birdclef-2026-effnet-b0-sed-v5f-weights",
+    "birdclef-2026-hgnet-b0-sed-v5g-weights",
     # Mel overhaul SED models, 234 classes (exp 017)
     # Step 5: loss + augmentation ablations
     "birdclef-2026-effnet-b0-sed-v4j-weights",
@@ -293,6 +298,54 @@ def compute_mel_amplitude_to_db(audio, mel_cfg):
     return mel_norm[np.newaxis, np.newaxis, :, :].astype(np.float32)
 
 
+def compute_mel_ttahara(audio, mel_cfg):
+    """Compute mel spectrogram with ttahara's pipeline: torchaudio + resize + min-max.
+
+    Matches ttahara's HGNetV2-B0 baseline (0.884 LB). Per-segment processing:
+    torchaudio MelSpectrogram → AmplitudeToDB → Resize(256,256) → per-sample min-max [0,1].
+    """
+    import torch
+    import torchaudio
+
+    sr = mel_cfg["sr"]
+    wave = torch.from_numpy(audio).float().unsqueeze(0)  # (1, samples)
+
+    mel_transform = torchaudio.transforms.MelSpectrogram(
+        sample_rate=sr,
+        n_fft=mel_cfg.get("n_fft", 2048),
+        win_length=mel_cfg.get("win_length", 626),
+        hop_length=mel_cfg.get("hop_length", 313),
+        f_min=mel_cfg.get("fmin", 20),
+        n_mels=mel_cfg.get("n_mels", 256),
+        power=2.0,
+        center=True,
+        pad_mode="reflect",
+        norm="slaney",
+        mel_scale="htk",
+    )
+    db_transform = torchaudio.transforms.AmplitudeToDB(
+        stype="power", top_db=mel_cfg.get("top_db", 80.0)
+    )
+
+    mel_spec = mel_transform(wave)  # (1, n_mels, time)
+    lms = db_transform(mel_spec)  # (1, n_mels, time)
+
+    # Resize to target shape
+    target_shape = mel_cfg.get("target_shape", [256, 256])
+    from torchvision.transforms import v2 as tvt_v2
+
+    resize = tvt_v2.Resize(size=target_shape)
+    lms = resize(lms)  # (1, target_h, target_w)
+
+    # Per-sample min-max normalization to [0, 1]
+    lms_flat = lms.reshape(1, -1)
+    lms_min = lms_flat.min(dim=1)[0][:, None, None]
+    lms_max = lms_flat.max(dim=1)[0][:, None, None]
+    lms = (lms - lms_min) / (lms_max - lms_min + 1e-7)
+
+    return lms[:, None, :, :].numpy().astype(np.float32)  # (1, 1, H, W)
+
+
 def compute_mel_kaldi_fbank(audio, mel_cfg):
     """Compute Kaldi fbank features for EAT.
 
@@ -375,7 +428,9 @@ def compute_mel(audio, mel_cfg):
     """Dispatch to model-specific mel computation."""
     mel_type = mel_cfg.get("type", "mel")
     norm_type = mel_cfg.get("norm_type", "audioset")
-    if mel_type == "kaldi_fbank":
+    if mel_type == "ttahara":
+        return compute_mel_ttahara(audio, mel_cfg)
+    elif mel_type == "kaldi_fbank":
         return compute_mel_kaldi_fbank(audio, mel_cfg)
     elif mel_type == "protoclr_mel":
         return compute_mel_protoclr(audio, mel_cfg)
@@ -940,6 +995,103 @@ def predict_soundscape(
     return predictions
 
 
+def predict_soundscape_ensemble(
+    sessions, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
+):
+    """4-fold ensemble: compute mel once per segment, run all models, average probs.
+
+    Same interface as predict_soundscape() but takes a list of ONNX sessions.
+    Computes mel spectrogram once per segment (the expensive step), then runs
+    each fold model on the same mel input. Averages probabilities across folds
+    before applying post-processing.
+    """
+    sr = mel_cfg["sr"]
+    segment_duration = 5.0
+    inference_window = mel_cfg.get("inference_window", segment_duration)
+    context_pad = (inference_window - segment_duration) / 2
+    soundscape_id = Path(audio_path).stem
+
+    info = sf.info(audio_path)
+    total_duration = info.frames / info.samplerate
+
+    species_2026 = species_mapping["birdclef2026_species"]
+    idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
+    n_model_outputs = max(int(k) for k in idx_map.keys()) + 1
+
+    # Collect per-segment mel spectrograms (with TTA shifts)
+    segment_mels = []  # list of [(mel, weight), ...] per segment
+    segment_times = []
+    segment_start_s = 0.0
+
+    while segment_start_s < total_duration:
+        audio_start = segment_start_s - context_pad
+
+        if ENABLE_TTA:
+            shifts = [
+                (audio_start, 0.50),
+                (audio_start - 2.5, 0.25),
+                (audio_start + 2.5, 0.25),
+            ]
+        else:
+            shifts = [(audio_start, 1.0)]
+
+        mels_with_weights = []
+        for shift_start, weight in shifts:
+            audio = load_audio_chunk(audio_path, sr, shift_start, inference_window)
+            mel = compute_mel(audio, mel_cfg)
+            mels_with_weights.append((mel, weight))
+        segment_mels.append(mels_with_weights)
+
+        segment_times.append(int(segment_start_s + segment_duration))
+        segment_start_s += segment_duration
+
+    n_segments = len(segment_mels)
+    n_folds = len(sessions)
+
+    # Run all fold models on all segments (mel computed once, ONNX runs N_folds times)
+    fold_probs = np.zeros((n_folds, n_segments, n_model_outputs), dtype=np.float32)
+    for fold_idx, sess in enumerate(sessions):
+        for seg_idx, mels_with_weights in enumerate(segment_mels):
+            seg_prob = np.zeros(n_model_outputs, dtype=np.float32)
+            for mel, weight in mels_with_weights:
+                prob = _run_onnx(sess, mel, mel_cfg)
+                seg_prob += weight * prob
+            fold_probs[fold_idx, seg_idx] = seg_prob
+
+    # Average across folds
+    avg_probs = fold_probs.mean(axis=0)  # (n_segments, n_model_outputs)
+
+    # Post-processing on averaged probabilities
+    temperature = mel_cfg.get("temperature", 1.0)
+    if temperature != 1.0:
+        avg_probs = _apply_temperature(avg_probs, temperature)
+
+    if ENABLE_TEMPORAL_SMOOTHING:
+        avg_probs = _apply_temporal_smoothing(avg_probs, taxa_mapping)
+
+    if ENABLE_TOPN:
+        avg_probs = _apply_topn(avg_probs)
+
+    site, hour = _parse_soundscape_metadata(audio_path)
+    if metadata_priors is not None and (site is not None or hour is not None):
+        avg_probs = _apply_metadata_priors(
+            avg_probs, metadata_priors, site, hour, taxa_mapping, idx_map
+        )
+
+    # Build prediction rows
+    predictions = []
+    for i, end_time in enumerate(segment_times):
+        row_id = f"{soundscape_id}_{end_time}"
+        row = {"row_id": row_id}
+        for sp in species_2026:
+            row[sp] = 0.0
+        for idx_str, name_2026 in idx_map.items():
+            row[name_2026] = float(avg_probs[i, int(idx_str)])
+        predictions.append(row)
+
+    return predictions
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -963,13 +1115,20 @@ def main():
     if not output_path.parent.exists():
         output_path = Path("predictions/submission.csv")
 
+    # Detect ensemble mode (4-fold: model_fold0.onnx, ..., model_fold3.onnx)
+    fold_onnx_paths = sorted(weights_dir.glob("model_fold*.onnx"))
+    is_ensemble = len(fold_onnx_paths) > 0
+
     # Load model artifacts
     onnx_path = weights_dir / "model.onnx"
     mel_config_path = weights_dir / "mel_config.json"
     species_mapping_path = weights_dir / "species_mapping.json"
 
     print(f"Model weights: {weights_dir}")
-    print(f"ONNX model: {onnx_path}")
+    if is_ensemble:
+        print(f"Ensemble mode: {len(fold_onnx_paths)} fold models")
+    else:
+        print(f"ONNX model: {onnx_path}")
 
     with open(mel_config_path) as f:
         mel_cfg = json.load(f)
@@ -1003,20 +1162,33 @@ def main():
     if mel_cfg.get("temperature", 1.0) != 1.0:
         print(f"Temperature scaling: T={mel_cfg['temperature']}")
 
-    # Create ONNX session (CPU only, optimized)
+    # Create ONNX session(s) (CPU only, optimized)
     sess_opts = ort.SessionOptions()
     sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     sess_opts.intra_op_num_threads = os.cpu_count() or 4
     sess_opts.inter_op_num_threads = 1
-    session = ort.InferenceSession(
-        str(onnx_path),
-        sess_options=sess_opts,
-        providers=["CPUExecutionProvider"],
-    )
-    print(
-        f"ONNX session created (threads={sess_opts.intra_op_num_threads}, "
-        f"{time.time() - start_time:.1f}s)"
-    )
+
+    if is_ensemble:
+        sessions = []
+        for fold_path in fold_onnx_paths:
+            s = ort.InferenceSession(
+                str(fold_path), sess_options=sess_opts, providers=["CPUExecutionProvider"]
+            )
+            sessions.append(s)
+        session = sessions[0]  # for compatibility with non-ensemble code paths
+        print(
+            f"{len(sessions)} ONNX sessions created "
+            f"(threads={sess_opts.intra_op_num_threads}, {time.time() - start_time:.1f}s)"
+        )
+    else:
+        session = ort.InferenceSession(
+            str(onnx_path), sess_options=sess_opts, providers=["CPUExecutionProvider"]
+        )
+        sessions = [session]
+        print(
+            f"ONNX session created (threads={sess_opts.intra_op_num_threads}, "
+            f"{time.time() - start_time:.1f}s)"
+        )
 
     # Find soundscape files
     audio_files = sorted(
@@ -1033,9 +1205,13 @@ def main():
 
     print(f"Processing {len(audio_files)} soundscapes from {test_dir}")
 
-    # Choose inference strategy: full-signal mel for SED models, per-segment for others
+    # Choose inference strategy
     use_fullsignal = mel_cfg.get("architecture") == "sed" and mel_type == "mel"
-    if use_fullsignal:
+    if is_ensemble:
+        print(
+            f"Using {len(sessions)}-fold ensemble inference (compute mel once, run {len(sessions)} models)"
+        )
+    elif use_fullsignal:
         print("Using full-signal mel inference (compute STFT once per file)")
     else:
         print("Using per-segment mel inference")
@@ -1044,7 +1220,16 @@ def main():
     all_predictions = []
     for i, audio_path in enumerate(audio_files):
         t0 = time.time()
-        if use_fullsignal:
+        if is_ensemble:
+            preds = predict_soundscape_ensemble(
+                sessions,
+                str(audio_path),
+                mel_cfg,
+                species_mapping,
+                taxa_mapping=taxa_mapping,
+                metadata_priors=metadata_priors,
+            )
+        elif use_fullsignal:
             preds = predict_soundscape_fullsignal(
                 session,
                 str(audio_path),
@@ -1063,7 +1248,9 @@ def main():
                 metadata_priors=metadata_priors,
             )
         elapsed = time.time() - t0
-        print(f"  [{i+1}/{len(audio_files)}] {audio_path.name}: {len(preds)} rows ({elapsed:.1f}s)")
+        print(
+            f"  [{i + 1}/{len(audio_files)}] {audio_path.name}: {len(preds)} rows ({elapsed:.1f}s)"
+        )
         all_predictions.extend(preds)
 
     print(f"Total predictions: {len(all_predictions)} rows")
@@ -1096,7 +1283,7 @@ def main():
 
     elapsed_total = time.time() - start_time
     print(f"Submission saved to {output_path} ({len(submission)} rows)")
-    print(f"Total time: {elapsed_total:.1f}s ({elapsed_total/60:.1f}min)")
+    print(f"Total time: {elapsed_total:.1f}s ({elapsed_total / 60:.1f}min)")
 
 
 if __name__ == "__main__":

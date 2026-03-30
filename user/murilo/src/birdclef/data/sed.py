@@ -1,12 +1,16 @@
-"""SED data module with 10-second windows for Sound Event Detection training.
+"""SED data module with configurable windows for Sound Event Detection training.
 
-Provides datasets that load 10-second audio windows instead of the standard
-5-second chunks. Focal recordings use random 10s crops; soundscape segments
-use 10s centered on the labeled 5s window (2.5s context on each side).
+Provides datasets that load audio windows (5-10s). Focal recordings use random
+crops; soundscape segments use context-padded windows centered on the labeled
+5s segment.
 
-Used by Experiment 016 (SED architecture).
+Supports both fraction-based splitting (90/10) and fold-based splitting
+(MultiLabelStratifiedGroupKFold for 4-fold cross-validation).
+
+Used by Experiments 016, 017, 019 (SED architecture).
 """
 
+import json
 import logging
 import random as py_random
 from pathlib import Path
@@ -139,6 +143,55 @@ def _split_soundscape_by_file(
     )
 
     return train_df, val_df, test_df
+
+
+def _split_by_fold(
+    focal_df: pd.DataFrame,
+    soundscape_df: pd.DataFrame,
+    fold_id: int,
+    fold_assignments_path: str | Path,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split focal and soundscape data by precomputed fold assignments.
+
+    Rows where fold == fold_id go to val; all others go to train.
+    No test set in fold mode.
+
+    Args:
+        focal_df: Focal recordings DataFrame (has 'filename' column).
+        soundscape_df: Soundscape labels DataFrame (has 'filename' column).
+        fold_id: Which fold to use as validation (0-3).
+        fold_assignments_path: Path to fold_assignments.json.
+
+    Returns:
+        (focal_train, focal_val, sc_train, sc_val) DataFrames.
+    """
+    with open(fold_assignments_path) as f:
+        assignments = json.load(f)
+
+    focal_assignments = assignments["focal"]
+    sc_assignments = assignments["soundscape"]
+
+    # Focal: look up each row's filename
+    focal_folds = focal_df["filename"].map(focal_assignments).astype(int)
+    focal_val_mask = focal_folds == fold_id
+    focal_train = focal_df[~focal_val_mask].reset_index(drop=True)
+    focal_val = focal_df[focal_val_mask].reset_index(drop=True)
+
+    # Soundscape: look up by filename (all segments from same file share fold)
+    sc_folds = soundscape_df["filename"].map(sc_assignments).astype(int)
+    sc_val_mask = sc_folds == fold_id
+    sc_train = soundscape_df[~sc_val_mask].reset_index(drop=True)
+    sc_val = soundscape_df[sc_val_mask].reset_index(drop=True)
+
+    n_sc_train_files = sc_train["filename"].nunique() if len(sc_train) > 0 else 0
+    n_sc_val_files = sc_val["filename"].nunique() if len(sc_val) > 0 else 0
+    logger.info(
+        f"Fold {fold_id} split: focal {len(focal_train)} train / {len(focal_val)} val, "
+        f"soundscape {n_sc_train_files} train files ({len(sc_train)} segments) / "
+        f"{n_sc_val_files} val files ({len(sc_val)} segments)"
+    )
+
+    return focal_train, focal_val, sc_train, sc_val
 
 
 # ============================================================================
@@ -382,6 +435,8 @@ class SEDDataModule(pl.LightningDataModule):
         seed: int = 42,
         transform=None,
         eval_transform=None,
+        fold_id: int | None = None,
+        fold_assignments_path: str | Path | None = None,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["transform", "eval_transform"])
@@ -401,6 +456,8 @@ class SEDDataModule(pl.LightningDataModule):
         # When None (default), uses the same transform for all splits.
         # Use this when training on raw waveforms but val/test need mel spectrograms.
         self.eval_transform = eval_transform if eval_transform is not None else transform
+        self.fold_id = fold_id
+        self.fold_assignments_path = fold_assignments_path
 
         # Build species lists
         self.species_list = build_full_species_list(taxonomy_csv)
@@ -420,20 +477,50 @@ class SEDDataModule(pl.LightningDataModule):
         focal_audio_dir = self.data_dir / "train_audio"
         focal_df = pd.read_csv(focal_csv)
 
-        has_test = self.test_fraction > 0
-        has_val = self.val_fraction > 0
-        fulldata = not has_val
+        # --- Soundscape labels ---
+        soundscape_dir = self.data_dir / "train_soundscapes"
+        soundscape_labels_csv = self.data_dir / "train_soundscapes_labels.csv"
+        soundscape_df = load_soundscape_labels(soundscape_labels_csv)
 
-        focal_train_df, focal_val_df, focal_test_df = _split_focal_dataframe(
-            focal_df, self.val_fraction, self.test_fraction, self.seed
-        )
-        if fulldata:
-            logger.info(f"Focal fulldata: {len(focal_train_df)} train (100%, no val/test)")
-        else:
-            logger.info(
-                f"Focal split: {len(focal_train_df)} train, {len(focal_val_df)} val"
-                + (f", {len(focal_test_df)} test" if has_test else " (no test holdout)")
+        # --- Split strategy ---
+        use_fold = self.fold_id is not None and self.fold_assignments_path is not None
+
+        if use_fold:
+            # Fold-based splitting (4-fold CV)
+            has_test = False
+            has_val = True
+            fulldata = False
+            focal_train_df, focal_val_df, sc_train_df, sc_val_df = _split_by_fold(
+                focal_df, soundscape_df, self.fold_id, self.fold_assignments_path
             )
+            focal_test_df = focal_df.iloc[:0]
+            sc_test_df = soundscape_df.iloc[:0]
+        else:
+            # Fraction-based splitting (legacy)
+            has_test = self.test_fraction > 0
+            has_val = self.val_fraction > 0
+            fulldata = not has_val
+
+            focal_train_df, focal_val_df, focal_test_df = _split_focal_dataframe(
+                focal_df, self.val_fraction, self.test_fraction, self.seed
+            )
+
+            soundscape_val_files = 0 if fulldata else self.soundscape_val_files
+            soundscape_test_files = self.soundscape_test_files if has_test else 0
+            sc_train_df, sc_val_df, sc_test_df = _split_soundscape_by_file(
+                soundscape_df,
+                soundscape_val_files,
+                soundscape_test_files,
+                self.seed + 1,
+            )
+
+            if fulldata:
+                logger.info(f"Focal fulldata: {len(focal_train_df)} train (100%, no val/test)")
+            else:
+                logger.info(
+                    f"Focal split: {len(focal_train_df)} train, {len(focal_val_df)} val"
+                    + (f", {len(focal_test_df)} test" if has_test else " (no test holdout)")
+                )
 
         focal_train_206 = SEDFocalDataset(
             audio_dir=str(focal_audio_dir),
@@ -469,20 +556,7 @@ class SEDDataModule(pl.LightningDataModule):
             )
             focal_test = FocalDataset234(focal_test_206, self.species_206, self.species_list)
 
-        # --- Labeled soundscape data (234 species, 10s context) ---
-        soundscape_dir = self.data_dir / "train_soundscapes"
-        soundscape_labels_csv = self.data_dir / "train_soundscapes_labels.csv"
-        soundscape_df = load_soundscape_labels(soundscape_labels_csv)
-
-        soundscape_val_files = 0 if fulldata else self.soundscape_val_files
-        soundscape_test_files = self.soundscape_test_files if has_test else 0
-        sc_train_df, sc_val_df, sc_test_df = _split_soundscape_by_file(
-            soundscape_df,
-            soundscape_val_files,
-            soundscape_test_files,
-            self.seed + 1,
-        )
-
+        # --- Labeled soundscape data (234 species, context windows) ---
         sc_train = SEDSoundscapeDataset(
             soundscape_dir=str(soundscape_dir),
             labels_df=sc_train_df,

@@ -205,8 +205,12 @@ class LSEPooling(nn.Module):
 class LSEHead(nn.Module):
     """SED head with Log-Sum-Exp temporal pooling.
 
-    Architecture: GeM(freq) → permute → Linear+ReLU+Dropout+Linear → LSEPool(time).
+    Architecture: freq_pool(freq) → permute → Linear+ReLU+Dropout+Linear → LSEPool(time).
     Returns (clipwise_logits, framewise_logits) tuple matching AttHead contract.
+
+    Args:
+        freq_pool: Frequency pooling method. "gem" (default, learnable power-mean)
+            or "mean" (simple average, matching ttahara's implementation).
 
     Cross-ref: ttahara-hgnetv2-b0-training.py lines 648-701.
     """
@@ -219,9 +223,12 @@ class LSEHead(nn.Module):
         dropout: float = 0.5,
         gem_p: float = 3.0,
         lse_temperature: float = 1.0,
+        freq_pool: str = "gem",
     ):
         super().__init__()
-        self.gem = GeM(p=gem_p)
+        self.freq_pool_type = freq_pool
+        if freq_pool == "gem":
+            self.gem = GeM(p=gem_p)
         self.cls_fc = nn.Sequential(
             nn.Linear(in_channels, hidden_dim),
             nn.ReLU(inplace=True),
@@ -240,7 +247,10 @@ class LSEHead(nn.Module):
             clipwise_logits: (B, num_classes)
             framewise_logits: (B, num_classes, T) — for dual supervision
         """
-        h = self.gem(features)  # (B, C, T)
+        if self.freq_pool_type == "mean":
+            h = features.mean(dim=2)  # (B, C, F, T) -> (B, C, T)
+        else:
+            h = self.gem(features)  # (B, C, F, T) -> (B, C, T)
         h = h.permute(0, 2, 1)  # (B, T, C)
         framewise_logits = self.cls_fc(h)  # (B, T, num_classes)
         clipwise_logits = self.lse_pool(framewise_logits)  # (B, num_classes)

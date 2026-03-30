@@ -24,6 +24,7 @@ PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 GPU_CHECK="${GPU_CHECK:-0}"
 NUM_WORKERS="${NUM_WORKERS:-}"
+FOLD="${FOLD:-}"
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     EXPERIMENT_DIR="$SLURM_SUBMIT_DIR"
@@ -101,6 +102,10 @@ if [[ "${GPU_CHECK}" -gt 0 ]]; then
 fi
 if [[ -n "${NUM_WORKERS}" ]]; then
     TRAIN_CMD="${TRAIN_CMD} --num-workers ${NUM_WORKERS}"
+fi
+if [[ -n "${FOLD}" ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --fold ${FOLD}"
+    echo "  (fold ${FOLD} of 4-fold CV)"
 fi
 
 echo "Starting training..."

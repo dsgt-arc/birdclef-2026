@@ -1,4 +1,4 @@
-# Experiment 019: Perch-Guided SED Training — Tasks
+      # Experiment 019: Perch-Guided SED Training — Tasks
 
 ## Goal
 
@@ -19,7 +19,7 @@ improvements with Perch pseudo-labels on 10K+ unlabeled soundscapes.
 | ~0.920 | Our Perch ProtoSSM | Teacher for pseudo-labels |
 | 0.939 | Competition #1 | Likely ensemble + pseudo-labels |
 
-### Status: Phase A Step 1 — 5 ablation runs training on PACE (2026-03-30, ~4h each)
+### Status: Phase A Step 2 complete. v5f submitted to LB, v5g blocked by daily quota (resets 2026-03-31 AM). Decision gate passed: v5g 0.872 ≥ 0.870 → Step 3 (4-fold) next.
 
 - **Branch**: `mg/018-perch-ensemble` (shared with exp 018 for now)
 - **Parallel**: Exp 018 ProtoSSM v4.1 running inference on Kaggle (~90 min)
@@ -58,20 +58,58 @@ Fast-dev-run: all 5 configs passed. GPU check: >95% utilization on all.
       Config: `sed_head.type: "lse_head"`. Submitted to PACE (2026-03-30).
 - [x] 1.5 **v5e — HGNetV2-B0 backbone**: `hgnetv2_b0.ssld_stage2_ft_in1k`
       (embed_dim=1024). Submitted to PACE (2026-03-30).
-- [ ] 1.6 Collect results: val/auroc, val/cmap for all 5 runs (~4h each)
+- [x] 1.6 Collect results: val/auroc, val/cmap for all 5 runs
+      - v5a: 0.875 / 0.620 (LB 0.851, -0.009)
+      - v5b: 0.869 / 0.638 (LB 0.840, -0.020)
+      - v5c: 0.867 / 0.624 (LB pending)
+      - v5d: 0.861 / — (LB pending)
+      - v5e: 0.861 / 0.612 (LB pending)
+      - **Conclusion**: All ablations regressed on LB despite some offline gains.
+        val/auroc is a poor LB predictor for single-variable changes on v4b.
 
-### Step 2: Combine winners (two tracks in parallel)
+### Step 2: ttahara Full Recipe Reproduction
 
-Run both backbone tracks with the winning ablation settings. The goal is to
-find the best overall model — HGNet may win on architecture while EfficientNet
-may win on specific improvements, or one may dominate.
+Pivoted from "combine winners" to faithful reproduction of ttahara's complete
+training pipeline (0.884 LB). The Step 1 results showed that individual changes
+don't help — the full recipe must be adopted together.
 
-- [ ] 2.1 Analyze ablation results: which improvements stack?
-- [ ] 2.2 **EfficientNet track**: Train EfficientNet-B0 with all positive ablations
-- [ ] 2.3 **HGNet track**: Train HGNetV2-B0 with all positive ablations
-      (HGNet may respond differently to BCE/MixUp/LSEHead than EfficientNet)
-- [ ] 2.4 Compare both tracks on LB — pick the best backbone for Phase C
-- [ ] 2.5 Target: ≥0.870 single fold (either backbone)
+Code changes: LSEHead(freq_pool=mean), TtaharaMelTransform, per-sample MixUp,
+OneCycleLR. See `src/birdclef/heads/sed_head.py`, `src/birdclef/preprocessing/ttahara_mel.py`,
+`src/birdclef/lightning/sed_finetune.py`. 22 pytest tests passing.
+
+- [x] 2.1 Implement LSEHead with `freq_pool="mean"` option (matching ttahara)
+- [x] 2.2 Implement TtaharaMelTransform (torchaudio, resize 256x256, min-max)
+- [x] 2.3 Implement per-sample MixUp lambda in SEDFinetuneModule
+- [x] 2.4 Implement OneCycleLR scheduler option (single param group, per-step)
+- [x] 2.5 Update train.py: mel type routing, freq_pool passthrough, new params
+- [x] 2.6 Create v5f config (EfficientNet-B0 + ttahara recipe)
+- [x] 2.7 Create v5g config (HGNetV2-B0 + ttahara recipe)
+- [x] 2.8 Audit: cross-referenced all 12 components against ttahara ground truth
+- [x] 2.9 Submit v5f and v5g to PACE (2026-03-30)
+- [x] 2.10 Collect v5g results: **0.872 val/auroc**, epoch 18, 21 min training
+      - +0.011 over v5e (same backbone, old recipe: 0.861)
+      - +0.007 over v4b (EfficientNet, old recipe: 0.865)
+      - Training 8-10× faster (21 min vs ~3-4h)
+- [x] 2.10b Collect v5f results: **0.866 val/auroc**, epoch 14
+      - +0.001 over v4b (same backbone, old recipe: 0.865) — recipe barely helps EfficientNet
+      - -0.006 vs v5g (HGNet with same recipe: 0.872) — backbone is the main factor
+- [x] 2.11 Compare results:
+      - Recipe impact on EfficientNet: v5f (0.866) vs v4b (0.865) = +0.001 (negligible)
+      - Backbone impact under ttahara recipe: v5g (0.872) vs v5f (0.866) = +0.006
+      - Recipe unlocking HGNet: v5e (0.861) → v5g (0.872) = +0.011
+- [x] 2.12 Decision gate: v5g 0.872 ≥ 0.870 target → proceed to Step 3 (4-fold ensemble)
+- [x] 2.13 Add v5f/v5g to exp 010 submission pipeline:
+      - export_efficientnet_sed.py: pass freq_pool to LSEHead, handle ttahara mel_config
+      - export.sbatch: add export functions + dispatch for v5f/v5g
+      - upload_kaggle.py: add MODELS entries
+      - submission.py: add compute_mel_ttahara + MODEL_SLUGS (per-segment, not full-signal)
+      - kernel-metadata JSON files for both models
+- [x] 2.14 Export v5f/v5g to ONNX + upload weights + push v5f kernel to Kaggle
+- [ ] 2.15 Push v5g kernel to Kaggle (blocked: daily submission quota, resets ~2026-03-31 morning)
+- [x] 2.16 Check v5f LB result: **0.855** (−0.005 vs v4b 0.860)
+      - ttahara recipe on EfficientNet regressed on LB despite matching offline (0.866 vs 0.865)
+      - Consistent with prior pattern: offline gains don't translate for EfficientNet
+- [ ] 2.17 Check v5g LB result
 
 ### Step 3: 4-fold ensemble
 
@@ -184,11 +222,11 @@ After each phase, decide whether to continue:
 | SED v4b (baseline) | 0.865 | 0.860 | — | EfficientNet-B0, AmplitudeToDB, AttHead, soft CE |
 | v5a (BCE) | **0.875** | **0.851** | A | `loss_type: "bce"`, epoch 29, **+0.010 val but −0.009 LB vs baseline** |
 | v5b (MixUp) | **0.869** | **0.840** | A | `mixup_alpha=1.0, theta=0.8, warmup=5`, epoch 31, **+0.004 val but −0.020 LB vs baseline** |
-| v5c (weight_decay) | training | — | A | `weight_decay=1e-4` |
+| v5c (weight_decay) | **0.867** | pending | A | `weight_decay=1e-4`, epoch 35, **+0.002 val vs baseline** |
 | v5d (LSEHead) | **0.861** | pending | A | `sed_head.type: "lse_head"`, epoch 21, **-0.004 vs baseline** |
 | v5e (HGNetV2) | 0.861 | pending | A | `hgnetv2_b0.ssld_stage2_ft_in1k`, embed=1024, epoch 23, **-0.004 vs baseline** |
-| Combined EfficientNet | — | — | A | Best ablation combo |
-| Combined HGNet | — | — | A | Best ablation combo on HGNet |
+| v5f (EffNet+ttahara) | **0.866** | **0.855** | A | Full ttahara recipe on EfficientNet-B0, epoch 14, **-0.005 LB vs v4b** |
+| v5g (HGNet+ttahara) | **0.872** | quota blocked | A | Full ttahara recipe on HGNetV2-B0, epoch 18, **21 min** |
 | 4-fold ensemble | — | — | A | |
 | Round 1 pseudo | — | — | C | |
 | Round 2 pseudo | — | — | C | |
