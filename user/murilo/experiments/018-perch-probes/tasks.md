@@ -22,7 +22,7 @@ ProtoSSM temporal modeling → post-processing.
 | 0.921 | maryna | + focal loss, mixup, cross-attn, SWA, TTA |
 | 0.925 | yuriy/yaroslav | + wider SSM (d=256, 3 layers), 6-stage post-proc |
 
-### Status: v4 (ProtoSSM) submitted, awaiting LB — v2-fix = **0.911 LB**, v4 target ~0.920-0.925
+### Status: v4.1 submitted (2026-03-30), running inference — v4 = **0.918 LB**, v4.1 target ~0.920-0.923
 
 - **Branch**: `mg/018-perch-ensemble` (PR #20)
 
@@ -143,7 +143,7 @@ Raw code: `kaggle_kernel/ref_jaejohn_perch_meta.py`
 
 ---
 
-## Phase D: Full ProtoSSM v4 Pipeline (0.911 → ~0.925) — IN PROGRESS
+## Phase D: Full ProtoSSM v4 Pipeline (0.911 → 0.918 → pending v4.1) — NEAR COMPLETE
 
 Ported Yuriy's ProtoSSM v5 (0.925 LB) into modular codebase under
 `src/birdclef/perch/` (8 modules, 140 pytest tests). Assembled into
@@ -179,11 +179,21 @@ postprocessing, ensemble, data_utils, config)
       - Event smoothing added in fuse_scores (α=0.15)
       - Gaussian smoothing → 6-stage post-processing pipeline
 - [x] 9.6 Batched Perch inference (16 files/batch, single TF call) — v2 kernel
-- [x] 9.7 Push v4 kernel (v1: ThreadPoolExecutor, v2: batched TF) — awaiting LB
-      - v1 dry-run: 219s (3 files), Phase 2 (ProtoSSM): 33.5s
+- [x] 9.7 Push v4 kernel — **0.918 LB** (nb version 1, ThreadPoolExecutor)
       - Ensemble weight: 0.50 proto / 0.50 MLP, OOF AUC=0.9133
-      - ResidualSSM: 1.6s training, correction weight=0.3
-- [ ] 9.8 Check v4 LB result — target: ~0.920-0.925
+- [x] 9.8 Audit v4 vs Yuriy (0.925) — found 3 bugs:
+      - Bug 1: OOF prior exclusion by site instead of filename (fixed)
+      - Bug 2: Post-processing missing per-stage clipping (fixed)
+      - Bug 3: Final ProtoSSM trained with 15% val split instead of all data (fixed)
+      - Also fixed: Perch labels.csv parsing (inat2024_fsd50k → scientific_name)
+      - Confirmed NOT bugs: dynamic proxy expansion (all unmapped are sonotypes),
+        model architectures, post-processing formulas, config values
+- [x] 9.9 Push v4.1 kernel (nb version 4) with all fixes — submitted 2026-03-30,
+      running inference (~90 min)
+      - OOF baseline AUROC: 0.6656 → 0.8061 (filename exclusion fix)
+      - OOF ensemble AUC: 0.9133 → 0.9447
+      - SWA applied: 6 checkpoints (vs 0 before, all-data training)
+- [ ] 9.10 Check v4.1 LB result — target: ~0.920-0.923
 
 ---
 
@@ -217,7 +227,8 @@ postprocessing, ensemble, data_utils, config)
 | Perch + probes v2 (OOF) | **0.898** | + OOF fold-safe priors, Gaussian smoothing — **buggy** (K_HOUR=4, subset priors, missing fuse categories, partial files) |
 | Perch + probes v2-fix | **0.911** | Fixes: K_HOUR=8, sc_clean priors, 6-cat fuse, 59 fully-labeled files (perch-probes-v2 ver.2) |
 | Perch + probes v3 (MLP) | not submitted | + 77-dim features, MLP probes (included in v4) |
-| **ProtoSSM v4** | **pending** | + BiSSM×2 + cross-attn + TTA + ResidualSSM + 6-stage PP, ensemble 0.50/0.50 |
+| **ProtoSSM v4** | **0.918** | + BiSSM×2 + cross-attn + TTA + ResidualSSM + 6-stage PP, ensemble 0.45/0.55 |
+| **ProtoSSM v4.1** | **pending** | Bug fixes: OOF prior by filename, per-stage clipping, train on all data, labels.csv parsing |
 
 ---
 

@@ -19,9 +19,10 @@ improvements with Perch pseudo-labels on 10K+ unlabeled soundscapes.
 | ~0.920 | Our Perch ProtoSSM | Teacher for pseudo-labels |
 | 0.939 | Competition #1 | Likely ensemble + pseudo-labels |
 
-### Status: Phase A Step 1 — 5 ablation runs submitted to PACE (2026-03-30)
+### Status: Phase A Step 1 — 5 ablation runs training on PACE (2026-03-30, ~4h each)
 
 - **Branch**: `mg/018-perch-ensemble` (shared with exp 018 for now)
+- **Parallel**: Exp 018 ProtoSSM v4.1 running inference on Kaggle (~90 min)
 
 ---
 
