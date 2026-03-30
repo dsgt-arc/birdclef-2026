@@ -113,8 +113,14 @@ OneCycleLR. See `src/birdclef/heads/sed_head.py`, `src/birdclef/preprocessing/tt
 
 ### Step 3: 4-fold ensemble
 
-- [ ] 3.1 Implement MultiLabel Stratified GroupKFold (from ttahara, group by audio_id)
-- [ ] 3.2 Train 4 folds of the **winning backbone** on PACE (~16h total)
+- [x] 3.1 Implement MultiLabel Stratified GroupKFold (from ttahara, group by audio_id)
+- [x] 3.2 Train 4 folds of HGNet v5g on PACE (~21 min each, all 4 parallel)
+      - Fold 0: 0.939 val/auroc (epoch 14) — suspiciously high, 55/66 soundscape files in val
+      - Fold 1: 0.842 val/auroc (epoch 19)
+      - Fold 2: 0.826 val/auroc (epoch 18)
+      - Fold 3: 0.802 val/auroc (epoch 16)
+      - **Fold imbalance**: 0.137 spread (0.939 vs 0.802). Soundscape files clustered in fold 0.
+        Only 66 file-level groups makes even distribution impossible with GroupKFold.
 - [ ] 3.3 Optionally train 4 folds of the **other backbone** too — mixed-backbone
       ensemble (EfficientNet + HGNet) may outperform single-backbone ensemble
 - [ ] 3.4 Export all models to ONNX (or OpenVINO if faster)

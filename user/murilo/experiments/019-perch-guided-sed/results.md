@@ -99,6 +99,31 @@ whether the ttahara recipe produces better-calibrated predictions that transfer 
 
 **Next**: If v5g LB ≥ 0.870 → proceed to 4-fold ensemble (target ~0.884).
 
+### Step 3: 4-Fold Ensemble (v5g-4fold)
+
+MultiLabelStratifiedGroupKFold (n_splits=4, seed=1086), grouped by audio_id (filename stem).
+Per-segment soundscape entries for stratification. Trained with `--fold N` flag.
+
+| Fold | val/auroc | val/cmap | Best Epoch | Checkpoint |
+|------|----------|----------|------------|------------|
+| 0 | **0.939** | 0.545 | 14 | `fold0/best-epochepoch=14.ckpt` |
+| 1 | 0.842 | 0.566 | 19 | `fold1/best-epochepoch=19.ckpt` |
+| 2 | 0.826 | 0.557 | 18 | `fold2/best-epochepoch=18.ckpt` |
+| 3 | 0.802 | 0.556 | 16 | `fold3/best-epochepoch=16.ckpt` |
+
+**Fold imbalance issue**: Fold 0 val/auroc (0.939) is 0.137 higher than fold 3 (0.802).
+The root cause is soundscape file distribution: fold 0 has 55 of 66 soundscape files in
+its validation set (and only 11 for training), while folds 2-3 have only 2 each in val.
+With only 66 soundscape file-level groups, the GroupKFold constraint prevents even
+distribution. The per-segment stratification fix (from per-file) barely changed this
+(57→55 files in fold 0).
+
+**Impact**: Fold 0 model trains on very few soundscape files, potentially weaker on
+soundscape-like test data. The ensemble averaging may still help (each fold's weakness
+is different), but the extreme spread suggests the folds are not comparable.
+
+LB result: pending (submission quota resets in ~5 hours).
+
 ### v5b Detailed Metrics (Best Checkpoint, Epoch 31)
 
 | Metric | Value |
