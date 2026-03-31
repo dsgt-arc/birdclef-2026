@@ -33,6 +33,8 @@ class TtaharaMelTransform(nn.Module):
         power: Exponent for magnitude spectrogram (default: 2.0 = power spectrum).
         top_db: AmplitudeToDB top_db clipping (default: 80.0).
         target_shape: Resize target as (height, width) tuple (default: (256, 256)).
+        out_channels: Number of output channels (default: 1). Set to 3 to repeat
+            mono mel to 3 channels, preserving full RGB pretrained weights.
     """
 
     def __init__(
@@ -46,6 +48,7 @@ class TtaharaMelTransform(nn.Module):
         power: float = 2.0,
         top_db: float = 80.0,
         target_shape: tuple[int, int] = (256, 256),
+        out_channels: int = 1,
     ):
         super().__init__()
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
@@ -63,6 +66,7 @@ class TtaharaMelTransform(nn.Module):
         )
         self.db = torchaudio.transforms.AmplitudeToDB(stype="power", top_db=top_db)
         self.resize = tvt_v2.Resize(size=target_shape)
+        self.out_channels = out_channels
 
     @torch.no_grad()
     def forward(self, wave: torch.Tensor) -> torch.Tensor:
@@ -90,6 +94,8 @@ class TtaharaMelTransform(nn.Module):
         lms = (lms - lms_min) / (lms_max - lms_min + 1e-7)
 
         result = lms[:, None, :, :]  # (B, 1, H, W)
+        if self.out_channels > 1:
+            result = result.repeat(1, self.out_channels, 1, 1)  # (B, C, H, W)
         if single:
             result = result.squeeze(0)
         return result

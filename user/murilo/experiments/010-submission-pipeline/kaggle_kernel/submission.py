@@ -101,6 +101,7 @@ MODEL_SLUGS = [
     "birdclef-2026-hgnet-b0-sed-v5h-weights",
     "birdclef-2026-hgnet-b0-sed-v5i-weights",
     "birdclef-2026-hgnet-b0-sed-v5j-weights",
+    "birdclef-2026-hgnet-b0-sed-v5k-weights",
     # SED 4-fold ensemble (exp 019 step 3)
     "birdclef-2026-hgnet-b0-sed-v5g-4fold-weights",
     # SED ttahara recipe reproduction, 234 classes (exp 019 step 2)
@@ -347,7 +348,11 @@ def compute_mel_ttahara(audio, mel_cfg):
     lms_max = lms_flat.max(dim=1)[0][:, None, None]
     lms = (lms - lms_min) / (lms_max - lms_min + 1e-7)
 
-    return lms[:, None, :, :].numpy().astype(np.float32)  # (1, 1, H, W)
+    result = lms[:, None, :, :].numpy().astype(np.float32)  # (1, 1, H, W)
+    in_chans = mel_cfg.get("in_chans", 1)
+    if in_chans > 1:
+        result = np.repeat(result, in_chans, axis=1)  # (1, C, H, W)
+    return result
 
 
 def compute_mel_kaldi_fbank(audio, mel_cfg):

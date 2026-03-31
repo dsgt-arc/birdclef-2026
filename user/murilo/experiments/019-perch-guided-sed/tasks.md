@@ -151,7 +151,8 @@ Medium confidence (from competitors):
 - [ ] 4.8 **Post-processing**: temperature scaling, confidence-sharpened smoothing,
       per-class thresholds on v5g predictions (zero training cost)
 - [ ] 4.9 **NS-JFT pretrained weights** on EfficientNet or HGNet equivalent
-- [ ] 4.10 **3-channel mel input** (repeat mono to match pretrained RGB stem)
+- [ ] 4.10 **v5k — 3-channel mel input** (repeat mono to match pretrained RGB stem)
+      Config ready: `config/hgnet_b0_sed_v5k.yaml`
 
 Lower priority:
 - [ ] 4.11 **Perch + SED ensemble**: Combine v5g-4fold (0.901) with Perch ProtoSSM

@@ -117,6 +117,7 @@ def main():
         model_name=config["encoder"]["model_name"],
         pretrained=config["encoder"].get("pretrained", True),
         drop_path_rate=config["encoder"].get("drop_path_rate", 0.0),
+        in_chans=config["encoder"].get("in_chans", 1),
     )
 
     # Use encoder's actual embed_dim (not config) — features_only=True may differ
@@ -152,6 +153,7 @@ def main():
     if mel_type == "ttahara":
         from birdclef.preprocessing.ttahara_mel import TtaharaMelTransform
 
+        in_chans = config["encoder"].get("in_chans", 1)
         audio_transform = TtaharaMelTransform(
             sample_rate=sample_rate,
             n_fft=mel_cfg.get("n_fft", 2048),
@@ -161,6 +163,7 @@ def main():
             n_mels=mel_cfg.get("n_mels", 256),
             top_db=mel_cfg.get("top_db", 80.0),
             target_shape=tuple(mel_cfg.get("target_shape", [256, 256])),
+            out_channels=in_chans,
         )
         logger.info(
             f"Mel transform (ttahara): sr={sample_rate}, n_fft={mel_cfg.get('n_fft', 2048)}, "
@@ -216,6 +219,7 @@ def main():
                 n_mels=mel_cfg.get("n_mels", 256),
                 top_db=mel_cfg.get("top_db", 80.0),
                 target_shape=tuple(mel_cfg.get("target_shape", [256, 256])),
+                out_channels=config["encoder"].get("in_chans", 1),
             )
         else:
             gpu_mel_transform = NNAudioMelSpectrogram(
