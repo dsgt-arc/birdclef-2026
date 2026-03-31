@@ -1,0 +1,37 @@
+[project]
+name = "exp104-wavtokenizer-retrieval"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "soundfile>=0.12",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "scikit-learn>=1.3",
+    "pyyaml>=6.0",
+    "typer>=0.9",
+    "huggingface_hub>=0.20",
+    "onnxruntime>=1.15",
+]
+
+# torch, torchaudio installed separately in sbatch (cu126 index)
+# Perch v2 ONNX from justinchuby/Perch-onnx (no TF/bmz needed)
+# WavTokenizer loaded via PYTHONPATH from vendor/
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+exp104-select = "birdclef_104.select_subset:main"
+exp104-tokenize = "birdclef_104.tokenize:main"
+exp104-roundtrip = "birdclef_104.roundtrip_eval:main"
+exp104-codebook = "birdclef_104.codebook:main"
+exp104-retrieval = "birdclef_104.kmer_index:main"
+exp104-soundscape = "birdclef_104.soundscape_search:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/birdclef_104"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

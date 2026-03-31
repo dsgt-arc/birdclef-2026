@@ -1,0 +1,25 @@
+data:
+  focal_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes
+  train_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
+  taxonomy_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/taxonomy.csv
+  soundscape_labels_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv
+
+wavtokenizer:
+  # HuggingFace repo for the large 75-token model (80K hours, speech+audio+music)
+  repo_id: novateur/WavTokenizer-large-speech-75token
+  # config_filename and model_filename auto-detected from repo if omitted
+  sample_rate: 24000
+
+subset:
+  n_species: 10
+  n_recordings_per_species: 20
+  seed: 42
+  max_duration_sec: 60  # cap long recordings
+
+retrieval:
+  supertoken_vocab_sizes: [64, 128, 256]
+  kmer_lengths: [4, 5, 6]
+
+output:
+  root: artifacts
