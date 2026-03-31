@@ -190,8 +190,23 @@ problems and can coexist:
 - Frame-level teacher pipeline built here transfers directly to prompted
   SED episode construction
 
-## Success criteria
+## Results so far
 
-- Phase 1: Kaggle LB > 0.794 (current best) from SED head alone
-- Phase 2: LB > 0.83 with mel improvements
+| Run | Backbone | Head | Inference | val/cmap | Kaggle LB |
+|-----|----------|------|-----------|----------|-----------|
+| C | LoRA 2ep | attention | sigmoid→max | 0.531 | **0.794** |
+| M | LoRA ep4 | SED | logit blend→sigmoid | 0.597 | 0.553 |
+| M-v2 | LoRA ep4 | SED | sigmoid→max | — | 0.586 |
+| N | **frozen** | SED | sigmoid→max | pending | pending |
+
+**Key finding**: LoRA fine-tuning + SED head regressed on LB despite better offline
+metrics. Inference strategy matters (+0.033 from prob-space max) but the dominant
+factor is focal overfitting — more training epochs = worse LB. Run N tests whether
+freezing the backbone entirely preserves generalization.
+
+## Original success criteria (revised)
+
+- ~~Phase 1: Kaggle LB > 0.794 from SED head alone~~ Not achieved with LoRA
+- Phase 1 (revised): Test frozen backbone + SED head (Run N)
+- Phase 2: LB > 0.83 with mel improvements (if frozen SED works)
 - Phase 3: LB > 0.85 with frame-level teacher supervision

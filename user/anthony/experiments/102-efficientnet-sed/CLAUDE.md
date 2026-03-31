@@ -34,11 +34,16 @@ class weighting, and soundscape validation. Best result: **0.794 Kaggle public L
 | L | run-l-efficientnet-cleaned | EfficientNet attention + teacher filter + SC val | 0.870 SC | 0.528 |
 | M | run-m-efficientnet-sed | EfficientNet LoRA + SED head (GeM + dual Conv1d) | cmap 0.597 | 0.553 |
 | M-v2 | re-export only | SED head with prob-space framewise max (match Run C inference) | — | 0.586 |
+| N | run-n-sed-frozen | **Frozen backbone** + SED head only (~867K params) | pending | pending |
 
 **Best model: Run C (old) at 0.794 LB.** The inference strategy matters (M-v2 +0.033
 over M) but doesn't close the gap. The SED head at epoch 4 overfits focal data
 regardless of inference strategy. Run C's 2-epoch barely-fine-tuned features
 generalize far better than 4 epochs of any architecture.
+
+**Run N hypothesis**: if pretrained features are what makes Run C work, freezing the
+backbone entirely and training only the SED head should preserve generalization.
+Job 6111276, frozen backbone, batch_size=64, lr=1e-3, no LoRA.
 
 ## Key findings
 
