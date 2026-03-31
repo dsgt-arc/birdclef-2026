@@ -149,8 +149,13 @@ Evidence-based (from our prior experiments):
       - **Conclusion: offline val/auroc cannot rank configs. v5j best on LB despite
         being only +0.002 offline. v5i best offline but worst on LB.**
 - [x] 4.5 Decision: v5j is the LB winner → proceed to 4-fold ensemble
-- [ ] 4.6 **v5j 4-fold ensemble**: Submitted to PACE (2026-03-31). Target: ≥0.915 LB.
-      Training 4 folds in parallel (~21 min each).
+- [x] 4.6 **v5j 4-fold ensemble**: Trained on PACE (2026-03-31). ~38 min/fold on V100.
+      - Fold 0: 0.951 val/auroc (epoch 15)
+      - Fold 1: 0.843 val/auroc (epoch 19)
+      - Fold 2: 0.823 val/auroc (epoch 19)
+      - Fold 3: 0.808 val/auroc (epoch 18)
+      - Same fold imbalance as v5g-4fold. Marginally better on folds 0/1/3.
+- [ ] 4.7 Export v5j-4fold to ONNX, upload weights, push kernel, submit to LB
 
 Medium confidence (from competitors):
 - [ ] 4.7 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
@@ -195,7 +200,7 @@ Lower priority:
 | v5i (10s windows) | **0.878** | **0.880** | window 5→10s, epoch 17, −0.012 LB vs v5g |
 | **v5j (AmplitudeToDB)** | 0.874 | **0.906** | **Best single-fold! NNAudio+AmpToDB, +0.014 LB vs v5g** |
 | v5k (3-channel mel) | 0.868 | pending | in_chans=3, epoch 16 |
-| v5j-4fold | pending | pending | 4-fold ensemble of v5j — target ≥0.915 |
+| v5j-4fold (HGNet×4) | 0.951/0.843/0.823/0.808 | pending | 4-fold ensemble of v5j — target ≥0.915 LB |
 
 ---
 

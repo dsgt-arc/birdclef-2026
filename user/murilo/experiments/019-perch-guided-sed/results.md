@@ -292,6 +292,37 @@ v5g (0.892) under the ttahara recipe, consistent with the direction from exp 017
 (where n_fft=4096 was a bigger win). The 33 min inference is slower than v5g due
 to the larger FFT.
 
+### Step 5: v5j 4-Fold Ensemble
+
+MultiLabelStratifiedGroupKFold (n_splits=4, seed=1086), same fold assignments as
+v5g-4fold. Trained with v5j config (NNAudio mel, AmplitudeToDB norm, no resize).
+
+| Fold | val/auroc | val/cmap† | Best Epoch | Checkpoint |
+|------|----------|----------|------------|------------|
+| 0 | **0.951** | 0.570 | 15 | `fold0/best-epochepoch=15.ckpt` |
+| 1 | 0.843 | 0.581 | 19 | `fold1/best-epochepoch=19.ckpt` |
+| 2 | 0.823 | 0.564 | 19 | `fold2/best-epochepoch=19.ckpt` |
+| 3 | 0.808 | 0.570 | 18 | `fold3/best-epochepoch=18.ckpt` |
+
+† val/cmap from end-of-training (epoch 20), not best-epoch.
+
+Checkpoint base: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/`
+
+**Comparison to v5g 4-fold:**
+
+| Fold | v5g val/auroc | v5j val/auroc | Delta |
+|------|-------------|-------------|-------|
+| 0 | 0.939 | **0.951** | +0.012 |
+| 1 | 0.842 | 0.843 | +0.001 |
+| 2 | 0.826 | 0.823 | −0.003 |
+| 3 | 0.802 | **0.808** | +0.006 |
+
+Same fold imbalance pattern (fold 0 ≫ folds 1-3). v5j is marginally better on
+folds 0/1/3, marginally worse on fold 2. Given v5j single-fold's +0.014 LB
+advantage over v5g (0.906 vs 0.892), the 4-fold ensemble should amplify the gain.
+
+Training: ~38 min/fold on V100 (SLURM jobs 6107175/6107185/6107187/6107188).
+
 ### v5b Detailed Metrics (Best Checkpoint, Epoch 31)
 
 | Metric | Value |
