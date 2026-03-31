@@ -135,13 +135,12 @@ Iterate on the validated v5g recipe. Each ablation changes ONE thing from v5g.
 Train single-fold first (~21 min), submit best to LB, then 4-fold the winner.
 
 Evidence-based (from our prior experiments):
-- [ ] 4.1 **v5h — n_fft=4096**: Our biggest prior lever (+0.030 LB in exp 017).
-      Keep ttahara recipe, change mel n_fft from 2048→4096. Needs win_length
-      adjustment and may need to drop resize (4096 n_fft → different time frames).
-- [ ] 4.2 **v5i — 10s context windows**: Change window_duration 5s→10s. Helps
-      texture species (insects/amphibians). Training ~2x slower (~42 min).
-- [ ] 4.3 **v5j — AmplitudeToDB norm**: Replace ttahara min-max with our
-      AmplitudeToDB+standardize+min-max. Was +0.030 LB on EfficientNet (v4a→v4b).
+- [x] 4.1 **v5h — n_fft=4096**: Submitted to PACE (2026-03-31).
+      Keep ttahara recipe, change mel n_fft from 2048→4096. Resize absorbs frame count.
+- [x] 4.2 **v5i — 10s context windows**: Submitted to PACE (2026-03-31).
+      Change window_duration 5s→10s. Training ~2x slower (~42 min).
+- [x] 4.3 **v5j — AmplitudeToDB norm**: Submitted to PACE (2026-03-31).
+      NNAudio mel (no resize, 256×511 output). Confounded: also changes win_length + resize.
 - [ ] 4.4 Collect results, compare vs v5g (0.892 LB)
 - [ ] 4.5 Combine winners into single config
 - [ ] 4.6 4-fold ensemble of best combined config → target: ≥0.910 LB
@@ -151,8 +150,8 @@ Medium confidence (from competitors):
 - [ ] 4.8 **Post-processing**: temperature scaling, confidence-sharpened smoothing,
       per-class thresholds on v5g predictions (zero training cost)
 - [ ] 4.9 **NS-JFT pretrained weights** on EfficientNet or HGNet equivalent
-- [ ] 4.10 **v5k — 3-channel mel input** (repeat mono to match pretrained RGB stem)
-      Config ready: `config/hgnet_b0_sed_v5k.yaml`
+- [x] 4.10 **v5k — 3-channel mel input**: Submitted to PACE (2026-03-31).
+      Repeat mono mel to 3 channels, encoder in_chans=3 (preserves full pretrained weights).
 
 Lower priority:
 - [ ] 4.11 **Perch + SED ensemble**: Combine v5g-4fold (0.901) with Perch ProtoSSM
