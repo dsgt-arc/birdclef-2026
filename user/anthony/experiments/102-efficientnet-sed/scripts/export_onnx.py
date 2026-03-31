@@ -65,10 +65,16 @@ class MelInputWrapper(nn.Module):
             frame_logits = self.head.frame_head(frame_features)
             logits = torch.sigmoid(frame_logits).max(dim=1).values  # (B, C)
         elif self.pooling_mode == "sed":
-            # SED head in inference mode returns blended clip logits
-            self.head.eval()
-            result = self.head(features)
-            logits = result["clipwise_logits"]
+            # Use probability-space framewise max (same as attention mode).
+            # The dual supervision trained better frame predictions, but
+            # logit-space blending diluted confident predictions on LB.
+            features = torch.relu(features)  # match SEDHead's ReLU before GeM
+            x = self.head.gem(features)
+            x = x.permute(0, 2, 1)
+            x = self.head.project(x)
+            x = x.permute(0, 2, 1)
+            frame_logits = self.head.frame_conv(x)
+            logits = torch.sigmoid(frame_logits).max(dim=-1).values  # (B, C)
         else:
             raise ValueError(f"Unknown pooling_mode: {self.pooling_mode}")
 
@@ -214,9 +220,9 @@ def main():
         json.dump(species_list, f, indent=2)
 
     # Save mel config
-    # avg/sed pooling outputs logits (need sigmoid in kernel)
-    # attention pooling outputs probabilities (sigmoid already in ONNX graph)
-    output_is_probs = pooling_mode == "attention"
+    # avg pooling outputs logits (need sigmoid in kernel)
+    # attention/sed pooling outputs probabilities (sigmoid already in ONNX graph)
+    output_is_probs = pooling_mode in ("attention", "sed")
 
     mel_config = {
         "sr": data_cfg["sample_rate"],

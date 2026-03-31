@@ -33,17 +33,13 @@ class weighting, and soundscape validation. Best result: **0.794 Kaggle public L
 | K | run-k-efficientnet-scval | EfficientNet attention + SC val | 0.866 SC | 0.609 |
 | L | run-l-efficientnet-cleaned | EfficientNet attention + teacher filter + SC val | 0.870 SC | 0.528 |
 | M | run-m-efficientnet-sed | EfficientNet LoRA + SED head (GeM + dual Conv1d) | cmap 0.597 | 0.553 |
+| M-v2 | re-export only | SED head with prob-space framewise max (match Run C inference) | — | pending |
 
 **Best model: Run C (old) at 0.794 LB.** Every subsequent run has regressed on LB
-despite improving offline metrics. The pattern is consistent:
-- Run C: cmap 0.531, **LB 0.794** (2 epochs, no SC data)
-- Run K: SC auroc 0.866, LB 0.609 (SC val)
-- Run L: SC auroc 0.870, LB 0.528 (teacher filter + SC val)
-- Run M: cmap 0.597, LB 0.553 (SED head, epoch 4)
-
-Offline metrics (cmap, auroc, sc_auroc) do NOT predict Kaggle LB. More training
-epochs and more complex heads both hurt. The 2-epoch attention model generalizes
-best despite lower focal validation scores.
+despite improving offline metrics. However, Run M used logit-space blended inference
+which dilutes confident predictions — different from Run C's probability-space
+framewise max. Run M-v2 re-exports with Run C's inference strategy (sigmoid → max)
+to test whether the SED head's frame predictions are actually better.
 
 ## Key findings
 
