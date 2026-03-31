@@ -110,11 +110,24 @@ def main(
     output_root = Path(cfg["output"]["root"])
 
     # Download / locate model
-    config_path, model_path = _download_model(
-        repo_id=cfg["wavtokenizer"]["repo_id"],
-        config_filename=cfg["wavtokenizer"].get("config_filename"),
-        model_filename=cfg["wavtokenizer"].get("model_filename"),
-    )
+    local_config = cfg["wavtokenizer"].get("local_config")
+    if local_config:
+        # Config not in HF repo — use local vendor copy, download only the checkpoint
+        config_path = str(repo_root / local_config)
+        if not Path(config_path).exists():
+            raise FileNotFoundError(f"Local config not found: {config_path}")
+        model_path = hf_hub_download(
+            repo_id=cfg["wavtokenizer"]["repo_id"],
+            filename=cfg["wavtokenizer"]["model_filename"],
+        )
+        print(f"  Config (local): {config_path}")
+        print(f"  Model (HF): {model_path}")
+    else:
+        config_path, model_path = _download_model(
+            repo_id=cfg["wavtokenizer"]["repo_id"],
+            config_filename=cfg["wavtokenizer"].get("config_filename"),
+            model_filename=cfg["wavtokenizer"].get("model_filename"),
+        )
 
     # Load model
     device = "cuda" if torch.cuda.is_available() else "cpu"

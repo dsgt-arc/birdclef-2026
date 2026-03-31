@@ -1,6 +1,6 @@
 # Proposal: WavTokenizer Codec Retrieval for Bird Audio
 
-**Status**: proposed
+**Status**: completed
 **Created**: 2026-03-31
 **Author**: Anthony
 
