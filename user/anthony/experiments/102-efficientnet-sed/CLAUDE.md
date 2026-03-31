@@ -33,20 +33,20 @@ class weighting, and soundscape validation. Best result: **0.794 Kaggle public L
 | K | run-k-efficientnet-scval | EfficientNet attention + SC val | 0.866 SC | 0.609 |
 | L | run-l-efficientnet-cleaned | EfficientNet attention + teacher filter + SC val | 0.870 SC | 0.528 |
 | M | run-m-efficientnet-sed | EfficientNet LoRA + SED head (GeM + dual Conv1d) | cmap 0.597 | 0.553 |
-| M-v2 | re-export only | SED head with prob-space framewise max (match Run C inference) | — | pending |
+| M-v2 | re-export only | SED head with prob-space framewise max (match Run C inference) | — | 0.586 |
 
-**Best model: Run C (old) at 0.794 LB.** Every subsequent run has regressed on LB
-despite improving offline metrics. However, Run M used logit-space blended inference
-which dilutes confident predictions — different from Run C's probability-space
-framewise max. Run M-v2 re-exports with Run C's inference strategy (sigmoid → max)
-to test whether the SED head's frame predictions are actually better.
+**Best model: Run C (old) at 0.794 LB.** The inference strategy matters (M-v2 +0.033
+over M) but doesn't close the gap. The SED head at epoch 4 overfits focal data
+regardless of inference strategy. Run C's 2-epoch barely-fine-tuned features
+generalize far better than 4 epochs of any architecture.
 
 ## Key findings
 
 1. **Attention pooling critical**: framewise max at inference catches brief calls in soundscapes (0.794 vs 0.754 LB)
 2. **Focal overfitting is the dominant problem**: val/cmap improves with more epochs but Kaggle LB degrades. Every run past epoch 2 has regressed on LB.
-3. **SED head (Run M) regressed**: 0.553 LB despite cmap 0.597. The GeM + dual Conv1d + dual supervision architecture trained to epoch 4, but more parameters + more epochs = worse LB. Same pattern as K/L.
+3. **SED head (Run M) regressed**: 0.553 LB (logit blend) / 0.586 LB (prob-space max) despite cmap 0.597. Inference strategy matters (+0.033 from fixing it) but doesn't explain the gap to 0.794.
 4. **Offline metrics are anti-correlated with LB**: higher cmap/auroc → lower Kaggle LB across runs C, K, L, M. The only model that generalizes is the 2-epoch attention model.
+5. **Epoch count is the dominant factor**: Run C's 2 epochs barely moved from pretrained features. Every run training longer overfits focal data and loses soundscape generalization.
 5. **EfficientNet > ConvNeXt on Kaggle**: 256 mels + smaller model generalizes better than 128 mels + 89M params
 6. **bf16 emulated on RTX 6000**: fp16 gives 3x throughput (sm_75 has no native bf16)
 7. **torch.compile works**: torch 2.11+cu126, needs setuptools+triton, compiles full LoRA backbone
