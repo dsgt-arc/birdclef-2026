@@ -1,5 +1,5 @@
 ---
-experiment: "019-perch-guided-sed"
+experiment: "019-sed-ablations"
 status: proposed
 date: 2026-03-30
 author: Murilo Gustineli
@@ -86,8 +86,8 @@ pseudo-labeled data with multi-round refinement.
 | Data | 35K focal + 708 labeled soundscape windows + 127K pseudo-labeled windows |
 | Compute | PACE RTX 6000 GPU, ~4h per training run, ~2-4h for Perch extraction |
 | Dependencies | timm (HGNetV2-B0), torch, torchaudio, Perch v2 (TF, GPU) |
-| Code | `user/murilo/experiments/019-perch-guided-sed/` |
-| Branch | `mg/019-perch-guided-sed` |
+| Code | `user/murilo/experiments/019-sed-ablations/` |
+| Branch | `mg/019-sed-ablations` |
 
 ### Procedure
 

@@ -345,7 +345,7 @@ export_effnet_b0_sed_v3d() {
 # ============================================================================
 
 EXP017_DIR="$(dirname "$EXPERIMENT_DIR")/017-mel-overhaul"
-EXP019_DIR="$(dirname "$EXPERIMENT_DIR")/019-perch-guided-sed"
+EXP019_DIR="$(dirname "$EXPERIMENT_DIR")/019-sed-ablations"
 
 export_effnet_b0_sed_v4a() {
     echo "=== Exporting EfficientNet-B0 SED v4a (mel overhaul, 234 classes) ==="
