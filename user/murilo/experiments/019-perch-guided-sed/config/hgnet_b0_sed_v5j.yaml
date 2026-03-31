@@ -9,6 +9,12 @@
 #
 # Hypothesis: AmplitudeToDB produces better-normalized spectrograms that
 # help the model distinguish quiet/loud recordings consistently.
+#
+# Note: TWO differences from v5g (not just one):
+#   1. Normalization: min-max → AmplitudeToDB+standardize+min-max
+#   2. No resize to 256x256 (NNAudio outputs raw (256, 511) frames)
+#   3. win_length=n_fft=2048 (vs ttahara's win_length=626)
+# If this helps, follow up with an ablation isolating each change.
 
 run_name: "2026-hgnet-b0-sed-v5j"
 
