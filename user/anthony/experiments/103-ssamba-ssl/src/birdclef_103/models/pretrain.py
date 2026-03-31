@@ -252,6 +252,8 @@ class SSAMBAPretrainModel(nn.Module):
         num_patches = patch_embeddings.shape[1]
 
         # Compute real tokens per sample (for padding-aware masking)
+        # Minimum real tokens needed: enough to form at least one mask span
+        min_maskable = max(self.mask_span_min, int(1 / self.mask_ratio) + 1)  # e.g. 5 tokens
         if real_samples is not None:
             hop_length = 320  # samples per mel frame
             # real_samples -> real mel frames -> real patches (tpatch=1)
@@ -259,6 +261,9 @@ class SSAMBAPretrainModel(nn.Module):
             min_real = real_tokens_per_sample.min().item()
         else:
             min_real = num_patches
+
+        # Clamp to ensure we have enough tokens to mask
+        min_real = max(min_real, min_maskable)
 
         # Generate mask only within real tokens.
         # Use min_real so the same mask applies to all samples in batch

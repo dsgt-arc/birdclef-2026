@@ -88,6 +88,10 @@ class SSLPretrainDataset(Dataset):
                     list(focal_path.rglob("*.wav"))
                     + list(focal_path.rglob("*.flac"))
                 )
+            # Skip very short recordings (<2s) — they produce too few tokens
+            # for meaningful masking and drag down the batch min_real count.
+            min_focal_samples = int(2.0 * sample_rate)
+            n_skipped = 0
             for audio_path in focal_files:
                 try:
                     info = sf.info(str(audio_path))
@@ -95,11 +99,14 @@ class SSLPretrainDataset(Dataset):
                     logger.warning(f"Skipping {audio_path}: {e}")
                     continue
                 total_samples = int(info.frames * sample_rate / info.samplerate)
+                if total_samples < min_focal_samples:
+                    n_skipped += 1
+                    continue
                 real_samples = min(self.chunk_samples, total_samples)
                 self.chunks.append((str(audio_path), 0, real_samples))
                 n_focal_chunks += 1
 
-            logger.info(f"Focal recordings: {n_focal_chunks} chunks")
+            logger.info(f"Focal recordings: {n_focal_chunks} chunks (skipped {n_skipped} under 2s)")
 
         logger.info(f"SSLPretrainDataset total: {len(self.chunks)} chunks")
 

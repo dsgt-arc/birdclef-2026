@@ -4,7 +4,7 @@
 #SBATCH -N1 -n1 --cpus-per-task=6 --mem-per-cpu=10G
 #SBATCH --gres=gpu:RTX_6000:1
 #SBATCH -p gpu-rtx6000
-#SBATCH -t720 -qinferno
+#SBATCH -t1200 -qinferno
 #SBATCH --output=logs/pretrain-%j.out
 
 # Usage:
