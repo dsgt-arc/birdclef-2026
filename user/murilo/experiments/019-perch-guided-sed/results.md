@@ -143,6 +143,155 @@ Comparison to competition:
 - Our Perch ProtoSSM v4: 0.918 LB (still higher, but SED closing the gap)
 - Salman single EfficientNet-B0 SED: 0.908 (we're at 0.892 single-fold, gap = 0.016)
 
+### Step 4: v5g Recipe Ablations (v5h/v5i/v5j/v5k)
+
+Single-variable ablations from v5g (0.872 val/auroc, 0.892 LB). Each changes ONE thing.
+All use HGNetV2-B0 + ttahara recipe, 20 epochs, same data pipeline.
+
+| Slug | Change from v5g | Best val/auroc | val/cmap† | Best Epoch | Delta vs v5g | Checkpoint |
+|------|----------------|---------------|----------|------------|-------------|------------|
+| `hgnet-b0-sed-v5g` | (baseline) | **0.872** | 0.618 | 18 | — | `2026-hgnet-b0-sed-v5g/best-epochepoch=18.ckpt` |
+| `hgnet-b0-sed-v5h` | n_fft 2048→4096 | 0.869 | 0.615 | 16 | **−0.003** | `2026-hgnet-b0-sed-v5h/best-epochepoch=16.ckpt` |
+| `hgnet-b0-sed-v5i` | window 5s→10s | **0.878** | **0.652** | 17 | **+0.006** | `2026-hgnet-b0-sed-v5i/best-epochepoch=17.ckpt` |
+| `hgnet-b0-sed-v5j` | AmplitudeToDB norm‡ | 0.874 | 0.643 | 19 | +0.002 | `2026-hgnet-b0-sed-v5j/best-epochepoch=19.ckpt` |
+| `hgnet-b0-sed-v5k` | 3-channel mel (in_chans=3) | 0.868 | 0.611 | 16 | **−0.004** | `2026-hgnet-b0-sed-v5k/best-epochepoch=16.ckpt` |
+
+† val/cmap values from end-of-training metrics (may differ slightly from best-epoch values).
+‡ v5j is confounded: also changes win_length (626→2048), removes resize (256×256→256×511), and uses NNAudio instead of torchaudio.
+
+Checkpoint base: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/`
+
+### v5h Detailed Metrics (Best Checkpoint, Epoch 16)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc | 0.8692 |
+| val/cmap | 0.6145 |
+| val/f1_macro | 0.5111 |
+| val/f1_micro | 0.6636 |
+| val/top1_acc | 0.7427 |
+| val/top5_acc | 0.8618 |
+| val/loss | 0.0124 |
+
+Training config: HGNetV2-B0, ttahara recipe, n_fft=4096 (vs 2048), win_length=626,
+resize 256×256. GPU: SLURM job 6077424.
+
+### v5i Detailed Metrics (Best Checkpoint, Epoch 17)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc | 0.8782 |
+| val/cmap | 0.6523 |
+| val/f1_macro | 0.5479 |
+| val/f1_micro | 0.7124 |
+| val/top1_acc | 0.8002 |
+| val/top5_acc | 0.9025 |
+| val/loss | 0.0109 |
+
+Training config: HGNetV2-B0, ttahara recipe, window_duration=10s (vs 5s), resize
+256×256 (more temporal compression). GPU: SLURM job 6077429.
+
+### v5j Detailed Metrics (Best Checkpoint, Epoch 19)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc | 0.8737 |
+| val/cmap | 0.6429 |
+| val/f1_macro | 0.5515 |
+| val/f1_micro | 0.6882 |
+| val/top1_acc | 0.7663 |
+| val/top5_acc | 0.8764 |
+| val/loss | 0.0118 |
+
+Training config: HGNetV2-B0, ttahara recipe, NNAudio mel with AmplitudeToDB norm
+(no resize, 256×511 output, win_length=2048). GPU: SLURM job 6077436.
+
+### v5k Detailed Metrics (Best Checkpoint, Epoch 16)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc | 0.8677 |
+| val/cmap | 0.6108 |
+| val/f1_macro | 0.5183 |
+| val/f1_micro | 0.6659 |
+| val/top1_acc | 0.7486 |
+| val/top5_acc | 0.8596 |
+| val/loss | 0.0124 |
+
+Training config: HGNetV2-B0, ttahara recipe, in_chans=3 (mono mel repeated to 3
+channels for full pretrained weight preservation). GPU: SLURM job 6077443.
+
+### Step 4 Analysis
+
+All four ablations land within ±0.006 val/auroc of v5g (0.872). Given that v5g
+showed a +0.020 gap between val (0.872) and LB (0.892), these offline deltas are
+smaller than the val→LB prediction error. We cannot confidently rank v5h, v5j,
+or v5k relative to v5g on offline metrics alone — they are effectively tied.
+
+**v5i (10s windows) stands out** (+0.006 val/auroc, +0.034 cmap). Unlike the others,
+the gain is consistent across *every* metric: f1_micro 0.661→0.712, top1_acc
+0.739→0.800, top5_acc 0.862→0.903. This breadth of improvement is harder to
+dismiss as noise. The longer context likely helps capture temporal patterns for
+continuous-stridulation species (insects, amphibians).
+
+**v5j (AmplitudeToDB)** shows +0.002 val/auroc and +0.025 cmap, but is confounded
+by three simultaneous changes (norm pipeline, win_length 626→2048, resize removal).
+The cmap improvement suggests better rare-species calibration but the gain cannot
+be attributed to any single factor.
+
+**v5h (n_fft=4096)** and **v5k (3-channel mel)** score −0.003 and −0.004 val/auroc
+respectively vs v5g. These are within the noise floor of our val set — they could
+plausibly perform anywhere from slightly worse to slightly better than v5g on LB.
+The only way to know is LB validation.
+
+### Step 4 LB Results
+
+| Variant | val/auroc | LB | val→LB gap | LB delta vs v5g |
+|---------|----------|-----|-----------|----------------|
+| v5g (baseline) | 0.872 | **0.892** | +0.020 | — |
+| v5i (10s windows) | **0.878** | **0.880** | +0.002 | **−0.012** |
+
+**v5i (0.880 LB) regressed −0.012 vs v5g (0.892) despite being the best offline
+variant (+0.006 val).** The val→LB gap collapsed from +0.020 (v5g) to +0.002 (v5i),
+suggesting the 10s window context that helps offline validation does not transfer
+to LB — likely because the test soundscapes have different temporal structure than
+training soundscapes, or the 10s→256×256 temporal compression loses detail that
+matters on the test distribution.
+
+**The val→LB disconnect makes offline metrics unreliable for ranking configs.**
+The full val→LB mapping across all HGNet ablations so far:
+
+| Variant | val/auroc | LB | val→LB gap | Inference time |
+|---------|----------|-----|-----------|---------------|
+| v5g | 0.872 | 0.892 | +0.020 | ~45 min (ttahara, 5s) |
+| v5i | 0.878 | 0.880 | +0.002 | ~37s†† (10s) |
+| **v5h** | 0.869 | **0.893** | +0.024 | ~33 min (ttahara, n_fft=4096) |
+| **v5j** | 0.874 | **0.906** | **+0.032** | **~20 min** (NNAudio, no resize) |
+| v5k | 0.868 | pending | ? | |
+
+†† v5i ran on 2 validation files only (36.9s total), not comparable.
+
+**The offline ranking is completely inverted on LB.** v5j was tied-second-worst
+offline (0.874) but is the best on LB by a wide margin (0.906). v5i was the
+best offline (0.878) but worst on LB (0.880). The val→LB gap varies from +0.002
+to +0.032 — offline metrics cannot rank these configs.
+
+**v5j (0.906 LB) is now our best single-fold SED model**, beating v5g-4fold
+ensemble (0.901) with a single model. Key differences from v5g:
+- NNAudio mel with AmplitudeToDB norm (vs ttahara min-max + resize)
+- No resize to 256×256 (raw 256×511 output)
+- win_length=n_fft=2048 (vs ttahara's win_length=626)
+
+**v5j inference is ~2x faster** (~20 min vs ~45 min for v5g). The speed gain
+comes from skipping the resize interpolation step and using the simpler NNAudio
+mel pipeline. This is significant for kernel time budget — leaves ~70 min for
+potential Perch+SED ensemble or 4-fold inference.
+
+**v5h (0.893 LB)** confirms that n_fft=4096 provides a small +0.001 gain over
+v5g (0.892) under the ttahara recipe, consistent with the direction from exp 017
+(where n_fft=4096 was a bigger win). The 33 min inference is slower than v5g due
+to the larger FFT.
+
 ### v5b Detailed Metrics (Best Checkpoint, Epoch 31)
 
 | Metric | Value |

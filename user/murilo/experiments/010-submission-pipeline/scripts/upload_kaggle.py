@@ -272,6 +272,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5g-4fold",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5g-4fold.json",
     },
+    # Exp 019 Step 4: v5j 4-fold ensemble (best single-fold 0.906 LB)
+    "hgnet-b0-sed-v5j-4fold": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-4fold-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-4fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-4fold.json",
+    },
     # Exp 019 Step 4: v5g recipe ablations
     "hgnet-b0-sed-v5h": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5h-weights",

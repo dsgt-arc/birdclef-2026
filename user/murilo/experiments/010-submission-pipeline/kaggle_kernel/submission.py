@@ -97,6 +97,8 @@ MODEL_SLUGS = [
     "birdclef-2026-effnet-b0-sed-v5c-weights",
     "birdclef-2026-effnet-b0-sed-v5d-weights",
     "birdclef-2026-hgnet-b0-sed-v5e-weights",
+    # SED v5j 4-fold ensemble (exp 019 step 4 — best single-fold 0.906 LB)
+    "birdclef-2026-hgnet-b0-sed-v5j-4fold-weights",
     # SED v5g recipe ablations (exp 019 step 4)
     "birdclef-2026-hgnet-b0-sed-v5h-weights",
     "birdclef-2026-hgnet-b0-sed-v5i-weights",

@@ -141,9 +141,16 @@ Evidence-based (from our prior experiments):
       Change window_duration 5s→10s. Training ~2x slower (~42 min).
 - [x] 4.3 **v5j — AmplitudeToDB norm**: Submitted to PACE (2026-03-31).
       NNAudio mel (no resize, 256×511 output). Confounded: also changes win_length + resize.
-- [ ] 4.4 Collect results, compare vs v5g (0.892 LB)
-- [ ] 4.5 Combine winners into single config
-- [ ] 4.6 4-fold ensemble of best combined config → target: ≥0.910 LB
+- [x] 4.4 Collect results, compare vs v5g (0.892 LB)
+      - v5h (n_fft=4096): 0.869 val → **0.893 LB** (+0.001 vs v5g)
+      - v5i (10s windows): **0.878 val** → **0.880 LB** (−0.012 vs v5g)
+      - **v5j (AmplitudeToDB): 0.874 val → 0.906 LB (+0.014 vs v5g, best single-fold!)**
+      - v5k (3-channel mel): 0.868 val → LB pending
+      - **Conclusion: offline val/auroc cannot rank configs. v5j best on LB despite
+        being only +0.002 offline. v5i best offline but worst on LB.**
+- [x] 4.5 Decision: v5j is the LB winner → proceed to 4-fold ensemble
+- [ ] 4.6 **v5j 4-fold ensemble**: Submitted to PACE (2026-03-31). Target: ≥0.915 LB.
+      Training 4 folds in parallel (~21 min each).
 
 Medium confidence (from competitors):
 - [ ] 4.7 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
@@ -154,133 +161,54 @@ Medium confidence (from competitors):
       Repeat mono mel to 3 channels, encoder in_chans=3 (preserves full pretrained weights).
 
 Lower priority:
-- [ ] 4.11 **Perch + SED ensemble**: Combine v5g-4fold (0.901) with Perch ProtoSSM
+- [ ] 4.11 **Perch + SED ensemble**: Combine best SED (v5j-4fold) with Perch ProtoSSM
       (0.918) for a combined submission — different architectures = diverse errors
 
 ---
 
-## Phase B: Perch Pseudo-Label Extraction (target: 127K labeled windows)
+## Phase B/C: Perch Pseudo-Label Training — DEFERRED
 
-Run Perch ProtoSSM on ALL unlabeled soundscapes offline on PACE to
-generate soft labels for Phase C training.
-
-### Step 4: Perch GPU extraction on unlabeled soundscapes
-
-- [ ] 4.1 Write SBATCH script for Perch v2 GPU extraction on PACE
-      (reference: exp 014 pseudo-labeling, `scripts/extract_perch_embeddings.py`)
-- [ ] 4.2 Extract embeddings + logits for all ~10,600 unlabeled soundscapes
-      Output: embeddings (127K, 1536) + mapped logits (127K, 234)
-      Estimate: ~2-4 hours on GPU
-- [ ] 4.3 Verify extraction: spot-check shapes, value ranges, no NaN
-
-### Step 5: Apply ProtoSSM pipeline to extracted embeddings
-
-- [ ] 5.1 Load ProtoSSM v4.1 trained model artifacts (probes, ProtoSSM weights,
-      ResidualSSM weights, prior tables, PCA scaler)
-      Note: these are trained in-kernel on 59 labeled files. Need to save
-      them from a training run or re-train on PACE.
-- [ ] 5.2 Apply full pipeline: prior fusion → MLP probes → ProtoSSM → ensemble
-      → ResidualSSM → post-processing → soft probabilities
-- [ ] 5.3 Output: pseudo_labels.npz with shape (n_files, 12, 234) float32
-- [ ] 5.4 Quality check: compute pseudo-label statistics
-      - Mean confidence per species
-      - Number of species detected per file
-      - Distribution of max probabilities
-      - Cross-check against labeled soundscapes (should match ~0.920 quality)
-
-### Step 6: Confidence filtering
-
-- [ ] 6.1 Apply power transform: `p_sharp = p^γ / (p^γ + (1-p)^γ)`, γ=1.5
-- [ ] 6.2 Filter low-confidence windows (max species prob < 0.1)
-- [ ] 6.3 Save filtered pseudo-labels as Kaggle dataset for kernel access
-      (or store on PACE shared storage for local training)
-
----
-
-## Phase C: Pseudo-Label Training (target: 0.900-0.915 LB)
-
-Train improved SED on labeled + pseudo-labeled data with multi-round
-refinement. Each round uses a stronger teacher.
-
-### Step 7: Round 1 — Conservative pseudo-labels
-
-- [ ] 7.1 Prepare training data:
-      - Focal recordings: 35K files, weight=1.0
-      - Labeled soundscapes: 708 windows, weight=1.0
-      - Pseudo-labeled soundscapes: 127K windows, weight=0.1, γ=1.5
-- [ ] 7.2 Implement per-sample loss weighting in SED training pipeline
-      (BCE with sample weights, similar to exp 015 but with lower weight)
-- [ ] 7.3 Train Round 1 SED (best variant from Phase A)
-      Config: same as Phase A winner, + pseudo-label data
-- [ ] 7.4 Evaluate: offline val AUROC + cmAP, compare vs Phase A baseline
-- [ ] 7.5 Validate on LB — confirm pseudo-labels help (not regress)
-
-### Step 8: Round 2 — Stronger teacher
-
-- [ ] 8.1 Generate new pseudo-labels using Round 1 SED + Perch ensemble
-      as teacher (average predictions, should be stronger than Perch alone)
-- [ ] 8.2 Increase pseudo-label weight to 0.15, increase γ to 2.0
-- [ ] 8.3 Train Round 2 SED
-- [ ] 8.4 Validate on LB — target: improvement over Round 1
-
-### Step 9: Round 3 — Final refinement
-
-- [ ] 9.1 Generate pseudo-labels with Round 2 teacher
-- [ ] 9.2 Weight 0.2, γ=2.5
-- [ ] 9.3 Train Round 3 SED
-- [ ] 9.4 4-fold ensemble of Round 3 models
-- [ ] 9.5 Validate on LB — target: 0.900-0.915
-
----
-
-## Decision Gates
-
-After each phase, decide whether to continue:
-
-**Phase A → B gate**: Any SED improvement reaches ≥0.870 LB?
-- Yes → proceed to Phase B (pseudo-labels will help a good model more)
-- No → debug SED improvements, try more ablations before pseudo-labeling
-
-**Phase B → C gate**: Pseudo-label extraction succeeds + quality check passes?
-- Yes → proceed to Phase C
-- No → investigate Perch extraction issues, retry
-
-**Phase C Round 1 gate**: Round 1 SED ≥ Phase A baseline?
-- Yes → continue to Round 2 (pseudo-labels are helping)
-- No → STOP. Same failure as exp 015. Investigate weight/confidence settings.
+> **Descoped from exp 019.** Perch pseudo-label extraction and multi-round
+> pseudo-label training will be a separate experiment. The idea: use Perch
+> ProtoSSM to extract soft pseudo-labels from all ~10,600 unlabeled soundscapes,
+> then fine-tune the best SED config (v5j/HGNet) on labeled + pseudo-labeled
+> data with conservative weighting and iterative refinement.
+>
+> See proposal.md Phase B/C for the original plan.
 
 ---
 
 ## Results Tracking
 
-| Submission | val/auroc | LB | Phase | Notes |
-|------------|----------|-----|-------|-------|
-| SED v4b (baseline) | 0.865 | 0.860 | — | EfficientNet-B0, AmplitudeToDB, AttHead, soft CE |
-| v5a (BCE) | **0.875** | **0.851** | A | `loss_type: "bce"`, epoch 29, **+0.010 val but −0.009 LB vs baseline** |
-| v5b (MixUp) | **0.869** | **0.840** | A | `mixup_alpha=1.0, theta=0.8, warmup=5`, epoch 31, **+0.004 val but −0.020 LB vs baseline** |
-| v5c (weight_decay) | **0.867** | pending | A | `weight_decay=1e-4`, epoch 35, **+0.002 val vs baseline** |
-| v5d (LSEHead) | **0.861** | pending | A | `sed_head.type: "lse_head"`, epoch 21, **-0.004 vs baseline** |
-| v5e (HGNetV2) | 0.861 | pending | A | `hgnetv2_b0.ssld_stage2_ft_in1k`, embed=1024, epoch 23, **-0.004 vs baseline** |
-| v5f (EffNet+ttahara) | **0.866** | **0.855** | A | Full ttahara recipe on EfficientNet-B0, epoch 14, **-0.005 LB vs v4b** |
-| v5g (HGNet+ttahara) | **0.872** | **0.892** | A | Full ttahara recipe on HGNetV2-B0, epoch 18, **21 min** |
-| v5g-4fold (HGNet×4) | 0.939/0.842/0.826/0.802 | **0.901** | A | **Broke 0.900!** 4-fold ensemble, +0.009 over single |
-| 4-fold ensemble | — | — | A | |
-| Round 1 pseudo | — | — | C | |
-| Round 2 pseudo | — | — | C | |
-| Round 3 pseudo + 4-fold | — | — | C | |
+| Submission | val/auroc | LB | Notes |
+|------------|----------|-----|-------|
+| SED v4b (baseline) | 0.865 | 0.860 | EfficientNet-B0, AmplitudeToDB, AttHead, soft CE |
+| v5a (BCE) | **0.875** | **0.851** | `loss_type: "bce"`, epoch 29, **+0.010 val but −0.009 LB vs baseline** |
+| v5b (MixUp) | **0.869** | **0.840** | `mixup_alpha=1.0, theta=0.8, warmup=5`, epoch 31, **−0.020 LB vs baseline** |
+| v5c (weight_decay) | **0.867** | pending | `weight_decay=1e-4`, epoch 35 |
+| v5d (LSEHead) | **0.861** | pending | `sed_head.type: "lse_head"`, epoch 21 |
+| v5e (HGNetV2) | 0.861 | pending | `hgnetv2_b0.ssld_stage2_ft_in1k`, epoch 23 |
+| v5f (EffNet+ttahara) | **0.866** | **0.855** | Full ttahara recipe on EfficientNet-B0, epoch 14 |
+| v5g (HGNet+ttahara) | **0.872** | **0.892** | Full ttahara recipe on HGNetV2-B0, epoch 18 |
+| v5g-4fold (HGNet×4) | 0.939/0.842/0.826/0.802 | **0.901** | **Broke 0.900!** 4-fold ensemble |
+| v5h (n_fft=4096) | 0.869 | **0.893** | n_fft 2048→4096, epoch 16, +0.001 LB vs v5g |
+| v5i (10s windows) | **0.878** | **0.880** | window 5→10s, epoch 17, −0.012 LB vs v5g |
+| **v5j (AmplitudeToDB)** | 0.874 | **0.906** | **Best single-fold! NNAudio+AmpToDB, +0.014 LB vs v5g** |
+| v5k (3-channel mel) | 0.868 | pending | in_chans=3, epoch 16 |
+| v5j-4fold | pending | pending | 4-fold ensemble of v5j — target ≥0.915 |
 
 ---
 
 ## Runtime Budget (Kaggle kernel, 90 min)
 
-| Component | Single-fold | 4-fold ensemble |
-|-----------|-------------|-----------------|
-| Model loading | ~1s | ~4s |
-| Audio → mel spectrogram | ~5 min | ~5 min |
-| SED inference (ONNX) | ~10 min | ~40 min |
-| Post-processing | ~1s | ~1s |
-| **Total** | **~15 min** | **~45 min** |
+| Component | v5j single | v5j 4-fold (est.) | v5g 4-fold (actual) |
+|-----------|-----------|-------------------|-------------------|
+| Model loading | ~1s | ~4s | ~4s |
+| Audio → mel (NNAudio) | ~8 min | ~8 min | ~15 min (ttahara+resize) |
+| SED inference (ONNX) | ~10 min | ~40 min | ~15 min |
+| Post-processing | ~1s | ~1s | ~1s |
+| **Total** | **~20 min** | **~50 min** | **~30 min** |
 
-Both single-fold and 4-fold fit comfortably in 90 min. This leaves
-room for potential future Perch+SED ensemble in a single kernel if
-Perch inference can be optimized (or via two-kernel approach).
+v5j's NNAudio mel (no resize) is faster per-segment than ttahara's resize
+pipeline. 4-fold well within 90 min budget, leaving room for future
+Perch+SED ensemble.
