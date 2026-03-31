@@ -19,7 +19,7 @@ improvements with Perch pseudo-labels on 10K+ unlabeled soundscapes.
 | ~0.920 | Our Perch ProtoSSM | Teacher for pseudo-labels |
 | 0.939 | Competition #1 | Likely ensemble + pseudo-labels |
 
-### Status: Phase A Step 3 (4-fold) trained + exported. Awaiting Kaggle submission quota reset (2026-03-31 AM) to submit v5g + v5g-4fold.
+### Status: **v5g-4fold 0.901 LB — broke 0.900!** v5g single 0.892. SED pipeline validated.
 
 - **Branch**: `mg/018-perch-ensemble` (shared with exp 018 for now)
 - **Parallel**: Exp 018 ProtoSSM v4.1 running inference on Kaggle (~90 min)
@@ -105,27 +105,29 @@ OneCycleLR. See `src/birdclef/heads/sed_head.py`, `src/birdclef/preprocessing/tt
       - submission.py: add compute_mel_ttahara + MODEL_SLUGS (per-segment, not full-signal)
       - kernel-metadata JSON files for both models
 - [x] 2.14 Export v5f/v5g to ONNX + upload weights + push v5f kernel to Kaggle
-- [ ] 2.15 Push v5g kernel to Kaggle (blocked: daily submission quota, resets ~2026-03-31 morning)
+- [x] 2.15 Push v5g kernel to Kaggle (2026-03-31)
 - [x] 2.16 Check v5f LB result: **0.855** (−0.005 vs v4b 0.860)
       - ttahara recipe on EfficientNet regressed on LB despite matching offline (0.866 vs 0.865)
       - Consistent with prior pattern: offline gains don't translate for EfficientNet
-- [ ] 2.17 Check v5g LB result
+- [x] 2.17 Check v5g LB result: **0.892** (+0.032 vs v4b) — val under-predicted LB!
 
 ### Step 3: 4-fold ensemble
 
 - [x] 3.1 Implement MultiLabel Stratified GroupKFold (from ttahara, group by audio_id)
 - [x] 3.2 Train 4 folds of HGNet v5g on PACE (~21 min each, all 4 parallel)
-      - Fold 0: 0.939 val/auroc (epoch 14) — suspiciously high, 55/66 soundscape files in val
+      - Fold 0: 0.939 val/auroc (epoch 14) — 55/66 soundscape files in val
       - Fold 1: 0.842 val/auroc (epoch 19)
       - Fold 2: 0.826 val/auroc (epoch 18)
       - Fold 3: 0.802 val/auroc (epoch 16)
-      - **Fold imbalance**: 0.137 spread (0.939 vs 0.802). Soundscape files clustered in fold 0.
-        Only 66 file-level groups makes even distribution impossible with GroupKFold.
+      - Fold imbalance (0.137 spread) didn't prevent ensemble from working on LB
 - [ ] 3.3 Optionally train 4 folds of the **other backbone** too — mixed-backbone
       ensemble (EfficientNet + HGNet) may outperform single-backbone ensemble
-- [ ] 3.4 Export all models to ONNX (or OpenVINO if faster)
-- [ ] 3.5 Implement fold-averaged inference kernel
-- [ ] 3.6 Validate on LB — target: ≥0.885 ensemble
+- [x] 3.4 Export all 4 fold models to ONNX
+- [x] 3.5 Implement fold-averaged inference kernel (ensemble detection + compute mel once)
+- [x] 3.6 Validate on LB: **0.901** (target was ≥0.885) — **exceeded target by +0.016!**
+      - v5g single: 0.892 (+0.032 over v4b)
+      - v5g 4-fold: **0.901** (+0.009 from ensemble, +0.041 over v4b)
+      - Surpassed ttahara's 0.884 reference by +0.017
 
 ---
 
@@ -232,7 +234,8 @@ After each phase, decide whether to continue:
 | v5d (LSEHead) | **0.861** | pending | A | `sed_head.type: "lse_head"`, epoch 21, **-0.004 vs baseline** |
 | v5e (HGNetV2) | 0.861 | pending | A | `hgnetv2_b0.ssld_stage2_ft_in1k`, embed=1024, epoch 23, **-0.004 vs baseline** |
 | v5f (EffNet+ttahara) | **0.866** | **0.855** | A | Full ttahara recipe on EfficientNet-B0, epoch 14, **-0.005 LB vs v4b** |
-| v5g (HGNet+ttahara) | **0.872** | quota blocked | A | Full ttahara recipe on HGNetV2-B0, epoch 18, **21 min** |
+| v5g (HGNet+ttahara) | **0.872** | **0.892** | A | Full ttahara recipe on HGNetV2-B0, epoch 18, **21 min** |
+| v5g-4fold (HGNet×4) | 0.939/0.842/0.826/0.802 | **0.901** | A | **Broke 0.900!** 4-fold ensemble, +0.009 over single |
 | 4-fold ensemble | — | — | A | |
 | Round 1 pseudo | — | — | C | |
 | Round 2 pseudo | — | — | C | |

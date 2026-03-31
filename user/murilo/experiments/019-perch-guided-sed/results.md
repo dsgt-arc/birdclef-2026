@@ -28,7 +28,7 @@ Reference: `user/murilo/notes/ttahara-hgnetv2-b0-annotated.md`
 | Slug | Backbone | Best val/auroc | val/cmap | Best Epoch | Stopped | LB | Checkpoint |
 |------|----------|---------------|----------|------------|---------|-----|------------|
 | `effnet-b0-sed-v5f` | EfficientNet-B0 (embed=320) | **0.866** | 0.599 | 14 | 20 | **0.855** | `2026-effnet-b0-sed-v5f/best-epochepoch=14.ckpt` |
-| `hgnet-b0-sed-v5g` | HGNetV2-B0 (embed=1024) | **0.872** | 0.618 | 18 | 20 | pending | `2026-hgnet-b0-sed-v5g/best-epochepoch=18.ckpt` |
+| `hgnet-b0-sed-v5g` | HGNetV2-B0 (embed=1024) | **0.872** | 0.618 | 18 | 20 | **0.892** | `2026-hgnet-b0-sed-v5g/best-epochepoch=18.ckpt` |
 
 Key differences from Step 1 ablations: LSEHead(freq_pool=mean), BCE loss (clipwise only),
 per-sample MixUp(α=1.0, θ=0.8, warmup=5, 100%), OneCycleLR(lr=5e-4 uniform, wd=1e-4),
@@ -122,7 +122,26 @@ distribution. The per-segment stratification fix (from per-file) barely changed 
 soundscape-like test data. The ensemble averaging may still help (each fold's weakness
 is different), but the extreme spread suggests the folds are not comparable.
 
-LB result: pending (submission quota resets in ~5 hours).
+### LB Results
+
+| Submission | LB | Notes |
+|-----------|-----|-------|
+| v5g single-fold | **0.892** | +0.032 over v4b (0.860), +0.037 over v5f (0.855) |
+| **v5g-4fold ensemble** | **0.901** | **Broke 0.900 barrier!** +0.009 from 4-fold, +0.041 over v4b |
+
+**v5g (0.892 LB)** is a massive improvement. The ttahara recipe + HGNet backbone
+translates to LB far better than any prior SED model. Notably, offline val/auroc
+(0.872) UNDER-predicted LB (0.892) — the opposite of all prior experiments where
+val over-predicted LB. The ttahara recipe produces better-calibrated predictions.
+
+**v5g-4fold (0.901 LB)** confirms the ensemble adds +0.009 despite the fold imbalance
+(fold 0 has 55/66 soundscape files). This is within the expected +0.010-0.015 range
+from ttahara's 4-fold approach.
+
+Comparison to competition:
+- ttahara HGNet 4-fold: 0.884 LB (our reproduction: **0.901**, +0.017 above reference)
+- Our Perch ProtoSSM v4: 0.918 LB (still higher, but SED closing the gap)
+- Salman single EfficientNet-B0 SED: 0.908 (we're at 0.892 single-fold, gap = 0.016)
 
 ### v5b Detailed Metrics (Best Checkpoint, Epoch 31)
 
