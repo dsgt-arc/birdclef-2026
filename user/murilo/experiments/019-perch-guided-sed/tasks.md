@@ -129,6 +129,34 @@ OneCycleLR. See `src/birdclef/heads/sed_head.py`, `src/birdclef/preprocessing/tt
       - v5g 4-fold: **0.901** (+0.009 from ensemble, +0.041 over v4b)
       - Surpassed ttahara's 0.884 reference by +0.017
 
+### Step 4: v5g Recipe Ablations (baseline: v5g 0.892 LB)
+
+Iterate on the validated v5g recipe. Each ablation changes ONE thing from v5g.
+Train single-fold first (~21 min), submit best to LB, then 4-fold the winner.
+
+Evidence-based (from our prior experiments):
+- [ ] 4.1 **v5h — n_fft=4096**: Our biggest prior lever (+0.030 LB in exp 017).
+      Keep ttahara recipe, change mel n_fft from 2048→4096. Needs win_length
+      adjustment and may need to drop resize (4096 n_fft → different time frames).
+- [ ] 4.2 **v5i — 10s context windows**: Change window_duration 5s→10s. Helps
+      texture species (insects/amphibians). Training ~2x slower (~42 min).
+- [ ] 4.3 **v5j — AmplitudeToDB norm**: Replace ttahara min-max with our
+      AmplitudeToDB+standardize+min-max. Was +0.030 LB on EfficientNet (v4a→v4b).
+- [ ] 4.4 Collect results, compare vs v5g (0.892 LB)
+- [ ] 4.5 Combine winners into single config
+- [ ] 4.6 4-fold ensemble of best combined config → target: ≥0.910 LB
+
+Medium confidence (from competitors):
+- [ ] 4.7 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
+- [ ] 4.8 **Post-processing**: temperature scaling, confidence-sharpened smoothing,
+      per-class thresholds on v5g predictions (zero training cost)
+- [ ] 4.9 **NS-JFT pretrained weights** on EfficientNet or HGNet equivalent
+- [ ] 4.10 **3-channel mel input** (repeat mono to match pretrained RGB stem)
+
+Lower priority:
+- [ ] 4.11 **Perch + SED ensemble**: Combine v5g-4fold (0.901) with Perch ProtoSSM
+      (0.918) for a combined submission — different architectures = diverse errors
+
 ---
 
 ## Phase B: Perch Pseudo-Label Extraction (target: 127K labeled windows)

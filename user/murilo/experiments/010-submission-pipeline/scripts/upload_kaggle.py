@@ -272,6 +272,22 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5g-4fold",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5g-4fold.json",
     },
+    # Exp 019 Step 4: v5g recipe ablations
+    "hgnet-b0-sed-v5h": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5h-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5h",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5h.json",
+    },
+    "hgnet-b0-sed-v5i": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5i-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5i",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5i.json",
+    },
+    "hgnet-b0-sed-v5j": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j.json",
+    },
 }
 
 
