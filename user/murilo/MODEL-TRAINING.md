@@ -51,6 +51,16 @@ for external research.
 - v5e (HGNet + v4b recipe): 0.861 val — recipe matters more than backbone
 - Re-parameterized architecture optimized for deployment (inference speed)
 
+### Input Channels: 1-Channel vs 3-Channel
+
+- **1-channel** (our default): Mel spectrogram as single channel `(B, 1, H, W)`.
+  Pretrained 3-ch stem weights averaged to 1 channel — loses information.
+- **3-channel** (competitor's approach): Repeat mono mel to 3 channels `(B, 3, H, W)`.
+  Preserves full RGB pretrained weights from ImageNet/SSLD pretraining.
+- Source: `ravi20076/birdclef2026-public-blend-v6` uses `mel.repeat(1, 3, 1, 1)` with
+  `tf_efficientnet_b0.ns_jft_in1k` (0.872 LB model).
+- **v5k** tests 3-channel on HGNet with ttahara recipe — pending results.
+
 ### Key Finding
 **Backbone alone doesn't determine performance.** HGNet with v4b recipe (0.861) < EfficientNet
 with v4b recipe (0.865). But HGNet with ttahara recipe (0.872) > EfficientNet with ttahara
