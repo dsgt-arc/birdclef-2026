@@ -32,23 +32,32 @@ class weighting, and soundscape validation. Best result: **0.794 Kaggle public L
 | J | run-j-efficientnet-classweight | EfficientNet attention + SC + inv_sqrt | 0.592 | — |
 | K | run-k-efficientnet-scval | EfficientNet attention + SC val | 0.866 SC | 0.609 |
 | L | run-l-efficientnet-cleaned | EfficientNet attention + teacher filter + SC val | 0.870 SC | 0.528 |
+| M | run-m-efficientnet-sed | EfficientNet LoRA + SED head (GeM + dual Conv1d) | cmap 0.597 | 0.553 |
 
-**Best model: Run C (old) at 0.794 LB.** Runs K and L demonstrated that soundscape
-validation does not predict Kaggle LB — higher SC auroc correlated with *worse* LB.
-Teacher filtering made it even worse (0.528). The 2-epoch model with no SC validation
-remains best.
+**Best model: Run C (old) at 0.794 LB.** Every subsequent run has regressed on LB
+despite improving offline metrics. The pattern is consistent:
+- Run C: cmap 0.531, **LB 0.794** (2 epochs, no SC data)
+- Run K: SC auroc 0.866, LB 0.609 (SC val)
+- Run L: SC auroc 0.870, LB 0.528 (teacher filter + SC val)
+- Run M: cmap 0.597, LB 0.553 (SED head, epoch 4)
+
+Offline metrics (cmap, auroc, sc_auroc) do NOT predict Kaggle LB. More training
+epochs and more complex heads both hurt. The 2-epoch attention model generalizes
+best despite lower focal validation scores.
 
 ## Key findings
 
 1. **Attention pooling critical**: framewise max at inference catches brief calls in soundscapes (0.794 vs 0.754 LB)
-2. **Focal overfitting**: val/cmap improves with more epochs but Kaggle LB degrades (soundscape val peaks ep 2)
-3. **EfficientNet > ConvNeXt on Kaggle**: 256 mels + smaller model generalizes better than 128 mels + 89M params
-4. **bf16 emulated on RTX 6000**: fp16 gives 3x throughput (sm_75 has no native bf16)
-5. **torch.compile works**: torch 2.11+cu126, needs setuptools+triton, compiles full LoRA backbone
-6. **GPU mel > CPU mel**: sustained 96-100% GPU utilization, no idle gaps
-7. **Kaggle metric**: macro AUROC excluding species with no positive labels (not standard torchmetrics)
-8. **Activity scores predict calls**: 0.913 AUROC from logistic regression on acoustic indices
-9. **ONNX export verified correct**: mel and output mismatch < 0.002
+2. **Focal overfitting is the dominant problem**: val/cmap improves with more epochs but Kaggle LB degrades. Every run past epoch 2 has regressed on LB.
+3. **SED head (Run M) regressed**: 0.553 LB despite cmap 0.597. The GeM + dual Conv1d + dual supervision architecture trained to epoch 4, but more parameters + more epochs = worse LB. Same pattern as K/L.
+4. **Offline metrics are anti-correlated with LB**: higher cmap/auroc → lower Kaggle LB across runs C, K, L, M. The only model that generalizes is the 2-epoch attention model.
+5. **EfficientNet > ConvNeXt on Kaggle**: 256 mels + smaller model generalizes better than 128 mels + 89M params
+6. **bf16 emulated on RTX 6000**: fp16 gives 3x throughput (sm_75 has no native bf16)
+7. **torch.compile works**: torch 2.11+cu126, needs setuptools+triton, compiles full LoRA backbone
+8. **GPU mel > CPU mel**: sustained 96-100% GPU utilization, no idle gaps
+9. **Kaggle metric**: macro AUROC excluding species with no positive labels (not standard torchmetrics)
+10. **Activity scores predict calls**: 0.913 AUROC from logistic regression on acoustic indices
+11. **ONNX export verified correct**: mel and output mismatch < 0.002
 
 ## Next improvements (from Murilo's exp 016-019 results)
 
