@@ -1,0 +1,33 @@
+[project]
+name = "exp103-ssamba-ssl"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "nnAudio>=0.3",
+    "torchmetrics>=1.0.0",
+    "pytorch-lightning>=2.0",
+    "torchaudio>=2.1",
+    "torch>=2.1",
+    "soundfile>=0.12",
+    "tensorboard>=2.14",
+    "pyyaml>=6.0",
+    "numpy>=1.24",
+]
+
+# ssamba-hf is installed separately in sbatch scripts via:
+#   uv pip install -e "$repo_dir/user/anthony/experiments/004-ssamba-hf-port/ssamba_hf"
+# Not listed as a dependency because it's not on PyPI and workspace refs
+# only work within a uv workspace.
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+birdclef-ssl-pretrain = "birdclef_103.cli.pretrain:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/birdclef_103"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

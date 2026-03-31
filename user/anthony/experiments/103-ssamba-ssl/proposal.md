@@ -36,12 +36,15 @@ See: `docs/concepts/ssamba-audio-mamba.md`, `docs/concepts/pretrained-mamba-tran
 
 ### Approach
 
-Train SSAMBA-small and SSAMBA-base from random init using the original masked patch prediction
-objective (masking 40% of spectrogram patches, predicting masked patches via MSE). Input is a
-32kHz mel spectrogram with rectangular 128×2 patches (full-frequency-band, 20ms per token).
-Train on all available BirdCLEF 2025/2026 audio — soundscapes + focal recordings (~1000+ hours).
+Train SSAMBA-small from random init using the original dual SSL objective: masked patch
+reconstruction (MSE) + contrastive discrimination (NCE), combined as `L_nce + 10 × L_mse`.
+Input is a 32kHz mel spectrogram normalized with AmplitudeToDB (80dB clamp, per-clip
+standardize, min-max to [0,1]) with rectangular 224×1 patches (full-frequency-band, 10ms
+per token). Use span masking (40%, spans of 50–150ms) rather than random masking, since
+adjacent 10ms frames are nearly identical and random masking is trivially solvable.
+Train on BirdCLEF 2026 soundscapes + focal recordings (~57K 30s windows).
 Evaluate via reconstruction loss (SSL quality) and a linear probe on BirdCLEF 2026 focal cmAP
-(downstream quality).
+(downstream quality). Gate SSAMBA-base on small results.
 
 ### Setup
 
@@ -49,10 +52,14 @@ Evaluate via reconstruction loss (SSL quality) and a linear probe on BirdCLEF 20
 |-----------|---------|
 | Data | BirdCLEF 2026: 10,658 soundscapes + 35,549 focal recordings; BirdCLEF 2025: soundscapes; total ~1000h |
 | Data paths | `/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2025/`, `birdclef-2026/` |
+| Mel norm | AmplitudeToDB: 80dB clamp → per-clip standardize → min-max [0,1] |
+| Masking | Span masking, 40% ratio, span length 5–15 tokens (50–150ms) |
+| SSL loss | Dual: NCE (discriminative) + 10 × MSE (generative) |
 | Compute | RTX 6000 (24GB VRAM), fp16 training (bf16 emulated on sm_75), torch.compile |
 | Dependencies | mamba-ssm (CUDA), causal-conv1d, torchaudio, nnAudio |
 | Backbone | `vendor/ssamba` (original CUDA implementation — HF port from exp 004 too slow for training) |
-| Windows | 10s clips, 50% overlap for SSL data augmentation |
+| Existing code | Adapt from `birdclef_009/models/pretrain.py` (span masking, MPG loss) |
+| Windows | 30s clips — soundscapes split into 2 halves, focal padded |
 
 ### Procedure
 
@@ -60,12 +67,13 @@ Evaluate via reconstruction loss (SSL quality) and a linear probe on BirdCLEF 20
    (file_path, offset_sec, duration_sec) for 10s windows with 50% overlap. Hold out 5% of
    soundscape files for validation (stratified by recording site).
 
-2. **Configure mel frontend**: 32kHz SR, n_fft=4096, n_mels=128, hop_length=320 (10ms), fmin=50,
-   fmax=16000. Patch size 128×2 → 500 tokens per 10s window.
+2. **Configure mel frontend**: 32kHz SR, n_fft=4096, n_mels=224, hop_length=320 (10ms), fmin=50,
+   fmax=16000. AmplitudeToDB normalization. Patch size 224×1 → 3000 tokens per 30s window.
 
-3. **Implement SSL training loop**: use SSAMBA's masked patch prediction head. Mask 40% of patches
-   randomly, encode unmasked tokens, reconstruct masked patches via a lightweight decoder head
-   (linear projection back to patch dimension). Loss: MSE on masked patches.
+3. **Implement SSL training loop**: dual objective — NCE (discriminative) + MSE (generative),
+   combined as `L_nce + 10 × L_mse`. Span mask 40% of tokens (spans of 5–15 tokens),
+   encode all tokens (masked replaced with learnable mask_embed), reconstruct masked patches
+   via MLP decoder heads. Per-patch target normalization (mean=0, std=1).
 
 4. **Train SSAMBA-small** (embed_dim=384): warm up for 5 epochs, train to convergence (monitor
    val reconstruction loss, early stop at patience=10). Log to TensorBoard.
@@ -84,8 +92,9 @@ Evaluate via reconstruction loss (SSL quality) and a linear probe on BirdCLEF 20
 
 - **Independent**: SSL pretraining domain (BirdCLEF soundscapes vs AudioSet), model size (small vs base)
 - **Dependent**: SSL val reconstruction loss; linear probe cmAP; Kaggle LB after finetune
-- **Controlled**: patch size (128×2), masking ratio (40%), mel config (n_fft=4096, n_mels=128),
-  training window (10s), optimizer (AdamW, lr=1e-4, warmup)
+- **Controlled**: patch size (224×1), masking ratio (40%), span masking (5–15 tokens),
+  mel config (n_fft=4096, n_mels=224, AmplitudeToDB), training window (30s),
+  optimizer (AdamW, lr=1.5e-4, warmup), dual loss (NCE + 10×MSE)
 
 ## Evaluation
 

@@ -1,7 +1,8 @@
 # Design: SSAMBA SSL Pretraining
 
 **Created**: 2026-03-30
-**Status**: decisions pending — captured from scoping conversation
+**Updated**: 2026-03-30
+**Status**: architecture finalized for 103-A
 
 This doc captures the design decisions and open questions from the initial scoping
 conversation. Update as decisions are made before implementation begins.
@@ -41,98 +42,160 @@ conversation. Update as decisions are made before implementation begins.
 - Gate SSAMBA-base (99M) on small results — don't run both in parallel
 - SSAMBA-tiny (7M) is the exp 007 baseline; small is the next step up
 
+### Mel normalization: AmplitudeToDB (default), PCEN (deferred ablation)
+- NOT AudioSet global stats (`(mel - mean) / (std * 2)`) — those were computed for
+  16kHz/128-mel AudioSet; wrong distribution for 32kHz/224-mel BirdCLEF audio
+- **AmplitudeToDB** — default for 103-A:
+  1. `10 * log10(mel.clamp(1e-10))` — convert to dB
+  2. `clamp(mel, min=mel_max - 80)` — 80dB dynamic range, cuts noise floor
+  3. Per-clip standardize: `(mel - mean) / std`
+  4. Min-max to [0, 1]: `(mel - min) / (max - min)`
+  - Proven in exp 009 SSL pipeline, bounded [0,1] output, numerically stable
+- **PCEN (Per-Channel Energy Normalization)** — available as `mel_norm: pcen`, deferred:
+  - Adaptive per-band AGC, suppresses noise, amplifies quiet calls
+  - Learnable parameters (alpha, delta, r, s) per mel band
+  - Issues found during implementation: unbounded output breaks raw NCE dot products,
+    IIR filter requires sequential loop (3000 steps), autograd workaround needed
+  - Evaluate as ablation once AmplitudeToDB baseline converges
+- Config flag `mel_norm` switches between them
+
+### Masking strategy: span masking (40%)
+- Mask 40% of tokens using contiguous spans, not random
+- Span length ~ Uniform[5, 15] tokens (50ms–150ms)
+- **Why spans over random**: with 224×1 patches (10ms/token), adjacent frames are
+  nearly identical — random masking is trivially solvable from immediate neighbors.
+  Contiguous spans force reconstruction from longer-range temporal context.
+- Adapted from exp 009 which validated span masking for Mamba SSL
+
+### SSL objective: dual loss (NCE + MSE)
+- Use both discriminative (NCE) and generative (MSE) losses, as in original SSAMBA
+- Combined: `L = L_nce + 10 × L_mse` (MSE weighted 10× stronger)
+- NCE provides contrastive signal (is this the right patch?), MSE provides
+  reconstruction signal (what does the patch look like?)
+- Per-patch target normalization: subtract patch mean, divide by patch std
+  (forces model to predict spectral shape, not loudness)
+
 ### Backbone code: vendor/ssamba (original CUDA implementation)
 - NOT the HF port from exp 004 — pure PyTorch SSM is too slow for training
 - vendor/ssamba requires mamba-ssm CUDA + causal-conv1d
+- Exp 009 has existing SSL code to adapt: `birdclef_009/models/pretrain.py`
 
 ---
 
-## Open questions (must resolve before implementation)
+## Full Architecture (103-A)
 
-### 1. Positional embedding at inference time (UNRESOLVED — needs decision)
+```
+                        30s audio (32kHz, 960K samples)
+                                    │
+                        MelSpectrogram(n_fft=4096, hop=320,
+                          n_mels=224, fmin=50, fmax=16000)
+                                    │
+                        AmplitudeToDB (80dB clamp → standardize → [0,1])
+                        or PCEN (configurable, deferred ablation)
+                                    │
+                              (B, 1, 224, 3000)
+                                    │
+                        Conv2d(1, 384, k=(224,1), s=(224,1))
+                           patch embed: 1 token/10ms
+                                    │
+                              (B, 3000, 384)
+                                    │
+                      ┌─────────────┴─────────────┐
+                      │     span mask 40%          │
+                      │  spans of 5–15 tokens      │
+                      │  (50ms–150ms each)          │
+                      │  → 1200 masked tokens       │
+                      │  replaced with mask_embed   │
+                      └─────────────┬─────────────┘
+                                    │
+                      + CLS token at position 1500 (middle)
+                      + learned pos_embed (1, 3001, 384)
+                                    │
+                              (B, 3001, 384)
+                                    │
+                      ┌─────────────┴─────────────┐
+                      │   24 BiMamba blocks        │
+                      │   (12 fwd/bwd pairs)       │
+                      │   embed_dim=384             │
+                      │   d_state=16, d_conv=4      │
+                      │   expand=2 (d_inner=768)    │
+                      │   RMSNorm, residual in fp32 │
+                      └─────────────┬─────────────┘
+                                    │
+                              RMSNorm(384)
+                                    │
+                  ┌─────────────────┴─────────────────┐
+                  │                                   │
+          masked positions                    masked positions
+            (B, 1200, 384)                     (B, 1200, 384)
+                  │                                   │
+          MLP(384→384→224)                    MLP(384→384→224)
+                  │                                   │
+          MSE vs target                        NCE vs target
+          (generative)                       (discriminative)
+                  │                                   │
+                  └────────────┬──────────────────────┘
+                               │
+                      L = L_nce + 10 × L_mse
+```
+
+### SSAMBA-small parameters
+
+| Component | Details |
+|-----------|---------|
+| embed_dim | 384 |
+| depth | 24 layers (12 bidirectional pairs) |
+| d_state | 16 (SSM state dimension) |
+| d_conv | 4 (conv kernel in SSM) |
+| expand | 2 (d_inner = 768) |
+| CLS token | 1, inserted at middle of sequence |
+| Positional embed | learned, (1, 3001, 384), trunc_normal(0.02) |
+| Mask embed | learned, (1, 1, 384), xavier_normal |
+| Total params | ~26M |
+
+### Training config
+
+| Parameter | Value |
+|-----------|-------|
+| Optimizer | AdamW, lr=1.5e-4, weight_decay=0.05, betas=(0.95, 0.999) |
+| Schedule | Cosine anneal + 2-epoch linear warmup |
+| Max epochs | 15 (early stop patience=5 on val loss) |
+| Batch size | 8 (eff 64 via accumulate_grad_batches=8) |
+| Precision | fp16 (RTX 6000, sm_75) |
+| torch.compile | Yes |
+| Windows | 30s — soundscapes split into 2 halves, focal padded |
+
+### Data
+
+| Source | Windows |
+|--------|---------|
+| BirdCLEF 2026 soundscapes (10,658 × 2 halves) | 21,316 |
+| BirdCLEF 2026 focal (35,549, padded to 30s) | 35,549 |
+| **Total** | **~56,865** |
+| Val holdout (5% soundscapes by site) | ~1,066 |
+
+---
+
+## Open questions (deferred — not blocking 103-A)
+
+### 1. Positional embedding at inference time (Phase 2)
 
 SSL trains on 30s windows (3,000 tokens, pos_embed shape (1, 3001, D)).
 Kaggle evaluation requires 60s soundscape inference (6,000 tokens).
-Positional embeddings are tied to training sequence length — mismatch at eval.
 
-**Option A — Bilinear interpolation** (`adapt_for_finetuning` in exp 004 HF port):
-- Already implemented in `user/anthony/experiments/004-ssamba-hf-port/ssamba_hf/model.py:260`
-- Bilinearly interpolates pos_embed from (1, 1, 3000) → (1, 1, 6000)
-- The upper half (tokens 3000–6000) is extrapolated from training distribution
-- Standard approach used by SSAMBA/SSAST/AST for different-length finetuning
-- **Risk**: bilinear interp in 1D (f_dim=1 for full-band patches) is just linear
-  interpolation, which may not capture whatever positional patterns were learned
+**Option A — Bilinear interpolation** (default, implemented in both vendor/ssamba and
+exp 004 HF port). Standard approach, resolve when we get to Phase 2.
 
-**Option B — No positional embeddings** (speculative, not validated):
-- Initialize pos_embed to zeros and freeze — effectively disabled
-- Mamba recurrence encodes temporal order implicitly (token n has seen tokens 0..n-1)
-- Pos embeddings primarily provide *absolute* position info, which may not matter for audio
-- Free length generalization — 30s training → 60s inference with no adaptation
-- **Risk**: this is unconventional; no evidence it works for SSAMBA specifically;
-  the original SSAMBA always uses positional embeddings
+**Option B — No positional embeddings** (speculative). Mamba recurrence may encode
+temporal order implicitly. Test only if interpolation hurts quality.
 
-**Suggested approach**: start with Option A (interpolation) since it's implemented and
-validated in the original codebase. Revisit Option B only if interpolation hurts quality.
+### 2. Linear probe / evaluation protocol (Phase 2)
 
-Check: does vendor/ssamba's `both_models.py` also have the interpolation logic?
-It should — the HF port in exp 004 was modeled on it. Confirm before implementing.
-
-### 2. Linear probe / evaluation protocol (UNRESOLVED)
-
-Kaggle evaluation structure:
-- Input: 60s soundscape
-- Output: 12 × 5s predictions (one 206-dim probability vector per 5s window)
-
-The linear probe needs to match this structure, not just do clip-level pooling.
-
-**Proposed protocol**:
-1. Freeze SSL backbone
-2. Add per-token linear head: `Linear(D, 206)` applied to each of the 3,000/6,000 tokens
-3. Train on focal recordings:
-   - Run backbone on 30s focal windows → (B, 3000, D) token embeddings
-   - Apply linear head → (B, 3000, 206) frame logits
-   - Pool over all tokens → (B, 206) clip prediction
-   - Loss: BCE against clip species label
-4. Evaluate on labeled soundscapes (739 windows from exp 101):
-   - Run backbone on 60s soundscapes (with pos_embed interpolation)
-   - Apply linear head → (6000, 206) frame logits
-   - Pool each 500-token block (5s) → (12, 206) per-window predictions
-   - Metric: Kaggle-style macro AUROC on 739 labeled windows
-
-**Open sub-questions**:
-- Pre-compute and cache embeddings, or run inline during probe training?
-  Pre-computing is faster for iterating on the probe but requires 30s-window inference.
-- What pooling for probe training: mean over all tokens, or max?
-  Mean is standard (matches SSAMBA's finetuningavgtok).
-- Should probe training use the same 30s windows as SSL, or 5s chunks?
-  30s stays in-distribution with SSL training. 5s would match Kaggle eval length
-  but requires pos_embed adaptation or length-invariant encoding.
-
-### 3. SSL objective: original SSAMBA has two losses (UNRESOLVED)
-
-Original SSAMBA pretraining uses **two objectives simultaneously**:
-1. **Discriminative** (D): predict whether a patch is real or swapped from another recording
-2. **Generative** (G): reconstruct masked patches via MSE (like MAE)
-
-The proposal currently assumes only the generative (MSE reconstruction) objective.
-Decision needed: use both (as in original), or generative only?
-
-- Both: stronger training signal, more stable early in training (D loss is easier)
-- Generative only: simpler implementation, sufficient for downstream tasks per MAE literature
-- Check vendor/ssamba/src/pretrain/ to see how the original implements both
-
-### 4. Masking strategy (UNRESOLVED)
-
-Original SSAMBA: mask 40% of patches randomly.
-For 224×1 patches (1D temporal sequence), masking options:
-- **Random frame masking**: mask 40% of time steps uniformly at random
-- **Block masking**: mask contiguous blocks of frames (forces model to predict from
-  further context — harder task, potentially richer representations)
-- **Structured masking**: mask all tokens in a 5s window (matches evaluation granularity)
-
-Random is simplest and matches original. Block masking is used in some MAE variants
-and may be better for audio (a masked 10ms frame is trivially predictable from neighbors;
-a masked 500ms block requires genuine temporal modeling).
+Deferred until SSL training converges. Key decisions:
+- Per-token linear head pooled over 5s blocks to match Kaggle format
+- Pre-compute embeddings vs inline inference
+- Mean vs max pooling
+- 30s vs 5s probe training windows
 
 ---
 
@@ -142,10 +205,11 @@ Once 103-A (single-stream, raw soundscapes) establishes a baseline:
 
 | Run | Change | Tests |
 |-----|--------|-------|
-| 103-B | Input: MixIT 4-ch instead of raw mixture | Do cleaner SSL inputs help? |
-| 103-C | Multi-stream K=4 with learnable freq gate | End-to-end implicit demixing |
-| 103-D | SSAMBA-base (99M) | Does more capacity help with in-domain SSL? |
-| 103-E | BirdCLEF 2025 soundscapes added | Does more unlabeled data help? |
+| 103-B | mel_norm: pcen (PCEN normalization) | Does adaptive AGC help representations? Needs cosine NCE (temperature=0.1) due to unbounded output. |
+| 103-C | Input: MixIT 4-ch instead of raw mixture | Do cleaner SSL inputs help? |
+| 103-D | Multi-stream K=4 with learnable freq gate | End-to-end implicit demixing |
+| 103-E | SSAMBA-base (99M) | Does more capacity help with in-domain SSL? |
+| 103-F | BirdCLEF 2025 soundscapes added | Does more unlabeled data help? |
 
 See `docs/concepts/multi-stream-ssamba.md` for 103-C architecture design.
 Gate each ablation on the previous result — don't run all in parallel.
