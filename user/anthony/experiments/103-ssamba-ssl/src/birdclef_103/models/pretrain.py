@@ -67,6 +67,7 @@ class SSAMBAPretrainModel(nn.Module):
         nce_weight: Weight for NCE loss (default 1.0)
         mse_weight: Weight for MSE loss (default 10.0)
         nce_temperature: Temperature for cosine similarity in NCE (default 0.1)
+        nce_num_negatives: Number of cross-sample negatives per prediction (default 100)
     """
 
     def __init__(
@@ -86,6 +87,7 @@ class SSAMBAPretrainModel(nn.Module):
         nce_weight: float = 1.0,
         mse_weight: float = 10.0,
         nce_temperature: float = 0.1,
+        nce_num_negatives: int = 100,
     ):
         super().__init__()
         self.mel_spec = mel_spec_layer
@@ -102,6 +104,7 @@ class SSAMBAPretrainModel(nn.Module):
         self.nce_weight = nce_weight
         self.mse_weight = mse_weight
         self.nce_temperature = nce_temperature
+        self.nce_num_negatives = nce_num_negatives
 
         self.backbone = SSAMBAModel(config)
 
@@ -338,25 +341,35 @@ class SSAMBAPretrainModel(nn.Module):
             monitor_mse = F.mse_loss(mpg_pred, mpg_targets)
             monitor_l1 = F.l1_loss(mpg_pred, mpg_targets)
 
-        # --- NCE: contrastive discrimination at masked positions ---
+        # --- NCE: cross-sample contrastive with shared negative pool ---
+        # Sample K negatives ONCE, shared across all predictions (wav2vec 2.0 style).
+        # Memory: O(K * D) for the pool + O(BM * K) for logits. Much cheaper than
+        # per-prediction negatives which create a (BM, K, D) gather tensor.
         nce_pred = self.cpredlayer(masked_repr)  # (B, M, patch_dim)
-        # NCE uses raw patches (not per-patch normalized) so patches are distinguishable
         nce_targets = raw_patches[:, mask_indices_t, :].detach()  # (B, M, patch_dim)
 
-        # Cosine similarity + temperature scaling to keep logits in stable range
-        # Raw dot products over 224 dims overflow softmax even in fp32
+        BM = B * M
+        K = min(self.nce_num_negatives, BM - 1)
         with torch.amp.autocast("cuda", enabled=False):
-            nce_targets_norm = F.normalize(nce_targets.float(), dim=-1)
-            nce_pred_norm = F.normalize(nce_pred.float(), dim=-1)
-            similarity = torch.bmm(
-                nce_targets_norm, nce_pred_norm.transpose(1, 2)
-            ) / self.nce_temperature  # (B, M, M), logits in [-1/T, 1/T]
-            labels = torch.arange(M, device=waveforms.device).unsqueeze(0).expand(B, -1)
-            loss_nce = F.cross_entropy(
-                similarity.reshape(B * M, M), labels.reshape(B * M)
-            )
+            nce_pred_flat = F.normalize(nce_pred.float().reshape(BM, -1), dim=-1)
+            nce_targets_flat = F.normalize(nce_targets.float().reshape(BM, -1), dim=-1)
+
+            # Sample K indices as shared negative pool
+            neg_indices = torch.randperm(BM, device=waveforms.device)[:K]
+            neg_pool = nce_targets_flat[neg_indices]  # (K, D)
+
+            # Positive similarity: (BM, 1)
+            pos_sim = (nce_pred_flat * nce_targets_flat).sum(dim=-1, keepdim=True)
+            # Negative similarity: (BM, K) via single matmul
+            neg_sim = torch.mm(nce_pred_flat, neg_pool.transpose(0, 1))
+
+            # Logits: positive first, then K negatives → (BM, K+1)
+            logits = torch.cat([pos_sim, neg_sim], dim=-1) / self.nce_temperature
+            labels = torch.zeros(BM, dtype=torch.long, device=waveforms.device)
+            loss_nce = F.cross_entropy(logits, labels)
+
         with torch.no_grad():
-            nce_accuracy = (similarity.argmax(dim=-1) == labels).float().mean()
+            nce_accuracy = (logits.argmax(dim=-1) == 0).float().mean()
 
         return {
             "loss_mpg": loss_mpg,

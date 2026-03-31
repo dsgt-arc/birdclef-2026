@@ -74,6 +74,17 @@ conversation. Update as decisions are made before implementation begins.
   reconstruction signal (what does the patch look like?)
 - Per-patch target normalization: subtract patch mean, divide by patch std
   (forces model to predict spectral shape, not loudness)
+- **Cross-sample sampled negatives for NCE**: K=100 negatives sampled from other
+  recordings in the batch per masked position (wav2vec 2.0 style).
+  - With full-band 224×1 patches, within-sample NCE fails — adjacent 10ms frames
+    are near-identical. Cross-sample negatives provide genuinely different patches.
+  - Cosine similarity, temperature=0.1. Memory: O(B\*M\*K) = ~3.7MB (vs ~350MB
+    for full B\*M × B\*M matrix).
+  - **NCE may be expendable**: the strongest audio SSL systems (Audio-MAE, BEATs,
+    HuBERT, Bird-MAE, BirdAVES) all dropped contrastive loss. SSAST ablation
+    shows NCE adds only +0.4 mAP over discriminative-alone with 2D patches.
+    With our 1D full-band patches, the gain may be even smaller. Keep for 103-A
+    as regularizer; ablate off in follow-up if MSE dominates.
 
 ### Backbone code: vendor/ssamba (original CUDA implementation)
 - NOT the HF port from exp 004 — pure PyTorch SSM is too slow for training
@@ -205,14 +216,33 @@ Once 103-A (single-stream, raw soundscapes) establishes a baseline:
 
 | Run | Change | Tests |
 |-----|--------|-------|
-| 103-B | mel_norm: pcen (PCEN normalization) | Does adaptive AGC help representations? Needs cosine NCE (temperature=0.1) due to unbounded output. |
-| 103-C | Input: MixIT 4-ch instead of raw mixture | Do cleaner SSL inputs help? |
-| 103-D | Multi-stream K=4 with learnable freq gate | End-to-end implicit demixing |
-| 103-E | SSAMBA-base (99M) | Does more capacity help with in-domain SSL? |
-| 103-F | BirdCLEF 2025 soundscapes added | Does more unlabeled data help? |
+| 103-B | MSE-only (drop NCE entirely) | Audio-MAE, Bird-MAE, BEATs all dropped contrastive. Does NCE actually help with our 224×1 patches? Simplifies pipeline + saves memory. |
+| 103-C | mel_norm: pcen (PCEN normalization) | Does adaptive AGC help representations? Needs cosine NCE (temperature=0.1) due to unbounded output. |
+| 103-D | Input: MixIT 4-ch instead of raw mixture | Do cleaner SSL inputs help? |
+| 103-E | Multi-stream K=4 with learnable freq gate | End-to-end implicit demixing |
+| 103-F | SSAMBA-base (99M) | Does more capacity help with in-domain SSL? |
+| 103-G | BirdCLEF 2025 soundscapes added | Does more unlabeled data help? |
 
-See `docs/concepts/multi-stream-ssamba.md` for 103-C architecture design.
+See `docs/concepts/multi-stream-ssamba.md` for 103-E architecture design.
 Gate each ablation on the previous result — don't run all in parallel.
+
+## Related work
+
+| System | Loss | Patches | Contrastive? | Key finding |
+|--------|------|---------|-------------|-------------|
+| SSAST | NCE + MSE (λ=10) | 16×16 2D | Yes (within-sample) | NCE adds +0.4 mAP over discriminative-alone on AudioSet |
+| SSAMBA | NCE + MSE (λ=10) | 16×16 2D | Yes (in-batch) | Same framework as SSAST, Mamba backbone |
+| Audio-MAE | MSE reconstruction | 16×16 2D | No | 80% masking, reconstruction-only sufficient |
+| BEATs | Discrete token prediction | 16×16 2D | No | k-means tokenizer, iterative training, SOTA mAP 50.6% |
+| HuBERT | Discrete cluster prediction | 1D speech | No | 200 k-means clusters, no contrastive loss |
+| Bird-MAE | MSE reconstruction | 16×16 2D | No | 128-mel 32kHz on BirdSet, SOTA for bird audio |
+| BirdAVES | HuBERT-style | 1D speech | No | Domain-specific HuBERT for bird audio |
+| wav2vec 2.0 | InfoNCE | 1D speech | Yes (K=100, τ=0.1) | Quantization bottleneck makes within-sample work |
+
+**Trend**: top audio SSL systems have dropped contrastive losses in favor of
+reconstructive (MAE) or predictive (BEATs/HuBERT) objectives. Contrastive losses
+require careful engineering (negatives, temperature, diversity loss) for marginal
+gains. Our 103-A keeps NCE as a regularizer; 103-B ablation will test if it helps.
 
 ---
 

@@ -97,16 +97,17 @@ def test_losses_finite(mel_norm):
 
 
 def test_nce_accuracy_at_chance():
-    """NCE accuracy should be near chance (1/M) for random init."""
+    """NCE accuracy should be near chance (1/(B*M)) for random init."""
     model = _make_tiny_model()
     model.eval()
 
-    waveforms = torch.randn(4, 32000)
+    B = 4
+    waveforms = torch.randn(B, 32000)
     with torch.no_grad():
         out = model(waveforms)
 
-    # With 40% masking of 100 tokens = 40 masked, chance = 1/40 = 0.025
-    # Allow generous margin for small random models
+    # Cross-sample NCE: 40% of 100 tokens × 4 samples = 160 candidates
+    # Chance = 1/160 ≈ 0.006. Allow generous margin for small random models.
     assert out["nce_accuracy"].item() < 0.5, "NCE accuracy suspiciously high for random init"
 
 
