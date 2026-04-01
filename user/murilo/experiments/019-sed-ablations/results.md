@@ -387,6 +387,8 @@ features are too compressed for the 234-class SED head. The projection recovers
 comes from HGNet's native architectural advantages (regular convolutions, dense
 connections, SSLD pretraining).
 
+Full architecture comparison and recommendations: `docs/vendor/efficientnet-vs-hgnetv2.md`.
+
 ### Step 5: v5j 4-Fold Ensemble
 
 MultiLabelStratifiedGroupKFold (n_splits=4, seed=1086), same fold assignments as

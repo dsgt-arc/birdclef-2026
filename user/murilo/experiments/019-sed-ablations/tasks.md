@@ -173,7 +173,7 @@ Embed_dim hypothesis test:
       2×2 grid: mel (v5f→v5n) = +0.020 LB, **projection (v5n→v5m) = +0.023 LB**.
       Confirms embed_dim is the primary bottleneck (45% of v5f→v5j gap).
 - [x] 4.18 Submit v5n to LB: **0.875** (+0.020 vs v5f from mel, −0.023 vs v5m from projection)
-- [ ] 4.19 Update analysis in `docs/vendor/efficientnet-vs-hgnetv2.md` with LB results
+- [x] 4.19 Update analysis in `docs/vendor/efficientnet-vs-hgnetv2.md` with LB results
 
 Medium confidence (from competitors):
 - [ ] 4.20 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
