@@ -381,11 +381,18 @@ change on LB. Offline, this same change was only +0.002 val/auroc, confirming
 that offline metrics cannot detect the capacity bottleneck that matters on the
 harder test distribution.
 
-**Conclusion: embed_dim IS the primary bottleneck.** EfficientNet-B0's 320-dim
-features are too compressed for the 234-class SED head. The projection recovers
-84% of the v5f→v5j LB gap (0.043 of 0.051). The remaining 16% gap (v5m→v5j)
-comes from HGNet's native architectural advantages (regular convolutions, dense
-connections, SSLD pretraining).
+**Conclusion: EfficientNet was doubly disadvantaged.** Two distinct problems
+explain the gap:
+1. **SED head capacity bottleneck** — 320 dims too few for 234 classes. The
+   projection fixes this (+0.023 LB), but it's a linear rearrangement of the
+   same 320 features, not new information.
+2. **Weaker backbone features** — even at matched 1024 embed_dim, HGNet still
+   leads by +0.008 LB. Its regular convolutions, dense connections, and SSLD
+   pretraining produce genuinely richer representations for spectrograms.
+
+HGNet wins because it solves both problems natively: high embed_dim (1024)
+AND better feature quality. The projection recovers 84% of the gap by fixing
+problem #1, but can't close the remaining 16% feature quality gap.
 
 Full architecture comparison and recommendations: `docs/vendor/efficientnet-vs-hgnetv2.md`.
 

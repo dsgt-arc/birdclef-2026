@@ -34,50 +34,66 @@ similar ImageNet accuracy (~78%). Why does HGNet outperform so dramatically?
 
 ## Why HGNet Wins: Experimentally Verified
 
-We ran a 2×2 ablation grid (exp 019, v5f/v5m/v5n/v5j) to isolate the three
-candidate factors. The results are conclusive.
+We ran a 2×2 ablation grid (exp 019, v5f/v5m/v5n/v5j) to isolate the
+contributing factors. Two distinct problems explain the gap.
 
-### 1. embed_dim: 1024 vs 320 — CONFIRMED as primary factor (45% of LB gap)
+### Problem 1: SED Head Capacity Bottleneck (embed_dim 320 too low)
 
 The SED head receives the last-stage feature map and must produce per-frame,
-per-species predictions for 234 classes.
+per-species predictions for 234 classes. With only 320 dimensions feeding into
+the head, there's almost no room for learned intermediate representations.
 
-- **EfficientNet-B0 gives the head 320 channels** to work with
-- **HGNetV2-B0 gives the head 1024 channels** — 3.2x more capacity
+We tested this by adding a 1x1 Conv2d projection (320→1024) after EfficientNet's
+backbone (v5m). This single layer — 328K parameters — improved LB by **+0.023**
+(v5n 0.875 → v5m 0.898). This confirms the SED head needs ~1024 dimensions to
+work well with 234 classes.
 
-We tested this directly by adding a 1x1 Conv2d projection (320→1024) after
-EfficientNet's backbone (v5m). This single layer — 328K parameters — improved
-LB by **+0.023** (v5n 0.875 → v5m 0.898), the largest single factor.
-
-With 234 bird species (many rare, many acoustically similar), 320 dimensions is
-a tight bottleneck. The head must compress 320 → 234 predictions, leaving almost
-no room for learned intermediate representations. With 1024 dimensions, the head
-has much more information to work with.
+However, the projection is a **linear** transformation — it rearranges the 320
+dimensions into a higher-dimensional space but cannot create new information.
+It fixes the head's capacity constraint but doesn't improve the underlying
+feature quality.
 
 **Offline val completely missed this.** The projection added only +0.002 val/auroc
-but +0.023 LB, a ~10x amplification. The offline val set is too small and
+but +0.023 LB, a ~12x amplification. The offline val set is too small and
 forgiving to detect the capacity bottleneck that matters on the harder test
 distribution.
 
-### 2. Mel pipeline — secondary factor (39% of LB gap)
+### Problem 2: Backbone Feature Quality (HGNet > EfficientNet)
+
+Even after matching embed_dim at 1024 via projection, HGNet still outperforms:
+v5m (0.898) → v5j (0.906) = **+0.008 LB**. This gap exists because HGNet
+natively produces richer 1024-dim features through a fundamentally different
+architecture, while the projection can only linearly rearrange EfficientNet's
+320 dimensions.
+
+HGNet's architectural advantages for spectrograms:
+- **Regular convolutions** vs depthwise separable — jointly process spatial
+  neighborhoods, better for single-channel mel spectrograms where there's no
+  RGB channel structure
+- **Dense connections** within HG blocks — multi-scale feature aggregation at
+  each stage, useful for calls spanning different frequency/time scales
+- **SSLD pretraining** — knowledge distillation produces qualitatively different,
+  potentially more transferable features
+- **GPU-friendly ops** — higher arithmetic intensity means more effective training
+  within the same 20-epoch budget
+
+### Factor 3: Mel Pipeline (+0.020 LB)
 
 Switching from ttahara mel (torchaudio, resize 256×256, min-max norm) to v5j mel
 (NNAudio, AmplitudeToDB norm, no resize, native 256×511) contributed +0.020 LB
-(v5f 0.855 → v5n 0.875). This is a meaningful gain from the preprocessing change,
-independent of the backbone.
+(v5f 0.855 → v5n 0.875). This is independent of the backbone choice.
 
-### 3. HGNet native architecture — minor factor (16% of LB gap)
+### Summary of Factors
 
-After matching embed_dim via projection, HGNet still has a small edge:
-v5m (0.898) → v5j (0.906) = +0.008 LB. This residual comes from HGNet's
-architectural properties:
-- **Regular convolutions** vs depthwise separable (better GPU utilization,
-  potentially better for single-channel spectrograms)
-- **Dense connections** within HG blocks (multi-scale feature aggregation)
-- **SSLD pretraining** (knowledge distillation, qualitatively different features)
-- **ReLU** vs Swish activation (faster, may regularize differently)
+EfficientNet was **doubly disadvantaged**:
+1. **Low embed_dim (320)** starved the SED head of capacity — fixable with projection
+2. **Weaker backbone features** for spectrogram tasks — not fixable without changing
+   the backbone
 
-These matter, but are secondary to the embed_dim bottleneck.
+The projection fixed problem #1 and recovered most of the gap, but the remaining
++0.008 (v5m→v5j) reflects HGNet's genuinely superior feature extraction for this
+task. HGNet wins because it solves both problems natively: it provides high
+embed_dim (1024) AND produces better features for spectrogram-based SED.
 
 ## Experimental Evidence
 
@@ -186,17 +202,27 @@ is massive (+0.023 in our case).
 
 ## Summary
 
-HGNetV2-B0 outperforms EfficientNet-B0 primarily because of **embed_dim**
-(1024 vs 320). This was confirmed experimentally with a 2×2 ablation grid:
+HGNetV2-B0 outperforms EfficientNet-B0 for two reasons, confirmed
+experimentally with a 2×2 ablation grid (exp 019):
 
-- **embed_dim (projection 320→1024): +0.023 LB (45% of gap)** — verified
-  by adding a single 1x1 Conv2d layer to EfficientNet (v5n→v5m)
-- Mel pipeline (NNAudio+AmplitudeToDB): +0.020 LB (39%) — v5f→v5n
-- HGNet native architecture: +0.008 LB (16%) — v5m→v5j
+1. **EfficientNet's 320-dim features starve the SED head** — the head needs
+   ~1024 dims for 234-class prediction. A 1x1 projection (320→1024) adds
+   +0.023 LB (v5n→v5m), fixing this capacity bottleneck.
 
-The offline val metric completely missed the embed_dim bottleneck (+0.002
-val vs +0.023 LB, ~12x amplification). Any future backbone evaluation
-should prioritize embed_dim and validate on LB, not offline val.
+2. **HGNet produces better features for spectrograms** — even at matched
+   1024 embed_dim, HGNet still leads by +0.008 LB (v5m→v5j). Its regular
+   convolutions, dense connections, and SSLD pretraining produce richer
+   representations that a linear projection of EfficientNet features cannot
+   replicate.
+
+Full factor decomposition (v5f 0.855 → v5j 0.906, total = +0.051 LB):
+- Mel pipeline: +0.020 (39%) — v5f→v5n
+- SED head capacity (projection): +0.023 (45%) — v5n→v5m
+- Backbone feature quality: +0.008 (16%) — v5m→v5j
+
+**Key lesson**: offline val completely missed the head capacity bottleneck
+(+0.002 val vs +0.023 LB, ~12x amplification). Any future backbone
+evaluation should check embed_dim AND validate on LB, not offline val.
 
 Reference: `user/murilo/experiments/019-sed-ablations/results.md` for
 full 2×2 grid analysis and detailed per-variant metrics.
