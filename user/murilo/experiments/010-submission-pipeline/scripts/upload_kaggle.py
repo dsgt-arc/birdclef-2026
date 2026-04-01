@@ -304,6 +304,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j.json",
     },
+    # Exp 019 embed_dim hypothesis test
+    "effnet-b0-sed-v5m": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5m-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5m",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5m.json",
+    },
 }
 
 

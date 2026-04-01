@@ -80,6 +80,7 @@ def main():
         pretrained=cfg["encoder"].get("pretrained", True),
         drop_path_rate=0.0,
         in_chans=in_chans,
+        projection_dim=cfg["encoder"].get("projection_dim"),
     )
     embed_dim = encoder.embed_dim
     if train_drop_path > 0:

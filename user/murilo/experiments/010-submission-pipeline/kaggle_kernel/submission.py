@@ -108,6 +108,8 @@ MODEL_SLUGS = [
     "birdclef-2026-hgnet-b0-sed-v5k-weights",
     # SED 4-fold ensemble (exp 019 step 3)
     "birdclef-2026-hgnet-b0-sed-v5g-4fold-weights",
+    # SED embed_dim hypothesis test (exp 019 step 4, EfficientNet + projection 320→1024)
+    "birdclef-2026-effnet-b0-sed-v5m-weights",
     # SED ttahara recipe reproduction, 234 classes (exp 019 step 2)
     "birdclef-2026-effnet-b0-sed-v5f-weights",
     "birdclef-2026-hgnet-b0-sed-v5g-weights",
