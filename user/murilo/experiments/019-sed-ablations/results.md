@@ -155,9 +155,11 @@ All use HGNetV2-B0 + ttahara recipe, 20 epochs, same data pipeline.
 | `hgnet-b0-sed-v5i` | window 5s→10s | **0.878** | **0.652** | 17 | **+0.006** | `2026-hgnet-b0-sed-v5i/best-epochepoch=17.ckpt` |
 | `hgnet-b0-sed-v5j` | AmplitudeToDB norm‡ | 0.874 | 0.643 | 19 | +0.002 | `2026-hgnet-b0-sed-v5j/best-epochepoch=19.ckpt` |
 | `hgnet-b0-sed-v5k` | 3-channel mel (in_chans=3) | 0.868 | 0.611 | 16 | **−0.004** | `2026-hgnet-b0-sed-v5k/best-epochepoch=16.ckpt` |
+| `effnet-b0-sed-v5m` | EffNet-B0 + proj 320→1024§ | **0.873** | **0.645** | 16 | +0.001 | `2026-effnet-b0-sed-v5m/best-epochepoch=16.ckpt` |
 
 † val/cmap values from end-of-training metrics (may differ slightly from best-epoch values).
 ‡ v5j is confounded: also changes win_length (626→2048), removes resize (256×256→256×511), and uses NNAudio instead of torchaudio.
+§ v5m uses EfficientNet-B0 backbone (320 native) + 1x1 Conv2d projection to 1024, with v5j recipe. Tests embed_dim hypothesis.
 
 Checkpoint base: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/`
 
@@ -269,6 +271,7 @@ The full val→LB mapping across all HGNet ablations so far:
 | **v5j** | 0.874 | **0.906** | **+0.032** | **~20 min** (NNAudio, no resize) |
 | v5k | 0.868 | **0.886** | +0.018 | |
 | v5l | 0.874 | pending | ? | (NNAudio, n_fft=4096, no resize) |
+| v5m | 0.873 | pending | ? | (EffNet-B0 + proj 320→1024, v5j recipe) |
 | **v5j-4fold** | 0.951/0.843/0.823/0.808 | **0.913** | — | **~20 min (est.)** |
 
 †† v5i ran on 2 validation files only (36.9s total), not comparable.
@@ -301,6 +304,40 @@ potential Perch+SED ensemble or 4-fold inference.
 v5g (0.892) under the ttahara recipe, consistent with the direction from exp 017
 (where n_fft=4096 was a bigger win). The 33 min inference is slower than v5g due
 to the larger FFT.
+
+### v5m Detailed Metrics (Best Checkpoint, Epoch 16)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc | 0.8734 |
+| val/cmap | 0.6453 |
+| val/f1_macro | 0.5495 |
+| val/f1_micro | 0.7033 |
+| val/top1_acc | 0.7744 |
+| val/top5_acc | 0.8784 |
+| val/loss | 0.0117 |
+
+Training config: EfficientNet-B0 + 1x1 Conv2d projection (320→1024), v5j recipe
+(NNAudio mel, AmplitudeToDB, LSEHead(mean), BCE, MixUp α=1.0/θ=0.8, OneCycleLR).
+GPU: SLURM job 6149183.
+
+**v5m (0.873) matches v5j (0.874) offline.** The projection layer brings
+EfficientNet-B0 to the same val/auroc as HGNetV2-B0 under identical recipe.
+This is consistent with the embed_dim hypothesis — the 320→1024 projection
+gives the SED head enough capacity to match HGNet's native 1024-dim features.
+LB validation needed to confirm whether this translates (v5j had +0.032 val→LB gap).
+
+**Comparison of v5m to key baselines (offline):**
+
+| Model | Backbone | embed_dim | val/auroc | val/cmap | f1_micro |
+|-------|----------|----------|----------|----------|----------|
+| v5f | EffNet-B0 | 320 (native) | 0.866 | 0.599 | 0.672 |
+| v5j | HGNet-B0 | 1024 (native) | 0.874 | 0.643 | 0.688 |
+| **v5m** | **EffNet-B0 + proj** | **320→1024** | **0.873** | **0.645** | **0.703** |
+
+v5m closes the offline gap to v5j completely (+0.007 over v5f, −0.001 vs v5j).
+Notably, v5m's cmap (0.645) and f1_micro (0.703) actually exceed v5j's (0.643, 0.688),
+suggesting the projection may help with rare species calibration.
 
 ### Step 5: v5j 4-Fold Ensemble
 

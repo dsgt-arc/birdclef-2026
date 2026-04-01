@@ -285,9 +285,11 @@ Single-variable ablations from v5g (0.892 LB). All use HGNetV2-B0 + ttahara reci
 | `hgnet-b0-sed-v5k` | 3-channel mel (in_chans=3) | LSEHead(mean) | bce | 0.868 | 16 | **0.886** | `017-.../2026-hgnet-b0-sed-v5k/best-epochepoch=16.ckpt` |
 
 | `hgnet-b0-sed-v5l` | v5j + n_fft=4096 | LSEHead(mean) | bce | 0.874 | 16 | pending | `017-.../2026-hgnet-b0-sed-v5l/best-epochepoch=16.ckpt` |
+| `effnet-b0-sed-v5m` | EffNet-B0 + proj 320→1024‡ | LSEHead(mean) | bce | **0.873** | 16 | pending | `017-.../2026-effnet-b0-sed-v5m/best-epochepoch=16.ckpt` |
 | **`hgnet-b0-sed-v5j-4fold`** | **AmplitudeToDB norm† ×4** | LSEHead(mean) | bce | 0.951/0.843/0.823/0.808 | 15/19/19/18 | **0.913** | `017-.../2026-hgnet-b0-sed-v5j/fold{0-3}/` |
 
 † v5j confounded: also changes win_length (626→2048), removes resize (256×256→256×511), uses NNAudio.
+‡ v5m uses EfficientNet-B0 (320 native embed_dim) + 1x1 Conv2d projection to 1024. Tests whether HGNet's advantage is from embed_dim. All other params match v5j.
 
 ## BirdCLEF 2026 — Perch Probes (exp 018)
 

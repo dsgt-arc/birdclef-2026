@@ -163,15 +163,13 @@ Evidence-based (from our prior experiments):
 - [ ] 4.11 Submit v5l to LB — submitted to Kaggle (2026-04-01), awaiting result
 
 Embed_dim hypothesis test:
-- [ ] 4.15 **v5m — EfficientNet-B0 + projection 320→1024**: Submitted to PACE (2026-04-01).
-      Tests whether HGNet's advantage is primarily from its larger embed_dim (1024 vs 320).
-      Adds a 1x1 Conv2d projection after EfficientNet backbone. All other params match v5j.
-      Config: `effnet_b0_sed_v5m.yaml`, code: `projection_dim` in `EfficientNetEncoder`.
-      Reference: `docs/vendor/efficientnet-vs-hgnetv2.md` for full analysis.
-      - If v5m ≈ v5j (0.906): embed_dim is the bottleneck, EfficientNet backbone is fine
-      - If v5m ≈ v5f (0.855): embed_dim isn't the issue, HGNet architecture matters
-      - If v5m in between: embed_dim helps partially, but HGNet has other advantages
-- [ ] 4.16 Collect v5m results, update analysis in `docs/vendor/efficientnet-vs-hgnetv2.md`
+- [x] 4.15 **v5m — EfficientNet-B0 + projection 320→1024**: Trained on PACE (2026-04-01).
+      **0.873 val/auroc** (epoch 16), 0.645 val/cmap. SLURM job 6149183.
+      Matches v5j (0.874) offline — projection closes the embed_dim gap completely.
+      LB pending — need to validate whether offline parity translates to LB.
+      - v5m (0.873) ≈ v5j (0.874): embed_dim hypothesis supported offline
+      - v5m (0.873) > v5f (0.866): projection adds +0.007 val over bare EfficientNet
+- [ ] 4.16 Submit v5m to LB, update analysis in `docs/vendor/efficientnet-vs-hgnetv2.md`
 
 Medium confidence (from competitors):
 - [ ] 4.17 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
@@ -221,7 +219,7 @@ Lower priority:
 | v5k (3-channel mel) | 0.868 | **0.886** | in_chans=3, epoch 16, within noise of v5g |
 | v5l (v5j+n_fft=4096) | 0.874 | pending | v5j + n_fft=4096, epoch 16, same val as v5j |
 | **v5j-4fold (HGNet×4)** | 0.951/0.843/0.823/0.808 | **0.913** | **Best trained model! +0.007 from 4-fold, +0.012 over v5g-4fold** |
-| v5m (EffNet+proj1024) | pending | pending | EfficientNet-B0 + 1x1 Conv2d 320→1024, v5j recipe. Tests embed_dim hypothesis. |
+| v5m (EffNet+proj1024) | **0.873** | pending | EfficientNet-B0 + 1x1 Conv2d 320→1024, v5j recipe. Matches v5j offline. |
 
 ---
 
