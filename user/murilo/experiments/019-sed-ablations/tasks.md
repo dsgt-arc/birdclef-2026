@@ -157,6 +157,9 @@ Evidence-based (from our prior experiments):
 - [x] 4.7 Export v5j-4fold to ONNX, upload weights, push kernel — done (2026-03-31)
 - [x] 4.8 **Submit v5j-4fold to LB**: **0.913 LB** — best trained model! +0.007 from 4-fold
 - [x] 4.9 **Submit v5k to LB**: **0.886 LB** — 3-channel mel, within noise of v5g
+- [x] 4.10 **v5l — v5j + n_fft=4096**: Trained on PACE (2026-04-01).
+      0.874 val/auroc (same as v5j), epoch 16. LB pending.
+- [ ] 4.11 Submit v5l to LB — submitted to Kaggle (2026-04-01), awaiting result
 
 Medium confidence (from competitors):
 - [ ] 4.10 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
@@ -201,6 +204,7 @@ Lower priority:
 | v5i (10s windows) | **0.878** | **0.880** | window 5→10s, epoch 17, −0.012 LB vs v5g |
 | **v5j (AmplitudeToDB)** | 0.874 | **0.906** | **Best single-fold! NNAudio+AmpToDB, +0.014 LB vs v5g** |
 | v5k (3-channel mel) | 0.868 | **0.886** | in_chans=3, epoch 16, within noise of v5g |
+| v5l (v5j+n_fft=4096) | 0.874 | pending | v5j + n_fft=4096, epoch 16, same val as v5j |
 | **v5j-4fold (HGNet×4)** | 0.951/0.843/0.823/0.808 | **0.913** | **Best trained model! +0.007 from 4-fold, +0.012 over v5g-4fold** |
 
 ---
