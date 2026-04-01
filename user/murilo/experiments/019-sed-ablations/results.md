@@ -271,7 +271,7 @@ The full val→LB mapping across all HGNet ablations so far:
 | **v5j** | 0.874 | **0.906** | **+0.032** | **~20 min** (NNAudio, no resize) |
 | v5k | 0.868 | **0.886** | +0.018 | |
 | v5l | 0.874 | pending | ? | (NNAudio, n_fft=4096, no resize) |
-| v5m | 0.873 | **0.898** | +0.025 | (EffNet-B0 + proj 320→1024, v5j recipe) |
+| v5m | 0.873 | **0.898** | +0.025 | **~15 min** (EffNet-B0 + proj, NNAudio) |
 | **v5j-4fold** | 0.951/0.843/0.823/0.808 | **0.913** | — | **~50 min** |
 
 †† v5i ran on 2 validation files only (36.9s total), not comparable.
