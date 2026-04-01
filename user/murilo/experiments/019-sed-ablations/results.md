@@ -272,7 +272,7 @@ The full val→LB mapping across all HGNet ablations so far:
 | **v5h** | 0.869 | **0.893** | +0.024 | ~33 min (ttahara, n_fft=4096) |
 | **v5j** | 0.874 | **0.906** | **+0.032** | **~20 min** (NNAudio, no resize) |
 | v5k | 0.868 | **0.886** | +0.018 | |
-| v5l | 0.874 | pending | ? | (NNAudio, n_fft=4096, no resize) |
+| v5l | 0.874 | **0.904** | +0.030 | (NNAudio, n_fft=4096, no resize) |
 | v5m | 0.873 | **0.898** | +0.025 | **~15 min** (EffNet-B0 + proj, NNAudio) |
 | v5n | 0.871 | **0.875** | +0.004 | (EffNet-B0, no proj, v5j recipe) |
 | **v5j-4fold** | 0.951/0.843/0.823/0.808 | **0.913** | — | **~50 min** |
@@ -280,8 +280,9 @@ The full val→LB mapping across all HGNet ablations so far:
 †† v5i ran on 2 validation files only (36.9s total), not comparable.
 
 **v5l (v5j + n_fft=4096)** scores 0.874 val/auroc — identical to v5j (0.874).
-The higher frequency resolution adds nothing offline when combined with
-AmplitudeToDB norm and no resize. LB validation needed to confirm.
+**0.904 LB** (−0.002 vs v5j 0.906). The higher frequency resolution doesn't
+help and may slightly hurt — consistent with v5h where n_fft=4096 was also
+negligible (+0.001 over v5g).
 
 **The offline ranking is completely inverted on LB.** v5j was tied-second-worst
 offline (0.874) but is the best on LB by a wide margin (0.906). v5i was the
