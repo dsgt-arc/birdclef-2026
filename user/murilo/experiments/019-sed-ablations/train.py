@@ -390,7 +390,7 @@ def main():
     # ========================================================================
 
     loggers = []
-    experiment_name = f"exp017-{run_name}"
+    experiment_name = f"exp019-{run_name}"
     if fold_id is not None:
         experiment_name = f"{experiment_name}-fold{fold_id}"
 
