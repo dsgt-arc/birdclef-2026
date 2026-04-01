@@ -168,20 +168,24 @@ Embed_dim hypothesis test:
       **0.898 LB** — projection closes ~83% of the v5f→v5j gap (+0.043 of 0.051).
       Remaining 0.008 gap to v5j (0.906) likely from HGNet architectural advantages.
 - [x] 4.16 Submit v5m to LB: **0.898** (+0.043 vs v5f, −0.008 vs v5j)
-- [ ] 4.16b Update analysis in `docs/vendor/efficientnet-vs-hgnetv2.md` with LB results
+- [x] 4.17 **v5n — EfficientNet-B0 + v5j recipe, NO projection** (control): Trained on PACE (2026-04-01).
+      **0.871 val/auroc** (epoch 19), 0.629 val/cmap.
+      2×2 grid offline: mel (v5f→v5n) = +0.005, projection (v5n→v5m) = +0.002. LB pending.
+- [ ] 4.18 Submit v5n to LB — need to wire into export pipeline first
+- [ ] 4.19 Update analysis in `docs/vendor/efficientnet-vs-hgnetv2.md` with LB results
 
 Medium confidence (from competitors):
-- [ ] 4.17 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
-- [ ] 4.18 **Post-processing**: temperature scaling, confidence-sharpened smoothing,
+- [ ] 4.20 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
+- [ ] 4.21 **Post-processing**: temperature scaling, confidence-sharpened smoothing,
       per-class thresholds on v5j predictions (zero training cost)
-- [ ] 4.19 **NS-JFT pretrained weights** on EfficientNet or HGNet equivalent
+- [ ] 4.22 **NS-JFT pretrained weights** on EfficientNet or HGNet equivalent
 - [x] 4.13 **v5k — 3-channel mel input**: Trained on PACE (2026-03-31).
       Repeat mono mel to 3 channels, encoder in_chans=3 (preserves full pretrained weights).
 
 Lower priority:
-- [ ] 4.20 **Perch + SED ensemble**: Combine best SED (v5j-4fold) with Perch ProtoSSM
+- [ ] 4.23 **Perch + SED ensemble**: Combine best SED (v5j-4fold) with Perch ProtoSSM
       (0.918) for a combined submission — different architectures = diverse errors
-- [ ] 4.21 **EfficientNetV2 backbone**: If v5m confirms embed_dim matters, try
+- [ ] 4.24 **EfficientNetV2 backbone**: If v5m confirms embed_dim matters, try
       `efficientnetv2_rw_t.ra2_in1k` (13.7M, 82.4% top-1, 208-dim) + projection.
       Stronger backbone features + projection may outperform HGNet.
 
@@ -219,6 +223,7 @@ Lower priority:
 | v5l (v5j+n_fft=4096) | 0.874 | pending | v5j + n_fft=4096, epoch 16, same val as v5j |
 | **v5j-4fold (HGNet×4)** | 0.951/0.843/0.823/0.808 | **0.913** | **Best trained model! +0.007 from 4-fold, +0.012 over v5g-4fold** |
 | v5m (EffNet+proj1024) | **0.873** | **0.898** | EfficientNet-B0 + 1x1 Conv2d 320→1024, v5j recipe. −0.008 vs v5j, +0.043 vs v5f |
+| v5n (EffNet, no proj) | 0.871 | pending | EfficientNet-B0, v5j recipe, no projection. Control for v5m. |
 
 ---
 

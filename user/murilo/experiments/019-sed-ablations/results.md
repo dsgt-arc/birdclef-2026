@@ -156,10 +156,12 @@ All use HGNetV2-B0 + ttahara recipe, 20 epochs, same data pipeline.
 | `hgnet-b0-sed-v5j` | AmplitudeToDB norm‡ | 0.874 | 0.643 | 19 | +0.002 | `2026-hgnet-b0-sed-v5j/best-epochepoch=19.ckpt` |
 | `hgnet-b0-sed-v5k` | 3-channel mel (in_chans=3) | 0.868 | 0.611 | 16 | **−0.004** | `2026-hgnet-b0-sed-v5k/best-epochepoch=16.ckpt` |
 | `effnet-b0-sed-v5m` | EffNet-B0 + proj 320→1024§ | **0.873** | **0.645** | 16 | +0.001 | `2026-effnet-b0-sed-v5m/best-epochepoch=16.ckpt` |
+| `effnet-b0-sed-v5n` | EffNet-B0, no proj (v5j recipe)¶ | 0.871 | 0.629 | 19 | −0.001 | `2026-effnet-b0-sed-v5n/best-epochepoch=19.ckpt` |
 
 † val/cmap values from end-of-training metrics (may differ slightly from best-epoch values).
 ‡ v5j is confounded: also changes win_length (626→2048), removes resize (256×256→256×511), and uses NNAudio instead of torchaudio.
 § v5m uses EfficientNet-B0 backbone (320 native) + 1x1 Conv2d projection to 1024, with v5j recipe. Tests embed_dim hypothesis.
+¶ v5n uses EfficientNet-B0 with v5j recipe (NNAudio+AmplitudeToDB) but NO projection. Control for v5m to isolate projection vs mel pipeline.
 
 Checkpoint base: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/`
 
@@ -272,6 +274,7 @@ The full val→LB mapping across all HGNet ablations so far:
 | v5k | 0.868 | **0.886** | +0.018 | |
 | v5l | 0.874 | pending | ? | (NNAudio, n_fft=4096, no resize) |
 | v5m | 0.873 | **0.898** | +0.025 | **~15 min** (EffNet-B0 + proj, NNAudio) |
+| v5n | 0.871 | pending | ? | (EffNet-B0, no proj, v5j recipe) |
 | **v5j-4fold** | 0.951/0.843/0.823/0.808 | **0.913** | — | **~50 min** |
 
 †† v5i ran on 2 validation files only (36.9s total), not comparable.
@@ -339,8 +342,44 @@ The projection accounts for ~83% of the v5f→v5j LB gap (0.043 of 0.051).
 The remaining 0.008 gap (v5m→v5j) likely comes from HGNet's architectural
 advantages: regular convolutions, dense connections within HG blocks, and
 SSLD-pretrained features that are qualitatively different from projected
-EfficientNet features. v5n (EffNet + v5j recipe, no projection) will
-isolate how much of v5m's gain is from the projection vs the mel change.
+EfficientNet features.
+
+### v5n Detailed Metrics (Best Checkpoint, Epoch 19)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc | 0.8708 |
+| val/cmap | 0.6293 |
+| val/f1_macro | 0.5369 |
+| val/f1_micro | 0.6940 |
+| val/top1_acc | 0.7621 |
+| val/top5_acc | 0.8700 |
+| val/loss | 0.0121 |
+
+Training config: EfficientNet-B0 (no projection, native 320 embed_dim), v5j recipe
+(NNAudio mel, AmplitudeToDB, LSEHead(mean, hidden=320), BCE, MixUp, OneCycleLR).
+GPU: SLURM job for v5n. Control for v5m to isolate projection vs mel pipeline.
+
+### 2×2 Ablation Grid: Mel Pipeline × Projection (Offline)
+
+|  | ttahara mel (resize, min-max) | v5j mel (NNAudio, AmpToDB, no resize) | Delta (mel) |
+|--|-------------------------------|---------------------------------------|-------------|
+| **EffNet 320 (no proj)** | v5f: 0.866 val / 0.855 LB | v5n: 0.871 val / pending | +0.005 val |
+| **EffNet 320→1024 (proj)** | — | v5m: 0.873 val / 0.898 LB | — |
+| **Delta (proj)** | — | +0.002 val (v5n→v5m) | — |
+| **HGNet 1024 (native)** | v5g: 0.872 val / 0.892 LB | v5j: 0.874 val / 0.906 LB | +0.002 val |
+
+**Offline, both factors contribute small increments:**
+- Mel pipeline (v5f→v5n): +0.005 val (NNAudio+AmplitudeToDB > ttahara+resize)
+- Projection (v5n→v5m): +0.002 val (320→1024 adds marginal offline capacity)
+- Combined (v5f→v5m): +0.007 val
+
+**But offline deltas don't predict LB.** v5m scored 0.898 LB (+0.043 over v5f's
+0.855), far larger than the +0.007 offline delta. The val→LB amplification
+suggests the projection + mel changes improve calibration on the harder test
+distribution in ways that offline val cannot measure. v5n's LB score will
+reveal whether the mel pipeline alone explains most of the LB gain, or
+whether the projection is the key factor on LB too.
 
 ### Step 5: v5j 4-Fold Ensemble
 
