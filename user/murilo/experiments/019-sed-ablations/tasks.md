@@ -165,11 +165,10 @@ Evidence-based (from our prior experiments):
 Embed_dim hypothesis test:
 - [x] 4.15 **v5m — EfficientNet-B0 + projection 320→1024**: Trained on PACE (2026-04-01).
       **0.873 val/auroc** (epoch 16), 0.645 val/cmap. SLURM job 6149183.
-      Matches v5j (0.874) offline — projection closes the embed_dim gap completely.
-      LB pending — need to validate whether offline parity translates to LB.
-      - v5m (0.873) ≈ v5j (0.874): embed_dim hypothesis supported offline
-      - v5m (0.873) > v5f (0.866): projection adds +0.007 val over bare EfficientNet
-- [ ] 4.16 Submit v5m to LB, update analysis in `docs/vendor/efficientnet-vs-hgnetv2.md`
+      **0.898 LB** — projection closes ~83% of the v5f→v5j gap (+0.043 of 0.051).
+      Remaining 0.008 gap to v5j (0.906) likely from HGNet architectural advantages.
+- [x] 4.16 Submit v5m to LB: **0.898** (+0.043 vs v5f, −0.008 vs v5j)
+- [ ] 4.16b Update analysis in `docs/vendor/efficientnet-vs-hgnetv2.md` with LB results
 
 Medium confidence (from competitors):
 - [ ] 4.17 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
@@ -219,13 +218,13 @@ Lower priority:
 | v5k (3-channel mel) | 0.868 | **0.886** | in_chans=3, epoch 16, within noise of v5g |
 | v5l (v5j+n_fft=4096) | 0.874 | pending | v5j + n_fft=4096, epoch 16, same val as v5j |
 | **v5j-4fold (HGNet×4)** | 0.951/0.843/0.823/0.808 | **0.913** | **Best trained model! +0.007 from 4-fold, +0.012 over v5g-4fold** |
-| v5m (EffNet+proj1024) | **0.873** | pending | EfficientNet-B0 + 1x1 Conv2d 320→1024, v5j recipe. Matches v5j offline. |
+| v5m (EffNet+proj1024) | **0.873** | **0.898** | EfficientNet-B0 + 1x1 Conv2d 320→1024, v5j recipe. −0.008 vs v5j, +0.043 vs v5f |
 
 ---
 
 ## Runtime Budget (Kaggle kernel, 90 min)
 
-| Component | v5j single | v5j 4-fold (est.) | v5g 4-fold (actual) |
+| Component | v5j single | v5j 4-fold (actual) | v5g 4-fold (actual) |
 |-----------|-----------|-------------------|-------------------|
 | Model loading | ~1s | ~4s | ~4s |
 | Audio → mel (NNAudio) | ~8 min | ~8 min | ~15 min (ttahara+resize) |
@@ -233,6 +232,5 @@ Lower priority:
 | Post-processing | ~1s | ~1s | ~1s |
 | **Total** | **~20 min** | **~50 min** | **~30 min** |
 
-v5j's NNAudio mel (no resize) is faster per-segment than ttahara's resize
-pipeline. 4-fold well within 90 min budget, leaving room for future
-Perch+SED ensemble.
+v5j-4fold actual: ~50 min on Kaggle CPU kernel. Well within 90 min budget,
+leaving ~40 min for potential Perch+SED ensemble.

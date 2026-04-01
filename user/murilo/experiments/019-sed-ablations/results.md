@@ -271,8 +271,8 @@ The full val→LB mapping across all HGNet ablations so far:
 | **v5j** | 0.874 | **0.906** | **+0.032** | **~20 min** (NNAudio, no resize) |
 | v5k | 0.868 | **0.886** | +0.018 | |
 | v5l | 0.874 | pending | ? | (NNAudio, n_fft=4096, no resize) |
-| v5m | 0.873 | pending | ? | (EffNet-B0 + proj 320→1024, v5j recipe) |
-| **v5j-4fold** | 0.951/0.843/0.823/0.808 | **0.913** | — | **~20 min (est.)** |
+| v5m | 0.873 | **0.898** | +0.025 | (EffNet-B0 + proj 320→1024, v5j recipe) |
+| **v5j-4fold** | 0.951/0.843/0.823/0.808 | **0.913** | — | **~50 min** |
 
 †† v5i ran on 2 validation files only (36.9s total), not comparable.
 
@@ -321,23 +321,26 @@ Training config: EfficientNet-B0 + 1x1 Conv2d projection (320→1024), v5j recip
 (NNAudio mel, AmplitudeToDB, LSEHead(mean), BCE, MixUp α=1.0/θ=0.8, OneCycleLR).
 GPU: SLURM job 6149183.
 
-**v5m (0.873) matches v5j (0.874) offline.** The projection layer brings
-EfficientNet-B0 to the same val/auroc as HGNetV2-B0 under identical recipe.
-This is consistent with the embed_dim hypothesis — the 320→1024 projection
-gives the SED head enough capacity to match HGNet's native 1024-dim features.
-LB validation needed to confirm whether this translates (v5j had +0.032 val→LB gap).
+**v5m (0.873 val, 0.898 LB)** matches v5j offline but falls short on LB (−0.008).
+The projection closes most of the gap: v5m is +0.043 over v5f (0.855 LB) and
+only −0.008 behind v5j (0.906 LB). The val→LB gap (+0.025) is between v5g's
+(+0.020) and v5j's (+0.032), suggesting the projection captures most but not
+all of HGNet's LB advantage.
 
-**Comparison of v5m to key baselines (offline):**
+**Comparison of v5m to key baselines:**
 
-| Model | Backbone | embed_dim | val/auroc | val/cmap | f1_micro |
-|-------|----------|----------|----------|----------|----------|
-| v5f | EffNet-B0 | 320 (native) | 0.866 | 0.599 | 0.672 |
-| v5j | HGNet-B0 | 1024 (native) | 0.874 | 0.643 | 0.688 |
-| **v5m** | **EffNet-B0 + proj** | **320→1024** | **0.873** | **0.645** | **0.703** |
+| Model | Backbone | embed_dim | val/auroc | LB | val→LB gap |
+|-------|----------|----------|----------|-----|-----------|
+| v5f | EffNet-B0 | 320 (native) | 0.866 | 0.855 | −0.011 |
+| **v5m** | **EffNet-B0 + proj** | **320→1024** | **0.873** | **0.898** | **+0.025** |
+| v5j | HGNet-B0 | 1024 (native) | 0.874 | 0.906 | +0.032 |
 
-v5m closes the offline gap to v5j completely (+0.007 over v5f, −0.001 vs v5j).
-Notably, v5m's cmap (0.645) and f1_micro (0.703) actually exceed v5j's (0.643, 0.688),
-suggesting the projection may help with rare species calibration.
+The projection accounts for ~83% of the v5f→v5j LB gap (0.043 of 0.051).
+The remaining 0.008 gap (v5m→v5j) likely comes from HGNet's architectural
+advantages: regular convolutions, dense connections within HG blocks, and
+SSLD-pretrained features that are qualitatively different from projected
+EfficientNet features. v5n (EffNet + v5j recipe, no projection) will
+isolate how much of v5m's gain is from the projection vs the mel change.
 
 ### Step 5: v5j 4-Fold Ensemble
 
