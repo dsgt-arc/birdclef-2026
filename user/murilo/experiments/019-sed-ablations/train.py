@@ -118,6 +118,7 @@ def main():
         pretrained=config["encoder"].get("pretrained", True),
         drop_path_rate=config["encoder"].get("drop_path_rate", 0.0),
         in_chans=config["encoder"].get("in_chans", 1),
+        projection_dim=config["encoder"].get("projection_dim"),
     )
 
     # Use encoder's actual embed_dim (not config) — features_only=True may differ
