@@ -169,9 +169,10 @@ Embed_dim hypothesis test:
       Remaining 0.008 gap to v5j (0.906) likely from HGNet architectural advantages.
 - [x] 4.16 Submit v5m to LB: **0.898** (+0.043 vs v5f, −0.008 vs v5j)
 - [x] 4.17 **v5n — EfficientNet-B0 + v5j recipe, NO projection** (control): Trained on PACE (2026-04-01).
-      **0.871 val/auroc** (epoch 19), 0.629 val/cmap.
-      2×2 grid offline: mel (v5f→v5n) = +0.005, projection (v5n→v5m) = +0.002. LB pending.
-- [ ] 4.18 Submit v5n to LB — need to wire into export pipeline first
+      **0.871 val/auroc** (epoch 19), 0.629 val/cmap. **0.875 LB**.
+      2×2 grid: mel (v5f→v5n) = +0.020 LB, **projection (v5n→v5m) = +0.023 LB**.
+      Confirms embed_dim is the primary bottleneck (45% of v5f→v5j gap).
+- [x] 4.18 Submit v5n to LB: **0.875** (+0.020 vs v5f from mel, −0.023 vs v5m from projection)
 - [ ] 4.19 Update analysis in `docs/vendor/efficientnet-vs-hgnetv2.md` with LB results
 
 Medium confidence (from competitors):
@@ -223,7 +224,7 @@ Lower priority:
 | v5l (v5j+n_fft=4096) | 0.874 | pending | v5j + n_fft=4096, epoch 16, same val as v5j |
 | **v5j-4fold (HGNet×4)** | 0.951/0.843/0.823/0.808 | **0.913** | **Best trained model! +0.007 from 4-fold, +0.012 over v5g-4fold** |
 | v5m (EffNet+proj1024) | **0.873** | **0.898** | EfficientNet-B0 + 1x1 Conv2d 320→1024, v5j recipe. −0.008 vs v5j, +0.043 vs v5f |
-| v5n (EffNet, no proj) | 0.871 | pending | EfficientNet-B0, v5j recipe, no projection. Control for v5m. |
+| v5n (EffNet, no proj) | 0.871 | **0.875** | EfficientNet-B0, v5j recipe, no projection. Projection = +0.023 LB. |
 
 ---
 
