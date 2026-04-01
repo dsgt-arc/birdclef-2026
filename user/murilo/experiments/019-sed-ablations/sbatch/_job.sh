@@ -115,7 +115,11 @@ srun ${TRAIN_CMD}
 if [[ "${FAST_DEV_RUN}" != "true" && "${GPU_CHECK}" -eq 0 ]]; then
     echo ""
     echo "Saving structured metrics to artifacts/..."
-    python save_metrics.py --config ${CONFIG}
+    SAVE_CMD="python save_metrics.py --config ${CONFIG}"
+    if [[ -n "${FOLD}" ]]; then
+        SAVE_CMD="${SAVE_CMD} --fold ${FOLD}"
+    fi
+    ${SAVE_CMD}
 fi
 
 echo ""

@@ -19,10 +19,9 @@ improvements with Perch pseudo-labels on 10K+ unlabeled soundscapes.
 | ~0.920 | Our Perch ProtoSSM | Teacher for pseudo-labels |
 | 0.939 | Competition #1 | Likely ensemble + pseudo-labels |
 
-### Status: **v5g-4fold 0.901 LB — broke 0.900!** v5g single 0.892. SED pipeline validated.
+### Status: **v5j-4fold 0.913 LB — best trained model!** v5j single 0.906, v5g-4fold 0.901.
 
-- **Branch**: `mg/018-perch-ensemble` (shared with exp 018 for now)
-- **Parallel**: Exp 018 ProtoSSM v4.1 running inference on Kaggle (~90 min)
+- **Branch**: `mg/019-sed-4fold-ensemble`
 
 ---
 
@@ -155,18 +154,20 @@ Evidence-based (from our prior experiments):
       - Fold 2: 0.823 val/auroc (epoch 19)
       - Fold 3: 0.808 val/auroc (epoch 18)
       - Same fold imbalance as v5g-4fold. Marginally better on folds 0/1/3.
-- [ ] 4.7 Export v5j-4fold to ONNX, upload weights, push kernel, submit to LB
+- [x] 4.7 Export v5j-4fold to ONNX, upload weights, push kernel — done (2026-03-31)
+- [x] 4.8 **Submit v5j-4fold to LB**: **0.913 LB** — best trained model! +0.007 from 4-fold
+- [x] 4.9 **Submit v5k to LB**: **0.886 LB** — 3-channel mel, within noise of v5g
 
 Medium confidence (from competitors):
-- [ ] 4.7 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
-- [ ] 4.8 **Post-processing**: temperature scaling, confidence-sharpened smoothing,
-      per-class thresholds on v5g predictions (zero training cost)
-- [ ] 4.9 **NS-JFT pretrained weights** on EfficientNet or HGNet equivalent
-- [x] 4.10 **v5k — 3-channel mel input**: Submitted to PACE (2026-03-31).
+- [ ] 4.10 **5-fold CV** (vs current 4-fold) — pantanal-distill uses 5-fold
+- [ ] 4.11 **Post-processing**: temperature scaling, confidence-sharpened smoothing,
+      per-class thresholds on v5j predictions (zero training cost)
+- [ ] 4.12 **NS-JFT pretrained weights** on EfficientNet or HGNet equivalent
+- [x] 4.13 **v5k — 3-channel mel input**: Trained on PACE (2026-03-31).
       Repeat mono mel to 3 channels, encoder in_chans=3 (preserves full pretrained weights).
 
 Lower priority:
-- [ ] 4.11 **Perch + SED ensemble**: Combine best SED (v5j-4fold) with Perch ProtoSSM
+- [ ] 4.14 **Perch + SED ensemble**: Combine best SED (v5j-4fold) with Perch ProtoSSM
       (0.918) for a combined submission — different architectures = diverse errors
 
 ---
@@ -199,8 +200,8 @@ Lower priority:
 | v5h (n_fft=4096) | 0.869 | **0.893** | n_fft 2048→4096, epoch 16, +0.001 LB vs v5g |
 | v5i (10s windows) | **0.878** | **0.880** | window 5→10s, epoch 17, −0.012 LB vs v5g |
 | **v5j (AmplitudeToDB)** | 0.874 | **0.906** | **Best single-fold! NNAudio+AmpToDB, +0.014 LB vs v5g** |
-| v5k (3-channel mel) | 0.868 | pending | in_chans=3, epoch 16 |
-| v5j-4fold (HGNet×4) | 0.951/0.843/0.823/0.808 | pending | 4-fold ensemble of v5j — target ≥0.915 LB |
+| v5k (3-channel mel) | 0.868 | **0.886** | in_chans=3, epoch 16, within noise of v5g |
+| **v5j-4fold (HGNet×4)** | 0.951/0.843/0.823/0.808 | **0.913** | **Best trained model! +0.007 from 4-fold, +0.012 over v5g-4fold** |
 
 ---
 

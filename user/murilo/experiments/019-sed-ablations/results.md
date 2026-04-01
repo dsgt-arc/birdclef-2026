@@ -267,7 +267,8 @@ The full val→LB mapping across all HGNet ablations so far:
 | v5i | 0.878 | 0.880 | +0.002 | ~37s†† (10s) |
 | **v5h** | 0.869 | **0.893** | +0.024 | ~33 min (ttahara, n_fft=4096) |
 | **v5j** | 0.874 | **0.906** | **+0.032** | **~20 min** (NNAudio, no resize) |
-| v5k | 0.868 | pending | ? | |
+| v5k | 0.868 | **0.886** | +0.018 | |
+| **v5j-4fold** | 0.951/0.843/0.823/0.808 | **0.913** | — | **~20 min (est.)** |
 
 †† v5i ran on 2 validation files only (36.9s total), not comparable.
 
@@ -276,7 +277,11 @@ offline (0.874) but is the best on LB by a wide margin (0.906). v5i was the
 best offline (0.878) but worst on LB (0.880). The val→LB gap varies from +0.002
 to +0.032 — offline metrics cannot rank these configs.
 
-**v5j (0.906 LB) is now our best single-fold SED model**, beating v5g-4fold
+**v5k (0.886 LB)** scored higher than v5g (0.892 LB) would suggest from offline
+(0.868 val, −0.004 vs v5g), reinforcing that small offline differences are noise.
+The 3-channel input didn't help but didn't catastrophically hurt either.
+
+**v5j (0.906 LB) is the best single-fold SED model**, beating v5g-4fold
 ensemble (0.901) with a single model. Key differences from v5g:
 - NNAudio mel with AmplitudeToDB norm (vs ttahara min-max + resize)
 - No resize to 256×256 (raw 256×511 output)
@@ -318,10 +323,27 @@ Checkpoint base: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiment
 | 3 | 0.802 | **0.808** | +0.006 |
 
 Same fold imbalance pattern (fold 0 ≫ folds 1-3). v5j is marginally better on
-folds 0/1/3, marginally worse on fold 2. Given v5j single-fold's +0.014 LB
-advantage over v5g (0.906 vs 0.892), the 4-fold ensemble should amplify the gain.
+folds 0/1/3, marginally worse on fold 2.
 
 Training: ~38 min/fold on V100 (SLURM jobs 6107175/6107185/6107187/6107188).
+
+### Step 5 LB Results
+
+| Submission | LB | Notes |
+|-----------|-----|-------|
+| v5k single-fold | **0.886** | 3-channel mel, +0.018 val→LB gap |
+| **v5j-4fold ensemble** | **0.913** | **Best trained model!** +0.007 from 4-fold, +0.012 over v5g-4fold |
+
+**v5j-4fold (0.913 LB) is our best trained model**, only 0.005 behind Perch
+ProtoSSM v4 (0.918 LB) which relies on a frozen foundation model. The 4-fold
+ensemble adds +0.007 over v5j single-fold (0.906), consistent with the +0.009
+gain from v5g→v5g-4fold.
+
+Comparison to competition:
+- **v5j-4fold: 0.913 LB** (our best trained SED)
+- Perch ProtoSSM v4: 0.918 LB (frozen foundation model, gap = 0.005)
+- ttahara HGNet 4-fold: 0.884 LB (our reproduction beats by +0.029)
+- Competition #1: 0.939 LB (gap = 0.026)
 
 ### v5b Detailed Metrics (Best Checkpoint, Epoch 31)
 

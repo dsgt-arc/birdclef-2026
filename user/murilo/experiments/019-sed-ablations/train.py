@@ -484,7 +484,10 @@ def main():
     if not args.fast_dev_run:
         results_dir = Path(__file__).parent / "outputs" / "test_results"
         results_dir.mkdir(parents=True, exist_ok=True)
-        results_file = results_dir / f"{run_name}.json"
+        if fold_id is not None:
+            results_file = results_dir / f"{run_name}-fold{fold_id}.json"
+        else:
+            results_file = results_dir / f"{run_name}.json"
 
         # Capture val metrics from trainer's logged values
         val_metrics = {}
