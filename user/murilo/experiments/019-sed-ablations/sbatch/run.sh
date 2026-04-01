@@ -2,7 +2,7 @@
 # Launcher script for Experiment 019 Perch-guided SED jobs.
 #
 # Usage:
-#   cd user/murilo/experiments/019-perch-guided-sed
+#   cd user/murilo/experiments/019-sed-ablations
 #
 #   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml
 #   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml --gpu a100

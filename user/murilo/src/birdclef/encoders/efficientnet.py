@@ -38,20 +38,30 @@ class EfficientNetEncoder(nn.Module):
         model_name: str = "efficientnet_b0",
         pretrained: bool = True,
         drop_path_rate: float = 0.0,
+        in_chans: int = 1,
+        projection_dim: int | None = None,
     ):
         super().__init__()
         self.backbone = timm.create_model(
             model_name,
             pretrained=pretrained,
             features_only=True,
-            in_chans=1,
+            in_chans=in_chans,
             drop_path_rate=drop_path_rate,
         )
         self.embed_dim = self.backbone.feature_info.channels()[-1]
 
+        # Optional 1x1 conv to project features to a higher dimension.
+        # Useful for testing whether embed_dim is a bottleneck (e.g. 320→1024).
+        self.projection = None
+        if projection_dim is not None and projection_dim != self.embed_dim:
+            self.projection = nn.Conv2d(self.embed_dim, projection_dim, kernel_size=1)
+            logger.info(f"  Projection: {self.embed_dim} → {projection_dim}")
+            self.embed_dim = projection_dim
+
         # EfficientNet family: manually adapt stem conv for better weight init
         # (average 3-ch pretrained weights into 1-ch instead of timm's default)
-        if hasattr(self.backbone, "conv_stem") and pretrained:
+        if in_chans == 1 and hasattr(self.backbone, "conv_stem") and pretrained:
             self._adapt_input_channels()
 
         dp_info = f", drop_path={drop_path_rate}" if drop_path_rate > 0 else ""
@@ -98,7 +108,10 @@ class EfficientNetEncoder(nn.Module):
             with input (B, 1, 128, 1000): output ~(B, 1280, 4, 31).
         """
         feature_maps = self.backbone(x)  # list of per-stage outputs
-        return feature_maps[-1]  # last stage: highest-level features
+        features = feature_maps[-1]  # last stage: highest-level features
+        if self.projection is not None:
+            features = self.projection(features)
+        return features
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Backward-compatible pooled embedding.

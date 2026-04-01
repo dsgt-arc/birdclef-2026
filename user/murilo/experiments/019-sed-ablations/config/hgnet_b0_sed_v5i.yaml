@@ -1,0 +1,92 @@
+# Experiment 019, v5i: v5g + 10s context windows
+#
+# Single change from v5g: window_duration 5s→10s for longer temporal context.
+# 10s windows help capture insect/amphibian texture patterns and provide
+# context around 5s labeled segments (2.5s padding each side).
+# Training ~2x slower (~42 min) due to doubled audio per sample.
+#
+# Hypothesis: longer context improves recognition of continuous-stridulation
+# species (the 28 soundscape-only taxa) that need temporal pattern matching.
+
+run_name: "2026-hgnet-b0-sed-v5i"
+
+encoder:
+  type: "efficientnet"
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"
+  pretrained: true
+  embed_dim: 1024
+
+sed_head:
+  type: "lse_head"
+  hidden_dim: 1024
+  dropout: 0.5
+  gem_p: 3.0
+  lse_temperature: 1.0
+  freq_pool: "mean"
+
+mel:
+  type: "ttahara"
+  n_fft: 2048
+  win_length: 626
+  hop_length: 313
+  f_min: 20
+  n_mels: 256
+  top_db: 80.0
+  target_shape: [256, 256]  # resize now compresses 10s→256 frames (more temporal compression)
+  gpu: true
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 10.0     # CHANGED: 5s→10s
+  batch_size: 64
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 8
+  soundscape_test_files: 0
+  seed: 42
+
+training:
+  max_epochs: 20
+  lr: 5.0e-4
+  head_lr: 5.0e-4
+  weight_decay: 1.0e-4
+  warmup_epochs: 5
+  threshold: 0.5
+  grad_clip_val: 0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+  clipwise_weight: 1.0
+  framewise_weight: 0.0
+  blend_clip: 1.0
+  blend_frame: 0.0
+  loss_type: "bce"
+  mixup_prob: 1.0
+  mixup_alpha: 1.0
+  mixup_warmup_epochs: 5
+  mixup_theta: 0.8
+  mixup_per_sample: true
+  scheduler_type: "one_cycle"
+  onecycle_div_factor: 25.0
+  onecycle_final_div_factor: 4.0
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/auroc"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/auroc"
+    mode: "max"
+    patience: 999
+    min_delta: 0.0
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp019"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

@@ -272,6 +272,49 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5g-4fold",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5g-4fold.json",
     },
+    # Exp 019 Step 4: v5j 4-fold ensemble (best single-fold 0.906 LB)
+    "hgnet-b0-sed-v5j-4fold": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-4fold-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-4fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-4fold.json",
+    },
+    # Exp 019 Step 4: v5g recipe ablations
+    "hgnet-b0-sed-v5h": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5h-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5h",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5h.json",
+    },
+    "hgnet-b0-sed-v5i": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5i-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5i",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5i.json",
+    },
+    "hgnet-b0-sed-v5k": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5k-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5k",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5k.json",
+    },
+    "hgnet-b0-sed-v5l": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5l-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5l",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5l.json",
+    },
+    "hgnet-b0-sed-v5j": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j.json",
+    },
+    # Exp 019 embed_dim hypothesis test
+    "effnet-b0-sed-v5m": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5m-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5m",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5m.json",
+    },
+    "effnet-b0-sed-v5n": {
+        "slug": "birdclef-2026-effnet-b0-sed-v5n-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-sed-v5n",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5n.json",
+    },
 }
 
 

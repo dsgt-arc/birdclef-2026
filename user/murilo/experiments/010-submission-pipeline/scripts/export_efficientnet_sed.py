@@ -74,10 +74,13 @@ def main():
     # mode and has no parameters, so weights load correctly without it. This avoids
     # ONNX tracing issues with DropPath modules.)
     train_drop_path = cfg["encoder"].get("drop_path_rate", 0.0)
+    in_chans = cfg["encoder"].get("in_chans", 1)
     encoder = EfficientNetEncoder(
         model_name=cfg["encoder"]["model_name"],
         pretrained=cfg["encoder"].get("pretrained", True),
         drop_path_rate=0.0,
+        in_chans=in_chans,
+        projection_dim=cfg["encoder"].get("projection_dim"),
     )
     embed_dim = encoder.embed_dim
     if train_drop_path > 0:
@@ -185,7 +188,7 @@ def main():
     window_duration = cfg["data"]["window_duration"]
     sample_rate = cfg["data"]["sample_rate"]
     target_frames = int(window_duration * sample_rate / hop_length_cfg)
-    dummy_mel = torch.randn(1, 1, n_mels, target_frames)
+    dummy_mel = torch.randn(1, in_chans, n_mels, target_frames)
     with torch.no_grad():
         ref_out = wrapper(dummy_mel)
     logger.info(
@@ -257,9 +260,11 @@ def main():
             "blend_frame": args.blend_frame,
             "window_duration": window_duration,
             "inference_window": window_duration,  # no context padding for ttahara
+            "in_chans": in_chans,
         }
         logger.info(
-            f"Mel normalization: ttahara (resize {mel_config['target_shape']}, per-segment min-max)"
+            f"Mel normalization: ttahara (resize {mel_config['target_shape']}, "
+            f"in_chans={in_chans}, per-segment min-max)"
         )
     else:
         mel_config = {

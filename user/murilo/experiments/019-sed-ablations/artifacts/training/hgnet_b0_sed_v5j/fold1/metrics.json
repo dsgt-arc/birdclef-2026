@@ -1,0 +1,46 @@
+{
+  "auroc": 0.843,
+  "cmap": 0.581,
+  "f1_macro": 0.526,
+  "top1_accuracy": 0.751,
+  "top5_accuracy": 0.862,
+  "loss": 0.011,
+  "metrics_source": "val",
+  "metrics_note": "end-of-training (epoch 20), not best-epoch values",
+  "fold_id": 1,
+  "architecture": "sed",
+  "encoder_type": "efficientnet",
+  "encoder_model": "hgnetv2_b0.ssld_stage2_ft_in1k",
+  "embed_dim": 1024,
+  "sed_head": {
+    "hidden_dim": 1024,
+    "dropout": 0.5,
+    "gem_p": 3.0
+  },
+  "mel": {
+    "n_fft": 2048,
+    "n_mels": 256,
+    "hop_length": 313,
+    "fmax": null,
+    "sample_rate": 32000,
+    "norm_type": "amplitude_to_db"
+  },
+  "dataset": "birdclef-2026",
+  "num_classes": 234,
+  "best_val_score": 0.84263,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/fold1/best-epochepoch=19.ckpt",
+  "stopped_epoch": 20,
+  "training": {
+    "max_epochs": 20,
+    "lr": 0.0005,
+    "weight_decay": 0.0001,
+    "batch_size": 64,
+    "window_duration": 5.0,
+    "sample_rate": 32000
+  },
+  "compute": {
+    "slurm_job_id": 6107185,
+    "node": "atl1-1-02-008-35-0",
+    "cpus_per_task": "8"
+  }
+}

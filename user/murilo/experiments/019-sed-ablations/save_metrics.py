@@ -21,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description="Save structured training metrics")
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--artifacts-dir", type=str, default="artifacts/training")
+    parser.add_argument("--fold", type=int, default=None, help="Fold ID (appends /foldN to paths)")
     args = parser.parse_args()
 
     experiment_dir = Path(__file__).parent
@@ -31,7 +32,12 @@ def main():
 
     run_name = config["run_name"]
 
-    results_file = experiment_dir / "outputs" / "test_results" / f"{run_name}.json"
+    if args.fold is not None:
+        results_file = (
+            experiment_dir / "outputs" / "test_results" / f"{run_name}-fold{args.fold}.json"
+        )
+    else:
+        results_file = experiment_dir / "outputs" / "test_results" / f"{run_name}.json"
     if not results_file.exists():
         print(f"Error: test results not found at {results_file}", file=sys.stderr)
         sys.exit(1)
@@ -124,6 +130,8 @@ def main():
     }
 
     output_dir = experiment_dir / args.artifacts_dir / variant_name
+    if args.fold is not None:
+        output_dir = output_dir / f"fold{args.fold}"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "metrics.json"
 

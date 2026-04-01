@@ -13,7 +13,7 @@
 # Experiment 019: Perch-Guided SED Training
 #
 # Usage:
-#   cd user/murilo/experiments/019-perch-guided-sed
+#   cd user/murilo/experiments/019-sed-ablations
 #   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml
 #   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml --fast-dev-run
 
@@ -115,7 +115,11 @@ srun ${TRAIN_CMD}
 if [[ "${FAST_DEV_RUN}" != "true" && "${GPU_CHECK}" -eq 0 ]]; then
     echo ""
     echo "Saving structured metrics to artifacts/..."
-    python save_metrics.py --config ${CONFIG}
+    SAVE_CMD="python save_metrics.py --config ${CONFIG}"
+    if [[ -n "${FOLD}" ]]; then
+        SAVE_CMD="${SAVE_CMD} --fold ${FOLD}"
+    fi
+    ${SAVE_CMD}
 fi
 
 echo ""
