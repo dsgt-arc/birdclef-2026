@@ -8,20 +8,18 @@ import os
 import subprocess
 import sys
 
+# Perch v2 requires TF 2.20+ for StableHLO compatibility.
+# Kaggle ships TF 2.19 which fails with "unregistered operation vhlo.cosine_v2".
+TF_WHEEL_CANDIDATES = [
+    "/kaggle/input/birdclef-tf220-wheel",
+    "/kaggle/input/datasets/murilogustineli/birdclef-tf220-wheel",
+]
 
-def _find_input_early(slug):
-    for prefix in ["/kaggle/input", "/kaggle/input/datasets"]:
-        p = os.path.join(prefix, slug)
-        if os.path.exists(p):
-            return p
-    return os.path.join("/kaggle/input", slug)
-
-
-if os.path.exists("/kaggle/input"):
-    TF_WHEEL_DIR = _find_input_early("birdclef-tf220-wheel")
-    if os.path.exists(TF_WHEEL_DIR):
-        print(f"Installing TF 2.20 from {TF_WHEEL_DIR}")
-        for whl in sorted(os.listdir(TF_WHEEL_DIR)):
+_tf_installed = False
+for tf_wheel_dir in TF_WHEEL_CANDIDATES:
+    if os.path.exists(tf_wheel_dir):
+        print(f"Installing TF 2.20 from {tf_wheel_dir}")
+        for whl in sorted(os.listdir(tf_wheel_dir)):
             if whl.endswith(".whl"):
                 subprocess.check_call(
                     [
@@ -30,9 +28,16 @@ if os.path.exists("/kaggle/input"):
                         "pip",
                         "install",
                         "--quiet",
-                        os.path.join(TF_WHEEL_DIR, whl),
+                        "--no-deps",
+                        os.path.join(tf_wheel_dir, whl),
                     ]
                 )
+        _tf_installed = True
+        break
+
+if not _tf_installed and os.path.exists("/kaggle/input"):
+    print("WARNING: TF 2.20 wheel not found! Kaggle input contents:")
+    print(os.listdir("/kaggle/input"))
 
 # --- Mode switch ---
 MODE = "submit"
