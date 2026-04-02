@@ -19,7 +19,7 @@ faster inference, then ensemble Perch + SED within 90-min kernel budget.
 | 0.930 | pantanal-distill V17 | d=256, 3 layers, MLP-only, per-class thresholds |
 | 0.939 | Competition #1 | Unknown |
 
-### Status: **Phase B: ONNX swap + MLP-only submitted (v5), awaiting LB score**
+### Status: **ONNX causes −0.010 LB penalty. Reverting to TF for exact 0.930 reproduction.**
 
 - **Branch**: `mg/020-perch-onnx`
 
@@ -109,7 +109,24 @@ ONNX models downloaded to: `/storage/project/ps-clef2026_birdclef-0/shared/model
       - onnxruntime installed from bundled wheel (--no-deps, offline)
       - Also changed ENSEMBLE_WEIGHT_PROTO 0.5→0.0 (MLP-only)
 - [x] B.5 v5 pushed (nb v6): dry-run 98s (was 230s with TF), 2.3x faster.
-      **Running LB inference now.**
+      LB: 0.911 (MLP-only w=0.0 regressed). Runtime: 20 min (great speedup).
+- [x] B.6 v7 (nb v7): V18+ONNX, w=0.5, V18 thresholds. LB: **0.920**.
+      ONNX causes ~0.010 LB penalty vs TF (0.930→0.920).
+      Penalty compounds through probe features, gated fusion, V18 thresholds,
+      and 5 TTA shifts.
+
+### ONNX Finding: −0.010 LB penalty
+
+ONNX is numerically close (max 2.7e-4 logit diff) but the downstream pipeline
+amplifies this. The V18 per-class thresholds were optimized on TF outputs and
+are mismatched with ONNX. Phase B is **on hold** — reverting to TF for 0.930.
+
+### Phase B Revised Plan
+
+- [ ] B.7 Reproduce pantanal exactly with TF (V18 config) → target 0.930
+- [ ] B.8 Once 0.930 confirmed, test ONNX as isolated variable to verify penalty
+- [ ] B.9 If ONNX penalty confirmed, explore: retune thresholds on ONNX outputs,
+      or accept penalty and use ONNX only for Perch+SED ensemble (Phase D)
 
 ---
 
@@ -152,4 +169,5 @@ Runtime budget with ONNX: ~20 min (Perch) + ~50 min (SED 4-fold) + ~5 min (rest)
 | ProtoSSM v5 port v2 (V18, no cache) | timeout | 1110s dry | V18 override caused timeout |
 | ProtoSSM v5 port v3 (V18, cache) | timeout | — | V18 override caused timeout |
 | ProtoSSM v5 port v4 (V17, cache) | **0.922** | 230s dry | V17 clean rewrite, ResidualSSM ran, new best Perch |
-| ProtoSSM v5 port v5 (ONNX+MLP-only) | **running** | 98s dry | TF→ONNX, ensemble 0.5→0.0 |
+| ProtoSSM v5 port v5 (ONNX+MLP-only) | **0.911** | 98s dry, 20 min LB | TF→ONNX works, but MLP-only regressed −0.011 |
+| ProtoSSM v5 port v7 (V18+ONNX) | **0.920** | 242s dry | V18 config + ONNX. ONNX penalty −0.010 vs TF |

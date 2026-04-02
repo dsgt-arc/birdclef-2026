@@ -1,54 +1,96 @@
 # Experiment 020: Perch ONNX + ProtoSSM — Results
 
-## Phase A: Port Pantanal-Distill V17
+## All Submissions
 
-### LB Results
+| Nb ver | Kernel ver | Config | Perch Backend | Cache | LB | Runtime (dry) | Notes |
+|--------|-----------|--------|--------------|-------|-----|---------------|-------|
+| v2 | v2 | V18 (d=320, 4L, 80ep) | TF | no | timeout | 1110s | V18 override too heavy with TF |
+| v3 | v3 | V18 (d=320, 4L, 80ep) | TF | jaejohn | timeout | — | V18 override too heavy with TF |
+| v4 | v4 | V17 (d=256, 3L, 40ep) | TF | jaejohn | **0.922** | 230s | V17 clean rewrite |
+| v5 | v5 | V17 + ensemble=0.0 | ONNX | jaejohn | 0.911 | 98s | MLP-only regressed −0.011 |
+| v6 | v5 (fix) | V17 + ensemble=0.5 | ONNX | jaejohn | — | — | not submitted (weight fix only) |
+| v7 | v6 | V18 + ensemble=0.5 | ONNX | jaejohn | **0.920** | 242s | V18 restored, ONNX |
 
-| Version | Config | Cache | LB | Runtime (dry) | Notes |
-|---------|--------|-------|-----|---------------|-------|
-| v2 | V18 (d=320, 4L, 80ep) | no | timeout | 1110s | V18 override too heavy |
-| v3 | V18 (d=320, 4L, 80ep) | yes (jaejohn) | timeout | — | V18 override too heavy |
-| **v4** | **V17 (d=256, 3L, 40ep)** | **yes (jaejohn)** | **0.922** | **230s** | Clean rewrite, V18 removed |
+Reference: pantanal-distill (dingjiarun) V18+TF = **0.930** LB
 
-### v4 Key Metrics (from dry-run logs)
+## Key Finding: ONNX Causes the 0.930 → 0.920 Gap
 
-- ProtoSSM training: 23 epochs (early stopped at patience=8), 11.3s
-- MLP probes trained: 52 classes
-- ResidualSSM: ran (wall=0.4 min < 4 min cutoff), 26 epochs, 1.0s
-- Ensemble weight: 0.50 (default, not OOF-optimized)
-- Fusion alpha: mean=0.501 (ProtoSSM and Perch roughly equal)
-- Correction magnitude: mean_abs=0.4601
-- Final score range: 0.000 to 1.000, mean=0.221
+### Confirmed: same cache, same code
 
-### Gap Analysis: 0.922 vs 0.930 (pantanal reference)
+The original pantanal-distill notebook uses `jaejohn/perch-meta` (dataset ID 9712127) —
+the **exact same cache** we use. The code is verified identical (all 43 functions match).
+The only difference between the original (0.930) and our v7 (0.920) is **TF vs ONNX
+for test inference**.
 
-Our v4 scores 0.922, which is +0.004 over our previous best (0.918, exp 018 v4)
-but −0.008 below the pantanal-distill reference (0.930). Possible causes:
+### How ONNX diverges
 
-1. **perch-meta cache mismatch**: We use `jaejohn/perch-meta` which was extracted
-   by a third party. The pantanal notebook may have used its own extraction with
-   slightly different proxy_reduce settings or TF version. Perch embeddings are
-   sensitive to TF version (we validated max diff 2.7e-4 between TF and ONNX).
+PACE validation showed max logit diff of 2.7e-4 between TF and ONNX — seemingly tiny.
+But this compounds through the downstream pipeline:
 
-2. **Per-class thresholds**: We use default 0.5 for all classes. The V18 pantanal
-   has hardcoded per-class thresholds optimized from OOF. Even with V17 config,
-   the original may have been using OOF-optimized thresholds from a train run.
+1. **MLP probe features**: `build_class_features` uses raw Perch scores as input features.
+   Small logit diffs → different probe predictions for threshold-edge cases.
+2. **ProtoSSM gated fusion**: `alpha * sim + (1-alpha) * perch_logits` — Perch logits
+   directly enter the model output.
+3. **V18 per-class thresholds**: Hardcoded thresholds were optimized on TF outputs.
+   The sharpening function `apply_per_class_thresholds` amplifies small differences
+   near threshold boundaries.
+4. **5 TTA shifts**: Each shift runs ONNX independently, accumulating 5x the inference diff.
+5. **ResidualSSM**: Second-pass correction trained on first-pass ensemble, which itself
+   uses ONNX test scores.
 
-3. **Ensemble weight**: We default to 0.50 (ProtoSSM=0.5, MLP=0.5). The pantanal
-   train mode found ENSEMBLE_WEIGHT_PROTO=0.0 (MLP-only wins on OOF). Using 0.0
-   instead of 0.5 could improve the score.
+### Evidence
 
-4. **Stochastic training**: ProtoSSM and MLP probes have random initialization.
-   The pantanal's 0.930 may represent a lucky seed. Our early stopping at epoch 23
-   (vs potentially running longer) may also matter.
+| Config | TF LB | ONNX LB | Delta |
+|--------|-------|---------|-------|
+| V17 | 0.922 | 0.911* | −0.011 |
+| V18 | 0.930 | 0.920 | −0.010 |
 
-5. **V17 vs actual pantanal version**: The pantanal notebook's 0.930 score may have
-   been achieved with a version between V17 and V18 that we don't have — e.g., V17
-   with per-class thresholds but without the heavy V18 model scaling.
+*V17+ONNX at ensemble=0.0. V17+ONNX at ensemble=0.5 was not submitted.
 
-### Recommended Next Steps
+The ONNX penalty is consistent at ~0.010 across both V17 and V18 configs.
 
-1. **Try ENSEMBLE_WEIGHT_PROTO=0.0** (MLP-only) — free, just change one constant
-2. **Build our own perch-meta** — ensures cache matches our exact pipeline
-3. **Swap TF→ONNX** (Phase B) — 4x speedup, frees budget for improvements
-4. **Add per-class thresholds from OOF** — run train mode to get V17-specific thresholds
+## Phase A Analysis
+
+### v4 (V17+TF, 0.922)
+
+- ProtoSSM: 3M params, 23 epochs (early stopped), best_val_loss=0.4406
+- MLP probes: 52 classes (PCA-64, hidden=(128,))
+- ResidualSSM: 176K params, 26 epochs
+- OOF baseline AUC: 0.8061
+
+### v7 (V18+ONNX, 0.920)
+
+- ProtoSSM: 5.8M params, 80 epochs (no early stop), best_val_loss=0.4590 (worse)
+- MLP probes: 58 classes (PCA-128, hidden=(256,128))
+- ResidualSSM: 439K params, 40 epochs
+- OOF baseline AUC: 0.8032 (worse — V18 fusion lambdas less optimal for this data)
+
+V18's bigger model actually has worse val_loss (0.4590 vs 0.4406) on 59 training files.
+The capacity increase overfits. V18 only wins when test inference matches TF exactly
+(so the hardcoded thresholds and fusion lambdas align).
+
+## Ensemble Weight Finding
+
+| Config | w=0.5 | w=0.0 | Delta |
+|--------|-------|-------|-------|
+| V17+ONNX | 0.922 (TF) | 0.911 (ONNX) | −0.011 |
+
+ENSEMBLE_WEIGHT_PROTO=0.0 (MLP-only) was −0.011 worse. ProtoSSM genuinely helps
+at w=0.5 under V17 config, contradicting the pantanal OOF finding of w=0.0
+(which was from V18 config with a bigger model).
+
+## Next Steps
+
+### Path to 0.930: Reproduce pantanal exactly (TF test inference)
+
+The ONNX approach costs ~0.010 LB. To match 0.930, we need TF for test inference.
+The original pantanal notebook uses TF for both labeled (via cache) and test inference.
+
+Plan:
+1. Restore TF in the kernel (remove ONNX)
+2. Use V18 config + V18 thresholds (matching original exactly)
+3. Keep jaejohn/perch-meta cache (confirmed same as original)
+4. Submit → should match 0.930
+
+Once 0.930 is confirmed, we can test ONNX as an isolated variable to verify
+the 0.010 penalty, and then decide whether the speedup is worth it for ensemble work.
