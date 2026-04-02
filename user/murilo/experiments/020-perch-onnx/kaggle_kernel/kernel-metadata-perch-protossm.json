@@ -1,0 +1,19 @@
+{
+  "id": "murilogustineli/birdclef-2026-perch-protossm-v5",
+  "title": "BirdCLEF 2026 Perch ProtoSSM v5",
+  "code_file": "submission_perch_protossm.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-tf220-wheel",
+    "jaejohn/perch-meta"
+  ],
+  "model_sources": [
+    "google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}
