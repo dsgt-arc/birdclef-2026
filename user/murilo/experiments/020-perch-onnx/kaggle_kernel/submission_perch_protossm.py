@@ -4,18 +4,38 @@
 # Pulled: 2026-03-30
 
 # --- TF 2.20 installation (must run before import tensorflow) ---
+# Perch v2 requires TF 2.20+ for StableHLO compatibility.
+# Kaggle ships TF 2.19 which fails with "unregistered operation vhlo.cosine_v2".
 import os
 import subprocess
 import sys
+import time
 
-# Perch v2 requires TF 2.20+ for StableHLO compatibility.
-# Kaggle ships TF 2.19 which fails with "unregistered operation vhlo.cosine_v2".
+START_TIME = time.time()
+TIMEOUT_SECONDS = 88 * 60  # 88 min safety cutoff
+
+KAGGLE_USER = "murilogustineli"
+
+
+def _find_input_early(slug: str) -> str:
+    candidates = [
+        f"/kaggle/input/{slug}",
+        f"/kaggle/input/datasets/{KAGGLE_USER}/{slug}",
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[0]
+
+
+if os.path.exists("/kaggle/input"):
+    print(f"Kaggle input contents: {os.listdir('/kaggle/input')}")
+
+# Install TF 2.20
 TF_WHEEL_CANDIDATES = [
+    _find_input_early("birdclef-tf220-wheel"),
     "/kaggle/input/birdclef-tf220-wheel",
-    "/kaggle/input/datasets/murilogustineli/birdclef-tf220-wheel",
 ]
-
-_tf_installed = False
 for tf_wheel_dir in TF_WHEEL_CANDIDATES:
     if os.path.exists(tf_wheel_dir):
         print(f"Installing TF 2.20 from {tf_wheel_dir}")
@@ -28,16 +48,10 @@ for tf_wheel_dir in TF_WHEEL_CANDIDATES:
                         "pip",
                         "install",
                         "--quiet",
-                        "--no-deps",
                         os.path.join(tf_wheel_dir, whl),
                     ]
                 )
-        _tf_installed = True
         break
-
-if not _tf_installed and os.path.exists("/kaggle/input"):
-    print("WARNING: TF 2.20 wheel not found! Kaggle input contents:")
-    print(os.listdir("/kaggle/input"))
 
 # --- Mode switch ---
 MODE = "submit"
