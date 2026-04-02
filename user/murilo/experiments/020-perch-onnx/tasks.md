@@ -19,7 +19,7 @@ faster inference, then ensemble Perch + SED within 90-min kernel budget.
 | 0.930 | pantanal-distill V17 | d=256, 3 layers, MLP-only, per-class thresholds |
 | 0.939 | Competition #1 | Unknown |
 
-### Status: **Phase A running, Phase B validation complete**
+### Status: **Phase B: ONNX swap + MLP-only submitted (v5), awaiting LB score**
 
 - **Branch**: `mg/020-perch-onnx`
 
@@ -47,9 +47,35 @@ Kaggle datasets required:
 - [x] A.4 v2 push (no cache): succeeded in 1110s. Labeled extraction took ~625s.
       Dry-run on 20 test files. Submitted to LB — awaiting result.
       Note: ResidualSSM skipped (wall time safety cutoff at 12.9 min).
-- [ ] A.5 v3 push (with jaejohn/perch-meta cache): **currently running on Kaggle**.
-      Should skip labeled extraction (~10 min saved), have time for ResidualSSM.
-- [ ] A.6 Record LB results from v2 and/or v3, update results tracking.
+- [x] A.5 v3 push (with jaejohn/perch-meta cache): submitted.
+- [x] A.6 **Both v2 and v3 TIMEOUT on LB submission.**
+
+### Root Cause: V18 Config Override Causes Timeout
+
+The notebook has two config layers:
+- **V17 CFG** (Cell 5): d_model=256, 3 layers, 40 epochs, 3 TTA shifts
+- **V18 CFG** (Cell 6): d_model=320, 4 layers, 80 epochs, 5 TTA shifts
+
+Cell 6 **always executes**, overriding V17 with V18. The V18 config is much
+heavier (bigger model, 2x epochs, 5 TTA shifts). This pushes the kernel over
+the 90-minute Kaggle budget.
+
+Additionally, our TF install was missing `--no-deps`, installing full dependency
+chains instead of just the two specific wheels.
+
+- [x] A.7 Clean V17 rewrite: fresh extraction from Kaggle pull (2026-04-02),
+      V18 override removed, TF install fixed with `--no-deps`,
+      V18 hardcoded thresholds replaced with V17 defaults (0.5).
+      Verified: all 43 functions/classes identical to original.
+      See `pantanal-implementation.md` for full step-by-step analysis.
+- [x] A.8 Push v4 (V17 clean) to Kaggle and submit to LB.
+      Dry-run: 230s (down from timeout). Cache loaded, ProtoSSM 23ep (early stop),
+      ResidualSSM ran (wall=0.4min), all 6 PP stages applied.
+- [x] A.9 LB result: **0.922** (+0.004 over our v4 0.918, but −0.008 vs pantanal 0.930).
+      Gap analysis: our kernel uses jaejohn/perch-meta cache (may differ from
+      pantanal's own extraction), V17 default thresholds (0.5) vs V18 hardcoded,
+      and ENSEMBLE_WEIGHT_PROTO=0.5 (pantanal train mode found 0.0 = MLP-only).
+      See results discussion below.
 
 ---
 
@@ -73,14 +99,17 @@ Numerical equivalence (ONNX standard vs TF):
 ONNX models downloaded to: `/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2-onnx/`
 
 - [x] B.1 Validate ONNX locally on PACE — **PASS** (max diff 2.7e-4, 4.1x speedup)
-- [ ] B.2 Upload Perch ONNX model to Kaggle as dataset (`birdclef-2026-perch-onnx`)
+- [x] B.2 Upload Perch ONNX model to Kaggle as dataset (`birdclef-2026-perch-onnx`)
+      Includes: perch_v2.onnx (391MB), labels.csv, onnxruntime-1.24.4 wheel (17MB)
 - [ ] B.3 Create our own perch-meta dataset (replace jaejohn dependency)
       Script ready: `scripts/build_perch_meta.py` (supports --use-onnx flag)
-- [ ] B.4 Modify kernel: remove TF, replace with onnxruntime session
-      - Remove TF wheel install + imports
-      - Replace Perch TF inference with ONNX `session.run()`
-      - Reuse onnxruntime pattern from SED kernel (exp 010)
-- [ ] B.5 Submit ONNX kernel to LB — must match Phase A score, runtime < 20 min
+- [x] B.4 Modify kernel: remove TF, replace with onnxruntime session
+      - Removed TF wheel install + all TF imports
+      - ONNX session loaded from bundled dataset
+      - onnxruntime installed from bundled wheel (--no-deps, offline)
+      - Also changed ENSEMBLE_WEIGHT_PROTO 0.5→0.0 (MLP-only)
+- [x] B.5 v5 pushed (nb v6): dry-run 98s (was 230s with TF), 2.3x faster.
+      **Running LB inference now.**
 
 ---
 
@@ -120,5 +149,7 @@ Runtime budget with ONNX: ~20 min (Perch) + ~50 min (SED 4-fold) + ~5 min (rest)
 |------------|-----|---------|-------|
 | Perch v4 (exp 018) | 0.918 | ~82 min | Previous best Perch |
 | SED v5j-4fold (exp 019) | 0.913 | ~50 min | Best SED |
-| ProtoSSM v5 port v2 (no cache) | pending | 1110s | Dry-run 20 files, ResidualSSM skipped |
-| ProtoSSM v5 port v3 (perch-meta) | running | — | With jaejohn/perch-meta cache |
+| ProtoSSM v5 port v2 (V18, no cache) | timeout | 1110s dry | V18 override caused timeout |
+| ProtoSSM v5 port v3 (V18, cache) | timeout | — | V18 override caused timeout |
+| ProtoSSM v5 port v4 (V17, cache) | **0.922** | 230s dry | V17 clean rewrite, ResidualSSM ran, new best Perch |
+| ProtoSSM v5 port v5 (ONNX+MLP-only) | **running** | 98s dry | TF→ONNX, ensemble 0.5→0.0 |

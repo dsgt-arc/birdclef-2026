@@ -309,6 +309,26 @@ probes train in ~2s on CPU. All inference on Kaggle CPU kernel (~85 min for ~600
 | `perch-protossm-v4.1` | v4 + OOF prior by filename, per-stage clipping, all-data train | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.918** | `submission_perch_protossm.py` v4 (no improvement) |
 | `perch-protossm-v4.2` | v4.1 + taxonomy 5-way, fixed ensemble 0.5, MLP seed, 1-based sites | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.899** | `submission_perch_protossm.py` v5 (**REGRESSED −0.019**) |
 
+## BirdCLEF 2026 — Perch ProtoSSM v5 (exp 020)
+
+Faithful port of pantanal-distill V17 (0.930 LB reference). V17 config: d_model=256,
+3 BiSSM layers, cross-attention, focal BCE + distill + mixup, 40 epochs. Uses
+jaejohn/perch-meta cache for labeled embeddings. All training on Kaggle CPU kernel.
+
+| Slug | Pipeline | Config | LB | Kaggle Kernel |
+|------|----------|--------|-----|---------------|
+| `perch-protossm-v5-v2` | pantanal port (V18 config, no cache) | d=320, 4L, 80ep | timeout | `020-.../submission_perch_protossm.py` v2 |
+| `perch-protossm-v5-v3` | pantanal port (V18 config, cache) | d=320, 4L, 80ep | timeout | `020-.../submission_perch_protossm.py` v3 |
+| **`perch-protossm-v5-v4`** | **pantanal port (V17 config, cache)** | **d=256, 3L, 40ep** | **0.922** | **`020-.../submission_perch_protossm.py` v4** |
+
+V17 pipeline: Perch v2 TF → cache → 5-fold OOF priors → MLP(128) probes (PCA-64) →
+ProtoSSM v4 (d=256, 3 BiSSM, cross-attn, 40ep, focal+distill+mixup, SWA) →
+ResidualSSM (d=64) → TTA [0,±1] → ensemble (0.5 proto + 0.5 mlp) →
+6-stage PP (temp, confidence, rank-aware, delta-shift, per-class threshold).
+
+Gap vs pantanal reference (0.930): −0.008. Likely from jaejohn/perch-meta cache
+differences, default thresholds (0.5 vs V18 optimized), ensemble weight (0.5 vs 0.0).
+
 ### v2-fix Details (0.911 LB)
 
 Pipeline: Perch v2 frozen → StandardScaler + PCA(32) → 5-fold OOF GroupKFold by site →

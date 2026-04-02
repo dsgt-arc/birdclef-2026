@@ -1,59 +1,22 @@
 # ruff: noqa
-# Exp 020: Perch ProtoSSM — ported from pantanal-distill V18 (0.930 LB)
-# Source: kaggle kernels pull dingjiarun/pantanal-distill-birdclef2026-improvement-a4dc68
-# Pulled: 2026-03-30
+# Exp 020: Perch ProtoSSM v5 — V17 config + ONNX Perch + MLP-only ensemble
+# Based on dingjiarun/pantanal-distill-birdclef2026-improvement-a4dc68
+# Changes from v4: TF→ONNX Perch (4x speedup), ENSEMBLE_WEIGHT_PROTO 0.5→0.0
+# Fresh pull: 2026-04-02
 
-# --- TF 2.20 installation (must run before import tensorflow) ---
-# Perch v2 requires TF 2.20+ for StableHLO compatibility.
-# Kaggle ships TF 2.19 which fails with "unregistered operation vhlo.cosine_v2".
-import os
-import subprocess
-import sys
-import time
+# ## Setup — install onnxruntime from bundled wheel (no internet)
+import glob, os, subprocess, sys
 
-START_TIME = time.time()
-TIMEOUT_SECONDS = 88 * 60  # 88 min safety cutoff
+_ort_dir = "/kaggle/input/birdclef-2026-perch-onnx"
+_ort_whl = glob.glob(os.path.join(_ort_dir, "onnxruntime-*.whl"))
+if _ort_whl:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "--no-deps", _ort_whl[0]])
 
-KAGGLE_USER = "murilogustineli"
+# ## Configuration
+# Mode switch and hyperparameters.
 
-
-def _find_input_early(slug: str) -> str:
-    candidates = [
-        f"/kaggle/input/{slug}",
-        f"/kaggle/input/datasets/{KAGGLE_USER}/{slug}",
-    ]
-    for c in candidates:
-        if os.path.exists(c):
-            return c
-    return candidates[0]
-
-
-if os.path.exists("/kaggle/input"):
-    print(f"Kaggle input contents: {os.listdir('/kaggle/input')}")
-
-# Install TF 2.20
-TF_WHEEL_CANDIDATES = [
-    _find_input_early("birdclef-tf220-wheel"),
-    "/kaggle/input/birdclef-tf220-wheel",
-]
-for tf_wheel_dir in TF_WHEEL_CANDIDATES:
-    if os.path.exists(tf_wheel_dir):
-        print(f"Installing TF 2.20 from {tf_wheel_dir}")
-        for whl in sorted(os.listdir(tf_wheel_dir)):
-            if whl.endswith(".whl"):
-                subprocess.check_call(
-                    [
-                        sys.executable,
-                        "-m",
-                        "pip",
-                        "install",
-                        "--quiet",
-                        os.path.join(tf_wheel_dir, whl),
-                    ]
-                )
-        break
-
-# --- Mode switch ---
+# --- Cell 3 ---
+# Cell 1 — Mode switch
 MODE = "submit"
 
 assert MODE in {"train", "submit"}
@@ -77,7 +40,6 @@ print("MODE =", MODE)
 # Cell 2 — Imports and run config
 import os
 
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import gc
@@ -91,7 +53,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import soundfile as sf
-import tensorflow as tf
+import onnxruntime as ort
 
 import torch
 import torch.nn as nn
@@ -114,14 +76,13 @@ from sklearn.preprocessing import StandardScaler
 from tqdm.auto import tqdm
 
 warnings.filterwarnings("ignore")
-tf.experimental.numpy.experimental_enable_numpy_behavior()
 
 _WALL_START = time.time()
 
 BASE = Path("/kaggle/input/competitions/birdclef-2026")
-MODEL_DIR = Path(
-    "/kaggle/input/models/google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
-)
+
+# ONNX Perch model — replaces TF SavedModel (~4x faster)
+ONNX_MODEL_DIR = Path("/kaggle/input/birdclef-2026-perch-onnx")
 
 SR = 32000
 WINDOW_SEC = 5
@@ -236,74 +197,16 @@ CFG = {
 
 CFG["full_cache_work_dir"].mkdir(parents=True, exist_ok=True)
 
-print("TensorFlow:", tf.__version__)
+print("ONNX Runtime:", ort.__version__)
 print("PyTorch:", torch.__version__)
 print("Competition dir exists:", BASE.exists())
-print("Model dir exists:", MODEL_DIR.exists())
+print("ONNX model dir exists:", ONNX_MODEL_DIR.exists())
 print("V17 CFG: d_model=256, n_ssm_layers=3")
 print(json.dumps({k: (str(v) if isinstance(v, Path) else v) for k, v in CFG.items()}, indent=2))
 
-# --- Cell 6 ---
-# ── V18 CFG UPGRADES ──────────────────────
-CFG["proto_ssm"] = {
-    "d_model": 320,
-    "d_state": 32,
-    "n_ssm_layers": 4,
-    "dropout": 0.12,
-    "n_prototypes": 2,
-    "n_sites": 20,
-    "meta_dim": 24,
-    "use_cross_attn": True,
-    "cross_attn_heads": 8,
-}
-CFG["proto_ssm_train"] = {
-    "n_epochs": 80,
-    "lr": 8e-4,
-    "weight_decay": 1e-3,
-    "val_ratio": 0.15,
-    "patience": 20,
-    "pos_weight_cap": 25.0,
-    "distill_weight": 0.15,
-    "proto_margin": 0.15,
-    "label_smoothing": 0.03,
-    "oof_n_splits": 5,
-    "mixup_alpha": 0.4,
-    "focal_gamma": 2.5,
-    "swa_start_frac": 0.65,
-    "swa_lr": 4e-4,
-    "use_cosine_restart": True,
-    "restart_period": 20,
-}
-CFG["residual_ssm"] = {
-    "d_model": 128,
-    "d_state": 16,
-    "n_ssm_layers": 2,
-    "dropout": 0.1,
-    "correction_weight": 0.35,
-    "n_epochs": 40,
-    "lr": 8e-4,
-    "patience": 12,
-}
-CFG["best_fusion"]["lambda_event"] = 0.45
-CFG["best_fusion"]["lambda_texture"] = 1.1
-CFG["best_fusion"]["lambda_proxy_texture"] = 0.9
-CFG["threshold_grid"] = [0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]
-CFG["tta_shifts"] = [0, 1, -1, 2, -2]
-CFG["rank_aware_power"] = 0.4
-CFG["delta_shift_alpha"] = 0.20
-CFG["mlp_params"] = {
-    "hidden_layer_sizes": (256, 128),
-    "activation": "relu",
-    "max_iter": 500,
-    "early_stopping": True,
-    "validation_fraction": 0.15,
-    "n_iter_no_change": 20,
-    "random_state": 42,
-    "learning_rate_init": 5e-4,
-    "alpha": 0.005,
-}
-CFG["frozen_best_probe"] = {"pca_dim": 128, "min_pos": 5, "C": 0.75, "alpha": 0.45}
-print("✅ V18 CFG loaded")
+# === V18 CFG OVERRIDE (Cell 6) — SKIPPED ===
+# V18 override removed: causes timeout due to bigger model (d=320, 4 layers),
+# 80 epochs, 5 TTA shifts. Using V17 config (d=256, 3 layers, 40 epochs).
 
 # --- Cell 7 ---
 
@@ -550,11 +453,21 @@ print("✅ Ensemble Weight Sweep defined")
 # --- Cell 16 ---
 # Cell 3 — Load Perch, mapping, and selective frog proxies
 BEST = CFG["best_fusion"]
-birdclassifier = tf.saved_model.load(str(MODEL_DIR))
-infer_fn = birdclassifier.signatures["serving_default"]
+
+# Load ONNX Perch model
+_sess_opts = ort.SessionOptions()
+_sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+_sess_opts.intra_op_num_threads = 4
+_sess_opts.inter_op_num_threads = 1
+onnx_session = ort.InferenceSession(
+    str(ONNX_MODEL_DIR / "perch_v2.onnx"),
+    sess_options=_sess_opts,
+    providers=["CPUExecutionProvider"],
+)
+print(f"ONNX Perch loaded: {ONNX_MODEL_DIR / 'perch_v2.onnx'}")
 
 bc_labels = (
-    pd.read_csv(MODEL_DIR / "assets" / "labels.csv")
+    pd.read_csv(ONNX_MODEL_DIR / "labels.csv")
     .reset_index()
     .rename(columns={"index": "bc_index", "inat2024_fsd50k": "scientific_name"})
 )
@@ -964,9 +877,9 @@ def infer_perch_with_embeddings(paths, batch_files=16, verbose=True, proxy_reduc
             x_pos += N_WINDOWS
             write_row += N_WINDOWS
 
-        outputs = infer_fn(inputs=tf.convert_to_tensor(x))
-        logits = outputs["label"].numpy().astype(np.float32, copy=False)
-        emb = outputs["embedding"].numpy().astype(np.float32, copy=False)
+        outputs = onnx_session.run(None, {"inputs": x})
+        emb = outputs[0].astype(np.float32, copy=False)  # embedding (B, 1536)
+        logits = outputs[3].astype(np.float32, copy=False)  # label (B, 14795)
 
         scores[batch_row_start:write_row, MAPPED_POS] = logits[:, MAPPED_BC_INDICES]
         embeddings[batch_row_start:write_row] = emb
@@ -2305,7 +2218,7 @@ if CFG["run_probe_grid"]:
     grid_results = (
         pd.DataFrame(results).sort_values("probe_oof_auc", ascending=False).reset_index(drop=True)
     )
-    display(grid_results)
+    print(grid_results)
 
     BEST_PROBE = {
         "pca_dim": int(grid_results.iloc[0]["pca_dim"]),
@@ -2378,7 +2291,6 @@ print("Explained variance ratio sum:", emb_pca.explained_variance_ratio_.sum())
 
 # ## ProtoSSM Training
 # Instantiate ProtoSSM, initialize prototypes from class means, set up taxonomic head, and train with multi-task loss.
-#
 
 # --- Cell 41 ---
 # Instantiate and train ProtoSSM v4
@@ -2411,7 +2323,7 @@ for fi in range(len(file_list)):
         file_families[fi, class_to_family[ci]] = 1.0
 
 # --- OOF Cross-Validation (TRAIN MODE ONLY) ---
-ENSEMBLE_WEIGHT_PROTO = 0.5  # default, overridden by OOF in train mode
+ENSEMBLE_WEIGHT_PROTO = 0.0  # MLP-only (pantanal OOF found proto weight=0.0 optimal)
 oof_proto_flat = None
 fold_alphas = []
 
@@ -2583,7 +2495,6 @@ if fold_alphas:
 # Train a lightweight SSM on the residuals (errors) of the first-pass ProtoSSM + MLP ensemble.
 # The residual model learns systematic correction patterns: species that are consistently
 # over/under-predicted, temporal error patterns, and site-specific biases.
-#
 
 # --- Cell 43 ---
 # Residual SSM: second-pass boosting on first-pass errors
@@ -2861,7 +2772,6 @@ else:
     print("SKIPPED ResidualSSM (wall time safety)")
     LOGS["residual_ssm"] = {"skipped": True, "wall_min": _wall_min}
 
-
 # --- Cell 44 ---
 # Cell 15 — Diagnostics
 if MODE == "train":
@@ -2897,7 +2807,6 @@ print(f"proxy_reduce used for test inference: {CFG['proxy_reduce']!r}")
 print("meta_test:", meta_test.shape)
 print("scores_test_raw:", scores_test_raw.shape)
 print("emb_test:", emb_test.shape)
-
 
 # ## Score Fusion -- ProtoSSM v2 + MLP Ensemble
 # Combine ProtoSSM v2 temporal predictions with MLP probe scores using OOF-optimized ensemble weight. Includes metadata-aware inference and comprehensive diagnostics.
@@ -3046,248 +2955,10 @@ LOGS["test_inference"] = test_logs
 # --- Cell 50 ---
 # Cell 18 — V17: Full post-processing pipeline
 
-# V17: Optimize per-class thresholds from OOF (train mode only)
-# V18: Optimize per-class thresholds from OOF (HARDCODED FROM V18 LOGS)
-print("Using HARDCODED optimized per-class thresholds for V18!")
-PER_CLASS_THRESHOLDS = np.array(
-    [
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.30000001192092896,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.4000000059604645,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.3499999940395355,
-        0.5,
-        0.6000000238418579,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.25,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.6000000238418579,
-        0.5,
-        0.699999988079071,
-        0.699999988079071,
-        0.25,
-        0.3499999940395355,
-        0.4000000059604645,
-        0.5,
-        0.5,
-        0.3499999940395355,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.30000001192092896,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.6499999761581421,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.30000001192092896,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.30000001192092896,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.699999988079071,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-        0.5,
-    ],
-    dtype=np.float32,
-)
+# V17: Per-class thresholds — use default 0.5 (no OOF optimization in submit mode)
+# Note: with threshold=0.5 for all classes, apply_per_class_thresholds is a no-op.
+# The V18 hardcoded thresholds were removed since we use V17 config.
+PER_CLASS_THRESHOLDS = np.full(N_CLASSES, 0.5, dtype=np.float32)
 
 
 def sigmoid(x):
