@@ -8,8 +8,7 @@
   "enable_gpu": false,
   "enable_internet": false,
   "dataset_sources": [
-    "murilogustineli/birdclef-tf220-wheel",
-    "jaejohn/perch-meta"
+    "murilogustineli/birdclef-tf220-wheel"
   ],
   "model_sources": [
     "google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
