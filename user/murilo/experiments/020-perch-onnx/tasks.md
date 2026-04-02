@@ -19,30 +19,37 @@ speedup, then ensemble Perch + SED within 90-min kernel budget.
 | 0.930 | pantanal-distill V18 | d=256, 3 layers, MLP-only, per-class thresholds |
 | 0.939 | Competition #1 | Unknown |
 
-### Status: **In progress** — Phase A
+### Status: **In progress** — Phase A submitted, awaiting LB
 
 - **Branch**: `mg/020-perch-onnx`
 
 ---
 
-## Phase A: Port Pantanal-Distill V18 as Baseline (1 day, 1 LB sub)
+## Phase A: Port Pantanal-Distill V17 as Baseline (1 day, 1-2 LB subs)
 
-Instead of bisecting the v4.2 regression (0.918→0.899), directly port the
-pantanal-distill V18 notebook (0.930 LB) as our new Perch baseline. The code
-is self-contained (3418 lines) and already validated on LB.
+Directly port the pantanal-distill notebook (0.930 LB) as our new Perch baseline.
+The code is self-contained (3418 lines) and already validated on LB.
 
 Source: `user/murilo/notes/pantanal-distill-0930.py`
 Annotated: `user/murilo/notes/pantanal-distill-0930-annotated.md`
+Config: V17 (d=256, 3 layers) — the actual code, despite the file being labeled V18.
 
 Kaggle datasets required:
 - `birdclef-2026` (competition data)
 - `google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1` (Perch model)
 - `murilogustineli/birdclef-tf220-wheel` (TF 2.20 wheels)
+- `jaejohn/perch-meta` (pre-extracted labeled embeddings cache, saves ~10 min)
 
-- [ ] A.1 Copy pantanal-distill code as kernel, adapt TF wheel paths to our dataset
-- [ ] A.2 Create kernel metadata JSON + push.sh entry
-- [ ] A.3 Push kernel to Kaggle, submit to LB — target 0.930
-- [ ] A.4 Record LB result, update results tracking
+- [x] A.1 Copy pantanal-distill code as kernel, add TF 2.20 wheel installer
+      (matching exp 018 proven pattern)
+- [x] A.2 Create kernel metadata JSON + push.sh entry
+- [x] A.3 v1 push: failed — TF 2.19 loaded (wheel install wasn't running). Fixed.
+- [x] A.4 v2 push (no cache): succeeded in 1110s. Labeled extraction took ~625s.
+      Dry-run on 20 test files. Submitted to LB — awaiting result.
+- [x] A.5 v3 push (with jaejohn/perch-meta cache): running on Kaggle.
+- [ ] A.6 Record LB results from v2 and/or v3, update results tracking.
+      Note: v2 ran without ResidualSSM (skipped due to wall time safety).
+      v3 with cache should have time for ResidualSSM.
 
 ---
 
