@@ -68,6 +68,7 @@ class SSAMBAPretrainModel(nn.Module):
         mse_weight: Weight for MSE loss (default 10.0)
         nce_temperature: Temperature for cosine similarity in NCE (default 0.1)
         nce_num_negatives: Number of cross-sample negatives per prediction (default 100)
+        nce_pool: "token" (per-token NCE) or "span" (pool over contiguous spans). Default "token".
     """
 
     def __init__(
@@ -88,6 +89,7 @@ class SSAMBAPretrainModel(nn.Module):
         mse_weight: float = 10.0,
         nce_temperature: float = 0.1,
         nce_num_negatives: int = 100,
+        nce_pool: str = "token",
     ):
         super().__init__()
         self.mel_spec = mel_spec_layer
@@ -105,6 +107,7 @@ class SSAMBAPretrainModel(nn.Module):
         self.mse_weight = mse_weight
         self.nce_temperature = nce_temperature
         self.nce_num_negatives = nce_num_negatives
+        self.nce_pool = nce_pool
 
         self.backbone = SSAMBAModel(config)
 
@@ -133,19 +136,20 @@ class SSAMBAPretrainModel(nn.Module):
             )
 
         # MPC decoder head (discriminative — NCE contrastive)
+        # Projects span-pooled backbone embeddings to patch space for contrastive loss.
+        nce_proj_dim = self.patch_dim
         if decoder_depth == 1:
-            self.cpredlayer = nn.Linear(embed_dim, self.patch_dim)
+            self.cpredlayer = nn.Linear(embed_dim, nce_proj_dim)
         else:
             self.cpredlayer = nn.Sequential(
                 nn.Linear(embed_dim, embed_dim),
                 nn.ReLU(),
-                nn.Linear(embed_dim, self.patch_dim),
+                nn.Linear(embed_dim, nce_proj_dim),
             )
 
         # PCEN layer (learnable parameters, applied per-channel)
         if mel_norm == "pcen":
-            n_mels = fpatch  # 224 for our config
-            self.pcen = _PCEN(n_mels=n_mels)
+            self.pcen = _PCEN(n_mels=config.img_size[0])
 
     def _compute_mpg_loss(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.loss_fn == "l1":
@@ -219,6 +223,54 @@ class SSAMBAPretrainModel(nn.Module):
         mask[num_real:] = False
         return mask
 
+    @staticmethod
+    def _compute_span_ids(mask_indices: torch.Tensor) -> tuple[torch.Tensor, int]:
+        """Assign each masked token to its contiguous span.
+
+        Args:
+            mask_indices: (M,) sorted indices of masked tokens
+
+        Returns:
+            span_ids: (M,) integer span ID for each masked token
+            num_spans: total number of spans
+        """
+        if len(mask_indices) <= 1:
+            return torch.zeros_like(mask_indices), max(1, len(mask_indices))
+
+        diffs = mask_indices[1:] - mask_indices[:-1]
+        breaks = torch.zeros(len(mask_indices), dtype=torch.long, device=mask_indices.device)
+        breaks[1:] = (diffs > 1).long()
+        span_ids = breaks.cumsum(0)
+        num_spans = span_ids[-1].item() + 1
+        return span_ids, num_spans
+
+    @staticmethod
+    def _span_mean_pool(
+        tokens: torch.Tensor, span_ids: torch.Tensor, num_spans: int
+    ) -> torch.Tensor:
+        """Mean-pool tokens within each contiguous span.
+
+        Args:
+            tokens: (B, M, D)
+            span_ids: (M,) integer span ID per token
+            num_spans: number of spans
+
+        Returns:
+            (B, num_spans, D)
+        """
+        B, M, D = tokens.shape
+        device = tokens.device
+
+        idx = span_ids.unsqueeze(0).unsqueeze(-1).expand(B, M, D)
+        pooled = torch.zeros(B, num_spans, D, device=device, dtype=tokens.dtype)
+        pooled.scatter_add_(1, idx, tokens)
+
+        counts = torch.zeros(num_spans, device=device, dtype=tokens.dtype)
+        ones = torch.ones(M, device=device, dtype=tokens.dtype)
+        counts.scatter_add_(0, span_ids, ones)
+        pooled = pooled / counts.unsqueeze(0).unsqueeze(-1).clamp(min=1)
+        return pooled
+
     def _generate_random_mask(self, num_real: int, num_total: int, device: torch.device) -> torch.Tensor:
         """Generate uniformly random mask within real tokens."""
         mask_count = int(num_real * self.mask_ratio)
@@ -241,23 +293,36 @@ class SSAMBAPretrainModel(nn.Module):
             monitor_l1, viz_mel, viz_mask, viz_pred, viz_target
         """
         B = waveforms.shape[0]
+        fpatch = self.backbone.config.fpatch
+        tpatch = self.backbone.config.tpatch
         mel = self.compute_mel(waveforms)  # (B, 1, n_mels, T)
         _nan_check("mel", mel)
 
         # Extract raw patch values as targets (before embedding)
+        # unfold produces freq-first order: (f0t0, f1t0, ..., f0t1, f1t1, ...)
         raw_patches = self.unfold(mel).transpose(1, 2)  # (B, N, patch_dim)
 
         # Get patch embeddings from backbone's patch_embed
+        # patch_embed uses Conv2d.flatten(2) which is freq-first order
         patch_embeddings = self.backbone.patch_embed(mel)  # (B, N, D)
         num_patches = patch_embeddings.shape[1]
+        f_patches = self.backbone.patch_embed.f_dim
+        t_patches = self.backbone.patch_embed.t_dim
+
+        # Token order: freq-first (default from Conv2d.flatten).
+        # Tokens: (f0t0, f1t0, ..., f15t0, f0t1, ..., f15t1, ...)
+        # This gives Mamba a full spectral view at each time step before advancing,
+        # which empirically outperforms time-first ordering for NCE.
 
         # Compute real tokens per sample (for padding-aware masking)
-        # Minimum real tokens needed: enough to form at least one mask span
-        min_maskable = max(self.mask_span_min, int(1 / self.mask_ratio) + 1)  # e.g. 5 tokens
+        min_maskable = int(1 / self.mask_ratio) + 1
+        if self.mask_mode == "span":
+            min_maskable = max(self.mask_span_min, min_maskable)
         if real_samples is not None:
             hop_length = 320  # samples per mel frame
-            # real_samples -> real mel frames -> real patches (tpatch=1)
-            real_tokens_per_sample = (real_samples.float() / hop_length).long().clamp(max=num_patches)
+            # real_samples -> real mel frames -> real time patches -> total tokens
+            real_time_patches = (real_samples.float() / (hop_length * tpatch)).long()
+            real_tokens_per_sample = (real_time_patches * f_patches).clamp(max=num_patches)
             min_real = real_tokens_per_sample.min().item()
         else:
             min_real = num_patches
@@ -346,31 +411,43 @@ class SSAMBAPretrainModel(nn.Module):
             monitor_mse = F.mse_loss(mpg_pred, mpg_targets)
             monitor_l1 = F.l1_loss(mpg_pred, mpg_targets)
 
-        # --- NCE: cross-sample contrastive with shared negative pool ---
-        # Sample K negatives ONCE, shared across all predictions (wav2vec 2.0 style).
-        # Memory: O(K * D) for the pool + O(BM * K) for logits. Much cheaper than
-        # per-prediction negatives which create a (BM, K, D) gather tensor.
-        nce_pred = self.cpredlayer(masked_repr)  # (B, M, patch_dim)
-        nce_targets = raw_patches[:, mask_indices_t, :].detach()  # (B, M, patch_dim)
+        # --- NCE: contrastive with shared negative pool ---
+        raw_masked = raw_patches[:, mask_indices_t, :].detach()  # (B, M, patch_dim)
 
-        BM = B * M
-        K = min(self.nce_num_negatives, BM - 1)
+        if self.nce_pool == "span":
+            # Pool masked tokens into contiguous spans before NCE.
+            # Useful when patches are too small to be individually discriminative.
+            span_ids, num_spans = self._compute_span_ids(mask_indices_t)
+            nce_repr = self._span_mean_pool(masked_repr, span_ids, num_spans)
+            nce_targets = self._span_mean_pool(raw_masked, span_ids, num_spans)
+            N_nce = num_spans
+        else:
+            # Token-level NCE: each masked token is its own prediction.
+            # Works well when patches carry enough spectro-temporal structure.
+            nce_repr = masked_repr
+            nce_targets = raw_masked
+            N_nce = M
+
+        nce_pred = self.cpredlayer(nce_repr)  # (B, N_nce, patch_dim)
+
+        BN = B * N_nce
+        K = min(self.nce_num_negatives, BN - 1)
         with torch.amp.autocast("cuda", enabled=False):
-            nce_pred_flat = F.normalize(nce_pred.float().reshape(BM, -1), dim=-1)
-            nce_targets_flat = F.normalize(nce_targets.float().reshape(BM, -1), dim=-1)
+            nce_pred_flat = F.normalize(nce_pred.float().reshape(BN, -1), dim=-1)
+            nce_targets_flat = F.normalize(nce_targets.float().reshape(BN, -1), dim=-1)
 
             # Sample K indices as shared negative pool
-            neg_indices = torch.randperm(BM, device=waveforms.device)[:K]
+            neg_indices = torch.randperm(BN, device=waveforms.device)[:K]
             neg_pool = nce_targets_flat[neg_indices]  # (K, D)
 
-            # Positive similarity: (BM, 1)
+            # Positive similarity: (BN, 1)
             pos_sim = (nce_pred_flat * nce_targets_flat).sum(dim=-1, keepdim=True)
-            # Negative similarity: (BM, K) via single matmul
+            # Negative similarity: (BN, K) via single matmul
             neg_sim = torch.mm(nce_pred_flat, neg_pool.transpose(0, 1))
 
-            # Logits: positive first, then K negatives → (BM, K+1)
+            # Logits: positive first, then K negatives → (BN, K+1)
             logits = torch.cat([pos_sim, neg_sim], dim=-1) / self.nce_temperature
-            labels = torch.zeros(BM, dtype=torch.long, device=waveforms.device)
+            labels = torch.zeros(BN, dtype=torch.long, device=waveforms.device)
             loss_nce = F.cross_entropy(logits, labels)
 
         with torch.no_grad():

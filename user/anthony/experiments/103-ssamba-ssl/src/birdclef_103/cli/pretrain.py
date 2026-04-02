@@ -57,6 +57,13 @@ def main():
         depth=model_cfg["depth"],
     )
 
+    # Disable grid jitter for overfit tests (otherwise targets shift each step,
+    # preventing memorization and making the test meaningless)
+    grid_jitter = model_cfg.get("grid_jitter", 5)
+    if args.overfit_batches > 0 and grid_jitter > 0:
+        logger.info(f"Overfit mode: disabling grid_jitter (was {grid_jitter})")
+        grid_jitter = 0
+
     # Build model
     model = SSAMBAPretrainModel(
         config=config,
@@ -64,15 +71,17 @@ def main():
         target_frames=data_cfg["target_frames"],
         mel_norm=model_cfg.get("mel_norm", "pcen"),
         mask_ratio=model_cfg.get("mask_ratio", 0.40),
-        mask_mode=model_cfg.get("mask_mode", "span"),
+        mask_mode=model_cfg.get("mask_mode", "random"),
         mask_span_min=model_cfg.get("mask_span_min", 5),
         mask_span_max=model_cfg.get("mask_span_max", 15),
-        grid_jitter=model_cfg.get("grid_jitter", 5),
+        grid_jitter=grid_jitter,
         normalize_targets=model_cfg.get("normalize_targets", True),
         loss_fn=model_cfg.get("loss_fn", "mse"),
         decoder_depth=model_cfg.get("decoder_depth", 2),
         nce_weight=model_cfg.get("nce_weight", 1.0),
         mse_weight=model_cfg.get("mse_weight", 10.0),
+        nce_pool=model_cfg.get("nce_pool", "token"),
+        nce_num_negatives=model_cfg.get("nce_num_negatives", 100),
     )
 
     total_params = sum(p.numel() for p in model.parameters())
@@ -93,13 +102,24 @@ def main():
             logger.info("No last.ckpt found, starting from scratch")
             ckpt_path = None
 
+    # Resolve actual max_epochs (overfit mode overrides to 200)
+    max_epochs = train_cfg["max_epochs"]
+    is_overfit = args.overfit_batches > 0
+    if is_overfit:
+        max_epochs = 200
+
     # Build Lightning module
+    weight_decay = train_cfg["weight_decay"]
+    if is_overfit:
+        logger.info(f"Overfit mode: disabling weight_decay (was {weight_decay})")
+        weight_decay = 0.0
+
     lightning_module = PretrainLightningModule(
         model=model,
         lr=train_cfg["lr"],
-        weight_decay=train_cfg["weight_decay"],
-        max_epochs=train_cfg["max_epochs"],
-        warmup_epochs=train_cfg.get("warmup_epochs", 5),
+        weight_decay=weight_decay,
+        max_epochs=max_epochs,
+        warmup_epochs=train_cfg.get("warmup_epochs", 5) if not is_overfit else 0,
         nce_weight=model_cfg.get("nce_weight", 1.0),
         mse_weight=model_cfg.get("mse_weight", 10.0),
     )
@@ -116,7 +136,6 @@ def main():
     )
 
     # Callbacks
-    is_overfit = args.overfit_batches > 0
     callbacks = [
         GPUUtilizationMonitor(log_every_n_steps=10),
         pl.callbacks.LearningRateMonitor(logging_interval="step"),
@@ -148,10 +167,6 @@ def main():
     )
 
     # Trainer
-    max_epochs = train_cfg["max_epochs"]
-    if is_overfit:
-        max_epochs = 200
-
     trainer = pl.Trainer(
         max_epochs=max_epochs,
         precision=train_cfg.get("precision", "16-mixed"),
