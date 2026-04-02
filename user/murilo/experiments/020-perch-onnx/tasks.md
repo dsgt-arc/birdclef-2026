@@ -2,12 +2,12 @@
 
 ## Goal
 
-Port pantanal-distill V18 (0.930 LB) as new Perch baseline, swap TF→ONNX for 9x
-speedup, then ensemble Perch + SED within 90-min kernel budget.
+Port pantanal-distill V17 (0.930 LB) as new Perch baseline, swap TF→ONNX for
+faster inference, then ensemble Perch + SED within 90-min kernel budget.
 
 **Current Perch Best**: 0.918 LB (ProtoSSM v4, exp 018)
 **Current SED Best**: 0.913 LB (v5j-4fold, exp 019)
-**Target**: 0.930 Perch alone, 0.935+ ensemble
+**Target**: 0.925-0.930 Perch alone, 0.935+ ensemble
 
 ### Reference Chain
 
@@ -16,10 +16,10 @@ speedup, then ensemble Perch + SED within 90-min kernel budget.
 | 0.913 | Our SED v5j-4fold | HGNetV2-B0, 4-fold, NNAudio mel |
 | 0.918 | Our Perch v4 | ProtoSSM d=128, 3-fold OOF |
 | 0.925 | Yuriy ProtoSSM v5 | d=256, 3 layers, 6-stage PP |
-| 0.930 | pantanal-distill V18 | d=256, 3 layers, MLP-only, per-class thresholds |
+| 0.930 | pantanal-distill V17 | d=256, 3 layers, MLP-only, per-class thresholds |
 | 0.939 | Competition #1 | Unknown |
 
-### Status: **In progress** — Phase A submitted, awaiting LB
+### Status: **Phase A running, Phase B validation complete**
 
 - **Branch**: `mg/020-perch-onnx`
 
@@ -46,26 +46,41 @@ Kaggle datasets required:
 - [x] A.3 v1 push: failed — TF 2.19 loaded (wheel install wasn't running). Fixed.
 - [x] A.4 v2 push (no cache): succeeded in 1110s. Labeled extraction took ~625s.
       Dry-run on 20 test files. Submitted to LB — awaiting result.
-- [x] A.5 v3 push (with jaejohn/perch-meta cache): running on Kaggle.
+      Note: ResidualSSM skipped (wall time safety cutoff at 12.9 min).
+- [ ] A.5 v3 push (with jaejohn/perch-meta cache): **currently running on Kaggle**.
+      Should skip labeled extraction (~10 min saved), have time for ResidualSSM.
 - [ ] A.6 Record LB results from v2 and/or v3, update results tracking.
-      Note: v2 ran without ResidualSSM (skipped due to wall time safety).
-      v3 with cache should have time for ResidualSSM.
 
 ---
 
 ## Phase B: Swap TF → ONNX Perch (1 day, 1 LB sub)
 
-Replace TensorFlow Perch inference with ONNX Runtime for ~9x speedup.
+Replace TensorFlow Perch inference with ONNX Runtime for faster inference.
 Source: `justinchuby/Perch-onnx` on HuggingFace (Apache 2.0).
 
-- [ ] B.1 Validate ONNX locally on PACE — numerical equivalence (max diff < 2e-5)
+### ONNX Validation Results (completed on PACE)
+
+| Backend | Time (12 samples) | Per sample | Speedup |
+|---------|-------------------|------------|---------|
+| TF 2.21 | 21.2s | 1769ms | baseline |
+| ONNX standard | 5.2s | 436ms | **4.1x** |
+| ONNX no_dft | 5.3s | 439ms | 4.0x |
+
+Numerical equivalence (ONNX standard vs TF):
+- Embeddings max diff: **8e-6** (PASS, tol=1e-3)
+- Logits max diff: **2.7e-4** (PASS, tol=1e-3) — ~0.007% probability diff after sigmoid
+
+ONNX models downloaded to: `/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2-onnx/`
+
+- [x] B.1 Validate ONNX locally on PACE — **PASS** (max diff 2.7e-4, 4.1x speedup)
 - [ ] B.2 Upload Perch ONNX model to Kaggle as dataset (`birdclef-2026-perch-onnx`)
-- [ ] B.3 Modify kernel: remove TF, replace with onnxruntime session
+- [ ] B.3 Create our own perch-meta dataset (replace jaejohn dependency)
+      Script ready: `scripts/build_perch_meta.py` (supports --use-onnx flag)
+- [ ] B.4 Modify kernel: remove TF, replace with onnxruntime session
       - Remove TF wheel install + imports
-      - Replace `load_perch_model()` → `load_perch_onnx()`
-      - Replace `run_perch_inference()` → ONNX `session.run()`
+      - Replace Perch TF inference with ONNX `session.run()`
       - Reuse onnxruntime pattern from SED kernel (exp 010)
-- [ ] B.4 Submit ONNX kernel to LB — must match Phase A score, runtime < 15 min
+- [ ] B.5 Submit ONNX kernel to LB — must match Phase A score, runtime < 20 min
 
 ---
 
@@ -76,8 +91,9 @@ annotated reference. Each step LB-validated before proceeding.
 
 Reference: `user/murilo/notes/pantanal-distill-0930-annotated.md`
 
-- [ ] C.1 5-fold OOF (if V18 uses 3-fold): `oof_n_splits: 3→5`
-- [ ] C.2 Per-class threshold optimization: expand grid
+- [ ] C.1 Investigate V18 vs V17 config discrepancy (code has d=256/3 layers,
+      annotated doc says V18 has d=320/4 layers — may need to find V18 code)
+- [ ] C.2 5-fold OOF (if V17 uses 3-fold): `oof_n_splits: 3→5`
 - [ ] C.3 Scale ProtoSSM: d_model 256→320, n_layers 3→4 (V18 params)
 - [ ] C.4 Training improvements: focal_gamma, epochs, lr, cosine restart
 
@@ -85,9 +101,9 @@ Reference: `user/murilo/notes/pantanal-distill-0930-annotated.md`
 
 ## Phase D: Perch + SED Ensemble (2-3 days, 2 LB subs)
 
-After Phase B ONNX is validated. Enabled by ~9x Perch speedup.
+After Phase B ONNX is validated. Enabled by ONNX Perch speedup.
 
-Runtime budget: ~7 min (Perch ONNX) + ~48 min (SED 4-fold) + ~3 min (rest) = ~58 min
+Runtime budget with ONNX: ~20 min (Perch) + ~50 min (SED 4-fold) + ~5 min (rest) = ~75 min
 
 - [ ] D.1 Create unified kernel: Perch ProtoSSM + SED v5j-4fold
       - Audio loaded once, shared between Perch (raw) and SED (mel)
@@ -104,3 +120,5 @@ Runtime budget: ~7 min (Perch ONNX) + ~48 min (SED 4-fold) + ~3 min (rest) = ~58
 |------------|-----|---------|-------|
 | Perch v4 (exp 018) | 0.918 | ~82 min | Previous best Perch |
 | SED v5j-4fold (exp 019) | 0.913 | ~50 min | Best SED |
+| ProtoSSM v5 port v2 (no cache) | pending | 1110s | Dry-run 20 files, ResidualSSM skipped |
+| ProtoSSM v5 port v3 (perch-meta) | running | — | With jaejohn/perch-meta cache |
