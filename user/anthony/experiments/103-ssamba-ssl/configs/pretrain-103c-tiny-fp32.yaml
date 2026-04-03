@@ -31,7 +31,7 @@ data:
 
 training:
   max_epochs: 50
-  lr: 6e-4
+  lr: 0.0006
   weight_decay: 0.05
   warmup_epochs: 5
   precision: 32-true
