@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Training script for SED experiments (shared by exp 017 and 019).
+"""Training script for SED experiments (exp 021, based on exp 019).
 
 Supports EfficientNet-B0, HGNetV2-B0, and other timm backbones with
 AttHead, AttBlockV2, or LSEHead. Configurable via YAML configs.
@@ -390,7 +390,7 @@ def main():
     # ========================================================================
 
     loggers = []
-    experiment_name = f"exp019-{run_name}"
+    experiment_name = f"exp021-{run_name}"
     if fold_id is not None:
         experiment_name = f"{experiment_name}-fold{fold_id}"
 

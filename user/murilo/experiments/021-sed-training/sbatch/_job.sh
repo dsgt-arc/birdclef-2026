@@ -10,10 +10,10 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=mgustineli3@gatech.edu
 #
-# Experiment 019: Perch-Guided SED Training
+# Experiment 021: SED Training Improvements
 #
 # Usage:
-#   cd user/murilo/experiments/019-sed-ablations
+#   cd user/murilo/experiments/021-sed-training
 #   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml
 #   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml --fast-dev-run
 
@@ -37,7 +37,7 @@ USER_DIR="$(dirname "$(dirname "$EXPERIMENT_DIR")")"
 REPO_DIR="$(dirname "$(dirname "$USER_DIR")")"
 
 echo "=============================================="
-echo "Job: Experiment 019 - Perch-Guided SED"
+echo "Job: Experiment 021 - SED Training"
 echo "=============================================="
 echo "Job ID: ${SLURM_JOB_ID:-local}"
 echo "Node: $(hostname)"

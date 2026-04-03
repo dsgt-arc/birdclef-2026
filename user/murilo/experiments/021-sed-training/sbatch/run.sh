@@ -1,8 +1,8 @@
 #!/bin/bash
-# Launcher script for Experiment 019 Perch-guided SED jobs.
+# Launcher script for Experiment 021 SED training jobs.
 #
 # Usage:
-#   cd user/murilo/experiments/019-sed-ablations
+#   cd user/murilo/experiments/021-sed-training
 #
 #   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml
 #   bash sbatch/run.sh config/effnet_b0_sed_v5a.yaml --gpu a100
@@ -145,7 +145,7 @@ EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 RUN_NAME="$(basename "$CONFIG" .yaml)"
 
 echo "=============================================="
-echo "Experiment 019: Perch-Guided SED"
+echo "Experiment 021: SED Training"
 echo "=============================================="
 echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
@@ -175,7 +175,7 @@ CMD="sbatch \
     --partition=${PARTITION} \
     --output=${LOG_DIR}/slurm_${RUN_NAME}${FOLD_SUFFIX}_%j.log \
     --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK},NUM_WORKERS=${NUM_WORKERS},FOLD=${FOLD} \
-    --job-name=exp019-${RUN_NAME}${FOLD_SUFFIX} \
+    --job-name=exp021-${RUN_NAME}${FOLD_SUFFIX} \
     ${CPUS_OVERRIDE} \
     ${JOB_SCRIPT}"
 
