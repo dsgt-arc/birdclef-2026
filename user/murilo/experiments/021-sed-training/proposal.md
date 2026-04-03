@@ -41,10 +41,32 @@ Our best SED models (exp 019):
 
 **1. No site/hour priors on SED output (estimated +0.006)**
 
-Salman reports priors give +0.006 (0.917→0.923). We have `fuse_scores_with_tables`
-implemented in exp 020 Perch pipeline but never applied to SED. The code builds
-prior probability tables from site + hour metadata in labeled soundscapes and
-blends them with model logits. This is pure post-processing — no retraining needed.
+Salman reports priors give +0.006 (0.917→0.923). We have prior infrastructure
+in exp 010's submission pipeline (`_apply_metadata_priors`) but never generated
+the priors JSON for our SED models. Pure post-processing — no retraining needed.
+
+**How site/hour priors work:**
+
+1. Parse test soundscape filename → extract **site** (e.g., S08) and **hour** (e.g., 03 UTC)
+2. Look up each species' prior probability using a fallback hierarchy:
+   site+hour → site only → hour only → global frequency
+3. Apply multiplicatively, scaled by taxa class:
+   `adjusted_prob = model_prob × prior^lambda`
+   - Aves: λ=0.3 (birds are mobile, weak prior)
+   - Amphibia/Insecta: λ=0.5 (strongly tied to site/time)
+   - Mammalia/Reptilia: λ=0.2 (most mobile, weakest prior)
+
+**Prior source:** 66 labeled soundscapes (1478 annotated segments), 9 sites,
+13 hours. Laplace-smoothed (α=0.01) to avoid zeroing out any species.
+
+**Effect:** Suppresses unlikely species for a given location/time (e.g., a frog
+at a site where it's never been observed gets its score reduced), while leaving
+common species mostly unchanged. Fallback to global priors for unseen sites/hours
+in the test set.
+
+**Risk:** Only 9 sites in training data. If the test set has different sites,
+priors fall back to global rates (minimal effect). Laplace smoothing prevents
+any species from being fully zeroed out.
 
 **2. Loss function: CE + sigmoid inference (unknown impact)**
 
