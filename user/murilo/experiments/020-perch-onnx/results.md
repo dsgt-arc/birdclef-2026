@@ -10,6 +10,8 @@
 | v5 | v5 | V17 + ensemble=0.0 | ONNX | jaejohn | 0.911 | 98s | MLP-only regressed −0.011 |
 | v6 | v5 (fix) | V17 + ensemble=0.5 | ONNX | jaejohn | — | — | not submitted (weight fix only) |
 | v7 | v6 | V18 + ensemble=0.5 | ONNX | jaejohn | **0.920** | 242s | V18 restored, ONNX |
+| v18-train | — | V18 (train_only) | TF | jaejohn | — | 277s | Two-kernel: saves artifacts |
+| **v18-infer** | **v3** | **V18 (infer_only)** | **TF** | **pretrained** | **0.925** | **213s dry** | **Two-kernel: loads artifacts, new best Perch** |
 
 Reference: pantanal-distill (dingjiarun) V18+TF = **0.930** LB
 
@@ -79,18 +81,35 @@ ENSEMBLE_WEIGHT_PROTO=0.0 (MLP-only) was −0.011 worse. ProtoSSM genuinely help
 at w=0.5 under V17 config, contradicting the pantanal OOF finding of w=0.0
 (which was from V18 config with a bigger model).
 
+## Two-Kernel Split Finding
+
+V18 config timed out in a single kernel (training + TF inference > 90 min).
+Solution: split into training kernel (saves artifacts) + inference kernel (loads artifacts).
+
+Key discovery: **loading 75MB of pretrained artifacts before TF inference caused 2x slowdown**
+(11s/file vs 5.5s/file). Fix: run Perch TF inference FIRST with clean memory, then load artifacts.
+
+## V18+TF Result: 0.925 LB
+
+| Config | Backend | LB | Delta vs V17 |
+|--------|---------|-----|-------------|
+| V17 (d=256, 3L, 40ep, TTA×3) | TF | 0.922 | baseline |
+| V18 (d=320, 4L, 80ep, TTA×5) | ONNX | 0.920 | −0.002 |
+| **V18 (d=320, 4L, 80ep, TTA×5)** | **TF** | **0.925** | **+0.003** |
+
+V18+TF gains +0.003 over V17+TF. The ONNX penalty is real but smaller than initially
+estimated: V18+TF (0.925) vs V18+ONNX (0.920) = −0.005 (not −0.010 as we estimated
+from the pantanal 0.930 comparison).
+
+Gap to pantanal (0.930): −0.005. Possible sources:
+- Ensemble weight: we use 0.50 (default), pantanal OOF found 0.0 (MLP-only)
+- Per-class thresholds: we use V18 hardcoded, pantanal computed fresh per run
+- jaejohn/perch-meta cache may differ subtly from pantanal's own extraction
+- Random seed differences in ProtoSSM training
+
 ## Next Steps
 
-### Path to 0.930: Reproduce pantanal exactly (TF test inference)
-
-The ONNX approach costs ~0.010 LB. To match 0.930, we need TF for test inference.
-The original pantanal notebook uses TF for both labeled (via cache) and test inference.
-
-Plan:
-1. Restore TF in the kernel (remove ONNX)
-2. Use V18 config + V18 thresholds (matching original exactly)
-3. Keep jaejohn/perch-meta cache (confirmed same as original)
-4. Submit → should match 0.930
-
-Once 0.930 is confirmed, we can test ONNX as an isolated variable to verify
-the 0.010 penalty, and then decide whether the speedup is worth it for ensemble work.
+1. **ONNX inference kernel** — swap TF for ONNX in the inference kernel, same pretrained
+   artifacts. Saves ~50 min runtime, enables Perch+SED ensemble (Phase D).
+2. **Ensemble weight ablation** — try ENSEMBLE_WEIGHT_PROTO=0.0 (MLP-only, matching pantanal)
+3. **Perch + SED ensemble** — with ONNX Perch (~7 min) + SED 4-fold (~50 min) = ~57 min

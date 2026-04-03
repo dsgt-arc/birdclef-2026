@@ -19,7 +19,7 @@ faster inference, then ensemble Perch + SED within 90-min kernel budget.
 | 0.930 | pantanal-distill V17 | d=256, 3 layers, MLP-only, per-class thresholds |
 | 0.939 | Competition #1 | Unknown |
 
-### Status: **Exact .ipynb reproduction submitted, awaiting LB score. Competition #1 = 0.942.**
+### Status: **V18+TF two-kernel split = 0.925 LB (new best Perch). Competition #1 = 0.942.**
 
 - **Branch**: `mg/020-perch-onnx`
 
@@ -128,12 +128,13 @@ are mismatched with ONNX. Phase B is **on hold** — reverting to TF for 0.930.
       TF inference still 10.9s/file — .py script format too slow for V18+TF.
 - [x] B.8 Discovery: .ipynb runs TF at 5.8s/file (2x faster than .py's 10.9s/file).
       Root cause unknown — same code, different Kaggle runtime behavior.
-- [x] B.9 Exact .ipynb reproduction: pushed unmodified pantanal notebook as
-      `birdclef-2026-perch-protossm-v5-nb`. Dry-run 666s (cache not found,
-      extracted fresh 337s). **Running LB inference — awaiting score.**
-- [ ] B.10 Check LB score. If 0.930 confirmed, test ONNX as isolated variable.
-- [ ] B.11 If ONNX penalty confirmed, explore: retune thresholds on ONNX outputs,
-      or accept penalty and use ONNX only for Perch+SED ensemble (Phase D)
+- [x] B.9 Exact .ipynb reproduction: timed out on LB (V18 too heavy for single kernel).
+- [x] B.10 Two-kernel split: training kernel (277s) saves artifacts to dataset,
+      inference kernel loads artifacts + runs TF Perch on test.
+      Key fix: run Perch TF BEFORE loading artifacts (75MB caused 2x TF slowdown).
+      **LB: 0.925** (+0.003 over V17 0.922, new best Perch).
+- [ ] B.11 ONNX inference kernel: swap TF for ONNX in infer_only mode, same artifacts.
+      Expected: ~7 min Perch (vs ~55 min TF), enables Phase D ensemble.
 
 ---
 
@@ -181,4 +182,6 @@ Runtime budget with ONNX: ~20 min (Perch) + ~50 min (SED 4-fold) + ~5 min (rest)
 | ProtoSSM v5 v8 (.py V18+TF) | timeout | 464s dry | .py script TF inference 10.9s/file, too slow |
 | ProtoSSM v5 v9 (.py V18+TF) | error | 173s | TF 2.19 loaded (ashok205 path wrong) |
 | ProtoSSM v5 v10 (.py V18+TF+gc) | timeout* | 464s dry | gc.collect didn't help, still 10.9s/file |
-| ProtoSSM v5-nb v1 (.ipynb V18+TF) | **running** | 666s dry | Exact .ipynb repro, TF 5.8s/file, no cache |
+| ProtoSSM v5-nb v1 (.ipynb V18+TF) | timeout | 666s dry | Exact .ipynb repro, V18 too heavy |
+| ProtoSSM V18 train (two-kernel) | — | 277s | Saves artifacts to dataset |
+| **ProtoSSM V18 infer (two-kernel)** | **0.925** | **213s dry** | **TF before artifact load, new best Perch** |

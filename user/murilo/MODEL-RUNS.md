@@ -319,15 +319,19 @@ jaejohn/perch-meta cache for labeled embeddings. All training on Kaggle CPU kern
 |------|----------|--------|-----|---------------|
 | `perch-protossm-v5-v2` | pantanal port (V18 config, no cache) | d=320, 4L, 80ep | timeout | `020-.../submission_perch_protossm.py` v2 |
 | `perch-protossm-v5-v3` | pantanal port (V18 config, cache) | d=320, 4L, 80ep | timeout | `020-.../submission_perch_protossm.py` v3 |
-| **`perch-protossm-v5-v4`** | **pantanal port (V17 config, cache)** | **d=256, 3L, 40ep** | **0.922** | **`020-.../submission_perch_protossm.py` v4** |
+| `perch-protossm-v5-v4` | pantanal port (V17 config, cache) | d=256, 3L, 40ep | **0.922** | `020-.../submission_perch_protossm.py` v4 |
+| `perch-protossm-v5-v5` | V17+ONNX, MLP-only (w=0.0) | d=256, 3L, 40ep | 0.911 | `020-.../submission_perch_protossm.py` v5 |
+| `perch-protossm-v5-v7` | V18+ONNX | d=320, 4L, 80ep | 0.920 | `020-.../submission_perch_protossm.py` v7 |
+| **`perch-protossm-v18`** | **two-kernel V18+TF** | **d=320, 4L, 80ep, TTA×5** | **0.925** | **`020-.../submission_perch_protossm.py` (infer_only)** |
 
-V17 pipeline: Perch v2 TF → cache → 5-fold OOF priors → MLP(128) probes (PCA-64) →
-ProtoSSM v4 (d=256, 3 BiSSM, cross-attn, 40ep, focal+distill+mixup, SWA) →
-ResidualSSM (d=64) → TTA [0,±1] → ensemble (0.5 proto + 0.5 mlp) →
-6-stage PP (temp, confidence, rank-aware, delta-shift, per-class threshold).
+V18 pipeline (two-kernel split): Training kernel saves pretrained artifacts to Kaggle dataset.
+Inference kernel loads artifacts AFTER Perch TF inference (memory optimization: loading 75MB
+before TF caused 2x slowdown). Pipeline: Perch v2 TF → MLP(256,128) probes (PCA-128) →
+ProtoSSM v5 (d=320, 4 BiSSM, cross-attn, 80ep, 5-fold, focal γ=2.5, cosine restart, SWA) →
+ResidualSSM (d=128) → TTA [0,±1,±2] → ensemble (0.5 proto + 0.5 mlp) →
+6-stage PP (temp, confidence, rank-aware, delta-shift, V18 per-class thresholds).
 
-Gap vs pantanal reference (0.930): −0.008. Likely from jaejohn/perch-meta cache
-differences, default thresholds (0.5 vs V18 optimized), ensemble weight (0.5 vs 0.0).
+Gap vs pantanal reference (0.930): −0.005. V18+TF gained +0.003 over V17+TF (0.922).
 
 ### v2-fix Details (0.911 LB)
 
