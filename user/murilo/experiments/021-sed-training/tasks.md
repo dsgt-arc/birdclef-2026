@@ -8,7 +8,7 @@ Push single SED model from 0.906 → 0.920+ LB by applying competitor insights
 **Current Best SED**: 0.906 LB (v5j single), 0.913 LB (v5j-4fold)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Setting up experiment. Phase A (priors) ready to implement.**
+### Status: **Phase A in progress — implementing site/hour priors on SED output.**
 
 - **Branch**: `mg/021-sed-training`
 

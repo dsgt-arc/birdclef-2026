@@ -1,6 +1,6 @@
 ---
 experiment: "021-sed-training"
-status: proposed
+status: in-progress
 date: 2026-04-03
 author: Murilo Gustineli
 ---
