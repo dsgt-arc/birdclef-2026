@@ -19,7 +19,7 @@ faster inference, then ensemble Perch + SED within 90-min kernel budget.
 | 0.930 | pantanal-distill V17 | d=256, 3 layers, MLP-only, per-class thresholds |
 | 0.939 | Competition #1 | Unknown |
 
-### Status: **ONNX causes −0.010 LB penalty. Reverting to TF for exact 0.930 reproduction.**
+### Status: **Exact .ipynb reproduction submitted, awaiting LB score. Competition #1 = 0.942.**
 
 - **Branch**: `mg/020-perch-onnx`
 
@@ -123,9 +123,16 @@ are mismatched with ONNX. Phase B is **on hold** — reverting to TF for 0.930.
 
 ### Phase B Revised Plan
 
-- [ ] B.7 Reproduce pantanal exactly with TF (V18 config) → target 0.930
-- [ ] B.8 Once 0.930 confirmed, test ONNX as isolated variable to verify penalty
-- [ ] B.9 If ONNX penalty confirmed, explore: retune thresholds on ONNX outputs,
+- [x] B.7 V18+TF as .py script: v8 (nb v8) timed out on LB, v9 (nb v9) failed
+      (TF 2.19 loaded, ashok205 path wrong), v10 (nb v10) compiled in 464s but
+      TF inference still 10.9s/file — .py script format too slow for V18+TF.
+- [x] B.8 Discovery: .ipynb runs TF at 5.8s/file (2x faster than .py's 10.9s/file).
+      Root cause unknown — same code, different Kaggle runtime behavior.
+- [x] B.9 Exact .ipynb reproduction: pushed unmodified pantanal notebook as
+      `birdclef-2026-perch-protossm-v5-nb`. Dry-run 666s (cache not found,
+      extracted fresh 337s). **Running LB inference — awaiting score.**
+- [ ] B.10 Check LB score. If 0.930 confirmed, test ONNX as isolated variable.
+- [ ] B.11 If ONNX penalty confirmed, explore: retune thresholds on ONNX outputs,
       or accept penalty and use ONNX only for Perch+SED ensemble (Phase D)
 
 ---
@@ -171,3 +178,7 @@ Runtime budget with ONNX: ~20 min (Perch) + ~50 min (SED 4-fold) + ~5 min (rest)
 | ProtoSSM v5 port v4 (V17, cache) | **0.922** | 230s dry | V17 clean rewrite, ResidualSSM ran, new best Perch |
 | ProtoSSM v5 port v5 (ONNX+MLP-only) | **0.911** | 98s dry, 20 min LB | TF→ONNX works, but MLP-only regressed −0.011 |
 | ProtoSSM v5 port v7 (V18+ONNX) | **0.920** | 242s dry | V18 config + ONNX. ONNX penalty −0.010 vs TF |
+| ProtoSSM v5 v8 (.py V18+TF) | timeout | 464s dry | .py script TF inference 10.9s/file, too slow |
+| ProtoSSM v5 v9 (.py V18+TF) | error | 173s | TF 2.19 loaded (ashok205 path wrong) |
+| ProtoSSM v5 v10 (.py V18+TF+gc) | timeout* | 464s dry | gc.collect didn't help, still 10.9s/file |
+| ProtoSSM v5-nb v1 (.ipynb V18+TF) | **running** | 666s dry | Exact .ipynb repro, TF 5.8s/file, no cache |

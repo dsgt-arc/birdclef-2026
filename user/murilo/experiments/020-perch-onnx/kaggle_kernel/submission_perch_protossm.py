@@ -7,26 +7,49 @@
 # ## Setup
 # Install dependencies and configure environment.
 
-# Cell 0 — Install TF 2.20
+# Cell 0 — Install TF 2.20 (single pip call, --no-deps)
 import os, subprocess, sys
 
-TF_WHEEL_DIRS = [
-    "/kaggle/input/notebooks/ashok205/tf-wheels/tf_wheels",
-    "/kaggle/input/birdclef-tf220-wheel",
-    "/kaggle/input/datasets/murilogustineli/birdclef-tf220-wheel",
+_WHEELS = [
+    "tensorboard-2.20.0-py3-none-any.whl",
+    "tensorflow-2.20.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
 ]
-for _d in TF_WHEEL_DIRS:
+_TF_DIRS = [
+    "/kaggle/input/notebooks/ashok205/tf-wheels/tf_wheels",  # original notebook source
+    "/kaggle/input/tf-wheels/tf_wheels",  # kernel source (alt mount)
+    "/kaggle/input/ashok205/tf-wheels/tf_wheels",  # kernel source (alt mount)
+    "/kaggle/input/birdclef-tf220-wheel",  # our dataset (fallback)
+]
+# Debug: show what's available
+if os.path.exists("/kaggle/input"):
+    print("Available inputs:", sorted(os.listdir("/kaggle/input")))
+_installed = False
+for _d in _TF_DIRS:
     if os.path.isdir(_d):
-        for _whl in [
-            "tensorboard-2.20.0-py3-none-any.whl",
-            "tensorflow-2.20.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-        ]:
-            _p = os.path.join(_d, _whl)
-            if os.path.isfile(_p):
+        _paths = [os.path.join(_d, w) for w in _WHEELS if os.path.isfile(os.path.join(_d, w))]
+        if _paths:
+            print(f"Installing TF 2.20 from {_d} ({len(_paths)} wheels)")
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "-q", "--no-deps"] + _paths
+            )
+            _installed = True
+            break
+if not _installed:
+    # Last resort: search all input dirs for any tensorflow wheel
+    for _root, _dirs, _files in os.walk("/kaggle/input"):
+        for _f in _files:
+            if _f.startswith("tensorflow-2.20") and _f.endswith(".whl"):
+                _p = os.path.join(_root, _f)
+                print(f"Found TF wheel at: {_p}")
                 subprocess.check_call(
                     [sys.executable, "-m", "pip", "install", "-q", "--no-deps", _p]
                 )
-        break
+                _installed = True
+                break
+        if _installed:
+            break
+if not _installed:
+    print("WARNING: TF 2.20 wheel not found! Perch inference will fail.")
 
 # ## Configuration
 # Mode switch and hyperparameters.
@@ -2850,6 +2873,16 @@ else:
 
 # ## Test Inference
 # Run Perch on hidden test soundscapes.
+
+# Free training data before TF Perch inference to reduce memory pressure.
+# In the original Jupyter notebook, cell-local variables are freed between cells.
+# In our script, they persist and cause TF inference to run 2x slower.
+del emb_files, logits_files, labels_files, file_families
+del emb_full, scores_full_raw, emb_full_scaled, Z_FULL
+del Y_FULL, Y_FULL_TRUTH, Y_SC
+del oof_base, oof_prior, oof_fold_id
+gc.collect()
+print(f"Memory freed before test inference")
 
 # --- Cell 46 ---
 # Cell 16 — Infer Perch on hidden test with embeddings
