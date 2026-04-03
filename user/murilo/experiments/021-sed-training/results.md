@@ -12,7 +12,7 @@ expected from Salman's report.
 | v5j (baseline, exp 019) | **0.906** | ~20 min | No priors |
 | **v5j-pp2** | **0.909** | 11 min | + site/hour priors |
 | v5j-4fold (baseline, exp 019) | **0.913** | ~50 min | No priors |
-| v5j-4fold-pp2 | pending | — | Submitting next |
+| **v5j-4fold-pp2** | **0.917** | ~50 min | **+ site/hour priors (+0.004)** |
 
 ### Why only +0.003 (not +0.006)?
 

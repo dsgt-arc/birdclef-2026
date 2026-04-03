@@ -8,7 +8,7 @@ Push single SED model from 0.906 → 0.920+ LB by applying competitor insights
 **Current Best SED**: 0.906 LB (v5j single), 0.913 LB (v5j-4fold)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase A: v5j-pp2 = 0.909 LB (+0.003). Submitting v5j-4fold-pp2 next.**
+### Status: **Phase A complete. v5j-pp2 0.909, v5j-4fold-pp2 0.917 (+0.004). Ready for Phase B.**
 
 - **Branch**: `mg/021-sed-training`
 
@@ -41,7 +41,7 @@ Created separate `-pp2` weights directories (base v5j unchanged).
 - [x] A.2 Upload v5j-pp2 to Kaggle, push kernel, submit to LB.
       Priors: 9 sites, 13 hours, 1478 segments (Laplace α=0.01).
       **LB: 0.909** (+0.003 over v5j 0.906, below 0.006 target)
-- [ ] A.3 Submit v5j-4fold-pp2 → target ≥0.919
+- [x] A.3 Submit v5j-4fold-pp2 → **LB: 0.917** (+0.004 over v5j-4fold 0.913)
 
 ---
 
@@ -81,4 +81,5 @@ Larger non-MBConv backbones with ONNX inference validation.
 | v5j (exp 019 baseline) | **0.906** | 0.874 | HGNetV2-B0, NNAudio AmplitudeToDB |
 | v5j-pp2 | **0.909** | — | v5j + site/hour priors (+0.003, 11 min runtime) |
 | v5j-4fold (exp 019) | **0.913** | — | 4-fold ensemble |
+| **v5j-4fold-pp2** | **0.917** | — | v5j-4fold + site/hour priors (+0.004) |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |

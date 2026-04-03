@@ -359,11 +359,11 @@ Multiplicative site×hour×species priors from 66 labeled soundscapes (1478 segm
 | `hgnet-b0-sed-v5j` | HGNetV2-B0 single | No | **0.906** | — | Baseline (exp 019) |
 | **`hgnet-b0-sed-v5j-pp2`** | HGNetV2-B0 single | **Yes** | **0.909** | **+0.003** | Site/hour priors, 11 min runtime |
 | `hgnet-b0-sed-v5j-4fold` | HGNetV2-B0 ×4 | No | **0.913** | — | Baseline (exp 019) |
-| `hgnet-b0-sed-v5j-4fold-pp2` | HGNetV2-B0 ×4 | Yes | pending | — | Submitting next |
+| **`hgnet-b0-sed-v5j-4fold-pp2`** | **HGNetV2-B0 ×4** | **Yes** | **0.917** | **+0.004** | **New best SED** |
 
-Priors gave +0.003 (not the +0.006 Salman reported). Possible reasons: different prior
-implementation (multiplicative vs logit-space), different lambda tuning, or the exp 010
-prior format is less sophisticated than the exp 020 Perch pipeline approach.
+Priors gave +0.003 single / +0.004 4-fold (not the +0.006 Salman reported). Possible
+reasons: different prior implementation (multiplicative vs logit-space), different lambda
+tuning, or model already captures site/time patterns that priors are redundant with.
 
 ## Checkpoint Base Path
 
