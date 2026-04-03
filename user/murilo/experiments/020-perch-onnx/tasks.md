@@ -138,32 +138,25 @@ are mismatched with ONNX. Phase B is **on hold** — reverting to TF for 0.930.
 
 ---
 
-## Phase C: Further Improvements (if needed)
+## Phase C: Further Perch Improvements — FUTURE WORK
 
-Only if Phase A doesn't match 0.930, apply incremental changes from the
-annotated reference. Each step LB-validated before proceeding.
+Deferred. V18+TF achieved 0.925 (−0.005 from pantanal 0.930). Diminishing returns
+on Perch pipeline tuning. Perch is more valuable as a pseudo-labeling teacher
+for future SED training than as a standalone submission pipeline.
 
-Reference: `user/murilo/notes/pantanal-distill-0930-annotated.md`
-
-- [ ] C.1 Investigate V18 vs V17 config discrepancy (code has d=256/3 layers,
-      annotated doc says V18 has d=320/4 layers — may need to find V18 code)
-- [ ] C.2 5-fold OOF (if V17 uses 3-fold): `oof_n_splits: 3→5`
-- [ ] C.3 Scale ProtoSSM: d_model 256→320, n_layers 3→4 (V18 params)
-- [ ] C.4 Training improvements: focal_gamma, epochs, lr, cosine restart
+- [ ] C.1 Ensemble weight ablation (w=0.0 MLP-only, matching pantanal)
+- [ ] C.2 ONNX inference kernel (swap TF for ONNX, same artifacts)
+- [ ] C.3 Scale ProtoSSM: 5-fold OOF, d_model 320→larger
 
 ---
 
-## Phase D: Perch + SED Ensemble (2-3 days, 2 LB subs)
+## Phase D: Perch + SED Ensemble — FUTURE WORK
 
-After Phase B ONNX is validated. Enabled by ONNX Perch speedup.
+Enabled by ONNX Perch speedup (~7 min) + SED (~50 min) = ~57 min.
+Deferred until SED models are stronger (see exp 021-sed-training).
 
-Runtime budget with ONNX: ~20 min (Perch) + ~50 min (SED 4-fold) + ~5 min (rest) = ~75 min
-
-- [ ] D.1 Create unified kernel: Perch ProtoSSM + SED v5j-4fold
-      - Audio loaded once, shared between Perch (raw) and SED (mel)
-      - Both produce per-(file, window) probabilities
-      - Ensemble: `w * perch + (1-w) * sed`
-- [ ] D.2 Determine ensemble weight (start fixed 0.5, optimize later)
+- [ ] D.1 Create unified kernel: Perch ProtoSSM + SED
+- [ ] D.2 Determine ensemble weight
 - [ ] D.3 Submit ensemble to LB — target ≥0.935
 
 ---
