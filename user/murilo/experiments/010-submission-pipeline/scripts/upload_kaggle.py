@@ -315,6 +315,17 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-sed-v5n",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5n.json",
     },
+    # Exp 021 Phase A: v5j + site/hour priors (pp2)
+    "hgnet-b0-sed-v5j-pp2": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-pp2-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-pp2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-pp2.json",
+    },
+    "hgnet-b0-sed-v5j-4fold-pp2": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-4fold-pp2-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-4fold-pp2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-4fold-pp2.json",
+    },
 }
 
 

@@ -139,3 +139,45 @@ tensorboard --logdir outputs/
 python save_metrics.py --config config/hgnet_b0_sed_v6a.yaml
 python save_metrics.py --config config/hgnet_b0_sed_v6a.yaml --fold 0
 ```
+
+### Kaggle export + submission (via exp 010)
+
+Inference/submission uses the shared pipeline in `010-submission-pipeline/`.
+See [adding-new-models.md](../010-submission-pipeline/adding-new-models.md) for
+the full 4-file guide on registering new models.
+
+```bash
+cd user/murilo/experiments/010-submission-pipeline
+
+# Step 1: Export checkpoint → ONNX (GPU job on PACE, ~10 min)
+bash sbatch/run.sh export --model hgnet-b0-sed-v6a
+
+# Step 2: Upload weights dataset to Kaggle (creates or updates)
+python scripts/upload_kaggle.py --model hgnet-b0-sed-v6a
+
+# Step 3: Push kernel to Kaggle (wait ~2 min if dataset is new)
+python scripts/upload_kaggle.py --model hgnet-b0-sed-v6a --push-kernel
+
+# Both upload + push in one go (if dataset already exists)
+python scripts/upload_kaggle.py --model hgnet-b0-sed-v6a --push-kernel
+```
+
+#### Adding priors (pp2 variants)
+
+Generate site/hour metadata priors from labeled soundscapes, then create a
+separate `-pp2` weights directory with the priors included.
+
+```bash
+# Generate priors into a pp2 weights directory
+python scripts/build_inference_priors.py \
+  --data-dir /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026 \
+  --species-mapping artifacts/weights/hgnet-b0-sed-v6a/species_mapping.json \
+  --output-dir artifacts/weights/hgnet-b0-sed-v6a-pp2
+
+# Copy model files into pp2 directory
+cp artifacts/weights/hgnet-b0-sed-v6a/{model.onnx,mel_config.json,species_list.json,species_mapping.json} \
+   artifacts/weights/hgnet-b0-sed-v6a-pp2/
+
+# Upload + push the pp2 variant
+python scripts/upload_kaggle.py --model hgnet-b0-sed-v6a-pp2 --push-kernel
+```
