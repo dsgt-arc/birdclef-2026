@@ -41,6 +41,9 @@ dependencies = [
     "onnx>=1.14.0",
     "onnxruntime>=1.16.0",
 
+    # TensorFlow (for Perch v2 inference)
+    "tensorflow>=2.20.0",
+
     # Machine learning
     "scikit-learn>=1.3.0",
     "scipy>=1.10.0",

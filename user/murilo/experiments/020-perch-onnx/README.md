@@ -7,7 +7,7 @@ See [proposal.md](proposal.md) for hypothesis, motivation, and design rationale.
 See [tasks.md](tasks.md) for the full task checklist and phase breakdown.
 
 **Branch**: `mg/020-perch-onnx`
-**Current Best**: 0.918 LB (Perch ProtoSSM v4, exp 018)
+**Current Best**: 0.922 LB (Perch ProtoSSM v5, V17 config, v4 kernel)
 **Target**: 0.925-0.930 Perch alone, 0.930+ ensemble
 
 ## Phases

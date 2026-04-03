@@ -2,96 +2,162 @@
 
 ## Goal
 
-Fix Perch v4.2 regression, swap TF→ONNX for 9x speedup, scale ProtoSSM
-toward 0.925-0.930, then ensemble Perch + SED within 90-min kernel budget.
+Port pantanal-distill V17 (0.930 LB) as new Perch baseline, swap TF→ONNX for
+faster inference, then ensemble Perch + SED within 90-min kernel budget.
 
 **Current Perch Best**: 0.918 LB (ProtoSSM v4, exp 018)
 **Current SED Best**: 0.913 LB (v5j-4fold, exp 019)
-**Target**: 0.925-0.930 Perch alone, 0.930+ ensemble
+**Target**: 0.925-0.930 Perch alone, 0.935+ ensemble
 
 ### Reference Chain
 
 | Score | Model | Key technique |
 |-------|-------|---------------|
-| 0.899 | Our Perch v4.2 | REGRESSED — bisect needed |
 | 0.913 | Our SED v5j-4fold | HGNetV2-B0, 4-fold, NNAudio mel |
 | 0.918 | Our Perch v4 | ProtoSSM d=128, 3-fold OOF |
 | 0.925 | Yuriy ProtoSSM v5 | d=256, 3 layers, 6-stage PP |
-| 0.930 | pantanal-distill V18 | d=320, 4 layers, MLP-only, per-class thresholds |
+| 0.930 | pantanal-distill V17 | d=256, 3 layers, MLP-only, per-class thresholds |
 | 0.939 | Competition #1 | Unknown |
 
-### Status: **Proposed** — starting Phase A
+### Status: **V18+TF two-kernel split = 0.925 LB (new best Perch). Competition #1 = 0.942.**
 
 - **Branch**: `mg/020-perch-onnx`
 
 ---
 
-## Phase A: Recover 0.918 + Bisect v4.2 Regression (1-2 days, 5 LB subs)
+## Phase A: Port Pantanal-Distill V17 as Baseline (1 day, 1-2 LB subs)
 
-v4.2 applied 4 changes simultaneously, LB dropped 0.918→0.899. Need to bisect.
+Directly port the pantanal-distill notebook (0.930 LB) as our new Perch baseline.
+The code is self-contained (3418 lines) and already validated on LB.
 
-v4.2 changes:
-1. Taxonomy aux head: genus (161 groups) → class_name (5 groups) — PRIME SUSPECT
-2. Site mapping: 0-based → 1-based indexing — SECOND SUSPECT
-3. MLP probes: added n_iter_no_change=15, random_state=42 — likely minor
-4. Ensemble weight: OOF-optimized → fixed 0.5 — medium risk
+Source: `user/murilo/notes/pantanal-distill-0930.py`
+Annotated: `user/murilo/notes/pantanal-distill-0930-annotated.md`
+Config: V17 (d=256, 3 layers) — the actual code, despite the file being labeled V18.
 
-- [ ] A.0 Reconstruct v4 baseline by reverting 4 changes in current v4.2 kernel.
-      Also pull v4 from Kaggle (`kaggle kernels pull`) for diffing.
-- [ ] A.1 Submit reconstructed v4 to LB — must score 0.918
-- [ ] A.2 Bisect: taxonomy change only (genus → class_name)
-- [ ] A.3 Bisect: site mapping only (0-based → 1-based)
-- [ ] A.4 Bisect: MLP params only (n_iter_no_change, random_state)
-- [ ] A.5 Bisect: ensemble weight only (OOF → fixed 0.5)
-- [ ] A.6 Decision: identify culprit(s), document findings
+Kaggle datasets required:
+- `birdclef-2026` (competition data)
+- `google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1` (Perch model)
+- `murilogustineli/birdclef-tf220-wheel` (TF 2.20 wheels)
+- `jaejohn/perch-meta` (pre-extracted labeled embeddings cache, saves ~10 min)
+
+- [x] A.1 Copy pantanal-distill code as kernel, add TF 2.20 wheel installer
+      (matching exp 018 proven pattern)
+- [x] A.2 Create kernel metadata JSON + push.sh entry
+- [x] A.3 v1 push: failed — TF 2.19 loaded (wheel install wasn't running). Fixed.
+- [x] A.4 v2 push (no cache): succeeded in 1110s. Labeled extraction took ~625s.
+      Dry-run on 20 test files. Submitted to LB — awaiting result.
+      Note: ResidualSSM skipped (wall time safety cutoff at 12.9 min).
+- [x] A.5 v3 push (with jaejohn/perch-meta cache): submitted.
+- [x] A.6 **Both v2 and v3 TIMEOUT on LB submission.**
+
+### Root Cause: V18 Config Override Causes Timeout
+
+The notebook has two config layers:
+- **V17 CFG** (Cell 5): d_model=256, 3 layers, 40 epochs, 3 TTA shifts
+- **V18 CFG** (Cell 6): d_model=320, 4 layers, 80 epochs, 5 TTA shifts
+
+Cell 6 **always executes**, overriding V17 with V18. The V18 config is much
+heavier (bigger model, 2x epochs, 5 TTA shifts). This pushes the kernel over
+the 90-minute Kaggle budget.
+
+Additionally, our TF install was missing `--no-deps`, installing full dependency
+chains instead of just the two specific wheels.
+
+- [x] A.7 Clean V17 rewrite: fresh extraction from Kaggle pull (2026-04-02),
+      V18 override removed, TF install fixed with `--no-deps`,
+      V18 hardcoded thresholds replaced with V17 defaults (0.5).
+      Verified: all 43 functions/classes identical to original.
+      See `pantanal-implementation.md` for full step-by-step analysis.
+- [x] A.8 Push v4 (V17 clean) to Kaggle and submit to LB.
+      Dry-run: 230s (down from timeout). Cache loaded, ProtoSSM 23ep (early stop),
+      ResidualSSM ran (wall=0.4min), all 6 PP stages applied.
+- [x] A.9 LB result: **0.922** (+0.004 over our v4 0.918, but −0.008 vs pantanal 0.930).
+      Gap analysis: our kernel uses jaejohn/perch-meta cache (may differ from
+      pantanal's own extraction), V17 default thresholds (0.5) vs V18 hardcoded,
+      and ENSEMBLE_WEIGHT_PROTO=0.5 (pantanal train mode found 0.0 = MLP-only).
+      See results discussion below.
 
 ---
 
 ## Phase B: Swap TF → ONNX Perch (1 day, 1 LB sub)
 
-Replace TensorFlow Perch inference with ONNX Runtime for ~9x speedup.
+Replace TensorFlow Perch inference with ONNX Runtime for faster inference.
 Source: `justinchuby/Perch-onnx` on HuggingFace (Apache 2.0).
 
-- [ ] B.1 Validate ONNX locally on PACE — numerical equivalence (max diff < 2e-5)
-- [ ] B.2 Upload Perch ONNX model to Kaggle as dataset (`birdclef-2026-perch-onnx`)
-- [ ] B.3 Modify kernel: remove TF, replace with onnxruntime session
-      - Remove TF wheel install + imports
-      - Replace `load_perch_model()` → `load_perch_onnx()`
-      - Replace `run_perch_inference()` → ONNX `session.run()`
-      - Reuse onnxruntime pattern from SED kernel (exp 010)
-- [ ] B.4 Submit ONNX kernel to LB — must score 0.918, runtime < 15 min
+### ONNX Validation Results (completed on PACE)
+
+| Backend | Time (12 samples) | Per sample | Speedup |
+|---------|-------------------|------------|---------|
+| TF 2.21 | 21.2s | 1769ms | baseline |
+| ONNX standard | 5.2s | 436ms | **4.1x** |
+| ONNX no_dft | 5.3s | 439ms | 4.0x |
+
+Numerical equivalence (ONNX standard vs TF):
+- Embeddings max diff: **8e-6** (PASS, tol=1e-3)
+- Logits max diff: **2.7e-4** (PASS, tol=1e-3) — ~0.007% probability diff after sigmoid
+
+ONNX models downloaded to: `/storage/project/ps-clef2026_birdclef-0/shared/models/perch-v2-onnx/`
+
+- [x] B.1 Validate ONNX locally on PACE — **PASS** (max diff 2.7e-4, 4.1x speedup)
+- [x] B.2 Upload Perch ONNX model to Kaggle as dataset (`birdclef-2026-perch-onnx`)
+      Includes: perch_v2.onnx (391MB), labels.csv, onnxruntime-1.24.4 wheel (17MB)
+- [ ] B.3 Create our own perch-meta dataset (replace jaejohn dependency)
+      Script ready: `scripts/build_perch_meta.py` (supports --use-onnx flag)
+- [x] B.4 Modify kernel: remove TF, replace with onnxruntime session
+      - Removed TF wheel install + all TF imports
+      - ONNX session loaded from bundled dataset
+      - onnxruntime installed from bundled wheel (--no-deps, offline)
+      - Also changed ENSEMBLE_WEIGHT_PROTO 0.5→0.0 (MLP-only)
+- [x] B.5 v5 pushed (nb v6): dry-run 98s (was 230s with TF), 2.3x faster.
+      LB: 0.911 (MLP-only w=0.0 regressed). Runtime: 20 min (great speedup).
+- [x] B.6 v7 (nb v7): V18+ONNX, w=0.5, V18 thresholds. LB: **0.920**.
+      ONNX causes ~0.010 LB penalty vs TF (0.930→0.920).
+      Penalty compounds through probe features, gated fusion, V18 thresholds,
+      and 5 TTA shifts.
+
+### ONNX Finding: −0.010 LB penalty
+
+ONNX is numerically close (max 2.7e-4 logit diff) but the downstream pipeline
+amplifies this. The V18 per-class thresholds were optimized on TF outputs and
+are mismatched with ONNX. Phase B is **on hold** — reverting to TF for 0.930.
+
+### Phase B Revised Plan
+
+- [x] B.7 V18+TF as .py script: v8 (nb v8) timed out on LB, v9 (nb v9) failed
+      (TF 2.19 loaded, ashok205 path wrong), v10 (nb v10) compiled in 464s but
+      TF inference still 10.9s/file — .py script format too slow for V18+TF.
+- [x] B.8 Discovery: .ipynb runs TF at 5.8s/file (2x faster than .py's 10.9s/file).
+      Root cause unknown — same code, different Kaggle runtime behavior.
+- [x] B.9 Exact .ipynb reproduction: timed out on LB (V18 too heavy for single kernel).
+- [x] B.10 Two-kernel split: training kernel (277s) saves artifacts to dataset,
+      inference kernel loads artifacts + runs TF Perch on test.
+      Key fix: run Perch TF BEFORE loading artifacts (75MB caused 2x TF slowdown).
+      **LB: 0.925** (+0.003 over V17 0.922, new best Perch).
+- [ ] B.11 ONNX inference kernel: swap TF for ONNX in infer_only mode, same artifacts.
+      Expected: ~7 min Perch (vs ~55 min TF), enables Phase D ensemble.
 
 ---
 
-## Phase C: Pantanal-Distill Improvements (3-5 days, 6-7 LB subs)
+## Phase C: Further Perch Improvements — FUTURE WORK
 
-Each step applies ONE change. LB-validated before proceeding. Revert if regression.
-Reference: `user/murilo/notes/pantanal-distill-0930-annotated.md`
+Deferred. V18+TF achieved 0.925 (−0.005 from pantanal 0.930). Diminishing returns
+on Perch pipeline tuning. Perch is more valuable as a pseudo-labeling teacher
+for future SED training than as a standalone submission pipeline.
 
-- [ ] C.1 OOF-optimized ensemble weight (use `best_w` from grid search)
-- [ ] C.2 5-fold OOF (from 3-fold): `oof_n_splits: 3→5`
-- [ ] C.3 Per-class threshold optimization: 10-value OOF grid per species
-- [ ] C.4 Scaled probes: PCA 64→128, MLP (128,)→(256,128), max_iter 300→500
-- [ ] C.5 Scale ProtoSSM: d_model 128→256, n_layers 2→3
-- [ ] C.6 Training improvements: focal_gamma 2.0→2.5, epochs 60→80, lr 1e-3→8e-4,
-      label_smoothing 0.02→0.03, cosine restart scheduler (T=20)
-- [ ] C.7 Full V18 scale: d_model 256→320, n_layers 3→4, cross_attn_heads 4→8,
-      ResidualSSM d=64→128, layers 1→2, TTA [0,±1]→[0,±1,±2]
+- [ ] C.1 Ensemble weight ablation (w=0.0 MLP-only, matching pantanal)
+- [ ] C.2 ONNX inference kernel (swap TF for ONNX, same artifacts)
+- [ ] C.3 Scale ProtoSSM: 5-fold OOF, d_model 320→larger
 
 ---
 
-## Phase D: Perch + SED Ensemble (2-3 days, 2 LB subs)
+## Phase D: Perch + SED Ensemble — FUTURE WORK
 
-After Phase C achieves ≥0.920 Perch score. Enabled by Phase B ONNX speedup.
+Enabled by ONNX Perch speedup (~7 min) + SED (~50 min) = ~57 min.
+Deferred until SED models are stronger (see exp 021-sed-training).
 
-Runtime budget: ~7 min (Perch ONNX) + ~48 min (SED 4-fold) + ~3 min (rest) = ~58 min
-
-- [ ] D.1 Create unified kernel: Perch ProtoSSM + SED v5j-4fold
-      - Audio loaded once, shared between Perch (raw) and SED (mel)
-      - Both produce per-(file, window) probabilities
-      - Ensemble: `w * perch + (1-w) * sed`
-- [ ] D.2 Determine ensemble weight (start fixed 0.5, optimize later)
-- [ ] D.3 Submit ensemble to LB — target ≥0.925
+- [ ] D.1 Create unified kernel: Perch ProtoSSM + SED
+- [ ] D.2 Determine ensemble weight
+- [ ] D.3 Submit ensemble to LB — target ≥0.935
 
 ---
 
@@ -99,6 +165,16 @@ Runtime budget: ~7 min (Perch ONNX) + ~48 min (SED 4-fold) + ~3 min (rest) = ~58
 
 | Submission | LB | Runtime | Notes |
 |------------|-----|---------|-------|
-| Perch v4 (exp 018) | 0.918 | ~82 min | TF baseline |
-| Perch v4.2 (exp 018) | 0.899 | ~82 min | REGRESSED |
+| Perch v4 (exp 018) | 0.918 | ~82 min | Previous best Perch |
 | SED v5j-4fold (exp 019) | 0.913 | ~50 min | Best SED |
+| ProtoSSM v5 port v2 (V18, no cache) | timeout | 1110s dry | V18 override caused timeout |
+| ProtoSSM v5 port v3 (V18, cache) | timeout | — | V18 override caused timeout |
+| ProtoSSM v5 port v4 (V17, cache) | **0.922** | 230s dry | V17 clean rewrite, ResidualSSM ran, new best Perch |
+| ProtoSSM v5 port v5 (ONNX+MLP-only) | **0.911** | 98s dry, 20 min LB | TF→ONNX works, but MLP-only regressed −0.011 |
+| ProtoSSM v5 port v7 (V18+ONNX) | **0.920** | 242s dry | V18 config + ONNX. ONNX penalty −0.010 vs TF |
+| ProtoSSM v5 v8 (.py V18+TF) | timeout | 464s dry | .py script TF inference 10.9s/file, too slow |
+| ProtoSSM v5 v9 (.py V18+TF) | error | 173s | TF 2.19 loaded (ashok205 path wrong) |
+| ProtoSSM v5 v10 (.py V18+TF+gc) | timeout* | 464s dry | gc.collect didn't help, still 10.9s/file |
+| ProtoSSM v5-nb v1 (.ipynb V18+TF) | timeout | 666s dry | Exact .ipynb repro, V18 too heavy |
+| ProtoSSM V18 train (two-kernel) | — | 277s | Saves artifacts to dataset |
+| **ProtoSSM V18 infer (two-kernel)** | **0.925** | **213s dry** | **TF before artifact load, new best Perch** |
