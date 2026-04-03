@@ -344,6 +344,27 @@ Key fixes over buggy v2 (0.898):
 - 6-category fuse_scores: proxy λ=0.8, prior-only REPLACE, inactive = -8.0
 - Filtered to 59 fully-labeled files / 708 windows (was 66 files / 792 windows)
 
+## BirdCLEF 2026 — SED Training Improvements (exp 021)
+
+Post-processing and training recipe improvements targeting 0.920+ single-model LB.
+Motivated by competitor insights from Kaggle discussion #683791.
+
+### Phase A: Site/Hour Priors (no retraining)
+
+Multiplicative site×hour×species priors from 66 labeled soundscapes (1478 segments,
+9 sites, 13 hours). Taxa-aware lambda: Aves=0.3, Amphibia/Insecta=0.5, Mammalia/Reptilia=0.2.
+
+| Slug | Base Model | Priors | LB | Delta | Notes |
+|------|-----------|--------|-----|-------|-------|
+| `hgnet-b0-sed-v5j` | HGNetV2-B0 single | No | **0.906** | — | Baseline (exp 019) |
+| **`hgnet-b0-sed-v5j-pp2`** | HGNetV2-B0 single | **Yes** | **0.909** | **+0.003** | Site/hour priors, 11 min runtime |
+| `hgnet-b0-sed-v5j-4fold` | HGNetV2-B0 ×4 | No | **0.913** | — | Baseline (exp 019) |
+| `hgnet-b0-sed-v5j-4fold-pp2` | HGNetV2-B0 ×4 | Yes | pending | — | Submitting next |
+
+Priors gave +0.003 (not the +0.006 Salman reported). Possible reasons: different prior
+implementation (multiplicative vs logit-space), different lambda tuning, or the exp 010
+prior format is less sophisticated than the exp 020 Perch pipeline approach.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
