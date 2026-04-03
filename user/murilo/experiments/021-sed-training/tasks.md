@@ -8,7 +8,7 @@ Push single SED model from 0.906 → 0.920+ LB by applying competitor insights
 **Current Best SED**: 0.906 LB (v5j single), 0.913 LB (v5j-4fold)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase A complete. v5j-pp2 0.909, v5j-4fold-pp2 0.917 (+0.004). Ready for Phase B.**
+### Status: **Phase B: v6a/b/c/d training on PACE. v6a+v6b running, v6c+v6d pending.**
 
 - **Branch**: `mg/021-sed-training`
 
@@ -49,14 +49,15 @@ Created separate `-pp2` weights directories (base v5j unchanged).
 
 Single-variable changes from v5j baseline.
 
-- [ ] B.1 Implement CE(primary_label) training mode (verify in train.py)
-- [ ] B.2 Implement waveform augmentations (noise, time stretch) in train.py
-- [ ] B.3 Train v6a (CE loss) on PACE
-- [ ] B.4 Train v6b (waveform MixUp) on PACE
-- [ ] B.5 Train v6c (full waveform augs) on PACE
-- [ ] B.6 Train v6d (25 epochs) on PACE
-- [ ] B.7 Submit winners to LB
-- [ ] B.8 Train combined recipe (v6e) from best Phase B findings
+- [x] B.1 Implement CE(primary_label) training mode — already in train.py
+- [x] B.2 Implement waveform augmentations (pink noise, time stretch) in sed_finetune.py
+- [x] B.3 Add reproducibility: pl.seed_everything(42), Trainer(deterministic=True), git hash logging
+- [x] B.4 Train v6a (CE loss) on PACE — running on V100 (job 6265569)
+- [x] B.5 Train v6b (waveform MixUp) on PACE — running on RTX 6000 (job 6265571)
+- [x] B.6 Train v6c (full waveform augs) on PACE — pending (job 6265572)
+- [x] B.7 Train v6d (25 epochs) on PACE — pending (job 6265576)
+- [ ] B.8 Submit winners to LB
+- [ ] B.9 Train combined recipe (v6e) from best Phase B findings
 
 ---
 
