@@ -152,6 +152,8 @@ class SEDFinetuneModule(pl.LightningModule):
         asl_clip: float = 0.05,
         mel_transform: nn.Module | None = None,
         waveform_mixup: bool = False,
+        waveform_noise: bool = False,
+        waveform_time_stretch: bool = False,
         scheduler_type: str = "cosine",
         onecycle_div_factor: float = 25.0,
         onecycle_final_div_factor: float = 4.0,
@@ -311,8 +313,60 @@ class SEDFinetuneModule(pl.LightningModule):
             return False
         return random.random() < self.hparams.mixup_prob
 
+    @staticmethod
+    def _apply_pink_noise(waveform: torch.Tensor, snr_range: tuple = (10.0, 30.0)) -> torch.Tensor:
+        """Add pink noise (1/f spectrum) to waveform. SNR sampled uniformly per sample."""
+        B, T = waveform.shape
+        # Generate white noise, apply 1/f filter in frequency domain
+        white = torch.randn_like(waveform)
+        freqs = torch.fft.rfftfreq(T, device=waveform.device)
+        freqs[0] = 1.0  # avoid division by zero
+        pink_filter = 1.0 / torch.sqrt(freqs)
+        pink = torch.fft.irfft(torch.fft.rfft(white) * pink_filter, n=T)
+        # Normalize pink noise to match signal RMS, then scale by SNR
+        snr_db = torch.empty(B, 1, device=waveform.device).uniform_(*snr_range)
+        snr_linear = 10 ** (snr_db / 20)
+        sig_rms = waveform.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp(min=1e-8)
+        noise_rms = pink.pow(2).mean(dim=-1, keepdim=True).sqrt().clamp(min=1e-8)
+        pink_scaled = pink * (sig_rms / (noise_rms * snr_linear))
+        return waveform + pink_scaled
+
+    @staticmethod
+    def _apply_time_stretch(
+        waveform: torch.Tensor, rate_range: tuple = (0.8, 1.25)
+    ) -> torch.Tensor:
+        """Time-stretch waveform by resampling, then crop/pad to original length."""
+        B, T = waveform.shape
+        rate = torch.empty(1).uniform_(*rate_range).item()
+        new_T = int(T * rate)
+        # Simple linear interpolation stretch
+        stretched = torch.nn.functional.interpolate(
+            waveform.unsqueeze(1), size=new_T, mode="linear", align_corners=False
+        ).squeeze(1)
+        # Crop or pad to original length
+        if new_T > T:
+            start = torch.randint(0, new_T - T, (1,)).item()
+            stretched = stretched[:, start : start + T]
+        elif new_T < T:
+            pad = T - new_T
+            stretched = torch.nn.functional.pad(stretched, (0, pad))
+        return stretched
+
     def training_step(self, batch, batch_idx):
         x, labels, primary_idx = batch
+
+        # Waveform augmentations (before mixup and mel, only when input is raw audio)
+        if self.mel_transform is not None:
+            if (
+                self.hparams.waveform_noise
+                and self.current_epoch >= self.hparams.mixup_warmup_epochs
+            ):
+                x = self._apply_pink_noise(x)
+            if (
+                self.hparams.waveform_time_stretch
+                and self.current_epoch >= self.hparams.mixup_warmup_epochs
+            ):
+                x = self._apply_time_stretch(x)
 
         if self.mel_transform is not None and self.hparams.waveform_mixup:
             # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.

@@ -52,7 +52,7 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.WARNING)
 
 DEFAULT_PROJECT_NAME = "ps-clef2026_birdclef-0"
-EXPERIMENT_NAME = "017-mel-overhaul"
+EXPERIMENT_NAME = "021-sed-training"
 
 
 def load_config(config_path: str) -> dict:
@@ -87,6 +87,11 @@ def main():
     config_path = Path(__file__).parent / args.config
     config = load_config(config_path)
     run_name = config["run_name"]
+
+    # Reproducibility: seed all RNGs before anything else
+    seed = config["data"].get("seed", 42)
+    pl.seed_everything(seed, workers=True)
+    logger.info(f"Seed: {seed} (pl.seed_everything)")
 
     logger.info(f"Config: {config_path}")
     logger.info(f"Run name: {run_name}")
@@ -264,6 +269,8 @@ def main():
         asl_clip=training_cfg.get("asl_clip", 0.05),
         mel_transform=gpu_mel_transform,
         waveform_mixup=waveform_mixup,
+        waveform_noise=training_cfg.get("waveform_noise", False),
+        waveform_time_stretch=training_cfg.get("waveform_time_stretch", False),
         scheduler_type=training_cfg.get("scheduler_type", "cosine"),
         onecycle_div_factor=training_cfg.get("onecycle_div_factor", 25.0),
         onecycle_final_div_factor=training_cfg.get("onecycle_final_div_factor", 4.0),
@@ -440,6 +447,7 @@ def main():
         num_sanity_val_steps=0 if fulldata else 2,
         enable_progress_bar=True,
         enable_model_summary=True,
+        deterministic=True,
     )
 
     # ========================================================================
