@@ -8,7 +8,7 @@ Push single SED model from 0.906 → 0.920+ LB by applying competitor insights
 **Current Best SED**: 0.906 LB (v5j single), 0.913 LB (v5j-4fold)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase A in progress — implementing site/hour priors on SED output.**
+### Status: **Phase A: v5j-pp2 submitted to LB, awaiting score. v5j-4fold-pp2 next.**
 
 - **Branch**: `mg/021-sed-training`
 
@@ -31,12 +31,17 @@ Push single SED model from 0.906 → 0.920+ LB by applying competitor insights
 
 ## Phase A: Site/Hour Priors on SED (1 day, 1-2 LB subs)
 
-Port prior fusion from exp 020 Perch pipeline to SED submission kernel.
-Pure post-processing — no retraining.
+Uses exp 010's existing `_apply_metadata_priors` (multiplicative in probability
+space, taxa-aware lambda). Generated priors via `build_inference_priors.py`.
+Created separate `-pp2` weights directories (base v5j unchanged).
 
-- [ ] A.1 Port `fuse_scores_with_tables` + `fit_prior_tables` to SED submission kernel
-- [ ] A.2 Submit v5j + priors → target ≥0.912
-- [ ] A.3 Submit v5j-4fold + priors → target ≥0.919
+- [x] A.1 Generate metadata_priors.json + taxa_mapping.json for v5j and v5j-4fold.
+      Created `hgnet-b0-sed-v5j-pp2` and `hgnet-b0-sed-v5j-4fold-pp2` weights dirs.
+      Registered in exp 010: upload_kaggle.py, submission.py MODEL_SLUGS, kernel-metadata.
+- [x] A.2 Upload v5j-pp2 to Kaggle, push kernel, submit to LB.
+      Priors: 9 sites, 13 hours, 1478 segments (Laplace α=0.01).
+      **Awaiting LB score** — target ≥0.912 (v5j 0.906 + expected 0.006)
+- [ ] A.3 Submit v5j-4fold-pp2 → target ≥0.919
 
 ---
 
@@ -74,5 +79,6 @@ Larger non-MBConv backbones with ONNX inference validation.
 | Submission | LB | val/auroc | Notes |
 |------------|-----|-----------|-------|
 | v5j (exp 019 baseline) | **0.906** | 0.874 | HGNetV2-B0, NNAudio AmplitudeToDB |
+| v5j-pp2 | **awaiting** | — | v5j + site/hour priors (no retraining) |
 | v5j-4fold (exp 019) | **0.913** | — | 4-fold ensemble |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |
