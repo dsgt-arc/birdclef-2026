@@ -10,9 +10,10 @@ author: Murilo Gustineli
 ## Hypothesis
 
 Applying insights from top competitors (site/hour priors at inference, CE+sigmoid
-training/inference split, waveform augmentations, and larger backbone exploration)
-will push our single SED model from 0.906 LB to 0.920+ LB, matching or exceeding
-our Perch ProtoSSM pipeline (0.925) with a simpler, faster, more generalizable model.
+training/inference split, waveform augmentations, and backbone exploration beyond
+small EfficientNet-B0) will push our single SED model from 0.906 LB to 0.920+ LB,
+matching or exceeding our Perch ProtoSSM pipeline (0.925) with a simpler, faster,
+more generalizable model.
 
 ## Background
 
@@ -20,12 +21,12 @@ our Perch ProtoSSM pipeline (0.925) with a simpler, faster, more generalizable m
 
 Our best SED models (exp 019):
 
-| Model | Backbone | LB | Key recipe |
-|-------|----------|-----|-----------|
-| v5j (single) | HGNetV2-B0 (1024 embed) | **0.906** | NNAudio AmplitudeToDB, LSEHead, BCE, 20ep |
-| v5j-4fold | HGNetV2-B0 ×4 | **0.913** | Same, 4-fold ensemble |
-| v5m (single) | EfficientNet-B0 + proj 320→1024 | **0.898** | v5j recipe with 1x1 conv projection |
-| v5n (single) | EfficientNet-B0 (native 320) | 0.875 | v5j recipe, no projection (control) |
+| Model | Backbone | Params | LB | Key recipe |
+|-------|----------|--------|-----|-----------|
+| v5j (single) | HGNetV2-B0 (1024 embed) | 6M | **0.906** | NNAudio AmplitudeToDB, LSEHead, BCE, 20ep |
+| v5j-4fold | HGNetV2-B0 ×4 | 6M×4 | **0.913** | Same, 4-fold ensemble |
+| v5m (single) | EfficientNet-B0 + proj 320→1024 | 5.3M | **0.898** | v5j recipe with 1x1 conv projection |
+| v5n (single) | EfficientNet-B0 (native 320) | 5.3M | 0.875 | v5j recipe, no projection (control) |
 
 ### What top competitors achieve (from Kaggle discussion #683791, 2026-04-03)
 
@@ -69,32 +70,37 @@ Our test (exp 017 v4j): waveform MixUp regressed −0.006 LB on EfficientNet-B0.
 But we never tested it on HGNetV2-B0 with the v5j recipe. The interaction may
 differ on a stronger backbone.
 
-**4. EfficientNet NS pretrained weights**
+**4. Backbone: MBConv (EfficientNet) struggles, other architectures work**
 
-Salman mentions "Efficientnet NS (with MBConv Architecture) were not converging
-fast" — referencing `tf_efficientnet_b0.ns_jft_in1k` (Noisy Student, JFT pretrained).
-These weights are better than standard ImageNet for noisy real-world data. We used
-standard ImageNet init (`tf_efficientnet_b0.in1k`) throughout exp 017/019.
+Salman explicitly says "Efficientnet NS (with MBConv Architecture) were not
+converging fast and scored much lower on LB, compared to other architectures"
+and "For now, Efficientnet B0 didn't help." His 0.921 uses a non-EfficientNet
+backbone. Meanwhile Boredom (8th) says EfficientNet can reach 925+ — possibly
+with a very different recipe.
 
-Boredom (8th, 0.922) says EfficientNet can "easily" reach 925+, suggesting the
-backbone isn't the bottleneck — it's the recipe.
+Our own data confirms this: HGNetV2-B0 (non-MBConv) outperforms EfficientNet-B0
+by +0.031 LB (v5j 0.906 vs v5f 0.855) on the same recipe. The MBConv
+architecture may be suboptimal for audio mel spectrograms.
 
 **5. Larger backbones with ONNX inference**
 
-Our exp 010 ONNX pipeline handles 20-30M param models (EAT, ConvNeXt) within the
-90-min Kaggle budget. Larger EfficientNet variants could be worth exploring:
+Our models are small (5-6M params). Top competitors likely use larger backbones.
+Our exp 010 ONNX pipeline handles 20-30M param models (EAT 86M, ConvNeXt 88M)
+within the 90-min Kaggle budget. Candidates for exploration:
 
-| Model | Params | timm slug |
-|-------|--------|-----------|
-| EfficientNet-B0 NS | 5.3M | `tf_efficientnet_b0.ns_jft_in1k` |
-| EfficientNet-B1 NS | 7.8M | `tf_efficientnet_b1.ns_jft_in1k` |
-| EfficientNet-B2 NS | 9.1M | `tf_efficientnet_b2.ns_jft_in1k` |
-| EfficientNet-B3 NS | 12M | `tf_efficientnet_b3.ns_jft_in1k` |
-| EfficientNet-B4 NS | 19M | `tf_efficientnet_b4.ns_jft_in1k` |
-| EfficientNet-B5 NS | 30M | `tf_efficientnet_b5.ns_jft_in1k` |
-| HGNetV2-B0 | 6M | `hgnetv2_b0.ssld_stage2_ft_in1k` |
+| Model | Params | Embed dim | Architecture | timm slug |
+|-------|--------|-----------|-------------|-----------|
+| HGNetV2-B0 | 6M | 1024 | Non-MBConv (our current best) | `hgnetv2_b0.ssld_stage2_ft_in1k` |
+| HGNetV2-B1 | 8M | 1024 | Non-MBConv | `hgnetv2_b1.ssld_stage2_ft_in1k` |
+| HGNetV2-B2 | 12M | 1536 | Non-MBConv | `hgnetv2_b2.ssld_stage2_ft_in1k` |
+| ConvNeXt-V2 Nano | 15M | 640 | Modern ConvNet, no MBConv | `convnextv2_nano.fcmae_ft_in22k_in1k` |
+| ConvNeXt-V2 Tiny | 28M | 768 | Modern ConvNet, no MBConv | `convnextv2_tiny.fcmae_ft_in22k_in1k` |
+| EfficientNet-B2 NS | 9M | 352 | MBConv (may struggle) | `tf_efficientnet_b2.ns_jft_in1k` |
+| EfficientNet-B3 NS | 12M | 384 | MBConv (may struggle) | `tf_efficientnet_b3.ns_jft_in1k` |
+| EfficientNet-B4 NS | 19M | 448 | MBConv (may struggle) | `tf_efficientnet_b4.ns_jft_in1k` |
 
-With ONNX export, even B3-B5 should fit within the Kaggle inference budget.
+Priority: larger HGNet and ConvNeXt-V2 (non-MBConv, aligned with Salman's findings).
+EfficientNet NS as a lower-priority test — Salman explicitly warns against MBConv.
 
 ### Why not keep tuning Perch?
 
@@ -117,11 +123,12 @@ Three phases, each building on findings:
 **Phase A: Quick wins (no retraining)** — Apply site/hour priors to existing
 v5j model output. Pure post-processing, just needs kernel changes.
 
-**Phase B: Training recipe improvements** — Test CE+sigmoid, waveform augmentations,
-NS pretrained weights on v5j recipe. Single-variable ablations on PACE.
+**Phase B: Training recipe improvements** — Test CE+sigmoid, waveform augmentations
+on v5j recipe with HGNetV2-B0. Single-variable ablations on PACE.
 
-**Phase C: Backbone scaling** — Test larger EfficientNet-NS variants (B1-B4),
-compare against HGNetV2-B0, validate with ONNX export + Kaggle inference.
+**Phase C: Backbone scaling** — Test larger non-MBConv backbones (HGNetV2-B1/B2,
+ConvNeXt-V2) and larger EfficientNet-NS variants for comparison. ONNX export
+for Kaggle inference.
 
 ### Setup
 
@@ -155,36 +162,36 @@ All ablations from v5j baseline (HGNetV2-B0, 0.906 LB). Single-variable changes.
 | v6a | CE(primary_label) + sigmoid inference | Sharper gradients, Salman's approach |
 | v6b | Waveform MixUp (instead of spectrogram) | Salman + yukiZ both use this |
 | v6c | Waveform MixUp + Pink Noise + Time Stretch | yukiZ's full augmentation stack |
-| v6d | NS-JFT pretrained EfficientNet-B0 + proj | Better init for noisy data |
-| v6e | 25 epochs (vs 20) | Salman's epoch count |
-| v6f | Combined winners from v6a-e | Best recipe |
+| v6d | 25 epochs (vs 20) | Salman's epoch count, slightly longer training |
+| v6e | Combined winners from v6a-d | Best recipe |
 
 - [ ] B.1 Implement CE(primary_label) training mode in train.py
 - [ ] B.2 Implement waveform augmentations (MixUp, pink noise, time stretch)
-- [ ] B.3 Train v6a-v6e on PACE (parallel where possible)
+- [ ] B.3 Train v6a-v6d on PACE (parallel where possible)
 - [ ] B.4 Submit winners to LB
-- [ ] B.5 Train combined recipe v6f, submit to LB
+- [ ] B.5 Train combined recipe v6e, submit to LB
 
 #### Phase C: Backbone Scaling (2-3 days, 2-3 LB subs)
 
-Test larger EfficientNet-NS backbones with the best recipe from Phase B.
+Test larger backbones with the best recipe from Phase B. Priority: non-MBConv
+architectures (HGNet, ConvNeXt-V2), with EfficientNet-NS as a comparison.
 All models exported to ONNX for Kaggle inference validation.
 
-| Run | Backbone | Params | Embed dim |
-|-----|----------|--------|-----------|
-| v6g | EfficientNet-B1 NS | 7.8M | 320 |
-| v6h | EfficientNet-B2 NS | 9.1M | 352 |
-| v6i | EfficientNet-B3 NS | 12M | 384 |
+| Run | Backbone | Params | Embed dim | Architecture |
+|-----|----------|--------|-----------|-------------|
+| v6f | HGNetV2-B2 | 12M | 1536 | Non-MBConv (larger HGNet) |
+| v6g | ConvNeXt-V2 Nano | 15M | 640 | Modern ConvNet |
+| v6h | EfficientNet-B3 NS | 12M | 384 | MBConv (comparison) |
 
-- [ ] C.1 Verify EfficientNet-B1/B2/B3 NS work with v5j recipe + ONNX export
-- [ ] C.2 Train v6g-v6i on PACE
+- [ ] C.1 Verify backbones work with v5j recipe + ONNX export
+- [ ] C.2 Train v6f-v6h on PACE
 - [ ] C.3 ONNX export + Kaggle inference timing validation
 - [ ] C.4 Submit best to LB — target ≥0.920
 - [ ] C.5 4-fold ensemble of best backbone — target ≥0.925+
 
 ### Variables
 
-- **Independent**: Loss function, augmentation strategy, pretrained weights, backbone scale
+- **Independent**: Loss function, augmentation strategy, backbone architecture/scale
 - **Dependent**: LB score, offline val/auroc, inference time
 - **Controlled**: Data (35K focal + 708 soundscape), mel config (NNAudio AmplitudeToDB),
   head (LSEHead), optimizer (AdamW), scheduler (OneCycleLR), batch size (64)
@@ -206,7 +213,7 @@ All models exported to ONNX for Kaggle inference validation.
 | v5j (our best single) | 0.906 | HGNetV2-B0, v5j recipe |
 | v5j-4fold | 0.913 | 4-fold ensemble |
 | Perch ProtoSSM V18 | 0.925 | Two-kernel TF, exp 020 |
-| Salman single | 0.921 | CE + waveform MixUp + priors |
+| Salman single | 0.921 | Non-EfficientNet, CE + waveform MixUp + priors |
 | Boredom single | 0.922 | EfficientNet, recipe unknown |
 | Competition #1 | 0.942 | Unknown |
 
@@ -215,7 +222,7 @@ All models exported to ONNX for Kaggle inference validation.
 - **Phase A confirm**: v5j + priors ≥ 0.910
 - **Phase B confirm**: any v6 variant ≥ 0.915 (single-fold)
 - **Phase B stretch**: ≥ 0.920 (matching Salman/Boredom)
-- **Phase C confirm**: larger backbone ≥ v5j baseline
+- **Phase C confirm**: larger backbone ≥ v5j baseline (0.906)
 - **Phase C stretch**: 4-fold ensemble ≥ 0.925 (matching Perch V18)
 
 ## Limitations
@@ -224,7 +231,8 @@ All models exported to ONNX for Kaggle inference validation.
 - 5 LB subs/day constrains ablation speed
 - CE loss on primary_label assumes single-label per clip — may fail on soundscapes
   with dense co-occurrence
-- Larger backbones increase training time (~2x per B-level) and may overfit on 708 windows
+- Larger backbones increase training time (~2x per size level) and may overfit on 708 windows
+- Salman's warning about EfficientNet-NS MBConv may limit backbone options
 
 ## Leads To
 
@@ -238,6 +246,5 @@ All models exported to ONNX for Kaggle inference validation.
 - [Exp 017 Mel Overhaul](../017-mel-overhaul/tasks.md) — v4a-v4k results
 - [Exp 020 Perch ONNX](../020-perch-onnx/tasks.md) — Perch V18 baseline, prior tables code
 - [Kaggle Discussion #683791](https://www.kaggle.com/competitions/birdclef-2026/discussion/683791) — competitor single-model scores
-- [Salman's annotated notes](../../notes/salman-sed-approach.md) — CE + waveform MixUp (to create)
 - [ttahara annotated](../../notes/ttahara-hgnetv2-b0-annotated.md) — base recipe
 - [EfficientNet NS models](https://huggingface.co/timm/tf_efficientnet_b0.ns_jft_in1k) — Noisy Student pretrained
