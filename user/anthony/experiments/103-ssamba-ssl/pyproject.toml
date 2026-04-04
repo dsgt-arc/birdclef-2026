@@ -24,6 +24,7 @@ dev = ["pytest>=8.0.0"]
 
 [project.scripts]
 birdclef-ssl-pretrain = "birdclef_103.cli.pretrain:main"
+birdclef-ssl-linprobe = "birdclef_103.cli.linprobe:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/birdclef_103"]

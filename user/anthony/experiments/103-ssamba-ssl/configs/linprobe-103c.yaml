@@ -1,0 +1,31 @@
+model:
+  embed_dim: 192
+  depth: 24
+  img_size: [256, 3072]
+  patch_size: [16, 16]
+  head_dropout: 0.3
+  ssl_checkpoint: logs/pretrain-103c/checkpoints/last.ckpt
+
+data:
+  train_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
+  taxonomy_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/taxonomy.csv
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
+  sample_rate: 32000
+  chunk_duration: 30.0
+  n_mels: 256
+  n_fft: 4096
+  win_length: 4096
+  hop_length: 320
+  fmin: 50
+  fmax: 16000
+  target_frames: 3072
+  batch_size: 16
+  num_workers: 6
+  val_fraction: 0.20
+
+training:
+  max_epochs: 30
+  lr: 0.001
+  weight_decay: 0.0
+  warmup_epochs: 2
+  precision: 32-true
