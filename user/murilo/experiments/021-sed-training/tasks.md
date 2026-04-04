@@ -8,7 +8,7 @@ Push single SED model from 0.906 → 0.920+ LB by applying competitor insights
 **Current Best SED**: 0.906 LB (v5j single), 0.913 LB (v5j-4fold)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase B: v6a/b/c/d training on PACE. v6a+v6b running, v6c+v6d pending.**
+### Status: **Phase B training complete. v6a regressed (CE), v6d flat (25ep). LB subs next.**
 
 - **Branch**: `mg/021-sed-training`
 
@@ -52,12 +52,13 @@ Single-variable changes from v5j baseline.
 - [x] B.1 Implement CE(primary_label) training mode — already in train.py
 - [x] B.2 Implement waveform augmentations (pink noise, time stretch) in sed_finetune.py
 - [x] B.3 Add reproducibility: pl.seed_everything(42), Trainer(deterministic=True), git hash logging
-- [x] B.4 Train v6a (CE loss) on PACE — running on V100 (job 6265569)
-- [x] B.5 Train v6b (waveform MixUp) on PACE — running on RTX 6000 (job 6265571)
-- [x] B.6 Train v6c (full waveform augs) on PACE — pending (job 6265572)
-- [x] B.7 Train v6d (25 epochs) on PACE — pending (job 6265576)
-- [ ] B.8 Submit winners to LB
-- [ ] B.9 Train combined recipe (v6e) from best Phase B findings
+- [x] B.4 Train v6a (CE loss) on PACE — val/auroc 0.854 (**−0.020**, regressed)
+- [x] B.5 Train v6b (waveform MixUp) on PACE — val/auroc 0.871 (−0.003)
+- [x] B.6 Train v6c (full waveform augs) on PACE — val/auroc 0.861 (−0.013, regressed)
+- [x] B.7 Train v6d (25 epochs) on PACE — val/auroc 0.873 (−0.001, flat)
+- [ ] B.8 Submit v6d to LB (best candidate, essentially flat with v5j)
+- [ ] B.9 Submit v6b to LB (if budget allows, offline unreliable)
+- [ ] B.10 Train combined recipe (v6e) from best Phase B findings — TBD
 
 ---
 
@@ -83,4 +84,8 @@ Larger non-MBConv backbones with ONNX inference validation.
 | v5j-pp2 | **0.909** | — | v5j + site/hour priors (+0.003, 11 min runtime) |
 | v5j-4fold (exp 019) | **0.913** | — | 4-fold ensemble |
 | **v5j-4fold-pp2** | **0.917** | — | v5j-4fold + site/hour priors (+0.004) |
+| v6a (CE loss) | pending | 0.854 | **−0.020 offline**, regressed |
+| v6b (waveform MixUp) | pending | 0.871 | −0.003 offline |
+| v6c (waveform augs) | pending | 0.861 | −0.013 offline, regressed |
+| v6d (25 epochs) | pending | 0.873 | −0.001 offline, flat |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |

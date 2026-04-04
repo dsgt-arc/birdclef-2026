@@ -39,3 +39,45 @@ Possible explanations for the smaller-than-expected prior boost:
 - Tune lambda values via cross-validation
 - But +0.003 suggests priors are a minor factor — training improvements (Phase B)
   are likely more impactful
+
+## Phase B: Training Recipe Ablations
+
+All ablations from v5j baseline (HGNetV2-B0, val/auroc 0.874, LB 0.906).
+Single-variable changes, trained with seed=42, deterministic=True.
+
+### Offline Results
+
+| Model | Change | val/auroc | val/cmap | Best Epoch | Delta vs v5j |
+|-------|--------|-----------|----------|------------|-------------|
+| v5j (baseline) | — | **0.874** | — | 19 | — |
+| v6a | CE loss | 0.854 | 0.580 | 18 | **−0.020** |
+| v6b | Waveform MixUp | 0.871 | 0.625 | 16 | −0.003 |
+| v6c | Waveform MixUp + noise + stretch | 0.861 | 0.608 | 16 | −0.013 |
+| v6d | 25 epochs | **0.873** | **0.651** | 22 | −0.001 |
+
+### Analysis
+
+**v6a (CE loss): −0.020 val/auroc — clear regression.**
+CE on primary_label significantly hurts. Despite Salman's success with CE, our
+HGNetV2 + LSEHead + v5j recipe doesn't benefit. The multi-label nature of
+soundscape data means BCE (per-species binary) is more appropriate than CE
+(single-label assumption). Salman may use a different head architecture that
+pairs better with CE.
+
+**v6b (waveform MixUp): −0.003 val/auroc — slight regression.**
+Waveform MixUp didn't help on HGNetV2, consistent with our earlier finding on
+EfficientNet-B0 (exp 017 v4j, −0.006 LB). Spectrogram MixUp remains better
+for our recipe. However, offline val/auroc is unreliable — this could still
+improve on LB. Worth a submission if budget allows.
+
+**v6c (full waveform augs): −0.013 val/auroc — clear regression.**
+Adding pink noise + time stretch on top of waveform MixUp made things worse.
+The augmentations may be too aggressive, or the SNR range (10-30dB) and stretch
+range (0.8-1.25x) need tuning. Also possible that NNAudio's mel normalization
+(AmplitudeToDB) already handles noise robustness well enough.
+
+**v6d (25 epochs): −0.001 val/auroc — essentially flat, but best cmap.**
+Nearly identical to v5j on AUROC. The extra 5 epochs improved cmap from ~0.625
+(v5j approximate) to 0.651, suggesting the model learned better class-specific
+patterns with slightly longer training. Best epoch was 22 (used extra headroom).
+Worth submitting to LB as it's essentially free.

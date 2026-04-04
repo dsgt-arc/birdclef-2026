@@ -365,6 +365,22 @@ Priors gave +0.003 single / +0.004 4-fold (not the +0.006 Salman reported). Poss
 reasons: different prior implementation (multiplicative vs logit-space), different lambda
 tuning, or model already captures site/time patterns that priors are redundant with.
 
+### Phase B: Training Recipe Ablations
+
+Single-variable changes from v5j (HGNetV2-B0, val/auroc 0.874, LB 0.906).
+All trained with seed=42, deterministic=True, on PACE GPU.
+
+| Slug | Change from v5j | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------------|-----------|----------|------------|-----|------------|
+| `hgnet-b0-sed-v6a` | CE loss (primary_label) | 0.854 | 0.580 | 18 | pending | `021-.../2026-hgnet-b0-sed-v6a/best-epochepoch=18.ckpt` |
+| `hgnet-b0-sed-v6b` | Waveform MixUp | 0.871 | 0.625 | 16 | pending | `021-.../2026-hgnet-b0-sed-v6b/best-epochepoch=16.ckpt` |
+| `hgnet-b0-sed-v6c` | Waveform MixUp + noise + stretch | 0.861 | 0.608 | 16 | pending | `021-.../2026-hgnet-b0-sed-v6c/best-epochepoch=16.ckpt` |
+| `hgnet-b0-sed-v6d` | 25 epochs (vs 20) | **0.873** | **0.651** | 22 | pending | `021-.../2026-hgnet-b0-sed-v6d/best-epochepoch=22.ckpt` |
+
+CE loss (v6a) regressed −0.020 — single-label assumption hurts on multi-label soundscapes.
+Waveform augmentations (v6b, v6c) didn't help — spectrogram MixUp remains better.
+25 epochs (v6d) essentially flat on AUROC but improved cmap (+0.026).
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
