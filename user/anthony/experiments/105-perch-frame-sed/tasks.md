@@ -1,17 +1,17 @@
 # Tasks
 
 ## 1. Setup
-- [ ] 1.1 Download Perch v2 ONNX from https://huggingface.co/justinchuby/Perch-onnx into shared storage (not home dir)
-- [ ] 1.2 Inspect ONNX graph in Netron; identify the pre-pool tensor (node name, shape, dtype)
+- [x] 1.1 Download Perch v2 ONNX from https://huggingface.co/justinchuby/Perch-onnx (done in job 6275860; cached in HF hub)
+- [x] 1.2 Inspect ONNX graph — **frame features are already an output**, `spatial_embedding` shape `[B, 16, 4, 1536]`; no graph surgery needed. See `artifacts/onnx_inspection/`.
 - [ ] 1.3 Confirm exp 102 Run N offline cmAP number (baseline to beat)
 - [ ] 1.4 Set up experiment package skeleton (`pyproject.toml`, `src/`, `sbatch/`, `configs/`) mirroring exp 102 layout
 - [ ] 1.5 Verify labeled soundscape window split matches exp 102 for apples-to-apples comparison
 
 ## 2. Implementation
-- [ ] 2.1 Write ONNX graph-surgery script to re-export Perch v2 with pre-pool tensor as an additional output (onnx-graphsurgeon or `onnx.utils.extract_model`)
-- [ ] 2.2 Sanity-check tapped model: final output matches original bit-for-bit on a few clips; frame-feature shape is (C, T') as expected
-- [ ] 2.3 Feature extraction pipeline: iterate labeled windows, run tapped ONNX, cache (pooled_embedding, frame_features, label) to shared storage
-- [ ] 2.4 Estimate full cache size from first batch; adjust storage plan if needed
+- [x] 2.1 ~~Graph-surgery script~~ — **not needed**: `spatial_embedding` is a stock output of `perch_v2_no_dft.onnx`. Just request it from `sess.run()`.
+- [x] 2.2 ~~Sanity-check tapped model~~ — covered by job 6275860 forward pass: all four outputs returned with expected shapes on a zero-input batch.
+- [ ] 2.3 Feature extraction pipeline: iterate labeled windows at 32 kHz (160000 samples/window), run stock Perch ONNX, cache `(embedding [1536], spatial_embedding [16, 4, 1536], label)` to shared storage
+- [ ] 2.4 ~~Estimate full cache size~~ — concrete from graph: ~393 KB/window fp32 or ~196 KB fp16 for `spatial_embedding`; ~16× the pooled embedding, not 50–100×.
 - [ ] 2.5 Head (a): linear probe on pooled 5s embedding
 - [ ] 2.6 Head (b): attention pool over frame features + linear classifier
 - [ ] 2.7 Head (c): 2-layer transformer over frame features + attention pool + classifier

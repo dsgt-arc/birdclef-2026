@@ -83,6 +83,35 @@ Backbone is frozen at all times; only heads are trained. Gradients never flow in
 - **Partial win**: head (a) or (b) beats exp 102 Run N by ≥0.02 — still useful (cheaper Perch recipe) but weakens the frame-level hypothesis; would not justify the cache cost.
 - **Reject if**: no head beats exp 102 Run N within 0.02, OR amphibian-only cmAP collapses (<50% of the bird-only cmAP), indicating Perch doesn't generalize to the competition's dominant taxon.
 
+## Findings from graph inspection (2026-04-04, job 6275860)
+
+Running `scripts/inspect_onnx.py` on `justinchuby/Perch-onnx :: perch_v2_no_dft.onnx` revealed that the frame-level feature map is **already a named output of the stock ONNX**. No graph surgery is required.
+
+**Model interface**:
+
+| Tensor | Shape | Notes |
+|--------|-------|-------|
+| input `inputs` | `[batch, 160000]` float | Raw waveform, 5s @ 32 kHz |
+| output `embedding` | `[batch, 1536]` float | Pooled 5s embedding (derived from `spatial_embedding` via reduce_sum + div, nodes 1135–1136) |
+| output `spatial_embedding` | `[batch, 16, 4, 1536]` float | **The pre-pool frame feature map we wanted** — 16 time × 4 freq × 1536 channels per 5s window (~312 ms per time step, ~192 time steps per 60s clip) |
+| output `spectrogram` | `[batch, 500, 128]` float | 128-mel, 500 frames/5s — free debugging output |
+| output `label` | `[batch, 14795]` float | Full Perch classifier logits |
+
+**Size**: 394 MB on disk, ~103M params, opset 18, 1137 nodes.
+
+**Cache footprint** (tighter than initial estimate):
+- Pooled `embedding`: 1536 × 4 B = 6 KB/window fp32
+- `spatial_embedding`: 16 × 4 × 1536 × 4 B ≈ 393 KB/window fp32 (≈ 196 KB fp16)
+- Frame cache is ~16× the pooled cache, not 50–100× as feared. Full train set is comfortably feasible on shared project storage.
+
+**Consequences for the plan**:
+- Tasks 2.1 (graph surgery) and 2.2 (tap-model sanity check) are obviated.
+- Feature extraction is "call `sess.run(['embedding', 'spatial_embedding'], {'inputs': wav})`" — no custom ONNX edit path.
+- The `spectrogram` output is a free debugging/visualization artifact; we can log mel specs without a separate librosa path.
+- Input sample rate is confirmed as 32 kHz (160000 samples / 5s), matching the project's existing audio pipelines.
+
+Artifacts: `artifacts/onnx_inspection/{summary.json, nodes.txt, candidates.txt}`, log `logs/inspect-onnx-6275860.out`.
+
 ## Limitations
 
 - **Amphibian coverage**: BirdCLEF 2026 is amphibian-dominated (exp 100 EDA). Perch v2 is trained on Xeno-canto *birds*. There is a real risk that Perch's features are uninformative for frog species regardless of head architecture. Amphibian cmAP is the explicit check.
