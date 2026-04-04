@@ -2,13 +2,13 @@
 
 ## Goal
 
-Push single SED model from 0.906 → 0.920+ LB by applying competitor insights
-(priors, CE+sigmoid, waveform augs) and exploring larger backbones.
+Push single SED model from 0.906 → 0.920+ LB by applying winning solution
+techniques (AttHead + dual supervision, CE loss, backbone scaling).
 
-**Current Best SED**: 0.906 LB (v5j single), 0.913 LB (v5j-4fold)
+**Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase B training complete. v6a regressed (CE), v6d flat (25ep). LB subs next.**
+### Status: **Phase C: implementing AttHead configs (v6e-v6i) based on winning solution analysis.**
 
 - **Branch**: `mg/021-sed-training`
 
@@ -16,63 +16,72 @@ Push single SED model from 0.906 → 0.920+ LB by applying competitor insights
 
 ## Config Comparison
 
-| Config | Backbone | Params | Embed | Head | Loss | MixUp | Epochs | Change from v5j |
-|--------|----------|--------|-------|------|------|-------|--------|-----------------|
-| v5j (baseline) | HGNetV2-B0 | 6M | 1024 | LSEHead | BCE | spec α=1.0 | 20 | — |
-| **v6a** | HGNetV2-B0 | 6M | 1024 | LSEHead | **CE** | spec α=1.0 | 20 | CE(primary_label) + sigmoid infer |
-| **v6b** | HGNetV2-B0 | 6M | 1024 | LSEHead | BCE | **wave** α=1.0 | 20 | Waveform MixUp |
-| **v6c** | HGNetV2-B0 | 6M | 1024 | LSEHead | BCE | **wave+noise+stretch** | 20 | Full waveform aug stack |
-| **v6d** | HGNetV2-B0 | 6M | 1024 | LSEHead | BCE | spec α=1.0 | **25** | Longer training |
-| **v6f** | **HGNetV2-B2** | **12M** | **1536** | LSEHead | BCE | spec α=1.0 | 20 | Larger HGNet |
-| **v6g** | **ConvNeXt-V2 Nano** | **15M** | **640** | LSEHead | BCE | spec α=1.0 | 20 | Modern ConvNet |
-| **v6h** | **EffNet-B3 NS** | **12M** | **384→1024** | LSEHead | BCE | spec α=1.0 | 20 | MBConv comparison |
+### Phase B — Recipe ablations (COMPLETED, no gains)
+
+| Config | Backbone | Head | Loss | MixUp | val/auroc | LB | Change from v5j |
+|--------|----------|------|------|-------|-----------|-----|-----------------|
+| v5j (baseline) | HGNetV2-B0 | LSEHead | BCE | spec | 0.874 | **0.906** | — |
+| v6a | HGNetV2-B0 | LSEHead | CE | spec | 0.854 | — | −0.020 (regressed) |
+| v6b | HGNetV2-B0 | LSEHead | BCE | wave | 0.871 | — | −0.003 |
+| v6c | HGNetV2-B0 | LSEHead | BCE | wave+noise | 0.861 | — | −0.013 (regressed) |
+| v6d | HGNetV2-B0 | LSEHead | BCE | spec | 0.873 | — | −0.001 (25ep, flat) |
+
+**Lesson**: Recipe changes on LSEHead don't help. The gap is architectural (head type).
+
+### Phase C — AttHead + backbone scaling (IN PROGRESS)
+
+All use **AttHead with dual supervision** (clip 0.5 + frame 0.5, blend 75% clip + 25% frame max).
+Motivated by BirdCLEF 2023/2024/2025 winning solutions + Salman's explicit recommendation.
+
+| Config | Backbone | Params | Embed | Head | Loss | Priority | Rationale |
+|--------|----------|--------|-------|------|------|----------|-----------|
+| **v6e** | HGNetV2-B0 | 6M | 1024 | **AttHead** | BCE | **Highest** | Isolate head: LSEHead → AttHead |
+| **v6f** | HGNetV2-B0 | 6M | 1024 | **AttHead** | **CE** | **High** | Winning combo (2024+2025 1st) |
+| **v6g** | EffNet-B3 NS | 12M | 384→1024 | **AttHead** | **CE** | **High** | Winning recipe on larger EffNet |
+| **v6h** | HGNetV2-B2 | 12M | 1536 | **AttHead** | BCE | Medium | Larger backbone + best head |
+| **v6i** | ConvNeXt-V2 Nano | 15M | 640 | **AttHead** | BCE | Medium | Architecture diversity |
 
 ---
 
-## Phase A: Site/Hour Priors on SED (1 day, 1-2 LB subs)
+## Phase A: Site/Hour Priors on SED — COMPLETE
 
-Uses exp 010's existing `_apply_metadata_priors` (multiplicative in probability
-space, taxa-aware lambda). Generated priors via `build_inference_priors.py`.
-Created separate `-pp2` weights directories (base v5j unchanged).
-
-- [x] A.1 Generate metadata_priors.json + taxa_mapping.json for v5j and v5j-4fold.
-      Created `hgnet-b0-sed-v5j-pp2` and `hgnet-b0-sed-v5j-4fold-pp2` weights dirs.
-      Registered in exp 010: upload_kaggle.py, submission.py MODEL_SLUGS, kernel-metadata.
-- [x] A.2 Upload v5j-pp2 to Kaggle, push kernel, submit to LB.
-      Priors: 9 sites, 13 hours, 1478 segments (Laplace α=0.01).
-      **LB: 0.909** (+0.003 over v5j 0.906, below 0.006 target)
-- [x] A.3 Submit v5j-4fold-pp2 → **LB: 0.917** (+0.004 over v5j-4fold 0.913)
+- [x] A.1 Generate priors, create -pp2 weights dirs, register in exp 010
+- [x] A.2 v5j-pp2 → **LB: 0.909** (+0.003)
+- [x] A.3 v5j-4fold-pp2 → **LB: 0.917** (+0.004)
 
 ---
 
-## Phase B: Training Recipe Ablations (3-5 days, 4-6 LB subs)
+## Phase B: Training Recipe Ablations — COMPLETE (no gains)
 
-Single-variable changes from v5j baseline.
+- [x] B.1-B.3 Implementation (CE loss, waveform augs, reproducibility)
+- [x] B.4 v6a (CE+LSEHead): val/auroc 0.854 (−0.020, regressed)
+- [x] B.5 v6b (waveform MixUp): val/auroc 0.871 (−0.003)
+- [x] B.6 v6c (waveform augs): val/auroc 0.861 (−0.013, regressed)
+- [x] B.7 v6d (25 epochs): val/auroc 0.873 (−0.001, flat)
 
-- [x] B.1 Implement CE(primary_label) training mode — already in train.py
-- [x] B.2 Implement waveform augmentations (pink noise, time stretch) in sed_finetune.py
-- [x] B.3 Add reproducibility: pl.seed_everything(42), Trainer(deterministic=True), git hash logging
-- [x] B.4 Train v6a (CE loss) on PACE — val/auroc 0.854 (**−0.020**, regressed)
-- [x] B.5 Train v6b (waveform MixUp) on PACE — val/auroc 0.871 (−0.003)
-- [x] B.6 Train v6c (full waveform augs) on PACE — val/auroc 0.861 (−0.013, regressed)
-- [x] B.7 Train v6d (25 epochs) on PACE — val/auroc 0.873 (−0.001, flat)
-- [ ] B.8 Submit v6d to LB (best candidate, essentially flat with v5j)
-- [ ] B.9 Submit v6b to LB (if budget allows, offline unreliable)
-- [ ] B.10 Train combined recipe (v6e) from best Phase B findings — TBD
+**Key finding**: v6a (CE+LSEHead) regressed because CE needs AttHead with
+framewise max to work. 2024+2025 winners use CE on AttHead, not LSEHead.
 
 ---
 
-## Phase C: Backbone Scaling (2-3 days, 2-3 LB subs)
+## Phase C: AttHead + Backbone Scaling (IN PROGRESS)
 
-Larger non-MBConv backbones with ONNX inference validation.
+Motivated by winning solution analysis:
+- 2023 1st: AttHead (GeM freq + attention), 75/25 clip/frame blend
+- 2024 1st: CE loss "significantly better" than BCE, EfficientNet-B0
+- 2025 1st: AttHead + CE, EfficientNet B0/B3/B4, 7-model ensemble
+- Salman (0.921): "Attn head's framewise max is better than LSE head"
 
-- [ ] C.1 Verify HGNetV2-B2, ConvNeXt-V2 Nano, EffNet-B3 NS work with train.py
-- [ ] C.2 Train v6f (HGNetV2-B2) on PACE
-- [ ] C.3 Train v6g (ConvNeXt-V2 Nano) on PACE
-- [ ] C.4 Train v6h (EffNet-B3 NS) on PACE
-- [ ] C.5 ONNX export + Kaggle inference timing validation
-- [ ] C.6 Submit best to LB — target ≥0.920
-- [ ] C.7 4-fold ensemble of best backbone — target ≥0.925+
+- [ ] C.1 Create AttHead configs (v6e-v6i) — dual supervision, 75/25 blend
+- [ ] C.2 Train v6e (HGNetV2-B0 + AttHead + BCE) — isolate head variable
+- [ ] C.3 Train v6f (HGNetV2-B0 + AttHead + CE) — winning loss combo
+- [ ] C.4 Train v6g (EffNet-B3 NS + AttHead + CE) — winning backbone + recipe
+- [ ] C.5 Train v6h (HGNetV2-B2 + AttHead + BCE) — larger backbone
+- [ ] C.6 Train v6i (ConvNeXt-V2 Nano + AttHead + BCE) — diversity
+- [ ] C.7 ONNX export + Kaggle inference timing validation
+- [ ] C.8 Submit winners to LB — target ≥0.920 single
+- [ ] C.9 Add priors to best model (-pp2 variant)
+- [ ] C.10 4-fold ensemble of best backbone — target ≥0.925+
 
 ---
 
@@ -80,12 +89,12 @@ Larger non-MBConv backbones with ONNX inference validation.
 
 | Submission | LB | val/auroc | Notes |
 |------------|-----|-----------|-------|
-| v5j (exp 019 baseline) | **0.906** | 0.874 | HGNetV2-B0, NNAudio AmplitudeToDB |
-| v5j-pp2 | **0.909** | — | v5j + site/hour priors (+0.003, 11 min runtime) |
+| v5j (exp 019 baseline) | **0.906** | 0.874 | HGNetV2-B0, LSEHead, BCE |
+| v5j-pp2 | **0.909** | — | v5j + site/hour priors (+0.003) |
 | v5j-4fold (exp 019) | **0.913** | — | 4-fold ensemble |
-| **v5j-4fold-pp2** | **0.917** | — | v5j-4fold + site/hour priors (+0.004) |
-| v6a (CE loss) | pending | 0.854 | **−0.020 offline**, regressed |
-| v6b (waveform MixUp) | pending | 0.871 | −0.003 offline |
-| v6c (waveform augs) | pending | 0.861 | −0.013 offline, regressed |
-| v6d (25 epochs) | pending | 0.873 | −0.001 offline, flat |
+| **v5j-4fold-pp2** | **0.917** | — | v5j-4fold + priors (+0.004), current best SED |
+| v6a (CE+LSEHead) | — | 0.854 | −0.020 offline, regressed |
+| v6b (waveform MixUp) | — | 0.871 | −0.003 offline |
+| v6c (waveform augs) | — | 0.861 | −0.013 offline, regressed |
+| v6d (25 epochs) | — | 0.873 | −0.001 offline, flat |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |
