@@ -40,7 +40,7 @@ sys.path.insert(0, str(repo_root / "src"))
 from birdclef.data.sed import SEDDataModule  # noqa: E402
 from birdclef.data.soundscape import build_full_species_list  # noqa: E402
 from birdclef.encoders.efficientnet import EfficientNetEncoder  # noqa: E402
-from birdclef.heads.sed_head import AttBlockV2, AttHead, LSEHead  # noqa: E402
+from birdclef.heads.sed_head import AttBlockV2, AttHead, AttHeadMultiContext, LSEHead  # noqa: E402
 from birdclef.lightning.sed_finetune import SEDFinetuneModule  # noqa: E402
 from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram  # noqa: E402
 
@@ -132,9 +132,12 @@ def main():
 
     head_type = config["sed_head"].get("type", "att_head")
     logger.info(f"Building SED head: {head_type}...")
-    head_cls = {"att_head": AttHead, "att_block_v2": AttBlockV2, "lse_head": LSEHead}.get(
-        head_type, AttHead
-    )
+    head_cls = {
+        "att_head": AttHead,
+        "att_head_multi_context": AttHeadMultiContext,
+        "att_block_v2": AttBlockV2,
+        "lse_head": LSEHead,
+    }.get(head_type, AttHead)
     head_kwargs = {
         "in_channels": embed_dim,
         "num_classes": num_classes,
@@ -145,6 +148,9 @@ def main():
     if head_type == "lse_head":
         head_kwargs["lse_temperature"] = config["sed_head"].get("lse_temperature", 1.0)
         head_kwargs["freq_pool"] = config["sed_head"].get("freq_pool", "gem")
+    elif head_type == "att_head_multi_context":
+        head_kwargs["train_period"] = config["sed_head"].get("train_period", 15.0)
+        head_kwargs["infer_period"] = config["sed_head"].get("infer_period", 5.0)
     sed_head = head_cls(**head_kwargs)
 
     # ========================================================================

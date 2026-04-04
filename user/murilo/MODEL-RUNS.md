@@ -381,6 +381,26 @@ CE loss (v6a) regressed −0.020 — single-label assumption hurts on multi-labe
 Waveform augmentations (v6b, v6c) didn't help — spectrogram MixUp remains better.
 25 epochs (v6d) essentially flat on AUROC but improved cmap (+0.026).
 
+### Phase C: AttHead + Backbone Scaling
+
+All use **AttHead with dual supervision** (clipwise_weight=0.5, framewise_weight=0.5,
+blend 75% clip + 25% frame max). Replaces LSEHead from v5j. 20 epochs, seed=42.
+
+| Slug | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|--------|------|------|-----------|----------|------------|-----|------------|
+| **`hgnet-b2-sed-v6h`** | **HGNetV2-B2** | **12M** | AttHead | BCE | **0.876** | **0.658** | 18 | pending | `021-.../2026-hgnet-b2-sed-v6h/best-epochepoch=18.ckpt` |
+| `convnextv2-nano-sed-v6i` | ConvNeXt-V2 Nano | 15M | AttHead | BCE | 0.874 | **0.663** | 16 | pending | `021-.../2026-convnextv2-nano-sed-v6i/best-epochepoch=16.ckpt` |
+| `effnet-b0-ns-sed-v6j` | EffNet-B0 NS | 5.3M | AttHead | BCE | 0.874 | 0.626 | 15 | pending | `021-.../2026-effnet-b0-ns-sed-v6j/best-epochepoch=15.ckpt` |
+| `hgnet-b0-sed-v6e` | HGNetV2-B0 | 6M | AttHead | BCE | 0.870 | 0.611 | 18 | skip | `021-.../2026-hgnet-b0-sed-v6e/best-epochepoch=18.ckpt` |
+| `effnet-b3-ns-sed-v6g` | EffNet-B3 NS | 12M | AttHead | CE | 0.859 | 0.611 | 19 | skip | `021-.../2026-effnet-b3-ns-sed-v6g/best-epochepoch=19.ckpt` |
+| `hgnet-b0-sed-v6f` | HGNetV2-B0 | 6M | AttHead | CE | 0.850 | 0.577 | 18 | skip | `021-.../2026-hgnet-b0-sed-v6f/best-epochepoch=18.ckpt` |
+
+**v6h (HGNetV2-B2)** is the offline winner (+0.002 AUROC over v5j baseline).
+CE loss regressed on all architectures (−0.015 to −0.024) — dead for our setup.
+AttHead actually hurts on HGNetV2-B0 (v6e: −0.004) — the gain comes from scaling
+the backbone, not the head swap. ConvNeXt-V2 Nano has best cmap (0.663), useful
+for ensemble diversity. LB submission required for v6h, v6i, v6j to validate.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

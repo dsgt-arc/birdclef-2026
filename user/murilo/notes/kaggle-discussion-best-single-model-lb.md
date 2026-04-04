@@ -2,8 +2,8 @@
 
 - **URL**: https://www.kaggle.com/competitions/birdclef-2026/discussion/683791
 - **Posted**: 2026-03-21 (Antoine Masq)
-- **Captured**: 2026-04-03
-- **19 comments**
+- **Captured**: 2026-04-04
+- **22 comments**
 
 ---
 
@@ -25,11 +25,13 @@
 | Person | Rank | LB | Details |
 |--------|------|-----|---------|
 | **Boredom** | 9th | **0.922** single/single-fold | EfficientNet, "easily 925+" |
-| **Salman Ahmed** | 403rd | **0.921** solo, **0.923** w/ priors | 2 SED ensemble, CE+sigmoid, waveform MixUp |
+| **Salman Ahmed** | 425th | **0.921** solo, **0.923** w/ priors | 2 SED ensemble, CE+sigmoid, waveform MixUp |
 | **Ali Ozan Memetoglu** | 2nd | **0.925** single model | No unlabeled data, no details |
-| **yukiZ** | 262nd | **0.904** (fold 0 only, 5-fold SKF) | Raw waveform augmentations |
-| Antoine Masq | 796th | 0.889 | EfficientNetV2-B0 |
-| Don Mathis | 962nd | 0.880 | CNN + logit-LSE, BCE, 5s clips |
+| **hengck23** | 154th | **0.896** CNN only | Long input wave, augmentation, no Perch, no PP |
+| **Tom** | 6th | ~similar to hengck23 | "slightly different approach which fits on 4x5sec" |
+| **yukiZ** | 65th | **0.904** (fold 0 only, 5-fold SKF) | Raw waveform augmentations |
+| Antoine Masq | 802nd | 0.889 | EfficientNetV2-B0 |
+| Don Mathis | 988th | 0.880 | CNN + logit-LSE, BCE, 5s clips |
 
 ---
 
@@ -187,7 +189,7 @@
 
 > train_soundscapes_labels.csv are labeled soundscapes.
 
-### Salman Ahmed (403rd) — Posted 9 hours ago (UPDATED)
+### Salman Ahmed (425th) — Posted 1 day ago (UPDATED)
 
 > Alright, Finally have 2 SED models with ensemble of LB 0.923. and solo around
 > 0.921 Simple training with mixup on waves. 25 epochs. CE Loss but Sigmoid at
@@ -198,38 +200,38 @@
 >
 > WITHOUT any Perch KD
 
-### Boredom (9th) — Posted 8 hours ago
+### Boredom (9th) — Posted 1 day ago
 
 > Interesting findings. In your experiments, did EfficientNet underperform
 > compared to other architectures? Also, may I ask what you mean by "Priors"
 > here? In my experiments, a single EfficientNet model can easily achieve an LB
 > score above 925+.
 
-### Salman Ahmed (403rd) — Posted 8 hours ago
+### Salman Ahmed (425th) — Posted 1 day ago
 
 > Yes, for me Efficientnet NS (with MBConv Architecture) were not converging fast
 > and scored much lower on LB, compared to other models. Not sure why. By Priors
 > I mean, prior table of species based on site and hours.
 
-### Jiacheng Ma (596th) — Posted 4 days ago
+### Jiacheng Ma (621st) — Posted 4 days ago
 
 > You only use train_audio? no train_soundscape?
 
-### Boredom (9th) — Posted 19 hours ago
+### Boredom (9th) — Posted 1 day ago
 
 > train_audio + train_soundscape (w/ label), w/o pseudo label
 
-### Boredom (9th) — Posted 19 hours ago
+### Boredom (9th) — Posted 1 day ago
 
 > I guess without using unlabeled data, the highest LB (leaderboard score) we can
 > achieve is around 0.94-0.945.
 
-### !!!!! (961st) — Posted 19 hours ago
+### !!!!! (956th) — Posted 1 day ago
 
 > May I ask you use Perch or just timm-based model? For me, I get low score (0.88)
 > using pretrained timm model.
 
-### Don Mathis (962nd) — Posted a day ago
+### Don Mathis (988th) — Posted 2 days ago
 
 > Mine is only 0.880, fine-tuning an imagenet-pretrained CNN backbone that takes
 > spectrogram input. The backbone outputs low-temporal resolution BCT (T=10,
@@ -244,7 +246,7 @@
 > I also trained a 4-layer residual mamba model from scratch (no pretrained network
 > at all), but that topped out at .772.
 
-### hengck23 (144th) — Posted a day ago
+### hengck23 (154th) — Posted 2 days ago
 
 > "The .880 isn't really replicable, more like .875 only." this is due to small
 > sample size in some class. bird clef is domain and long tail problem. the issue
@@ -253,6 +255,32 @@
 >
 > although "train from pretrained CNN/scratch" can achieve good results, using
 > perchv2 may be faster and easier.
+
+### hengck23 (154th) — Posted 9 hours ago ⭐ NEW
+
+> how to use CNN only (no perch2, no post processing) to get 0.896 lb
+> context and augmentation is the key. here we cheat by using CNN and long input
+> wave to capture temporal information
+>
+> hint: how to get even better results: multi-conext head
+
+**Attached image shows:**
+- 3×5sec approach: 3 adjacent 5s windows as longer input wave (15s total),
+  providing 5s before and 5s after the center 5s window for temporal context
+- Wave mix augmentation designed specifically for the 3×5sec multi-window input
+- HGNetV2-B0 + LSE head with 4-folds
+- 3 input windows → 3 output predictions (all supervised)
+- This matches BirdCLEF 2023 5th place (Tattaka) train_period=15s / infer_period=5s
+
+### Tom (6th) — Posted 9 hours ago ⭐ NEW
+
+> This is similar to my current approach, but I made a slightly different approach
+> which fits on 4x5sec.
+
+### hengck23 (154th) — Posted 8 hours ago ⭐ NEW
+
+> I checked your Claude report. He actually knows this trick the very first day.
+> That is impressive
 
 ---
 
@@ -268,3 +296,7 @@
 8. **Offline val/auroc is unreliable**: yukiZ's data shows correlation but with significant variance
 9. **Maximum achievable without unlabeled data**: ~0.94-0.945 per Boredom (9th place)
 10. **Salman says "Attn head's framewise max is better than LSE head"** — we use LSEHead, he uses AttHead
+11. **hengck23: "context and augmentation is the key"** — 0.896 LB with CNN only (no Perch, no PP) using **long input wave** to capture temporal info. Hints at **multi-context head** for even better results.
+12. **Tom (6th) confirms similar approach** — "fits on 4x5sec" (20s total context via multiple 5s windows)
+13. **Multi-context head** = train on long windows (3×5s=15s or 4×5s=20s), predict on center 5s only. Backbone processes full spectrogram, head crops to center at inference. This is the BirdCLEF 2023 5th place (Tattaka) `train_period/infer_period` mechanism. hengck23 uses HGNetV2-B0 + LSE head (our exact v5j setup) — the multi-context is the key difference, not the architecture.
+14. **Our v5i (10s single window) got 0.880 LB (worse than v5j's 0.906 at 5s)** — but multi-context is different: it preserves 5s resolution per window while adding temporal context, rather than processing one long spectrogram at reduced temporal density.

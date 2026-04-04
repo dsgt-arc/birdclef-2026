@@ -1,25 +1,49 @@
 """Sound Event Detection (SED) heads with attention-based temporal pooling.
 
-Two head variants:
+Three head variants:
 
-AttHead (v1/v4a):
+AttHead (v1/v4a, exps 016-021 Phase C):
   backbone features (B, C, F, T)
     → GeM pool frequency axis → (B, C, T)
     → dense projection + dropout → (B, hidden, T)
     → framewise logits via Conv1d → (B, num_classes, T)
     → attention weights via Conv1d + softmax → (B, num_classes, T)
-    → clipwise = attention-weighted sum → (B, num_classes)
+    → clipwise = attention-weighted sum of raw logits → (B, num_classes)
+  Note: differs from competition-standard (Tattaka/BirdCLEF 2023 5th) in two ways:
+    1. No tanh before softmax (ours: softmax(x), Tattaka: softmax(tanh(x)))
+    2. Logit-space clipwise (ours: sum(att*logits), Tattaka: sum(att*sigmoid(logits)))
+  See evgeniimaslov2/birdclef-5th-place-code for reference implementation.
 
-AttBlockV2 (v4c):
+AttBlockV2 (v4c, exp 017):
   Same GeM + projection, but:
-    → attention weights via Conv1d + tanh (value) * softmax (weight)
+    → attention weights via Conv1d + tanh(x) * softmax(x) (PANNs-style)
     → framewise logits via Conv1d + sigmoid (bounded [0,1])
     → clipwise = attention-weighted sum of sigmoid framewise
-  Competition-standard design from PANNs / BirdCLEF top solutions.
+  PANNs design (Kong et al. 2020). Note: PANNs uses tanh(x)*softmax(x),
+  while Tattaka uses softmax(tanh(x)) — these are different operations.
   Returns logits (inverse-sigmoid) for compatibility with dual CE loss.
 
+LSEHead (v5d+, exps 019-021):
+  backbone features (B, C, F, T)
+    → freq pool (GeM or mean) → (B, C, T)
+    → Linear + ReLU + Dropout + Linear → (B, T, num_classes)
+    → LSE temporal pooling → (B, num_classes)
+  Adapted from ttahara's HGNetV2-B0 recipe. Currently our best-performing
+  head on LB (v5j: 0.906 LB with HGNetV2-B0).
+
+AttHeadMultiContext (v7+, exp 021 Phase D):
+  Competition-standard attention head from BirdCLEF 2023 5th place (Tattaka).
+  Key differences from AttHead:
+    → attention: softmax(tanh(x)) — tanh bounds inputs before softmax
+    → clipwise: sum(sigmoid(logits) * att_weights) — probability-space aggregation
+    → train_period/infer_period: trains on long windows (e.g. 15s), infers on
+      center crop (e.g. 5s). This IS the multi-context mechanism — the backbone
+      sees full temporal context but predictions are for the center segment only.
+    → pre-dropout before linear (Dropout(p/2))
+  Ref: evgeniimaslov2/birdclef-5th-place-code, hengck23's 0.896 CNN-only approach.
+
 Training uses dual supervision on clipwise and framewise-max predictions.
-Inference blends 75% clipwise + 25% framewise-max.
+Inference blends clipwise and framewise-max (configurable ratio).
 """
 
 import math
@@ -107,6 +131,103 @@ class AttHead(nn.Module):
 
         # Clipwise: attention-weighted sum of frame logits over time
         clipwise_logits = (att_weights * frame_logits).sum(dim=-1)  # (B, num_classes)
+
+        return clipwise_logits, frame_logits
+
+
+class AttHeadMultiContext(nn.Module):
+    """Competition-standard attention head with multi-context train/infer cropping.
+
+    Adapted from BirdCLEF 2023 5th place (Tattaka/evgeniimaslov2). Key design:
+    - Trains on long windows (e.g. 15s) for temporal context
+    - Infers on center crop (e.g. 5s) for evaluation alignment
+    - Attention uses softmax(tanh(x)) for bounded inputs
+    - Clipwise aggregates in probability space: sum(sigmoid(logits) * att_weights)
+
+    The train_period/infer_period mechanism is the multi-context approach described
+    by hengck23 (0.896 LB CNN-only) and Tom (6th place, 4x5sec). The backbone
+    sees full temporal context but predictions are for the center segment only.
+
+    Args:
+        in_channels: Number of input channels from backbone.
+        num_classes: Number of output classes.
+        hidden_dim: Hidden projection dimension (default: 512).
+        dropout: Dropout rate for post-linear layer (default: 0.5).
+        gem_p: Initial GeM power parameter (default: 3.0).
+        train_period: Training window duration in seconds (default: 15.0).
+        infer_period: Inference window duration in seconds (default: 5.0).
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        num_classes: int,
+        hidden_dim: int = 512,
+        dropout: float = 0.5,
+        gem_p: float = 3.0,
+        train_period: float = 15.0,
+        infer_period: float = 5.0,
+    ):
+        super().__init__()
+        assert (
+            train_period >= infer_period
+        ), f"train_period ({train_period}) must be >= infer_period ({infer_period})"
+        self.train_period = train_period
+        self.infer_period = infer_period
+        self.gem = GeM(p=gem_p)
+        self.project = nn.Sequential(
+            nn.Dropout(dropout / 2),
+            nn.Linear(in_channels, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+        )
+        self.frame_logits_conv = nn.Conv1d(hidden_dim, num_classes, kernel_size=1)
+        self.attention_conv = nn.Conv1d(hidden_dim, num_classes, kernel_size=1)
+
+    def forward(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass with multi-context temporal cropping.
+
+        During training: processes full temporal extent (e.g. 15s).
+        During inference: crops to center infer_period (e.g. 5s).
+
+        Args:
+            features: (B, C, F, T) feature map from backbone.
+
+        Returns:
+            clipwise_logits: (B, num_classes) — logits (inverse-sigmoid of
+                probability-space aggregation) for loss compatibility.
+            framewise_logits: (B, num_classes, T) — per-frame raw logits.
+                T matches full temporal extent during training, or center crop
+                during inference.
+        """
+        # GeM pool frequency: (B, C, F, T) → (B, C, T)
+        x = self.gem(features)
+
+        # Dense projection: (B, C, T) → (B, hidden, T)
+        x = x.permute(0, 2, 1)  # (B, T, C)
+        x = self.project(x)  # (B, T, hidden)
+        x = x.permute(0, 2, 1)  # (B, hidden, T)
+
+        # Per-frame logits and attention (full temporal extent)
+        frame_logits = self.frame_logits_conv(x)  # (B, num_classes, T)
+        att_raw = torch.tanh(self.attention_conv(x))  # (B, num_classes, T)
+
+        # Crop to center infer_period during inference
+        if not self.training and self.train_period > self.infer_period:
+            feat_time = x.size(-1)
+            ratio = self.infer_period / self.train_period
+            start = int(feat_time / 2 - feat_time * ratio / 2)
+            end = int(start + feat_time * ratio)
+            frame_logits = frame_logits[:, :, start:end]
+            att_raw = att_raw[:, :, start:end]
+
+        # Attention-weighted sum in probability space
+        att_weights = torch.softmax(att_raw, dim=-1)  # (B, num_classes, T)
+        frame_probs = torch.sigmoid(frame_logits)  # (B, num_classes, T)
+        clipwise_probs = (att_weights * frame_probs).sum(dim=-1)  # (B, num_classes)
+
+        # Convert to logits for loss compatibility (BCE/CE expect logits)
+        clipwise_logits = torch.logit(clipwise_probs.clamp(1e-7, 1.0 - 1e-7))
 
         return clipwise_logits, frame_logits
 

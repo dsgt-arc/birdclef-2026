@@ -81,3 +81,73 @@ Nearly identical to v5j on AUROC. The extra 5 epochs improved cmap from ~0.625
 (v5j approximate) to 0.651, suggesting the model learned better class-specific
 patterns with slightly longer training. Best epoch was 22 (used extra headroom).
 Worth submitting to LB as it's essentially free.
+
+## Phase C: AttHead + Backbone Scaling
+
+All models use **AttHead with dual supervision** (clipwise_weight=0.5,
+framewise_weight=0.5, blend 75% clip + 25% frame max). GeM freq pooling + attention
+head, replacing LSEHead from v5j baseline. Motivated by BirdCLEF 2023/2024/2025
+winning solutions and Salman's explicit recommendation ("Attn head's framewise max
+is better than LSE head").
+
+### Offline Results
+
+| Model | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | Delta vs v5j |
+|-------|----------|--------|------|------|-----------|----------|------------|-------------|
+| v5j (baseline) | HGNetV2-B0 | 6M | LSEHead | BCE | **0.874** | — | 19 | — |
+| **v6h** | **HGNetV2-B2** | **12M** | AttHead | BCE | **0.876** | **0.658** | 18 | **+0.002** |
+| v6i | ConvNeXt-V2 Nano | 15M | AttHead | BCE | 0.874 | **0.663** | 16 | ±0 |
+| v6j | EffNet-B0 NS | 5.3M | AttHead | BCE | 0.874 | 0.626 | 15 | ±0 |
+| v6e | HGNetV2-B0 | 6M | AttHead | BCE | 0.870 | 0.611 | 18 | −0.004 |
+| v6g | EffNet-B3 NS | 12M | AttHead | CE | 0.859 | 0.611 | 19 | −0.015 |
+| v6f | HGNetV2-B0 | 6M | AttHead | CE | 0.850 | 0.577 | 18 | −0.024 |
+
+### Analysis
+
+**v6h (HGNetV2-B2, AttHead, BCE): +0.002 val/auroc — best offline performer.**
+Scaling HGNet from B0 (6M) to B2 (12M) with AttHead achieves the best offline AUROC
+(0.876) and strong cmap (0.658). The larger backbone provides modest but consistent
+improvement. LB validation required — offline gains have been unreliable predictors.
+
+**v6i (ConvNeXt-V2 Nano, AttHead, BCE): ±0 val/auroc — matches baseline.**
+Architecture diversity test. ConvNeXt matches v5j AUROC exactly (0.874) but achieves
+the highest cmap of all Phase C models (0.663), suggesting better per-class calibration.
+Worth a LB submission for ensemble diversity even if AUROC is flat.
+
+**v6j (EffNet-B0 NS, AttHead, BCE): ±0 val/auroc — matches baseline.**
+Tests Boredom's claim that EfficientNet can "easily" reach 925+ LB. Offline AUROC
+matches v5j (0.874) but doesn't show the improvement Boredom implies. The gap may
+be in recipe details we haven't reproduced (training schedule, augmentations, etc.).
+
+**v6e (HGNetV2-B0, AttHead, BCE): −0.004 val/auroc — AttHead regressed on B0.**
+Isolating the head swap (LSEHead → AttHead) on HGNetV2-B0 actually hurt by −0.004.
+This is surprising given winning solutions' preference for AttHead. Possible
+explanations: the dual supervision (50/50 clip/frame) may need different weighting
+for smaller backbones, or the 75/25 blend ratio needs tuning for HGNet's embedding
+structure.
+
+**v6f (HGNetV2-B0, AttHead, CE): −0.024 val/auroc — CE with AttHead still fails.**
+CE loss regressed even worse with AttHead than with LSEHead (v6a: −0.020). This
+definitively rules out the hypothesis that CE needs AttHead to work. CE loss with
+single-label primary_label is fundamentally incompatible with our multi-label
+soundscape data setup, regardless of head architecture.
+
+**v6g (EffNet-B3 NS, AttHead, CE): −0.015 val/auroc — larger EffNet + CE fails.**
+EfficientNet-B3 (12M params) with CE loss underperforms. Confirms both findings:
+CE loss hurts (−0.015 vs EfficientNet with BCE), and MBConv architecture struggles
+on mels compared to HGNet. Salman also noted "MBConvs from EfficientNets are not
+learning that well."
+
+### Key Takeaways
+
+1. **CE loss is dead** — consistently −0.015 to −0.024 across LSEHead (Phase B) and AttHead (Phase C), on both HGNet and EffNet. Despite winning solutions using CE, our setup can't make it work.
+2. **AttHead is not a universal upgrade** — on HGNetV2-B0, it regressed −0.004 vs LSEHead. The improvement comes from pairing AttHead with a larger backbone (B2).
+3. **Backbone scaling matters more than head type** — v6h (B2+AttHead, 0.876) > v5j (B0+LSEHead, 0.874) > v6e (B0+AttHead, 0.870).
+4. **ConvNeXt-V2 has ensemble potential** — matches AUROC with best cmap (0.663), different architecture from HGNet.
+5. **Offline metrics are modest** — best delta is +0.002. LB submission is essential to validate whether these translate.
+
+### LB Submission Priority
+
+1. **v6h** (HGNetV2-B2, AttHead, BCE) — best offline AUROC, highest priority
+2. **v6i** (ConvNeXt-V2 Nano) — ensemble diversity, highest cmap
+3. **v6j** (EffNet-B0 NS) — tests Boredom's EffNet claim on LB

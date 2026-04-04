@@ -326,6 +326,17 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-4fold-pp2",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-4fold-pp2.json",
     },
+    # Exp 021 Phase C: AttHead + backbone scaling
+    "hgnet-b2-sed-v6h": {
+        "slug": "birdclef-2026-hgnet-b2-sed-v6h-weights",
+        "weights_dir": "artifacts/weights/hgnet-b2-sed-v6h",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b2-sed-v6h.json",
+    },
+    "effnet-b0-ns-sed-v6j": {
+        "slug": "birdclef-2026-effnet-b0-ns-sed-v6j-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-ns-sed-v6j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-ns-sed-v6j.json",
+    },
 }
 
 
