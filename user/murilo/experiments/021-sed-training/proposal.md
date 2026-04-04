@@ -142,81 +142,70 @@ Perch remains valuable as a pseudo-labeling teacher for future experiments.
 
 Three phases, each building on findings:
 
-**Phase A: Quick wins (no retraining)** — Apply site/hour priors to existing
-v5j model output. Pure post-processing, just needs kernel changes.
+**Phase A: Quick wins (no retraining)** — COMPLETE. Site/hour priors on SED output.
+v5j-pp2 0.909 (+0.003), v5j-4fold-pp2 0.917 (+0.004).
 
-**Phase B: Training recipe improvements** — Test CE+sigmoid, waveform augmentations
-on v5j recipe with HGNetV2-B0. Single-variable ablations on PACE.
+**Phase B: Training recipe ablations** — COMPLETE (no gains). CE loss, waveform
+MixUp, noise/stretch, 25 epochs — all regressed or flat on LSEHead.
 
-**Phase C: Backbone scaling** — Test larger non-MBConv backbones (HGNetV2-B1/B2,
-ConvNeXt-V2) and larger EfficientNet-NS variants for comparison. ONNX export
-for Kaggle inference.
+**Phase C: AttHead + backbone scaling** — IN PROGRESS. Winning solution analysis
+revealed the gap is architectural: every BirdCLEF winner (2023/2024/2025) uses
+**AttHead with GeM freq pooling + dual supervision + 75/25 clip/frame blending**.
+Phase B's CE loss regression was because CE needs AttHead's framewise max channel.
+
+### Winning Solution Evidence for AttHead
+
+| Year | Winner | Head | Loss | Blending |
+|------|--------|------|------|----------|
+| 2023 1st | Volodymyr | AttHead (GeM freq + attention) | Focal | 75% clip + 25% frame max |
+| 2024 1st | Team Kefir | Pure backbone (no SED) | CE | sigmoid inference |
+| 2025 1st | Nikita Babich | AttHead (GeM freq + attention) | CE | 75% clip + 25% frame max |
+| 2025 9th | i2nfinit3y | AttBlockV2 | BCE | framewise max |
+| Salman (0.921) | — | AttHead | CE | framewise max > LSEHead |
 
 ### Setup
 
 | Component | Details |
 |-----------|---------|
 | Data | 35K focal + 708 labeled soundscape windows (same as exp 019) |
-| Compute | PACE RTX 6000 GPU, ~2-4h per training run |
+| Compute | PACE GPU (~20-30 min per training run) |
 | Dependencies | timm, torch, torchaudio, nnAudio, pytorch-lightning |
-| Code | `user/murilo/experiments/021-sed-training/` (extends exp 019 train.py) |
+| Code | `user/murilo/experiments/021-sed-training/` |
 | Branch | `mg/021-sed-training` |
-| Base model | v5j recipe: HGNetV2-B0, LSEHead, BCE, NNAudio AmplitudeToDB, 5s, 20ep |
+| Base mel | v5j recipe: NNAudio AmplitudeToDB, n_fft=2048, n_mels=256, 5s, 20ep, OneCycleLR |
+| Head | **AttHead** (GeM freq pooling + attention) with dual supervision |
+| Dual supervision | clipwise_weight=0.5, framewise_weight=0.5, blend 75% clip + 25% frame max |
 
-### Procedure
+### Phase C Config Table
 
-#### Phase A: Site/Hour Priors on SED (1 day, 1-2 LB subs)
+All configs use AttHead with dual supervision. Base mel pipeline from v5j.
 
-Apply the prior fusion from exp 020 Perch pipeline to SED inference.
-The prior tables are built from the 739 labeled soundscape annotations
-(site × hour × species co-occurrence statistics).
+| Config | Backbone | Params | Head | Loss | What it tests | Priority |
+|--------|----------|--------|------|------|--------------|----------|
+| **v6e** | HGNetV2-B0 | 6M | **AttHead** | BCE | Isolate head: LSEHead → AttHead (same backbone as v5j) | **Highest** |
+| **v6f** | HGNetV2-B0 | 6M | **AttHead** | **CE** | Winning loss combo: AttHead + CE (2024+2025 1st place recipe) | **High** |
+| **v6g** | **EffNet-B3 NS** | 12M | **AttHead** | **CE** | Full winning recipe on larger EfficientNet (NS-JFT weights) | **High** |
+| **v6h** | **HGNetV2-B2** | 12M | **AttHead** | BCE | Backbone capacity: 2x params, 1536 embed (vs B0's 1024) | Medium |
+| **v6i** | **ConvNeXt-V2 Nano** | 15M | **AttHead** | BCE | Architecture diversity: non-MBConv, non-HGNet backbone | Medium |
+| **v6j** | **EffNet-B0 NS** | 5.3M | **AttHead** | BCE | Boredom says EffNet reaches 925+; NS-JFT weights + proj 1024 | Medium |
 
-- [ ] A.1 Port `fuse_scores_with_tables` + `fit_prior_tables` to SED submission kernel
-- [ ] A.2 Submit v5j + priors → target ≥0.912 (v5j 0.906 + expected 0.006)
-- [ ] A.3 Submit v5j-4fold + priors → target ≥0.919
+Detailed config parameters:
 
-#### Phase B: Training Recipe Ablations (3-5 days, 4-6 LB subs)
-
-All ablations from v5j baseline (HGNetV2-B0, 0.906 LB). Single-variable changes.
-
-| Run | Change | Hypothesis |
-|-----|--------|-----------|
-| v6a | CE(primary_label) + sigmoid inference | Sharper gradients, Salman's approach |
-| v6b | Waveform MixUp (instead of spectrogram) | Salman + yukiZ both use this |
-| v6c | Waveform MixUp + Pink Noise + Time Stretch | yukiZ's full augmentation stack |
-| v6d | 25 epochs (vs 20) | Salman's epoch count, slightly longer training |
-| v6e | Combined winners from v6a-d | Best recipe |
-
-- [ ] B.1 Implement CE(primary_label) training mode in train.py
-- [ ] B.2 Implement waveform augmentations (MixUp, pink noise, time stretch)
-- [ ] B.3 Train v6a-v6d on PACE (parallel where possible)
-- [ ] B.4 Submit winners to LB
-- [ ] B.5 Train combined recipe v6e, submit to LB
-
-#### Phase C: Backbone Scaling (2-3 days, 2-3 LB subs)
-
-Test larger backbones with the best recipe from Phase B. Priority: non-MBConv
-architectures (HGNet, ConvNeXt-V2), with EfficientNet-NS as a comparison.
-All models exported to ONNX for Kaggle inference validation.
-
-| Run | Backbone | Params | Embed dim | Architecture |
-|-----|----------|--------|-----------|-------------|
-| v6f | HGNetV2-B2 | 12M | 1536 | Non-MBConv (larger HGNet) |
-| v6g | ConvNeXt-V2 Nano | 15M | 640 | Modern ConvNet |
-| v6h | EfficientNet-B3 NS | 12M | 384 | MBConv (comparison) |
-
-- [ ] C.1 Verify backbones work with v5j recipe + ONNX export
-- [ ] C.2 Train v6f-v6h on PACE
-- [ ] C.3 ONNX export + Kaggle inference timing validation
-- [ ] C.4 Submit best to LB — target ≥0.920
-- [ ] C.5 4-fold ensemble of best backbone — target ≥0.925+
+| Config | timm model | Embed dim | proj_dim | hidden_dim |
+|--------|-----------|-----------|----------|------------|
+| v6e | `hgnetv2_b0.ssld_stage2_ft_in1k` | 1024 | — | 1024 |
+| v6f | `hgnetv2_b0.ssld_stage2_ft_in1k` | 1024 | — | 1024 |
+| v6g | `tf_efficientnet_b3.ns_jft_in1k` | 384 | 1024 | 1024 |
+| v6h | `hgnetv2_b2.ssld_stage2_ft_in1k` | 1536 | — | 1024 |
+| v6i | `convnextv2_nano.fcmae_ft_in22k_in1k` | 640 | — | 640 |
+| v6j | `tf_efficientnet_b0.ns_jft_in1k` | 320 | 1024 | 1024 |
 
 ### Variables
 
-- **Independent**: Loss function, augmentation strategy, backbone architecture/scale
+- **Independent**: SED head type (AttHead vs LSEHead), loss function, backbone architecture/scale
 - **Dependent**: LB score, offline val/auroc, inference time
 - **Controlled**: Data (35K focal + 708 soundscape), mel config (NNAudio AmplitudeToDB),
-  head (LSEHead), optimizer (AdamW), scheduler (OneCycleLR), batch size (64)
+  optimizer (AdamW), scheduler (OneCycleLR), batch size (64), seed (42)
 
 ## Evaluation
 
@@ -232,19 +221,20 @@ All models exported to ONNX for Kaggle inference validation.
 
 | Model | LB | Notes |
 |-------|-----|-------|
-| v5j (our best single) | 0.906 | HGNetV2-B0, v5j recipe |
-| v5j-4fold | 0.913 | 4-fold ensemble |
-| Perch ProtoSSM V18 | 0.925 | Two-kernel TF, exp 020 |
-| Salman single | 0.921 | Non-EfficientNet, CE + waveform MixUp + priors |
-| Boredom single | 0.922 | EfficientNet, recipe unknown |
+| v5j (our best single) | 0.906 | HGNetV2-B0, LSEHead, BCE |
+| v5j-pp2 | 0.909 | v5j + site/hour priors |
+| v5j-4fold-pp2 | **0.917** | Current best SED |
+| Perch ProtoSSM V18 | **0.925** | Two-kernel TF, exp 020 |
+| Salman single | 0.921 | AttHead, CE, non-EfficientNet + priors |
+| Boredom single | 0.922 | EfficientNet, "easily 925+" |
 | Competition #1 | 0.942 | Unknown |
 
 ### Success Criteria
 
-- **Phase A confirm**: v5j + priors ≥ 0.910
-- **Phase B confirm**: any v6 variant ≥ 0.915 (single-fold)
-- **Phase B stretch**: ≥ 0.920 (matching Salman/Boredom)
-- **Phase C confirm**: larger backbone ≥ v5j baseline (0.906)
+- **Phase A**: ~~v5j + priors ≥ 0.910~~ → **DONE: 0.909 single, 0.917 4-fold**
+- **Phase B**: ~~recipe ablation ≥ 0.915~~ → **DONE: no gains on LSEHead**
+- **Phase C confirm**: any AttHead variant ≥ 0.910 single (beats v5j-pp2)
+- **Phase C stretch**: ≥ 0.920 single (matching Salman/Boredom)
 - **Phase C stretch**: 4-fold ensemble ≥ 0.925 (matching Perch V18)
 
 ## Limitations

@@ -8,7 +8,7 @@ techniques (AttHead + dual supervision, CE loss, backbone scaling).
 **Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase C: implementing AttHead configs (v6e-v6i) based on winning solution analysis.**
+### Status: **Phase C: v6e-v6j training on PACE. AttHead + dual supervision on multiple backbones.**
 
 - **Branch**: `mg/021-sed-training`
 
@@ -73,16 +73,18 @@ Motivated by winning solution analysis:
 - 2025 1st: AttHead + CE, EfficientNet B0/B3/B4, 7-model ensemble
 - Salman (0.921): "Attn head's framewise max is better than LSE head"
 
-- [ ] C.1 Create AttHead configs (v6e-v6i) — dual supervision, 75/25 blend
-- [ ] C.2 Train v6e (HGNetV2-B0 + AttHead + BCE) — isolate head variable
-- [ ] C.3 Train v6f (HGNetV2-B0 + AttHead + CE) — winning loss combo
-- [ ] C.4 Train v6g (EffNet-B3 NS + AttHead + CE) — winning backbone + recipe
-- [ ] C.5 Train v6h (HGNetV2-B2 + AttHead + BCE) — larger backbone
-- [ ] C.6 Train v6i (ConvNeXt-V2 Nano + AttHead + BCE) — diversity
-- [ ] C.7 ONNX export + Kaggle inference timing validation
-- [ ] C.8 Submit winners to LB — target ≥0.920 single
-- [ ] C.9 Add priors to best model (-pp2 variant)
-- [ ] C.10 4-fold ensemble of best backbone — target ≥0.925+
+- [x] C.1 Create AttHead configs (v6e-v6j) — dual supervision, 75/25 blend
+- [x] C.2 Train v6e (HGNetV2-B0 + AttHead + BCE) — submitted to PACE
+- [x] C.3 Train v6f (HGNetV2-B0 + AttHead + CE) — submitted to PACE
+- [x] C.4 Train v6g (EffNet-B3 NS + AttHead + CE) — submitted to PACE
+- [x] C.5 Train v6h (HGNetV2-B2 + AttHead + BCE) — submitted to PACE
+- [x] C.6 Train v6i (ConvNeXt-V2 Nano + AttHead + BCE) — submitted to PACE
+- [x] C.7 Train v6j (EffNet-B0 NS + AttHead + BCE) — submitted to PACE
+- [ ] C.8 Check training results, compare val/auroc
+- [ ] C.9 ONNX export + Kaggle inference timing validation
+- [ ] C.10 Submit winners to LB (no priors) — target ≥0.920 single
+- [ ] C.11 Add priors to best model (-pp2 variant)
+- [ ] C.12 4-fold ensemble of best backbone — target ≥0.925+
 
 ---
 
