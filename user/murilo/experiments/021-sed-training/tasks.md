@@ -40,6 +40,7 @@ Motivated by BirdCLEF 2023/2024/2025 winning solutions + Salman's explicit recom
 | **v6g** | EffNet-B3 NS | 12M | 384→1024 | **AttHead** | **CE** | **High** | Winning recipe on larger EffNet |
 | **v6h** | HGNetV2-B2 | 12M | 1536 | **AttHead** | BCE | Medium | Larger backbone + best head |
 | **v6i** | ConvNeXt-V2 Nano | 15M | 640 | **AttHead** | BCE | Medium | Architecture diversity |
+| **v6j** | EffNet-B0 NS | 5.3M | 320→1024 | **AttHead** | BCE | Medium | Boredom says EffNet reaches 925+ |
 
 ---
 
