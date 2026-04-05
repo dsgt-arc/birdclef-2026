@@ -243,7 +243,9 @@ def _run_soundscape(cfg: dict, limit: int | None) -> int:
     data_cfg = cfg["data"]
     perch_cfg = cfg["perch"]
     cache_cfg = cfg["cache"]
-    extract_frame_features = bool(cfg.get("extract", {}).get("frame_features", False))
+    extract_cfg = cfg.get("extract", {}) or {}
+    extract_frame_features = bool(extract_cfg.get("frame_features", False))
+    capture_perch_logits = bool(extract_cfg.get("capture_perch_logits", False))
 
     species_list = build_species_list(data_cfg["train_csv"])
     species_to_idx = {s: i for i, s in enumerate(species_list)}
@@ -272,9 +274,14 @@ def _run_soundscape(cfg: dict, limit: int | None) -> int:
 
     embeddings = np.zeros((len(index_df), 1536), dtype=np.float32)
     spatial = np.zeros((len(index_df), 16, 4, 1536), dtype=np.float32) if extract_frame_features else None
+    perch_logits: np.ndarray | None = None  # allocated lazily after first batch (dim from model)
     labels = np.zeros((len(index_df), num_classes), dtype=np.int8)
 
-    out_names = ["embedding"] + (["spatial_embedding"] if extract_frame_features else [])
+    out_names = ["embedding"]
+    if extract_frame_features:
+        out_names.append("spatial_embedding")
+    if capture_perch_logits:
+        out_names.append("label")
 
     t0 = time.time()
     grouped = index_df.sort_values(["filename", "start_sec"]).reset_index(drop=False)
@@ -282,14 +289,19 @@ def _run_soundscape(cfg: dict, limit: int | None) -> int:
     buf_pos: list[int] = []
 
     def flush():
+        nonlocal perch_logits
         if not buf_wavs:
             return
         batch = np.stack(buf_wavs, axis=0).astype(np.float32, copy=False)
         out = perch.run(batch, outputs=out_names)
+        if capture_perch_logits and perch_logits is None:
+            perch_logits = np.zeros((len(index_df), out["label"].shape[1]), dtype=np.float32)
         for k, pos in enumerate(buf_pos):
             embeddings[pos] = out["embedding"][k]
             if spatial is not None:
                 spatial[pos] = out["spatial_embedding"][k]
+            if capture_perch_logits:
+                perch_logits[pos] = out["label"][k]
         buf_wavs.clear()
         buf_pos.clear()
 
@@ -334,8 +346,12 @@ def _run_soundscape(cfg: dict, limit: int | None) -> int:
         labels=labels,
         species_list=species_list,
         spatial=spatial,
+        perch_logits=perch_logits,
     )
-    logger.info("Shard written to %s (spatial=%s)", out_dir, spatial is not None)
+    logger.info(
+        "Shard written to %s (spatial=%s, perch_logits=%s)",
+        out_dir, spatial is not None, perch_logits is not None,
+    )
     return 0
 
 
@@ -344,7 +360,9 @@ def _run_focal(cfg: dict, shard_index: int, num_shards: int) -> int:
     perch_cfg = cfg["perch"]
     cache_cfg = cfg["cache"]
     focal_cfg = cfg.get("focal", {})
-    extract_frame_features = bool(cfg.get("extract", {}).get("frame_features", False))
+    extract_cfg = cfg.get("extract", {}) or {}
+    extract_frame_features = bool(extract_cfg.get("frame_features", False))
+    capture_perch_logits = bool(extract_cfg.get("capture_perch_logits", False))
 
     audio_dir = Path(focal_cfg["audio_dir"])
     val_fraction = float(focal_cfg.get("val_fraction", 0.1))
@@ -378,11 +396,16 @@ def _run_focal(cfg: dict, shard_index: int, num_shards: int) -> int:
     )
 
     perch = _make_perch(perch_cfg)
-    out_names = ["embedding"] + (["spatial_embedding"] if extract_frame_features else [])
+    out_names = ["embedding"]
+    if extract_frame_features:
+        out_names.append("spatial_embedding")
+    if capture_perch_logits:
+        out_names.append("label")
 
     # Unknown a priori how many windows per shard — grow lists, stack once at end.
     emb_chunks: list[np.ndarray] = []
-    spatial_chunks: list[np.ndarray] = [] if extract_frame_features else None
+    spatial_chunks: list[np.ndarray] | None = [] if extract_frame_features else None
+    logit_chunks: list[np.ndarray] | None = [] if capture_perch_logits else None
     label_chunks: list[np.ndarray] = []
     index_rows: list[dict] = []
 
@@ -397,6 +420,8 @@ def _run_focal(cfg: dict, shard_index: int, num_shards: int) -> int:
         emb_chunks.append(out["embedding"].astype(np.float32))
         if spatial_chunks is not None:
             spatial_chunks.append(out["spatial_embedding"].astype(np.float32))
+        if logit_chunks is not None:
+            logit_chunks.append(out["label"].astype(np.float32))
         for k, meta in enumerate(buf_meta):
             lab = np.zeros(num_classes, dtype=np.int8)
             lab[species_to_idx[meta["primary_label"]]] = 1
@@ -454,6 +479,7 @@ def _run_focal(cfg: dict, shard_index: int, num_shards: int) -> int:
 
     embeddings = np.concatenate(emb_chunks, axis=0)
     spatial = np.concatenate(spatial_chunks, axis=0) if spatial_chunks is not None else None
+    perch_logits = np.concatenate(logit_chunks, axis=0) if logit_chunks is not None else None
     labels = np.stack(label_chunks, axis=0)
     index_df = pd.DataFrame(index_rows)
 
@@ -465,6 +491,10 @@ def _run_focal(cfg: dict, shard_index: int, num_shards: int) -> int:
         labels=labels,
         species_list=species_list,
         spatial=spatial,
+        perch_logits=perch_logits,
     )
-    logger.info("Shard written to %s (spatial=%s)", out_dir, spatial is not None)
+    logger.info(
+        "Shard written to %s (spatial=%s, perch_logits=%s)",
+        out_dir, spatial is not None, perch_logits is not None,
+    )
     return 0

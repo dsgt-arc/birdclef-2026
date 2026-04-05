@@ -21,6 +21,11 @@ extract:
   # Costs ~16× the disk of pooled alone, but zero extra Perch compute (both
   # tensors come out of the same forward pass). Saves re-extracting for phase 2.
   frame_features: true
+  # Also capture Perch's classifier logits ('label' output, 14795-d over
+  # Xeno-canto taxonomy). Free from the same forward pass, ~7 GB disk for
+  # the full focal set. Enables zero-shot baseline, logit-feature concatenation,
+  # teacher distillation, and amphibian-coverage diagnostics.
+  capture_perch_logits: true
 
 perch:
   hf_repo: justinchuby/Perch-onnx
