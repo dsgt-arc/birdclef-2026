@@ -1,0 +1,41 @@
+# Experiment 105: Perch pooled-embedding head, phase 1 (linear probe).
+# Hyperparameters mirror exp 102 Run N (configs/run-n-sed-frozen.yaml).
+
+data:
+  sample_rate: 32000
+  chunk_duration: 5.0
+  window_samples: 160000
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+  soundscape_labels_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv
+  train_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
+  nocall_parquet: ../102-efficientnet-sed/artifacts/nocall_index.parquet
+  split_seed: 42
+
+perch:
+  hf_repo: justinchuby/Perch-onnx
+  hf_filename: perch_v2_no_dft.onnx
+  batch_size: 8
+
+cache:
+  output_dir: /storage/project/ps-clef2026_birdclef-0/shared/features/perch_v2_pooled/
+  pilot_dir: artifacts/features_pilot/
+
+training:
+  batch_size: 256
+  max_epochs: 50
+  lr: 1.0e-3
+  weight_decay: 0.01
+  warmup_epochs: 3
+  gamma: 2.0
+  precision: 32
+  early_stopping:
+    monitor: val/cmap
+    mode: max
+    patience: 10
+
+model:
+  linear:
+    # No hyperparameters — just nn.Linear(1536, num_classes)
+  mlp:
+    hidden_dim: 512
+    dropout: 0.2
