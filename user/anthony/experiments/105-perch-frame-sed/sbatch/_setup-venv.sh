@@ -43,6 +43,7 @@ if [ ! -f "$VENV_MARKER" ]; then
     uv pip install \
         pytorch-lightning \
         torchmetrics \
+        tensorboard \
         pandas \
         pyarrow \
         soundfile

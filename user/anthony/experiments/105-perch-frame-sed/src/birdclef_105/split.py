@@ -46,3 +46,43 @@ def assign_split(filename: str, train_files: set[str], val_files: set[str]) -> s
     if filename in val_files:
         return "val"
     raise KeyError(f"Filename {filename!r} not in train or val set")
+
+
+def stratified_focal_split(
+    train_csv: str,
+    val_fraction: float = 0.1,
+    seed: int = 42,
+) -> tuple[set[str], set[str]]:
+    """Stratified-by-primary_label file-level split of the focal train CSV.
+
+    Replicates exp 102's focal split logic at
+    `user/anthony/experiments/102-efficientnet-sed/src/birdclef_102/data.py:486`.
+    For each species, shuffle its recording indices with `np.random.RandomState(seed)`
+    (single RNG, reused across species — matches exp 102's behaviour exactly, which
+    is what makes this deterministic with respect to exp 102), and take the first
+    `max(1, int(len * val_fraction))` into val.
+
+    Args:
+        train_csv: Path to BirdCLEF 2026 `train.csv`.
+        val_fraction: Fraction per species to send to val (default 0.1 matches Run N).
+        seed: RNG seed; must be 42 to match exp 102.
+
+    Returns:
+        `(train_filenames, val_filenames)` — sets of values from the `filename` column.
+    """
+    df = pd.read_csv(train_csv)
+    df["primary_label"] = df["primary_label"].astype(str)
+
+    rng = np.random.RandomState(seed)
+    val_rows: list[int] = []
+    train_rows: list[int] = []
+    for _species, group in df.groupby("primary_label", sort=True):
+        indices = group.index.tolist()
+        rng.shuffle(indices)
+        n_val = max(1, int(len(indices) * val_fraction))
+        val_rows.extend(indices[:n_val])
+        train_rows.extend(indices[n_val:])
+
+    train_files = set(df.loc[train_rows, "filename"].tolist())
+    val_files = set(df.loc[val_rows, "filename"].tolist())
+    return train_files, val_files

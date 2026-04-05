@@ -11,13 +11,26 @@ data:
   nocall_parquet: ../102-efficientnet-sed/artifacts/nocall_index.parquet
   split_seed: 42
 
+focal:
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
+  val_fraction: 0.1
+  num_shards: 8
+
+extract:
+  # Also request spatial_embedding ([16, 4, 1536]) alongside pooled embedding.
+  # Costs ~16× the disk of pooled alone, but zero extra Perch compute (both
+  # tensors come out of the same forward pass). Saves re-extracting for phase 2.
+  frame_features: true
+
 perch:
   hf_repo: justinchuby/Perch-onnx
   hf_filename: perch_v2_no_dft.onnx
-  batch_size: 8
+  batch_size: 32
 
 cache:
-  output_dir: /storage/project/ps-clef2026_birdclef-0/shared/features/perch_v2_pooled/
+  # Scratch — ~48 GB focal frame-feature cache lives here, auto-purged after
+  # inactivity. Not project/shared because size + regenerability.
+  output_dir: /storage/home/hcoda1/8/amiyaguchi3/scratch/birdclef-2026/features/perch_v2/
   pilot_dir: artifacts/features_pilot/
 
 training:
