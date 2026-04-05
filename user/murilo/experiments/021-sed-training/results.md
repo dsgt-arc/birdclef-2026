@@ -233,7 +233,26 @@ the backbone seeing 15s of context and splitting into 3 chunks before pooling. T
 validates hengck23's approach: context from the backbone, precision from the head.
 
 Both v8a and v8b show best-ever offline metrics. v8b (4×5s=20s) matches v8a on AUROC
-(0.881 vs 0.882) and has even better cmap (0.727 vs 0.719). Both submitted to LB.
+(0.881 vs 0.882) and has even better cmap (0.727 vs 0.719).
 
-**Caveat**: offline metrics have been unreliable (Phase C: best offline = worst LB).
-LB submission required to validate.
+### LB Results
+
+| Model | Context | n_chunks | Inference | val/auroc | LB | Delta vs v5j |
+|-------|---------|----------|-----------|-----------|-----|-------------|
+| v5j (baseline) | 5s | 1 | — | 0.874 | **0.906** | — |
+| v8b | 4×5s (20s) | 4 | avg all 4 | 0.881 | **0.896** | −0.010 |
+| v8a | 3×5s (15s) | 3 | avg all 3 | 0.882 | 0.882 | −0.024 |
+| v8a (center) | 3×5s (15s) | 3 | **center chunk** | 0.882 | pending | — |
+
+**Multi-context improves offline but regresses on LB** when averaging all chunks.
+The averaging dilutes predictions — species present in only the center 5s gets
+diluted by flanking chunks where it's absent.
+
+v8b (0.896) outperformed v8a (0.882) despite more dilution (4 chunks vs 3). This
+suggests longer context (20s) provides enough backbone benefit to overcome the
+averaging dilution. If center-chunk inference fixes v8a, v8b with center chunks
+could improve even more.
+
+v8a re-exported with center-chunk inference (only center chunk prediction, no
+averaging) — awaiting LB score. If this improves, re-export v8b with center
+chunks too.

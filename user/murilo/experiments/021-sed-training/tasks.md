@@ -8,7 +8,7 @@ techniques (multi-context training, AttHead variants, backbone scaling).
 **Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase E: v8a/v8b trained, both submitted to LB. Awaiting scores.**
+### Status: **Phase E: v8b 0.896 LB (avg inference), v8a center-chunk resubmitted. Testing center-chunk inference.**
 
 - **Branch**: `mg/021-sed-training`
 - **Architecture reference**: [`notes/sed-architecture-overview.md`](../../notes/sed-architecture-overview.md)
@@ -138,8 +138,10 @@ Same LSEHead, same loss, same recipe. The head processes 5s chunks (not 15s).
 - [x] E.6 Train v8a on PACE — **val/auroc 0.882 (+0.008), cmap 0.719 (best ever)**
 - [x] E.6b Train v8b on PACE — **val/auroc 0.881 (+0.007), cmap 0.727 (new best cmap)**
 - [x] E.7 Check training results — both v8a/v8b show best offline metrics ever
-- [x] E.8 ONNX export v8a/v8b — multi-chunk averaged in ONNX wrapper, kernel uses 15s/20s inference_window
-- [x] E.9 Submit v8a, v8b to LB — **awaiting scores**
+- [x] E.8 ONNX export v8a/v8b — initial: avg all chunks. v8a LB 0.882 (−0.024), v8b LB **0.896** (−0.010)
+- [x] E.9 Fix ONNX wrapper: center-chunk inference instead of averaging
+- [ ] E.10 Re-submit v8a with center-chunk — **pending LB**
+- [ ] E.11 Re-submit v8b with center-chunk if v8a improves
 
 ---
 
@@ -185,6 +187,7 @@ Could stack with multi-context — mix the 15s feature maps before splitting int
 | v7a (HGNet-B0+MC 3×5s) | — | 0.820 | **−0.054**, massive regression |
 | v7b (HGNet-B0+MC 4×5s) | — | 0.799 | **−0.075**, longer context = worse |
 | v7c (EffNet-B0 NS+MC 3×5s) | — | 0.851 | **−0.023**, least bad but still regressed |
-| **v8a (HGNet-B0+LSE MC 3×5s)** | pending | **0.882** | **+0.008 offline, cmap 0.719** |
-| **v8b (HGNet-B0+LSE MC 4×5s)** | pending | **0.881** | **+0.007 offline, cmap 0.727 (best)** |
+| v8a (HGNet-B0+LSE MC 3×5s, avg) | **0.882** | **0.882** | −0.024 LB, avg all 3 chunks dilutes |
+| **v8b (HGNet-B0+LSE MC 4×5s, avg)** | **0.896** | **0.881** | **−0.010 LB**, 20s context helps |
+| v8a (center-chunk inference) | pending | 0.882 | re-exported with center chunk only |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |

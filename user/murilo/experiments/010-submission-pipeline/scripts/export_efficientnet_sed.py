@@ -165,7 +165,13 @@ def main():
         """Wraps encoder + SED head → blended sigmoid probabilities.
 
         Handles both single-chunk (B, C) and multi-chunk (B, N, C) clipwise output.
-        Multi-chunk: averages probabilities across chunks → (B, C).
+        Multi-chunk: uses CENTER chunk prediction (not average of all chunks).
+        The inference window is centered on the target 5s segment, so the center
+        chunk aligns with the target. Averaging all chunks dilutes predictions
+        when species is only present in the center segment.
+
+        For odd n_chunks (3): center chunk = index n//2 = 1
+        For even n_chunks (4): average of two center chunks (target spans both)
         """
 
         def __init__(self, encoder, sed_head, blend_clip=0.75, blend_frame=0.25):
@@ -180,9 +186,20 @@ def main():
             features = self.encoder.forward_features(mel)
             clipwise_logits, framewise_logits = self.sed_head(features)
 
-            # Handle multi-chunk: (B, N, C) → average probs → (B, C)
+            # Handle multi-chunk: (B, N, C) → center chunk probs → (B, C)
             if clipwise_logits.dim() == 3:
-                clip_probs = torch.sigmoid(clipwise_logits).mean(dim=1)
+                n = clipwise_logits.shape[1]
+                if n % 2 == 1:
+                    # Odd chunks (3): exact center aligns with target 5s
+                    center = n // 2
+                    clip_probs = torch.sigmoid(clipwise_logits[:, center, :])
+                else:
+                    # Even chunks (4): target spans two center chunks, average them
+                    c1, c2 = n // 2 - 1, n // 2
+                    clip_probs = (
+                        torch.sigmoid(clipwise_logits[:, c1, :])
+                        + torch.sigmoid(clipwise_logits[:, c2, :])
+                    ) / 2
             else:
                 clip_probs = torch.sigmoid(clipwise_logits)
 

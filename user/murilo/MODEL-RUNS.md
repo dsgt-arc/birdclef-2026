@@ -426,13 +426,15 @@ Inspired by hengck23 (0.896 LB, CNN-only, 3×5s). See `multi-context-data-flow.m
 
 | Slug | Backbone | Head | Context | n_chunks | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
 |------|----------|------|---------|----------|-----------|----------|------------|-----|------------|
-| **`hgnet-b0-mc-lse-sed-v8a`** | **HGNetV2-B0** | **LSEHead** | **3×5s (15s)** | **3** | **0.882** | **0.719** | 13 | pending | `021-.../2026-hgnet-b0-mc-lse-sed-v8a/best-epochepoch=13.ckpt` |
-| **`hgnet-b0-mc-lse-sed-v8b`** | **HGNetV2-B0** | **LSEHead** | **4×5s (20s)** | **4** | **0.881** | **0.727** | 9 | pending | `021-.../2026-hgnet-b0-mc-lse-sed-v8b/best-epochepoch=09.ckpt` |
+| `hgnet-b0-mc-lse-sed-v8a` | HGNetV2-B0 | LSEHead | 3×5s (15s) | 3 | **0.882** | **0.719** | 13 | 0.882 (avg) / pending (center) | `021-.../2026-hgnet-b0-mc-lse-sed-v8a/best-epochepoch=13.ckpt` |
+| **`hgnet-b0-mc-lse-sed-v8b`** | **HGNetV2-B0** | **LSEHead** | **4×5s (20s)** | **4** | **0.881** | **0.727** | 9 | **0.896 (avg)** | `021-.../2026-hgnet-b0-mc-lse-sed-v8b/best-epochepoch=09.ckpt` |
 
-**v8a is the best offline result in our entire experiment history** (+0.008 AUROC,
-+0.094 cmap vs v5j). Same LSEHead as v5j — improvement comes purely from the backbone
-seeing 15s of context. LB submission required to validate (offline metrics have been
-unreliable).
+Best offline metrics ever (+0.007-0.008 AUROC, +0.094-0.102 cmap vs v5j). LB results
+with averaged inference: v8a 0.882 (−0.024), v8b **0.896** (−0.010). Averaging all
+chunks dilutes predictions — the ONNX wrapper was updated to use center-chunk inference
+(only the chunk aligned with the target 5s segment). v8a re-submitted with center chunk;
+v8b to follow if it improves. v8b's 20s context outperforms v8a's 15s even with more
+dilution (4 chunks averaged vs 3), suggesting longer backbone context is valuable.
 
 ## Checkpoint Base Path
 
