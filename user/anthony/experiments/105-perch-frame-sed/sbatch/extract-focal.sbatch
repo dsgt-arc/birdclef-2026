@@ -3,15 +3,20 @@
 #SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH -p cpu-small
-#SBATCH -t 120
+#SBATCH -t 240
 #SBATCH -q inferno
 #SBATCH --array=0-7
 #SBATCH --output=logs/focal-%A_%a.out
 
-# Stage 1 (focal): extract Perch pooled embedding + spatial_embedding for
-# every 5s chunk of every focal recording in train.csv. Sharded via SLURM
-# array — each task processes 1/8 of the focal set (~4444 recordings, ~31k
-# windows). Writes to $SCRATCH/birdclef-2026/features/perch_v2/focal/shard-NNN/.
+# Stage 1 (focal): extract Perch pooled embedding + spatial_embedding +
+# classifier logits ('label' output) for every 5s chunk of every focal
+# recording in train.csv. Sharded via SLURM array — each task processes 1/8
+# of the focal set (~4444 recordings, ~31k windows). Writes to
+# $SCRATCH/birdclef-2026/features/perch_v2/focal/shard-NNN/.
+#
+# Time budget note: with capture_perch_logits=true, Perch throughput drops
+# from ~12 win/s to ~4 win/s (the prototype classifier head costs real
+# compute). Each shard needs ~120 min; we budget 240 for safety.
 #
 # Usage:
 #   cd user/anthony/experiments/105-perch-frame-sed
