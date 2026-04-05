@@ -8,7 +8,7 @@ techniques (multi-context training, AttHead variants, backbone scaling).
 **Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase E complete. v8b 0.896 LB (best multi-context). Center-chunk inference negligible (+0.001).**
+### Status: **Phase F planned: framewise-max inference, 3-ch input, overlap reconstruction (gap analysis fixes).**
 
 - **Branch**: `mg/021-sed-training`
 - **Architecture reference**: [`notes/sed-architecture-overview.md`](../../notes/sed-architecture-overview.md)
@@ -145,7 +145,51 @@ Same LSEHead, same loss, same recipe. The head processes 5s chunks (not 15s).
 
 ---
 
-## Future: Mix2 Augmentation (reference for potential Phase F)
+## Phase F: Gap Analysis Fixes — PLANNED
+
+Motivated by `notes/2026-04-05-sed-gap-analysis.md`. Comparing our v5j (0.906)
+against Nikita 1st place 2025 inference code and Salman's 0.921, we identified
+three gaps we've never tested. Two require no retraining (inference-only).
+
+Reference code: `docs/references/kaggle/birdclef-2025/nikita-1st-place-sed.py`
+
+### F.1 Framewise-max inference (NO RETRAINING)
+
+Nikita's inference disables attention entirely — uses only `framewise_logit.sigmoid()`
+→ max over time. Salman: "Attn head's framewise max is better than LSE head."
+Our v5j uses clipwise-only (`blend_clip=1.0, blend_frame=0.0`). We have **never**
+tested `blend_clip=0.0, blend_frame=1.0` (framewise-max only).
+
+- [ ] F.1a Re-export v5j ONNX with `blend_clip=0.0, blend_frame=1.0`
+- [ ] F.1b Submit to LB
+- [ ] F.1c If it helps, test on v5j-4fold too
+
+### F.2 3-Channel mel input (REQUIRES RETRAINING)
+
+Nikita stacks mono mel 3×: `torch.stack([mel, mel, mel], dim=1)` with backbone
+`in_chans=3` (default ImageNet). This preserves pretrained stem weights exactly
+instead of averaging 3→1 channel. Could explain why EliKal gets 0.909 with
+EffNet-B0 (we get 0.855).
+
+- [ ] F.2a Modify model wrapper to use `in_chans=3` + repeat mel 3×
+- [ ] F.2b Create v9a config (v5j recipe + 3-channel, everything else identical)
+- [ ] F.2c Train v9a, compare offline metrics
+- [ ] F.2d ONNX export + LB submission
+
+### F.3 Overlap reconstruction + delta blending (NO RETRAINING)
+
+Nikita processes overlapping windows (20s with 5s step = 75% overlap), averages
+where windows overlap, takes max per 5s segment, then delta-blends ±2 frames
+(0.5 center + 0.25 left + 0.25 right). Temporal TTA without extra forward passes.
+EliKal also uses "time-shift TTA."
+
+- [ ] F.3a Implement overlap reconstruction in Kaggle kernel
+- [ ] F.3b Test on v5j single model
+- [ ] F.3c Can stack with F.1 (framewise max + overlap)
+
+---
+
+## Future: Mix2 Augmentation (reference for potential Phase G after F)
 
 **Paper**: "Mixture of Mixups for Multi-label Classification of Rare Anuran Sounds"
 ([arxiv 2403.09598](https://arxiv.org/abs/2403.09598)) —
