@@ -13,7 +13,7 @@ Goal: identify what's actually different vs what we've been assuming.
 - **EliKal** (0.909, EffNet-B0) — Kaggle discussion #683791
 - **BirdCLEF 2024 1st place** (Team Kefir) — `docs/references/kaggle/birdclef-2024/`
 - **Our exp 021 results** — `experiments/021-sed-training/`
-- **Nikita reference code**: `docs/references/kaggle/birdclef-2025/birdclef2025-nikita-1st-place-sed.py`
+- **Nikita reference code**: `docs/references/kaggle/birdclef-2025/birdclef-2025-nikita-1st-place-sed.py`
 
 ## The Scoreboard (single model, same data, no Perch KD)
 
