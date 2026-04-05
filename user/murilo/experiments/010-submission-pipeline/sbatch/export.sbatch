@@ -750,6 +750,18 @@ export_hgnet_b2_sed_v6h() {
         --blend-clip 0.75 --blend-frame 0.25
 }
 
+export_hgnet_b0_sed_v6b() {
+    echo "=== Exporting HGNetV2-B0 SED v6b (waveform MixUp, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/021-sed-training/checkpoints/2026-hgnet-b0-sed-v6b")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP021_DIR}/config/hgnet_b0_sed_v6b.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v6b/
+}
+
 export_effnet_b0_ns_sed_v6j() {
     echo "=== Exporting EffNet-B0 NS SED v6j (AttHead + BCE, 234 classes) ==="
     local CKPT
@@ -810,7 +822,7 @@ case "$MODEL" in
     effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3a|effnet-b0-sed-v3b|effnet-b0-sed-v3c|effnet-b0-sed-v3d|\
     effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|effnet-b0-sed-v4j|\
     effnet-b0-sed-v5a|effnet-b0-sed-v5b|effnet-b0-sed-v5c|effnet-b0-sed-v5d|hgnet-b0-sed-v5e|effnet-b0-sed-v5f|hgnet-b0-sed-v5g|hgnet-b0-sed-v5g-4fold|hgnet-b0-sed-v5h|hgnet-b0-sed-v5i|hgnet-b0-sed-v5j|hgnet-b0-sed-v5j-4fold|hgnet-b0-sed-v5k|hgnet-b0-sed-v5l|effnet-b0-sed-v5m|effnet-b0-sed-v5n|all-019-ablations|\
-    hgnet-b2-sed-v6h|effnet-b0-ns-sed-v6j|\
+    hgnet-b0-sed-v6b|hgnet-b2-sed-v6h|effnet-b0-ns-sed-v6j|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -913,6 +925,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j)          export_hgnet_b0_sed_v5j ;;
     hgnet-b0-sed-v5j-4fold)    export_hgnet_b0_sed_v5j_4fold ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
+    hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;
     effnet-b0-ns-sed-v6j)      export_effnet_b0_ns_sed_v6j ;;
     all-019-ablations)

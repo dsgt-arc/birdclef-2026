@@ -264,13 +264,23 @@
 >
 > hint: how to get even better results: multi-conext head
 
-**Attached image shows:**
-- 3×5sec approach: 3 adjacent 5s windows as longer input wave (15s total),
-  providing 5s before and 5s after the center 5s window for temporal context
-- Wave mix augmentation designed specifically for the 3×5sec multi-window input
-- HGNetV2-B0 + LSE head with 4-folds
-- 3 input windows → 3 output predictions (all supervised)
-- This matches BirdCLEF 2023 5th place (Tattaka) train_period=15s / infer_period=5s
+**Attached image** (`notes/figures/hengck23-cnn-birdclef.png`):
+
+Architecture: ONE backbone pass on 15s spectrogram, then SPLIT temporal features
+into 3 chunks at the head level. Each chunk gets its own LSEHead prediction.
+
+- Single 15s spectrogram → HGNetV2-B0 backbone → feature map (B, C, F', T')
+- Split T' into 3 chunks of T'/3 → apply LSEHead to each → 3 predictions
+- All 3 supervised during training, each with its own 5s label
+- "conv does have location information" — backbone's receptive field spans
+  across windows, so center 5s features are informed by flanking context
+- LB 0.876 (5sec baseline) → **LB 0.896 (3×5sec) = +0.020 gain**, 4-fold, no PP
+- Wave mix augmentation specially designed for 3×5sec input
+- Training: 35k focal clips + 66 labeled soundscapes (same data as us)
+
+**Key difference from Tattaka's approach**: hengck23 does NOT aggregate attention
+over 15s. He keeps LSEHead and applies it per-chunk. The multi-context comes from
+the backbone seeing 15s, not from the head aggregating over 15s.
 
 ### Tom (6th) — Posted 9 hours ago ⭐ NEW
 
@@ -298,5 +308,6 @@
 10. **Salman says "Attn head's framewise max is better than LSE head"** — we use LSEHead, he uses AttHead
 11. **hengck23: "context and augmentation is the key"** — 0.896 LB with CNN only (no Perch, no PP) using **long input wave** to capture temporal info. Hints at **multi-context head** for even better results.
 12. **Tom (6th) confirms similar approach** — "fits on 4x5sec" (20s total context via multiple 5s windows)
-13. **Multi-context head** = train on long windows (3×5s=15s or 4×5s=20s), predict on center 5s only. Backbone processes full spectrogram, head crops to center at inference. This is the BirdCLEF 2023 5th place (Tattaka) `train_period/infer_period` mechanism. hengck23 uses HGNetV2-B0 + LSE head (our exact v5j setup) — the multi-context is the key difference, not the architecture.
-14. **Our v5i (10s single window) got 0.880 LB (worse than v5j's 0.906 at 5s)** — but multi-context is different: it preserves 5s resolution per window while adding temporal context, rather than processing one long spectrogram at reduced temporal density.
+13. **Multi-context (hengck23)** = ONE backbone pass on 15s, then SPLIT temporal features into 3 chunks, apply LSEHead per-chunk → 3 predictions. The backbone's convolutional receptive field provides cross-window context, but each prediction is still from a 5s chunk. NOT the same as Tattaka's train_period/infer_period crop (which aggregates attention over all 15s). hengck23 uses HGNetV2-B0 + LSE head + 4-fold → **+0.020 gain** (0.876→0.896).
+14. **Our v5i (10s single window) got 0.880 LB (worse than v5j's 0.906 at 5s)** — different from multi-context because v5i pools over the full 10s. hengck23's approach preserves 5s pooling resolution per chunk while adding backbone-level context.
+15. **Our v7 Phase D (AttHeadMultiContext) failed badly** (−0.054) because we changed the head AND aggregated over all 15s. The correct approach is: keep LSEHead, just feed longer input and split at head level.

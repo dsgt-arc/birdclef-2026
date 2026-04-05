@@ -30,6 +30,9 @@ LSEHead (v5d+, exps 019-021):
     → LSE temporal pooling → (B, num_classes)
   Adapted from ttahara's HGNetV2-B0 recipe. Currently our best-performing
   head on LB (v5j: 0.906 LB with HGNetV2-B0).
+  Multi-context mode (n_chunks > 1): splits temporal features into N chunks
+  before LSE pooling → (B, N, num_classes). Backbone sees full context (e.g. 15s)
+  but each pool operates on one chunk (e.g. 5s). hengck23's 3×5s approach (0.896 LB).
 
 AttHeadMultiContext (v7+, exp 021 Phase D):
   Competition-standard attention head from BirdCLEF 2023 5th place (Tattaka).
@@ -329,9 +332,21 @@ class LSEHead(nn.Module):
     Architecture: freq_pool(freq) → permute → Linear+ReLU+Dropout+Linear → LSEPool(time).
     Returns (clipwise_logits, framewise_logits) tuple matching AttHead contract.
 
+    Multi-context mode (n_chunks > 1): splits temporal features into N chunks
+    before LSE pooling, returning N predictions per sample. The backbone sees
+    the full temporal extent (e.g. 15s), providing cross-chunk context via its
+    receptive field, but each LSE pool operates on one chunk (e.g. 5s) —
+    preserving the same temporal resolution as single-chunk mode.
+
+    Inspired by hengck23's 3×5s approach (0.896 LB, BirdCLEF 2026).
+    See notes/sed-architecture-overview.md for full context.
+
     Args:
         freq_pool: Frequency pooling method. "gem" (default, learnable power-mean)
             or "mean" (simple average, matching ttahara's implementation).
+        n_chunks: Number of temporal chunks for multi-context (default: 1).
+            When 1, behavior is identical to original LSEHead.
+            When 3, splits temporal dim into 3 chunks → 3 predictions.
 
     Cross-ref: ttahara-hgnetv2-b0-training.py lines 648-701.
     """
@@ -345,9 +360,11 @@ class LSEHead(nn.Module):
         gem_p: float = 3.0,
         lse_temperature: float = 1.0,
         freq_pool: str = "gem",
+        n_chunks: int = 1,
     ):
         super().__init__()
         self.freq_pool_type = freq_pool
+        self.n_chunks = n_chunks
         if freq_pool == "gem":
             self.gem = GeM(p=gem_p)
         self.cls_fc = nn.Sequential(
@@ -365,8 +382,12 @@ class LSEHead(nn.Module):
             features: (B, C, F, T) from backbone
 
         Returns:
-            clipwise_logits: (B, num_classes)
-            framewise_logits: (B, num_classes, T) — for dual supervision
+            When n_chunks == 1 (default):
+                clipwise_logits: (B, num_classes)
+                framewise_logits: (B, num_classes, T)
+            When n_chunks > 1:
+                clipwise_logits: (B, n_chunks, num_classes)
+                framewise_logits: (B, num_classes, T) — full temporal extent
         """
         if self.freq_pool_type == "mean":
             h = features.mean(dim=2)  # (B, C, F, T) -> (B, C, T)
@@ -374,5 +395,13 @@ class LSEHead(nn.Module):
             h = self.gem(features)  # (B, C, F, T) -> (B, C, T)
         h = h.permute(0, 2, 1)  # (B, T, C)
         framewise_logits = self.cls_fc(h)  # (B, T, num_classes)
-        clipwise_logits = self.lse_pool(framewise_logits)  # (B, num_classes)
-        return clipwise_logits, framewise_logits.permute(0, 2, 1)  # (B, num_classes, T)
+
+        if self.n_chunks == 1:
+            clipwise_logits = self.lse_pool(framewise_logits)  # (B, num_classes)
+        else:
+            # Split temporal dim into N chunks, LSE pool each independently
+            chunks = framewise_logits.chunk(self.n_chunks, dim=1)  # N × (B, T/N, C)
+            clipwise_list = [self.lse_pool(c) for c in chunks]  # N × (B, num_classes)
+            clipwise_logits = torch.stack(clipwise_list, dim=1)  # (B, N, num_classes)
+
+        return clipwise_logits, framewise_logits.permute(0, 2, 1)  # framewise always full

@@ -138,16 +138,85 @@ CE loss hurts (−0.015 vs EfficientNet with BCE), and MBConv architecture strug
 on mels compared to HGNet. Salman also noted "MBConvs from EfficientNets are not
 learning that well."
 
+### LB Results
+
+| Model | Backbone | Head | val/auroc | LB | Delta vs v5j (0.906 LB) |
+|-------|----------|------|-----------|-----|-------------------------|
+| v5j (baseline) | HGNetV2-B0 | LSEHead | 0.874 | **0.906** | — |
+| **v6j** | **EffNet-B0 NS** | AttHead | 0.874 | **0.893** | **−0.013** |
+| v6h | HGNetV2-B2 | AttHead | **0.876** | 0.889 | −0.017 |
+
+**Both AttHead models regressed on LB** despite matching or beating v5j offline.
+v6h was the best offline (+0.002) but worst on LB (−0.017). v6j (EffNet) beat v6h
+on LB despite identical offline AUROC — further proof that offline metrics don't
+predict LB performance.
+
 ### Key Takeaways
 
-1. **CE loss is dead** — consistently −0.015 to −0.024 across LSEHead (Phase B) and AttHead (Phase C), on both HGNet and EffNet. Despite winning solutions using CE, our setup can't make it work.
-2. **AttHead is not a universal upgrade** — on HGNetV2-B0, it regressed −0.004 vs LSEHead. The improvement comes from pairing AttHead with a larger backbone (B2).
-3. **Backbone scaling matters more than head type** — v6h (B2+AttHead, 0.876) > v5j (B0+LSEHead, 0.874) > v6e (B0+AttHead, 0.870).
-4. **ConvNeXt-V2 has ensemble potential** — matches AUROC with best cmap (0.663), different architecture from HGNet.
-5. **Offline metrics are modest** — best delta is +0.002. LB submission is essential to validate whether these translate.
+1. **AttHead with 75/25 blend regresses on LB** — v5j (LSEHead, clipwise-only) at 0.906 vs v6h/v6j (AttHead, 75/25 blend) at 0.889/0.893. The dual supervision + framewise blending hurts LB despite being competition-standard. Our AttHead implementation differs from the reference (see `atthead-comparison.md`).
+2. **CE loss is dead** — consistently −0.015 to −0.024 across LSEHead (Phase B) and AttHead (Phase C), on both HGNet and EffNet.
+3. **Offline metrics are anti-correlated with LB** — v6h had best offline (+0.002) but worst LB (−0.017). v6j had same offline as v5j but lost −0.013 on LB. Head type and backbone scaling (Phase B/C) are not the lever.
 
-### LB Submission Priority
+## Phase D: Multi-Context Training (AttHeadMultiContext)
 
-1. **v6h** (HGNetV2-B2, AttHead, BCE) — best offline AUROC, highest priority
-2. **v6i** (ConvNeXt-V2 Nano) — ensemble diversity, highest cmap
-3. **v6j** (EffNet-B0 NS) — tests Boredom's EffNet claim on LB
+Multi-context training using `AttHeadMultiContext` (competition-standard attention head
+with train_period/infer_period cropping). Trains on 15-20s windows, predicts center 5s.
+
+### Offline Results
+
+| Model | Backbone | Head | Context | val/auroc | val/cmap | Best Epoch | Delta vs v5j |
+|-------|----------|------|---------|-----------|----------|------------|-------------|
+| v5j (baseline) | HGNetV2-B0 | LSEHead | 5s | **0.874** | — | 19 | — |
+| v7c | EffNet-B0 NS | AttHeadMC | 3×5s (15s) | 0.851 | 0.605 | 19 | −0.023 |
+| v7a | HGNetV2-B0 | AttHeadMC | 3×5s (15s) | 0.820 | 0.579 | 16 | −0.054 |
+| v7b | HGNetV2-B0 | AttHeadMC | 4×5s (20s) | 0.799 | 0.542 | 16 | −0.075 |
+
+**All v7 models massively regressed.** Longer context = worse (v7b 20s < v7a 15s).
+HGNet regressed more than EffNet (opposite of all prior experiments).
+
+### Analysis: Why multi-context failed
+
+The v7 runs changed **too many variables at once** from v5j:
+1. Head: LSEHead → AttHeadMultiContext (different architecture, loss gradient path)
+2. Window: 5s → 15-20s (3-4× more context)
+3. Batch size: 64 → 32/24 (halved due to memory)
+4. Clipwise aggregation: LSE pooling → sigmoid probability-space attention
+
+**Confounds make it impossible to isolate the multi-context effect.** The head change
+alone already hurts (Phase C showed AttHead regresses −0.004 to −0.017 vs LSEHead).
+Adding multi-context on top of an already-worse head compounds the regression.
+
+**Possible root causes:**
+
+1. **AttHeadMultiContext itself** — the `logit(Σ(att × sigmoid(logits)))` loss path
+   differs from Tattaka's `BCEWithLogitsLoss(Σ(att × logits))`. This may produce
+   weaker gradients or training instability (noted in `atthead-comparison.md`).
+
+2. **Zero-padding of short recordings** — many focal recordings are shorter than 15s.
+   With 15s window_duration, these get zero-padded. The model sees lots of silence,
+   diluting the training signal. v5j's 5s windows had much less padding.
+
+3. **Label mismatch with context** — during training, the label applies to the center
+   5s but the model aggregates over all 15s. Flanking soundscape segments may contain
+   different species, confusing the attention. For focal recordings, the label covers
+   the whole file but padded silence contributes noise.
+
+4. **Batch size halved** — 32 (v7a/c) or 24 (v7b) vs 64 (v5j). Changes MixUp
+   pairing diversity and gradient noise characteristics.
+
+5. **HGNet collapses with long context** — v7a/v7b (HGNet, 0.820/0.799) regressed
+   far more than v7c (EffNet, 0.851). HGNet's embedding structure may not handle
+   3-4× longer temporal features well with the attention mechanism.
+
+### Next steps
+
+The multi-context idea (from hengck23 and Tom) is sound — but our implementation
+changed too many things at once. Key insight: **hengck23 uses LSEHead + multi-context,
+not AttHead.** We should isolate variables:
+
+1. **LSEHead + multi-context** — add train/infer period cropping to LSEHead, keep
+   everything else from v5j. This isolates the multi-context variable from the head change.
+2. **Investigate zero-padding** — check focal recording duration distribution. If most
+   are <15s, the padding issue is severe and shorter context (e.g., 10s) may be better.
+3. **Try Tattaka's dual-output loss** — separate logits for loss, probs for prediction,
+   instead of our logit(probs) approach.

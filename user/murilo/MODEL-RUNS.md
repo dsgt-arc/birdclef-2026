@@ -388,18 +388,35 @@ blend 75% clip + 25% frame max). Replaces LSEHead from v5j. 20 epochs, seed=42.
 
 | Slug | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
 |------|----------|--------|------|------|-----------|----------|------------|-----|------------|
-| **`hgnet-b2-sed-v6h`** | **HGNetV2-B2** | **12M** | AttHead | BCE | **0.876** | **0.658** | 18 | pending | `021-.../2026-hgnet-b2-sed-v6h/best-epochepoch=18.ckpt` |
-| `convnextv2-nano-sed-v6i` | ConvNeXt-V2 Nano | 15M | AttHead | BCE | 0.874 | **0.663** | 16 | pending | `021-.../2026-convnextv2-nano-sed-v6i/best-epochepoch=16.ckpt` |
-| `effnet-b0-ns-sed-v6j` | EffNet-B0 NS | 5.3M | AttHead | BCE | 0.874 | 0.626 | 15 | pending | `021-.../2026-effnet-b0-ns-sed-v6j/best-epochepoch=15.ckpt` |
+| `hgnet-b2-sed-v6h` | HGNetV2-B2 | 12M | AttHead | BCE | **0.876** | **0.658** | 18 | **0.889** | `021-.../2026-hgnet-b2-sed-v6h/best-epochepoch=18.ckpt` |
+| `convnextv2-nano-sed-v6i` | ConvNeXt-V2 Nano | 15M | AttHead | BCE | 0.874 | **0.663** | 16 | — | `021-.../2026-convnextv2-nano-sed-v6i/best-epochepoch=16.ckpt` |
+| **`effnet-b0-ns-sed-v6j`** | **EffNet-B0 NS** | **5.3M** | AttHead | BCE | 0.874 | 0.626 | 15 | **0.893** | `021-.../2026-effnet-b0-ns-sed-v6j/best-epochepoch=15.ckpt` |
 | `hgnet-b0-sed-v6e` | HGNetV2-B0 | 6M | AttHead | BCE | 0.870 | 0.611 | 18 | skip | `021-.../2026-hgnet-b0-sed-v6e/best-epochepoch=18.ckpt` |
 | `effnet-b3-ns-sed-v6g` | EffNet-B3 NS | 12M | AttHead | CE | 0.859 | 0.611 | 19 | skip | `021-.../2026-effnet-b3-ns-sed-v6g/best-epochepoch=19.ckpt` |
 | `hgnet-b0-sed-v6f` | HGNetV2-B0 | 6M | AttHead | CE | 0.850 | 0.577 | 18 | skip | `021-.../2026-hgnet-b0-sed-v6f/best-epochepoch=18.ckpt` |
 
-**v6h (HGNetV2-B2)** is the offline winner (+0.002 AUROC over v5j baseline).
-CE loss regressed on all architectures (−0.015 to −0.024) — dead for our setup.
-AttHead actually hurts on HGNetV2-B0 (v6e: −0.004) — the gain comes from scaling
-the backbone, not the head swap. ConvNeXt-V2 Nano has best cmap (0.663), useful
-for ensemble diversity. LB submission required for v6h, v6i, v6j to validate.
+**Both AttHead models regressed on LB** vs v5j (LSEHead, 0.906): v6j 0.893 (−0.013),
+v6h 0.889 (−0.017). The AttHead + 75/25 clip/frame blend + dual supervision combo
+hurts LB performance despite being "competition-standard." v6h had best offline AUROC
+but worst LB — offline metrics are anti-correlated with LB for this experiment.
+EffNet-B0 NS (v6j) outperformed HGNetV2-B2 (v6h) on LB despite identical offline.
+Phase C conclusion: head/backbone changes are not the lever.
+
+### Phase D: Multi-Context Training (AttHeadMultiContext)
+
+Train on 15-20s windows with center 5s inference crop. `AttHeadMultiContext` head with
+competition-standard attention (softmax(tanh(att)), probability-space clipwise).
+
+| Slug | Backbone | Params | Head | Context | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|--------|------|---------|-----------|----------|------------|-----|------------|
+| `effnet-b0-ns-mc-sed-v7c` | EffNet-B0 NS | 5.3M | AttHeadMC | 3×5s (15s) | 0.851 | 0.605 | 19 | — | `021-.../2026-effnet-b0-ns-mc-sed-v7c/best-epochepoch=19.ckpt` |
+| `hgnet-b0-mc-sed-v7a` | HGNetV2-B0 | 6M | AttHeadMC | 3×5s (15s) | 0.820 | 0.579 | 16 | — | `021-.../2026-hgnet-b0-mc-sed-v7a/best-epochepoch=16.ckpt` |
+| `hgnet-b0-mc-sed-v7b` | HGNetV2-B0 | 6M | AttHeadMC | 4×5s (20s) | 0.799 | 0.542 | 16 | — | `021-.../2026-hgnet-b0-mc-sed-v7b/best-epochepoch=16.ckpt` |
+
+**All v7 models massively regressed** vs v5j (0.874): v7c −0.023, v7a −0.054, v7b −0.075.
+Longer context = worse. Changed too many variables from v5j (head type + window length +
+batch size). Cannot isolate multi-context effect. hengck23 uses LSEHead with multi-context,
+not AttHead — the head change likely caused most of the regression, not the context itself.
 
 ## Checkpoint Base Path
 

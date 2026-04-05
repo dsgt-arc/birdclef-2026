@@ -98,6 +98,10 @@ def main():
 
     if gpu_check_mode:
         config["training"]["max_epochs"] = args.gpu_check
+        # Cap warmup to avoid OneCycleLR pct_start > 1.0
+        warmup = config["training"].get("warmup_epochs", 0)
+        if warmup >= args.gpu_check:
+            config["training"]["warmup_epochs"] = 0
         logger.info(f"GPU check mode: {args.gpu_check} epoch(s)")
 
     if args.num_workers is not None:
@@ -148,6 +152,7 @@ def main():
     if head_type == "lse_head":
         head_kwargs["lse_temperature"] = config["sed_head"].get("lse_temperature", 1.0)
         head_kwargs["freq_pool"] = config["sed_head"].get("freq_pool", "gem")
+        head_kwargs["n_chunks"] = config["sed_head"].get("n_chunks", 1)
     elif head_type == "att_head_multi_context":
         head_kwargs["train_period"] = config["sed_head"].get("train_period", 15.0)
         head_kwargs["infer_period"] = config["sed_head"].get("infer_period", 5.0)

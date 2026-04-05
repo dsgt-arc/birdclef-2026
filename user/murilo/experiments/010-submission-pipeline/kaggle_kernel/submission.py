@@ -91,6 +91,8 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 021 Phase B: waveform MixUp
+    "birdclef-2026-hgnet-b0-sed-v6b-weights",
     # Exp 021 Phase C: AttHead + backbone scaling
     "birdclef-2026-hgnet-b2-sed-v6h-weights",
     "birdclef-2026-effnet-b0-ns-sed-v6j-weights",

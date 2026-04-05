@@ -298,11 +298,56 @@ class SEDFinetuneModule(pl.LightningModule):
     def _blended_probs(
         self, clipwise_logits: torch.Tensor, framewise_logits: torch.Tensor
     ) -> torch.Tensor:
-        """Compute blended sigmoid probabilities for metrics and inference."""
+        """Compute blended sigmoid probabilities for metrics and inference.
+
+        Handles multi-chunk clipwise_logits (B, N, C) by averaging probs across chunks.
+        """
+        # Multi-chunk: average probabilities across chunks for metrics
+        if clipwise_logits.dim() == 3:
+            clip_probs = torch.sigmoid(clipwise_logits).mean(dim=1)  # (B, N, C) → (B, C)
+        else:
+            clip_probs = torch.sigmoid(clipwise_logits)  # (B, C)
+
         framewise_max = framewise_logits.max(dim=-1).values
-        return self.hparams.blend_clip * torch.sigmoid(
-            clipwise_logits
-        ) + self.hparams.blend_frame * torch.sigmoid(framewise_max)
+        return self.hparams.blend_clip * clip_probs + self.hparams.blend_frame * torch.sigmoid(
+            framewise_max
+        )
+
+    def _compute_chunked_loss(
+        self,
+        clipwise_logits: torch.Tensor,
+        framewise_logits: torch.Tensor,
+        labels: torch.Tensor,
+        primary_idx: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Compute loss handling both single-chunk and multi-chunk clipwise outputs.
+
+        When clipwise_logits is (B, C): standard single-prediction loss (v5j behavior).
+        When clipwise_logits is (B, N, C): average loss across N chunks. Each chunk
+        is supervised with the same label (correct for focal recordings; approximate
+        for soundscapes where flanking chunks may have different species).
+        """
+        if clipwise_logits.dim() == 3:
+            # Multi-chunk: (B, N, C) — average loss across chunks
+            n_chunks = clipwise_logits.shape[1]
+            chunk_losses = []
+            for i in range(n_chunks):
+                chunk_clip = clipwise_logits[:, i, :]  # (B, C)
+                clip_loss = self._compute_loss(chunk_clip, labels, primary_idx)
+                chunk_losses.append(clip_loss)
+            clipwise_loss = sum(chunk_losses) / n_chunks
+        else:
+            # Single-chunk: (B, C) — standard loss
+            clipwise_loss = self._compute_loss(clipwise_logits, labels, primary_idx)
+
+        # Framewise loss (always on full temporal extent, unchanged)
+        framewise_max_logits = framewise_logits.max(dim=-1).values
+        framewise_loss = self._compute_loss(framewise_max_logits, labels, primary_idx)
+
+        return (
+            self.hparams.clipwise_weight * clipwise_loss
+            + self.hparams.framewise_weight * framewise_loss
+        )
 
     def _mixup_active(self) -> bool:
         """Check if mixup should be applied this epoch (respects warmup)."""
@@ -387,16 +432,10 @@ class SEDFinetuneModule(pl.LightningModule):
                 mel, labels = self._apply_mixup(mel, labels)
 
         clipwise_logits, framewise_logits = self(mel)
-        framewise_max_logits = framewise_logits.max(dim=-1).values
 
-        # Dual loss (CE uses primary_idx, other losses use multi-hot labels)
-        loss = self.hparams.clipwise_weight * self._compute_loss(
-            clipwise_logits, labels, primary_idx
-        ) + self.hparams.framewise_weight * self._compute_loss(
-            framewise_max_logits, labels, primary_idx
-        )
+        loss = self._compute_chunked_loss(clipwise_logits, framewise_logits, labels, primary_idx)
 
-        # Blended probabilities for metrics
+        # Blended probabilities for metrics (handles multi-chunk automatically)
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()
 
@@ -438,13 +477,8 @@ class SEDFinetuneModule(pl.LightningModule):
         mel, labels, primary_idx = batch
         mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
-        framewise_max_logits = framewise_logits.max(dim=-1).values
 
-        loss = self.hparams.clipwise_weight * self._compute_loss(
-            clipwise_logits, labels, primary_idx
-        ) + self.hparams.framewise_weight * self._compute_loss(
-            framewise_max_logits, labels, primary_idx
-        )
+        loss = self._compute_chunked_loss(clipwise_logits, framewise_logits, labels, primary_idx)
 
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()
@@ -480,13 +514,8 @@ class SEDFinetuneModule(pl.LightningModule):
         mel, labels, primary_idx = batch
         mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
-        framewise_max_logits = framewise_logits.max(dim=-1).values
 
-        loss = self.hparams.clipwise_weight * self._compute_loss(
-            clipwise_logits, labels, primary_idx
-        ) + self.hparams.framewise_weight * self._compute_loss(
-            framewise_max_logits, labels, primary_idx
-        )
+        loss = self._compute_chunked_loss(clipwise_logits, framewise_logits, labels, primary_idx)
 
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()

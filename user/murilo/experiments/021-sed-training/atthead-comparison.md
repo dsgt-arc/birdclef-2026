@@ -250,89 +250,155 @@ multiple top competitors.
 
 ---
 
-## Our Phase D plan (AttHeadMultiContext)
+## Two different multi-context approaches
 
-We implemented `AttHeadMultiContext` matching Tattaka's design (softmax(tanh(att)),
-probability-space clipwise, train/infer period cropping, pre-dropout).
+### Tattaka (BirdCLEF 2023 5th) — AttHead + center crop
 
-**One difference from Tattaka**: We return `logit(clipwise_probs)` for loss compatibility
-instead of separate logit and probability outputs. This is a simplification that keeps
-the head contract compatible with our existing `SEDFinetuneModule` without changes.
-If this causes issues, we can split the returns later.
+```
+15s audio → mel (256 × 1533) → backbone → features (B, C, F', T')
+  → AttHead processes ALL T' frames during training
+  → At inference: CROP to center T'/3 frames, then aggregate
+  → 1 prediction per 15s window (for the center 5s)
+```
 
-### Configs
+- Head aggregates attention over the full (or cropped) temporal extent
+- One prediction per forward pass
+- The head architecture IS the multi-context mechanism (train_period/infer_period)
 
-| Config | Backbone | Context | Rationale |
-|--------|----------|---------|-----------|
-| v7a | HGNetV2-B0 | 3×5s (15s) | hengck23's approach on our best backbone |
-| v7b | HGNetV2-B0 | 4×5s (20s) | Tom's approach (6th place) |
-| v7c | EffNet-B0 NS | 3×5s (15s) | Test Boredom's claim with multi-context |
+### hengck23 (BirdCLEF 2026, 0.896 LB) — LSEHead + temporal split
 
-All use v5j recipe base (AmplitudeToDB, OneCycleLR, per-sample MixUp, BCE, 20 epochs),
-clipwise_weight=1.0 (no framewise loss, matching v5j).
+```
+15s audio → mel (256 × 1533) → backbone → features (B, C, F', T')
+  → freq pool → (B, C, T')
+  → Linear → framewise_logits (B, T', 234)
+  → SPLIT T' into 3 chunks of T'/3
+  → LSEPool each chunk independently → 3 predictions
+  → All 3 supervised during training
+```
+
+Source: `notes/figures/hengck23-cnn-birdclef.png` (Kaggle discussion #683791)
+
+- Head operates on **5s chunks** (same as normal LSEHead)
+- **3 predictions** per forward pass, all supervised
+- The multi-context comes from the **backbone** — convolutional receptive fields
+  span across chunk boundaries, so features for the center chunk are informed by
+  flanking chunks
+- "conv does have location information" — positional encoding is implicit in CNNs
+- **No new head architecture needed** — just split temporal features before existing LSEHead
+
+Key numbers from hengck23's image:
+- 5sec baseline: LB 0.876 (4-fold, no PP)
+- 3×5sec: **LB 0.896** (4-fold, no PP) → **+0.020 gain**
+- Same data as us: 35k focal clips + 66 labeled soundscapes
 
 ---
 
-## Implementation verification (2026-04-04)
+## Phase D results: AttHeadMultiContext (Tattaka approach) — FAILED
 
-### What matches Tattaka exactly
+We implemented Tattaka's approach (AttHeadMultiContext). All models massively regressed:
 
-1. **Attention**: `softmax(tanh(x))` ✓
-2. **Probability-space clipwise**: `Σ(att × sigmoid(logits))` ✓
-3. **Pre-dropout**: `Dropout(p/2)` before linear ✓
-4. **Train/infer crop**: center crop at eval based on period ratio ✓
-5. **GeM frequency pooling**: learnable power-mean ✓
+| Config | Backbone | Context | val/auroc | Delta vs v5j (0.874) |
+|--------|----------|---------|-----------|----------------------|
+| v7c | EffNet-B0 NS | 3×5s (15s) | 0.851 | −0.023 |
+| v7a | HGNetV2-B0 | 3×5s (15s) | 0.820 | −0.054 |
+| v7b | HGNetV2-B0 | 4×5s (20s) | 0.799 | −0.075 |
 
-### Deliberate simplification: loss gradient path
+**Root cause**: Changed too many variables from v5j (head type + window length + batch
+size + loss gradient path). AttHead already regresses vs LSEHead (Phase C: −0.013 to
+−0.017 LB). Adding 15s aggregation on top compounded the regression.
 
-**Tattaka returns TWO clipwise outputs:**
-- `logits` = `Σ(att × raw_frame_logits)` — used with `BCEWithLogitsLoss`
-- `clipwise_pred` = `Σ(att × sigmoid(frame_logits))` — used for evaluation
+The fundamental issue: Tattaka's approach aggregates attention over ALL 15s into one
+prediction. hengck23's approach keeps 5s-level LSE pooling per chunk — the backbone
+provides context through its receptive field, not through the head.
 
-**We return ONE output:**
-- `logit(Σ(att × sigmoid(frame_logits)))` — serves both loss and prediction
+---
 
-**Why this differs mathematically:**
-- Tattaka's loss: `BCEWithLogitsLoss(Σ(att × x), y)` → applies `sigmoid(Σ(att × x))`
-- Our loss: `BCEWithLogitsLoss(logit(Σ(att × σ(x))), y)` → applies `σ(logit(Σ(att × σ(x))))` = `Σ(att × σ(x))`
+## Phase E plan: LSEHead + temporal split (hengck23 approach)
 
-The predictions are identical: `Σ(att × sigmoid(x))` in both cases.
-But the loss gradients differ: `sigmoid(sum_of_logits)` ≠ `sum_of_sigmoids`.
-By Jensen's inequality (sigmoid is concave on x>0, convex on x<0), these give
-different gradient magnitudes.
+The correct implementation based on the image:
 
-**Why we accept this:** Keeping a single clipwise output preserves compatibility
-with our existing `SEDFinetuneModule` (which expects `(clipwise_logits, framewise_logits)`).
-Splitting into dual outputs would require changes to the training loop. If v7 models
-underperform, switching to Tattaka's dual-output approach is a straightforward follow-up.
+### Architecture
 
-### Verified: training and inference flow
+```
+15s audio → mel → backbone → features (B, C, F', T')
+  → mean freq pool → (B, C, T')          [same as v5j LSEHead]
+  → Linear+ReLU+Dropout+Linear → (B, T', 234)  [same as v5j LSEHead]
+  → Split T' into N chunks
+  → LSEPool each chunk → N × (B, 234)    [same pooling as v5j]
+  → All N supervised with their respective labels
+```
 
-**Training (15s input):**
-1. Backbone receives (B, 1, 256, ~1533) mel (15s at hop=313)
-2. AttHeadMultiContext in `self.training=True` → uses full temporal extent
-3. clipwise_logits computed from all ~1533 frames
-4. Loss = `clipwise_weight × BCE(clipwise_logits, labels)` (framewise_weight=0.0 in v7)
-5. Label corresponds to center 5s segment (soundscapes) or full recording (focal)
+### What changes from v5j
 
-**Inference (15s input):**
-1. Same backbone pass → (B, C, F, ~1533) features
-2. AttHeadMultiContext in `self.training=False` → crops to center ~511 frames (5s)
-3. clipwise_logits computed from center frames only
-4. `_blended_probs` with blend_clip=1.0 → `sigmoid(clipwise_logits)` = center 5s prediction
+Only two things:
+1. **window_duration**: 5s → 15s (dataset already supports this)
+2. **Forward pass**: split temporal features into N chunks, apply LSEPool per-chunk,
+   return N predictions instead of 1
 
-**ONNX export:** Model in eval mode → crop logic baked into ONNX graph.
-Kaggle kernel feeds 15s mel → gets center 5s prediction. Requires kernel update
-for multi-context windowing (task D.8).
+Everything else stays identical: LSEHead, BCE loss, OneCycleLR, MixUp, batch params.
+
+### What stays the same
+
+- Head architecture (LSEHead with mean freq pool)
+- Loss function (BCE)
+- Training recipe (OneCycleLR, per-sample MixUp)
+- All hyperparameters
+
+### Implementation
+
+Modify the `SEDFinetuneModule` forward + loss to handle N chunks:
+
+```python
+# In forward():
+features = self.encoder.forward_features(mel)     # (B, C, F', T')
+clipwise, framewise = self.sed_head(features)      # normal LSEHead on full T'
+
+# For multi-context: split framewise before pooling
+# Option A: modify LSEHead to return pre-pooled framewise + pool per chunk
+# Option B: wrapper that calls LSEHead N times on sub-features
+```
+
+**Option A** is cleaner — add a `n_chunks` param to LSEHead:
+```python
+class LSEHead:
+    def __init__(self, ..., n_chunks=1):
+        self.n_chunks = n_chunks
+
+    def forward(self, features):
+        h = freq_pool(features)           # (B, C, T')
+        h = h.permute(0, 2, 1)           # (B, T', C)
+        framewise = self.cls_fc(h)        # (B, T', 234)
+
+        if self.n_chunks == 1:
+            clipwise = self.lse_pool(framewise)
+            return clipwise, framewise.permute(0, 2, 1)
+
+        # Split into chunks, pool each
+        chunks = framewise.chunk(self.n_chunks, dim=1)  # N × (B, T'/N, 234)
+        clipwise_list = [self.lse_pool(c) for c in chunks]  # N × (B, 234)
+        clipwise = torch.stack(clipwise_list, dim=1)    # (B, N, 234)
+        return clipwise, framewise.permute(0, 2, 1)
+```
+
+The loss needs to handle (B, N, 234) clipwise — sum BCE over all N chunks.
+
+### Labels for N chunks
+
+- **Focal recordings**: same label for all N chunks (whole file is one species)
+- **Soundscape segments**: each 5s has its own label from the annotations.
+  Currently we load one 15s window centered on one labeled 5s segment.
+  The flanking 5s may have different labels — we need per-chunk labels.
+
+For the initial implementation, using the **same label for all 3 chunks** is simplest
+(correct for focal, approximate for soundscapes). Can refine later with per-chunk
+soundscape labels.
 
 ### Open questions
 
-1. **Loss gradient path**: If v7 underperforms, try Tattaka's dual-output
-   (separate logits for loss, probs for prediction). Requires SEDFinetuneModule change.
-2. **LSEHead + multi-context**: hengck23 uses LSE head with 3×5s. Could add
-   train/infer cropping to LSEHead too (crop temporal features before LSE pooling).
-   This would test multi-context independently of the head architecture change.
-3. **Framewise loss**: v7 uses clipwise_weight=1.0 (matching v5j). Tattaka uses
-   dual supervision — could try 0.5/0.5 as a follow-up ablation.
-4. **Batch size**: v7a uses batch_size=32 (halved from 64) for 3× wider spectrograms.
-   May need reduction if OOM on RTX 6000 (24GB).
+1. **Batch size**: 15s spectrograms are 3× wider. May need batch_size=32 or
+   gradient accumulation to compensate.
+2. **Per-chunk soundscape labels**: initial implementation uses same label for all
+   chunks. Could improve by loading per-5s labels from soundscape annotations.
+3. **Wave mix augmentation**: hengck23 mentions "specially designed for 3×5sec."
+   May mean mixing different species into different chunks within the 15s window.
+4. **N=3 vs N=4**: hengck23 uses 3, Tom uses 4. Start with 3, ablate later.

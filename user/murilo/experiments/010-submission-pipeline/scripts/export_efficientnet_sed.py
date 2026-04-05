@@ -114,6 +114,7 @@ def main():
     elif head_type == "lse_head":
         head_kwargs["lse_temperature"] = cfg["sed_head"].get("lse_temperature", 1.0)
         head_kwargs["freq_pool"] = cfg["sed_head"].get("freq_pool", "gem")
+        head_kwargs["n_chunks"] = cfg["sed_head"].get("n_chunks", 1)
         sed_head = LSEHead(**head_kwargs)
         logger.info(f"SED head: LSEHead (freq_pool={head_kwargs['freq_pool']}, LSE time pooling)")
     else:
