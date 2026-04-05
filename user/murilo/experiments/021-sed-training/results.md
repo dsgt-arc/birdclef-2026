@@ -208,15 +208,32 @@ Adding multi-context on top of an already-worse head compounds the regression.
    far more than v7c (EffNet, 0.851). HGNet's embedding structure may not handle
    3-4× longer temporal features well with the attention mechanism.
 
-### Next steps
+### Lesson: isolate variables, keep LSEHead
 
-The multi-context idea (from hengck23 and Tom) is sound — but our implementation
-changed too many things at once. Key insight: **hengck23 uses LSEHead + multi-context,
-not AttHead.** We should isolate variables:
+## Phase E: LSEHead + Temporal Split (correct multi-context)
 
-1. **LSEHead + multi-context** — add train/infer period cropping to LSEHead, keep
-   everything else from v5j. This isolates the multi-context variable from the head change.
-2. **Investigate zero-padding** — check focal recording duration distribution. If most
-   are <15s, the padding issue is severe and shorter context (e.g., 10s) may be better.
-3. **Try Tattaka's dual-output loss** — separate logits for loss, probs for prediction,
-   instead of our logit(probs) approach.
+Correct implementation based on hengck23's image: keep LSEHead exactly as v5j,
+add `n_chunks` to split temporal features before LSE pooling. Only TWO changes
+from v5j: `window_duration` and `n_chunks`. See `multi-context-data-flow.md`.
+
+### Offline Results
+
+| Model | Backbone | Head | Context | n_chunks | val/auroc | val/cmap | Best Epoch | Delta vs v5j |
+|-------|----------|------|---------|----------|-----------|----------|------------|-------------|
+| v5j (baseline) | HGNetV2-B0 | LSEHead | 5s | 1 | 0.874 | ~0.625 | 19 | — |
+| **v8a** | HGNetV2-B0 | LSEHead | **3×5s (15s)** | **3** | **0.882** | **0.719** | 13 | **+0.008** |
+| **v8b** | HGNetV2-B0 | LSEHead | **4×5s (20s)** | **4** | **0.881** | **0.727** | 9 | **+0.007** |
+
+**v8a shows the largest offline improvement we've ever seen** (+0.008 AUROC, +0.094 cmap
+vs v5j). The cmap of 0.719 is by far the best across all experiments — the multi-context
+backbone features are helping the model detect per-class patterns much better.
+
+Critically, v8a uses the exact same LSEHead as v5j — the improvement comes purely from
+the backbone seeing 15s of context and splitting into 3 chunks before pooling. This
+validates hengck23's approach: context from the backbone, precision from the head.
+
+Both v8a and v8b show best-ever offline metrics. v8b (4×5s=20s) matches v8a on AUROC
+(0.881 vs 0.882) and has even better cmap (0.727 vs 0.719). Both submitted to LB.
+
+**Caveat**: offline metrics have been unreliable (Phase C: best offline = worst LB).
+LB submission required to validate.

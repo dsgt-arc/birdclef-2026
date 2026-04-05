@@ -8,7 +8,7 @@ techniques (multi-context training, AttHead variants, backbone scaling).
 **Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase E: LSEHead + temporal split (hengck23 approach). Phases B-D all failed.**
+### Status: **Phase E: v8a/v8b trained, both submitted to LB. Awaiting scores.**
 
 - **Branch**: `mg/021-sed-training`
 - **Architecture reference**: [`notes/sed-architecture-overview.md`](../../notes/sed-architecture-overview.md)
@@ -130,14 +130,16 @@ Same LSEHead, same loss, same recipe. The head processes 5s chunks (not 15s).
 
 ### Tasks
 
-- [ ] E.1 Add `n_chunks` to LSEHead
-- [ ] E.2 Update SEDFinetuneModule to handle multi-chunk output
-- [ ] E.3 Create v8a config (HGNet-B0 + LSEHead + 3×5s, everything else from v5j)
-- [ ] E.4 Create v8b config (HGNet-B0 + LSEHead + 4×5s)
-- [ ] E.5 GPU check v8a
-- [ ] E.6 Train v8a, v8b on PACE
-- [ ] E.7 Check training results
-- [ ] E.8 ONNX export + LB submission if promising
+- [x] E.1 Add `n_chunks` to LSEHead
+- [x] E.2 Update SEDFinetuneModule to handle multi-chunk output
+- [x] E.3 Create v8a config (HGNet-B0 + LSEHead + 3×5s)
+- [x] E.4 Create v8b config (HGNet-B0 + LSEHead + 4×5s)
+- [x] E.5 GPU check v8a — passed, 98% utilization, 1.1% memory
+- [x] E.6 Train v8a on PACE — **val/auroc 0.882 (+0.008), cmap 0.719 (best ever)**
+- [x] E.6b Train v8b on PACE — **val/auroc 0.881 (+0.007), cmap 0.727 (new best cmap)**
+- [x] E.7 Check training results — both v8a/v8b show best offline metrics ever
+- [x] E.8 ONNX export v8a/v8b — multi-chunk averaged in ONNX wrapper, kernel uses 15s/20s inference_window
+- [x] E.9 Submit v8a, v8b to LB — **awaiting scores**
 
 ---
 
@@ -171,7 +173,7 @@ Could stack with multi-context — mix the 15s feature maps before splitting int
 | v5j-4fold (exp 019) | **0.913** | — | 4-fold ensemble |
 | **v5j-4fold-pp2** | **0.917** | — | v5j-4fold + priors (+0.004), current best SED |
 | v6a (CE+LSEHead) | — | 0.854 | −0.020 offline, regressed |
-| v6b (waveform MixUp) | — | 0.871 | −0.003 offline |
+| v6b (waveform MixUp) | **0.887** | 0.871 | **−0.019 LB**, waveform MixUp hurts |
 | v6c (waveform augs) | — | 0.861 | −0.013 offline, regressed |
 | v6d (25 epochs) | — | 0.873 | −0.001 offline, flat |
 | v6h (HGNetV2-B2+AttHead) | **0.889** | 0.876 | **−0.017 LB**, best offline but worst LB |
@@ -183,4 +185,6 @@ Could stack with multi-context — mix the 15s feature maps before splitting int
 | v7a (HGNet-B0+MC 3×5s) | — | 0.820 | **−0.054**, massive regression |
 | v7b (HGNet-B0+MC 4×5s) | — | 0.799 | **−0.075**, longer context = worse |
 | v7c (EffNet-B0 NS+MC 3×5s) | — | 0.851 | **−0.023**, least bad but still regressed |
+| **v8a (HGNet-B0+LSE MC 3×5s)** | pending | **0.882** | **+0.008 offline, cmap 0.719** |
+| **v8b (HGNet-B0+LSE MC 4×5s)** | pending | **0.881** | **+0.007 offline, cmap 0.727 (best)** |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |

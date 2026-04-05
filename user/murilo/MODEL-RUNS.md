@@ -373,12 +373,12 @@ All trained with seed=42, deterministic=True, on PACE GPU.
 | Slug | Change from v5j | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
 |------|----------------|-----------|----------|------------|-----|------------|
 | `hgnet-b0-sed-v6a` | CE loss (primary_label) | 0.854 | 0.580 | 18 | pending | `021-.../2026-hgnet-b0-sed-v6a/best-epochepoch=18.ckpt` |
-| `hgnet-b0-sed-v6b` | Waveform MixUp | 0.871 | 0.625 | 16 | pending | `021-.../2026-hgnet-b0-sed-v6b/best-epochepoch=16.ckpt` |
+| `hgnet-b0-sed-v6b` | Waveform MixUp | 0.871 | 0.625 | 16 | **0.887** | `021-.../2026-hgnet-b0-sed-v6b/best-epochepoch=16.ckpt` |
 | `hgnet-b0-sed-v6c` | Waveform MixUp + noise + stretch | 0.861 | 0.608 | 16 | pending | `021-.../2026-hgnet-b0-sed-v6c/best-epochepoch=16.ckpt` |
 | `hgnet-b0-sed-v6d` | 25 epochs (vs 20) | **0.873** | **0.651** | 22 | pending | `021-.../2026-hgnet-b0-sed-v6d/best-epochepoch=22.ckpt` |
 
 CE loss (v6a) regressed −0.020 — single-label assumption hurts on multi-label soundscapes.
-Waveform augmentations (v6b, v6c) didn't help — spectrogram MixUp remains better.
+Waveform MixUp (v6b) confirmed hurts on LB: 0.887 (−0.019 vs v5j's 0.906). Spectrogram MixUp remains better.
 25 epochs (v6d) essentially flat on AUROC but improved cmap (+0.026).
 
 ### Phase C: AttHead + Backbone Scaling
@@ -417,6 +417,22 @@ competition-standard attention (softmax(tanh(att)), probability-space clipwise).
 Longer context = worse. Changed too many variables from v5j (head type + window length +
 batch size). Cannot isolate multi-context effect. hengck23 uses LSEHead with multi-context,
 not AttHead — the head change likely caused most of the regression, not the context itself.
+
+### Phase E: LSEHead + Temporal Split (correct multi-context)
+
+Keep LSEHead exactly as v5j, add `n_chunks` to split temporal features into N chunks
+before LSE pooling. Backbone sees full 15-20s context, each chunk pools at 5s resolution.
+Inspired by hengck23 (0.896 LB, CNN-only, 3×5s). See `multi-context-data-flow.md`.
+
+| Slug | Backbone | Head | Context | n_chunks | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|------|---------|----------|-----------|----------|------------|-----|------------|
+| **`hgnet-b0-mc-lse-sed-v8a`** | **HGNetV2-B0** | **LSEHead** | **3×5s (15s)** | **3** | **0.882** | **0.719** | 13 | pending | `021-.../2026-hgnet-b0-mc-lse-sed-v8a/best-epochepoch=13.ckpt` |
+| **`hgnet-b0-mc-lse-sed-v8b`** | **HGNetV2-B0** | **LSEHead** | **4×5s (20s)** | **4** | **0.881** | **0.727** | 9 | pending | `021-.../2026-hgnet-b0-mc-lse-sed-v8b/best-epochepoch=09.ckpt` |
+
+**v8a is the best offline result in our entire experiment history** (+0.008 AUROC,
++0.094 cmap vs v5j). Same LSEHead as v5j — improvement comes purely from the backbone
+seeing 15s of context. LB submission required to validate (offline metrics have been
+unreliable).
 
 ## Checkpoint Base Path
 

@@ -162,7 +162,11 @@ def main():
 
     # Create ONNX export wrapper that outputs blended probabilities
     class SEDWrapper(nn.Module):
-        """Wraps encoder + SED head → blended sigmoid probabilities."""
+        """Wraps encoder + SED head → blended sigmoid probabilities.
+
+        Handles both single-chunk (B, C) and multi-chunk (B, N, C) clipwise output.
+        Multi-chunk: averages probabilities across chunks → (B, C).
+        """
 
         def __init__(self, encoder, sed_head, blend_clip=0.75, blend_frame=0.25):
             super().__init__()
@@ -172,15 +176,22 @@ def main():
             self.blend_frame = blend_frame
 
         def forward(self, mel):
-            # mel: (B, 1, 128, T)
+            # mel: (B, 1, n_mels, T)
             features = self.encoder.forward_features(mel)
             clipwise_logits, framewise_logits = self.sed_head(features)
+
+            # Handle multi-chunk: (B, N, C) → average probs → (B, C)
+            if clipwise_logits.dim() == 3:
+                clip_probs = torch.sigmoid(clipwise_logits).mean(dim=1)
+            else:
+                clip_probs = torch.sigmoid(clipwise_logits)
+
             framewise_max_logits = framewise_logits.max(dim=-1).values
 
-            # Blended sigmoid probabilities
-            probs = self.blend_clip * torch.sigmoid(
-                clipwise_logits
-            ) + self.blend_frame * torch.sigmoid(framewise_max_logits)
+            # Blended probabilities
+            probs = self.blend_clip * clip_probs + self.blend_frame * torch.sigmoid(
+                framewise_max_logits
+            )
             return probs
 
     wrapper = SEDWrapper(

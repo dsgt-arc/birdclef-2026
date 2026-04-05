@@ -332,6 +332,17 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v6b",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v6b.json",
     },
+    # Exp 021 Phase E: LSEHead multi-context
+    "hgnet-b0-mc-lse-sed-v8a": {
+        "slug": "birdclef-2026-hgnet-b0-mc-lse-sed-v8a-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-mc-lse-sed-v8a",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-mc-lse-sed-v8a.json",
+    },
+    "hgnet-b0-mc-lse-sed-v8b": {
+        "slug": "birdclef-2026-hgnet-b0-mc-lse-sed-v8b-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-mc-lse-sed-v8b",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-mc-lse-sed-v8b.json",
+    },
     # Exp 021 Phase C: AttHead + backbone scaling
     "hgnet-b2-sed-v6h": {
         "slug": "birdclef-2026-hgnet-b2-sed-v6h-weights",
