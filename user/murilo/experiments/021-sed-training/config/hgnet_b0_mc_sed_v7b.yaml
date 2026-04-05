@@ -8,26 +8,29 @@
 # Changes from v7a: window 15s → 20s, train_period 15 → 20,
 # batch_size 32 → 24 (4× wider spectrograms than 5s baseline).
 
-run_name: 2026-hgnet-b0-mc-sed-v7b
+run_name: "2026-hgnet-b0-mc-sed-v7b"
+
 encoder:
-  type: efficientnet
-  model_name: hgnetv2_b0.ssld_stage2_ft_in1k
+  type: "efficientnet"
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"
   pretrained: true
   embed_dim: 1024
+
 sed_head:
-  type: att_head_multi_context
+  type: "att_head_multi_context"
   hidden_dim: 1024
   dropout: 0.5
   gem_p: 3.0
   train_period: 20.0
   infer_period: 5.0
+
 mel:
   n_fft: 2048
   hop_length: 313
   n_mels: 256
   fmax: null
   top_db: 80.0
-  norm_type: amplitude_to_db
+  norm_type: "amplitude_to_db"
   gpu: true
 data:
   data_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026

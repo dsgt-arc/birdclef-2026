@@ -4,28 +4,32 @@
 # Motivated by BirdCLEF 2023/2024/2025 winning solutions.
 # Base: v5j mel pipeline (NNAudio AmplitudeToDB, 5s, 20ep, OneCycleLR).
 
-run_name: 2026-effnet-b3-ns-sed-v6g
+run_name: "2026-effnet-b3-ns-sed-v6g"
+
 encoder:
-  type: efficientnet
-  model_name: tf_efficientnet_b3.ns_jft_in1k
+  type: "efficientnet"
+  model_name: "tf_efficientnet_b3.ns_jft_in1k"
   pretrained: true
   embed_dim: 384
   projection_dim: 1024
+
 sed_head:
-  type: att_head
+  type: "att_head"
   hidden_dim: 1024
   dropout: 0.5
   gem_p: 3.0
+
 mel:
   n_fft: 2048
   hop_length: 313
   n_mels: 256
   fmax: null
   top_db: 80.0
-  norm_type: amplitude_to_db
+  norm_type: "amplitude_to_db"
   gpu: true
+
 data:
-  data_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
   sample_rate: 32000
   window_duration: 5.0
   batch_size: 64
@@ -35,6 +39,7 @@ data:
   soundscape_val_files: 8
   soundscape_test_files: 0
   seed: 42
+
 training:
   max_epochs: 20
   lr: 0.0005
@@ -43,37 +48,39 @@ training:
   warmup_epochs: 5
   threshold: 0.5
   grad_clip_val: 0
-  precision: 16-mixed
+  precision: "16-mixed"
   accumulate_grad_batches: 1
   clipwise_weight: 0.5
   framewise_weight: 0.5
   blend_clip: 0.75
   blend_frame: 0.25
-  loss_type: ce
+  loss_type: "ce"
   mixup_prob: 1.0
   mixup_alpha: 1.0
   mixup_warmup_epochs: 5
   mixup_theta: 0.8
   mixup_per_sample: true
-  scheduler_type: one_cycle
+  scheduler_type: "one_cycle"
   onecycle_div_factor: 25.0
   onecycle_final_div_factor: 4.0
   label_smoothing: 0.0
+
 callbacks:
   model_checkpoint:
-    monitor: val/auroc
-    mode: max
+    monitor: "val/auroc"
+    mode: "max"
     save_top_k: 1
     save_last: true
-    filename: best-epoch{epoch:02d}
+    filename: "best-epoch{epoch:02d}"
   early_stopping:
-    monitor: val/auroc
-    mode: max
+    monitor: "val/auroc"
+    mode: "max"
     patience: 999
     min_delta: 0.0
+
 logging:
-  entity: dsgt-arc
-  project: birdclef-2026-exp021
-  save_dir: outputs/wandb
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp021"
+  save_dir: "outputs/wandb"
   log_model: false
   log_every_n_steps: 50
