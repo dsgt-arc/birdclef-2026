@@ -8,7 +8,7 @@ techniques (multi-context training, AttHead variants, backbone scaling).
 **Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase E: v8b 0.896 LB (avg inference), v8a center-chunk resubmitted. Testing center-chunk inference.**
+### Status: **Phase E complete. v8b 0.896 LB (best multi-context). Center-chunk inference negligible (+0.001).**
 
 - **Branch**: `mg/021-sed-training`
 - **Architecture reference**: [`notes/sed-architecture-overview.md`](../../notes/sed-architecture-overview.md)
@@ -140,8 +140,8 @@ Same LSEHead, same loss, same recipe. The head processes 5s chunks (not 15s).
 - [x] E.7 Check training results — both v8a/v8b show best offline metrics ever
 - [x] E.8 ONNX export v8a/v8b — initial: avg all chunks. v8a LB 0.882 (−0.024), v8b LB **0.896** (−0.010)
 - [x] E.9 Fix ONNX wrapper: center-chunk inference instead of averaging
-- [ ] E.10 Re-submit v8a with center-chunk — **pending LB**
-- [ ] E.11 Re-submit v8b with center-chunk if v8a improves
+- [x] E.10 Re-submit v8a with center-chunk — **LB 0.883** (+0.001 vs avg, negligible)
+- [ ] E.11 Re-submit v8b with center-chunk — skipped, center-chunk didn't help v8a
 
 ---
 
@@ -189,5 +189,5 @@ Could stack with multi-context — mix the 15s feature maps before splitting int
 | v7c (EffNet-B0 NS+MC 3×5s) | — | 0.851 | **−0.023**, least bad but still regressed |
 | v8a (HGNet-B0+LSE MC 3×5s, avg) | **0.882** | **0.882** | −0.024 LB, avg all 3 chunks dilutes |
 | **v8b (HGNet-B0+LSE MC 4×5s, avg)** | **0.896** | **0.881** | **−0.010 LB**, 20s context helps |
-| v8a (center-chunk inference) | pending | 0.882 | re-exported with center chunk only |
+| v8a (center-chunk inference) | **0.883** | 0.882 | center chunk only (+0.001, negligible) |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |

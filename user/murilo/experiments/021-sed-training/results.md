@@ -242,17 +242,33 @@ Both v8a and v8b show best-ever offline metrics. v8b (4×5s=20s) matches v8a on 
 | v5j (baseline) | 5s | 1 | — | 0.874 | **0.906** | — |
 | v8b | 4×5s (20s) | 4 | avg all 4 | 0.881 | **0.896** | −0.010 |
 | v8a | 3×5s (15s) | 3 | avg all 3 | 0.882 | 0.882 | −0.024 |
-| v8a (center) | 3×5s (15s) | 3 | **center chunk** | 0.882 | pending | — |
+| v8a (center) | 3×5s (15s) | 3 | **center chunk** | 0.882 | **0.883** | −0.023 |
 
-**Multi-context improves offline but regresses on LB** when averaging all chunks.
-The averaging dilutes predictions — species present in only the center 5s gets
-diluted by flanking chunks where it's absent.
+**Multi-context improves offline but regresses on LB.** Center-chunk inference
+gave only +0.001 over averaging (0.883 vs 0.882) — negligible. The hypothesis
+that averaging dilutes predictions was wrong, or at least not the main issue.
 
-v8b (0.896) outperformed v8a (0.882) despite more dilution (4 chunks vs 3). This
-suggests longer context (20s) provides enough backbone benefit to overcome the
-averaging dilution. If center-chunk inference fixes v8a, v8b with center chunks
-could improve even more.
+v8b (0.896) outperformed v8a (0.883) significantly despite more chunks (4 vs 3).
+Longer backbone context (20s) helps more than inference strategy. Since center-chunk
+didn't help v8a, re-exporting v8b with center chunks is unlikely to improve on 0.896.
 
-v8a re-exported with center-chunk inference (only center chunk prediction, no
-averaging) — awaiting LB score. If this improves, re-export v8b with center
-chunks too.
+### Analysis: why multi-context regresses on LB despite best-ever offline
+
+The +0.008 offline AUROC gain doesn't translate to LB. Possible explanations:
+
+1. **Domain shift amplification**: longer windows from focal recordings (clean,
+   single-species) may teach backbone features that don't transfer to soundscapes
+   (noisy, multi-species). The 15-20s focal context is acoustically different from
+   15-20s of Pantanal soundscape.
+
+2. **Zero-padding artifacts**: ~30% of focal recordings are <15s. Zero-padded regions
+   produce low-information backbone features that may confuse the head at test time
+   when all 15-20s contain real audio.
+
+3. **Training signal mismatch**: all 3-4 chunks get the same label during training,
+   but test soundscapes have different species in adjacent 5s segments. The model
+   may learn to spread predictions across chunks rather than localizing them.
+
+4. **hengck23's missing ingredient**: his 0.896 used 4-fold ensemble (we submitted
+   single fold) and "wave mix augmentation specially designed for 3×5sec." The
+   multi-context approach may need both 4-fold and specialized augmentation to work.
