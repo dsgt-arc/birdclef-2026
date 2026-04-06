@@ -403,13 +403,12 @@ hidden_dim=1024 (matching v5j). Everything else identical to v5j.
 
 | Slug | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
 |------|----------|--------|------|------|-----------|----------|------------|-----|------------|
-| `hgnet-b0-atthead-v6k` | HGNetV2-B0 | 6M | AttHead (fixed) | BCE | 0.871 | 0.596 | 19 | skip | `021-.../2026-hgnet-b0-atthead-v6k/best-epochepoch=19.ckpt` |
+| `hgnet-b0-atthead-v6k` | HGNetV2-B0 | 6M | AttHead (fixed) | BCE | 0.871 | 0.596 | 19 | **0.888** | `021-.../2026-hgnet-b0-atthead-v6k/best-epochepoch=19.ckpt` |
 
-**Fixed AttHead still regresses** vs v5j (−0.003 AUROC, −0.029 cmap) and barely
-differs from old buggy AttHead v6e (0.871 vs 0.870). The three fixes (pre-dropout,
-tanh, probability-space) are not the differentiator. AttHead consistently
-underperforms LSEHead on HGNetV2-B0. Combined with Phase C LB regressions (v6j
-0.893, v6h 0.889), AttHead is conclusively worse than LSEHead in our setup.
+**Fixed AttHead regresses** −0.018 on LB (0.888 vs 0.906) and −0.003 offline.
+Barely differs from old buggy AttHead v6e (0.871 vs 0.870). The three fixes
+(pre-dropout, tanh, probability-space) are not the differentiator. AttHead
+consistently underperforms LSEHead on HGNetV2-B0 on both offline and LB.
 
 **Both Phase C AttHead models regressed on LB** vs v5j (LSEHead, 0.906): v6j 0.893
 (−0.013), v6h 0.889 (−0.017). Offline metrics are anti-correlated with LB.

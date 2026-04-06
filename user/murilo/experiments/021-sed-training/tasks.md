@@ -8,7 +8,7 @@ techniques (multi-context training, AttHead variants, backbone scaling).
 **Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase F: v6k AttHead 0.871 offline (−0.003, regressed). F.1 fmax = no gain. Head is not the gap.**
+### Status: **Phase F complete. v6k AttHead 0.888 LB (−0.018). F.1 fmax = no gain. Head is not the gap.**
 
 - **Branch**: `mg/021-sed-training`
 - **Architecture reference**: [`notes/sed-architecture-overview.md`](../../notes/sed-architecture-overview.md)
@@ -174,7 +174,7 @@ over LSEHead. Config: v6k (v5j recipe, hidden_dim=1024, only head changes).
 - [x] F.4a Fix AttHead in `sed_head.py` (pre-dropout, tanh, sigmoid-space)
 - [x] F.4b Create v6k config (v5j + AttHead + dual 50/50 + fmax inference)
 - [x] F.4c Train v6k on PACE — **val/auroc 0.871 (−0.003), cmap 0.596 (−0.029)**
-- [ ] F.4d ~~ONNX export + LB submission~~ — skip, regressed offline
+- [x] F.4d ONNX export + LB — **0.888 LB (−0.018)** (first 2 subs scored 0.508 from species_mapping bug)
 
 ### F.2 3-Channel mel input (DEFERRED)
 
@@ -232,5 +232,5 @@ Could stack with multi-context — mix the 15s feature maps before splitting int
 | **v8b (HGNet-B0+LSE MC 4×5s, avg)** | **0.896** | **0.881** | **−0.010 LB**, 20s context helps |
 | v8a (center-chunk inference) | **0.883** | 0.882 | center chunk only (+0.001, negligible) |
 | v5j-fmax (blend 0/1) | **0.906** | 0.874 | framewise hard-max = same as v5j 0.75/0.25 |
-| v6k (fixed AttHead) | — | 0.871 | −0.003 offline, skip LB (AttHead regresses on HGNet) |
+| v6k (fixed AttHead) | **0.888** | 0.871 | −0.018 LB, AttHead regresses vs LSEHead |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |

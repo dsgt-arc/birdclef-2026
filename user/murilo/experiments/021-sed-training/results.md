@@ -293,16 +293,19 @@ BCE, OneCycleLR, hidden_dim=1024).
 
 | Model | Head | Supervision | val/auroc | val/cmap | Best Epoch | Delta vs v5j |
 |-------|------|-------------|-----------|----------|------------|-------------|
-| v5j (baseline) | LSEHead | clip only | **0.874** | ~0.625 | 19 | — |
-| v6e (old AttHead) | AttHead (buggy) | clip 0.5 + frame 0.5 | 0.870 | 0.611 | 18 | −0.004 |
-| **v6k (fixed AttHead)** | **AttHead (Nikita)** | **clip 0.5 + frame 0.5** | **0.871** | **0.596** | **19** | **−0.003** |
+| Model | Head | Supervision | val/auroc | val/cmap | Best Epoch | LB | Delta vs v5j |
+|-------|------|-------------|-----------|----------|------------|-----|-------------|
+| v5j (baseline) | LSEHead | clip only | **0.874** | ~0.625 | 19 | **0.906** | — |
+| v6e (old AttHead) | AttHead (buggy) | clip 0.5 + frame 0.5 | 0.870 | 0.611 | 18 | skip | −0.004 |
+| **v6k (fixed AttHead)** | **AttHead (Nikita)** | **clip 0.5 + frame 0.5** | **0.871** | **0.596** | **19** | **0.888** | **−0.018 LB** |
 
-**The competition-standard fixes barely changed anything** (+0.001 vs old AttHead v6e).
-The three fixes (pre-dropout, tanh, probability-space) are not the differentiator.
-AttHead consistently underperforms LSEHead on HGNetV2-B0 by −0.003 to −0.004 on
-AUROC and significantly on cmap (0.596 vs ~0.625).
+v6k regresses −0.003 offline and **−0.018 on LB** (0.888 vs 0.906). The competition-
+standard AttHead fixes (+0.001 vs old v6e offline) don't translate to LB gains.
+AttHead with dual supervision + framewise-max inference consistently underperforms
+LSEHead on HGNetV2-B0, both offline and on LB.
 
 **Interpretation**: The gap between us (0.906) and Salman (0.921) is NOT the AttHead
-implementation. LSEHead may actually be the better head for our backbone/recipe.
-The gap must come from something else entirely: backbone choice, CE loss with
-proper pairing, waveform augmentation, or a combination thereof.
+implementation. LSEHead is the better head for our backbone/recipe. The gap must
+come from something else: backbone choice, CE loss, waveform augmentation, or a
+combination. Note: v6k's first two submissions scored 0.508 due to a species_mapping
+bug (41-species 2025 mapping instead of 234) — the 0.888 is the correct score.
