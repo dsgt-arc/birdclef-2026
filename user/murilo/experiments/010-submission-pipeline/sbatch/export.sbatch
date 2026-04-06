@@ -652,6 +652,7 @@ export_hgnet_b0_sed_v5j_fmax() {
         --train-csv "$TAXONOMY_CSV_2026" \
         --output-dir artifacts/weights/hgnet-b0-sed-v5j-fmax/ \
         --blend-clip 0.0 --blend-frame 1.0
+    cp artifacts/weights/species_mapping_2026_234.json artifacts/weights/hgnet-b0-sed-v5j-fmax/species_mapping.json
 }
 
 export_hgnet_b0_sed_v5j_clip() {
@@ -665,6 +666,7 @@ export_hgnet_b0_sed_v5j_clip() {
         --train-csv "$TAXONOMY_CSV_2026" \
         --output-dir artifacts/weights/hgnet-b0-sed-v5j-clip/ \
         --blend-clip 1.0 --blend-frame 0.0
+    cp artifacts/weights/species_mapping_2026_234.json artifacts/weights/hgnet-b0-sed-v5j-clip/species_mapping.json
 }
 
 export_hgnet_b0_sed_v5g() {
@@ -837,6 +839,7 @@ export_hgnet_b0_atthead_v6k() {
         --train-csv "$TAXONOMY_CSV_2026" \
         --output-dir artifacts/weights/hgnet-b0-atthead-v6k/ \
         --blend-clip 0.0 --blend-frame 1.0
+    cp artifacts/weights/species_mapping_2026_234.json artifacts/weights/hgnet-b0-atthead-v6k/species_mapping.json
 }
 
 export_convnext_2026_soundscape() {
