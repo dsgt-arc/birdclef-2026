@@ -224,8 +224,8 @@ but LSEHead's simplicity is likely the main advantage for our data regime.
 | Data | Focal (35.5K) + labeled soundscapes (653 train segments) | |
 | clipwise_weight | 1.0 | |
 | framewise_weight | 0.0 | Only clipwise loss (no framewise) |
-| blend_clip | 1.0 | Only clipwise at inference |
-| blend_frame | 0.0 | |
+| blend_clip | 1.0 (config) / 0.75 (ONNX export) | Config says clipwise-only, but export used script defaults |
+| blend_frame | 0.0 (config) / 0.25 (ONNX export) | v5j LB 0.906 actually uses 75% clip + 25% frame max |
 
 Key design choices:
 - **Clipwise-only loss** (no framewise supervision): simpler, works better on LB
@@ -252,8 +252,9 @@ SEDWrapper.forward(mel):
     return probs  # (B, 234) probabilities
 ```
 
-With v5j (blend_clip=1.0, blend_frame=0.0), this simplifies to
-`probs = sigmoid(clipwise_logits)`.
+The v5j training config specifies blend_clip=1.0, blend_frame=0.0 (clipwise only),
+but the ONNX export used the script defaults of blend_clip=0.75, blend_frame=0.25.
+So the v5j 0.906 LB result actually uses 75% clipwise + 25% framewise max.
 
 ### Kaggle kernel inference
 

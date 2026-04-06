@@ -151,7 +151,8 @@ Motivated by `notes/2026-04-05-sed-gap-analysis.md`. Comparing our v5j (0.906)
 against Nikita 1st place 2025 inference code and Salman's 0.921, we identified
 three gaps we've never tested. Two require no retraining (inference-only).
 
-Reference code: `docs/references/kaggle/birdclef-2025/birdclef-2025-nikita-1st-place-sed.py`
+Reference code: [`birdclef-2025-nikita-1st-place-sed.py`](../../../docs/references/kaggle/birdclef-2025/birdclef-2025-nikita-1st-place-sed.py)
+Gap analysis: [`2026-04-05-sed-gap-analysis.md`](../../notes/2026-04-05-sed-gap-analysis.md)
 
 ### F.1 Framewise-max inference (NO RETRAINING)
 
