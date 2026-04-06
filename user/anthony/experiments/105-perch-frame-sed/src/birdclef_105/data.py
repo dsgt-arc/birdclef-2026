@@ -1,37 +1,40 @@
-"""Cached-embedding dataset and DataModule for stage 2 training.
+"""Cached-feature datasets for stage 2 training.
 
-Supports two layouts:
-  - Single shard: one directory with (embedding.npy, labels.npy, index.parquet, meta.json).
-  - Multi-shard (focal): a parent directory containing shard-000/, shard-001/, etc.
-    The multi-shard case unions all shards into one logical dataset while keeping
-    per-shard memmaps separate (no giant numpy concat, just index math).
-
-Backed by numpy memmap — no audio I/O, no ONNX, just fast tensor loads.
+Two dataset types:
+  - CachedEmbeddingDataset (map-style): memmap-backed, for val and small shards.
+    Sequential access (no shuffle) works well with memmap.
+  - StreamingShardDataset (iterable): loads one shard at a time into RAM,
+    shuffles within, then GCs before loading the next. Peak RAM = one shard
+    (~6 GB spatial fp16). Used for training over 8 focal shards without
+    preloading 50 GB.
 """
 
 from __future__ import annotations
 
 import logging
+import random
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, IterableDataset
 
 from birdclef_105 import cache as cache_mod
 
 logger = logging.getLogger(__name__)
 
 
-class CachedEmbeddingDataset(Dataset):
-    """Reads a single shard, filtered by split ('train' or 'val').
+# ---------------------------------------------------------------------------
+# Map-style dataset (memmap, for val / small data)
+# ---------------------------------------------------------------------------
 
-    Pre-loads embeddings, labels, and optionally spatial features into
-    contiguous RAM tensors at init. The full focal set is ~720 MB fp32
-    for embeddings + ~50 MB for labels — trivially fits in memory. Spatial
-    features add ~12 GB fp32 but are only loaded when `load_spatial=True`.
+class CachedEmbeddingDataset(Dataset):
+    """Reads a single shard filtered by split. Memmap-backed, zero preload.
+
+    Best for val (sequential, no shuffle) or small datasets (soundscape/pilot).
+    For shuffled training over many large shards, use StreamingShardDataset.
     """
 
     def __init__(self, shard_dir: str | Path, split: str, load_spatial: bool = False):
@@ -41,34 +44,94 @@ class CachedEmbeddingDataset(Dataset):
         self.num_classes = len(self.species_list)
 
         mask = (index["split"] == split).to_numpy()
-        rows = np.where(mask)[0]
-        self.index_df = index.iloc[rows].reset_index(drop=True)
+        self.rows = np.where(mask)[0]
+        self.index_df = index.iloc[self.rows].reset_index(drop=True)
 
-        # Pre-load into contiguous fp32 tensors — fast __getitem__.
-        self._embeddings = torch.from_numpy(
-            np.asarray(shard["embeddings"][rows], dtype=np.float32)
-        )
-        self._labels = torch.from_numpy(
-            np.asarray(shard["labels"][rows], dtype=np.float32)
-        )
-        self._spatial = None
-        if load_spatial and shard["spatial"] is not None:
-            # Keep as fp16 in RAM (~44 GB total across all focal shards).
-            # Cast to fp32 per-sample in __getitem__ — cheap for one (16, 4, 1536) tensor.
-            # Loading as fp32 would need ~88 GB which OOMs at 64 GB allocation.
-            self._spatial = torch.from_numpy(
-                np.asarray(shard["spatial"][rows], dtype=np.float16)
-            )
+        self._embeddings = shard["embeddings"]  # memmap fp16
+        self._labels = shard["labels"]          # memmap int8
+        self._spatial = shard["spatial"] if load_spatial else None  # memmap fp16 or None
 
     def __len__(self) -> int:
-        return len(self._embeddings)
+        return len(self.rows)
 
     def __getitem__(self, i: int) -> dict:
-        out = {"embedding": self._embeddings[i], "labels": self._labels[i]}
+        row = int(self.rows[i])
+        out = {
+            "embedding": torch.from_numpy(np.asarray(self._embeddings[row], dtype=np.float32)),
+            "labels": torch.from_numpy(np.asarray(self._labels[row], dtype=np.float32)),
+        }
         if self._spatial is not None:
-            out["spatial"] = self._spatial[i].float()  # fp16 → fp32 per-sample
+            out["spatial"] = torch.from_numpy(np.asarray(self._spatial[row], dtype=np.float32))
         return out
 
+
+# ---------------------------------------------------------------------------
+# Streaming dataset (one shard at a time, for large-scale training)
+# ---------------------------------------------------------------------------
+
+class StreamingShardDataset(IterableDataset):
+    """Streams focal shards one at a time. Peak RAM = one shard.
+
+    Each epoch:
+      1. Shuffle shard order
+      2. For each shard: load into RAM, shuffle rows, yield samples, free
+    """
+
+    def __init__(self, shard_dirs: list[Path], split: str, load_spatial: bool = False):
+        self.shard_dirs = list(shard_dirs)
+        self.split = split
+        self.load_spatial = load_spatial
+        # Pre-compute total length from index parquets (cheap, no data loaded).
+        self._total = 0
+        for sd in self.shard_dirs:
+            idx = pd.read_parquet(Path(sd) / "index.parquet")
+            self._total += int((idx["split"] == split).sum())
+
+    def __len__(self) -> int:
+        """Hint for Lightning progress bar. Exact count."""
+        return self._total
+
+    def __iter__(self):
+        shards = list(self.shard_dirs)
+        random.shuffle(shards)
+        for shard_dir in shards:
+            yield from self._stream_shard(shard_dir)
+
+    def _stream_shard(self, shard_dir: Path):
+        """Load one shard into RAM, yield shuffled samples, then release."""
+        shard = cache_mod.read_shard(shard_dir)
+        index = shard["index"]
+        mask = (index["split"] == self.split).to_numpy()
+        rows = np.where(mask)[0]
+        if len(rows) == 0:
+            return
+
+        # Load this shard's data into contiguous arrays (one shard fits in RAM).
+        emb = np.asarray(shard["embeddings"][rows], dtype=np.float32)   # ~90 MB
+        lab = np.asarray(shard["labels"][rows], dtype=np.float32)       # ~2.5 MB
+        spat = None
+        if self.load_spatial and shard["spatial"] is not None:
+            spat = np.asarray(shard["spatial"][rows], dtype=np.float16)  # ~5.6 GB fp16
+
+        # Shuffle within shard.
+        perm = np.random.permutation(len(rows))
+
+        for i in perm:
+            out = {
+                "embedding": torch.from_numpy(emb[i].copy()),
+                "labels": torch.from_numpy(lab[i].copy()),
+            }
+            if spat is not None:
+                out["spatial"] = torch.from_numpy(spat[i].astype(np.float32))
+            yield out
+
+        # Explicit cleanup before next shard.
+        del emb, lab, spat
+
+
+# ---------------------------------------------------------------------------
+# DataModules
+# ---------------------------------------------------------------------------
 
 class CachedEmbeddingDataModule(pl.LightningDataModule):
     """Single-shard DataModule (soundscape or pilot)."""
@@ -83,7 +146,7 @@ class CachedEmbeddingDataModule(pl.LightningDataModule):
 
     def setup(self, stage: str | None = None) -> None:
         if self._is_setup:
-            return  # Lightning calls setup() again in trainer.fit(); don't double-load
+            return
         self.train_ds = CachedEmbeddingDataset(self.shard_dir, split="train", load_spatial=self.load_spatial)
         self.val_ds = CachedEmbeddingDataset(self.shard_dir, split="val", load_spatial=self.load_spatial)
         self.num_classes = self.train_ds.num_classes
@@ -93,40 +156,21 @@ class CachedEmbeddingDataModule(pl.LightningDataModule):
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train_ds, batch_size=self.batch_size, shuffle=True,
-            num_workers=self.num_workers, pin_memory=True, drop_last=False,
+            num_workers=self.num_workers, drop_last=False,
         )
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(
             self.val_ds, batch_size=self.batch_size, shuffle=False,
-            num_workers=self.num_workers, pin_memory=True,
+            num_workers=self.num_workers,
         )
 
 
-def load_sharded_dataset(parent_dir: str | Path, split: str, load_spatial: bool = False) -> ConcatDataset:
-    """Load all shard-NNN/ subdirs under parent_dir and union them into one dataset."""
-    parent = Path(parent_dir)
-    shard_dirs = sorted(parent.glob("shard-*/"))
-    if not shard_dirs:
-        raise FileNotFoundError(f"No shard-*/ subdirs found in {parent}")
-    datasets = []
-    total = 0
-    for sd in shard_dirs:
-        ds = CachedEmbeddingDataset(sd, split=split, load_spatial=load_spatial)
-        if len(ds) > 0:
-            datasets.append(ds)
-            total += len(ds)
-    if not datasets:
-        raise ValueError(f"All shards empty for split={split!r} in {parent}")
-    logger.info("Loaded %d shards from %s (split=%s, total=%d)", len(datasets), parent, split, total)
-    return ConcatDataset(datasets)
-
-
 class FocalDataModule(pl.LightningDataModule):
-    """Train on focal shards, validate on focal val split.
+    """Train on focal shards (streaming), val on focal val + soundscape val.
 
-    Optionally adds soundscape val as a second val dataloader (for monitoring
-    val/sc_cmap alongside the primary val/cmap on focal val).
+    Training uses StreamingShardDataset — loads one shard at a time (~6 GB peak).
+    Val uses CachedEmbeddingDataset (memmap, sequential access = fine).
     """
 
     def __init__(
@@ -134,7 +178,7 @@ class FocalDataModule(pl.LightningDataModule):
         focal_dir: str | Path,
         soundscape_dir: str | Path | None = None,
         batch_size: int = 256,
-        num_workers: int = 2,
+        num_workers: int = 0,
         load_spatial: bool = False,
     ):
         super().__init__()
@@ -143,31 +187,51 @@ class FocalDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.load_spatial = load_spatial
+        self._is_setup = False
 
     def setup(self, stage: str | None = None) -> None:
-        if hasattr(self, "_is_setup") and self._is_setup:
-            return  # Lightning calls setup() again in trainer.fit(); don't double-load
-        self.train_ds = load_sharded_dataset(self.focal_dir, split="train", load_spatial=self.load_spatial)
-        self.val_ds = load_sharded_dataset(self.focal_dir, split="val", load_spatial=self.load_spatial)
+        if self._is_setup:
+            return
 
-        # Get species list and num_classes from the first shard.
-        first_shard = sorted(self.focal_dir.glob("shard-*/"))[0]
-        meta = cache_mod.read_shard(first_shard)
+        shard_dirs = sorted(self.focal_dir.glob("shard-*/"))
+        if not shard_dirs:
+            raise FileNotFoundError(f"No shard-*/ subdirs in {self.focal_dir}")
+
+        # Train: streaming (one shard at a time).
+        self.train_ds = StreamingShardDataset(
+            shard_dirs=shard_dirs,
+            split="train",
+            load_spatial=self.load_spatial,
+        )
+
+        # Val: memmap (sequential access, no shuffle).
+        val_datasets = []
+        for sd in shard_dirs:
+            ds = CachedEmbeddingDataset(sd, split="val", load_spatial=self.load_spatial)
+            if len(ds) > 0:
+                val_datasets.append(ds)
+        self.val_ds = ConcatDataset(val_datasets) if val_datasets else None
+
+        # Species list from first shard.
+        meta = cache_mod.read_shard(shard_dirs[0])
         self.species_list = meta["species_list"]
         self.num_classes = len(self.species_list)
 
+        # Soundscape auxiliary val.
         self.sc_val_ds = None
         if self.soundscape_dir and self.soundscape_dir.exists():
             try:
-                self.sc_val_ds = CachedEmbeddingDataset(self.soundscape_dir, split="val", load_spatial=self.load_spatial)
+                self.sc_val_ds = CachedEmbeddingDataset(
+                    self.soundscape_dir, split="val", load_spatial=self.load_spatial
+                )
                 logger.info("Soundscape val: %d windows", len(self.sc_val_ds))
             except (ValueError, FileNotFoundError) as e:
                 logger.warning("Soundscape val not loaded: %s", e)
 
         logger.info(
-            "Focal train=%d  focal val=%d  soundscape val=%s",
+            "Focal train=%d (streaming)  focal val=%d (memmap)  soundscape val=%s",
             len(self.train_ds),
-            len(self.val_ds),
+            len(self.val_ds) if self.val_ds else 0,
             len(self.sc_val_ds) if self.sc_val_ds else "N/A",
         )
         self._is_setup = True
@@ -176,9 +240,8 @@ class FocalDataModule(pl.LightningDataModule):
         return DataLoader(
             self.train_ds,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=False,  # IterableDataset handles its own shuffling
             num_workers=self.num_workers,
-            pin_memory=True,
             drop_last=False,
         )
 
@@ -188,7 +251,6 @@ class FocalDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            pin_memory=True,
         )
         if self.sc_val_ds is not None:
             sc_val = DataLoader(
@@ -196,7 +258,6 @@ class FocalDataModule(pl.LightningDataModule):
                 batch_size=self.batch_size,
                 shuffle=False,
                 num_workers=0,
-                pin_memory=True,
             )
             return [focal_val, sc_val]
         return focal_val
