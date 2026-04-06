@@ -1,4 +1,4 @@
-# Experiment 021, v9a: v5j recipe + competition-standard AttHead
+# Experiment 021, v6k: v5j recipe + competition-standard AttHead
 #
 # Single change from v5j: LSEHead → AttHead (Nikita/Tattaka competition standard).
 # Three fixes vs our old AttHead (v6e-v6j):
@@ -11,9 +11,9 @@
 # Nikita 1st place 2025 who disables attention at inference entirely.
 #
 # Everything else identical to v5j: same backbone, loss, optimizer, schedule,
-# augmentation, data, epochs. This isolates the head architecture change.
+# augmentation, data, epochs, hidden_dim=1024. Isolates the head architecture.
 
-run_name: "2026-hgnet-b0-atthead-v9a"
+run_name: "2026-hgnet-b0-atthead-v6k"
 
 encoder:
   type: "efficientnet"
@@ -23,7 +23,7 @@ encoder:
 
 sed_head:
   type: "att_head"
-  hidden_dim: 512
+  hidden_dim: 1024
   dropout: 0.5
   gem_p: 3.0
 
