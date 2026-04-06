@@ -34,12 +34,18 @@ class HeadTrainer(pl.LightningModule):
         max_epochs: int = 50,
         warmup_epochs: int = 3,
         gamma: float = 2.0,
+        clipwise_weight: float = 0.5,
+        framewise_weight: float = 0.5,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["head"])
         self.head = head
         self.num_classes = num_classes
-        self.loss_fn = FocalBCELoss(gamma=gamma, from_logits=True)
+        self.is_sed = hasattr(head, "blend_clip")  # PerchSEDHead has this attr
+        self.clip_loss = FocalBCELoss(gamma=gamma, from_logits=True)
+        self.frame_loss = FocalBCELoss(gamma=gamma, from_logits=True)
+        self.clipwise_weight = clipwise_weight
+        self.framewise_weight = framewise_weight
 
         self.train_cmap = torchmetrics.AveragePrecision(
             task="multilabel", num_labels=num_classes, average="macro"
@@ -52,14 +58,31 @@ class HeadTrainer(pl.LightningModule):
             task="multilabel", num_labels=num_classes, average="macro"
         )
 
-    def forward(self, embedding: torch.Tensor) -> torch.Tensor:
-        return self.head(embedding)
+    def _run_head(self, batch: dict) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Run the head, return (clip_logits, frame_logits_or_None)."""
+        if self.is_sed:
+            out = self.head(batch["spatial"])
+            return out["clipwise_logits"], out["framewise_logits"]
+        else:
+            return self.head(batch["embedding"]), None
+
+    def _compute_loss(self, clip_logits, frame_logits, labels):
+        clip_loss = self.clip_loss(clip_logits, labels)
+        if frame_logits is not None:
+            frame_max = frame_logits.max(dim=-1).values  # (B, C)
+            f_loss = self.frame_loss(frame_max, labels)
+            return self.clipwise_weight * clip_loss + self.framewise_weight * f_loss
+        return clip_loss
+
+    def forward(self, batch: dict) -> torch.Tensor:
+        clip_logits, _ = self._run_head(batch)
+        return clip_logits
 
     def training_step(self, batch, batch_idx):
-        logits = self.head(batch["embedding"])
+        clip_logits, frame_logits = self._run_head(batch)
         labels = batch["labels"]
-        loss = self.loss_fn(logits, labels)
-        self.train_cmap.update(torch.sigmoid(logits), labels.round().int())
+        loss = self._compute_loss(clip_logits, frame_logits, labels)
+        self.train_cmap.update(torch.sigmoid(clip_logits), labels.round().int())
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
@@ -68,10 +91,10 @@ class HeadTrainer(pl.LightningModule):
         self.train_cmap.reset()
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        logits = self.head(batch["embedding"])
+        clip_logits, frame_logits = self._run_head(batch)
         labels = batch["labels"]
-        loss = self.loss_fn(logits, labels)
-        probs = torch.sigmoid(logits)
+        loss = self._compute_loss(clip_logits, frame_logits, labels)
+        probs = torch.sigmoid(clip_logits)
 
         if dataloader_idx == 0:
             # Primary focal val
@@ -123,7 +146,7 @@ class HeadTrainer(pl.LightningModule):
         }
 
 
-def _resolve_data(cfg: dict) -> tuple[pl.LightningDataModule, int]:
+def _resolve_data(cfg: dict, load_spatial: bool = False) -> tuple[pl.LightningDataModule, int]:
     """Pick the best data source available and return (DataModule, num_classes).
 
     Priority:
@@ -144,6 +167,7 @@ def _resolve_data(cfg: dict) -> tuple[pl.LightningDataModule, int]:
             soundscape_dir=soundscape_dir if soundscape_dir.exists() else None,
             batch_size=train_cfg["batch_size"],
             num_workers=2,
+            load_spatial=load_spatial,
         )
         dm.setup()
         return dm, dm.num_classes
@@ -154,6 +178,7 @@ def _resolve_data(cfg: dict) -> tuple[pl.LightningDataModule, int]:
             shard_dir=soundscape_dir,
             batch_size=train_cfg["batch_size"],
             num_workers=0,
+            load_spatial=load_spatial,
         )
         dm.setup()
         return dm, dm.num_classes
@@ -164,6 +189,7 @@ def _resolve_data(cfg: dict) -> tuple[pl.LightningDataModule, int]:
             shard_dir=pilot_dir,
             batch_size=train_cfg["batch_size"],
             num_workers=0,
+            load_spatial=load_spatial,
         )
         dm.setup()
         return dm, dm.num_classes
@@ -181,14 +207,21 @@ def run(config_path: str, head: str = "linear", run_name: str | None = None) -> 
         cfg = yaml.safe_load(fh)
     train_cfg = cfg["training"]
 
-    dm, num_classes = _resolve_data(cfg)
-    logger.info("Training data ready: %d classes", num_classes)
+    load_spatial = (head == "sed")
+    dm, num_classes = _resolve_data(cfg, load_spatial=load_spatial)
+    logger.info("Training data ready: %d classes (load_spatial=%s)", num_classes, load_spatial)
 
     # Build head.
     head_kwargs: dict = {}
     if head == "mlp" and "mlp" in cfg.get("model", {}):
         head_kwargs = {
             k: v for k, v in cfg["model"]["mlp"].items() if k in {"hidden_dim", "dropout"}
+        }
+    if head == "sed" and "sed" in cfg.get("model", {}):
+        head_kwargs = {
+            k: v
+            for k, v in cfg["model"]["sed"].items()
+            if k in {"hidden_dim", "dropout", "gem_p", "blend_clip", "blend_frame"}
         }
     head_module = model_mod.build_head(
         name=head, embed_dim=1536, num_classes=num_classes, **head_kwargs
@@ -204,6 +237,8 @@ def run(config_path: str, head: str = "linear", run_name: str | None = None) -> 
         max_epochs=train_cfg["max_epochs"],
         warmup_epochs=train_cfg["warmup_epochs"],
         gamma=train_cfg.get("gamma", 2.0),
+        clipwise_weight=train_cfg.get("clipwise_weight", 0.5),
+        framewise_weight=train_cfg.get("framewise_weight", 0.5),
     )
 
     tag = run_name or f"{head}"

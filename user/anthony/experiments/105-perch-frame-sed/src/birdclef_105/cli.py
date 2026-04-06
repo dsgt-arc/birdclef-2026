@@ -46,9 +46,9 @@ def main(argv: list[str] | None = None) -> int:
     p_train.add_argument("--config", required=True, help="Path to exp105.yaml")
     p_train.add_argument(
         "--head",
-        choices=["linear", "mlp"],
+        choices=["linear", "mlp", "sed"],
         default="linear",
-        help="Head architecture to train",
+        help="Head architecture to train (sed uses spatial_embedding)",
     )
     p_train.add_argument(
         "--run-name",

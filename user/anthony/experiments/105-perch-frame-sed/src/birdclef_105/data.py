@@ -28,13 +28,13 @@ logger = logging.getLogger(__name__)
 class CachedEmbeddingDataset(Dataset):
     """Reads a single shard, filtered by split ('train' or 'val').
 
-    Pre-loads embeddings and labels into contiguous RAM tensors at init.
-    The full focal set is ~720 MB fp32 for embeddings + ~50 MB for labels —
-    trivially fits in memory. This avoids the memmap random-access penalty
-    that made shuffle=True across 8 shards pathologically slow.
+    Pre-loads embeddings, labels, and optionally spatial features into
+    contiguous RAM tensors at init. The full focal set is ~720 MB fp32
+    for embeddings + ~50 MB for labels — trivially fits in memory. Spatial
+    features add ~12 GB fp32 but are only loaded when `load_spatial=True`.
     """
 
-    def __init__(self, shard_dir: str | Path, split: str):
+    def __init__(self, shard_dir: str | Path, split: str, load_spatial: bool = False):
         shard = cache_mod.read_shard(shard_dir)
         index = shard["index"]
         self.species_list = shard["species_list"]
@@ -51,26 +51,35 @@ class CachedEmbeddingDataset(Dataset):
         self._labels = torch.from_numpy(
             np.asarray(shard["labels"][rows], dtype=np.float32)
         )
+        self._spatial = None
+        if load_spatial and shard["spatial"] is not None:
+            self._spatial = torch.from_numpy(
+                np.asarray(shard["spatial"][rows], dtype=np.float32)
+            )
 
     def __len__(self) -> int:
         return len(self._embeddings)
 
     def __getitem__(self, i: int) -> dict:
-        return {"embedding": self._embeddings[i], "labels": self._labels[i]}
+        out = {"embedding": self._embeddings[i], "labels": self._labels[i]}
+        if self._spatial is not None:
+            out["spatial"] = self._spatial[i]
+        return out
 
 
 class CachedEmbeddingDataModule(pl.LightningDataModule):
     """Single-shard DataModule (soundscape or pilot)."""
 
-    def __init__(self, shard_dir: str | Path, batch_size: int = 256, num_workers: int = 0):
+    def __init__(self, shard_dir: str | Path, batch_size: int = 256, num_workers: int = 0, load_spatial: bool = False):
         super().__init__()
         self.shard_dir = Path(shard_dir)
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.load_spatial = load_spatial
 
     def setup(self, stage: str | None = None) -> None:
-        self.train_ds = CachedEmbeddingDataset(self.shard_dir, split="train")
-        self.val_ds = CachedEmbeddingDataset(self.shard_dir, split="val")
+        self.train_ds = CachedEmbeddingDataset(self.shard_dir, split="train", load_spatial=self.load_spatial)
+        self.val_ds = CachedEmbeddingDataset(self.shard_dir, split="val", load_spatial=self.load_spatial)
         self.num_classes = self.train_ds.num_classes
         self.species_list = self.train_ds.species_list
 
@@ -87,7 +96,7 @@ class CachedEmbeddingDataModule(pl.LightningDataModule):
         )
 
 
-def load_sharded_dataset(parent_dir: str | Path, split: str) -> ConcatDataset:
+def load_sharded_dataset(parent_dir: str | Path, split: str, load_spatial: bool = False) -> ConcatDataset:
     """Load all shard-NNN/ subdirs under parent_dir and union them into one dataset."""
     parent = Path(parent_dir)
     shard_dirs = sorted(parent.glob("shard-*/"))
@@ -96,7 +105,7 @@ def load_sharded_dataset(parent_dir: str | Path, split: str) -> ConcatDataset:
     datasets = []
     total = 0
     for sd in shard_dirs:
-        ds = CachedEmbeddingDataset(sd, split=split)
+        ds = CachedEmbeddingDataset(sd, split=split, load_spatial=load_spatial)
         if len(ds) > 0:
             datasets.append(ds)
             total += len(ds)
@@ -119,16 +128,18 @@ class FocalDataModule(pl.LightningDataModule):
         soundscape_dir: str | Path | None = None,
         batch_size: int = 256,
         num_workers: int = 2,
+        load_spatial: bool = False,
     ):
         super().__init__()
         self.focal_dir = Path(focal_dir)
         self.soundscape_dir = Path(soundscape_dir) if soundscape_dir else None
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.load_spatial = load_spatial
 
     def setup(self, stage: str | None = None) -> None:
-        self.train_ds = load_sharded_dataset(self.focal_dir, split="train")
-        self.val_ds = load_sharded_dataset(self.focal_dir, split="val")
+        self.train_ds = load_sharded_dataset(self.focal_dir, split="train", load_spatial=self.load_spatial)
+        self.val_ds = load_sharded_dataset(self.focal_dir, split="val", load_spatial=self.load_spatial)
 
         # Get species list and num_classes from the first shard.
         first_shard = sorted(self.focal_dir.glob("shard-*/"))[0]
@@ -139,7 +150,7 @@ class FocalDataModule(pl.LightningDataModule):
         self.sc_val_ds = None
         if self.soundscape_dir and self.soundscape_dir.exists():
             try:
-                self.sc_val_ds = CachedEmbeddingDataset(self.soundscape_dir, split="val")
+                self.sc_val_ds = CachedEmbeddingDataset(self.soundscape_dir, split="val", load_spatial=self.load_spatial)
                 logger.info("Soundscape val: %d windows", len(self.sc_val_ds))
             except (ValueError, FileNotFoundError) as e:
                 logger.warning("Soundscape val not loaded: %s", e)

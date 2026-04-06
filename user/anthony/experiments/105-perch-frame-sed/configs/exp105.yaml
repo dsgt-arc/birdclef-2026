@@ -45,6 +45,8 @@ training:
   weight_decay: 0.01
   warmup_epochs: 3
   gamma: 2.0
+  clipwise_weight: 0.5
+  framewise_weight: 0.5
   precision: 32
   early_stopping:
     monitor: val/cmap
@@ -57,3 +59,9 @@ model:
   mlp:
     hidden_dim: 512
     dropout: 0.2
+  sed:
+    hidden_dim: 512
+    dropout: 0.5
+    gem_p: 3.0
+    blend_clip: 0.75
+    blend_frame: 0.25
