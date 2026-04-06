@@ -53,8 +53,11 @@ class CachedEmbeddingDataset(Dataset):
         )
         self._spatial = None
         if load_spatial and shard["spatial"] is not None:
+            # Keep as fp16 in RAM (~44 GB total across all focal shards).
+            # Cast to fp32 per-sample in __getitem__ — cheap for one (16, 4, 1536) tensor.
+            # Loading as fp32 would need ~88 GB which OOMs at 64 GB allocation.
             self._spatial = torch.from_numpy(
-                np.asarray(shard["spatial"][rows], dtype=np.float32)
+                np.asarray(shard["spatial"][rows], dtype=np.float16)
             )
 
     def __len__(self) -> int:
@@ -63,7 +66,7 @@ class CachedEmbeddingDataset(Dataset):
     def __getitem__(self, i: int) -> dict:
         out = {"embedding": self._embeddings[i], "labels": self._labels[i]}
         if self._spatial is not None:
-            out["spatial"] = self._spatial[i]
+            out["spatial"] = self._spatial[i].float()  # fp16 → fp32 per-sample
         return out
 
 
