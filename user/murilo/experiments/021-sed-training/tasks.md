@@ -161,9 +161,9 @@ Nikita's inference disables attention entirely — uses only `framewise_logit.si
 Our v5j uses clipwise-only (`blend_clip=1.0, blend_frame=0.0`). We have **never**
 tested `blend_clip=0.0, blend_frame=1.0` (framewise-max only).
 
-- [ ] F.1a Re-export v5j ONNX with `blend_clip=0.0, blend_frame=1.0`
-- [ ] F.1b Submit to LB
-- [ ] F.1c If it helps, test on v5j-4fold too
+- [x] F.1a Re-export v5j ONNX with `blend_clip=0.0, blend_frame=1.0`
+- [x] F.1b Submit to LB — **0.906** (identical to v5j 0.75/0.25 blend)
+- [ ] ~~F.1c If it helps, test on v5j-4fold too~~ — skipped, no gain
 
 ### F.2 3-Channel mel input (REQUIRES RETRAINING)
 
@@ -235,4 +235,5 @@ Could stack with multi-context — mix the 15s feature maps before splitting int
 | v8a (HGNet-B0+LSE MC 3×5s, avg) | **0.882** | **0.882** | −0.024 LB, avg all 3 chunks dilutes |
 | **v8b (HGNet-B0+LSE MC 4×5s, avg)** | **0.896** | **0.881** | **−0.010 LB**, 20s context helps |
 | v8a (center-chunk inference) | **0.883** | 0.882 | center chunk only (+0.001, negligible) |
+| v5j-fmax (blend 0/1) | **0.906** | 0.874 | framewise hard-max = same as v5j 0.75/0.25 |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |
