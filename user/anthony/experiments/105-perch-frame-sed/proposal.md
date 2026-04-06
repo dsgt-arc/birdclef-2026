@@ -1,6 +1,6 @@
 # Proposal: Perch v2 Frame-Level SED
 
-**Status**: proposed
+**Status**: in-progress
 **Created**: 2026-04-04
 **Author**: anthony
 
@@ -112,12 +112,43 @@ Running `scripts/inspect_onnx.py` on `justinchuby/Perch-onnx :: perch_v2_no_dft.
 
 Artifacts: `artifacts/onnx_inspection/{summary.json, nodes.txt, candidates.txt}`, log `logs/inspect-onnx-6275860.out`.
 
+## Results (2026-04-06)
+
+### Per-window heads (trained on 239,711 focal windows, validated on 26,213 focal + 369 soundscape)
+
+| Head | Params | val/cmap (focal) | val/sc_cmap (soundscape) | Best epoch | Job |
+|------|--------|------------------|--------------------------|------------|-----|
+| LinearHead(1536→206) | 316K | **0.684** | 0.052 | 10 | 6290291 |
+| PerchSEDHead (GeM+proj+dual Conv1d) | 998K | **0.695** | **0.072** | 17 | 6290938 |
+
+### Auxiliary comparisons
+
+| Run | Head | Train data | val/cmap | val/sc_cmap | Notes |
+|-----|------|-----------|----------|-------------|-------|
+| Pilot | Linear | 59 soundscape | 0.011 | — | Pipeline smoke test |
+| Soundscape-only | Linear | 352 soundscape | 0.059 | — | In-domain, tiny |
+| Exp 012 | Linear | focal | 0.336 | — | EfficientNet-B1-BirdSet frozen, 0.649 Kaggle LB |
+| Exp 007 | Linear | focal | 0.173 | — | SSAMBA AudioSet pretrained |
+
+### Interpretation
+
+1. **Perch pooled embedding doubles EfficientNet**: 0.684 vs 0.336 focal cmAP for the same linear probe setup.
+2. **SED head barely helps on focal** (+0.011): signal is everywhere in clean focal recordings, so attention pooling ≈ mean pooling. The 16×4 patch grid is too coarse for fine-grained attention to add much.
+3. **SED helps more on soundscape** (+0.020, 38% relative): framewise-max catches brief calls that get diluted in the mean. But the improvement is small in absolute terms.
+4. **Domain shift is the dominant bottleneck**: 0.695 focal → 0.072 soundscape. Frozen Perch features trained on close-mic focal audio don't generalize well to far-field noisy soundscapes. No head architecture can fix this.
+5. **In-domain training beats out-of-domain scale**: soundscape-only linear probe (0.059) nearly matches focal-trained linear probe on soundscape (0.052), despite 700× less data.
+
+### Next direction
+
+Full-clip sequence model: concatenate all 12 windows of a 60s soundscape into one 192-step sequence. The SED head is sequence-length agnostic (Conv1d kernel=1 + softmax attention). This gives the model temporal context across the full clip — call bout patterns, noise rejection, and matches the Kaggle eval format. Training on labeled soundscape clips (in-domain) rather than focal may also help.
+
 ## Limitations
 
-- **Amphibian coverage**: BirdCLEF 2026 is amphibian-dominated (exp 100 EDA). Perch v2 is trained on Xeno-canto *birds*. There is a real risk that Perch's features are uninformative for frog species regardless of head architecture. Amphibian cmAP is the explicit check.
-- **Domain shift**: Perch is trained on focal recordings; soundscapes are far-field with overlap. Known issue, also affects every other backbone we've tried.
-- **ONNX tap risk**: the distributed ONNX may not expose a clean pre-pool tap. Fallback is re-exporting from upstream Perch v2, which adds implementation time but is not blocking.
-- **Frozen backbone only**: no end-to-end fine-tuning possible via ONNX. This is a feature, not a bug (see exp 102 lessons), but it caps the absolute achievable ceiling.
-- **Storage cost**: frame-feature cache is 50–100× the pooled-embedding cache. Must live on shared project storage; local/home is not viable. Rough estimate only until shapes are verified in step 1.
-- **Single-task scope**: this experiment does not attempt teacher-label distillation, multi-window context across a 60s clip, or joint training with exp 102. Those are follow-ups if the core hypothesis lands.
-- **Exp 102 Run N baseline is still running** — the comparison target is not yet a fixed number.
+- **Amphibian coverage**: BirdCLEF 2026 is amphibian-dominated (exp 100 EDA). Perch v2 is trained on Xeno-canto *birds*. There is a real risk that Perch's features are uninformative for frog species regardless of head architecture. Amphibian cmAP is the explicit check — **not yet computed**.
+- **Domain shift**: confirmed as the dominant problem. Perch is trained on focal recordings; soundscapes are far-field with overlap. Frozen Perch features hit a ceiling of ~0.07 sc_cmap regardless of head.
+- **ONNX tap risk**: RESOLVED — `spatial_embedding` is a stock output.
+- **Frozen backbone only**: no end-to-end fine-tuning possible via ONNX. Caps the soundscape ceiling.
+- **Storage cost**: 57 GB on scratch (8 focal shards + soundscape). Manageable.
+- **Perch `label` output is NOT free**: requesting the 14795-d classifier head slows Perch from ~12 to ~4 win/s.
+- **CPU training is slow**: SED head takes ~30 min/epoch on cpu-small. GPU would be 100× faster.
+- **Exp 102 Run N baseline is still pending** — the direct comparator hasn't landed yet.
