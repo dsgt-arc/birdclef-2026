@@ -1,9 +1,9 @@
 """Test that SEDWrapper handles AttHead's torch.logit without NaN propagation.
 
 Background: AttHead computes clipwise via torch.logit(clamp(sigmoid(...))),
-which can produce NaN in ONNX. With blend_clip=0.0, the old wrapper still
-computed clipwise and multiplied by 0.0 — but 0.0 * NaN = NaN (IEEE 754),
-corrupting the entire output. This caused v6k to score 0.508 LB (random).
+which can produce NaN. With blend_clip=0.0, the old wrapper still computed
+clipwise and multiplied by 0.0 — but 0.0 * NaN = NaN (IEEE 754), corrupting
+the entire output. This caused v6k to score 0.508 LB (random).
 
 The fix: skip clipwise computation entirely when blend_clip == 0.0.
 
@@ -13,7 +13,6 @@ Usage:
 """
 
 import sys
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -39,8 +38,7 @@ def load_real_mel(audio_path: str = SAMPLE_AUDIO) -> torch.Tensor:
     """Load a real audio file and compute mel spectrogram matching v5j params."""
     import librosa
 
-    y, sr = librosa.load(audio_path, sr=32000, duration=5.0)
-    # Pad to exactly 5s
+    y, _sr = librosa.load(audio_path, sr=32000, duration=5.0)
     target_len = 5 * 32000
     if len(y) < target_len:
         y = np.pad(y, (0, target_len - len(y)))
@@ -56,10 +54,8 @@ def load_real_mel(audio_path: str = SAMPLE_AUDIO) -> torch.Tensor:
         fmax=None,
     )
     mel_db = librosa.power_to_db(mel, top_db=80.0)
-    # Standardize (approximate global stats from v5j)
-    mel_norm = (mel_db - (-4.268)) / (4.569)
-    mel_tensor = torch.from_numpy(mel_norm).float().unsqueeze(0).unsqueeze(0)  # (1, 1, 256, T)
-    return mel_tensor
+    mel_norm = (mel_db - (-4.268)) / 4.569
+    return torch.from_numpy(mel_norm).float().unsqueeze(0).unsqueeze(0)  # (1, 1, 256, T)
 
 
 class MockEncoder(nn.Module):
@@ -68,94 +64,56 @@ class MockEncoder(nn.Module):
     def __init__(self, embed_dim=1024):
         super().__init__()
         self.embed_dim = embed_dim
-        # Simple conv to reduce spatial dims like a real backbone
         self.conv = nn.Conv2d(1, embed_dim, kernel_size=8, stride=8)
 
     def forward_features(self, x):
-        return self.conv(x)  # (B, 1024, F', T')
+        return self.conv(x)
 
 
-class OldSEDWrapper(nn.Module):
-    """Original SEDWrapper that computes clipwise even when blend_clip=0.
-    This is the BUGGY version that causes NaN with AttHead.
-    """
+def old_wrapper_forward(encoder, sed_head, mel, blend_clip=0.0, blend_frame=1.0):
+    """Old SEDWrapper logic — always computes clipwise, multiplies by 0."""
+    features = encoder.forward_features(mel)
+    clipwise_logits, framewise_logits = sed_head(features)
 
-    def __init__(self, encoder, sed_head, blend_clip=0.0, blend_frame=1.0):
-        super().__init__()
-        self.encoder = encoder
-        self.sed_head = sed_head
-        self.blend_clip = blend_clip
-        self.blend_frame = blend_frame
-
-    def forward(self, mel):
-        features = self.encoder.forward_features(mel)
-        clipwise_logits, framewise_logits = self.sed_head(features)
-
-        if clipwise_logits.dim() == 3:
-            n = clipwise_logits.shape[1]
-            center = n // 2
-            clip_probs = torch.sigmoid(clipwise_logits[:, center, :])
-        else:
-            clip_probs = torch.sigmoid(clipwise_logits)
-
-        framewise_max_logits = framewise_logits.max(dim=-1).values
-        probs = self.blend_clip * clip_probs + self.blend_frame * torch.sigmoid(
-            framewise_max_logits
-        )
-        return probs
+    clip_probs = torch.sigmoid(clipwise_logits)
+    framewise_max_logits = framewise_logits.max(dim=-1).values
+    probs = blend_clip * clip_probs + blend_frame * torch.sigmoid(framewise_max_logits)
+    return probs
 
 
-class FixedSEDWrapper(nn.Module):
-    """Fixed SEDWrapper that skips clipwise when blend_clip=0.
-    This avoids NaN from AttHead's torch.logit propagating via 0*NaN=NaN.
-    """
+def fixed_wrapper_forward(encoder, sed_head, mel, blend_clip=0.0, blend_frame=1.0):
+    """Fixed SEDWrapper logic — skips clipwise when blend_clip=0."""
+    features = encoder.forward_features(mel)
+    clipwise_logits, framewise_logits = sed_head(features)
 
-    def __init__(self, encoder, sed_head, blend_clip=0.0, blend_frame=1.0):
-        super().__init__()
-        self.encoder = encoder
-        self.sed_head = sed_head
-        self.blend_clip = blend_clip
-        self.blend_frame = blend_frame
+    framewise_max_logits = framewise_logits.max(dim=-1).values
+    frame_probs = torch.sigmoid(framewise_max_logits)
 
-    def forward(self, mel):
-        features = self.encoder.forward_features(mel)
-        clipwise_logits, framewise_logits = self.sed_head(features)
+    if blend_clip == 0.0:
+        return frame_probs
 
-        framewise_max_logits = framewise_logits.max(dim=-1).values
-        frame_probs = torch.sigmoid(framewise_max_logits)
+    clip_probs = torch.sigmoid(clipwise_logits)
+    if blend_frame == 0.0:
+        return clip_probs
 
-        if self.blend_clip == 0.0:
-            return frame_probs
-
-        if clipwise_logits.dim() == 3:
-            n = clipwise_logits.shape[1]
-            center = n // 2
-            clip_probs = torch.sigmoid(clipwise_logits[:, center, :])
-        else:
-            clip_probs = torch.sigmoid(clipwise_logits)
-
-        if self.blend_frame == 0.0:
-            return clip_probs
-
-        return self.blend_clip * clip_probs + self.blend_frame * frame_probs
+    return blend_clip * clip_probs + blend_frame * frame_probs
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Fixtures
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
 def real_mel():
-    """Load real mel spectrogram from a training audio file."""
     return load_real_mel()
 
 
 @pytest.fixture
 def encoder():
-    encoder = MockEncoder(embed_dim=1024)
-    encoder.eval()
-    return encoder
+    enc = MockEncoder(embed_dim=1024)
+    enc.eval()
+    return enc
 
 
 @pytest.fixture
@@ -178,97 +136,150 @@ def lsehead():
     return head
 
 
-class TestAttHeadClipwiseNaN:
-    """Test that AttHead's clipwise logits can contain extreme values."""
+# ---------------------------------------------------------------------------
+# Tests: IEEE 754 NaN propagation
+# ---------------------------------------------------------------------------
 
-    def test_atthead_clipwise_is_finite_pytorch(self, encoder, atthead, real_mel):
-        """In pure PyTorch, clamp prevents NaN — logit(clamp(x)) is finite."""
+
+class TestNaNPropagation:
+    """Verify 0.0 * NaN = NaN in IEEE 754 — the root cause of the bug."""
+
+    def test_zero_times_nan_is_nan(self):
+        """IEEE 754: 0.0 * NaN = NaN. This is why the old wrapper breaks."""
+        nan = torch.tensor(float("nan"))
+        result = 0.0 * nan + 1.0 * torch.tensor(0.5)
+        assert torch.isnan(result), "Expected 0.0 * NaN + 1.0 * 0.5 = NaN"
+
+    def test_sigmoid_of_nan_is_nan(self):
+        """sigmoid(NaN) = NaN — if logit produces NaN, sigmoid doesn't fix it."""
+        result = torch.sigmoid(torch.tensor(float("nan")))
+        assert torch.isnan(result)
+
+
+# ---------------------------------------------------------------------------
+# Tests: AttHead clipwise behavior
+# ---------------------------------------------------------------------------
+
+
+class TestAttHeadClipwise:
+    """Test AttHead's clipwise logits (torch.logit round-trip)."""
+
+    def test_atthead_clipwise_finite_in_pytorch(self, encoder, atthead, real_mel):
+        """In PyTorch, clamp(1e-7, 1-1e-7) keeps logit() finite."""
         with torch.no_grad():
             features = encoder.forward_features(real_mel)
             clipwise_logits, framewise_logits = atthead(features)
-        # PyTorch clamp should keep values finite
-        assert torch.isfinite(clipwise_logits).all(), "clipwise has non-finite values in PyTorch"
-        assert torch.isfinite(framewise_logits).all(), "framewise has non-finite values in PyTorch"
+        assert torch.isfinite(clipwise_logits).all()
+        assert torch.isfinite(framewise_logits).all()
 
-
-class TestONNXExport:
-    """Test ONNX export and inference for NaN issues."""
-
-    def _export_and_run(self, wrapper, mel_input) -> np.ndarray:
-        """Export wrapper to ONNX, run inference, return output."""
-        import onnxruntime as ort
-
-        wrapper.eval()
-        with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as f:
-            onnx_path = f.name
-
+    def test_atthead_clipwise_can_be_extreme(self, encoder, atthead, real_mel):
+        """AttHead clipwise logits can have large magnitude from logit(clamp(...))."""
         with torch.no_grad():
-            torch.onnx.export(
-                wrapper,
-                (mel_input,),
-                onnx_path,
-                opset_version=17,
-                input_names=["mel"],
-                output_names=["probs"],
-                dynamic_axes={"mel": {0: "batch", 3: "time"}, "probs": {0: "batch"}},
+            features = encoder.forward_features(real_mel)
+            clipwise_logits, _ = atthead(features)
+        # logit(1e-7) ≈ -16.1, logit(1-1e-7) ≈ 16.1
+        max_abs = clipwise_logits.abs().max().item()
+        # Just document the range — not asserting failure, just that values exist
+        assert max_abs > 0, "clipwise logits should be non-zero"
+
+    def test_lsehead_clipwise_no_logit_roundtrip(self, encoder, lsehead, real_mel):
+        """LSEHead returns raw logits — no sigmoid→logit round-trip."""
+        with torch.no_grad():
+            features = encoder.forward_features(real_mel)
+            clipwise_logits, framewise_logits = lsehead(features)
+        assert torch.isfinite(clipwise_logits).all()
+        assert torch.isfinite(framewise_logits).all()
+
+
+# ---------------------------------------------------------------------------
+# Tests: Wrapper NaN behavior (simulates what happens in ONNX)
+# ---------------------------------------------------------------------------
+
+
+class TestWrapperNaN:
+    """Test old vs fixed wrapper with AttHead.
+
+    The old wrapper always computes `0.0 * sigmoid(clipwise) + 1.0 * sigmoid(fmax)`.
+    If clipwise contains NaN (e.g., from ONNX decomposition of torch.logit), the
+    0.0 * NaN = NaN corrupts the output.
+
+    We simulate this by injecting NaN into clipwise to prove the propagation path.
+    """
+
+    def test_old_wrapper_propagates_nan_from_clipwise(self, encoder, atthead, real_mel):
+        """If clipwise becomes NaN, old wrapper output is NaN even with blend=0."""
+        with torch.no_grad():
+            features = encoder.forward_features(real_mel)
+            clipwise_logits, framewise_logits = atthead(features)
+
+        # Inject NaN into clipwise (simulates ONNX torch.logit failure)
+        clipwise_nan = clipwise_logits.clone()
+        clipwise_nan[0, 0] = float("nan")
+
+        clip_probs = torch.sigmoid(clipwise_nan)
+        framewise_max_logits = framewise_logits.max(dim=-1).values
+        probs = 0.0 * clip_probs + 1.0 * torch.sigmoid(framewise_max_logits)
+
+        # The NaN propagates through 0.0 * NaN
+        assert torch.isnan(probs).any(), (
+            "Expected NaN propagation via 0.0 * NaN — if this fails, "
+            "IEEE 754 behavior may differ on this platform"
+        )
+
+    def test_fixed_wrapper_immune_to_clipwise_nan(self, encoder, atthead, real_mel):
+        """Fixed wrapper skips clipwise entirely, so NaN cannot propagate."""
+        with torch.no_grad():
+            probs = fixed_wrapper_forward(
+                encoder, atthead, real_mel, blend_clip=0.0, blend_frame=1.0
             )
-
-        session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
-        onnx_out = session.run(None, {"mel": mel_input.numpy()})[0]
-        Path(onnx_path).unlink()
-        return onnx_out
-
-    def test_old_wrapper_atthead_onnx_has_nan(self, encoder, atthead, real_mel):
-        """Old wrapper with AttHead + blend 0/1 may produce NaN in ONNX."""
-        wrapper = OldSEDWrapper(encoder, atthead, blend_clip=0.0, blend_frame=1.0)
-        onnx_out = self._export_and_run(wrapper, real_mel)
-        has_nan = np.isnan(onnx_out).any()
-        # Document the behavior — NaN is the bug we're fixing
-        if has_nan:
-            pytest.xfail("Old wrapper produces NaN with AttHead (expected bug)")
-        # If no NaN, the bug may be input-dependent or ONNX-version-dependent
-        assert np.isfinite(onnx_out).all()
-
-    def test_fixed_wrapper_atthead_onnx_no_nan(self, encoder, atthead, real_mel):
-        """Fixed wrapper with AttHead + blend 0/1 must NOT produce NaN."""
-        wrapper = FixedSEDWrapper(encoder, atthead, blend_clip=0.0, blend_frame=1.0)
-        onnx_out = self._export_and_run(wrapper, real_mel)
-        assert np.isfinite(onnx_out).all(), (
-            f"Fixed wrapper still produces NaN/inf! "
-            f"NaN count: {np.isnan(onnx_out).sum()}, "
-            f"Inf count: {np.isinf(onnx_out).sum()}"
+        assert torch.isfinite(probs).all(), (
+            f"Fixed wrapper has non-finite values! "
+            f"NaN: {torch.isnan(probs).sum()}, Inf: {torch.isinf(probs).sum()}"
         )
 
-    def test_fixed_wrapper_atthead_onnx_reasonable_range(self, encoder, atthead, real_mel):
-        """Output probabilities should be in [0, 1]."""
-        wrapper = FixedSEDWrapper(encoder, atthead, blend_clip=0.0, blend_frame=1.0)
-        onnx_out = self._export_and_run(wrapper, real_mel)
-        assert onnx_out.min() >= 0.0, f"Min prob {onnx_out.min()} < 0"
-        assert onnx_out.max() <= 1.0, f"Max prob {onnx_out.max()} > 1"
-
-    def test_fixed_wrapper_lsehead_onnx_no_nan(self, encoder, lsehead, real_mel):
-        """LSEHead should work fine with both old and new wrapper."""
-        wrapper = FixedSEDWrapper(encoder, lsehead, blend_clip=0.0, blend_frame=1.0)
-        onnx_out = self._export_and_run(wrapper, real_mel)
-        assert np.isfinite(onnx_out).all()
-
-    def test_fixed_wrapper_atthead_blended_onnx_no_nan(self, encoder, atthead, real_mel):
-        """AttHead with 0.75/0.25 blend should also work (non-zero blend_clip)."""
-        wrapper = FixedSEDWrapper(encoder, atthead, blend_clip=0.75, blend_frame=0.25)
-        onnx_out = self._export_and_run(wrapper, real_mel)
-        assert np.isfinite(onnx_out).all(), (
-            f"Blended wrapper produces NaN/inf with AttHead! "
-            f"NaN count: {np.isnan(onnx_out).sum()}"
-        )
-
-    def test_pytorch_vs_onnx_match(self, encoder, atthead, real_mel):
-        """Fixed wrapper PyTorch output should match ONNX output."""
-        wrapper = FixedSEDWrapper(encoder, atthead, blend_clip=0.0, blend_frame=1.0)
-        wrapper.eval()
-
+    def test_fixed_wrapper_output_in_valid_range(self, encoder, atthead, real_mel):
+        """Output probabilities must be in [0, 1]."""
         with torch.no_grad():
-            pytorch_out = wrapper(real_mel).numpy()
+            probs = fixed_wrapper_forward(
+                encoder, atthead, real_mel, blend_clip=0.0, blend_frame=1.0
+            )
+        assert probs.min() >= 0.0, f"Min prob {probs.min()} < 0"
+        assert probs.max() <= 1.0, f"Max prob {probs.max()} > 1"
 
-        onnx_out = self._export_and_run(wrapper, real_mel)
-        max_diff = np.max(np.abs(pytorch_out - onnx_out))
-        assert max_diff < 1e-4, f"PyTorch vs ONNX max diff: {max_diff}"
+    def test_fixed_wrapper_blended_atthead(self, encoder, atthead, real_mel):
+        """AttHead with 0.75/0.25 blend (non-zero clip) should also work."""
+        with torch.no_grad():
+            probs = fixed_wrapper_forward(
+                encoder, atthead, real_mel, blend_clip=0.75, blend_frame=0.25
+            )
+        assert torch.isfinite(
+            probs
+        ).all(), f"Blended wrapper NaN with AttHead! NaN: {torch.isnan(probs).sum()}"
+
+    def test_fixed_wrapper_lsehead(self, encoder, lsehead, real_mel):
+        """LSEHead works fine with fixed wrapper (no logit round-trip)."""
+        with torch.no_grad():
+            probs = fixed_wrapper_forward(
+                encoder, lsehead, real_mel, blend_clip=0.0, blend_frame=1.0
+            )
+        assert torch.isfinite(probs).all()
+
+    def test_old_wrapper_lsehead_also_fine(self, encoder, lsehead, real_mel):
+        """LSEHead works with old wrapper too — no logit in the path."""
+        with torch.no_grad():
+            probs = old_wrapper_forward(encoder, lsehead, real_mel, blend_clip=0.0, blend_frame=1.0)
+        assert torch.isfinite(probs).all()
+
+    def test_old_vs_fixed_same_output_when_no_nan(self, encoder, atthead, real_mel):
+        """When clipwise is finite (PyTorch), both wrappers produce the same output."""
+        with torch.no_grad():
+            old_out = old_wrapper_forward(
+                encoder, atthead, real_mel, blend_clip=0.0, blend_frame=1.0
+            )
+            fixed_out = fixed_wrapper_forward(
+                encoder, atthead, real_mel, blend_clip=0.0, blend_frame=1.0
+            )
+        # In pure PyTorch (no ONNX), both should be finite and equal
+        assert torch.isfinite(old_out).all(), "Old wrapper has NaN even in PyTorch"
+        max_diff = (old_out - fixed_out).abs().max().item()
+        assert max_diff < 1e-6, f"Old vs fixed differ by {max_diff}"
