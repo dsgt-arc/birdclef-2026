@@ -26,7 +26,13 @@ logger = logging.getLogger(__name__)
 
 
 class CachedEmbeddingDataset(Dataset):
-    """Reads a single shard, filtered by split ('train' or 'val')."""
+    """Reads a single shard, filtered by split ('train' or 'val').
+
+    Pre-loads embeddings and labels into contiguous RAM tensors at init.
+    The full focal set is ~720 MB fp32 for embeddings + ~50 MB for labels —
+    trivially fits in memory. This avoids the memmap random-access penalty
+    that made shuffle=True across 8 shards pathologically slow.
+    """
 
     def __init__(self, shard_dir: str | Path, split: str):
         shard = cache_mod.read_shard(shard_dir)
@@ -35,20 +41,22 @@ class CachedEmbeddingDataset(Dataset):
         self.num_classes = len(self.species_list)
 
         mask = (index["split"] == split).to_numpy()
-        self.rows = np.where(mask)[0]
+        rows = np.where(mask)[0]
+        self.index_df = index.iloc[rows].reset_index(drop=True)
 
-        self._embeddings = shard["embeddings"]
-        self._labels = shard["labels"]
-        self.index_df = index.iloc[self.rows].reset_index(drop=True)
+        # Pre-load into contiguous fp32 tensors — fast __getitem__.
+        self._embeddings = torch.from_numpy(
+            np.asarray(shard["embeddings"][rows], dtype=np.float32)
+        )
+        self._labels = torch.from_numpy(
+            np.asarray(shard["labels"][rows], dtype=np.float32)
+        )
 
     def __len__(self) -> int:
-        return len(self.rows)
+        return len(self._embeddings)
 
     def __getitem__(self, i: int) -> dict:
-        row = int(self.rows[i])
-        emb = torch.from_numpy(np.asarray(self._embeddings[row], dtype=np.float32))
-        lab = torch.from_numpy(np.asarray(self._labels[row], dtype=np.float32))
-        return {"embedding": emb, "labels": lab}
+        return {"embedding": self._embeddings[i], "labels": self._labels[i]}
 
 
 class CachedEmbeddingDataModule(pl.LightningDataModule):
