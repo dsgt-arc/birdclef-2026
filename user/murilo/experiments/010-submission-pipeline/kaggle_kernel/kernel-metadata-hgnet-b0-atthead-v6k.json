@@ -1,0 +1,16 @@
+{
+  "id": "murilogustineli/birdclef-2026-hgnet-b0-atthead-v6k",
+  "title": "BirdCLEF 2026 HGNet-B0 AttHead v6k",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-deps",
+    "murilogustineli/birdclef-2026-hgnet-b0-atthead-v6k-weights"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}
