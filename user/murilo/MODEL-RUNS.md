@@ -395,12 +395,24 @@ blend 75% clip + 25% frame max). Replaces LSEHead from v5j. 20 epochs, seed=42.
 | `effnet-b3-ns-sed-v6g` | EffNet-B3 NS | 12M | AttHead | CE | 0.859 | 0.611 | 19 | skip | `021-.../2026-effnet-b3-ns-sed-v6g/best-epochepoch=19.ckpt` |
 | `hgnet-b0-sed-v6f` | HGNetV2-B0 | 6M | AttHead | CE | 0.850 | 0.577 | 18 | skip | `021-.../2026-hgnet-b0-sed-v6f/best-epochepoch=18.ckpt` |
 
-**Both AttHead models regressed on LB** vs v5j (LSEHead, 0.906): v6j 0.893 (−0.013),
-v6h 0.889 (−0.017). The AttHead + 75/25 clip/frame blend + dual supervision combo
-hurts LB performance despite being "competition-standard." v6h had best offline AUROC
-but worst LB — offline metrics are anti-correlated with LB for this experiment.
-EffNet-B0 NS (v6j) outperformed HGNetV2-B2 (v6h) on LB despite identical offline.
-Phase C conclusion: head/backbone changes are not the lever.
+### Phase F: Competition-Standard AttHead Fix (v6k)
+
+Fixed AttHead to match Nikita 1st place 2025 / Tattaka exactly: pre-dropout(p/2),
+softmax(tanh(x)) attention, probability-space clipwise. Dual supervision (50/50).
+hidden_dim=1024 (matching v5j). Everything else identical to v5j.
+
+| Slug | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|--------|------|------|-----------|----------|------------|-----|------------|
+| `hgnet-b0-atthead-v6k` | HGNetV2-B0 | 6M | AttHead (fixed) | BCE | 0.871 | 0.596 | 19 | skip | `021-.../2026-hgnet-b0-atthead-v6k/best-epochepoch=19.ckpt` |
+
+**Fixed AttHead still regresses** vs v5j (−0.003 AUROC, −0.029 cmap) and barely
+differs from old buggy AttHead v6e (0.871 vs 0.870). The three fixes (pre-dropout,
+tanh, probability-space) are not the differentiator. AttHead consistently
+underperforms LSEHead on HGNetV2-B0. Combined with Phase C LB regressions (v6j
+0.893, v6h 0.889), AttHead is conclusively worse than LSEHead in our setup.
+
+**Both Phase C AttHead models regressed on LB** vs v5j (LSEHead, 0.906): v6j 0.893
+(−0.013), v6h 0.889 (−0.017). Offline metrics are anti-correlated with LB.
 
 ### Phase D: Multi-Context Training (AttHeadMultiContext)
 

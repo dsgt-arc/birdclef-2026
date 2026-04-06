@@ -272,3 +272,37 @@ The +0.008 offline AUROC gain doesn't translate to LB. Possible explanations:
 4. **hengck23's missing ingredient**: his 0.896 used 4-fold ensemble (we submitted
    single fold) and "wave mix augmentation specially designed for 3×5sec." The
    multi-context approach may need both 4-fold and specialized augmentation to work.
+
+## Phase F: Gap Analysis Fixes
+
+Motivated by gap analysis (`notes/2026-04-05-sed-gap-analysis.md`) comparing our
+v5j (0.906) against Nikita 1st place 2025 and Salman (0.921).
+
+### F.1: Framewise-max inference — no gain
+
+Re-exported v5j with `blend_clip=0.0, blend_frame=1.0` (hard framewise max).
+LB: **0.906** — identical to v5j's 0.75/0.25 blend. LSEHead with T=1.0 already
+approximates hard max, so the pooling method is not the gap.
+
+### F.4: Competition-standard AttHead (v6k)
+
+Fixed AttHead to match Nikita/Tattaka exactly: pre-dropout(p/2), softmax(tanh(x))
+attention, probability-space clipwise aggregation. Trained with dual supervision
+(50% clipwise + 50% framewise max). Everything else identical to v5j (HGNetV2-B0,
+BCE, OneCycleLR, hidden_dim=1024).
+
+| Model | Head | Supervision | val/auroc | val/cmap | Best Epoch | Delta vs v5j |
+|-------|------|-------------|-----------|----------|------------|-------------|
+| v5j (baseline) | LSEHead | clip only | **0.874** | ~0.625 | 19 | — |
+| v6e (old AttHead) | AttHead (buggy) | clip 0.5 + frame 0.5 | 0.870 | 0.611 | 18 | −0.004 |
+| **v6k (fixed AttHead)** | **AttHead (Nikita)** | **clip 0.5 + frame 0.5** | **0.871** | **0.596** | **19** | **−0.003** |
+
+**The competition-standard fixes barely changed anything** (+0.001 vs old AttHead v6e).
+The three fixes (pre-dropout, tanh, probability-space) are not the differentiator.
+AttHead consistently underperforms LSEHead on HGNetV2-B0 by −0.003 to −0.004 on
+AUROC and significantly on cmap (0.596 vs ~0.625).
+
+**Interpretation**: The gap between us (0.906) and Salman (0.921) is NOT the AttHead
+implementation. LSEHead may actually be the better head for our backbone/recipe.
+The gap must come from something else entirely: backbone choice, CE loss with
+proper pairing, waveform augmentation, or a combination thereof.
