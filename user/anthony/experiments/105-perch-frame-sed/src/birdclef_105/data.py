@@ -51,6 +51,34 @@ class CachedEmbeddingDataset(Dataset):
         return {"embedding": emb, "labels": lab}
 
 
+class CachedEmbeddingDataModule(pl.LightningDataModule):
+    """Single-shard DataModule (soundscape or pilot)."""
+
+    def __init__(self, shard_dir: str | Path, batch_size: int = 256, num_workers: int = 0):
+        super().__init__()
+        self.shard_dir = Path(shard_dir)
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+
+    def setup(self, stage: str | None = None) -> None:
+        self.train_ds = CachedEmbeddingDataset(self.shard_dir, split="train")
+        self.val_ds = CachedEmbeddingDataset(self.shard_dir, split="val")
+        self.num_classes = self.train_ds.num_classes
+        self.species_list = self.train_ds.species_list
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.train_ds, batch_size=self.batch_size, shuffle=True,
+            num_workers=self.num_workers, pin_memory=True, drop_last=False,
+        )
+
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.val_ds, batch_size=self.batch_size, shuffle=False,
+            num_workers=self.num_workers, pin_memory=True,
+        )
+
+
 def load_sharded_dataset(parent_dir: str | Path, split: str) -> ConcatDataset:
     """Load all shard-NNN/ subdirs under parent_dir and union them into one dataset."""
     parent = Path(parent_dir)
