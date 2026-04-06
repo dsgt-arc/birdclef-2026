@@ -304,11 +304,16 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j.json",
     },
-    # Exp 021 Phase F: v5j framewise-max only (blend_clip=0, blend_frame=1)
+    # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "hgnet-b0-sed-v5j-fmax": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-fmax",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-fmax.json",
+    },
+    "hgnet-b0-sed-v5j-clip": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-clip-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-clip",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-clip.json",
     },
     # Exp 019 embed_dim hypothesis test
     "effnet-b0-sed-v5m": {

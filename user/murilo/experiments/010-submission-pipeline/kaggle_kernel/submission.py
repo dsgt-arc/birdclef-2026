@@ -91,8 +91,9 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
-    # Exp 021 Phase F: framewise-max inference (same v5j checkpoint, blend 0/1)
+    # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",
+    "birdclef-2026-hgnet-b0-sed-v5j-clip-weights",
     # Exp 021 Phase E: LSEHead multi-context
     "birdclef-2026-hgnet-b0-mc-lse-sed-v8b-weights",
     "birdclef-2026-hgnet-b0-mc-lse-sed-v8a-weights",
