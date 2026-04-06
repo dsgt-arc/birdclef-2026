@@ -8,7 +8,7 @@ techniques (multi-context training, AttHead variants, backbone scaling).
 **Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase F complete. v6k AttHead 0.888 LB (−0.018). F.1 fmax = no gain. Head is not the gap.**
+### Status: **Phase G in progress. v6l (manifold mixup) training. Phases A–F complete (head/inference not the gap).**
 
 - **Branch**: `mg/021-sed-training`
 - **Architecture reference**: [`notes/sed-architecture-overview.md`](../../notes/sed-architecture-overview.md)
@@ -145,7 +145,7 @@ Same LSEHead, same loss, same recipe. The head processes 5s chunks (not 15s).
 
 ---
 
-## Phase F: Gap Analysis Fixes — IN PROGRESS
+## Phase F: Gap Analysis Fixes — COMPLETE (no gains)
 
 Motivated by `notes/2026-04-05-sed-gap-analysis.md`. Comparing our v5j (0.906)
 against Nikita 1st place 2025 inference code and Salman's 0.921, we identified
@@ -164,7 +164,7 @@ the aggregation method isn't the gap — it's the per-frame feature quality.
 - [x] F.1b Submit to LB — **0.906** (identical to v5j 0.75/0.25 blend)
 - [ ] ~~F.1c If it helps, test on v5j-4fold too~~ — skipped, no gain
 
-### F.4 Competition-standard AttHead — TRAINING
+### F.4 Competition-standard AttHead — COMPLETE (regressed)
 
 Fixed AttHead to match Nikita/Tattaka (pre-dropout, tanh attention, probability-space
 clipwise). Train with dual supervision (50% clipwise + 50% framewise max), infer
@@ -194,49 +194,94 @@ over LSEHead. Config: v6k (v5j recipe, hidden_dim=1024, only head changes).
 | Framewise-max inference | Phase F.1 (v5j-fmax) | 0.906 (identical) | Pooling method is not the gap |
 | Competition-standard AttHead | Phase F.4 (v6k) | −0.018 LB | Head architecture is not the gap |
 
-## Remaining Gaps to Explore — Next Steps
+## Phase G: Manifold Mixup, Backbone Exploration, TTA — IN PROGRESS
 
-The 0.906→0.920+ gap is NOT in the head architecture or inference strategy.
-What remains untested or undertested:
+The 0.906→0.920+ gap is NOT in the head architecture or inference strategy
+(ruled out in Phases C–F). Phase G focuses on training-time augmentation
+(manifold mixup), backbone diversity, and inference-time TTA.
 
-### 1. CE loss + proper head pairing (HIGH PRIORITY)
+### Rationale
 
-We tested CE with LSEHead (v6a, −0.020) and CE with our old broken AttHead (v6f,
-−0.024). Both failed. But Salman (0.921) and BirdCLEF 2024 1st place both use CE
-with sigmoid at inference. We've never tested CE + LSEHead + framewise-max inference,
-or CE on the fixed AttHead (v6k used BCE). The CE+sigmoid trick specifically needs
-softmax competition during training — may require different recipe tuning (LR,
-epochs, warmup).
+1. **Manifold Mixup** (Mix2-inspired) — Moummad et al. 2024 showed that mixing
+   in embedding space (after backbone, before head) yields +6.2% on rare anuran
+   classes, while input-space mixup alone can hurt. Random alternation between
+   input-space and embedding-space mixing per batch is the key. Directly relevant:
+   our 82 species with <100 recordings and 28 soundscape-only species are exactly
+   the rare-class scenario. See `docs/vendor/mix2-mixture-of-mixups.md`.
 
-### 2. Backbone exploration (HIGH PRIORITY)
+2. **Backbone exploration with LSEHead** — Phase C tested backbones but confounded
+   with AttHead swap (which regresses on LB). We don't know how ConvNeXt, RegNet,
+   or ECA-NFNet perform with our proven LSEHead+BCE recipe. Salman explicitly moved
+   away from EfficientNet for 0.921. EliKal shows 0.906-0.909 across 4 architectures.
 
-Salman explicitly moved away from EfficientNet but won't say what to. Boredom
-claims 0.922+ with EfficientNet. We use HGNetV2-B0 (0.906). Candidates to try:
-- **ConvNeXt-Small/Tiny** (EliKal gets 0.907 with ConvNeXt-Small + distillation)
-- **RegNetY-008/016** (used by BirdCLEF 2024 1st and 2025 1st ensembles)
-- **ECA-NFNet-L0** (used by BirdCLEF 2023 1st and 2025 1st ensembles)
-- All with our proven v5j recipe (LSEHead + BCE + OneCycleLR)
+3. **Time-shift TTA** — inference-only augmentation (shift ±0.5-1s, average
+   predictions). EliKal's "only" inference trick. We have zero TTA. Can stack on
+   top of any model without retraining.
 
-### 3. Temporal modeling (MEDIUM — from hengck23)
+### Deprioritized (from prior "Remaining Gaps")
 
-hengck23's comment: "to get lb 0.92+ from timm, you need to add temporal."
-He references the Perch notebook (0.930) which uses temporal features.
-Our multi-context experiments (Phase E) improved offline but not LB — may need
-hengck23's specialized wave mix augmentation or 4-fold to realize the gains.
-Awaiting his reply on what "temporal" means beyond multi-context.
+- **3-channel input**: mathematically near-equivalent after BatchNorm — the 3×
+  channel output is just a scale factor that BN absorbs. 20 epochs of fine-tuning
+  compensates for any initialization difference. Deprioritized in favor of manifold
+  mixup which has stronger empirical evidence (Mix2 paper).
+- **CE loss**: tested 3× (v6a, v6f, v6g), regressed every time (−0.015 to −0.024).
+  Our recipe doesn't synergize with CE regardless of head pairing.
+- **Multi-context / temporal**: Phase E showed best-ever offline but regressed on LB.
+  Can't iterate reliably until offline-LB disconnect is understood.
+- **Overlap reconstruction**: v5j-fmax showed inference strategy isn't the gap.
 
-### 4. Overlap reconstruction + delta blending (LOW — inference only)
+### G.1 Manifold Mixup (v6l) — TRAINING
 
-Nikita's inference uses overlapping windows with delta blending. EliKal uses
-time-shift TTA. No retraining needed — kernel change only. Low expected impact
-since v5j-fmax showed pooling method doesn't matter much, but could stack.
+Implemented manifold mixup as a private method in `sed_finetune.py`. Each batch
+randomly alternates between input-space spectrogram mixup (50%) and embedding-space
+manifold mixup (50%), matching Mix2's random alternation finding. Uses same
+Beta(alpha, alpha) lambda sampling and per-sample mixing as existing input-space
+mixup. Single-variable change from v5j — same backbone, head, loss, schedule.
 
-### 5. Mix2 augmentation (LOW — research)
+Implementation: `_apply_manifold_mixup()` in `sed_finetune.py`, gated by
+`manifold_mixup: true` config flag. When `manifold_mixup: false` (default),
+`training_step` is identical to the original code path. All existing configs
+are backward-compatible.
 
-Paper: "Mixture of Mixups for Multi-label Classification of Rare Anuran Sounds"
-([arxiv 2403.09598](https://arxiv.org/abs/2403.09598)). Randomly alternates
-Mixup, Manifold Mixup, and MultiMix. +6.2% on rare classes for anurans.
-See `docs/vendor/mix2-mixture-of-mixups.md`.
+Reference: Mix2 repo cloned to `/tmp/Mix2/` (https://github.com/ilyassmoummad/Mix2)
+
+- [x] G.1a Implement `_apply_manifold_mixup()` in `sed_finetune.py`
+- [x] G.1b Wire `manifold_mixup` + `manifold_mixup_prob` params in `train.py`
+- [x] G.1c Create v6l config (v5j + `manifold_mixup: true`, `manifold_mixup_prob: 0.5`)
+- [x] G.1d Validate: AST syntax check, config loads, backward compat confirmed
+- [x] G.1e Fast-dev-run passed (5 batches, no errors)
+- [ ] G.1f Train v6l on PACE — **TRAINING** (job 6304401)
+- [ ] G.1g Check training results
+- [ ] G.1h ONNX export + LB submission (if offline metrics are promising)
+
+### G.2 Backbone Exploration with LSEHead (v9b-v9d) — PLANNED
+
+Swap backbone only, keep LSEHead + BCE + v5j recipe. Tests whether backbone
+choice (not head) is the lever. Phase C's backbone tests were confounded by
+also switching to AttHead.
+
+Candidates (all available in timm, used in BirdCLEF winning solutions):
+- **v9b**: ConvNeXt-Tiny (`convnext_tiny.fb_in22k_ft_in1k`, 28M, used by EliKal)
+- **v9c**: RegNetY-008 (`regnety_008.pycls_in1k`, 6M, used by BirdCLEF 2024/2025 1st)
+- **v9d**: ECA-NFNet-L0 (`eca_nfnet_l0.ra2_in1k`, 24M, used by BirdCLEF 2023/2025 1st)
+
+Include `manifold_mixup: true` if G.1 shows improvement.
+
+- [ ] G.2a Create v9b config (ConvNeXt-Tiny + LSEHead)
+- [ ] G.2b Create v9c config (RegNetY-008 + LSEHead)
+- [ ] G.2c Create v9d config (ECA-NFNet-L0 + LSEHead)
+- [ ] G.2d Train v9b-v9d on PACE
+- [ ] G.2e Check training results, select best
+- [ ] G.2f ONNX export best → LB submission
+
+### G.3 Time-Shift TTA (inference-only) — PLANNED
+
+Shift 5s inference window by ±0.5s and ±1.0s (5 forward passes per segment),
+average predictions. Modify Kaggle kernel only — no retraining. Apply to
+whichever model wins from G.1/G.2.
+
+- [ ] G.3a Implement time-shift TTA in Kaggle inference kernel
+- [ ] G.3b Submit best model with TTA → LB
 
 ---
 
@@ -266,4 +311,5 @@ See `docs/vendor/mix2-mixture-of-mixups.md`.
 | v8a (center-chunk inference) | **0.883** | 0.882 | center chunk only (+0.001, negligible) |
 | v5j-fmax (blend 0/1) | **0.906** | 0.874 | framewise hard-max = same as v5j 0.75/0.25 |
 | v6k (fixed AttHead) | **0.888** | 0.871 | −0.018 LB, AttHead regresses vs LSEHead |
+| v6l (manifold mixup) | — | — | **TRAINING** — v5j + manifold mixup 50% |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |

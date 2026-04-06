@@ -154,6 +154,8 @@ class SEDFinetuneModule(pl.LightningModule):
         waveform_mixup: bool = False,
         waveform_noise: bool = False,
         waveform_time_stretch: bool = False,
+        manifold_mixup: bool = False,
+        manifold_mixup_prob: float = 0.5,
         scheduler_type: str = "cosine",
         onecycle_div_factor: float = 25.0,
         onecycle_final_div_factor: float = 4.0,
@@ -295,6 +297,43 @@ class SEDFinetuneModule(pl.LightningModule):
             labels = torch.where(labels >= theta, torch.ones_like(labels), labels)
         return x, labels
 
+    def _apply_manifold_mixup(
+        self, features: torch.Tensor, labels: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply mixup in embedding space (after backbone, before head).
+
+        Same mixing logic as _apply_mixup but operates on backbone feature maps
+        (B, C, F', T') instead of input spectrograms. Interpolation in learned
+        feature space produces more semantically meaningful augmentations than
+        input-space mixing (Verma et al. 2019, Moummad et al. 2024 "Mix2").
+
+        Enabled by manifold_mixup=True in config. When active, training_step
+        randomly alternates between input-space and manifold mixup per batch.
+        """
+        indices = torch.randperm(features.size(0), device=features.device)
+
+        if self.hparams.mixup_per_sample:
+            beta_dist = torch.distributions.Beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
+            lam = beta_dist.sample(sample_shape=(features.size(0),)).to(features.device)
+            lam = torch.maximum(lam, 1 - lam).float()
+
+            # Broadcast lambda over (C, F', T') dims of backbone features
+            feat_lam = lam[:, None, None, None]
+            label_lam = lam[:, None]
+
+            features = feat_lam * features + (1 - feat_lam) * features[indices]
+            labels = label_lam * labels + (1 - label_lam) * labels[indices]
+        else:
+            lam = np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
+            lam = max(lam, 1.0 - lam)
+            features = lam * features + (1 - lam) * features[indices]
+            labels = lam * labels + (1 - lam) * labels[indices]
+
+        theta = self.hparams.mixup_theta
+        if theta < 1.0:
+            labels = torch.where(labels >= theta, torch.ones_like(labels), labels)
+        return features, labels
+
     def _blended_probs(
         self, clipwise_logits: torch.Tensor, framewise_logits: torch.Tensor
     ) -> torch.Tensor:
@@ -413,25 +452,48 @@ class SEDFinetuneModule(pl.LightningModule):
             ):
                 x = self._apply_time_stretch(x)
 
-        if self.mel_transform is not None and self.hparams.waveform_mixup:
-            # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
-            if self._mixup_active():
-                x, labels = self._apply_mixup(x, labels)
-            with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
-                mel = self.mel_transform(x.float())
-        elif self.mel_transform is not None:
-            # GPU mel mode: compute mel on GPU first, then spectrogram mixup.
-            with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
-                mel = self.mel_transform(x.float())
-            if self._mixup_active():
-                mel, labels = self._apply_mixup(mel, labels)
-        else:
-            # CPU mel mode (default): input is pre-computed mel, spectrogram mixup
-            mel = x
-            if self._mixup_active():
-                mel, labels = self._apply_mixup(mel, labels)
+        # Decide mixup strategy for this batch. Sample _mixup_active() once to
+        # avoid double-sampling the random probability check.
+        do_mixup = self._mixup_active()
+        use_manifold = (
+            do_mixup
+            and self.hparams.manifold_mixup
+            and random.random() < self.hparams.manifold_mixup_prob
+        )
 
-        clipwise_logits, framewise_logits = self(mel)
+        if not use_manifold:
+            # Original input-space mixup paths (unchanged when manifold_mixup=False)
+            if self.mel_transform is not None and self.hparams.waveform_mixup:
+                # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
+                if do_mixup:
+                    x, labels = self._apply_mixup(x, labels)
+                with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                    mel = self.mel_transform(x.float())
+            elif self.mel_transform is not None:
+                # GPU mel mode: compute mel on GPU first, then spectrogram mixup.
+                with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                    mel = self.mel_transform(x.float())
+                if do_mixup:
+                    mel, labels = self._apply_mixup(mel, labels)
+            else:
+                # CPU mel mode (default): input is pre-computed mel, spectrogram mixup
+                mel = x
+                if do_mixup:
+                    mel, labels = self._apply_mixup(mel, labels)
+
+            clipwise_logits, framewise_logits = self(mel)
+        else:
+            # Manifold mixup: compute mel (no input-space mixup), run backbone,
+            # mix in embedding space, then run head.
+            if self.mel_transform is not None:
+                with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                    mel = self.mel_transform(x.float())
+            else:
+                mel = x
+
+            features = self.encoder.forward_features(mel)
+            features, labels = self._apply_manifold_mixup(features, labels)
+            clipwise_logits, framewise_logits = self.sed_head(features)
 
         loss = self._compute_chunked_loss(clipwise_logits, framewise_logits, labels, primary_idx)
 

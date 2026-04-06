@@ -282,6 +282,8 @@ def main():
         waveform_mixup=waveform_mixup,
         waveform_noise=training_cfg.get("waveform_noise", False),
         waveform_time_stretch=training_cfg.get("waveform_time_stretch", False),
+        manifold_mixup=training_cfg.get("manifold_mixup", False),
+        manifold_mixup_prob=training_cfg.get("manifold_mixup_prob", 0.5),
         scheduler_type=training_cfg.get("scheduler_type", "cosine"),
         onecycle_div_factor=training_cfg.get("onecycle_div_factor", 25.0),
         onecycle_final_div_factor=training_cfg.get("onecycle_final_div_factor", 4.0),
