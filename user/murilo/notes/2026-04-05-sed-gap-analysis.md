@@ -347,3 +347,27 @@ We've been ablating single variables from v5j, but our ablations tested
 
 The correct approach is to implement the **full competitor recipe** faithfully
 before concluding that specific ingredients don't work.
+
+---
+
+## Postscript: Phase F Results (same day)
+
+We tested the top two action items from this analysis and both failed:
+
+**F.1 Framewise-max inference (v5j-fmax)**: LB **0.906** — identical to v5j's
+0.75/0.25 blend. LSEHead with T=1.0 is already near hard-max, so the pooling
+method is not the gap. Gap 1 ruled out.
+
+**F.4 Competition-standard AttHead (v6k)**: LB **0.888** (−0.018 vs v5j). Fixed
+all three bugs (pre-dropout, tanh, sigmoid-space). Still regresses vs LSEHead.
+Gaps 4 and 5 ruled out — the head architecture is definitively not the issue.
+
+**Also discovered**: v5j's ONNX export was using blend 0.75/0.25 (script defaults),
+not 1.0/0.0 as the training config specified. The 0.906 LB already included 25%
+framewise max.
+
+**Remaining hypotheses** (updated priority):
+1. CE loss with proper recipe tuning (never tested with right pairing)
+2. Backbone exploration (ConvNeXt, RegNet, ECA-NFNet)
+3. Temporal modeling (hengck23's hint: "to get 0.92+ from timm, add temporal")
+4. Overlap reconstruction (inference-only, low expected impact)
