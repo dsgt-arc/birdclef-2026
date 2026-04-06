@@ -18,7 +18,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 from birdclef_105 import cache as cache_mod
 from birdclef_105 import model as model_mod
-from birdclef_105.data import CachedEmbeddingDataModule
+from birdclef_105.data import CachedEmbeddingDataModule, FocalDataModule
 from birdclef_105.losses import FocalBCELoss
 
 logger = logging.getLogger("birdclef_105.training")
@@ -47,6 +47,10 @@ class HeadTrainer(pl.LightningModule):
         self.val_cmap = torchmetrics.AveragePrecision(
             task="multilabel", num_labels=num_classes, average="macro"
         )
+        # Auxiliary soundscape val (dataloader_idx=1 when present)
+        self.sc_val_cmap = torchmetrics.AveragePrecision(
+            task="multilabel", num_labels=num_classes, average="macro"
+        )
 
     def forward(self, embedding: torch.Tensor) -> torch.Tensor:
         return self.head(embedding)
@@ -63,17 +67,31 @@ class HeadTrainer(pl.LightningModule):
         self.log("train/cmap", self.train_cmap.compute(), prog_bar=True)
         self.train_cmap.reset()
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         logits = self.head(batch["embedding"])
         labels = batch["labels"]
         loss = self.loss_fn(logits, labels)
-        self.val_cmap.update(torch.sigmoid(logits), labels.round().int())
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        probs = torch.sigmoid(logits)
+
+        if dataloader_idx == 0:
+            # Primary focal val
+            self.val_cmap.update(probs, labels.round().int())
+            self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        else:
+            # Auxiliary soundscape val (monitoring only)
+            self.sc_val_cmap.update(probs, labels.round().int())
         return loss
 
     def on_validation_epoch_end(self):
         self.log("val/cmap", self.val_cmap.compute(), prog_bar=True)
         self.val_cmap.reset()
+        # Soundscape val — may be empty if no soundscape dataloader provided
+        try:
+            sc = self.sc_val_cmap.compute()
+            self.log("val/sc_cmap", sc, prog_bar=True)
+        except (RuntimeError, ValueError):
+            pass  # no soundscape samples this epoch
+        self.sc_val_cmap.reset()
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
@@ -105,18 +123,54 @@ class HeadTrainer(pl.LightningModule):
         }
 
 
-def _resolve_shard_dir(cfg: dict) -> Path:
-    """Pick the full shard if it exists, otherwise fall back to the pilot shard."""
-    full = Path(cfg["cache"]["output_dir"]) / "soundscape_plus_nocall"
-    pilot = Path(cfg["cache"]["pilot_dir"]) / "soundscape_plus_nocall"
-    if (full / "meta.json").exists():
-        return full
-    if (pilot / "meta.json").exists():
-        logger.info("Full shard not found at %s — falling back to pilot shard %s", full, pilot)
-        return pilot
+def _resolve_data(cfg: dict) -> tuple[pl.LightningDataModule, int]:
+    """Pick the best data source available and return (DataModule, num_classes).
+
+    Priority:
+      1. Focal shards + soundscape auxiliary val  (matches exp 102 Run N)
+      2. Single soundscape shard (fallback)
+      3. Pilot shard (fallback)
+    """
+    cache_dir = Path(cfg["cache"]["output_dir"])
+    focal_dir = cache_dir / "focal"
+    soundscape_dir = cache_dir / "soundscape_plus_nocall"
+    pilot_dir = Path(cfg["cache"]["pilot_dir"]) / "soundscape_plus_nocall"
+    train_cfg = cfg["training"]
+
+    if focal_dir.exists() and any(focal_dir.glob("shard-*/meta.json")):
+        logger.info("Using focal shards at %s (+ soundscape auxiliary val)", focal_dir)
+        dm = FocalDataModule(
+            focal_dir=focal_dir,
+            soundscape_dir=soundscape_dir if soundscape_dir.exists() else None,
+            batch_size=train_cfg["batch_size"],
+            num_workers=2,
+        )
+        dm.setup()
+        return dm, dm.num_classes
+
+    if (soundscape_dir / "meta.json").exists():
+        logger.info("No focal shards — using soundscape shard at %s", soundscape_dir)
+        dm = CachedEmbeddingDataModule(
+            shard_dir=soundscape_dir,
+            batch_size=train_cfg["batch_size"],
+            num_workers=0,
+        )
+        dm.setup()
+        return dm, dm.num_classes
+
+    if (pilot_dir / "meta.json").exists():
+        logger.info("Falling back to pilot shard at %s", pilot_dir)
+        dm = CachedEmbeddingDataModule(
+            shard_dir=pilot_dir,
+            batch_size=train_cfg["batch_size"],
+            num_workers=0,
+        )
+        dm.setup()
+        return dm, dm.num_classes
+
     raise FileNotFoundError(
-        f"No feature shard found. Expected one of:\n  {full}\n  {pilot}\n"
-        "Run `sbatch sbatch/extract-features.sbatch` first."
+        f"No feature shards found. Checked:\n  {focal_dir}\n  {soundscape_dir}\n  {pilot_dir}\n"
+        "Run `sbatch sbatch/extract-focal.sbatch` or `sbatch sbatch/extract-features.sbatch` first."
     )
 
 
@@ -127,18 +181,8 @@ def run(config_path: str, head: str = "linear", run_name: str | None = None) -> 
         cfg = yaml.safe_load(fh)
     train_cfg = cfg["training"]
 
-    shard_dir = _resolve_shard_dir(cfg)
-    logger.info("Loading shard from %s", shard_dir)
-
-    # Read meta without loading full arrays — we need num_classes/species_list.
-    shard = cache_mod.read_shard(shard_dir)
-    num_classes = len(shard["species_list"])
-
-    dm = CachedEmbeddingDataModule(
-        shard_dir=shard_dir,
-        batch_size=train_cfg["batch_size"],
-        num_workers=0,  # tiny datasets — workers add overhead
-    )
+    dm, num_classes = _resolve_data(cfg)
+    logger.info("Training data ready: %d classes", num_classes)
 
     # Build head.
     head_kwargs: dict = {}
