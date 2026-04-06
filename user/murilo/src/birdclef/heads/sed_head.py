@@ -2,17 +2,18 @@
 
 Three head variants:
 
-AttHead (v1/v4a, exps 016-021 Phase C):
+AttHead (v9a+, exp 021 Phase F):
+  Competition-standard attention head matching Nikita (1st BirdCLEF 2025) and
+  Tattaka (5th BirdCLEF 2023). Intended for dual supervision (50% clipwise +
+  50% framewise max) during training, framewise-max only at inference.
   backbone features (B, C, F, T)
     → GeM pool frequency axis → (B, C, T)
-    → dense projection + dropout → (B, hidden, T)
+    → Dropout(p/2) + Linear + ReLU + Dropout(p) → (B, hidden, T)
     → framewise logits via Conv1d → (B, num_classes, T)
-    → attention weights via Conv1d + softmax → (B, num_classes, T)
-    → clipwise = attention-weighted sum of raw logits → (B, num_classes)
-  Note: differs from competition-standard (Tattaka/BirdCLEF 2023 5th) in two ways:
-    1. No tanh before softmax (ours: softmax(x), Tattaka: softmax(tanh(x)))
-    2. Logit-space clipwise (ours: sum(att*logits), Tattaka: sum(att*sigmoid(logits)))
-  See evgeniimaslov2/birdclef-5th-place-code for reference implementation.
+    → attention weights via Conv1d + softmax(tanh(x)) → (B, num_classes, T)
+    → clipwise = attention-weighted sum of sigmoid(logits) → (B, num_classes)
+  Ref: birdclef-2025-nikita-1st-place-sed.py, evgeniimaslov2/birdclef-5th-place-code.
+  NOTE: breaks checkpoint compat with v6e-v6j (pre-dropout shifts Sequential indices).
 
 AttBlockV2 (v4c, exp 017):
   Same GeM + projection, but:
@@ -78,17 +79,22 @@ class GeM(nn.Module):
 
 
 class AttHead(nn.Module):
-    """SED attention head with GeM frequency pooling and dual output.
+    """Competition-standard SED attention head (Nikita 1st 2025 / Tattaka 5th 2023).
 
-    Produces two sets of logits for dual supervision:
-    - clipwise: attention-weighted temporal aggregation (captures sustained calls)
-    - framewise: per-frame predictions (framewise-max captures brief vocalizations)
+    Dual output for training:
+    - clipwise: attention-weighted sum of sigmoid(framewise) in probability space
+    - framewise: per-frame raw logits (framewise-max used at inference)
+
+    Key design: attention helps train better per-frame features via dual supervision,
+    but is discarded at inference (only framewise max matters). See gap analysis:
+    user/murilo/notes/2026-04-05-sed-gap-analysis.md
 
     Args:
-        in_channels: Number of input channels from backbone (e.g., 1280 for EfficientNet-B0).
+        in_channels: Number of input channels from backbone.
         num_classes: Number of output classes (e.g., 234).
         hidden_dim: Hidden projection dimension (default: 512).
-        dropout: Dropout rate for projection layer (default: 0.5).
+        dropout: Dropout rate for post-linear layer (default: 0.5).
+            Pre-dropout uses dropout/2 before the linear layer.
         gem_p: Initial GeM power parameter (default: 3.0).
     """
 
@@ -103,6 +109,7 @@ class AttHead(nn.Module):
         super().__init__()
         self.gem = GeM(p=gem_p)
         self.project = nn.Sequential(
+            nn.Dropout(dropout / 2),
             nn.Linear(in_channels, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
@@ -117,23 +124,27 @@ class AttHead(nn.Module):
             features: (B, C, F, T) feature map from backbone.
 
         Returns:
-            clipwise_logits: (B, num_classes) attention-weighted temporal sum.
-            framewise_logits: (B, num_classes, T) per-frame predictions.
+            clipwise_logits: (B, num_classes) — logits derived from probability-space
+                attention aggregation (for loss computation).
+            framewise_logits: (B, num_classes, T) — per-frame raw logits.
         """
         # GeM pool frequency: (B, C, F, T) → (B, C, T)
         x = self.gem(features)
 
-        # Dense projection: (B, C, T) → permute → Linear → permute → (B, hidden, T)
+        # Dense projection with pre-dropout
         x = x.permute(0, 2, 1)  # (B, T, C)
         x = self.project(x)  # (B, T, hidden)
         x = x.permute(0, 2, 1)  # (B, hidden, T)
 
         # Per-frame logits and attention weights
         frame_logits = self.frame_logits_conv(x)  # (B, num_classes, T)
-        att_weights = torch.softmax(self.attention_conv(x), dim=-1)  # (B, num_classes, T)
+        att_raw = torch.tanh(self.attention_conv(x))  # (B, num_classes, T)
+        att_weights = torch.softmax(att_raw, dim=-1)  # (B, num_classes, T)
 
-        # Clipwise: attention-weighted sum of frame logits over time
-        clipwise_logits = (att_weights * frame_logits).sum(dim=-1)  # (B, num_classes)
+        # Clipwise: attention-weighted sum in PROBABILITY space
+        frame_probs = torch.sigmoid(frame_logits)  # (B, num_classes, T)
+        clipwise_probs = (att_weights * frame_probs).sum(dim=-1)  # (B, num_classes)
+        clipwise_logits = torch.logit(clipwise_probs.clamp(1e-7, 1.0 - 1e-7))
 
         return clipwise_logits, frame_logits
 
