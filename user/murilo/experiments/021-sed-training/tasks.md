@@ -176,34 +176,67 @@ over LSEHead. Config: v6k (v5j recipe, hidden_dim=1024, only head changes).
 - [x] F.4c Train v6k on PACE — **val/auroc 0.871 (−0.003), cmap 0.596 (−0.029)**
 - [x] F.4d ONNX export + LB — **0.888 LB (−0.018)** (first 2 subs scored 0.508 from species_mapping bug)
 
-### F.2 3-Channel mel input (DEFERRED)
-
-Low priority — unlikely to close the gap. Deferred until after F.4 results.
-
-### F.3 Overlap reconstruction + delta blending (DEFERRED)
-
-Inference-only kernel change. Can stack with any model. Deferred until after F.4.
-
 ---
 
-## Future: Mix2 Augmentation (reference for potential Phase G after F)
+## What We've Ruled Out (Phases A–F)
 
-**Paper**: "Mixture of Mixups for Multi-label Classification of Rare Anuran Sounds"
-([arxiv 2403.09598](https://arxiv.org/abs/2403.09598)) —
-see `docs/vendor/mix2-mixture-of-mixups.md` for full analysis.
+| Hypothesis | Test | Result | Conclusion |
+|-----------|------|--------|------------|
+| Site/hour priors | Phase A (v5j-pp2) | +0.003 LB | Minor, not the gap |
+| CE loss | Phase B (v6a) | −0.020 offline | Doesn't work with LSEHead |
+| Waveform MixUp | Phase B (v6b) | −0.019 LB | Hurts in our setup |
+| Waveform augs (noise, stretch) | Phase B (v6c) | −0.013 offline | Regressed |
+| More epochs (25) | Phase B (v6d) | −0.001 offline | Flat |
+| AttHead (our buggy impl) | Phase C (v6e-v6j) | −0.013 to −0.017 LB | Head hurts LB |
+| Backbone scaling (HGNet-B2) | Phase C (v6h) | −0.017 LB | Not the lever |
+| AttHeadMultiContext (Tattaka) | Phase D (v7a-v7c) | −0.023 to −0.075 | Wrong approach |
+| Multi-context LSEHead | Phase E (v8a/v8b) | −0.010 to −0.024 LB | Offline gains don't transfer |
+| Framewise-max inference | Phase F.1 (v5j-fmax) | 0.906 (identical) | Pooling method is not the gap |
+| Competition-standard AttHead | Phase F.4 (v6k) | −0.018 LB | Head architecture is not the gap |
 
-Randomly alternates between 3 mixing strategies per training step:
-- **Mixup** (25%): standard spectrogram-space interpolation (what we do now)
-- **Manifold Mixup** (50%): mix embeddings after backbone, before head
-- **MultiMix** (25%): batch-level Dirichlet interpolation in embedding space
+## Remaining Gaps to Explore — Next Steps
 
-Key result: individual methods underperform baseline, but random combination yields
-+4.2% macro F-score overall, **+6.2% on rare classes** (anuran classification).
-Particularly relevant for our 25 insect sonotypes and rare amphibians.
+The 0.906→0.920+ gap is NOT in the head architecture or inference strategy.
+What remains untested or undertested:
 
-**Implementation priority**: After Phase E (multi-context). Manifold Mixup alone
-(mix backbone features before LSEHead) is the highest-value single addition.
-Could stack with multi-context — mix the 15s feature maps before splitting into chunks.
+### 1. CE loss + proper head pairing (HIGH PRIORITY)
+
+We tested CE with LSEHead (v6a, −0.020) and CE with our old broken AttHead (v6f,
+−0.024). Both failed. But Salman (0.921) and BirdCLEF 2024 1st place both use CE
+with sigmoid at inference. We've never tested CE + LSEHead + framewise-max inference,
+or CE on the fixed AttHead (v6k used BCE). The CE+sigmoid trick specifically needs
+softmax competition during training — may require different recipe tuning (LR,
+epochs, warmup).
+
+### 2. Backbone exploration (HIGH PRIORITY)
+
+Salman explicitly moved away from EfficientNet but won't say what to. Boredom
+claims 0.922+ with EfficientNet. We use HGNetV2-B0 (0.906). Candidates to try:
+- **ConvNeXt-Small/Tiny** (EliKal gets 0.907 with ConvNeXt-Small + distillation)
+- **RegNetY-008/016** (used by BirdCLEF 2024 1st and 2025 1st ensembles)
+- **ECA-NFNet-L0** (used by BirdCLEF 2023 1st and 2025 1st ensembles)
+- All with our proven v5j recipe (LSEHead + BCE + OneCycleLR)
+
+### 3. Temporal modeling (MEDIUM — from hengck23)
+
+hengck23's comment: "to get lb 0.92+ from timm, you need to add temporal."
+He references the Perch notebook (0.930) which uses temporal features.
+Our multi-context experiments (Phase E) improved offline but not LB — may need
+hengck23's specialized wave mix augmentation or 4-fold to realize the gains.
+Awaiting his reply on what "temporal" means beyond multi-context.
+
+### 4. Overlap reconstruction + delta blending (LOW — inference only)
+
+Nikita's inference uses overlapping windows with delta blending. EliKal uses
+time-shift TTA. No retraining needed — kernel change only. Low expected impact
+since v5j-fmax showed pooling method doesn't matter much, but could stack.
+
+### 5. Mix2 augmentation (LOW — research)
+
+Paper: "Mixture of Mixups for Multi-label Classification of Rare Anuran Sounds"
+([arxiv 2403.09598](https://arxiv.org/abs/2403.09598)). Randomly alternates
+Mixup, Manifold Mixup, and MultiMix. +6.2% on rare classes for anurans.
+See `docs/vendor/mix2-mixture-of-mixups.md`.
 
 ---
 
