@@ -79,12 +79,16 @@ class CachedEmbeddingDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.load_spatial = load_spatial
+        self._is_setup = False
 
     def setup(self, stage: str | None = None) -> None:
+        if self._is_setup:
+            return  # Lightning calls setup() again in trainer.fit(); don't double-load
         self.train_ds = CachedEmbeddingDataset(self.shard_dir, split="train", load_spatial=self.load_spatial)
         self.val_ds = CachedEmbeddingDataset(self.shard_dir, split="val", load_spatial=self.load_spatial)
         self.num_classes = self.train_ds.num_classes
         self.species_list = self.train_ds.species_list
+        self._is_setup = True
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
@@ -141,6 +145,8 @@ class FocalDataModule(pl.LightningDataModule):
         self.load_spatial = load_spatial
 
     def setup(self, stage: str | None = None) -> None:
+        if hasattr(self, "_is_setup") and self._is_setup:
+            return  # Lightning calls setup() again in trainer.fit(); don't double-load
         self.train_ds = load_sharded_dataset(self.focal_dir, split="train", load_spatial=self.load_spatial)
         self.val_ds = load_sharded_dataset(self.focal_dir, split="val", load_spatial=self.load_spatial)
 
@@ -164,6 +170,7 @@ class FocalDataModule(pl.LightningDataModule):
             len(self.val_ds),
             len(self.sc_val_ds) if self.sc_val_ds else "N/A",
         )
+        self._is_setup = True
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
