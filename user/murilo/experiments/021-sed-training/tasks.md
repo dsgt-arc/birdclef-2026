@@ -8,7 +8,7 @@ techniques (multi-context training, AttHead variants, backbone scaling).
 **Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase F planned: framewise-max inference, 3-ch input, overlap reconstruction (gap analysis fixes).**
+### Status: **Phase F: v6k (competition-standard AttHead) training. F.1 framewise-max = no gain (0.906).**
 
 - **Branch**: `mg/021-sed-training`
 - **Architecture reference**: [`notes/sed-architecture-overview.md`](../../notes/sed-architecture-overview.md)
@@ -145,48 +145,45 @@ Same LSEHead, same loss, same recipe. The head processes 5s chunks (not 15s).
 
 ---
 
-## Phase F: Gap Analysis Fixes — PLANNED
+## Phase F: Gap Analysis Fixes — IN PROGRESS
 
 Motivated by `notes/2026-04-05-sed-gap-analysis.md`. Comparing our v5j (0.906)
 against Nikita 1st place 2025 inference code and Salman's 0.921, we identified
-three gaps we've never tested. Two require no retraining (inference-only).
+gaps in our pipeline. See also Nikita's reference code and the gap analysis.
 
 Reference code: [`birdclef-2025-nikita-1st-place-sed.py`](../../../docs/references/kaggle/birdclef-2025/birdclef-2025-nikita-1st-place-sed.py)
 Gap analysis: [`2026-04-05-sed-gap-analysis.md`](../../notes/2026-04-05-sed-gap-analysis.md)
 
-### F.1 Framewise-max inference (NO RETRAINING)
+### F.1 Framewise-max inference — COMPLETE (no gain)
 
-Nikita's inference disables attention entirely — uses only `framewise_logit.sigmoid()`
-→ max over time. Salman: "Attn head's framewise max is better than LSE head."
-Our v5j uses clipwise-only (`blend_clip=1.0, blend_frame=0.0`). We have **never**
-tested `blend_clip=0.0, blend_frame=1.0` (framewise-max only).
+Tested `blend_clip=0.0, blend_frame=1.0` on v5j checkpoint. Identical LB to
+the 0.75/0.25 blend (0.906). LSEHead with T=1.0 is already near hard-max, so
+the aggregation method isn't the gap — it's the per-frame feature quality.
 
 - [x] F.1a Re-export v5j ONNX with `blend_clip=0.0, blend_frame=1.0`
 - [x] F.1b Submit to LB — **0.906** (identical to v5j 0.75/0.25 blend)
 - [ ] ~~F.1c If it helps, test on v5j-4fold too~~ — skipped, no gain
 
-### F.2 3-Channel mel input (REQUIRES RETRAINING)
+### F.4 Competition-standard AttHead — TRAINING
 
-Nikita stacks mono mel 3×: `torch.stack([mel, mel, mel], dim=1)` with backbone
-`in_chans=3` (default ImageNet). This preserves pretrained stem weights exactly
-instead of averaging 3→1 channel. Could explain why EliKal gets 0.909 with
-EffNet-B0 (we get 0.855).
+Fixed AttHead to match Nikita/Tattaka (pre-dropout, tanh attention, probability-space
+clipwise). Train with dual supervision (50% clipwise + 50% framewise max), infer
+with framewise-max only. Tests whether proper AttHead improves per-frame features
+over LSEHead. Config: v6k (v5j recipe, hidden_dim=1024, only head changes).
 
-- [ ] F.2a Modify model wrapper to use `in_chans=3` + repeat mel 3×
-- [ ] F.2b Create v9a config (v5j recipe + 3-channel, everything else identical)
-- [ ] F.2c Train v9a, compare offline metrics
-- [ ] F.2d ONNX export + LB submission
+- [x] F.4a Fix AttHead in `sed_head.py` (pre-dropout, tanh, sigmoid-space)
+- [x] F.4b Create v6k config (v5j + AttHead + dual 50/50 + fmax inference)
+- [ ] F.4c Train v6k on PACE — **training**
+- [ ] F.4d Check offline metrics vs v5j (0.874)
+- [ ] F.4e ONNX export + LB submission (if offline ≥ 0.870)
 
-### F.3 Overlap reconstruction + delta blending (NO RETRAINING)
+### F.2 3-Channel mel input (DEFERRED)
 
-Nikita processes overlapping windows (20s with 5s step = 75% overlap), averages
-where windows overlap, takes max per 5s segment, then delta-blends ±2 frames
-(0.5 center + 0.25 left + 0.25 right). Temporal TTA without extra forward passes.
-EliKal also uses "time-shift TTA."
+Low priority — unlikely to close the gap. Deferred until after F.4 results.
 
-- [ ] F.3a Implement overlap reconstruction in Kaggle kernel
-- [ ] F.3b Test on v5j single model
-- [ ] F.3c Can stack with F.1 (framewise max + overlap)
+### F.3 Overlap reconstruction + delta blending (DEFERRED)
+
+Inference-only kernel change. Can stack with any model. Deferred until after F.4.
 
 ---
 
