@@ -186,15 +186,22 @@ def main():
             features = self.encoder.forward_features(mel)
             clipwise_logits, framewise_logits = self.sed_head(features)
 
+            framewise_max_logits = framewise_logits.max(dim=-1).values
+            frame_probs = torch.sigmoid(framewise_max_logits)
+
+            # Skip clipwise when blend_clip == 0 to avoid NaN propagation
+            # (AttHead's clipwise uses torch.logit which can produce NaN in ONNX,
+            # and 0.0 * NaN = NaN in IEEE 754)
+            if self.blend_clip == 0.0:
+                return frame_probs
+
             # Handle multi-chunk: (B, N, C) → center chunk probs → (B, C)
             if clipwise_logits.dim() == 3:
                 n = clipwise_logits.shape[1]
                 if n % 2 == 1:
-                    # Odd chunks (3): exact center aligns with target 5s
                     center = n // 2
                     clip_probs = torch.sigmoid(clipwise_logits[:, center, :])
                 else:
-                    # Even chunks (4): target spans two center chunks, average them
                     c1, c2 = n // 2 - 1, n // 2
                     clip_probs = (
                         torch.sigmoid(clipwise_logits[:, c1, :])
@@ -203,13 +210,10 @@ def main():
             else:
                 clip_probs = torch.sigmoid(clipwise_logits)
 
-            framewise_max_logits = framewise_logits.max(dim=-1).values
+            if self.blend_frame == 0.0:
+                return clip_probs
 
-            # Blended probabilities
-            probs = self.blend_clip * clip_probs + self.blend_frame * torch.sigmoid(
-                framewise_max_logits
-            )
-            return probs
+            return self.blend_clip * clip_probs + self.blend_frame * frame_probs
 
     wrapper = SEDWrapper(
         module.encoder,
