@@ -3,7 +3,7 @@
 #SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH -p cpu-small
-#SBATCH -t 30
+#SBATCH -t 720
 #SBATCH -q inferno
 #SBATCH --output=logs/train-%j.out
 
