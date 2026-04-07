@@ -641,6 +641,34 @@ export_hgnet_b0_sed_v5j() {
         --output-dir artifacts/weights/hgnet-b0-sed-v5j/
 }
 
+export_hgnet_b0_sed_v5j_fmax() {
+    echo "=== Exporting HGNetV2-B0 SED v5j-fmax (framewise-max only, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-fmax/ \
+        --blend-clip 0.0 --blend-frame 1.0
+    cp artifacts/weights/species_mapping_2026_234.json artifacts/weights/hgnet-b0-sed-v5j-fmax/species_mapping.json
+}
+
+export_hgnet_b0_sed_v5j_clip() {
+    echo "=== Exporting HGNetV2-B0 SED v5j-clip (clipwise-only / LSE, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-clip/ \
+        --blend-clip 1.0 --blend-frame 0.0
+    cp artifacts/weights/species_mapping_2026_234.json artifacts/weights/hgnet-b0-sed-v5j-clip/species_mapping.json
+}
+
 export_hgnet_b0_sed_v5g() {
     echo "=== Exporting HGNetV2-B0 SED v5g (ttahara full reproduction, 234 classes) ==="
     local CKPT
@@ -731,6 +759,101 @@ export_hgnet_b0_sed_v5j_4fold() {
     ls -lh "${OUTPUT_DIR}"/model_fold*.onnx
 }
 
+# ============================================================================
+# Exp 021: SED training Phase C (AttHead + backbone scaling)
+# ============================================================================
+
+EXP021_DIR="$(dirname "$EXPERIMENT_DIR")/021-sed-training"
+
+export_hgnet_b2_sed_v6h() {
+    echo "=== Exporting HGNetV2-B2 SED v6h (AttHead + BCE, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/021-sed-training/checkpoints/2026-hgnet-b2-sed-v6h")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP021_DIR}/config/hgnet_b2_sed_v6h.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b2-sed-v6h/ \
+        --blend-clip 0.75 --blend-frame 0.25
+}
+
+export_hgnet_b0_sed_v6b() {
+    echo "=== Exporting HGNetV2-B0 SED v6b (waveform MixUp, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/021-sed-training/checkpoints/2026-hgnet-b0-sed-v6b")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP021_DIR}/config/hgnet_b0_sed_v6b.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v6b/
+}
+
+export_effnet_b0_ns_sed_v6j() {
+    echo "=== Exporting EffNet-B0 NS SED v6j (AttHead + BCE, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/021-sed-training/checkpoints/2026-effnet-b0-ns-sed-v6j")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP021_DIR}/config/effnet_b0_ns_sed_v6j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnet-b0-ns-sed-v6j/ \
+        --blend-clip 0.75 --blend-frame 0.25
+}
+
+# Exp 021 Phase E: LSEHead multi-context
+export_hgnet_b0_mc_lse_sed_v8a() {
+    echo "=== Exporting HGNetV2-B0 MC-LSE SED v8a (3×5s multi-context, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/021-sed-training/checkpoints/2026-hgnet-b0-mc-lse-sed-v8a")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP021_DIR}/config/hgnet_b0_mc_lse_sed_v8a.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-mc-lse-sed-v8a/
+}
+
+export_hgnet_b0_mc_lse_sed_v8b() {
+    echo "=== Exporting HGNetV2-B0 MC-LSE SED v8b (4×5s multi-context, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/021-sed-training/checkpoints/2026-hgnet-b0-mc-lse-sed-v8b")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP021_DIR}/config/hgnet_b0_mc_lse_sed_v8b.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-mc-lse-sed-v8b/
+}
+
+export_hgnet_b0_atthead_v6k() {
+    echo "=== Exporting HGNetV2-B0 AttHead v6k (competition-standard AttHead, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/021-sed-training/checkpoints/2026-hgnet-b0-atthead-v6k")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP021_DIR}/config/hgnet_b0_atthead_v6k.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-atthead-v6k/ \
+        --blend-clip 0.0 --blend-frame 1.0
+    cp artifacts/weights/species_mapping_2026_234.json artifacts/weights/hgnet-b0-atthead-v6k/species_mapping.json
+}
+
+export_hgnet_b0_sed_v6l() {
+    echo "=== Exporting HGNetV2-B0 SED v6l (manifold mixup, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/021-sed-training/checkpoints/2026-hgnet-b0-sed-v6l")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP021_DIR}/config/hgnet_b0_sed_v6l.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v6l/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -778,6 +901,8 @@ case "$MODEL" in
     effnet-b0-sed-v1|effnet-b0-sed-v2|effnet-b0-sed-v3a|effnet-b0-sed-v3b|effnet-b0-sed-v3c|effnet-b0-sed-v3d|\
     effnet-b0-sed-v4a|effnet-b0-sed-v4b|effnet-b0-sed-v4b-fulldata|effnet-b0-sed-v4c|effnet-b0-sed-v4d|effnet-b0-sed-v4e|effnet-b0-sed-v4f|effnet-b0-sed-v4g|effnet-b0-sed-v4h|effnet-b0-sed-v4j|\
     effnet-b0-sed-v5a|effnet-b0-sed-v5b|effnet-b0-sed-v5c|effnet-b0-sed-v5d|hgnet-b0-sed-v5e|effnet-b0-sed-v5f|hgnet-b0-sed-v5g|hgnet-b0-sed-v5g-4fold|hgnet-b0-sed-v5h|hgnet-b0-sed-v5i|hgnet-b0-sed-v5j|hgnet-b0-sed-v5j-4fold|hgnet-b0-sed-v5k|hgnet-b0-sed-v5l|effnet-b0-sed-v5m|effnet-b0-sed-v5n|all-019-ablations|\
+    hgnet-b0-sed-v5j-fmax|hgnet-b0-sed-v5j-clip|hgnet-b0-atthead-v6k|\
+    hgnet-b0-sed-v6b|hgnet-b0-sed-v6l|hgnet-b2-sed-v6h|effnet-b0-ns-sed-v6j|hgnet-b0-mc-lse-sed-v8a|hgnet-b0-mc-lse-sed-v8b|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -878,8 +1003,17 @@ case "$MODEL" in
     hgnet-b0-sed-v5k)          export_hgnet_b0_sed_v5k ;;
     hgnet-b0-sed-v5i)          export_hgnet_b0_sed_v5i ;;
     hgnet-b0-sed-v5j)          export_hgnet_b0_sed_v5j ;;
+    hgnet-b0-sed-v5j-fmax)     export_hgnet_b0_sed_v5j_fmax ;;
+    hgnet-b0-sed-v5j-clip)     export_hgnet_b0_sed_v5j_clip ;;
     hgnet-b0-sed-v5j-4fold)    export_hgnet_b0_sed_v5j_4fold ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
+    hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
+    hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;
+    effnet-b0-ns-sed-v6j)      export_effnet_b0_ns_sed_v6j ;;
+    hgnet-b0-mc-lse-sed-v8a)   export_hgnet_b0_mc_lse_sed_v8a ;;
+    hgnet-b0-mc-lse-sed-v8b)   export_hgnet_b0_mc_lse_sed_v8b ;;
+    hgnet-b0-atthead-v6k)      export_hgnet_b0_atthead_v6k ;;
+    hgnet-b0-sed-v6l)          export_hgnet_b0_sed_v6l ;;
     all-019-ablations)
         export_effnet_b0_sed_v5a
         echo ""

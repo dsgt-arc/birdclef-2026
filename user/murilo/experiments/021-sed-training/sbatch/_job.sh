@@ -43,6 +43,8 @@ echo "Job ID: ${SLURM_JOB_ID:-local}"
 echo "Node: $(hostname)"
 echo "Date: $(date)"
 echo "Config: ${CONFIG}"
+echo "Git commit: $(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+echo "Git branch: $(git -C "$REPO_DIR" branch --show-current 2>/dev/null || echo 'unknown')"
 echo ""
 nvidia-smi
 echo ""

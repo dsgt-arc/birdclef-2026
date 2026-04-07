@@ -40,7 +40,7 @@ sys.path.insert(0, str(repo_root / "src"))
 from birdclef.data.sed import SEDDataModule  # noqa: E402
 from birdclef.data.soundscape import build_full_species_list  # noqa: E402
 from birdclef.encoders.efficientnet import EfficientNetEncoder  # noqa: E402
-from birdclef.heads.sed_head import AttBlockV2, AttHead, LSEHead  # noqa: E402
+from birdclef.heads.sed_head import AttBlockV2, AttHead, AttHeadMultiContext, LSEHead  # noqa: E402
 from birdclef.lightning.sed_finetune import SEDFinetuneModule  # noqa: E402
 from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram  # noqa: E402
 
@@ -52,7 +52,7 @@ logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.WARNING)
 
 DEFAULT_PROJECT_NAME = "ps-clef2026_birdclef-0"
-EXPERIMENT_NAME = "017-mel-overhaul"
+EXPERIMENT_NAME = "021-sed-training"
 
 
 def load_config(config_path: str) -> dict:
@@ -88,11 +88,20 @@ def main():
     config = load_config(config_path)
     run_name = config["run_name"]
 
+    # Reproducibility: seed all RNGs before anything else
+    seed = config["data"].get("seed", 42)
+    pl.seed_everything(seed, workers=True)
+    logger.info(f"Seed: {seed} (pl.seed_everything)")
+
     logger.info(f"Config: {config_path}")
     logger.info(f"Run name: {run_name}")
 
     if gpu_check_mode:
         config["training"]["max_epochs"] = args.gpu_check
+        # Cap warmup to avoid OneCycleLR pct_start > 1.0
+        warmup = config["training"].get("warmup_epochs", 0)
+        if warmup >= args.gpu_check:
+            config["training"]["warmup_epochs"] = 0
         logger.info(f"GPU check mode: {args.gpu_check} epoch(s)")
 
     if args.num_workers is not None:
@@ -127,9 +136,12 @@ def main():
 
     head_type = config["sed_head"].get("type", "att_head")
     logger.info(f"Building SED head: {head_type}...")
-    head_cls = {"att_head": AttHead, "att_block_v2": AttBlockV2, "lse_head": LSEHead}.get(
-        head_type, AttHead
-    )
+    head_cls = {
+        "att_head": AttHead,
+        "att_head_multi_context": AttHeadMultiContext,
+        "att_block_v2": AttBlockV2,
+        "lse_head": LSEHead,
+    }.get(head_type, AttHead)
     head_kwargs = {
         "in_channels": embed_dim,
         "num_classes": num_classes,
@@ -140,6 +152,10 @@ def main():
     if head_type == "lse_head":
         head_kwargs["lse_temperature"] = config["sed_head"].get("lse_temperature", 1.0)
         head_kwargs["freq_pool"] = config["sed_head"].get("freq_pool", "gem")
+        head_kwargs["n_chunks"] = config["sed_head"].get("n_chunks", 1)
+    elif head_type == "att_head_multi_context":
+        head_kwargs["train_period"] = config["sed_head"].get("train_period", 15.0)
+        head_kwargs["infer_period"] = config["sed_head"].get("infer_period", 5.0)
     sed_head = head_cls(**head_kwargs)
 
     # ========================================================================
@@ -264,6 +280,10 @@ def main():
         asl_clip=training_cfg.get("asl_clip", 0.05),
         mel_transform=gpu_mel_transform,
         waveform_mixup=waveform_mixup,
+        waveform_noise=training_cfg.get("waveform_noise", False),
+        waveform_time_stretch=training_cfg.get("waveform_time_stretch", False),
+        manifold_mixup=training_cfg.get("manifold_mixup", False),
+        manifold_mixup_prob=training_cfg.get("manifold_mixup_prob", 0.5),
         scheduler_type=training_cfg.get("scheduler_type", "cosine"),
         onecycle_div_factor=training_cfg.get("onecycle_div_factor", 25.0),
         onecycle_final_div_factor=training_cfg.get("onecycle_final_div_factor", 4.0),
@@ -440,6 +460,7 @@ def main():
         num_sanity_val_steps=0 if fulldata else 2,
         enable_progress_bar=True,
         enable_model_summary=True,
+        deterministic=True,
     )
 
     # ========================================================================

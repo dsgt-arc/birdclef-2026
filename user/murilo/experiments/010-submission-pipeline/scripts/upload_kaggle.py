@@ -304,6 +304,17 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j.json",
     },
+    # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
+    "hgnet-b0-sed-v5j-fmax": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-fmax",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-fmax.json",
+    },
+    "hgnet-b0-sed-v5j-clip": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-clip-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-clip",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-clip.json",
+    },
     # Exp 019 embed_dim hypothesis test
     "effnet-b0-sed-v5m": {
         "slug": "birdclef-2026-effnet-b0-sed-v5m-weights",
@@ -314,6 +325,57 @@ MODELS = {
         "slug": "birdclef-2026-effnet-b0-sed-v5n-weights",
         "weights_dir": "artifacts/weights/effnet-b0-sed-v5n",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-sed-v5n.json",
+    },
+    # Exp 021 Phase A: v5j + site/hour priors (pp2)
+    "hgnet-b0-sed-v5j-pp2": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-pp2-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-pp2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-pp2.json",
+    },
+    "hgnet-b0-sed-v5j-4fold-pp2": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-4fold-pp2-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-4fold-pp2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-4fold-pp2.json",
+    },
+    # Exp 021 Phase B: recipe ablations
+    "hgnet-b0-sed-v6b": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v6b-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v6b",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v6b.json",
+    },
+    # Exp 021 Phase E: LSEHead multi-context
+    "hgnet-b0-mc-lse-sed-v8a": {
+        "slug": "birdclef-2026-hgnet-b0-mc-lse-sed-v8a-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-mc-lse-sed-v8a",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-mc-lse-sed-v8a.json",
+    },
+    "hgnet-b0-mc-lse-sed-v8b": {
+        "slug": "birdclef-2026-hgnet-b0-mc-lse-sed-v8b-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-mc-lse-sed-v8b",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-mc-lse-sed-v8b.json",
+    },
+    # Exp 021 Phase F: competition-standard AttHead (v6k)
+    "hgnet-b0-atthead-v6k": {
+        "slug": "birdclef-2026-hgnet-b0-atthead-v6k-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-atthead-v6k",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-atthead-v6k.json",
+    },
+    # Exp 021 Phase C: AttHead + backbone scaling
+    "hgnet-b2-sed-v6h": {
+        "slug": "birdclef-2026-hgnet-b2-sed-v6h-weights",
+        "weights_dir": "artifacts/weights/hgnet-b2-sed-v6h",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b2-sed-v6h.json",
+    },
+    "effnet-b0-ns-sed-v6j": {
+        "slug": "birdclef-2026-effnet-b0-ns-sed-v6j-weights",
+        "weights_dir": "artifacts/weights/effnet-b0-ns-sed-v6j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-ns-sed-v6j.json",
+    },
+    # Exp 021 Phase G: manifold mixup
+    "hgnet-b0-sed-v6l": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v6l-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v6l",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v6l.json",
     },
 }
 
@@ -418,7 +480,12 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
 
     # Copy species_mapping.json into model weights dir
     # Soundscape models use 234-species mapping, 2026 models use 206, 2025 uses 41-overlap
-    if "-soundscape" in model_name or "-student" in model_name or "-sed" in model_name:
+    if (
+        "-soundscape" in model_name
+        or "-student" in model_name
+        or "-sed" in model_name
+        or "-atthead" in model_name
+    ):
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026_234.json"
     elif "-2026" in model_name:
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026.json"

@@ -1,0 +1,16 @@
+{
+  "id": "murilogustineli/birdclef-2026-hgnet-b0-mc-lse-sed-v8b",
+  "title": "BirdCLEF 2026 HGNet-B0 MC-LSE SED v8b",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-deps",
+    "murilogustineli/birdclef-2026-hgnet-b0-mc-lse-sed-v8b-weights"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}

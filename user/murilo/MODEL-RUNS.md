@@ -293,6 +293,12 @@ Single-variable ablations from v5g (0.892 LB). All use HGNetV2-B0 + ttahara reci
 ‡ v5m uses EfficientNet-B0 (320 native embed_dim) + 1x1 Conv2d projection to 1024. Tests whether HGNet's advantage is from embed_dim. All other params match v5j.
 ‡‡ v5n uses EfficientNet-B0 with v5j recipe (NNAudio+AmplitudeToDB) but NO projection (native 320 embed_dim). Control for v5m.
 
+**Note on inference post-processing**: All LB scores from v5g onward include
+inference-time TTA (±2.5s shifts, 50/25/25 weighting), temporal smoothing
+(Gaussian), and TopN filtering, enabled globally in `submission.py`
+(`ENABLE_TTA=True`, `ENABLE_TEMPORAL_SMOOTHING=True`, `ENABLE_TOPN=True`).
+These are baked into every score — there is no "raw" v5j LB without them.
+
 ## BirdCLEF 2026 — Perch Probes (exp 018)
 
 Frozen Perch v2 as feature extractor + LogReg probe classifiers. No GPU training —
@@ -343,6 +349,125 @@ Key fixes over buggy v2 (0.898):
 - Prior tables from ALL 739 soundscape annotations (was labeled subset only)
 - 6-category fuse_scores: proxy λ=0.8, prior-only REPLACE, inactive = -8.0
 - Filtered to 59 fully-labeled files / 708 windows (was 66 files / 792 windows)
+
+## BirdCLEF 2026 — SED Training Improvements (exp 021)
+
+Post-processing and training recipe improvements targeting 0.920+ single-model LB.
+Motivated by competitor insights from Kaggle discussion #683791.
+
+**All exp 021 LB scores include TTA + temporal smoothing + TopN** (inherited from
+`submission.py` global flags). See note under exp 019 Step 4.
+
+### Phase A: Site/Hour Priors (no retraining)
+
+Multiplicative site×hour×species priors from 66 labeled soundscapes (1478 segments,
+9 sites, 13 hours). Taxa-aware lambda: Aves=0.3, Amphibia/Insecta=0.5, Mammalia/Reptilia=0.2.
+
+| Slug | Base Model | Priors | LB | Delta | Notes |
+|------|-----------|--------|-----|-------|-------|
+| `hgnet-b0-sed-v5j` | HGNetV2-B0 single | No | **0.906** | — | Baseline (exp 019) |
+| **`hgnet-b0-sed-v5j-pp2`** | HGNetV2-B0 single | **Yes** | **0.909** | **+0.003** | Site/hour priors, 11 min runtime |
+| `hgnet-b0-sed-v5j-4fold` | HGNetV2-B0 ×4 | No | **0.913** | — | Baseline (exp 019) |
+| **`hgnet-b0-sed-v5j-4fold-pp2`** | **HGNetV2-B0 ×4** | **Yes** | **0.917** | **+0.004** | **New best SED** |
+
+Priors gave +0.003 single / +0.004 4-fold (not the +0.006 Salman reported). Possible
+reasons: different prior implementation (multiplicative vs logit-space), different lambda
+tuning, or model already captures site/time patterns that priors are redundant with.
+
+### Phase B: Training Recipe Ablations
+
+Single-variable changes from v5j (HGNetV2-B0, val/auroc 0.874, LB 0.906).
+All trained with seed=42, deterministic=True, on PACE GPU.
+
+| Slug | Change from v5j | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------------|-----------|----------|------------|-----|------------|
+| `hgnet-b0-sed-v6a` | CE loss (primary_label) | 0.854 | 0.580 | 18 | pending | `021-.../2026-hgnet-b0-sed-v6a/best-epochepoch=18.ckpt` |
+| `hgnet-b0-sed-v6b` | Waveform MixUp | 0.871 | 0.625 | 16 | **0.887** | `021-.../2026-hgnet-b0-sed-v6b/best-epochepoch=16.ckpt` |
+| `hgnet-b0-sed-v6c` | Waveform MixUp + noise + stretch | 0.861 | 0.608 | 16 | pending | `021-.../2026-hgnet-b0-sed-v6c/best-epochepoch=16.ckpt` |
+| `hgnet-b0-sed-v6d` | 25 epochs (vs 20) | **0.873** | **0.651** | 22 | pending | `021-.../2026-hgnet-b0-sed-v6d/best-epochepoch=22.ckpt` |
+
+CE loss (v6a) regressed −0.020 — single-label assumption hurts on multi-label soundscapes.
+Waveform MixUp (v6b) confirmed hurts on LB: 0.887 (−0.019 vs v5j's 0.906). Spectrogram MixUp remains better.
+25 epochs (v6d) essentially flat on AUROC but improved cmap (+0.026).
+
+### Phase C: AttHead + Backbone Scaling
+
+All use **AttHead with dual supervision** (clipwise_weight=0.5, framewise_weight=0.5,
+blend 75% clip + 25% frame max). Replaces LSEHead from v5j. 20 epochs, seed=42.
+
+| Slug | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|--------|------|------|-----------|----------|------------|-----|------------|
+| `hgnet-b2-sed-v6h` | HGNetV2-B2 | 12M | AttHead | BCE | **0.876** | **0.658** | 18 | **0.889** | `021-.../2026-hgnet-b2-sed-v6h/best-epochepoch=18.ckpt` |
+| `convnextv2-nano-sed-v6i` | ConvNeXt-V2 Nano | 15M | AttHead | BCE | 0.874 | **0.663** | 16 | — | `021-.../2026-convnextv2-nano-sed-v6i/best-epochepoch=16.ckpt` |
+| **`effnet-b0-ns-sed-v6j`** | **EffNet-B0 NS** | **5.3M** | AttHead | BCE | 0.874 | 0.626 | 15 | **0.893** | `021-.../2026-effnet-b0-ns-sed-v6j/best-epochepoch=15.ckpt` |
+| `hgnet-b0-sed-v6e` | HGNetV2-B0 | 6M | AttHead | BCE | 0.870 | 0.611 | 18 | skip | `021-.../2026-hgnet-b0-sed-v6e/best-epochepoch=18.ckpt` |
+| `effnet-b3-ns-sed-v6g` | EffNet-B3 NS | 12M | AttHead | CE | 0.859 | 0.611 | 19 | skip | `021-.../2026-effnet-b3-ns-sed-v6g/best-epochepoch=19.ckpt` |
+| `hgnet-b0-sed-v6f` | HGNetV2-B0 | 6M | AttHead | CE | 0.850 | 0.577 | 18 | skip | `021-.../2026-hgnet-b0-sed-v6f/best-epochepoch=18.ckpt` |
+
+### Phase F: Competition-Standard AttHead Fix (v6k)
+
+Fixed AttHead to match Nikita 1st place 2025 / Tattaka exactly: pre-dropout(p/2),
+softmax(tanh(x)) attention, probability-space clipwise. Dual supervision (50/50).
+hidden_dim=1024 (matching v5j). Everything else identical to v5j.
+
+| Slug | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|--------|------|------|-----------|----------|------------|-----|------------|
+| `hgnet-b0-atthead-v6k` | HGNetV2-B0 | 6M | AttHead (fixed) | BCE | 0.871 | 0.596 | 19 | **0.888** | `021-.../2026-hgnet-b0-atthead-v6k/best-epochepoch=19.ckpt` |
+
+**Fixed AttHead regresses** −0.018 on LB (0.888 vs 0.906) and −0.003 offline.
+Barely differs from old buggy AttHead v6e (0.871 vs 0.870). The three fixes
+(pre-dropout, tanh, probability-space) are not the differentiator. AttHead
+consistently underperforms LSEHead on HGNetV2-B0 on both offline and LB.
+
+**Both Phase C AttHead models regressed on LB** vs v5j (LSEHead, 0.906): v6j 0.893
+(−0.013), v6h 0.889 (−0.017). Offline metrics are anti-correlated with LB.
+
+### Phase D: Multi-Context Training (AttHeadMultiContext)
+
+Train on 15-20s windows with center 5s inference crop. `AttHeadMultiContext` head with
+competition-standard attention (softmax(tanh(att)), probability-space clipwise).
+
+| Slug | Backbone | Params | Head | Context | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|--------|------|---------|-----------|----------|------------|-----|------------|
+| `effnet-b0-ns-mc-sed-v7c` | EffNet-B0 NS | 5.3M | AttHeadMC | 3×5s (15s) | 0.851 | 0.605 | 19 | — | `021-.../2026-effnet-b0-ns-mc-sed-v7c/best-epochepoch=19.ckpt` |
+| `hgnet-b0-mc-sed-v7a` | HGNetV2-B0 | 6M | AttHeadMC | 3×5s (15s) | 0.820 | 0.579 | 16 | — | `021-.../2026-hgnet-b0-mc-sed-v7a/best-epochepoch=16.ckpt` |
+| `hgnet-b0-mc-sed-v7b` | HGNetV2-B0 | 6M | AttHeadMC | 4×5s (20s) | 0.799 | 0.542 | 16 | — | `021-.../2026-hgnet-b0-mc-sed-v7b/best-epochepoch=16.ckpt` |
+
+**All v7 models massively regressed** vs v5j (0.874): v7c −0.023, v7a −0.054, v7b −0.075.
+Longer context = worse. Changed too many variables from v5j (head type + window length +
+batch size). Cannot isolate multi-context effect. hengck23 uses LSEHead with multi-context,
+not AttHead — the head change likely caused most of the regression, not the context itself.
+
+### Phase E: LSEHead + Temporal Split (correct multi-context)
+
+Keep LSEHead exactly as v5j, add `n_chunks` to split temporal features into N chunks
+before LSE pooling. Backbone sees full 15-20s context, each chunk pools at 5s resolution.
+Inspired by hengck23 (0.896 LB, CNN-only, 3×5s). See `multi-context-data-flow.md`.
+
+| Slug | Backbone | Head | Context | n_chunks | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|------|---------|----------|-----------|----------|------------|-----|------------|
+| `hgnet-b0-mc-lse-sed-v8a` | HGNetV2-B0 | LSEHead | 3×5s (15s) | 3 | **0.882** | **0.719** | 13 | 0.882 (avg) / 0.883 (center) | `021-.../2026-hgnet-b0-mc-lse-sed-v8a/best-epochepoch=13.ckpt` |
+| **`hgnet-b0-mc-lse-sed-v8b`** | **HGNetV2-B0** | **LSEHead** | **4×5s (20s)** | **4** | **0.881** | **0.727** | 9 | **0.896 (avg)** | `021-.../2026-hgnet-b0-mc-lse-sed-v8b/best-epochepoch=09.ckpt` |
+
+Best offline metrics ever (+0.007-0.008 AUROC, +0.094-0.102 cmap vs v5j). LB results:
+v8a 0.882 (avg) / 0.883 (center-chunk, +0.001 negligible), v8b **0.896** (avg). Center-chunk
+inference didn't help — the offline-to-LB gap is not an inference strategy issue. v8b's
+20s context outperforms v8a's 15s on LB (0.896 vs 0.883), suggesting longer backbone
+context is valuable but the approach still regresses vs v5j's 0.906 single-model LB.
+
+### Phase G: Manifold Mixup (v6l)
+
+Manifold mixup inspired by Mix2 (Moummad et al. 2024). Each batch randomly alternates
+between input-space spectrogram mixup (50%) and embedding-space manifold mixup (50%).
+Single-variable change from v5j — same backbone, head, loss, schedule.
+
+| Slug | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|--------|------|------|-----------|----------|------------|-----|------------|
+| `hgnet-b0-sed-v6l` | HGNetV2-B0 | 6M | LSEHead | BCE | 0.874 | 0.630 | 15 | **0.899** | `021-.../2026-hgnet-b0-sed-v6l/best-epochepoch=15.ckpt` |
+
+**Manifold mixup regresses −0.007 on LB** (0.899 vs 0.906) despite matching v5j offline
+(0.874). Embedding-space mixing disrupts soundscape generalization. Another training-time
+change that fails to improve on v5j.
 
 ## Checkpoint Base Path
 

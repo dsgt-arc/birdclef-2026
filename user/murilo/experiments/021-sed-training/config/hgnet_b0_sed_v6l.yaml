@@ -1,25 +1,23 @@
-# Experiment 021, v6h: EfficientNet-B3 NS (Noisy Student, JFT pretrained)
+# Experiment 021, v6l: Manifold Mixup (Mix2-inspired)
 #
-# Change from v5j: backbone hgnetv2_b0 → tf_efficientnet_b3.ns_jft_in1k
-# (12M params, 384 embed dim + 1x1 projection to 1024).
+# Single change from v5j: add manifold_mixup=true with 50% probability.
+# Each batch randomly alternates between input-space spectrogram mixup (50%)
+# and embedding-space manifold mixup (50%). Based on Moummad et al. 2024
+# "Mix2: Mixture of Mixups" — the alternation between mixing strategies
+# yields +6.2% on rare classes for anuran sounds. Individual methods alone
+# can hurt; random alternation helps.
 #
-# Motivation: Larger EfficientNet with Noisy Student pretraining (better for
-# noisy real-world data). B3 has 12M params (2x B0). Projection 384→1024
-# matches HGNet's embed dim (v5m pattern showed projection recovers 83% of gap).
-#
-# Risk: Salman warns "Efficientnet NS (with MBConv Architecture) were not
-# converging fast." Lower priority than HGNet/ConvNeXt variants.
+# Hypothesis: Manifold mixup in backbone feature space produces more
+# semantically meaningful augmentations than spectrogram-space mixing,
+# improving rare-class performance without changing architecture.
 
-run_name: "2026-effnet-b3-ns-sed-v6h"
+run_name: "2026-hgnet-b0-sed-v6l"
 
 encoder:
   type: "efficientnet"
-  # CHANGED: EfficientNet-B3 NS-JFT (12M params, 384 native embed)
-  model_name: "tf_efficientnet_b3.ns_jft_in1k"
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"
   pretrained: true
-  embed_dim: 384
-  # Project 384→1024 to match HGNet embed dim (v5m pattern)
-  projection_dim: 1024
+  embed_dim: 1024
 
 sed_head:
   type: "lse_head"
@@ -70,6 +68,9 @@ training:
   mixup_warmup_epochs: 5
   mixup_theta: 0.8
   mixup_per_sample: true
+  # CHANGED: Manifold mixup — 50% of batches mix in embedding space
+  manifold_mixup: true
+  manifold_mixup_prob: 0.5
   scheduler_type: "one_cycle"
   onecycle_div_factor: 25.0
   onecycle_final_div_factor: 4.0

@@ -91,6 +91,23 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 021 Phase G: manifold mixup
+    "birdclef-2026-hgnet-b0-sed-v6l-weights",
+    # Exp 021 Phase F: competition-standard AttHead + blend ablations
+    "birdclef-2026-hgnet-b0-atthead-v6k-weights",
+    "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",
+    "birdclef-2026-hgnet-b0-sed-v5j-clip-weights",
+    # Exp 021 Phase E: LSEHead multi-context
+    "birdclef-2026-hgnet-b0-mc-lse-sed-v8b-weights",
+    "birdclef-2026-hgnet-b0-mc-lse-sed-v8a-weights",
+    # Exp 021 Phase B: waveform MixUp
+    "birdclef-2026-hgnet-b0-sed-v6b-weights",
+    # Exp 021 Phase C: AttHead + backbone scaling
+    "birdclef-2026-hgnet-b2-sed-v6h-weights",
+    "birdclef-2026-effnet-b0-ns-sed-v6j-weights",
+    # Exp 021 Phase A: v5j + site/hour priors (pp2)
+    "birdclef-2026-hgnet-b0-sed-v5j-4fold-pp2-weights",
+    "birdclef-2026-hgnet-b0-sed-v5j-pp2-weights",
     # SED ablations, 234 classes (exp 019)
     "birdclef-2026-effnet-b0-sed-v5a-weights",
     "birdclef-2026-effnet-b0-sed-v5b-weights",

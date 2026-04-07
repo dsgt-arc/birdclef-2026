@@ -59,7 +59,7 @@ def main():
 
     from birdclef.data.soundscape import build_full_species_list
     from birdclef.encoders.efficientnet import EfficientNetEncoder
-    from birdclef.heads.sed_head import AttBlockV2, AttHead, LSEHead
+    from birdclef.heads.sed_head import AttBlockV2, AttHead, AttHeadMultiContext, LSEHead
     from birdclef.lightning.sed_finetune import SEDFinetuneModule
 
     with open(args.config) as f:
@@ -103,9 +103,18 @@ def main():
     if head_type == "att_block_v2":
         sed_head = AttBlockV2(**head_kwargs)
         logger.info("SED head: AttBlockV2 (tanh+softmax attention, sigmoid classification)")
+    elif head_type == "att_head_multi_context":
+        head_kwargs["train_period"] = cfg["sed_head"].get("train_period", 15.0)
+        head_kwargs["infer_period"] = cfg["sed_head"].get("infer_period", 5.0)
+        sed_head = AttHeadMultiContext(**head_kwargs)
+        logger.info(
+            f"SED head: AttHeadMultiContext (train={head_kwargs['train_period']}s, "
+            f"infer={head_kwargs['infer_period']}s)"
+        )
     elif head_type == "lse_head":
         head_kwargs["lse_temperature"] = cfg["sed_head"].get("lse_temperature", 1.0)
         head_kwargs["freq_pool"] = cfg["sed_head"].get("freq_pool", "gem")
+        head_kwargs["n_chunks"] = cfg["sed_head"].get("n_chunks", 1)
         sed_head = LSEHead(**head_kwargs)
         logger.info(f"SED head: LSEHead (freq_pool={head_kwargs['freq_pool']}, LSE time pooling)")
     else:
@@ -153,7 +162,17 @@ def main():
 
     # Create ONNX export wrapper that outputs blended probabilities
     class SEDWrapper(nn.Module):
-        """Wraps encoder + SED head → blended sigmoid probabilities."""
+        """Wraps encoder + SED head → blended sigmoid probabilities.
+
+        Handles both single-chunk (B, C) and multi-chunk (B, N, C) clipwise output.
+        Multi-chunk: uses CENTER chunk prediction (not average of all chunks).
+        The inference window is centered on the target 5s segment, so the center
+        chunk aligns with the target. Averaging all chunks dilutes predictions
+        when species is only present in the center segment.
+
+        For odd n_chunks (3): center chunk = index n//2 = 1
+        For even n_chunks (4): average of two center chunks (target spans both)
+        """
 
         def __init__(self, encoder, sed_head, blend_clip=0.75, blend_frame=0.25):
             super().__init__()
@@ -163,16 +182,38 @@ def main():
             self.blend_frame = blend_frame
 
         def forward(self, mel):
-            # mel: (B, 1, 128, T)
+            # mel: (B, 1, n_mels, T)
             features = self.encoder.forward_features(mel)
             clipwise_logits, framewise_logits = self.sed_head(features)
-            framewise_max_logits = framewise_logits.max(dim=-1).values
 
-            # Blended sigmoid probabilities
-            probs = self.blend_clip * torch.sigmoid(
-                clipwise_logits
-            ) + self.blend_frame * torch.sigmoid(framewise_max_logits)
-            return probs
+            framewise_max_logits = framewise_logits.max(dim=-1).values
+            frame_probs = torch.sigmoid(framewise_max_logits)
+
+            # Skip clipwise when blend_clip == 0 to avoid NaN propagation
+            # (AttHead's clipwise uses torch.logit which can produce NaN in ONNX,
+            # and 0.0 * NaN = NaN in IEEE 754)
+            if self.blend_clip == 0.0:
+                return frame_probs
+
+            # Handle multi-chunk: (B, N, C) → center chunk probs → (B, C)
+            if clipwise_logits.dim() == 3:
+                n = clipwise_logits.shape[1]
+                if n % 2 == 1:
+                    center = n // 2
+                    clip_probs = torch.sigmoid(clipwise_logits[:, center, :])
+                else:
+                    c1, c2 = n // 2 - 1, n // 2
+                    clip_probs = (
+                        torch.sigmoid(clipwise_logits[:, c1, :])
+                        + torch.sigmoid(clipwise_logits[:, c2, :])
+                    ) / 2
+            else:
+                clip_probs = torch.sigmoid(clipwise_logits)
+
+            if self.blend_frame == 0.0:
+                return clip_probs
+
+            return self.blend_clip * clip_probs + self.blend_frame * frame_probs
 
     wrapper = SEDWrapper(
         module.encoder,
