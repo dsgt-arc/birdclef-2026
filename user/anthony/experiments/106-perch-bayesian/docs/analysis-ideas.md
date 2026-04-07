@@ -285,31 +285,82 @@ by how "soundscape-like" it is:
   just a diagonal weight matrix in the ridge solve:
   `W = (X' diag(w) X + λΣ^{-1})^{-1} X' diag(w) Y`
 
+## 14. Spectroscopic matching: species profiles as reference spectra
+
+The Perch logit space is analogous to a spectrometer: each soundscape window
+produces a "spectrum" across 14,795 species channels, and we match it against
+known species "spectral signatures" to identify what's present.
+
+### Matching strategies (least to most sophisticated)
+
+**Cosine similarity** (current implementation):
+- Measures direction alignment between observation and signature
+- Handles sparsity and scale invariance
+- Limitation: treats all channels equally, no noise model, doesn't handle
+  multi-species mixtures
+
+**Matched filter** (equivalent to ridge with covariance prior):
+- Optimal linear detector for known signal in noise: `score = p' Σ^{-1} z`
+- Down-weights noisy/correlated channels via inverse covariance
+- This is mathematically what the empirical Bayes ridge already computes
+- Single-species: scores each species independently
+
+**Non-negative least squares (NNLS) spectral decomposition**:
+- Models soundscape as mixture: `z ≈ Σ_i α_i p_i + noise` (α_i ≥ 0)
+- Jointly decomposes observation into species contributions
+- Handles multi-species overlap: if two species share logit activations,
+  NNLS disentangles their contributions
+- Species can be present (α > 0) but not anti-present (non-negativity)
+- One scipy call per window: `scipy.optimize.nnls(profiles.T, observation)`
+- The α_i coefficients are species abundance/presence scores
+
+### What we have implemented
+
+| Task | Groups by | Matching | Data |
+|------|-----------|----------|------|
+| FocalSpeciesProfiles | Species (206) | Cosine (mean + activation freq) | 265K focal |
+| SoundscapeProfiles | Site (23) + diel period (4) | Activation frequency | 128K soundscape |
+| EmpiricalBayesRidge | — | Matched filter (Σ^{-1} weighting) | Both |
+
+### Comparing focal vs soundscape profiles
+
+The comparison between FocalSpeciesProfiles and SoundscapeProfiles reveals
+domain shift at the interpretable species level:
+- "Perch logit X fires 80% at S22 night but 5% in focal" → nocturnal species
+  mapped to bird X by Perch
+- Sites with signatures overlapping focal → easier to classify
+- Sites with novel signatures → harder domain shift
+- Diel signatures show dawn chorus → daytime → nocturnal transition per site
+
 ---
 
-## Priority order
+## Priority order (revised)
 
-### Phase 1: Static baselines (days 1-3)
-1. **Zero-shot logit readout** — minutes, establishes floor
-2. **Empirical Bayes ridge on embeddings** — hours, main static result
-3. **Distribution shift diagnostics** — go/no-go gate for everything downstream
-4. **Prototype classifier for insect sonotypes** — hours, low-hanging fruit
+### Phase 1: Profiles + baselines (DONE / RUNNING)
+1. **Zero-shot logit readout** — DONE (AUROC 0.701)
+2. **Distribution shift diagnostics** — DONE (96.8% shifted)
+3. **Logit + embedding covariance** — DONE
+4. **Prototype classifier (insects)** — DONE (0.529)
+5. **Feature selection** — DONE (exploratory, selection-biased)
+6. **Focal species profiles** — NEW, Phase 1 task
+7. **Soundscape site/diel profiles** — NEW, Phase 1 task
 
-### Phase 2: Temporal structure (days 4-7)
-5. **Simple temporal pooling** — hours, establishes temporal baseline
-6. **HMM diel regimes on unlabeled data** — 1-2 days, practical temporal model
-7. **DMD on per-site time series** — 1 day, discover dynamical modes
+### Phase 2: Learned models (RUNNING)
+8. **Empirical Bayes ridge** (6 configs: soundscape + focal tracks)
+9. **Sparse logistic** (per-species L1 on logits, LOSO CV)
+10. **Temporal pooling** (max/mean/softmax on OOF predictions)
+11. **DMD per site** (dynamical modes from unlabeled time series)
 
-### Phase 3: Full pipeline (days 7-10)
-8. **UKF temporal smoothing** — using DMD-informed dynamics + ridge observation model
-9. **Classification-occupancy model** — calibrate FP/FN rates
-10. **GP classification** — if ridge saturates, try GP for uncertainty
-11. **Transition matrix / DMD mode analysis** — ecological interpretation
+### Phase 3: Temporal + spectroscopic
+12. **NNLS spectral decomposition** — mixture model using focal profiles
+13. **UKF temporal smoothing** — DMD dynamics + ridge observation model
+14. **Community clustering** — on logit covariance or DMD modes
 
-### Research exploration (if time permits)
-12. **HMSC community modeling** — ecological gold standard
-13. **Multi-resolution DMD** — separate fast/slow dynamics
-14. **Bayesian DMD** — uncertainty over modes from short clips
+### Research exploration
+15. **Domain-adaptive focal weighting** (importance weights)
+16. **Classification-occupancy model** (Ogawa 2025)
+17. **GP classification** — if ridge saturates
+18. **Multi-resolution / Bayesian DMD**
 
 ---
 
