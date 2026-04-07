@@ -90,6 +90,31 @@ class PCENLayer(nn.Module):
             return self.r_param.clamp(1e-4, 1.0)
         return self.r_buf
 
+    def _compute_ema(self, mel: torch.Tensor, s_bc: torch.Tensor) -> torch.Tensor:
+        """Compute IIR exponential moving average along time axis.
+
+        Pre-allocates output tensor and writes in-place to avoid 511
+        intermediate tensor allocations + a large concatenation.
+
+        Args:
+            mel: (B, n_mels, T) input.
+            s_bc: (1, n_mels, 1) smoothing coefficient.
+
+        Returns:
+            M: (B, n_mels, T) smoothed signal.
+        """
+        T = mel.shape[-1]
+        M = torch.empty_like(mel)
+        M[..., 0] = mel[..., 0]  # M_0 = E_0
+
+        decay = 1 - s_bc.squeeze(-1)  # (1, n_mels)
+        s_flat = s_bc.squeeze(-1)  # (1, n_mels)
+
+        for t in range(1, T):
+            M[..., t] = decay * M[..., t - 1] + s_flat * mel[..., t]
+
+        return M
+
     def forward(self, mel: torch.Tensor) -> torch.Tensor:
         """Apply PCEN to mel spectrogram.
 
@@ -111,14 +136,13 @@ class PCENLayer(nn.Module):
         r_bc = r.unsqueeze(0).unsqueeze(-1)
 
         # IIR smoothing: M_t = (1 - s) * M_{t-1} + s * E_t
-        T = mel.shape[-1]
-        m_frames = [mel[..., :1]]  # M_0 = E_0
-
-        for t in range(1, T):
-            m_t = (1 - s_bc) * m_frames[-1] + s_bc * mel[..., t : t + 1]
-            m_frames.append(m_t)
-
-        M = torch.cat(m_frames, dim=-1)  # (B, n_mels, T)
+        # For fixed PCEN (not trainable): compute under no_grad since s is frozen
+        # and we don't need gradients through the 511-step loop.
+        if self.trainable:
+            M = self._compute_ema(mel, s_bc)
+        else:
+            with torch.no_grad():
+                M = self._compute_ema(mel.detach(), s_bc)
 
         # PCEN: (E / (eps + M)^alpha + delta)^r - delta^r
         smooth = (self.eps + M).pow(alpha_bc)
