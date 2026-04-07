@@ -90,7 +90,7 @@ uv pip install -e "$EXPERIMENT_DIR"
 
 # Install PyTorch with CUDA support
 echo "  Installing PyTorch with CUDA..."
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+uv pip install "torch>=2.0.0,<2.11" "torchvision>=0.15,<0.26" "torchaudio>=2.0.0,<2.11" --index-url https://download.pytorch.org/whl/cu121
 
 echo "  Virtual environment ready!"
 echo ""
