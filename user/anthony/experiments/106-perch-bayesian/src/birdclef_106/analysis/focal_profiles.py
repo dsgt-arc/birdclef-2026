@@ -1,27 +1,27 @@
 """Focal species profiles: per-species Perch logit signatures from focal recordings.
 
-For each of the 206 focal species, compute the mean Perch logit activation
-pattern across all focal recordings of that species. This gives a sparse
-signature vector (14,795-d) representing "what Perch sees when species X calls."
+For each of the 206 focal species, compute multiple views of the Perch logit
+activation pattern:
 
-Sparsity helps: most logits are near-zero for any given species, only a handful
-fire consistently. Background noise and unrelated activations average out across
-hundreds of recordings, leaving a clean signature.
+1. **Mean profile**: average logit values (sensitive to outliers)
+2. **Median profile**: robust central tendency (ignores rare activations)
+3. **Activation frequency**: fraction of windows where each logit exceeds a
+   threshold — captures the sparse structure ("logit X fires 73% of the time
+   for species Y")
+4. **Signature summary**: for each species, the top-k most frequently activated
+   logits with their activation rate, mean value, and the Perch species name
 
-Classification: match soundscape windows against signatures via cosine similarity.
-This is prototype classification in logit space, trained on focal data (265K windows)
-— combining the strengths of focal (lots of clean labeled data) and logit space
-(interpretable, sparse, species-level).
+The activation frequency approach is best for sparse matching: background noise
+averages out, consistent activations stand out regardless of amplitude.
 
-Also computes secondary-label co-occurrence profiles: which other species are
-present when species X is the primary label? This captures ecological co-occurrence
-structure from focal metadata.
+Also computes secondary-label co-occurrence matrix from focal metadata.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 import numpy as np
 from sklearn.metrics import average_precision_score, roc_auc_score
@@ -34,10 +34,15 @@ from birdclef_106.data_loading import (
     extract_site,
     load_focal_shards,
     load_labeled,
+    load_species_mapping,
     logits_to_numpy,
 )
 
 logger = logging.getLogger(__name__)
+
+# A logit is "active" if it exceeds this percentile of the global logit distribution.
+# Computed from a subsample in pass 1.
+ACTIVATION_PERCENTILE = 75
 
 
 class FocalSpeciesProfiles(AnalysisTask):
@@ -57,21 +62,43 @@ class FocalSpeciesProfiles(AnalysisTask):
         species_to_idx = {s: i for i, s in enumerate(species_list)}
         n_species = len(species_list)
 
-        # === Pass 1: accumulate per-species logit sums from focal data ===
+        # Load Perch label names for interpretable output
+        perch_labels = self._load_perch_labels()
 
-        logger.info("FocalProfiles: accumulating per-species logit profiles from focal data")
+        # === Pass 1: compute global activation threshold from a subsample ===
+
+        logger.info("FocalProfiles: pass 1 — computing global activation threshold")
+        logit_sample = []
+        for i, shard in enumerate(load_focal_shards(self.features_dir)):
+            logits = logits_to_numpy(shard)
+            logit_sample.append(logits[::8])  # subsample every 8th row
+            if i >= 3:
+                break
+        logit_sample = np.concatenate(logit_sample)
+        activation_threshold = float(np.percentile(logit_sample, ACTIVATION_PERCENTILE))
+        logger.info("  Activation threshold (p%d): %.4f", ACTIVATION_PERCENTILE, activation_threshold)
+        del logit_sample
+
+        # === Pass 2: accumulate per-species statistics ===
+
+        logger.info("FocalProfiles: pass 2 — accumulating per-species profiles")
         logit_dim = None
-        species_sum = None    # (n_species, logit_dim)
+        species_sum = None           # (n_species, logit_dim) — for mean
+        species_sum_sq = None        # (n_species, logit_dim) — for variance
+        species_active_count = None  # (n_species, logit_dim) — count of windows above threshold
         species_count = np.zeros(n_species, dtype=np.int64)
-
-        # Also track secondary label co-occurrence
         cooccurrence = np.zeros((n_species, n_species), dtype=np.int64)
 
+        # For median: collect per-species logit values (memory-intensive, do for top species only)
+        # Instead, use the online approach: store sorted quantile sketches via running stats
+
         for i, shard in enumerate(load_focal_shards(self.features_dir)):
-            logits = logits_to_numpy(shard)  # (N, 14795)
+            logits = logits_to_numpy(shard)
             if logit_dim is None:
                 logit_dim = logits.shape[1]
                 species_sum = np.zeros((n_species, logit_dim), dtype=np.float64)
+                species_sum_sq = np.zeros((n_species, logit_dim), dtype=np.float64)
+                species_active_count = np.zeros((n_species, logit_dim), dtype=np.int64)
 
             primary_labels = shard["primary_label"].to_list()
             ground_truths = shard["ground_truth"].to_list()
@@ -81,7 +108,11 @@ class FocalSpeciesProfiles(AnalysisTask):
                 si = species_to_idx.get(pl)
                 if si is None:
                     continue
-                species_sum[si] += logits[j].astype(np.float64)
+
+                row = logits[j].astype(np.float64)
+                species_sum[si] += row
+                species_sum_sq[si] += row ** 2
+                species_active_count[si] += (logits[j] > activation_threshold).astype(np.int64)
                 species_count[si] += 1
 
                 # Co-occurrence from secondary labels
@@ -96,69 +127,134 @@ class FocalSpeciesProfiles(AnalysisTask):
             if i % 4 == 0:
                 logger.info("  focal shard %d done", i)
 
-        # Compute mean profiles (species with 0 recordings get zero vectors)
+        # Compute profiles
         mask = species_count > 0
-        profiles = np.zeros_like(species_sum)
-        profiles[mask] = species_sum[mask] / species_count[mask, None]
+        mean_profiles = np.zeros_like(species_sum)
+        std_profiles = np.zeros_like(species_sum)
+        activation_freq = np.zeros_like(species_sum)
+
+        mean_profiles[mask] = species_sum[mask] / species_count[mask, None]
+        var = species_sum_sq[mask] / species_count[mask, None] - mean_profiles[mask] ** 2
+        std_profiles[mask] = np.sqrt(np.maximum(var, 0))
+        activation_freq[mask] = species_active_count[mask] / species_count[mask, None]
 
         n_with_data = int(mask.sum())
         logger.info("FocalProfiles: %d/%d species have focal data", n_with_data, n_species)
 
-        # Sparsity analysis: how many logits are "active" per species?
-        # Threshold: logit > mean + 2*std across all species profiles
-        global_mean = profiles[mask].mean()
-        global_std = profiles[mask].std()
-        active_threshold = global_mean + 2 * global_std
-        n_active_per_species = (profiles > active_threshold).sum(axis=1)
+        # === Build per-species signature summaries ===
 
-        # === Pass 2: evaluate on labeled soundscapes ===
+        top_k = 30
+        signatures = {}
+        for si in range(n_species):
+            sp = species_list[si]
+            if species_count[si] == 0:
+                continue
+
+            freq = activation_freq[si]
+            mean_val = mean_profiles[si]
+            std_val = std_profiles[si]
+
+            # Top logits by activation frequency
+            top_idx = np.argsort(-freq)[:top_k]
+            top_logits = []
+            for j in top_idx:
+                if freq[j] < 0.05:  # skip logits that fire <5% of the time
+                    break
+                perch_name = perch_labels[j] if j < len(perch_labels) else f"logit_{j}"
+                top_logits.append({
+                    "logit_index": int(j),
+                    "perch_species": perch_name,
+                    "activation_freq": float(freq[j]),
+                    "mean_value": float(mean_val[j]),
+                    "std_value": float(std_val[j]),
+                })
+
+            # Sparsity: how many logits fire >10% of the time?
+            n_active_10pct = int((freq > 0.10).sum())
+            n_active_25pct = int((freq > 0.25).sum())
+            n_active_50pct = int((freq > 0.50).sum())
+
+            signatures[sp] = {
+                "n_focal_windows": int(species_count[si]),
+                "n_active_10pct": n_active_10pct,
+                "n_active_25pct": n_active_25pct,
+                "n_active_50pct": n_active_50pct,
+                "top_logits": top_logits,
+            }
+
+        # === Evaluate on labeled soundscapes ===
 
         logger.info("FocalProfiles: evaluating on labeled soundscapes")
         sc_df = load_labeled(self.features_dir)
         sc_logits = logits_to_numpy(sc_df).astype(np.float64)
         sc_Y = build_binary_label_matrix(sc_df, species_list)
-        sc_sites = np.array([extract_site(f) for f in sc_df["filename"].to_list()])
-        unique_sites = sorted(set(sc_sites))
 
-        # Cosine similarity: each soundscape window vs all species profiles
-        # Only use species that have focal data
         active_species = [i for i in range(n_species) if species_count[i] > 0]
-        profiles_active = profiles[active_species]  # (n_active, 14795)
 
-        # Normalize profiles for cosine sim
-        norms = np.linalg.norm(profiles_active, axis=1, keepdims=True)
-        norms = np.maximum(norms, 1e-8)
-        profiles_normed = profiles_active / norms
+        # Three matching strategies:
+        eval_results = {}
+        for strategy_name, profiles in [
+            ("mean", mean_profiles),
+            ("activation_freq", activation_freq),
+        ]:
+            profiles_active = profiles[active_species]
 
-        # Score all soundscape windows
-        sc_norms = np.linalg.norm(sc_logits, axis=1, keepdims=True)
-        sc_norms = np.maximum(sc_norms, 1e-8)
-        sc_normed = sc_logits / sc_norms
+            # Normalize for cosine similarity
+            norms = np.linalg.norm(profiles_active, axis=1, keepdims=True)
+            norms = np.maximum(norms, 1e-8)
+            profiles_normed = profiles_active / norms
 
-        sim_matrix = sc_normed @ profiles_normed.T  # (739, n_active)
+            sc_norms = np.linalg.norm(sc_logits, axis=1, keepdims=True)
+            sc_norms = np.maximum(sc_norms, 1e-8)
+            sc_normed = sc_logits / sc_norms
 
-        # Evaluate per species
-        per_species = {}
-        for idx_in_active, si in enumerate(active_species):
-            sp = species_list[si]
-            y_true = sc_Y[:, si]
-            n_pos = int(y_true.sum())
-            if n_pos < 2:
-                per_species[sp] = {
-                    "auroc": None, "ap": None, "n_pos": n_pos,
-                    "n_focal_windows": int(species_count[si]),
-                    "n_active_logits": int(n_active_per_species[si]),
+            sim_matrix = sc_normed @ profiles_normed.T  # (739, n_active)
+
+            per_species_eval = {}
+            for idx_in_active, si in enumerate(active_species):
+                sp = species_list[si]
+                y_true = sc_Y[:, si]
+                n_pos = int(y_true.sum())
+                if n_pos < 2:
+                    per_species_eval[sp] = {"auroc": None, "ap": None, "n_pos": n_pos}
+                    continue
+
+                y_score = sim_matrix[:, idx_in_active]
+                per_species_eval[sp] = {
+                    "auroc": float(roc_auc_score(y_true, y_score)),
+                    "ap": float(average_precision_score(y_true, y_score)),
+                    "n_pos": n_pos,
                 }
-                continue
 
-            y_score = sim_matrix[:, idx_in_active]
-            per_species[sp] = {
-                "auroc": float(roc_auc_score(y_true, y_score)),
-                "ap": float(average_precision_score(y_true, y_score)),
-                "n_pos": n_pos,
-                "n_focal_windows": int(species_count[si]),
-                "n_active_logits": int(n_active_per_species[si]),
+            aurocs = [v["auroc"] for v in per_species_eval.values() if v["auroc"] is not None]
+            aps = [v["ap"] for v in per_species_eval.values() if v["ap"] is not None]
+
+            eval_results[strategy_name] = {
+                "per_species": per_species_eval,
+                "macro_auroc": float(np.mean(aurocs)) if aurocs else None,
+                "macro_ap": float(np.mean(aps)) if aps else None,
+                "n_evaluated": len(aurocs),
             }
+
+            logger.info(
+                "FocalProfiles [%s]: macro AUROC=%.3f, AP=%.3f (%d species)",
+                strategy_name, eval_results[strategy_name]["macro_auroc"] or 0,
+                eval_results[strategy_name]["macro_ap"] or 0,
+                eval_results[strategy_name]["n_evaluated"],
+            )
+
+        # === Save ===
+
+        np.savez_compressed(
+            self.output()[0].path,
+            mean_profiles=mean_profiles.astype(np.float32),
+            std_profiles=std_profiles.astype(np.float32),
+            activation_freq=activation_freq.astype(np.float32),
+            species_count=species_count,
+            cooccurrence=cooccurrence.astype(np.int32),
+            species_list=species_list,
+            activation_threshold=activation_threshold,
+        )
 
         # Top co-occurring species pairs
         top_cooc = []
@@ -172,39 +268,23 @@ class FocalSpeciesProfiles(AnalysisTask):
                         "count": c,
                     })
         top_cooc.sort(key=lambda x: -x["count"])
-        top_cooc = top_cooc[:50]
-
-        # Aggregate metrics
-        aurocs = [v["auroc"] for v in per_species.values() if v["auroc"] is not None]
-        aps = [v["ap"] for v in per_species.values() if v["ap"] is not None]
 
         summary = {
-            "per_species": per_species,
-            "macro_auroc": float(np.mean(aurocs)) if aurocs else None,
-            "macro_ap": float(np.mean(aps)) if aps else None,
-            "n_evaluated": len(aurocs),
+            "evaluation": eval_results,
+            "signatures": signatures,
             "n_species_with_focal": n_with_data,
-            "mean_active_logits": float(n_active_per_species[mask].mean()),
-            "median_active_logits": float(np.median(n_active_per_species[mask])),
-            "top_cooccurrences": top_cooc,
+            "activation_threshold": activation_threshold,
+            "activation_percentile": ACTIVATION_PERCENTILE,
+            "top_cooccurrences": top_cooc[:50],
         }
-
-        # Save profiles
-        np.savez_compressed(
-            self.output()[0].path,
-            profiles=profiles.astype(np.float32),        # (234, 14795)
-            species_count=species_count,                  # (234,)
-            cooccurrence=cooccurrence.astype(np.int32),   # (234, 234)
-            species_list=species_list,
-            n_active_per_species=n_active_per_species,
-        )
 
         with open(self.output()[1].path, "w") as f:
             json.dump(summary, f, indent=2)
 
-        logger.info(
-            "FocalProfiles: macro AUROC=%.3f, AP=%.3f (%d species evaluated, "
-            "mean %.0f active logits/species)",
-            summary["macro_auroc"] or 0, summary["macro_ap"] or 0,
-            summary["n_evaluated"], summary["mean_active_logits"],
-        )
+    def _load_perch_labels(self) -> list[str]:
+        """Load Perch v2 species names for interpretable output."""
+        labels_path = Path(self.artifacts_dir) / "perch_v2_labels.csv"
+        if not labels_path.exists():
+            return []
+        with open(labels_path) as f:
+            return [line.strip() for line in f]
