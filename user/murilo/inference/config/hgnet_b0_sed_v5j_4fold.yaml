@@ -1,0 +1,44 @@
+# SED inference: HGNetV2-B0 + LSEHead (v5j 4-fold, 0.913 LB)
+#
+# Runs inference for each fold sequentially, saving outputs under fold0/–fold3/.
+
+run_name: "hgnet-b0-sed-v5j-4fold"
+dataset_name: "birdclef-2026"
+model_type: "sed"
+
+encoder:
+  type: "efficientnet"
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"
+  pretrained: false
+  embed_dim: 1024
+
+sed_head:
+  type: "lse_head"
+  hidden_dim: 1024
+  dropout: 0.5
+  gem_p: 3.0
+  lse_temperature: 1.0
+  freq_pool: "mean"
+
+mel:
+  n_fft: 2048
+  hop_length: 313
+  n_mels: 256
+  fmax: null
+  top_db: 80.0
+  norm_type: "amplitude_to_db"
+
+model:
+  num_classes: 234
+  folds:
+    - checkpoint_path: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/fold0/best-epochepoch=15.ckpt"
+    - checkpoint_path: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/fold1/best-epochepoch=19.ckpt"
+    - checkpoint_path: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/fold2/best-epochepoch=19.ckpt"
+    - checkpoint_path: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/fold3/best-epochepoch=18.ckpt"
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  chunk_duration: 5.0
+  batch_size: 64
+  num_workers: 8

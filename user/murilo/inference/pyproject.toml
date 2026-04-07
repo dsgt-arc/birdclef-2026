@@ -8,6 +8,7 @@ dependencies = [
     "pytorch-lightning",
     "torchmetrics",
     "timm",
+    "nnAudio>=0.3.2",
     "einops",
     "peft>=0.7.0",
     "huggingface-hub",

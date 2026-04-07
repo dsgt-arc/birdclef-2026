@@ -159,10 +159,28 @@ if [[ "${OVERWRITE}" == "false" ]]; then
         CHECK_SOURCES="$SOURCE"
     fi
 
+    # Determine which output file to check (SED uses logits.parquet, ProtoCLR uses embeddings.parquet)
+    MODEL_TYPE=$(grep '^model_type:' "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
+    if [[ "$MODEL_TYPE" == "sed" ]]; then
+        CHECK_FILE="logits.parquet"
+    else
+        CHECK_FILE="embeddings.parquet"
+    fi
+
+    # Check for 4-fold configs (folds key in model section)
+    HAS_FOLDS=$(grep -c '^\s*folds:' "$CONFIG_FILE" || true)
+
     EXISTING=""
     for src in $CHECK_SOURCES; do
-        if [[ -f "${OUTPUT_BASE}/${src}/embeddings.parquet" ]]; then
-            EXISTING="${EXISTING} ${src}"
+        if [[ "$HAS_FOLDS" -gt 0 ]]; then
+            # 4-fold: check under fold0/
+            if [[ -f "${OUTPUT_BASE}/fold0/${src}/${CHECK_FILE}" ]]; then
+                EXISTING="${EXISTING} ${src}"
+            fi
+        else
+            if [[ -f "${OUTPUT_BASE}/${src}/${CHECK_FILE}" ]]; then
+                EXISTING="${EXISTING} ${src}"
+            fi
         fi
     done
 

@@ -37,9 +37,14 @@ sys.path.insert(0, str(repo_root / "src"))
 
 from birdclef.data.dataset import build_species_list  # noqa: E402
 from birdclef.data.inference import InferenceChunkDataset, inference_collate_fn  # noqa: E402
+
+# ProtoCLR imports (always available)
 from birdclef.encoders.protoclr import ProtoCLREncoder  # noqa: E402
 from birdclef.lightning.lora_finetune import LoRAFinetuneModule  # noqa: E402
 from birdclef.preprocessing.protoclr_mel import ProtoCLRMelSpectrogram  # noqa: E402
+
+# SED imports are lazy (inside load_sed_model) to avoid requiring timm/nnAudio
+# when running ProtoCLR-only inference.
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -88,6 +93,18 @@ def enumerate_train_soundscapes(data_dir: Path) -> list[dict]:
     ]
     logger.info(f"train_soundscapes: {len(file_list)} files")
     return file_list
+
+
+def build_species_list_taxonomy(data_dir: Path) -> list[str]:
+    """Build 234-species list from taxonomy.csv (includes soundscape-only species).
+
+    train.csv only has 206 species (focal recordings). SED models are trained
+    on 234 classes including 28 soundscape-only species from taxonomy.csv.
+    """
+    df = pd.read_csv(data_dir / "taxonomy.csv")
+    species = sorted(df["primary_label"].astype(str).unique().tolist())
+    logger.info(f"Found {len(species)} species in taxonomy.csv")
+    return species
 
 
 # ============================================================================
@@ -143,6 +160,74 @@ def load_model(config: dict) -> LoRAFinetuneModule:
     logger.info("Model loaded and set to eval mode")
 
     return module
+
+
+def load_sed_model(config: dict):
+    """Load SED model from checkpoint.
+
+    Reconstructs encoder, sed_head, and mel_transform from config, then loads
+    checkpoint weights. Returns (module, mel_transform) since mel runs on GPU
+    separately from the module.
+    """
+    from birdclef.encoders.efficientnet import EfficientNetEncoder
+    from birdclef.heads.sed_head import LSEHead
+    from birdclef.lightning.sed_finetune import SEDFinetuneModule
+    from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
+
+    # 1. Build encoder
+    enc_cfg = config["encoder"]
+    encoder = EfficientNetEncoder(
+        model_name=enc_cfg["model_name"],
+        pretrained=enc_cfg.get("pretrained", False),
+    )
+    logger.info(f"Encoder: {enc_cfg['model_name']}, embed_dim={encoder.embed_dim}")
+
+    # 2. Build SED head
+    head_cfg = config["sed_head"]
+    sed_head = LSEHead(
+        in_channels=encoder.embed_dim,
+        num_classes=config["model"]["num_classes"],
+        hidden_dim=head_cfg["hidden_dim"],
+        dropout=head_cfg.get("dropout", 0.5),
+        gem_p=head_cfg.get("gem_p", 3.0),
+        lse_temperature=head_cfg.get("lse_temperature", 1.0),
+        freq_pool=head_cfg.get("freq_pool", "gem"),
+    )
+
+    # 3. Build mel transform (GPU-side, applied in inference loop)
+    mel_cfg = config["mel"]
+    sample_rate = config["data"]["sample_rate"]
+    hop_length = mel_cfg.get("hop_length", 313)
+    chunk_duration = config["data"]["chunk_duration"]
+    target_frames = int(chunk_duration * sample_rate / hop_length)
+
+    mel_transform = NNAudioMelSpectrogram(
+        sample_rate=sample_rate,
+        n_mels=mel_cfg.get("n_mels", 256),
+        target_frames=target_frames,
+        n_fft=mel_cfg.get("n_fft"),
+        hop_length=hop_length,
+        fmax=mel_cfg.get("fmax"),
+        norm_type=mel_cfg.get("norm_type", "amplitude_to_db"),
+        top_db=mel_cfg.get("top_db", 80.0),
+    )
+
+    # 4. Load checkpoint
+    ckpt_path = config["model"]["checkpoint_path"]
+    logger.info(f"Loading checkpoint: {ckpt_path}")
+
+    module = SEDFinetuneModule.load_from_checkpoint(
+        ckpt_path,
+        encoder=encoder,
+        sed_head=sed_head,
+        mel_transform=None,
+        num_classes=config["model"]["num_classes"],
+        map_location="cpu",
+    )
+    module.eval()
+    logger.info("SED model loaded and set to eval mode")
+
+    return module, mel_transform
 
 
 # ============================================================================
@@ -216,6 +301,107 @@ def run_inference(
     return embeddings, probabilities, all_metadata
 
 
+@torch.no_grad()
+def run_sed_inference(
+    module,
+    mel_transform,
+    dataloader: DataLoader,
+    device: torch.device,
+    gpu_monitor=None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+    """Run SED inference: extract embeddings, clip logits, and frame logits.
+
+    Unlike run_inference(), this receives raw waveforms from the DataLoader
+    and applies the mel transform on GPU. The LSEHead forward pass is split
+    to extract the pre-head backbone embedding.
+
+    Args:
+        module: SEDFinetuneModule with encoder and sed_head.
+        mel_transform: NNAudioMelSpectrogram (moved to GPU).
+        dataloader: DataLoader yielding (waveforms, metadata) tuples.
+        device: Device to run inference on.
+        gpu_monitor: Optional InferenceGPUMonitor.
+
+    Returns:
+        embeddings: (N, embed_dim) float32 — clip-level backbone embedding
+        clip_logits: (N, num_classes) float32 — raw clipwise logits
+        frame_logits: (N, T, num_classes) float32 — per-frame logits
+        metadata: dict of lists
+    """
+    module = module.to(device)
+    mel_transform = mel_transform.to(device)
+
+    all_embeddings = []
+    all_clip_logits = []
+    all_frame_logits = []
+    all_metadata = {
+        "filename": [],
+        "source": [],
+        "chunk_idx": [],
+        "start_sec": [],
+        "end_sec": [],
+    }
+
+    head = module.sed_head
+
+    for waveforms, metadata in tqdm(dataloader, desc="SED Inference"):
+        if gpu_monitor:
+            gpu_monitor.batch_start()
+
+        waveforms = waveforms.to(device)
+
+        # GPU mel: compute in float32 (matches training behavior)
+        with torch.amp.autocast("cuda", enabled=False):
+            mel = mel_transform(waveforms.float())
+
+        with torch.amp.autocast("cuda"):
+            # Backbone: (B, 1, n_mels, T_mel) -> (B, C, F', T')
+            features = module.encoder.forward_features(mel)
+
+            # Split LSEHead forward to extract pre-head embedding
+            # Freq pool: (B, C, F', T') -> (B, C, T')
+            if head.freq_pool_type == "mean":
+                h = features.mean(dim=2)
+            else:
+                h = head.gem(features)
+
+            # (B, C, T') -> (B, T', C) — frame-level embeddings
+            h = h.permute(0, 2, 1)
+
+            # Classification head: (B, T', C) -> (B, T', num_classes)
+            frame_logits = head.cls_fc(h)
+
+            # LSE temporal pool: (B, T', num_classes) -> (B, num_classes)
+            clip_logits = head.lse_pool(frame_logits)
+
+            # Clip-level embedding: mean pool over time
+            clip_emb = h.mean(dim=1)  # (B, C)
+
+        # Store as float32 on CPU
+        all_embeddings.append(clip_emb.float().cpu().numpy())
+        all_clip_logits.append(clip_logits.float().cpu().numpy())
+        all_frame_logits.append(frame_logits.float().cpu().numpy())
+
+        if gpu_monitor:
+            gpu_monitor.batch_end(batch_size=waveforms.shape[0])
+
+        for key in all_metadata:
+            all_metadata[key].extend(metadata[key])
+
+    embeddings = np.concatenate(all_embeddings, axis=0)
+    clip_logits_arr = np.concatenate(all_clip_logits, axis=0)
+    frame_logits_arr = np.concatenate(all_frame_logits, axis=0)
+
+    logger.info(
+        f"SED inference complete: {embeddings.shape[0]} chunks, "
+        f"embedding dim={embeddings.shape[1]}, "
+        f"num_classes={clip_logits_arr.shape[1]}, "
+        f"num_frames={frame_logits_arr.shape[1]}"
+    )
+
+    return embeddings, clip_logits_arr, frame_logits_arr, all_metadata
+
+
 # ============================================================================
 # Save results
 # ============================================================================
@@ -269,9 +455,174 @@ def save_results(
     logger.info(f"Saved predictions: {pred_path} ({n} rows, {len(species_list)} species)")
 
 
+def save_sed_results(
+    embeddings: np.ndarray,
+    clip_logits: np.ndarray,
+    frame_logits: np.ndarray,
+    metadata: dict,
+    species_list: list[str],
+    output_dir: Path,
+):
+    """Save SED inference outputs as 3 parquet files.
+
+    Args:
+        embeddings: (N, embed_dim) clip-level embeddings
+        clip_logits: (N, num_classes) raw clipwise logits
+        frame_logits: (N, T, num_classes) per-frame logits
+        metadata: dict with filename, source, chunk_idx, start_sec, end_sec
+        species_list: ordered list of species names (column headers for logits)
+        output_dir: directory to write parquet files
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    n = embeddings.shape[0]
+
+    # Base metadata columns
+    base_df = pd.DataFrame(
+        {
+            "filename": metadata["filename"],
+            "source": metadata["source"],
+            "chunk_idx": metadata["chunk_idx"],
+            "start_sec": metadata["start_sec"],
+            "end_sec": metadata["end_sec"],
+        }
+    )
+
+    # 1. embeddings.parquet: clip-level embedding as list[float32]
+    emb_df = base_df.copy()
+    emb_df["embedding"] = [embeddings[i].tolist() for i in range(n)]
+
+    emb_path = output_dir / "embeddings.parquet"
+    emb_df.to_parquet(emb_path, index=False, engine="pyarrow")
+    logger.info(f"Saved embeddings: {emb_path} ({n} rows, dim={embeddings.shape[1]})")
+
+    # 2. logits.parquet: raw clipwise logits (one column per species)
+    species_df = pd.DataFrame(clip_logits.astype(np.float32), columns=species_list)
+    logits_df = pd.concat([base_df, species_df], axis=1)
+
+    logits_path = output_dir / "logits.parquet"
+    logits_df.to_parquet(logits_path, index=False, engine="pyarrow")
+    logger.info(f"Saved logits: {logits_path} ({n} rows, {len(species_list)} species)")
+
+    # 3. framewise_logits.parquet: per-frame logits stored flat
+    #    Each row: num_frames (int) + framewise_logits (list[float32] of T*num_classes)
+    #    Reshape with: np.array(row.framewise_logits).reshape(row.num_frames, num_classes)
+    frame_df = base_df.copy()
+    frame_df["num_frames"] = [frame_logits[i].shape[0] for i in range(n)]
+    frame_df["framewise_logits"] = [frame_logits[i].flatten().tolist() for i in range(n)]
+
+    frame_path = output_dir / "framewise_logits.parquet"
+    frame_df.to_parquet(frame_path, index=False, engine="pyarrow")
+    logger.info(
+        f"Saved framewise logits: {frame_path} ({n} rows, "
+        f"{frame_logits.shape[1]} frames × {frame_logits.shape[2]} species)"
+    )
+
+
 # ============================================================================
 # CLI
 # ============================================================================
+
+
+def _process_source(
+    source: str,
+    config: dict,
+    model_type: str,
+    species_list: list[str],
+    data_dir: Path,
+    output_dir: Path,
+    module,
+    gpu_mel_transform,
+    device: torch.device,
+    num_workers: int,
+    gpu_monitor,
+    args,
+):
+    """Process a single data source (train_audio or train_soundscapes)."""
+    # Skip if output already exists (unless --overwrite or --gpu-check)
+    check_file = "logits.parquet" if model_type == "sed" else "embeddings.parquet"
+    if not args.overwrite and not args.gpu_check and (output_dir / check_file).exists():
+        logger.info(f"Skipping {source}: output already exists at {output_dir}")
+        logger.info("  Use --overwrite to re-run and replace existing results")
+        return
+
+    logger.info(f"\n{'='*60}")
+    logger.info(f"Processing: {source}")
+    logger.info(f"{'='*60}")
+
+    # Enumerate files
+    if source == "train_audio":
+        file_list = enumerate_train_audio(data_dir)
+    else:
+        file_list = enumerate_train_soundscapes(data_dir)
+
+    # Apply max-files limit
+    if args.max_files is not None:
+        file_list = file_list[: args.max_files]
+        logger.info(f"Limited to {len(file_list)} files (--max-files)")
+
+    # For SED: no transform in DataLoader (raw waveforms, mel on GPU)
+    # For ProtoCLR: mel transform in DataLoader workers (CPU)
+    if model_type == "sed":
+        dataset_transform = None
+    else:
+        dataset_transform = ProtoCLRMelSpectrogram(
+            sample_rate=config["data"]["sample_rate"],
+        )
+
+    # Build dataset and dataloader
+    dataset = InferenceChunkDataset(
+        file_list=file_list,
+        sample_rate=config["data"]["sample_rate"],
+        chunk_duration=config["data"]["chunk_duration"],
+        transform=dataset_transform,
+    )
+
+    dataloader = DataLoader(
+        dataset,
+        batch_size=config["data"]["batch_size"],
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+        collate_fn=inference_collate_fn,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=4 if num_workers > 0 else None,
+    )
+
+    # Run inference
+    t0 = time.time()
+
+    if model_type == "sed":
+        embeddings, clip_logits, frame_logits, metadata = run_sed_inference(
+            module, gpu_mel_transform, dataloader, device, gpu_monitor=gpu_monitor
+        )
+    else:
+        embeddings, probabilities, metadata = run_inference(
+            module, dataloader, device, gpu_monitor=gpu_monitor
+        )
+
+    elapsed = time.time() - t0
+    logger.info(f"Inference time: {elapsed:.1f}s ({len(dataset)/elapsed:.1f} chunks/s)")
+
+    # Save results (skip when only profiling GPU)
+    if not args.gpu_check or args.overwrite:
+        if model_type == "sed":
+            save_sed_results(
+                embeddings=embeddings,
+                clip_logits=clip_logits,
+                frame_logits=frame_logits,
+                metadata=metadata,
+                species_list=species_list,
+                output_dir=output_dir,
+            )
+        else:
+            save_results(
+                embeddings=embeddings,
+                probabilities=probabilities,
+                metadata=metadata,
+                species_list=species_list,
+                output_dir=output_dir,
+            )
 
 
 def main():
@@ -322,11 +673,13 @@ def main():
 
     run_name = config["run_name"]
     data_dir = Path(config["data"]["data_dir"]).expanduser()
+    model_type = config.get("model_type", "protoclr")
     num_workers = (
         args.num_workers if args.num_workers is not None else config["data"]["num_workers"]
     )
 
     logger.info(f"Run name: {run_name}")
+    logger.info(f"Model type: {model_type}")
     logger.info(f"Data dir: {data_dir}")
     logger.info(f"Source: {args.source}")
 
@@ -338,14 +691,12 @@ def main():
         sources.append("train_soundscapes")
 
     # Build species list
-    metadata_csv = data_dir / "train.csv"
-    species_list = build_species_list(metadata_csv)
+    if model_type == "sed":
+        species_list = build_species_list_taxonomy(data_dir)  # 234 species
+    else:
+        metadata_csv = data_dir / "train.csv"
+        species_list = build_species_list(metadata_csv)  # 206 species
     logger.info(f"Species: {len(species_list)}")
-
-    # Build mel transform
-    mel_transform = ProtoCLRMelSpectrogram(
-        sample_rate=config["data"]["sample_rate"],
-    )
 
     # GPU monitor (optional)
     gpu_monitor = None
@@ -358,85 +709,75 @@ def main():
         )
         logger.info("GPU profiling enabled (--gpu-check)")
 
-    # Load model
+    # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Device: {device}")
-    module = load_model(config)
 
-    # Output base directory: /storage/project/<project>/shared/inference/<dataset>/<run_name>/
+    # Output base directory
     dataset_name = config["dataset_name"]
     output_base = (
         Path("/storage/project/ps-clef2026_birdclef-0/shared/inference") / dataset_name / run_name
     )
     logger.info(f"Output: {output_base}")
 
-    # Process each source
-    for source in sources:
-        output_dir = output_base / source
+    # Determine fold configs (4-fold or single)
+    folds = config["model"].get("folds")
 
-        # Skip if output already exists (unless --overwrite or --gpu-check)
-        if (
-            not args.overwrite
-            and not args.gpu_check
-            and (output_dir / "embeddings.parquet").exists()
-        ):
-            logger.info(f"Skipping {source}: output already exists at {output_dir}")
-            logger.info("  Use --overwrite to re-run and replace existing results")
-            continue
+    if folds:
+        # ---- 4-fold: process each fold sequentially ----
+        for fold_idx, fold_cfg in enumerate(folds):
+            logger.info(f"\n{'#'*60}")
+            logger.info(f"Fold {fold_idx}")
+            logger.info(f"{'#'*60}")
 
-        logger.info(f"\n{'='*60}")
-        logger.info(f"Processing: {source}")
-        logger.info(f"{'='*60}")
+            # Override checkpoint path for this fold
+            config["model"]["checkpoint_path"] = fold_cfg["checkpoint_path"]
+            module, gpu_mel_transform = load_sed_model(config)
 
-        # Enumerate files
-        if source == "train_audio":
-            file_list = enumerate_train_audio(data_dir)
+            for source in sources:
+                output_dir = output_base / f"fold{fold_idx}" / source
+                _process_source(
+                    source=source,
+                    config=config,
+                    model_type=model_type,
+                    species_list=species_list,
+                    data_dir=data_dir,
+                    output_dir=output_dir,
+                    module=module,
+                    gpu_mel_transform=gpu_mel_transform,
+                    device=device,
+                    num_workers=num_workers,
+                    gpu_monitor=gpu_monitor,
+                    args=args,
+                )
+
+            # Free GPU memory between folds
+            del module, gpu_mel_transform
+            torch.cuda.empty_cache()
+
+    else:
+        # ---- Single model ----
+        if model_type == "sed":
+            module, gpu_mel_transform = load_sed_model(config)
         else:
-            file_list = enumerate_train_soundscapes(data_dir)
+            module = load_model(config)
+            gpu_mel_transform = None
 
-        # Apply max-files limit
-        if args.max_files is not None:
-            file_list = file_list[: args.max_files]
-            logger.info(f"Limited to {len(file_list)} files (--max-files)")
-
-        # Build dataset and dataloader
-        dataset = InferenceChunkDataset(
-            file_list=file_list,
-            sample_rate=config["data"]["sample_rate"],
-            chunk_duration=config["data"]["chunk_duration"],
-            transform=mel_transform,
-        )
-
-        dataloader = DataLoader(
-            dataset,
-            batch_size=config["data"]["batch_size"],
-            shuffle=False,
-            num_workers=num_workers,
-            pin_memory=True,
-            collate_fn=inference_collate_fn,
-            persistent_workers=num_workers > 0,
-            prefetch_factor=4 if num_workers > 0 else None,
-        )
-
-        # Run inference
-        t0 = time.time()
-        embeddings, probabilities, metadata = run_inference(
-            module,
-            dataloader,
-            device,
-            gpu_monitor=gpu_monitor,
-        )
-        elapsed = time.time() - t0
-        logger.info(f"Inference time: {elapsed:.1f}s ({len(dataset)/elapsed:.1f} chunks/s)")
-
-        # Save results (skip when only profiling GPU)
-        if not args.gpu_check or args.overwrite:
-            save_results(
-                embeddings=embeddings,
-                probabilities=probabilities,
-                metadata=metadata,
+        for source in sources:
+            output_dir = output_base / source
+            _process_source(
+                source=source,
+                config=config,
+                model_type=model_type,
                 species_list=species_list,
+                data_dir=data_dir,
                 output_dir=output_dir,
+                module=module,
+                gpu_mel_transform=gpu_mel_transform,
+                device=device,
+                num_workers=num_workers,
+                gpu_monitor=gpu_monitor,
+                args=args,
             )
 
     # Print GPU profiling summary
