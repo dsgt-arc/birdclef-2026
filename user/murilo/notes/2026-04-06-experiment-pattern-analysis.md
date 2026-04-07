@@ -150,9 +150,24 @@ This was discovered 2026-04-06 when investigating G.3 (TTA implementation).
    - Higher fmax (currently null = 16kHz; insect stridulation peaks at 8–20kHz)
    - Different mel filter bank (bark scale, constant-Q, gammatone)
    - Multi-resolution input (low-res for birds, high-res for insects)
-   - PCEN normalization (per-channel energy normalization, used in bioacoustics)
+   - **PCEN normalization** (per-channel energy normalization) — widely used in
+     bioacoustics (Google's Perch uses it internally). PCEN adapts to local
+     signal energy, suppressing stationary noise while preserving transients.
+     Unlike AmplitudeToDB (our current norm, +0.014 to +0.034 LB gain), PCEN
+     is designed for variable-SNR environments like outdoor soundscapes —
+     directly addresses the domain shift between clean focal recordings and
+     noisy Pantanal soundscapes. High priority.
 
-3. **Inference-time improvements** — the only category that consistently works:
+3. **Hybrid SED + Perch approach** — our two best pipelines are complementary:
+   - SED (0.906 single, 0.917 ensemble): fine-tuned on focal data, strong on
+     species with focal recordings, weak on soundscape-only species
+   - Perch (0.925): frozen embeddings, strong on domain generalization, heavy
+     post-processing compensates for simpler model
+   - Combining SED predictions with Perch features or ensembling SED+Perch
+     could capture both strengths. Options: feature concatenation, score-level
+     fusion, or using Perch embeddings as auxiliary input to the SED head.
+
+4. **Inference-time improvements** — the only category that consistently works:
    - Better ensemble strategies (model diversity, not just fold diversity)
    - Improved post-processing (Perch pipeline's 6-stage PP is much more
      sophisticated than our simple priors)
