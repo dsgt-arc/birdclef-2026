@@ -1,0 +1,23 @@
+data:
+  sample_rate: 32000
+  chunk_duration: 5.0
+  window_samples: 160000
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+  soundscape_labels_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv
+  train_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
+  split_seed: 42
+
+focal:
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
+
+perch:
+  hf_repo: justinchuby/Perch-onnx
+  hf_filename: perch_v2_no_dft.onnx
+  batch_size: 32
+  # Kaggle source: google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1
+  labels_csv: artifacts/perch_v2_labels.csv           # 14,795 species + 1 non-bird background (idx 0)
+  ebird_classes_csv: artifacts/perch_v2_ebird_classes.csv  # 14,796 eBird codes
+  species_mapping: artifacts/perch_species_mapping.json    # BirdCLEF 2026 → Perch index (203 direct, 6 genus proxy, 25 unmapped)
+
+output:
+  base_dir: /storage/home/hcoda1/8/amiyaguchi3/scratch/birdclef-2026/features/exp106/
