@@ -469,6 +469,24 @@ Single-variable change from v5j — same backbone, head, loss, schedule.
 (0.874). Embedding-space mixing disrupts soundscape generalization. Another training-time
 change that fails to improve on v5j.
 
+## BirdCLEF 2026 Models — PCEN Normalization (exp 022)
+
+PCEN (Per-Channel Energy Normalization) replacing AmplitudeToDB in the mel pipeline.
+All configs identical to v5j except normalization. Targets domain gap between focal
+recordings and Pantanal soundscapes.
+
+| Slug | Backbone | Params | Head | Normalization | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|--------|------|---------------|-----------|----------|------------|-----|------------|
+| `hgnet-b0-sed-v10a` | HGNetV2-B0 | 6M | LSEHead | Learnable PCEN | 0.871 | 0.620 | 18 | **0.880** | `022-.../2026-hgnet-b0-sed-v10a/best-epochepoch=18.ckpt` |
+| `hgnet-b0-sed-v10b` | HGNetV2-B0 | 6M | LSEHead | Fixed PCEN | 0.870 | 0.610 | 18 | — | `022-.../2026-hgnet-b0-sed-v10b/best-epochepoch=18.ckpt` |
+| `hgnet-b0-sed-v10c` | HGNetV2-B0 | 6M | LSEHead | PCEN + AmplitudeToDB | 0.870 | 0.602 | 17 | — | `022-.../2026-hgnet-b0-sed-v10c/best-epochepoch=17.ckpt` |
+| `hgnet-b0-sed-v5j-repro` | HGNetV2-B0 | 3.1M | LSEHead | AmplitudeToDB | 0.873 | — | 18 | **0.903** | `022-.../2026-hgnet-b0-sed-v5j-repro/best-epochepoch=18.ckpt` |
+
+**v10a regressed −0.026 on LB** (0.880 vs 0.906). PCEN normalization hurts soundscape
+generalization. v10b/v10c not submitted (worse offline than v10a). **v5j-repro scored
+0.903 LB** (−0.003 vs original v5j 0.906), confirming pipeline is correct and PCEN
+is the cause of regression. **Experiment rejected.**
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

@@ -20,6 +20,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from nnAudio.features import MelSpectrogram
 
+from birdclef.preprocessing.pcen import PCENLayer
+
 
 class NNAudioMelSpectrogram(nn.Module):
     """GPU-accelerated log-mel spectrogram with normalization.
@@ -41,7 +43,16 @@ class NNAudioMelSpectrogram(nn.Module):
             - "audioset": log(mel+eps) → (x - mean) / (std * 2). Default, matches v1/v4a.
             - "amplitude_to_db": AmplitudeToDB(top_db=80) → per-sample standardize → min-max [0,1].
               Used by Tom's 28 experiments and 2025 1st place.
+            - "pcen": PCEN normalization → per-sample min-max [0,1]. Adaptive gain
+              control for recording-invariant features.
+            - "pcen_amp2db": PCEN → AmplitudeToDB → standardize → min-max [0,1].
+              PCEN adaptive gain control followed by dB compression.
         top_db: Dynamic range clipping for amplitude_to_db norm (default: 80.0).
+        pcen_s: PCEN smoothing coefficient (default: 0.025).
+        pcen_alpha: PCEN AGC strength (default: 0.98).
+        pcen_delta: PCEN bias (default: 2.0).
+        pcen_r: PCEN compression exponent (default: 0.5).
+        pcen_trainable: Whether PCEN parameters are learnable (default: True).
     """
 
     def __init__(
@@ -57,6 +68,11 @@ class NNAudioMelSpectrogram(nn.Module):
         fmax: int | None = None,
         norm_type: str = "audioset",
         top_db: float = 80.0,
+        pcen_s: float = 0.025,
+        pcen_alpha: float = 0.98,
+        pcen_delta: float = 2.0,
+        pcen_r: float = 0.5,
+        pcen_trainable: bool = True,
     ):
         super().__init__()
         self.target_frames = target_frames
@@ -87,6 +103,18 @@ class NNAudioMelSpectrogram(nn.Module):
             trainable_STFT=False,
         )
 
+        # PCEN layer (only created for pcen/pcen_amp2db norm types)
+        self.pcen_layer = None
+        if norm_type in ("pcen", "pcen_amp2db"):
+            self.pcen_layer = PCENLayer(
+                n_mels=n_mels,
+                s=pcen_s,
+                alpha=pcen_alpha,
+                delta=pcen_delta,
+                r=pcen_r,
+                trainable=pcen_trainable,
+            )
+
     def _normalize_audioset(self, mel: torch.Tensor) -> torch.Tensor:
         """AudioSet log normalization: log(mel+eps) → (x - mean) / (std * 2)."""
         mel = torch.log(mel + 1e-6)
@@ -104,6 +132,45 @@ class NNAudioMelSpectrogram(nn.Module):
         mel = torch.clamp(mel, min=mel_max - self.top_db)
 
         # Per-sample standardize (zero mean, unit variance)
+        mean = mel.mean(dim=(-2, -1), keepdim=True)
+        std = mel.std(dim=(-2, -1), keepdim=True).clamp(min=1e-6)
+        mel = (mel - mean) / std
+
+        # Per-sample min-max scale to [0, 1]
+        mel_min = mel.amin(dim=(-2, -1), keepdim=True)
+        mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+        mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
+
+        return mel
+
+    def _normalize_pcen(self, mel: torch.Tensor) -> torch.Tensor:
+        """PCEN → per-sample min-max [0,1].
+
+        mel input is in linear power scale from nnAudio.
+        """
+        mel = self.pcen_layer(mel)
+
+        # Per-sample min-max scale to [0, 1]
+        mel_min = mel.amin(dim=(-2, -1), keepdim=True)
+        mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+        mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
+
+        return mel
+
+    def _normalize_pcen_amp2db(self, mel: torch.Tensor) -> torch.Tensor:
+        """PCEN → AmplitudeToDB → standardize → min-max [0,1].
+
+        Applies PCEN adaptive gain control on linear mel, then the standard
+        AmplitudeToDB pipeline. PCEN output is ≥ 0, so log10 is valid.
+        """
+        mel = self.pcen_layer(mel)
+
+        # AmplitudeToDB on PCEN output (≥ 0)
+        mel = 10.0 * torch.log10(mel + 1e-10)
+        mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+        mel = torch.clamp(mel, min=mel_max - self.top_db)
+
+        # Per-sample standardize
         mean = mel.mean(dim=(-2, -1), keepdim=True)
         std = mel.std(dim=(-2, -1), keepdim=True).clamp(min=1e-6)
         mel = (mel - mean) / std
@@ -143,6 +210,10 @@ class NNAudioMelSpectrogram(nn.Module):
         # Normalize
         if self.norm_type == "amplitude_to_db":
             mel = self._normalize_amplitude_to_db(mel)
+        elif self.norm_type == "pcen":
+            mel = self._normalize_pcen(mel)
+        elif self.norm_type == "pcen_amp2db":
+            mel = self._normalize_pcen_amp2db(mel)
         else:
             mel = self._normalize_audioset(mel)
 

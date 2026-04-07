@@ -377,6 +377,27 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v6l",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v6l.json",
     },
+    # Exp 022: PCEN normalization
+    "hgnet-b0-sed-v10a": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v10a-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v10a",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v10a.json",
+    },
+    "hgnet-b0-sed-v10b": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v10b-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v10b",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v10b.json",
+    },
+    "hgnet-b0-sed-v10c": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v10c-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v10c",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v10c.json",
+    },
+    "hgnet-b0-sed-v5j-repro": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-repro-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-repro",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-repro.json",
+    },
 }
 
 
