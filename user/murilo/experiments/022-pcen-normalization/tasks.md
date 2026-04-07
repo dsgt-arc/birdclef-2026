@@ -9,7 +9,7 @@ to close the domain gap between focal recordings and Pantanal soundscapes.
 **Target**: ≥0.910 LB single model
 **Baseline**: v5j (0.906 LB) — HGNetV2-B0, AmplitudeToDB, LSEHead, BCE, OneCycleLR, 20 epochs
 
-### Status: **IN PROGRESS — Implementation complete, ready to train.**
+### Status: **IN PROGRESS — v10a/v10b/v10c training (20 epochs each).**
 
 - **Proposal**: [`proposal.md`](proposal.md)
 - **Pattern analysis**: [`notes/2026-04-06-experiment-pattern-analysis.md`](../../notes/2026-04-06-experiment-pattern-analysis.md)
@@ -48,25 +48,18 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 
 ---
 
-## Phase B: Training — PENDING
+## Phase B: Training — IN PROGRESS
 
-- [ ] B.1 GPU check (1 epoch) for v10a to verify PCEN training works
-  ```bash
-  cd user/murilo/experiments/022-pcen-normalization
-  bash sbatch/run.sh config/hgnet_b0_sed_v10a.yaml --gpu-check
-  ```
-- [ ] B.2 Train v10a (learnable PCEN, 20 epochs)
-  ```bash
-  bash sbatch/run.sh config/hgnet_b0_sed_v10a.yaml
-  ```
-- [ ] B.3 Train v10b (fixed PCEN, 20 epochs)
-  ```bash
-  bash sbatch/run.sh config/hgnet_b0_sed_v10b.yaml
-  ```
-- [ ] B.4 Train v10c (PCEN + AmplitudeToDB, 20 epochs)
-  ```bash
-  bash sbatch/run.sh config/hgnet_b0_sed_v10c.yaml
-  ```
+- [x] B.1 GPU check (1 epoch) for v10a to verify PCEN training works
+  - Job 6317377 — **PASSED**: 1 epoch in 2:17, train/loss 0.027, val/loss 0.028
+  - GPU util 69% avg (PCEN IIR loop is sequential — 511 autograd-tracked steps)
+  - Memory 0.3 GB / 25 GB (1.2%) — model is small, not memory-bound
+  - Fixed autograd in-place write bug (RuntimeError on backward pass)
+  - Optimized: in-place + no_grad EMA for fixed PCEN (v10b/v10c), autograd-safe
+    list+cat for trainable PCEN (v10a)
+- [ ] B.2 Train v10a (learnable PCEN, 20 epochs) — **TRAINING**
+- [ ] B.3 Train v10b (fixed PCEN, 20 epochs) — **TRAINING**
+- [ ] B.4 Train v10c (PCEN + AmplitudeToDB, 20 epochs) — **TRAINING**
 - [ ] B.5 Compare val/auroc across v10a/v10b/v10c vs v5j baseline
 
 ---
