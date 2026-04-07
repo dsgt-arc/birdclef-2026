@@ -206,7 +206,16 @@ class FocalSpeciesProfiles(AnalysisTask):
                 "signature": sig,
             })
 
-        sig_df = pl.DataFrame(rows)
+        # Build DataFrame with explicit signature struct type to handle empty lists.
+        # Polars can't infer List(Struct) from an empty list.
+        sig_dtype = pl.List(pl.Struct({
+            "logit_index": pl.Int32,
+            "perch_species": pl.Utf8,
+            "activation_freq": pl.Float32,
+            "mean_value": pl.Float32,
+            "std_value": pl.Float32,
+        }))
+        sig_df = pl.DataFrame(rows, schema_overrides={"signature": sig_dtype})
         sig_df.write_parquet(self.output()[0].path)
         logger.info("FocalProfiles: wrote %d species to %s", len(rows), self.output()[0].path)
 
