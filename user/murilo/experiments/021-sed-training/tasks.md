@@ -280,14 +280,15 @@ Include `manifold_mixup: true` if G.1 shows improvement.
 - [ ] G.2e Check training results, select best
 - [ ] G.2f ONNX export best → LB submission
 
-### G.3 Time-Shift TTA (inference-only) — PLANNED
+### G.3 Time-Shift TTA (inference-only) — ALREADY IMPLEMENTED
 
-Shift 5s inference window by ±0.5s and ±1.0s (5 forward passes per segment),
-average predictions. Modify Kaggle kernel only — no retraining. Apply to
-whichever model wins from G.1/G.2.
+**Discovery**: TTA is already enabled in `submission.py` (`ENABLE_TTA = True`).
+The kernel uses ±2.5s shifts with 50/25/25 weighting, plus temporal smoothing
+and TopN filtering. All v5j submissions (0.906 LB) already include TTA. The
+0.906 score is not raw — it already has TTA + smoothing + TopN baked in.
 
-- [ ] G.3a Implement time-shift TTA in Kaggle inference kernel
-- [ ] G.3b Submit best model with TTA → LB
+- [x] G.3a Already implemented in `submission.py` (lines 707-719, 1062-1073)
+- [x] G.3b All v5j/v6l submissions already ran with TTA enabled
 
 ---
 
