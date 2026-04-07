@@ -12,6 +12,7 @@ from birdclef_106.analysis.sparse_logistic import SparseLogistic
 from birdclef_106.analysis.temporal_pooling import TemporalPooling
 from birdclef_106.analysis.dmd import DMDAnalysis
 from birdclef_106.analysis.focal_profiles import FocalSpeciesProfiles
+from birdclef_106.analysis.soundscape_profiles import SoundscapeProfiles
 from birdclef_106.analysis.ukf import UKFSmoothing
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     "TemporalPooling",
     "DMDAnalysis",
     "FocalSpeciesProfiles",
+    "SoundscapeProfiles",
     "UKFSmoothing",
 ]

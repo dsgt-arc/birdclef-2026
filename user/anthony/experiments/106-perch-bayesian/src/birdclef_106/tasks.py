@@ -13,6 +13,7 @@ from birdclef_106.analysis import (
     PrototypeClassifier,
     FeatureSelection,
     FocalSpeciesProfiles,
+    SoundscapeProfiles,
     EmpiricalBayesRidge,
     SparseLogistic,
     TemporalPooling,
@@ -44,6 +45,7 @@ class AllAnalysis(AnalysisTask):
             PrototypeClassifier(**p),
             FeatureSelection(**p),
             FocalSpeciesProfiles(**p),
+            SoundscapeProfiles(**p),
         ]
         phase2 = [
             EmpiricalBayesRidge(**p),
