@@ -61,6 +61,7 @@ def main():
     from birdclef.encoders.efficientnet import EfficientNetEncoder
     from birdclef.heads.sed_head import AttBlockV2, AttHead, AttHeadMultiContext, LSEHead
     from birdclef.lightning.sed_finetune import SEDFinetuneModule
+    from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
@@ -121,6 +122,32 @@ def main():
         sed_head = AttHead(**head_kwargs)
         logger.info("SED head: AttHead (softmax attention)")
 
+    # Build mel transform if PCEN (needed to load learned params from checkpoint)
+    mel_cfg = cfg.get("mel", {})
+    norm_type = mel_cfg.get("norm_type", "audioset")
+    gpu_mel_transform = None
+    if norm_type in ("pcen", "pcen_amp2db"):
+        hop_length_mel = mel_cfg.get("hop_length", 313)
+        sample_rate = cfg["data"]["sample_rate"]
+        window_duration = cfg["data"]["window_duration"]
+        target_frames = int(window_duration * sample_rate / hop_length_mel)
+        gpu_mel_transform = NNAudioMelSpectrogram(
+            sample_rate=sample_rate,
+            n_mels=mel_cfg.get("n_mels", 256),
+            target_frames=target_frames,
+            n_fft=mel_cfg.get("n_fft"),
+            hop_length=hop_length_mel,
+            fmax=mel_cfg.get("fmax"),
+            norm_type=norm_type,
+            top_db=mel_cfg.get("top_db", 80.0),
+            pcen_s=mel_cfg.get("pcen_s", 0.025),
+            pcen_alpha=mel_cfg.get("pcen_alpha", 0.98),
+            pcen_delta=mel_cfg.get("pcen_delta", 2.0),
+            pcen_r=mel_cfg.get("pcen_r", 0.5),
+            pcen_trainable=mel_cfg.get("pcen_trainable", True),
+        )
+        logger.info(f"Built mel_transform with {norm_type} for PCEN param extraction")
+
     # Build full module and load checkpoint
     training_cfg = cfg["training"]
     module = SEDFinetuneModule(
@@ -141,6 +168,7 @@ def main():
         asl_gamma_neg=training_cfg.get("asl_gamma_neg", 4.0),
         asl_gamma_pos=training_cfg.get("asl_gamma_pos", 0.0),
         asl_clip=training_cfg.get("asl_clip", 0.05),
+        mel_transform=gpu_mel_transform,
     )
 
     logger.info(f"Loading checkpoint: {args.checkpoint}")
@@ -328,7 +356,26 @@ def main():
             "window_duration": window_duration,
             "inference_window": inference_window,
         }
-        if norm_type == "amplitude_to_db":
+        if norm_type in ("pcen", "pcen_amp2db"):
+            # Save PCEN parameters (may be learned values from training)
+            pcen_params = {
+                "s": mel_cfg.get("pcen_s", 0.025),
+                "alpha": mel_cfg.get("pcen_alpha", 0.98),
+                "delta": mel_cfg.get("pcen_delta", 2.0),
+                "r": mel_cfg.get("pcen_r", 0.5),
+                "eps": 1e-6,
+            }
+            # If mel_transform has a pcen_layer with learned params, extract them
+            if hasattr(module, "mel_transform") and module.mel_transform is not None:
+                mel_t = module.mel_transform
+                if hasattr(mel_t, "pcen_layer") and mel_t.pcen_layer is not None:
+                    pcen_params = mel_t.pcen_layer.get_params_dict()
+                    logger.info("Extracted learned PCEN params from checkpoint")
+            mel_config["pcen"] = pcen_params
+            if norm_type == "pcen_amp2db":
+                mel_config["top_db"] = mel_cfg.get("top_db", 80.0)
+            logger.info(f"Mel normalization: {norm_type} (PCEN s={pcen_params['s']!r})")
+        elif norm_type == "amplitude_to_db":
             mel_config["top_db"] = mel_cfg.get("top_db", 80.0)
             logger.info(f"Mel normalization: amplitude_to_db (top_db={mel_config['top_db']})")
     mel_config_path = output_dir / "mel_config.json"

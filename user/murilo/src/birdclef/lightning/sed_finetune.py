@@ -15,6 +15,7 @@ Data flow:
 
 import logging
 import random
+from contextlib import nullcontext
 
 import numpy as np
 import pytorch_lightning as pl
@@ -202,6 +203,14 @@ class SEDFinetuneModule(pl.LightningModule):
             )
             setattr(self, f"{split}_top1", MultiLabelTopKAccuracy(k=1))
             setattr(self, f"{split}_top5", MultiLabelTopKAccuracy(k=5))
+
+    def _mel_grad_context(self):
+        """Return no_grad context unless mel_transform has learnable params (e.g. PCEN)."""
+        if self.mel_transform is not None and any(
+            p.requires_grad for p in self.mel_transform.parameters()
+        ):
+            return nullcontext()
+        return torch.no_grad()
 
     def forward(self, mel: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Forward pass: mel → backbone features → SED head → dual logits.
@@ -467,11 +476,11 @@ class SEDFinetuneModule(pl.LightningModule):
                 # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
                 if do_mixup:
                     x, labels = self._apply_mixup(x, labels)
-                with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
                     mel = self.mel_transform(x.float())
             elif self.mel_transform is not None:
                 # GPU mel mode: compute mel on GPU first, then spectrogram mixup.
-                with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
                     mel = self.mel_transform(x.float())
                 if do_mixup:
                     mel, labels = self._apply_mixup(mel, labels)
@@ -486,7 +495,7 @@ class SEDFinetuneModule(pl.LightningModule):
             # Manifold mixup: compute mel (no input-space mixup), run backbone,
             # mix in embedding space, then run head.
             if self.mel_transform is not None:
-                with torch.no_grad(), torch.amp.autocast("cuda", enabled=False):
+                with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
                     mel = self.mel_transform(x.float())
             else:
                 mel = x
