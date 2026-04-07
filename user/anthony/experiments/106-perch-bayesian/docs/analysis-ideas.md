@@ -255,14 +255,72 @@ or time-varying dynamics.
 DMD can be done *before* the EKF as a standalone analysis — it only needs the
 raw Perch logit time series from unlabeled soundscapes.
 
+## 10. Feature space selection: logits vs embeddings
+
+The two Perch outputs encode different information and suit different analyses.
+
+### Logits (14,795-d)
+
+- Each dimension = a specific species in Perch's pretrained taxonomy
+- Sparse, mostly near-zero, interpretable (you can name each dimension)
+- Bird-biased: non-bird sounds produce indirect activations ("which birds does
+  Perch think this frog sounds like?")
+- Best for: DMD (modes are interpretable species patterns), direct logit readout
+  (zero-shot), correlation analysis with BirdCLEF targets
+
+### Embeddings (1536-d)
+
+- Penultimate-layer acoustic representation, before taxonomic projection
+- Dense, encodes spectral/temporal features more generally
+- Better for non-bird species: captures acoustic similarity even for sounds
+  Perch was never trained to classify
+- Best for: ridge regression (1536 features vs 739 samples is much friendlier
+  than 14795 vs 739), prototype classification, UMAP visualization
+
+### Which to use where
+
+| Analysis | Logits | Embeddings | Both |
+|----------|--------|------------|------|
+| Zero-shot baseline | ✓ (direct readout) | | |
+| Ridge regression | try | **prefer** (better p/n ratio) | concatenate |
+| DMD | **prefer** (interpretable modes) | try (acoustic modes) | |
+| EKF observation model | | **prefer** (generalization) | concatenate |
+| Distribution shift | ✓ (per-logit KS test) | ✓ (UMAP, MMD) | both |
+| Site/temporal patterns | ✓ (which species active?) | ✓ (acoustic clusters) | both |
+| Insect sonotypes | | **prefer** (prototype/centroid) | |
+
+### Prototype learning connection
+
+Prototype networks classify by distance to class centroids in embedding space.
+The EKF approach extends this with temporal dynamics:
+
+- **Static prototype**: each species has a centroid in embedding space. Classify
+  by nearest prototype (cosine similarity). No temporal information.
+- **EKF observation model**: each species has an expected activation profile
+  (effectively a prototype), but beliefs are updated probabilistically and
+  temporal priors propagate information across windows.
+- **DMD modes**: dynamic prototypes — not a single point but a trajectory
+  pattern. A "nocturnal frog community mode" describes how a species group
+  activates and persists together over time.
+
+For **data-starved species** (insect sonotypes with 3-12 windows), static
+prototype classification in embedding space is the right starting point.
+The EKF can then smooth those prototype-based predictions temporally.
+
+The approaches layer naturally:
+1. Prototypes (embedding space) → baseline for rare species
+2. Ridge (embedding or logit space) → static observation model for common species
+3. EKF → temporal smoothing on top of either
+4. DMD (logit space) → interpret the dynamics
+
 ## Priority order
 
 1. **Zero-shot baseline** — minutes of work, establishes floor
-2. **Ridge regression** — hours, main static result
-3. **Distribution shift** — diagnostic, informs whether ridge generalizes
+2. **Ridge regression** — hours, try embeddings first, then logits, then concat
+3. **Distribution shift** — diagnostic, both feature spaces
 4. **Site/temporal patterns** — uses unlabeled data, informs priors
-5. **DMD on unlabeled time series** — discover dynamical modes, timescales, communities
+5. **DMD on unlabeled logit time series** — dynamical modes, timescales, communities
 6. **State space / EKF** — temporal smoothing using DMD-informed dynamics
-7. **Transition matrix clustering** — ecological groupings from DMD modes
-8. **Non-bird correlations** — diagnostic for understanding ridge weights
-9. **Insect sonotypes** — hardest, do last
+7. **Prototype classification** — for insect sonotypes and other data-starved species
+8. **Transition matrix clustering** — ecological groupings from DMD modes
+9. **Non-bird correlations** — diagnostic for understanding ridge weights
