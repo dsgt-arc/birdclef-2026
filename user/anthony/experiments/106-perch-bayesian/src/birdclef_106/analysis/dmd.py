@@ -81,10 +81,27 @@ class DMDAnalysis(AnalysisTask):
         out_dir = Path(self.artifacts_dir) / "dmd_modes"
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Collect all unlabeled data grouped by site
+        # Collect unlabeled metadata + PCA-reduced logits grouped by site.
+        # Only store PCA-reduced vectors (100-d) not full logits (14795-d) to limit memory.
+        # Two passes: first pass fits PCA on a subsample, second pass transforms all data.
+        logger.info("DMD: pass 1 — fitting PCA on subsample")
+        pca_sample = []
+        for i, shard in enumerate(load_unlabeled_shards(self.features_dir)):
+            logits = logits_to_numpy(shard)
+            # Take every 4th row for PCA fitting (~32K total)
+            pca_sample.append(logits[::4])
+            if i >= 7:
+                break
+        pca_sample = np.concatenate(pca_sample).astype(np.float64)
+        global_pca = PCA(n_components=PCA_DIM)
+        global_pca.fit(pca_sample)
+        del pca_sample
+
+        logger.info("DMD: pass 2 — projecting and grouping by site")
         site_data: dict[str, list[tuple[str, int, np.ndarray]]] = {}
         for shard in load_unlabeled_shards(self.features_dir):
-            logits = logits_to_numpy(shard)
+            logits = logits_to_numpy(shard).astype(np.float64)
+            logits_pca = global_pca.transform(logits)  # (N, 100) — much smaller
             filenames = shard["filename"].to_list()
             window_idxs = shard["window_idx"].to_list()
 
@@ -92,7 +109,7 @@ class DMDAnalysis(AnalysisTask):
                 site = extract_site(filenames[i])
                 if site not in site_data:
                     site_data[site] = []
-                site_data[site].append((filenames[i], window_idxs[i], logits[i]))
+                site_data[site].append((filenames[i], window_idxs[i], logits_pca[i]))
 
         logger.info("DMD: %d sites found", len(site_data))
 
@@ -105,11 +122,7 @@ class DMDAnalysis(AnalysisTask):
 
             # Sort chronologically by filename + window_idx
             rows.sort(key=lambda x: (x[0], x[1]))
-            X = np.stack([r[2] for r in rows]).astype(np.float64)  # (T, 14795)
-
-            # PCA reduce
-            pca = PCA(n_components=min(PCA_DIM, X.shape[0] - 1))
-            X_pca = pca.fit_transform(X)  # (T, pca_dim)
+            X_pca = np.stack([r[2] for r in rows]).astype(np.float64)  # (T, PCA_DIM)
 
             # DMD: columns are time steps → transpose to (d, T)
             rank = min(SVD_RANK, X_pca.shape[1], X_pca.shape[0] - 2)
@@ -126,15 +139,15 @@ class DMDAnalysis(AnalysisTask):
             X2_pred = modes @ np.diag(evals) @ np.linalg.pinv(modes) @ X1
             recon_error = float(np.linalg.norm(X2 - X2_pred) / np.linalg.norm(X2))
 
-            # Save per-site
+            # Save per-site (PCA is global, shared across sites)
             np.savez_compressed(
                 out_dir / f"{site}.npz",
                 eigenvalues=evals,
                 modes=modes.astype(np.float32),
                 A_tilde=A_tilde.astype(np.float32),
-                pca_components=pca.components_.astype(np.float32),
-                pca_mean=pca.mean_.astype(np.float32),
-                explained_variance_ratio=pca.explained_variance_ratio_.astype(np.float32),
+                pca_components=global_pca.components_.astype(np.float32),
+                pca_mean=global_pca.mean_.astype(np.float32),
+                explained_variance_ratio=global_pca.explained_variance_ratio_.astype(np.float32),
             )
 
             # Eigenvalue analysis

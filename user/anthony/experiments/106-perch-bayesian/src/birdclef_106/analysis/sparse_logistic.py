@@ -40,7 +40,7 @@ class SparseLogistic(AnalysisTask):
     """Per-species L1 logistic regression on Perch logits with LOSO CV."""
 
     def requires(self):
-        return LogitCovariance(**self._params())
+        return []  # no dependencies — operates on raw labeled data
 
     def output(self):
         return [
@@ -81,7 +81,7 @@ class SparseLogistic(AnalysisTask):
                         continue
 
                     clf = LogisticRegression(
-                        penalty="l1", C=C, solver="saga", max_iter=2000, random_state=42,
+                        penalty="l1", C=C, solver="liblinear", max_iter=1000, random_state=42,
                     )
                     clf.fit(X[train_mask], y[train_mask])
                     y_pred = clf.predict_proba(X[test_mask])[:, 1]
@@ -97,7 +97,7 @@ class SparseLogistic(AnalysisTask):
 
             # Refit on all data with best C
             clf = LogisticRegression(
-                penalty="l1", C=best_c, solver="saga", max_iter=2000, random_state=42,
+                penalty="l1", C=best_c, solver="liblinear", max_iter=1000, random_state=42,
             )
             clf.fit(X, y)
             y_pred_all = clf.predict_proba(X)[:, 1]

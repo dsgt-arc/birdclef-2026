@@ -56,7 +56,7 @@ def _evaluate(Y_true, Y_pred):
     aurocs, aps = [], []
     for j in range(n_species):
         y = Y_true[:, j]
-        if y.sum() < 1 or y.sum() == len(y):
+        if y.sum() < 2 or y.sum() >= len(y) - 1:
             continue
         aurocs.append(roc_auc_score(y, Y_pred[:, j]))
         aps.append(average_precision_score(y, Y_pred[:, j]))

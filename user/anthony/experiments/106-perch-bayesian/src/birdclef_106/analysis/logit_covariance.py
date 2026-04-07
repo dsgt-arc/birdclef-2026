@@ -61,8 +61,8 @@ class LogitCovariance(AnalysisTask):
 
         np.savez_compressed(
             self.output().path,
-            mean=mean.astype(np.float32),
-            cov=cov.astype(np.float32),
+            mean=mean,  # float64 — preserve precision for downstream inversion
+            cov=cov,    # float64 — 14795^2 * 8 bytes ≈ 1.75 GB uncompressed
             n_samples=n_total,
         )
 

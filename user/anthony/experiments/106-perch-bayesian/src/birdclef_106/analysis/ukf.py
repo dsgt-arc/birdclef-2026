@@ -122,17 +122,25 @@ class UKFSmoothing(AnalysisTask):
             rows.sort(key=lambda r: (r["filename"], r["window_idx"]))
             X_site = np.stack([r["features"] for r in rows]).astype(np.float64)
 
-            # Project to PCA space (same as DMD used)
-            X_pca = (X_site - pca_mean) @ pca_components.T  # (T, pca_dim)
+            # Project to full PCA space, then truncate to DMD state dim for UKF
+            pca_dim = pca_components.shape[0]
+            X_pca_full = (X_site - pca_mean) @ pca_components.T  # (T, pca_dim)
             state_dim = A_tilde.shape[0]
-            X_pca = X_pca[:, :state_dim]
+            X_pca_state = X_pca_full[:, :state_dim]  # (T, state_dim) — UKF state
 
-            # UKF setup
+            # Pre-compute ridge weights projected to PCA space for scoring.
+            # W_pca = pca_components @ W_ridge maps PCA space → species scores.
+            # This avoids lossy reconstruction to feature space.
+            W_pca_full = pca_components @ W_ridge  # (pca_dim, 234)
+            # Bias from the mean: pca_mean @ W_ridge
+            bias = pca_mean @ W_ridge  # (234,)
+
+            # UKF setup — state evolves in DMD mode space, observed in DMD mode space
             def fx(x, dt):
                 return A_tilde @ x
 
             def hx(x):
-                return x  # observe the state directly in PCA space
+                return x  # observe the state directly in reduced PCA space
 
             points = MerweScaledSigmaPoints(state_dim, alpha=0.1, beta=2.0, kappa=0.0)
             ukf = UnscentedKalmanFilter(
@@ -141,21 +149,23 @@ class UKFSmoothing(AnalysisTask):
             )
 
             # Initialize
-            ukf.x = X_pca[0]
+            ukf.x = X_pca_state[0]
             ukf.P = np.eye(state_dim) * 1.0
             ukf.Q = np.eye(state_dim) * 0.1  # process noise
             ukf.R = np.eye(state_dim) * 0.5  # observation noise
 
             # Forward pass
-            smoothed_states = np.zeros_like(X_pca)
-            for t in range(len(X_pca)):
+            smoothed_states = np.zeros_like(X_pca_state)
+            for t in range(len(X_pca_state)):
                 ukf.predict()
-                ukf.update(X_pca[t])
+                ukf.update(X_pca_state[t])
                 smoothed_states[t] = ukf.x
 
-            # Project back to feature space and apply ridge
-            smoothed_features = smoothed_states @ pca_components[:state_dim] + pca_mean
-            smoothed_scores = smoothed_features @ W_ridge  # (T, 234)
+            # Score: blend smoothed (state_dim) with unsmoothed residual (pca_dim - state_dim)
+            # Smoothed dimensions get UKF-filtered values, remaining keep raw PCA values
+            X_pca_blended = X_pca_full.copy()
+            X_pca_blended[:, :state_dim] = smoothed_states
+            smoothed_scores = X_pca_blended @ W_pca_full + bias  # (T, 234)
 
             for t, row in enumerate(rows):
                 all_rows.append({

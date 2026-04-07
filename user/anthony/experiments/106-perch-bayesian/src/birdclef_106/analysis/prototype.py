@@ -67,7 +67,7 @@ class PrototypeClassifier(AnalysisTask):
                 continue
 
             # LOSO CV
-            y_scores = np.zeros(len(df), dtype=np.float64)
+            y_scores = np.full(len(df), np.nan, dtype=np.float64)
             for site in unique_sites:
                 test_mask = site_arr == site
                 train_mask = ~test_mask
@@ -81,8 +81,8 @@ class PrototypeClassifier(AnalysisTask):
                 # Cosine similarity as score
                 y_scores[test_mask] = cosine_similarity(emb[test_mask], centroid).ravel()
 
-            # Evaluate
-            evaluated_mask = y_scores != 0
+            # Evaluate (NaN marks unevaluated windows)
+            evaluated_mask = ~np.isnan(y_scores)
             if evaluated_mask.sum() < 2 or y_true[evaluated_mask].sum() < 1:
                 results[sp] = {"auroc": None, "ap": None, "n_pos": n_pos, "note": "insufficient CV coverage"}
                 continue
