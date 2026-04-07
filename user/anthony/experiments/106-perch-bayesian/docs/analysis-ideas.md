@@ -134,6 +134,37 @@ Once we learn A, its structure reveals ecological groupings:
    large indicate unusual species activity — rare species, unusual timing, or
    recording artifacts. Could flag interesting unlabeled clips for manual review.
 
+### Role of each dataset
+
+The three datasets serve distinct roles in the state space framework:
+
+**Focal recordings (~245K windows, labeled)** — parameter estimation (supervised):
+- Learn the **observation model H**: what does each species look like in Perch
+  logit space? Thousands of clean, labeled examples per species.
+- Estimate **process noise Q** per species: how variable are Perch logits across
+  consecutive windows within a single focal recording of that species?
+- Measure **call persistence** per species: average consecutive active windows.
+  Directly parameterizes diagonal of A.
+- Focal data has NO temporal continuity between recordings — each file is an
+  independent snapshot. The EKF does not run on focal data.
+
+**Labeled soundscapes (739 windows, 66 files)** — calibration + validation:
+- Calibrate H for domain shift: focal-learned observation profiles may not match
+  soundscape conditions (noise, multi-species overlap, different mics).
+- Validate EKF predictions against ground truth.
+- Tune λ (ridge) and Q (process noise) via cross-validation.
+
+**Unlabeled soundscapes (127K windows, 10,592 files)** — dynamics + inference:
+- Learn **transition matrix A** from temporal autocorrelation of Perch logits
+  across consecutive clips at each site. No labels needed.
+- Learn A at two timescales: within-clip (12 steps) and across-clip at a site
+  (thousands of chronologically ordered files).
+- 12 steps within a clip is enough for *applying* A (inference/smoothing) but
+  not for *learning* A from a single clip. The power comes from 10,592 files
+  providing ~116K within-clip transitions plus thousands of cross-clip transitions.
+- Run EKF state estimation to produce smoothed species predictions on all
+  unlabeled soundscapes.
+
 ### Practical considerations
 
 - EKF needed (not linear KF) because species presence is binary but we model on
