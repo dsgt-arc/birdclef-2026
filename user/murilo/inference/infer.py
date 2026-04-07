@@ -216,18 +216,21 @@ def load_sed_model(config: dict):
     ckpt_path = config["model"]["checkpoint_path"]
     logger.info(f"Loading checkpoint: {ckpt_path}")
 
+    # Pass mel_transform to the module so its state_dict keys are loaded
+    # from the checkpoint. We still use it separately in the inference loop.
     module = SEDFinetuneModule.load_from_checkpoint(
         ckpt_path,
         encoder=encoder,
         sed_head=sed_head,
-        mel_transform=None,
+        mel_transform=mel_transform,
         num_classes=config["model"]["num_classes"],
         map_location="cpu",
     )
     module.eval()
     logger.info("SED model loaded and set to eval mode")
 
-    return module, mel_transform
+    # Return the mel_transform from the module (now has loaded state)
+    return module, module.mel_transform
 
 
 # ============================================================================
