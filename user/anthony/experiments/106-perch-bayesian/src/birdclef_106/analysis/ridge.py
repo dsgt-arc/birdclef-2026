@@ -1,17 +1,19 @@
-"""Empirical Bayes ridge regression with logit covariance prior.
+"""Empirical Bayes ridge regression with covariance priors.
 
 Standard ridge uses λI as regularization, treating all feature directions equally.
-Empirical Bayes ridge uses λΣ^{-1} where Σ is the logit covariance estimated from
+Empirical Bayes ridge uses λΣ^{-1} where Σ is the covariance estimated from
 127K unlabeled soundscape windows. This gives better regularization: directions
-where logits vary a lot (high variance in Σ) get less penalized, directions with
+where features vary a lot (high variance in Σ) get less penalized, directions with
 low variance get shrunk hard.
 
-The semi-supervised aspect: unlabeled data informs the prior via covariance,
-labeled data (739 windows) provides the likelihood.
+Compares 4 configurations:
+    1. Embeddings + λI (standard ridge, 1536-d)
+    2. Embeddings + λΣ_emb^{-1} (empirical Bayes, 1536-d)
+    3. Logits + λI (standard ridge, 14795-d — high p/n)
+    4. Logits + λΣ_logit^{-1} (empirical Bayes, 14795-d)
 
-Implements both feature spaces:
-    - Option A: ridge on embeddings (1536-d) with standard λI prior
-    - Option B: ridge on logits (14795-d) with empirical Bayes λΣ^{-1} prior
+Also trains on focal data (265K windows) as an alternative to soundscape-only,
+with soundscape LOSO as the evaluation.
 
 References:
     Tang et al. 2020 — Deep Transfer Learning with Ridge Regression
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 import numpy as np
 import scipy.linalg
@@ -29,11 +32,13 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 
 from birdclef_106.analysis.base import AnalysisTask
 from birdclef_106.analysis.logit_covariance import LogitCovariance
+from birdclef_106.analysis.embedding_covariance import EmbeddingCovariance
 from birdclef_106.data_loading import (
     build_binary_label_matrix,
     build_species_list,
     embeddings_to_numpy,
     extract_site,
+    load_focal_shards,
     load_labeled,
     logits_to_numpy,
 )
@@ -68,10 +73,13 @@ def _evaluate(Y_true, Y_pred):
 
 
 class EmpiricalBayesRidge(AnalysisTask):
-    """Ridge regression with LOSO CV, comparing embedding vs logit feature spaces."""
+    """Ridge regression comparing feature spaces, priors, and training data."""
 
     def requires(self):
-        return LogitCovariance(**self._params())
+        return {
+            "logit_cov": LogitCovariance(**self._params()),
+            "emb_cov": EmbeddingCovariance(**self._params()),
+        }
 
     def output(self):
         return [
@@ -84,97 +92,119 @@ class EmpiricalBayesRidge(AnalysisTask):
             self.ensure_parent(t)
 
         species_list = build_species_list(self.artifacts_dir)
+
+        # Load labeled soundscape data
         df = load_labeled(self.features_dir)
-        emb = embeddings_to_numpy(df)  # (739, 1536)
-        logits = logits_to_numpy(df)   # (739, 14795)
-        Y = build_binary_label_matrix(df, species_list).astype(np.float64)
+        sc_emb = embeddings_to_numpy(df).astype(np.float64)   # (739, 1536)
+        sc_logits = logits_to_numpy(df).astype(np.float64)     # (739, 14795)
+        sc_Y = build_binary_label_matrix(df, species_list).astype(np.float64)
+        sc_sites = np.array([extract_site(f) for f in df["filename"].to_list()])
+        unique_sites = sorted(set(sc_sites))
 
-        sites = np.array([extract_site(f) for f in df["filename"].to_list()])
-        unique_sites = sorted(set(sites))
+        # Load covariances
+        logit_cov = np.load(self.input()["logit_cov"].path)["cov"].astype(np.float64)
+        emb_cov = np.load(self.input()["emb_cov"].path)["cov"].astype(np.float64)
 
-        # Load logit covariance for empirical Bayes prior
-        cov_data = np.load(self.input().path)
-        logit_cov = cov_data["cov"].astype(np.float64)
+        # Pre-compute inverses once (expensive for logit cov)
+        logger.info("Ridge: inverting covariance matrices")
+        logit_cov_inv = scipy.linalg.inv(logit_cov)
+        emb_cov_inv = scipy.linalg.inv(emb_cov)
 
         results = {}
 
-        # Option A: Ridge on embeddings with standard λI
-        logger.info("Ridge: evaluating embeddings (1536-d) with λI prior")
-        best_emb = self._cv_ridge(emb.astype(np.float64), Y, sites, unique_sites, prior="identity")
-        results["embeddings_identity"] = best_emb
+        # --- Soundscape-only training, 4 configurations ---
 
-        # Option B: Ridge on logits with empirical Bayes λΣ^{-1}
-        logger.info("Ridge: evaluating logits (14795-d) with λΣ^{-1} prior")
-        best_logit = self._cv_ridge(
-            logits.astype(np.float64), Y, sites, unique_sites,
-            prior="covariance", cov=logit_cov,
-        )
-        results["logits_empirical_bayes"] = best_logit
+        logger.info("Ridge: embeddings + λI")
+        results["emb_identity"] = self._cv_ridge(
+            sc_emb, sc_Y, sc_sites, unique_sites, prior_inv=None)
 
-        # Pick best overall model, retrain on all data
-        if (best_emb["best_auroc"] or 0) >= (best_logit["best_auroc"] or 0):
-            best_space = "embeddings"
-            X_all = emb.astype(np.float64)
-            reg = best_emb["best_lambda"] * np.eye(X_all.shape[1])
+        logger.info("Ridge: embeddings + λΣ_emb^{-1}")
+        results["emb_empirical_bayes"] = self._cv_ridge(
+            sc_emb, sc_Y, sc_sites, unique_sites, prior_inv=emb_cov_inv)
+
+        logger.info("Ridge: logits + λI")
+        results["logit_identity"] = self._cv_ridge(
+            sc_logits, sc_Y, sc_sites, unique_sites, prior_inv=None)
+
+        logger.info("Ridge: logits + λΣ_logit^{-1}")
+        results["logit_empirical_bayes"] = self._cv_ridge(
+            sc_logits, sc_Y, sc_sites, unique_sites, prior_inv=logit_cov_inv)
+
+        # --- Focal-trained, evaluated on soundscape ---
+
+        logger.info("Ridge: loading focal data for focal-trained models")
+        focal_emb_parts, focal_Y_parts = [], []
+        for i, shard in enumerate(load_focal_shards(self.features_dir)):
+            focal_emb_parts.append(embeddings_to_numpy(shard).astype(np.float64))
+            focal_Y_parts.append(
+                build_binary_label_matrix(shard, species_list).astype(np.float64))
+            if i % 4 == 0:
+                logger.info("  focal shard %d loaded", i)
+
+        focal_emb = np.concatenate(focal_emb_parts)
+        focal_Y = np.concatenate(focal_Y_parts)
+        del focal_emb_parts, focal_Y_parts
+
+        logger.info("Ridge: focal-trained embeddings + λI → eval on soundscape")
+        results["focal_emb_identity"] = self._focal_ridge(
+            focal_emb, focal_Y, sc_emb, sc_Y, sc_sites, unique_sites, prior_inv=None)
+
+        logger.info("Ridge: focal-trained embeddings + λΣ_emb^{-1} → eval on soundscape")
+        results["focal_emb_empirical_bayes"] = self._focal_ridge(
+            focal_emb, focal_Y, sc_emb, sc_Y, sc_sites, unique_sites, prior_inv=emb_cov_inv)
+
+        del focal_emb, focal_Y
+
+        # --- Pick best model and save ---
+
+        best_key = max(results, key=lambda k: results[k].get("best_auroc", 0))
+        best = results[best_key]
+        logger.info("Ridge: best config = %s (AUROC=%.3f)", best_key, best["best_auroc"])
+
+        # Retrain best on all soundscape data
+        if "logit" in best_key:
+            X_all = sc_logits
+            prior_inv = logit_cov_inv if "empirical" in best_key else None
         else:
-            best_space = "logits"
-            X_all = logits.astype(np.float64)
-            cov_inv = scipy.linalg.inv(logit_cov)
-            reg = best_logit["best_lambda"] * cov_inv
+            X_all = sc_emb
+            prior_inv = emb_cov_inv if "empirical" in best_key else None
 
-        W = _ridge_solve(X_all, Y, reg)
+        d = X_all.shape[1]
+        reg = best["best_lambda"] * (prior_inv if prior_inv is not None else np.eye(d))
+        W = _ridge_solve(X_all, sc_Y, reg)
 
         np.savez_compressed(
             self.output()[0].path,
             W=W.astype(np.float32),
-            best_lambda=results[f"{best_space}_{'identity' if best_space == 'embeddings' else 'empirical_bayes'}"]["best_lambda"],
-            feature_space=best_space,
+            best_lambda=best["best_lambda"],
+            feature_space="logits" if "logit" in best_key else "embeddings",
+            config=best_key,
             species_list=species_list,
         )
 
         with open(self.output()[1].path, "w") as f:
             json.dump(results, f, indent=2)
 
-        logger.info(
-            "Ridge: best=%s, AUROC=%.3f, AP=%.3f, λ=%.4f",
-            best_space,
-            results[f"{best_space}_{'identity' if best_space == 'embeddings' else 'empirical_bayes'}"]["best_auroc"],
-            results[f"{best_space}_{'identity' if best_space == 'embeddings' else 'empirical_bayes'}"]["best_ap"],
-            results[f"{best_space}_{'identity' if best_space == 'embeddings' else 'empirical_bayes'}"]["best_lambda"],
-        )
+        logger.info("Ridge: saved model (%s) and metrics", best_key)
 
-    def _cv_ridge(self, X, Y, sites, unique_sites, prior="identity", cov=None):
-        """LOSO cross-validation over lambda grid."""
+    def _cv_ridge(self, X, Y, sites, unique_sites, prior_inv=None):
+        """LOSO cross-validation on soundscape data."""
         d = X.shape[1]
-
-        if prior == "covariance" and cov is not None:
-            cov_inv = scipy.linalg.inv(cov)
-        else:
-            cov_inv = None
-
         best_auroc = -1
         best_lambda = None
         all_results = []
 
         for lam in LAMBDA_GRID:
-            if cov_inv is not None:
-                reg = lam * cov_inv
-            else:
-                reg = lam * np.eye(d)
-
-            fold_aurocs = []
-            fold_aps = []
+            reg = lam * (prior_inv if prior_inv is not None else np.eye(d))
+            fold_aurocs, fold_aps = [], []
 
             for site in unique_sites:
                 test_mask = sites == site
                 train_mask = ~test_mask
                 if test_mask.sum() == 0 or train_mask.sum() == 0:
                     continue
-
                 W = _ridge_solve(X[train_mask], Y[train_mask], reg)
-                Y_pred = X[test_mask] @ W
-
-                metrics = _evaluate(Y[test_mask], Y_pred)
+                metrics = _evaluate(Y[test_mask], X[test_mask] @ W)
                 if metrics["n_evaluated"] > 0:
                     fold_aurocs.append(metrics["macro_auroc"])
                     fold_aps.append(metrics["macro_ap"])
@@ -182,18 +212,51 @@ class EmpiricalBayesRidge(AnalysisTask):
             mean_auroc = float(np.mean(fold_aurocs)) if fold_aurocs else 0.0
             mean_ap = float(np.mean(fold_aps)) if fold_aps else 0.0
             all_results.append({"lambda": lam, "auroc": mean_auroc, "ap": mean_ap})
-
             if mean_auroc > best_auroc:
                 best_auroc = mean_auroc
                 best_lambda = lam
-
             logger.info("  λ=%.4f: AUROC=%.3f, AP=%.3f", lam, mean_auroc, mean_ap)
 
         return {
-            "best_lambda": best_lambda,
-            "best_auroc": best_auroc,
+            "best_lambda": best_lambda, "best_auroc": best_auroc,
             "best_ap": next((r["ap"] for r in all_results if r["lambda"] == best_lambda), 0.0),
-            "lambda_sweep": all_results,
-            "prior": prior,
-            "n_features": d,
+            "lambda_sweep": all_results, "n_features": d,
+            "train_data": "soundscape",
+        }
+
+    def _focal_ridge(self, focal_X, focal_Y, sc_X, sc_Y, sc_sites, unique_sites, prior_inv=None):
+        """Train on focal, evaluate on soundscape LOSO (held-out site = test)."""
+        d = focal_X.shape[1]
+        best_auroc = -1
+        best_lambda = None
+        all_results = []
+
+        for lam in LAMBDA_GRID:
+            reg = lam * (prior_inv if prior_inv is not None else np.eye(d))
+            # Train on ALL focal data (no focal CV — soundscape sites are the folds)
+            W = _ridge_solve(focal_X, focal_Y, reg)
+            # Evaluate on each soundscape site
+            fold_aurocs, fold_aps = [], []
+            for site in unique_sites:
+                test_mask = sc_sites == site
+                if test_mask.sum() == 0:
+                    continue
+                metrics = _evaluate(sc_Y[test_mask], sc_X[test_mask] @ W)
+                if metrics["n_evaluated"] > 0:
+                    fold_aurocs.append(metrics["macro_auroc"])
+                    fold_aps.append(metrics["macro_ap"])
+
+            mean_auroc = float(np.mean(fold_aurocs)) if fold_aurocs else 0.0
+            mean_ap = float(np.mean(fold_aps)) if fold_aps else 0.0
+            all_results.append({"lambda": lam, "auroc": mean_auroc, "ap": mean_ap})
+            if mean_auroc > best_auroc:
+                best_auroc = mean_auroc
+                best_lambda = lam
+            logger.info("  λ=%.4f: AUROC=%.3f, AP=%.3f (focal→soundscape)", lam, mean_auroc, mean_ap)
+
+        return {
+            "best_lambda": best_lambda, "best_auroc": best_auroc,
+            "best_ap": next((r["ap"] for r in all_results if r["lambda"] == best_lambda), 0.0),
+            "lambda_sweep": all_results, "n_features": d,
+            "train_data": "focal",
         }

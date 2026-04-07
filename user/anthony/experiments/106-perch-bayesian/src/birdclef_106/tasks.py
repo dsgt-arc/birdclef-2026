@@ -8,6 +8,7 @@ from birdclef_106.analysis.base import AnalysisTask
 from birdclef_106.analysis import (
     ZeroShotBaseline,
     LogitCovariance,
+    EmbeddingCovariance,
     DistributionShift,
     PrototypeClassifier,
     FeatureSelection,
@@ -37,6 +38,7 @@ class AllAnalysis(AnalysisTask):
         phase1 = [
             ZeroShotBaseline(**p),
             LogitCovariance(**p),
+            EmbeddingCovariance(**p),
             DistributionShift(**p),
             PrototypeClassifier(**p),
             FeatureSelection(**p),
