@@ -477,13 +477,13 @@ recordings and Pantanal soundscapes.
 
 | Slug | Backbone | Params | Head | Normalization | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
 |------|----------|--------|------|---------------|-----------|----------|------------|-----|------------|
-| `hgnet-b0-sed-v10a` | HGNetV2-B0 | 6M | LSEHead | Learnable PCEN | 0.871 | 0.620 | 18 | pending | `022-.../2026-hgnet-b0-sed-v10a/best-epochepoch=18.ckpt` |
-| `hgnet-b0-sed-v10b` | HGNetV2-B0 | 6M | LSEHead | Fixed PCEN | 0.870 | 0.610 | 18 | pending | `022-.../2026-hgnet-b0-sed-v10b/best-epochepoch=18.ckpt` |
-| `hgnet-b0-sed-v10c` | HGNetV2-B0 | 6M | LSEHead | PCEN + AmplitudeToDB | 0.870 | 0.602 | 17 | pending | `022-.../2026-hgnet-b0-sed-v10c/best-epochepoch=17.ckpt` |
+| `hgnet-b0-sed-v10a` | HGNetV2-B0 | 6M | LSEHead | Learnable PCEN | 0.871 | 0.620 | 18 | **0.880** | `022-.../2026-hgnet-b0-sed-v10a/best-epochepoch=18.ckpt` |
+| `hgnet-b0-sed-v10b` | HGNetV2-B0 | 6M | LSEHead | Fixed PCEN | 0.870 | 0.610 | 18 | — | `022-.../2026-hgnet-b0-sed-v10b/best-epochepoch=18.ckpt` |
+| `hgnet-b0-sed-v10c` | HGNetV2-B0 | 6M | LSEHead | PCEN + AmplitudeToDB | 0.870 | 0.602 | 17 | — | `022-.../2026-hgnet-b0-sed-v10c/best-epochepoch=17.ckpt` |
 
-All PCEN variants are ~0.003–0.004 below v5j on offline val/auroc (0.870–0.871 vs
-0.874). Offline metrics are anti-correlated with LB per pattern analysis — must submit
-to LB to evaluate. v10a (learnable PCEN) is best across all offline metrics.
+**v10a regressed −0.026 on LB** (0.880 vs 0.906). PCEN normalization hurts soundscape
+generalization. v10b/v10c not submitted (worse offline than v10a). v5j-repro baseline
+retraining in progress to verify pipeline correctness.
 
 ## Checkpoint Base Path
 

@@ -9,7 +9,7 @@ to close the domain gap between focal recordings and Pantanal soundscapes.
 **Target**: ≥0.910 LB single model
 **Baseline**: v5j (0.906 LB) — HGNetV2-B0, AmplitudeToDB, LSEHead, BCE, OneCycleLR, 20 epochs
 
-### Status: **IN PROGRESS — Training complete, awaiting LB submission.**
+### Status: **IN PROGRESS — v10a 0.880 LB (−0.026), v5j-repro training to verify pipeline.**
 
 - **Proposal**: [`proposal.md`](proposal.md)
 - **Pattern analysis**: [`notes/2026-04-06-experiment-pattern-analysis.md`](../../notes/2026-04-06-experiment-pattern-analysis.md)
@@ -24,9 +24,9 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 | Config | Normalization | PCEN Trainable | PCEN Params | val/auroc | LB | Delta vs v5j |
 |--------|---------------|----------------|-------------|-----------|-----|-------------|
 | v5j (baseline) | AmplitudeToDB | — | — | 0.874 | **0.906** | — |
-| **v10a** | PCEN → min-max [0,1] | yes (1024 params) | s=0.025 α=0.98 δ=2.0 r=0.5 | 0.871 | pending | — |
-| v10b | PCEN → min-max [0,1] | no (frozen) | s=0.025 α=0.98 δ=2.0 r=0.5 | 0.870 | pending | — |
-| v10c | PCEN → AmpToDB → std → min-max | no (frozen) | s=0.025 α=0.98 δ=2.0 r=0.5 | 0.870 | pending | — |
+| v10a | PCEN → min-max [0,1] | yes (1024 params) | s=0.025 α=0.98 δ=2.0 r=0.5 | 0.871 | **0.880** | −0.026 |
+| v10b | PCEN → min-max [0,1] | no (frozen) | s=0.025 α=0.98 δ=2.0 r=0.5 | 0.870 | — | not submitted |
+| v10c | PCEN → AmpToDB → std → min-max | no (frozen) | s=0.025 α=0.98 δ=2.0 r=0.5 | 0.870 | — | not submitted |
 
 ---
 
@@ -67,31 +67,22 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 
 ---
 
-## Phase C: Export + LB Submission — PENDING
+## Phase C: Export + LB Submission — v10a SUBMITTED
 
-- [ ] C.1 Export best PCEN variant to ONNX
-  ```bash
-  cd user/murilo/experiments/010-submission-pipeline
-  bash sbatch/run.sh export --model hgnet-b0-sed-v10a
-  ```
-- [ ] C.2 Upload weights to Kaggle
-  ```bash
-  python scripts/upload_kaggle.py --model hgnet-b0-sed-v10a
-  ```
-- [ ] C.3 Push kernel + submit to LB
-  ```bash
-  python scripts/upload_kaggle.py --model hgnet-b0-sed-v10a --push-kernel
-  ```
-- [ ] C.4 Record LB scores in results table above
-- [ ] C.5 If ≥0.910: submit remaining variants; if <0.906: reject hypothesis
+- [x] C.1 Export v10a to ONNX
+- [x] C.2 Upload weights to Kaggle
+- [x] C.3 Push kernel + submit to LB
+- [x] C.4 **v10a LB: 0.880 (−0.026 vs v5j)** — PCEN regressed significantly
+- [x] C.5 v10b/v10c not submitted (worse offline than v10a, would likely regress further)
 
 ---
 
-## Phase D: Follow-Up (if successful) — PENDING
+## Phase D: Pipeline Verification — IN PROGRESS
 
-- [ ] D.1 4-fold ensemble of best PCEN variant
-- [ ] D.2 PCEN + site/hour priors
-- [ ] D.3 Update MODEL-RUNS.md with results
+- [ ] D.1 Train v5j-repro (AmplitudeToDB baseline through exp 022 pipeline) — **TRAINING**
+- [ ] D.2 Export v5j-repro → ONNX → Kaggle LB
+- [ ] D.3 If v5j-repro ≈ 0.906: PCEN is the problem, experiment rejected
+- [ ] D.4 If v5j-repro << 0.906: pipeline bug, investigate
 
 ---
 
@@ -99,7 +90,8 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 
 | Model | val/auroc | val/cmap | LB | Normalization | Notes |
 |-------|-----------|----------|-----|---------------|-------|
-| v5j (baseline) | 0.874 | — | 0.906 | AmplitudeToDB | — |
-| **v10a** | 0.871 | 0.620 | pending | Learnable PCEN | Best offline metrics |
-| v10b | 0.870 | 0.610 | pending | Fixed PCEN | — |
-| v10c | 0.870 | 0.602 | pending | PCEN + AmplitudeToDB | Worst cmap |
+| v5j (baseline) | 0.874 | — | **0.906** | AmplitudeToDB | — |
+| v10a | 0.871 | 0.620 | **0.880** | Learnable PCEN | −0.026 regression |
+| v10b | 0.870 | 0.610 | — | Fixed PCEN | Not submitted |
+| v10c | 0.870 | 0.602 | — | PCEN + AmplitudeToDB | Not submitted |
+| v5j-repro | — | — | pending | AmplitudeToDB | Pipeline verification |
