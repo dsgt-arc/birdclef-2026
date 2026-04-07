@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=106-focal
 #SBATCH --account=paceship-clef2026_birdclef
-#SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=4G
+#SBATCH -N1 -n1 --cpus-per-task=4 --mem-per-cpu=12G
 #SBATCH -p cpu-small
 #SBATCH -t 360
 #SBATCH -q inferno
