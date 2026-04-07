@@ -7,16 +7,26 @@ See [proposal.md](proposal.md) for hypothesis, motivation, and design rationale.
 See [tasks.md](tasks.md) for the full task checklist and phase breakdown.
 
 **Branch**: `mg/021-sed-training`
-**Current Best SED**: 0.906 LB (v5j single), 0.913 LB (v5j-4fold)
-**Target**: 0.920+ single, 0.925+ 4-fold
+**Status**: COMPLETE — target not reached. v5j (0.906) remains best single SED.
+**Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
+**Target**: 0.920+ single — **not achieved**
+
+**Key finding**: across 7 phases and 14 training recipe changes, no single-variable
+modification improved LB. The gap to 0.920+ is not in the training recipe — it's in
+the domain shift between focal recordings and soundscapes. See
+[pattern analysis](../../notes/2026-04-06-experiment-pattern-analysis.md).
 
 ## Phases
 
-| Phase | Goal | LB Target | Dependencies |
-|-------|------|-----------|-------------|
-| A | Site/hour priors on SED output (no retraining) | ≥0.912 | None |
-| B | Training recipe ablations (CE+sigmoid, waveform augs) | ≥0.915 | Phase A result |
-| C | Backbone scaling (HGNetV2-B2, ConvNeXt-V2, EffNet-B3 NS) | ≥0.920 | Phase B recipe |
+| Phase | Goal | Result | Verdict |
+|-------|------|--------|---------|
+| A | Site/hour priors (inference-only) | +0.003 single, +0.004 4-fold | Minor |
+| B | Recipe ablations (CE, waveform augs, epochs) | All regressed or flat | Recipe not the gap |
+| C | AttHead + backbone scaling | −0.013 to −0.017 LB | AttHead hurts LB |
+| D | Multi-context AttHead (Tattaka-style) | −0.023 to −0.075 | Wrong approach |
+| E | Multi-context LSEHead (hengck23-style) | Best offline, −0.010 to −0.024 LB | Offline gains don't transfer |
+| F | Gap analysis fixes (fmax, competition AttHead) | fmax neutral, AttHead −0.018 | Head is not the gap |
+| G | Manifold Mixup, backbone exploration, TTA | v6l −0.007 LB, TTA already active | Training changes don't help |
 
 ## Key References
 

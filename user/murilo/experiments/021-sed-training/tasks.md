@@ -8,7 +8,7 @@ techniques (multi-context training, AttHead variants, backbone scaling).
 **Current Best SED**: 0.909 LB (v5j-pp2 single), 0.917 LB (v5j-4fold-pp2)
 **Target**: 0.920+ single, 0.925+ 4-fold
 
-### Status: **Phase G in progress. v6l (manifold mixup) training. Phases A–F complete (head/inference not the gap).**
+### Status: **COMPLETE. Phases A–G exhausted. v5j (0.906) remains best single SED. No training recipe change improved LB. See [pattern analysis](../../notes/2026-04-06-experiment-pattern-analysis.md).**
 
 - **Branch**: `mg/021-sed-training`
 - **Architecture reference**: [`notes/sed-architecture-overview.md`](../../notes/sed-architecture-overview.md)
@@ -200,7 +200,7 @@ over LSEHead. Config: v6k (v5j recipe, hidden_dim=1024, only head changes).
 representation or post-processing changes. Full analysis:
 [`notes/2026-04-06-experiment-pattern-analysis.md`](../../notes/2026-04-06-experiment-pattern-analysis.md).
 
-## Phase G: Manifold Mixup, Backbone Exploration, TTA — IN PROGRESS
+## Phase G: Manifold Mixup, Backbone Exploration, TTA — COMPLETE
 
 The 0.906→0.920+ gap is NOT in the head architecture or inference strategy
 (ruled out in Phases C–F). Phase G focuses on training-time augmentation
@@ -260,25 +260,12 @@ Reference: Mix2 repo cloned to `/tmp/Mix2/` (https://github.com/ilyassmoummad/Mi
 - [x] G.1g Check training results — neutral offline, best epoch 15 (faster convergence)
 - [x] G.1h ONNX export + LB — **0.899 LB (−0.007 vs v5j)**
 
-### G.2 Backbone Exploration with LSEHead (v9b-v9d) — PLANNED
+### G.2 Backbone Exploration with LSEHead (v9b-v9d) — SHELVED
 
-Swap backbone only, keep LSEHead + BCE + v5j recipe. Tests whether backbone
-choice (not head) is the lever. Phase C's backbone tests were confounded by
-also switching to AttHead.
-
-Candidates (all available in timm, used in BirdCLEF winning solutions):
-- **v9b**: ConvNeXt-Tiny (`convnext_tiny.fb_in22k_ft_in1k`, 28M, used by EliKal)
-- **v9c**: RegNetY-008 (`regnety_008.pycls_in1k`, 6M, used by BirdCLEF 2024/2025 1st)
-- **v9d**: ECA-NFNet-L0 (`eca_nfnet_l0.ra2_in1k`, 24M, used by BirdCLEF 2023/2025 1st)
-
-Include `manifold_mixup: true` if G.1 shows improvement.
-
-- [ ] G.2a Create v9b config (ConvNeXt-Tiny + LSEHead)
-- [ ] G.2b Create v9c config (RegNetY-008 + LSEHead)
-- [ ] G.2c Create v9d config (ECA-NFNet-L0 + LSEHead)
-- [ ] G.2d Train v9b-v9d on PACE
-- [ ] G.2e Check training results, select best
-- [ ] G.2f ONNX export best → LB submission
+Deprioritized after pattern analysis. The EffNet→HGNet gain (+0.037) was a
+one-time architecture class jump. Lateral moves between similar-sized timm
+backbones are unlikely to close the remaining 0.014 gap. The bottleneck is
+domain shift, not backbone architecture.
 
 ### G.3 Time-Shift TTA (inference-only) — ALREADY IMPLEMENTED
 
