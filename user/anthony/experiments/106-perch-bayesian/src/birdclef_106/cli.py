@@ -79,7 +79,10 @@ def main(argv: list[str] | None = None) -> None:
             )],
             workers=args.workers,
             local_scheduler=True,
+            no_lock=True,
         )
+        # Note: Luigi default retry_count=1 (2 attempts). Override via
+        # [worker] retry_count=0 in luigi.cfg if retries waste time on bugs.
     else:
         parser.print_help()
         sys.exit(1)
