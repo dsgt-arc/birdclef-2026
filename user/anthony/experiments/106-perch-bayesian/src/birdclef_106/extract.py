@@ -29,9 +29,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+import polars as pl
 import yaml
 
 from birdclef_106 import audio as audio_mod
@@ -79,32 +77,31 @@ def _write_parquet(
     emb_list: list[np.ndarray],
     logit_list: list[np.ndarray],
 ) -> None:
-    """Write metadata + vector columns to parquet via pyarrow."""
+    """Write metadata + vector columns to parquet via polars."""
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     n = len(meta_rows)
     if n == 0:
         logger.warning("No rows to write")
         return
 
-    # Build metadata columns
-    meta_df = pd.DataFrame(meta_rows)
+    # Build metadata DataFrame
+    meta_df = pl.DataFrame(meta_rows)
 
-    # Build arrow arrays for vector columns (avoids Python list overhead)
-    emb_array = pa.FixedSizeListArray.from_arrays(
-        pa.array(np.stack(emb_list).ravel(), type=pa.float32()),
-        list_size=emb_list[0].shape[0],
-    )
-    logit_array = pa.FixedSizeListArray.from_arrays(
-        pa.array(np.stack(logit_list).ravel(), type=pa.float32()),
-        list_size=logit_list[0].shape[0],
-    )
+    # Stack vectors into 2-D arrays, then convert to polars list columns
+    emb_matrix = np.stack(emb_list)       # (N, 1536)
+    logit_matrix = np.stack(logit_list)   # (N, 14795)
 
-    table = pa.Table.from_pandas(meta_df)
-    table = table.append_column("embedding", emb_array)
-    table = table.append_column("perch_logits", logit_array)
+    vectors_df = pl.DataFrame({
+        "embedding": emb_matrix.tolist(),
+        "perch_logits": logit_matrix.tolist(),
+    }).cast({
+        "embedding": pl.List(pl.Float32),
+        "perch_logits": pl.List(pl.Float32),
+    })
 
-    pq.write_table(table, output_path)
-    logger.info("Written: %s (%d rows)", output_path, n)
+    df = pl.concat([meta_df, vectors_df], how="horizontal")
+    df.write_parquet(output_path)
+    logger.info("Written: %s (%d rows, %.1f MB)", output_path, n, Path(output_path).stat().st_size / 1e6)
 
 
 def extract_soundscape_labeled(cfg: dict, output_path: str) -> int:
@@ -114,18 +111,17 @@ def extract_soundscape_labeled(cfg: dict, output_path: str) -> int:
     batch_size = cfg["perch"]["batch_size"]
     sdir = Path(data["soundscape_dir"])
 
-    labels_df = pd.read_csv(data["soundscape_labels_csv"]).drop_duplicates(
+    labels_df = pl.read_csv(data["soundscape_labels_csv"]).unique(
         subset=["filename", "start"]
     )
     logger.info("Labeled windows: %d (after dedup)", len(labels_df))
 
     # Build split (reuse exp 102/105 seed=42 split)
-    all_files = sorted(labels_df["filename"].unique())
+    all_files = sorted(labels_df["filename"].unique().to_list())
     rng = np.random.RandomState(data["split_seed"])
     rng.shuffle(all_files)
     mid = len(all_files) // 2
     train_files = set(all_files[:mid])
-    val_files = set(all_files[mid:])
 
     meta_rows: list[dict] = []
     emb_list: list[np.ndarray] = []
@@ -135,7 +131,7 @@ def extract_soundscape_labeled(cfg: dict, output_path: str) -> int:
     n_skipped = 0
 
     t0 = time.time()
-    for _, row in labels_df.iterrows():
+    for row in labels_df.iter_rows(named=True):
         fname = row["filename"]
         path = sdir / fname
         if not path.exists():
@@ -191,8 +187,8 @@ def extract_soundscape_unlabeled(
     sdir = Path(data["soundscape_dir"])
 
     # Get labeled filenames to exclude
-    labels_df = pd.read_csv(data["soundscape_labels_csv"])
-    labeled_files = set(labels_df["filename"].unique())
+    labels_df = pl.read_csv(data["soundscape_labels_csv"])
+    labeled_files = set(labels_df["filename"].unique().to_list())
 
     # All soundscape files minus labeled ones
     all_files = sorted(p.name for p in sdir.glob("*.ogg"))
@@ -259,11 +255,12 @@ def extract_focal(
     batch_size = cfg["perch"]["batch_size"]
     audio_dir = Path(focal["audio_dir"])
 
-    train_df = pd.read_csv(data["train_csv"])
-    train_df = train_df.sort_values("filename").reset_index(drop=True)
+    train_df = pl.read_csv(data["train_csv"]).sort("filename")
 
     # Shard by index
-    train_df = train_df.iloc[shard_index::num_shards].reset_index(drop=True)
+    train_df = train_df.with_row_index("_idx").filter(
+        pl.col("_idx") % num_shards == shard_index
+    ).drop("_idx")
     logger.info("Focal shard %d/%d: %d recordings", shard_index, num_shards, len(train_df))
 
     meta_rows: list[dict] = []
@@ -274,7 +271,7 @@ def extract_focal(
     n_failed = 0
 
     t0 = time.time()
-    for fi, (_, rec) in enumerate(train_df.iterrows()):
+    for fi, rec in enumerate(train_df.iter_rows(named=True)):
         if fi % 1000 == 0 and fi > 0:
             logger.info("Progress: %d/%d files, %d windows", fi, len(train_df), len(meta_rows))
 
@@ -289,7 +286,7 @@ def extract_focal(
         primary = str(rec["primary_label"])
         secondary = str(rec.get("secondary_labels", ""))
         gt = primary
-        if secondary and secondary != "nan":
+        if secondary and secondary not in ("", "None", "nan", "null"):
             gt = f"{primary};{secondary}"
 
         windows = audio_mod.window_audio(wav, window_samples=WINDOW_SAMPLES)

@@ -25,8 +25,7 @@ if [ ! -f "$VENV_MARKER" ]; then
         huggingface_hub \
         numpy \
         pyyaml \
-        pandas \
-        pyarrow \
+        polars \
         soundfile
 
     # CPU-only torch for Perch ONNX + torchaudio resampling
