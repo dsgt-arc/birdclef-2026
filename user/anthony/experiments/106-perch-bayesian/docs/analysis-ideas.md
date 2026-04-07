@@ -176,13 +176,93 @@ The three datasets serve distinct roles in the state space framework:
   statistics can be estimated purely from temporal autocorrelation of Perch logits
   without any species labels
 
+## 9. Dynamic Mode Decomposition on Perch time series
+
+The learned transition matrix A from the EKF is analyzable via DMD. This
+connects the Bayesian state space model to a modal decomposition of the
+ecosystem dynamics.
+
+### DMD = eigendecomposition of A
+
+Given consecutive Perch logit observations z_t, z_{t+1} from unlabeled
+soundscapes, DMD finds the best-fit linear operator A ≈ z_{t+1} z_t^+
+(where z_t^+ is the pseudoinverse). Then A = VΛV^{-1}:
+
+- **Eigenvectors (DMD modes)**: spatial activation patterns. Each mode is a
+  coherent pattern of Perch logits that evolve together. Interpretable as
+  ecological communities — "these bird logits + these amphibian-correlated
+  logits activate and decay as a unit."
+
+- **Eigenvalues (DMD spectrum)**: temporal behavior of each mode.
+  - |λ| < 1 → decaying (transient events: brief bird calls, alarm calls)
+  - |λ| ≈ 1 → persistent (background species: always-present frogs, insects)
+  - Complex λ → oscillatory. Period = 2π / arg(λ). A complex pair with
+    period ≈ 24h would be the diel cycle (dawn chorus ↔ nocturnal assemblage).
+  - |λ| > 1 → growing (unstable — shouldn't appear in a stationary ecosystem,
+    would indicate model misfit or non-stationarity)
+
+- **Mode amplitudes**: how much each mode contributes to the overall dynamics.
+  Dominant modes explain most of the variance in species turnover.
+
+### What DMD reveals
+
+1. **Ecosystem timescales**: the eigenvalue spectrum shows the characteristic
+   frequencies of species turnover. Expect clusters at:
+   - Very fast (|λ| ≈ 0): individual call events
+   - Slow (|λ| ≈ 0.9-0.99): gradual assemblage shifts
+   - Oscillatory (~24h period): diel cycle
+   - Near-unit (|λ| ≈ 1): persistent background
+
+2. **Ecological communities**: DMD modes group species by dynamical similarity.
+   Species that load on the same mode appear/disappear together. This is a
+   data-driven discovery of species assemblages — no taxonomy needed.
+
+3. **Diel regime structure**: if dominant modes are oscillatory with ~24h period,
+   the real/imaginary parts of those eigenvectors describe the dawn→day→dusk→night
+   species rotation. Projecting a specific time-of-day onto these modes gives
+   the expected species composition.
+
+4. **Low-rank dynamics**: if a few DMD modes explain most variance, the effective
+   dimensionality of species dynamics is low. This means the 234-species state
+   space can be compressed to a handful of community modes — massive simplification
+   for the EKF (run in mode space, not species space).
+
+### Computational approach
+
+DMD is cheap — just an SVD:
+1. Stack consecutive Perch logit vectors into matrices X = [z_1, ..., z_{T-1}]
+   and Y = [z_2, ..., z_T]
+2. SVD of X: X = UΣV*
+3. Project: Ã = U* Y V Σ^{-1} (reduced-rank A in the SVD basis)
+4. Eigendecompose Ã → modes and eigenvalues
+
+For 127K windows with 14,795-d logits, work in the reduced basis (truncated SVD
+to rank r ≈ 50-200). Total cost: one truncated SVD of a 14795 × 127K matrix,
+which is minutes on a CPU with randomized SVD.
+
+Can also run DMD separately per site or per diel period to discover site-specific
+or time-varying dynamics.
+
+### Pipeline integration
+
+1. Ridge regression → static observation model (H)
+2. DMD on unlabeled Perch logit time series → dynamical modes and A
+3. Interpret modes as ecological communities, eigenvalues as timescales
+4. Use DMD modes to inform/initialize EKF structure
+5. EKF with informed A → temporally smoothed species predictions
+6. Analyze EKF innovations (prediction errors) for anomaly detection
+
+DMD can be done *before* the EKF as a standalone analysis — it only needs the
+raw Perch logit time series from unlabeled soundscapes.
+
 ## Priority order
 
 1. **Zero-shot baseline** — minutes of work, establishes floor
 2. **Ridge regression** — hours, main static result
 3. **Distribution shift** — diagnostic, informs whether ridge generalizes
 4. **Site/temporal patterns** — uses unlabeled data, informs priors
-5. **State space / EKF** — adds temporal dynamics on top of ridge observation model
-6. **Transition matrix clustering** — discover ecological groupings from learned dynamics
-7. **Non-bird correlations** — diagnostic for understanding ridge weights
-8. **Insect sonotypes** — hardest, do last
+5. **DMD on unlabeled time series** — discover dynamical modes, timescales, communities
+6. **State space / EKF** — temporal smoothing using DMD-informed dynamics
+7. **Transition matrix clustering** — ecological groupings from DMD modes
+8. **Non-bird correlations** — diagnostic for understanding ridge weights
+9. **Insect sonotypes** — hardest, do last
