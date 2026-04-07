@@ -9,7 +9,7 @@ to close the domain gap between focal recordings and Pantanal soundscapes.
 **Target**: ≥0.910 LB single model
 **Baseline**: v5j (0.906 LB) — HGNetV2-B0, AmplitudeToDB, LSEHead, BCE, OneCycleLR, 20 epochs
 
-### Status: **IN PROGRESS — v10a/v10b/v10c training (20 epochs each).**
+### Status: **IN PROGRESS — Training complete, awaiting LB submission.**
 
 - **Proposal**: [`proposal.md`](proposal.md)
 - **Pattern analysis**: [`notes/2026-04-06-experiment-pattern-analysis.md`](../../notes/2026-04-06-experiment-pattern-analysis.md)
@@ -24,9 +24,9 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 | Config | Normalization | PCEN Trainable | PCEN Params | val/auroc | LB | Delta vs v5j |
 |--------|---------------|----------------|-------------|-----------|-----|-------------|
 | v5j (baseline) | AmplitudeToDB | — | — | 0.874 | **0.906** | — |
-| v10a | PCEN → min-max [0,1] | yes (1024 params) | s=0.025 α=0.98 δ=2.0 r=0.5 | — | — | — |
-| v10b | PCEN → min-max [0,1] | no (frozen) | s=0.025 α=0.98 δ=2.0 r=0.5 | — | — | — |
-| v10c | PCEN → AmpToDB → std → min-max | no (frozen) | s=0.025 α=0.98 δ=2.0 r=0.5 | — | — | — |
+| **v10a** | PCEN → min-max [0,1] | yes (1024 params) | s=0.025 α=0.98 δ=2.0 r=0.5 | 0.871 | pending | — |
+| v10b | PCEN → min-max [0,1] | no (frozen) | s=0.025 α=0.98 δ=2.0 r=0.5 | 0.870 | pending | — |
+| v10c | PCEN → AmpToDB → std → min-max | no (frozen) | s=0.025 α=0.98 δ=2.0 r=0.5 | 0.870 | pending | — |
 
 ---
 
@@ -48,7 +48,7 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 
 ---
 
-## Phase B: Training — IN PROGRESS
+## Phase B: Training — COMPLETE
 
 - [x] B.1 GPU check (1 epoch) for v10a to verify PCEN training works
   - Job 6317377 — **PASSED**: 1 epoch in 2:17, train/loss 0.027, val/loss 0.028
@@ -57,10 +57,13 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
   - Fixed autograd in-place write bug (RuntimeError on backward pass)
   - Optimized: in-place + no_grad EMA for fixed PCEN (v10b/v10c), autograd-safe
     list+cat for trainable PCEN (v10a)
-- [ ] B.2 Train v10a (learnable PCEN, 20 epochs) — **TRAINING**
-- [ ] B.3 Train v10b (fixed PCEN, 20 epochs) — **TRAINING**
-- [ ] B.4 Train v10c (PCEN + AmplitudeToDB, 20 epochs) — **TRAINING**
-- [ ] B.5 Compare val/auroc across v10a/v10b/v10c vs v5j baseline
+- [x] B.2 Train v10a (learnable PCEN, 20 epochs) — val/auroc 0.871, val/cmap 0.620, best epoch 18
+- [x] B.3 Train v10b (fixed PCEN, 20 epochs) — val/auroc 0.870, val/cmap 0.610, best epoch 18
+- [x] B.4 Train v10c (PCEN + AmplitudeToDB, 20 epochs) — val/auroc 0.870, val/cmap 0.602, best epoch 17
+- [x] B.5 Compare val/auroc across v10a/v10b/v10c vs v5j baseline
+  - All PCEN variants ~0.003–0.004 below v5j offline (0.870–0.871 vs 0.874)
+  - v10a (learnable) best across all offline metrics
+  - Offline metrics are anti-correlated with LB — must submit to evaluate
 
 ---
 
@@ -97,6 +100,6 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 | Model | val/auroc | val/cmap | LB | Normalization | Notes |
 |-------|-----------|----------|-----|---------------|-------|
 | v5j (baseline) | 0.874 | — | 0.906 | AmplitudeToDB | — |
-| v10a | — | — | — | Learnable PCEN | — |
-| v10b | — | — | — | Fixed PCEN | — |
-| v10c | — | — | — | PCEN + AmplitudeToDB | — |
+| **v10a** | 0.871 | 0.620 | pending | Learnable PCEN | Best offline metrics |
+| v10b | 0.870 | 0.610 | pending | Fixed PCEN | — |
+| v10c | 0.870 | 0.602 | pending | PCEN + AmplitudeToDB | Worst cmap |
