@@ -393,6 +393,11 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v10c",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v10c.json",
     },
+    "hgnet-b0-sed-v5j-repro": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-repro-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-repro",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-repro.json",
+    },
 }
 
 

@@ -91,7 +91,8 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
-    # Exp 022: PCEN normalization
+    # Exp 022: PCEN normalization + pipeline verification
+    "birdclef-2026-hgnet-b0-sed-v5j-repro-weights",
     "birdclef-2026-hgnet-b0-sed-v10a-weights",
     "birdclef-2026-hgnet-b0-sed-v10b-weights",
     "birdclef-2026-hgnet-b0-sed-v10c-weights",
