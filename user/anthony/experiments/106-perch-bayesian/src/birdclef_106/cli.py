@@ -30,6 +30,16 @@ def main(argv: list[str] | None = None) -> None:
     p_ext.add_argument("--shard-index", type=int, default=0)
     p_ext.add_argument("--num-shards", type=int, default=1)
 
+    # analyze subcommand
+    p_analyze = sub.add_parser("analyze", help="Run analysis pipeline (Luigi tasks)")
+    p_analyze.add_argument("--phase", type=int, default=0, choices=[0, 1, 2, 3],
+                           help="Phase to run (0=all, 1=static, 2=+models, 3=+UKF)")
+    p_analyze.add_argument("--workers", type=int, default=4,
+                           help="Luigi worker count (task parallelism)")
+    p_analyze.add_argument("--features-dir",
+                           default="~/scratch/birdclef-2026/features/exp106")
+    p_analyze.add_argument("--artifacts-dir", default="artifacts")
+
     args = parser.parse_args(argv)
 
     if args.command == "extract":
@@ -57,6 +67,19 @@ def main(argv: list[str] | None = None) -> None:
                 num_shards=args.num_shards,
             )
         sys.exit(rc)
+    elif args.command == "analyze":
+        import os
+        import luigi
+        from birdclef_106.tasks import AllAnalysis
+        luigi.build(
+            [AllAnalysis(
+                features_dir=os.path.expanduser(args.features_dir),
+                artifacts_dir=args.artifacts_dir,
+                phase=args.phase,
+            )],
+            workers=args.workers,
+            local_scheduler=True,
+        )
     else:
         parser.print_help()
         sys.exit(1)

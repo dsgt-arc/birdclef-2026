@@ -1,0 +1,27 @@
+"""Exp 106 analysis tasks — Luigi DAG for Perch v2 feature exploration."""
+
+from birdclef_106.analysis.base import AnalysisTask
+from birdclef_106.analysis.zero_shot import ZeroShotBaseline
+from birdclef_106.analysis.logit_covariance import LogitCovariance
+from birdclef_106.analysis.distribution_shift import DistributionShift
+from birdclef_106.analysis.prototype import PrototypeClassifier
+from birdclef_106.analysis.feature_selection import FeatureSelection
+from birdclef_106.analysis.ridge import EmpiricalBayesRidge
+from birdclef_106.analysis.sparse_logistic import SparseLogistic
+from birdclef_106.analysis.temporal_pooling import TemporalPooling
+from birdclef_106.analysis.dmd import DMDAnalysis
+from birdclef_106.analysis.ukf import UKFSmoothing
+
+__all__ = [
+    "AnalysisTask",
+    "ZeroShotBaseline",
+    "LogitCovariance",
+    "DistributionShift",
+    "PrototypeClassifier",
+    "FeatureSelection",
+    "EmpiricalBayesRidge",
+    "SparseLogistic",
+    "TemporalPooling",
+    "DMDAnalysis",
+    "UKFSmoothing",
+]
