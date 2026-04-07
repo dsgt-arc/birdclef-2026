@@ -20,7 +20,7 @@ source sbatch/_setup-venv.sh
 NUM_SHARDS=16
 OUTPUT_DIR=$(python -c "import yaml; print(yaml.safe_load(open('configs/exp106.yaml'))['output']['base_dir'])")
 
-birdclef-106 extract \
+python -c "from birdclef_106.cli import main; main()" extract \
     --config configs/exp106.yaml \
     --source soundscape-unlabeled \
     --output "$OUTPUT_DIR/soundscape_unlabeled/shard-${SLURM_ARRAY_TASK_ID}.parquet" \

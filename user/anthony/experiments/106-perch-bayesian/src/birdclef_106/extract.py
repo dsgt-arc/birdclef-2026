@@ -111,7 +111,7 @@ def extract_soundscape_labeled(cfg: dict, output_path: str) -> int:
     batch_size = cfg["perch"]["batch_size"]
     sdir = Path(data["soundscape_dir"])
 
-    labels_df = pl.read_csv(data["soundscape_labels_csv"]).unique(
+    labels_df = pl.read_csv(data["soundscape_labels_csv"], infer_schema_length=10000).unique(
         subset=["filename", "start"]
     )
     logger.info("Labeled windows: %d (after dedup)", len(labels_df))
@@ -187,7 +187,7 @@ def extract_soundscape_unlabeled(
     sdir = Path(data["soundscape_dir"])
 
     # Get labeled filenames to exclude
-    labels_df = pl.read_csv(data["soundscape_labels_csv"])
+    labels_df = pl.read_csv(data["soundscape_labels_csv"], infer_schema_length=10000)
     labeled_files = set(labels_df["filename"].unique().to_list())
 
     # All soundscape files minus labeled ones
@@ -255,7 +255,7 @@ def extract_focal(
     batch_size = cfg["perch"]["batch_size"]
     audio_dir = Path(focal["audio_dir"])
 
-    train_df = pl.read_csv(data["train_csv"]).sort("filename")
+    train_df = pl.read_csv(data["train_csv"], infer_schema_length=10000).sort("filename")
 
     # Shard by index
     train_df = train_df.with_row_index("_idx").filter(

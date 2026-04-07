@@ -7,10 +7,9 @@
 
 set -eu
 
-repo_dir=$(realpath ~/arc/birdclef-2026)
-exp_dir=$repo_dir/user/anthony/experiments/106-perch-bayesian
+exp_dir="$HOME/arc/birdclef-2026/user/anthony/experiments/106-perch-bayesian"
 
-scratch_dir=$(realpath ~/scratch/birdclef-2026)
+scratch_dir="$HOME/scratch/birdclef-2026"
 VENV_DIR="$scratch_dir/.venv-106"
 VENV_MARKER="$VENV_DIR/.setup-done-v1"
 
@@ -39,6 +38,7 @@ else
 fi
 
 # Always re-install editable package to pick up code changes.
-uv pip install -e "$exp_dir" --quiet
+echo "Installing editable package from $exp_dir"
+uv pip install -e "$exp_dir"
 
 cd "$exp_dir"
