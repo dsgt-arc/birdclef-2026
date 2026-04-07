@@ -80,12 +80,78 @@ windows each. All defined by soundscape annotation only.
 - Compare embeddings vs logits for this task — embeddings might preserve more low-level
   acoustic information than the taxonomic logit space
 
+## 8. State space model / Extended Kalman Filter
+
+Species presence is a latent state that evolves over time. Perch logits are
+noisy observations. A state space model makes this explicit.
+
+### Within-clip dynamics (12 steps per 60s file)
+
+- **State**: 234-d species presence (logit scale, so approximately Gaussian)
+- **Observation model**: ridge weights from section 2 (H matrix)
+- **Transition model**: species-specific persistence — frogs call continuously
+  (high autocorrelation, low process noise), birds call in brief bouts (low
+  autocorrelation, high process noise)
+- **Benefit**: smooths noisy per-window predictions using temporal continuity.
+  A frog detected in windows 1-4 and 6-12 was probably present in window 5 too.
+
+### Across-clip dynamics (site-level, hours/days)
+
+- Longer timescale: species assemblages at a site evolve over hours (diel cycle)
+  and days (seasonal migration, weather)
+- State propagates across consecutive clips at the same site
+- Unlabeled clips participate as observations — they update the state even without
+  ground truth labels
+
+### What the EKF transition matrix tells us
+
+The learned transition matrix A encodes **species dynamics**:
+- Diagonal entries = persistence (how sticky is each species' presence?)
+- Off-diagonal entries = co-occurrence dynamics (does species X arriving predict
+  species Y departing? Does a dawn chorus species predict the end of nocturnal callers?)
+- Eigenvalues = timescales of the system (fast vs slow-changing species groups)
+
+### Clustering from the transition function
+
+Once we learn A, its structure reveals ecological groupings:
+
+1. **Spectral clustering on A**: eigendecomposition of the transition matrix groups
+   species by dynamical similarity. Species in the same cluster have similar
+   persistence and co-occurrence patterns. This could discover:
+   - Nocturnal assemblage (frogs + nightjars that appear/disappear together)
+   - Dawn chorus group (birds that activate together at sunrise)
+   - Background species (always present, diagonal ≈ 1)
+   - Transient visitors (low persistence, high process noise)
+
+2. **Community detection**: treat A as a weighted directed graph, run modularity-based
+   clustering. Edges = dynamical coupling between species.
+
+3. **Regime identification**: if A is time-varying (different transition dynamics at
+   night vs day), fit separate A matrices per diel period. The difference between
+   A_night and A_day reveals which species swap in/out at transitions.
+
+4. **Anomaly detection**: clips where the Kalman innovation (prediction error) is
+   large indicate unusual species activity — rare species, unusual timing, or
+   recording artifacts. Could flag interesting unlabeled clips for manual review.
+
+### Practical considerations
+
+- EKF needed (not linear KF) because species presence is binary but we model on
+  logit scale — the observation model (sigmoid ∘ ridge) is nonlinear
+- Alternative: particle filter if the Gaussian approximation is too poor
+- Start simple: diagonal A (independent species persistence), then add off-diagonal
+  terms if cross-species dynamics improve predictions
+- The 127K unlabeled windows provide massive data for learning A — transition
+  statistics can be estimated purely from temporal autocorrelation of Perch logits
+  without any species labels
+
 ## Priority order
 
 1. **Zero-shot baseline** — minutes of work, establishes floor
-2. **Ridge regression** — hours, main result
+2. **Ridge regression** — hours, main static result
 3. **Distribution shift** — diagnostic, informs whether ridge generalizes
 4. **Site/temporal patterns** — uses unlabeled data, informs priors
-5. **Non-bird correlations** — diagnostic for understanding ridge weights
-6. **Temporal aggregation** — extension to ridge
-7. **Insect sonotypes** — hardest, do last
+5. **State space / EKF** — adds temporal dynamics on top of ridge observation model
+6. **Transition matrix clustering** — discover ecological groupings from learned dynamics
+7. **Non-bird correlations** — diagnostic for understanding ridge weights
+8. **Insect sonotypes** — hardest, do last
