@@ -242,6 +242,51 @@ shared environmental responses and species-to-species associations.
 
 ---
 
+## 13. Focal recording analysis: per-species transfer and background correlations
+
+Focal recordings aren't just "clean training data" — they have rich structure
+worth analyzing beyond training a ridge model.
+
+### Per-species domain gap
+
+For each species, measure how different the Perch embedding distribution is
+between that species' focal recordings and soundscape windows where the species
+is present. Some species may transfer well (similar acoustic conditions), others
+poorly (studio-quality focal vs noisy field recording).
+
+- Per-species MMD or KL divergence between focal and soundscape embeddings
+- Species with small gap → high-confidence focal-trained weights
+- Species with large gap → need soundscape calibration or downweight focal
+- Could inform a **per-species weighting** in the ridge: weight focal samples
+  by their acoustic similarity to the soundscape domain
+
+### Background noise and secondary labels
+
+Focal recordings contain secondary species, environmental noise, wind, insects.
+The `secondary_labels` column tells you what else is present in each recording.
+
+- When species A is the primary label and Perch logit B fires strongly, that's
+  evidence about B's acoustic signature in the presence of A
+- Co-occurrence structure from focal `secondary_labels` is correlational data
+  that can inform the prior (which species pairs tend to co-occur?)
+- Background noise patterns in focal recordings may partially overlap with
+  soundscape noise — useful for learning what "not a target species" looks like
+
+### Domain-adaptive weighting
+
+Instead of training ridge on all focal data equally, weight each focal window
+by how "soundscape-like" it is:
+
+- Compute distance from each focal embedding to the mean/centroid of unlabeled
+  soundscape embeddings (or use Mahalanobis distance with the embedding covariance)
+- Downweight focal windows that are acoustically far from any soundscape condition
+- Upweight focal windows that resemble soundscape conditions
+- This is a simple importance-weighting domain adaptation — no model changes,
+  just a diagonal weight matrix in the ridge solve:
+  `W = (X' diag(w) X + λΣ^{-1})^{-1} X' diag(w) Y`
+
+---
+
 ## Priority order
 
 ### Phase 1: Static baselines (days 1-3)
