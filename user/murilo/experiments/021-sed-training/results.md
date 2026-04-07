@@ -336,3 +336,17 @@ recipe appears to be at a local optimum that is resistant to single-variable
 perturbations.
 
 Checkpoint: `021-.../2026-hgnet-b0-sed-v6l/best-epochepoch=15.ckpt`
+
+### Cross-Experiment Pattern Analysis
+
+After 7 phases of ablations (A–G), every training-time recipe change from v5j
+has regressed on LB. A full analysis of what worked vs what didn't across all
+experiments (006–021, 40+ variants) is documented in
+[`notes/2026-04-06-experiment-pattern-analysis.md`](../../notes/2026-04-06-experiment-pattern-analysis.md).
+
+**Key finding**: the only LB gains came from changing *what the model sees*
+(mel resolution, normalization, backbone) or *how predictions are combined*
+(ensembling, priors, TTA). No training-time recipe change has ever improved LB.
+The domain shift between focal recordings and Pantanal soundscapes is the
+fundamental bottleneck — training recipe changes that improve offline val/auroc
+on focal data consistently hurt soundscape generalization.

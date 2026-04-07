@@ -195,6 +195,11 @@ over LSEHead. Config: v6k (v5j recipe, hidden_dim=1024, only head changes).
 | Competition-standard AttHead | Phase F.4 (v6k) | −0.018 LB | Head architecture is not the gap |
 | Manifold Mixup (Mix2) | Phase G.1 (v6l) | −0.007 LB | Embedding-space mixing hurts soundscape generalization |
 
+**Pattern analysis**: After 14 training-time recipe changes across Phases A–G
+(and exps 016–019), zero have improved LB. Every gain came from input
+representation or post-processing changes. Full analysis:
+[`notes/2026-04-06-experiment-pattern-analysis.md`](../../notes/2026-04-06-experiment-pattern-analysis.md).
+
 ## Phase G: Manifold Mixup, Backbone Exploration, TTA — IN PROGRESS
 
 The 0.906→0.920+ gap is NOT in the head architecture or inference strategy
