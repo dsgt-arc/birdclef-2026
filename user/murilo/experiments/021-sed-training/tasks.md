@@ -193,6 +193,7 @@ over LSEHead. Config: v6k (v5j recipe, hidden_dim=1024, only head changes).
 | Multi-context LSEHead | Phase E (v8a/v8b) | −0.010 to −0.024 LB | Offline gains don't transfer |
 | Framewise-max inference | Phase F.1 (v5j-fmax) | 0.906 (identical) | Pooling method is not the gap |
 | Competition-standard AttHead | Phase F.4 (v6k) | −0.018 LB | Head architecture is not the gap |
+| Manifold Mixup (Mix2) | Phase G.1 (v6l) | −0.007 LB | Embedding-space mixing hurts soundscape generalization |
 
 ## Phase G: Manifold Mixup, Backbone Exploration, TTA — IN PROGRESS
 
@@ -252,7 +253,7 @@ Reference: Mix2 repo cloned to `/tmp/Mix2/` (https://github.com/ilyassmoummad/Mi
 - [x] G.1e Fast-dev-run passed (5 batches, no errors)
 - [x] G.1f Train v6l on PACE — **val/auroc 0.874 (±0.000 vs v5j), cmap 0.630 (+0.005)**
 - [x] G.1g Check training results — neutral offline, best epoch 15 (faster convergence)
-- [ ] G.1h ONNX export + LB submission (optional — neutral offline, but offline-LB disconnect means LB could differ)
+- [x] G.1h ONNX export + LB — **0.899 LB (−0.007 vs v5j)**
 
 ### G.2 Backbone Exploration with LSEHead (v9b-v9d) — PLANNED
 
@@ -311,5 +312,5 @@ whichever model wins from G.1/G.2.
 | v8a (center-chunk inference) | **0.883** | 0.882 | center chunk only (+0.001, negligible) |
 | v5j-fmax (blend 0/1) | **0.906** | 0.874 | framewise hard-max = same as v5j 0.75/0.25 |
 | v6k (fixed AttHead) | **0.888** | 0.871 | −0.018 LB, AttHead regresses vs LSEHead |
-| v6l (manifold mixup) | — | 0.874 | ±0.000 AUROC, +0.005 cmap, neutral (best ep 15) |
+| v6l (manifold mixup) | **0.899** | 0.874 | **−0.007 LB**, neutral offline, embedding mixing hurts |
 | Perch V18 (exp 020) | **0.925** | — | Two-kernel TF, reference |

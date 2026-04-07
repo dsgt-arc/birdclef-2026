@@ -312,26 +312,27 @@ bug (41-species 2025 mapping instead of 234) — the 0.888 is the correct score.
 
 ## Phase G: Manifold Mixup, Backbone Exploration, TTA
 
-### G.1: Manifold Mixup (v6l) — neutral offline
+### G.1: Manifold Mixup (v6l) — neutral offline, −0.007 LB
 
 Implemented manifold mixup inspired by Mix2 (Moummad et al. 2024). Each batch
 randomly alternates between input-space spectrogram mixup (50%) and embedding-space
 manifold mixup (50%). Single-variable change from v5j — same backbone, head, loss.
 
-| Model | Change | val/auroc | val/cmap | Best Epoch | Delta vs v5j |
-|-------|--------|-----------|----------|------------|-------------|
-| v5j (baseline) | — | **0.874** | ~0.625 | 19 | — |
-| **v6l** | **manifold mixup 50%** | **0.874** | **0.630** | **15** | **±0.000 AUROC, +0.005 cmap** |
+| Model | Change | val/auroc | val/cmap | Best Epoch | LB | Delta vs v5j |
+|-------|--------|-----------|----------|------------|-----|-------------|
+| v5j (baseline) | — | **0.874** | ~0.625 | 19 | **0.906** | — |
+| **v6l** | **manifold mixup 50%** | **0.874** | **0.630** | **15** | **0.899** | **−0.007 LB** |
 
 v6l matches v5j exactly on val/auroc (0.874) with marginally better cmap (0.630 vs
-~0.625). Best epoch is 15 (vs 19 for v5j) — the model converges faster, suggesting
-manifold mixup acts as regularizer but doesn't push the performance ceiling higher.
+~0.625), but regresses **−0.007 on LB** (0.899 vs 0.906). Best epoch is 15 (vs 19
+for v5j) — the model converges faster but produces worse predictions on soundscapes.
 
-**Interpretation**: Manifold mixup is neutral for our setup. The Mix2 paper showed
-+6.2% on rare classes training from scratch for 100 epochs. Our ImageNet-pretrained
-backbone fine-tuned for 20 epochs already has structured embeddings — the
-regularization benefit of manifold mixup is smaller. However, given offline metrics
-are unreliable predictors of LB (v8a had +0.008 offline but −0.024 LB), v6l could
-still differ on LB. Worth a submission if LB budget allows.
+**Interpretation**: Manifold mixup hurts LB performance despite neutral offline
+metrics. The embedding-space mixing likely disrupts the backbone feature structure
+that v5j learned for soundscape generalization. This is consistent with the broader
+pattern in exp 021: every training-time change from v5j (CE loss, waveform augs,
+AttHead, multi-context, manifold mixup) either regresses or is flat on LB. The v5j
+recipe appears to be at a local optimum that is resistant to single-variable
+perturbations.
 
 Checkpoint: `021-.../2026-hgnet-b0-sed-v6l/best-epochepoch=15.ckpt`

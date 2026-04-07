@@ -454,12 +454,11 @@ Single-variable change from v5j — same backbone, head, loss, schedule.
 
 | Slug | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
 |------|----------|--------|------|------|-----------|----------|------------|-----|------------|
-| `hgnet-b0-sed-v6l` | HGNetV2-B0 | 6M | LSEHead | BCE | 0.874 | 0.630 | 15 | — | `021-.../2026-hgnet-b0-sed-v6l/best-epochepoch=15.ckpt` |
+| `hgnet-b0-sed-v6l` | HGNetV2-B0 | 6M | LSEHead | BCE | 0.874 | 0.630 | 15 | **0.899** | `021-.../2026-hgnet-b0-sed-v6l/best-epochepoch=15.ckpt` |
 
-**Manifold mixup is neutral offline** — matches v5j exactly on val/auroc (0.874) with
-marginally better cmap (0.630 vs ~0.625). Model converges faster (best epoch 15 vs 19),
-suggesting manifold mixup regularizes but doesn't push the ceiling. Worth an LB test
-given offline-LB disconnect.
+**Manifold mixup regresses −0.007 on LB** (0.899 vs 0.906) despite matching v5j offline
+(0.874). Embedding-space mixing disrupts soundscape generalization. Another training-time
+change that fails to improve on v5j.
 
 ## Checkpoint Base Path
 
