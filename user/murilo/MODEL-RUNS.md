@@ -446,6 +446,21 @@ inference didn't help — the offline-to-LB gap is not an inference strategy iss
 20s context outperforms v8a's 15s on LB (0.896 vs 0.883), suggesting longer backbone
 context is valuable but the approach still regresses vs v5j's 0.906 single-model LB.
 
+### Phase G: Manifold Mixup (v6l)
+
+Manifold mixup inspired by Mix2 (Moummad et al. 2024). Each batch randomly alternates
+between input-space spectrogram mixup (50%) and embedding-space manifold mixup (50%).
+Single-variable change from v5j — same backbone, head, loss, schedule.
+
+| Slug | Backbone | Params | Head | Loss | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|----------|--------|------|------|-----------|----------|------------|-----|------------|
+| `hgnet-b0-sed-v6l` | HGNetV2-B0 | 6M | LSEHead | BCE | 0.874 | 0.630 | 15 | — | `021-.../2026-hgnet-b0-sed-v6l/best-epochepoch=15.ckpt` |
+
+**Manifold mixup is neutral offline** — matches v5j exactly on val/auroc (0.874) with
+marginally better cmap (0.630 vs ~0.625). Model converges faster (best epoch 15 vs 19),
+suggesting manifold mixup regularizes but doesn't push the ceiling. Worth an LB test
+given offline-LB disconnect.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

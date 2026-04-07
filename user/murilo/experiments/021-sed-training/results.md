@@ -309,3 +309,29 @@ implementation. LSEHead is the better head for our backbone/recipe. The gap must
 come from something else: backbone choice, CE loss, waveform augmentation, or a
 combination. Note: v6k's first two submissions scored 0.508 due to a species_mapping
 bug (41-species 2025 mapping instead of 234) — the 0.888 is the correct score.
+
+## Phase G: Manifold Mixup, Backbone Exploration, TTA
+
+### G.1: Manifold Mixup (v6l) — neutral offline
+
+Implemented manifold mixup inspired by Mix2 (Moummad et al. 2024). Each batch
+randomly alternates between input-space spectrogram mixup (50%) and embedding-space
+manifold mixup (50%). Single-variable change from v5j — same backbone, head, loss.
+
+| Model | Change | val/auroc | val/cmap | Best Epoch | Delta vs v5j |
+|-------|--------|-----------|----------|------------|-------------|
+| v5j (baseline) | — | **0.874** | ~0.625 | 19 | — |
+| **v6l** | **manifold mixup 50%** | **0.874** | **0.630** | **15** | **±0.000 AUROC, +0.005 cmap** |
+
+v6l matches v5j exactly on val/auroc (0.874) with marginally better cmap (0.630 vs
+~0.625). Best epoch is 15 (vs 19 for v5j) — the model converges faster, suggesting
+manifold mixup acts as regularizer but doesn't push the performance ceiling higher.
+
+**Interpretation**: Manifold mixup is neutral for our setup. The Mix2 paper showed
++6.2% on rare classes training from scratch for 100 epochs. Our ImageNet-pretrained
+backbone fine-tuned for 20 epochs already has structured embeddings — the
+regularization benefit of manifold mixup is smaller. However, given offline metrics
+are unreliable predictors of LB (v8a had +0.008 offline but −0.024 LB), v6l could
+still differ on LB. Worth a submission if LB budget allows.
+
+Checkpoint: `021-.../2026-hgnet-b0-sed-v6l/best-epochepoch=15.ckpt`
