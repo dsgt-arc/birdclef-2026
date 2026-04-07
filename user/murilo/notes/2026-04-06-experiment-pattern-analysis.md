@@ -130,6 +130,11 @@ predictions.
 The pattern says: **stop changing the training recipe and start changing what
 the model sees or how predictions are combined.**
 
+**Note on TTA**: All LB scores from v5g onward already include ±2.5s time-shift
+TTA (50/25/25 weighting), temporal smoothing (Gaussian), and TopN filtering —
+these are globally enabled in `submission.py`. The 0.906 is NOT a raw score.
+This was discovered 2026-04-06 when investigating G.3 (TTA implementation).
+
 ### High-value directions
 
 1. **Bridge the domain gap** — the model trains on clean focal recordings
@@ -148,10 +153,11 @@ the model sees or how predictions are combined.**
    - PCEN normalization (per-channel energy normalization, used in bioacoustics)
 
 3. **Inference-time improvements** — the only category that consistently works:
-   - Time-shift TTA (EliKal's approach, never tested)
    - Better ensemble strategies (model diversity, not just fold diversity)
    - Improved post-processing (Perch pipeline's 6-stage PP is much more
      sophisticated than our simple priors)
+   - TTA already implemented (±2.5s shifts) — could test different shift
+     amounts or more shifts, but likely diminishing returns
 
 ### Deprioritized directions
 

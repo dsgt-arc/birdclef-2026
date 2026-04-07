@@ -293,6 +293,12 @@ Single-variable ablations from v5g (0.892 LB). All use HGNetV2-B0 + ttahara reci
 ‡ v5m uses EfficientNet-B0 (320 native embed_dim) + 1x1 Conv2d projection to 1024. Tests whether HGNet's advantage is from embed_dim. All other params match v5j.
 ‡‡ v5n uses EfficientNet-B0 with v5j recipe (NNAudio+AmplitudeToDB) but NO projection (native 320 embed_dim). Control for v5m.
 
+**Note on inference post-processing**: All LB scores from v5g onward include
+inference-time TTA (±2.5s shifts, 50/25/25 weighting), temporal smoothing
+(Gaussian), and TopN filtering, enabled globally in `submission.py`
+(`ENABLE_TTA=True`, `ENABLE_TEMPORAL_SMOOTHING=True`, `ENABLE_TOPN=True`).
+These are baked into every score — there is no "raw" v5j LB without them.
+
 ## BirdCLEF 2026 — Perch Probes (exp 018)
 
 Frozen Perch v2 as feature extractor + LogReg probe classifiers. No GPU training —
@@ -348,6 +354,9 @@ Key fixes over buggy v2 (0.898):
 
 Post-processing and training recipe improvements targeting 0.920+ single-model LB.
 Motivated by competitor insights from Kaggle discussion #683791.
+
+**All exp 021 LB scores include TTA + temporal smoothing + TopN** (inherited from
+`submission.py` global flags). See note under exp 019 Step 4.
 
 ### Phase A: Site/Hour Priors (no retraining)
 
