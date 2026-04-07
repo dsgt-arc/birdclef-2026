@@ -15,6 +15,9 @@ Compares 4 configurations:
 Also trains on focal data (265K windows) as an alternative to soundscape-only,
 with soundscape LOSO as the evaluation.
 
+Saves LOSO out-of-fold predictions for the best config — used by TemporalPooling
+to evaluate clip-level aggregation without train-on-train bias.
+
 References:
     Tang et al. 2020 — Deep Transfer Learning with Ridge Regression
     Munch et al. 2022 — Semi-supervised empirical Bayes factor regression
@@ -85,6 +88,7 @@ class EmpiricalBayesRidge(AnalysisTask):
         return [
             self.artifact("ridge_model.npz"),
             self.artifact("ridge_metrics.json"),
+            self.artifact("ridge_oof_predictions.npz"),  # out-of-fold for temporal pooling
         ]
 
     def run(self):
@@ -95,8 +99,8 @@ class EmpiricalBayesRidge(AnalysisTask):
 
         # Load labeled soundscape data
         df = load_labeled(self.features_dir)
-        sc_emb = embeddings_to_numpy(df).astype(np.float64)   # (739, 1536)
-        sc_logits = logits_to_numpy(df).astype(np.float64)     # (739, 14795)
+        sc_emb = embeddings_to_numpy(df).astype(np.float64)
+        sc_logits = logits_to_numpy(df).astype(np.float64)
         sc_Y = build_binary_label_matrix(df, species_list).astype(np.float64)
         sc_sites = np.array([extract_site(f) for f in df["filename"].to_list()])
         unique_sites = sorted(set(sc_sites))
@@ -105,7 +109,7 @@ class EmpiricalBayesRidge(AnalysisTask):
         logit_cov = np.load(self.input()["logit_cov"].path)["cov"].astype(np.float64)
         emb_cov = np.load(self.input()["emb_cov"].path)["cov"].astype(np.float64)
 
-        # Pre-compute inverses once (expensive for logit cov)
+        # Pre-compute inverses once
         logger.info("Ridge: inverting covariance matrices")
         logit_cov_inv = scipy.linalg.inv(logit_cov)
         emb_cov_inv = scipy.linalg.inv(emb_cov)
@@ -155,7 +159,7 @@ class EmpiricalBayesRidge(AnalysisTask):
 
         del focal_emb, focal_Y
 
-        # --- Pick best model and save ---
+        # --- Pick best config and save ---
 
         best_key = max(results, key=lambda k: results[k].get("best_auroc", 0))
         best = results[best_key]
@@ -173,6 +177,10 @@ class EmpiricalBayesRidge(AnalysisTask):
         reg = best["best_lambda"] * (prior_inv if prior_inv is not None else np.eye(d))
         W = _ridge_solve(X_all, sc_Y, reg)
 
+        # Generate LOSO out-of-fold predictions for the best config
+        oof_preds = self._generate_oof_predictions(
+            X_all, sc_Y, sc_sites, unique_sites, best["best_lambda"], prior_inv)
+
         np.savez_compressed(
             self.output()[0].path,
             W=W.astype(np.float32),
@@ -185,7 +193,29 @@ class EmpiricalBayesRidge(AnalysisTask):
         with open(self.output()[1].path, "w") as f:
             json.dump(results, f, indent=2)
 
-        logger.info("Ridge: saved model (%s) and metrics", best_key)
+        np.savez_compressed(
+            self.output()[2].path,
+            oof_predictions=oof_preds.astype(np.float32),
+            species_list=species_list,
+        )
+
+        logger.info("Ridge: saved model (%s), metrics, and OOF predictions", best_key)
+
+    def _generate_oof_predictions(self, X, Y, sites, unique_sites, lam, prior_inv):
+        """Generate out-of-fold predictions using LOSO CV at the best lambda."""
+        d = X.shape[1]
+        reg = lam * (prior_inv if prior_inv is not None else np.eye(d))
+        oof = np.zeros_like(Y)
+
+        for site in unique_sites:
+            test_mask = sites == site
+            train_mask = ~test_mask
+            if test_mask.sum() == 0 or train_mask.sum() == 0:
+                continue
+            W = _ridge_solve(X[train_mask], Y[train_mask], reg)
+            oof[test_mask] = X[test_mask] @ W
+
+        return oof
 
     def _cv_ridge(self, X, Y, sites, unique_sites, prior_inv=None):
         """LOSO cross-validation on soundscape data."""
@@ -225,7 +255,7 @@ class EmpiricalBayesRidge(AnalysisTask):
         }
 
     def _focal_ridge(self, focal_X, focal_Y, sc_X, sc_Y, sc_sites, unique_sites, prior_inv=None):
-        """Train on focal, evaluate on soundscape LOSO (held-out site = test)."""
+        """Train on focal, evaluate on soundscape LOSO."""
         d = focal_X.shape[1]
         best_auroc = -1
         best_lambda = None
@@ -233,9 +263,7 @@ class EmpiricalBayesRidge(AnalysisTask):
 
         for lam in LAMBDA_GRID:
             reg = lam * (prior_inv if prior_inv is not None else np.eye(d))
-            # Train on ALL focal data (no focal CV — soundscape sites are the folds)
             W = _ridge_solve(focal_X, focal_Y, reg)
-            # Evaluate on each soundscape site
             fold_aurocs, fold_aps = [], []
             for site in unique_sites:
                 test_mask = sc_sites == site
