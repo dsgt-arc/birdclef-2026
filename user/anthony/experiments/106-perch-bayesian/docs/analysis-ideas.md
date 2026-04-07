@@ -8,7 +8,11 @@
 - Per window: embedding (1536-d), perch_logits (14,795-d), metadata (site, time, filename)
 - Mapping: 203 BirdCLEF species → Perch logit index, 6 genus proxies, 25 unmapped
 
-## 1. Zero-shot baseline: direct logit readout
+---
+
+## Static methods (no temporal structure)
+
+### 1. Zero-shot baseline: direct logit readout
 
 For the 203 directly-mapped species, the Perch logit at the corresponding index
 is a free predictor. No training needed.
@@ -17,21 +21,56 @@ is a free predictor. No training needed.
 - Compare against exp 105 linear probe (0.684 focal cmAP, 0.052 sc_cmap)
 - Tells us the ceiling for non-learned approaches
 
-## 2. Ridge regression (logits → BirdCLEF targets)
+### 2. Empirical Bayes ridge / logistic regression
 
-Multi-output ridge: 14,795 Perch logits → 234 BirdCLEF species.
+Use the 127K unlabeled embeddings to estimate the feature covariance, then use
+that as the prior for Bayesian regression on the 739 labeled windows.
 
-- Closed-form: `W = (X'X + λI)^{-1} X'Y`, factorize once, solve all 234 targets
-- Cross-validate λ on the 739 labeled windows (LOSO by site, reuse exp 101 splits)
-- Compare features: raw logits vs sigmoid(logits) vs embeddings (1536-d)
-- Embeddings might work better — 1536 features is a much friendlier ratio with 739 samples
+**Empirical Bayes approach** (Munch et al. 2022):
+- Estimate Σ_unlabeled from 127K unlabeled embedding vectors (1536×1536 covariance)
+- Use Σ_unlabeled^{-1} as the precision prior for ridge/logistic regression
+- Fit on 739 labeled windows → posterior weights for 234 species
+- Closed-form for ridge: `W = (X'X + λΣ^{-1})^{-1} X'Y`
+- The unlabeled covariance tells the model which feature directions have high
+  variance (important) vs low variance (noise) — better regularization than λI
 
-## 3. Distribution shift: focal vs soundscape
+**Why this is the right starting point:**
+- Semi-supervised: uses all 127K unlabeled points through the prior
+- Closed-form, runs in seconds on CPU
+- Ridge on embeddings (p/n ≈ 2:1) is well-validated for frozen pretrained features
+  (Tang et al. 2020, CLIP linear probe literature)
+- For logits (p/n ≈ 20:1), apply PCA to 200-500 dims first, or use elastic net
+  (L1+L2) to exploit sparsity — most of 14,795 logits are irrelevant
 
-Compare feature distributions between the three data populations:
-- Focal recordings (206 species, controlled, mostly diurnal birds)
-- Labeled soundscapes (75 species, Pantanal wetland, amphibian-dominated)
-- Unlabeled soundscapes (same sites, unknown species composition)
+**Compare features:**
+- Embeddings (1536-d) — better p/n ratio, generalizes better for non-birds
+- Logits (14,795-d) — interpretable, but needs dimensionality reduction
+- Sigmoid(logits) — bounded [0,1], may be better conditioned
+- PCA-reduced logits (200-500d) — best of both worlds?
+- Concatenated embedding + top-k logits
+
+Cross-validate λ via LOSO by site (reuse exp 101 splits).
+
+### 3. GP classification on embeddings
+
+Gaussian process classification on 1536-d Perch embeddings.
+
+**Why GP:** (Patacchiola et al. NeurIPS 2020 — Deep Kernel Transfer)
+- GP with RBF kernel on frozen embeddings is competitive with fine-tuning for few-shot
+- Exact GP is feasible at n=739 (cost ≈ 739³ ≈ 400M ops)
+- Provides calibrated uncertainty per prediction — useful for downstream thresholding
+- Multi-output GP (Ingram et al. 2020) models species correlations via coregionalization
+  matrix B = WW', capturing inter-species structure
+
+**Semi-supervised extension:**
+- Scalable SVGP (Hensman et al. AISTATS 2015) handles 127K points via inducing points
+- GPyTorch implements this with GPU acceleration
+- 500-1000 inducing points on 1536-d features is computationally feasible
+
+### 4. Distribution shift: focal vs soundscape
+
+Compare feature distributions between the three data populations. **This is the
+go/no-go diagnostic** — if features don't transfer, no downstream model will work.
 
 Methods:
 - Per-logit KL divergence or Kolmogorov-Smirnov test (which Perch outputs shift most?)
@@ -39,288 +78,233 @@ Methods:
 - MMD between focal and soundscape embedding distributions
 - Which Perch logits are "always on" in soundscapes but not focal? (background species)
 
-## 4. Temporal activation patterns
+### 5. Prototype classification for rare species
 
-Soundscapes are 60s (12 windows). Analyze how Perch activations change over time:
-- Per-file activation timelines: which logits fire in which 5s windows?
-- Species-specific temporal signatures (frogs call continuously, birds call briefly)
-- Optimal aggregation width per species: does averaging over 2, 3, or all 12 windows help?
-- Autocorrelation of logit activations within a file — do species come in bursts?
+For insect sonotypes (25 targets, 3-12 windows each) and other data-starved species:
+- Compute centroid of each species' embeddings from labeled windows
+- Classify by cosine similarity to centroids (Snell et al. 2017 — prototypical networks)
+- Embeddings preferred over logits (preserve acoustic similarity for non-bird sounds)
+- Compare: cosine vs Mahalanobis distance (using unlabeled covariance)
 
-## 5. Site-level and diel patterns
-
-The soundscape filenames encode site and timestamp. Analyze spatial/temporal structure:
-- Per-site activation profiles: which Perch logits characterize each site?
-- Diel patterns: which logits are active at night vs dawn vs day?
-  (amphibians = nocturnal, birds = dawn chorus — this is a strong prior)
-- Site × time interaction: do species assemblages shift predictably?
-- Use unlabeled soundscapes (127K windows, 23 sites) — no labels needed, just activations
-- Could inform a site-aware or time-aware prior for the ridge model
-
-## 6. Non-bird species via indirect correlations
+### 6. Non-bird species via indirect correlations
 
 Amphibians, mammals, and insects have no direct Perch mapping. But their calls
-may consistently co-activate certain bird logits (acoustic similarity, shared
-frequency bands, co-occurrence).
+may consistently co-activate certain bird logits.
 
 - On labeled windows: correlate each of the 14,795 Perch logits with each non-bird
   species' presence. Which bird logits predict frog/mammal presence?
-- Sparse patterns would be interpretable (e.g., "Perch logit for species X always
-  fires when frog Y is calling")
+- Sparse patterns would be interpretable
 - Ridge regression subsumes this — but the raw correlations are diagnostic
 
-## 7. Insect sonotype discrimination (hardest subproblem)
+---
 
-25 `47158sonXX` targets with zero focal data, zero Perch mapping, only 3-12 labeled
-windows each. All defined by soundscape annotation only.
+## Temporal methods (exploit time structure)
 
-- Cluster their Perch embeddings: do the 25 sonotypes separate in embedding space?
-- If yes: nearest-centroid or prototype classifier could work
-- If no: Perch doesn't encode the relevant acoustic differences (frequency, rhythm)
-- Compare embeddings vs logits for this task — embeddings might preserve more low-level
-  acoustic information than the taxonomic logit space
+### 7. Simple temporal baselines
 
-## 8. State space model / Extended Kalman Filter
+Before any state-space model, establish what simple pooling achieves:
+- Max-pool ridge predictions across 12 windows of a 60s clip
+- Mean-pool ridge predictions across 12 windows
+- Exponential moving average of predictions within a clip
+- **These are the baselines any temporal model must beat**
 
-Species presence is a latent state that evolves over time. Perch logits are
-noisy observations. A state space model makes this explicit.
+### 8. HMM temporal regimes
 
-### Within-clip dynamics (12 steps per 60s file)
+Hidden Markov Models are the established approach for PAM temporal structure
+(D'Angelo et al. 2026 — general HMM framework for PAM time series).
 
-- **State**: 234-d species presence (logit scale, so approximately Gaussian)
-- **Observation model**: ridge weights from section 2 (H matrix)
-- **Transition model**: species-specific persistence — frogs call continuously
-  (high autocorrelation, low process noise), birds call in brief bouts (low
-  autocorrelation, high process noise)
-- **Benefit**: smooths noisy per-window predictions using temporal continuity.
-  A frog detected in windows 1-4 and 6-12 was probably present in window 5 too.
+**Per-site Gaussian HMM on embedding sequences:**
+- Fit a 3-5 state HMM per site on unlabeled embedding time series
+- States correspond to diel regimes: dawn chorus, daytime, dusk, night, transition
+- No labels needed — learns regimes from temporal structure alone
+- Then condition species predictions on the inferred regime:
+  P(species | embedding, regime) vs P(species | embedding)
 
-### Across-clip dynamics (site-level, hours/days)
+**Why HMM before EKF:**
+- Simpler, well-validated in bioacoustics (D'Angelo et al. 2026)
+- Discrete states (dawn/day/dusk/night) match ecological reality better than
+  continuous Gaussian state evolution
+- Diel patterns are strong in this data (Perez-Granados & Schuchmann 2025):
+  amphibians = nocturnal, birds = dawn chorus
+- Viterbi-decoded state labels are directly useful as features for ridge/GP
 
-- Longer timescale: species assemblages at a site evolve over hours (diel cycle)
-  and days (seasonal migration, weather)
-- State propagates across consecutive clips at the same site
-- Unlabeled clips participate as observations — they update the state even without
-  ground truth labels
+### 9. State space model / UKF
 
-### What the EKF transition matrix tells us
+For continuous-state temporal smoothing. **Prefer UKF over EKF** — Newman et al.
+(2023) showed UKF consistently outperforms EKF for ecological SSMs with
+moderate nonlinearity, at similar computational cost.
 
-The learned transition matrix A encodes **species dynamics**:
-- Diagonal entries = persistence (how sticky is each species' presence?)
-- Off-diagonal entries = co-occurrence dynamics (does species X arriving predict
-  species Y departing? Does a dawn chorus species predict the end of nocturnal callers?)
-- Eigenvalues = timescales of the system (fast vs slow-changing species groups)
+**Key clarification from the literature:**
+- Ecology's canonical SSMs (Royle & Kery 2007) use binary latent states with
+  Bernoulli observations → Kalman filters don't apply, need MCMC
+- BUT our setting is different: we model continuous Perch embeddings evolving
+  over time, then threshold for species detection. The Gaussian assumption is
+  reasonable for high-dimensional embeddings (central limit effects).
+- Run UKF on continuous embeddings → threshold for detection after
 
-### Clustering from the transition function
+**Architecture:**
+- **State**: embedding-space representation of species community (1536-d, or
+  reduced to DMD mode space, ~50-100d)
+- **Observation model H**: empirical Bayes ridge weights (section 2)
+- **Transition model A**: learned from DMD (section 10) or temporal autocorrelation
+- **Process noise Q**: species-specific, estimated from focal within-recording
+  variability
 
-Once we learn A, its structure reveals ecological groupings:
+**Role of each dataset:**
 
-1. **Spectral clustering on A**: eigendecomposition of the transition matrix groups
-   species by dynamical similarity. Species in the same cluster have similar
-   persistence and co-occurrence patterns. This could discover:
-   - Nocturnal assemblage (frogs + nightjars that appear/disappear together)
-   - Dawn chorus group (birds that activate together at sunrise)
-   - Background species (always present, diagonal ≈ 1)
-   - Transient visitors (low persistence, high process noise)
+| Dataset | Role | Why |
+|---------|------|-----|
+| Focal (~245K) | Learn H (observation model), Q (noise), call persistence | Lots of labeled data, clean signal, no temporal continuity between files |
+| Labeled soundscapes (739) | Calibrate H for domain shift, validate, tune hyperparams | Small but in-domain ground truth |
+| Unlabeled soundscapes (127K) | Learn A (dynamics), run UKF inference | Massive temporal/spatial structure, no labels needed |
 
-2. **Community detection**: treat A as a weighted directed graph, run modularity-based
-   clustering. Edges = dynamical coupling between species.
+**Within-clip (12 steps):** enough for applying A (smoothing), not for learning A.
+**Across-clip (thousands per site):** where A is learned from temporal autocorrelation.
 
-3. **Regime identification**: if A is time-varying (different transition dynamics at
-   night vs day), fit separate A matrices per diel period. The difference between
-   A_night and A_day reveals which species swap in/out at transitions.
+### 10. Dynamic Mode Decomposition
 
-4. **Anomaly detection**: clips where the Kalman innovation (prediction error) is
-   large indicate unusual species activity — rare species, unusual timing, or
-   recording artifacts. Could flag interesting unlabeled clips for manual review.
+DMD extracts dominant spatiotemporal modes from time series — connecting the
+Bayesian state space model to a modal decomposition of ecosystem dynamics.
 
-### Role of each dataset
+**Standard DMD** — eigendecomposition of the best-fit linear operator:
+- Eigenvectors = spatial patterns (species/logit activation patterns that evolve together)
+- Eigenvalues = temporal dynamics (|λ|<1 decaying, |λ|≈1 persistent, complex λ oscillatory)
+- Modes interpretable as ecological communities
 
-The three datasets serve distinct roles in the state space framework:
+**DMD variants worth trying:**
 
-**Focal recordings (~245K windows, labeled)** — parameter estimation (supervised):
-- Learn the **observation model H**: what does each species look like in Perch
-  logit space? Thousands of clean, labeled examples per species.
-- Estimate **process noise Q** per species: how variable are Perch logits across
-  consecutive windows within a single focal recording of that species?
-- Measure **call persistence** per species: average consecutive active windows.
-  Directly parameterizes diagonal of A.
-- Focal data has NO temporal continuity between recordings — each file is an
-  independent snapshot. The EKF does not run on focal data.
+| Variant | Reference | Why relevant |
+|---------|-----------|--------------|
+| **Bayesian DMD** | Takeishi & Kawahara, IJCAI 2017 | Posterior uncertainty over modes — critical with short 12-step clips |
+| **BOP-DMD** | Sashidhar & Kutz, Phil Trans A 2022 | Bagged optimized DMD, uncertainty via bootstrap. Implemented in PyDMD |
+| **Multi-resolution DMD** | Kutz et al. 2015 | Separates slow (community shifts) from fast (vocalization events). Two timescales |
+| **DMDc** | Proctor et al. SIAM 2016 | DMD with control inputs — site ID and time-of-day as exogenous forcing |
+| **Online DMD** | Zhang et al. SIAM 2019 | Streaming updates, O(n²) memory. Feasible for 1536-d embeddings |
+| **Kernel DMD** | Williams et al. 2015 | Nonlinear Koopman in kernel space. Cost depends on snapshots, not dim |
+| **Non-Stationary DMD** | Baddoo et al. 2023 | Handles drifting dynamics (seasonal shifts). Fits modulated modes |
+| **Sparse DMD** | Jovanovic et al. 2014 | L1 penalty selects minimal set of important modes |
 
-**Labeled soundscapes (739 windows, 66 files)** — calibration + validation:
-- Calibrate H for domain shift: focal-learned observation profiles may not match
-  soundscape conditions (noise, multi-species overlap, different mics).
-- Validate EKF predictions against ground truth.
-- Tune λ (ridge) and Q (process noise) via cross-validation.
+**Run DMD on logits** for interpretable species-level modes.
+**Run DMD on embeddings** for acoustic-level modes (and better numerics at 1536-d).
 
-**Unlabeled soundscapes (127K windows, 10,592 files)** — dynamics + inference:
-- Learn **transition matrix A** from temporal autocorrelation of Perch logits
-  across consecutive clips at each site. No labels needed.
-- Learn A at two timescales: within-clip (12 steps) and across-clip at a site
-  (thousands of chronologically ordered files).
-- 12 steps within a clip is enough for *applying* A (inference/smoothing) but
-  not for *learning* A from a single clip. The power comes from 10,592 files
-  providing ~116K within-clip transitions plus thousands of cross-clip transitions.
-- Run EKF state estimation to produce smoothed species predictions on all
-  unlabeled soundscapes.
+**What DMD reveals:**
+1. Ecosystem timescales (eigenvalue spectrum)
+2. Ecological communities (species grouped by dynamical similarity)
+3. Diel regime structure (oscillatory modes with ~24h period)
+4. Low-rank dynamics → compress 234-species state space to a few community modes
 
-### Practical considerations
+**Practical note:** run DMD per site separately first. Cross-site DMD assumes
+shared dynamics, which may not hold across the 23 sites.
 
-- EKF needed (not linear KF) because species presence is binary but we model on
-  logit scale — the observation model (sigmoid ∘ ridge) is nonlinear
-- Alternative: particle filter if the Gaussian approximation is too poor
-- Start simple: diagonal A (independent species persistence), then add off-diagonal
-  terms if cross-species dynamics improve predictions
-- The 127K unlabeled windows provide massive data for learning A — transition
-  statistics can be estimated purely from temporal autocorrelation of Perch logits
-  without any species labels
+### 11. Classification-occupancy model
 
-## 9. Dynamic Mode Decomposition on Perch time series
+Ogawa et al. (Ecology, 2025) — directly our setting. Jointly models false-positive
+and false-negative rates from AI classifiers (BirdNET) within an occupancy framework.
 
-The learned transition matrix A from the EKF is analyzable via DMD. This
-connects the Bayesian state space model to a modal decomposition of the
-ecosystem dynamics.
+**How it applies:**
+- Perch predictions have both false positives (bird logit fires for a frog) and
+  false negatives (species present but Perch doesn't detect it)
+- The 739 labeled windows serve as the validation subset that calibrates FP/FN rates
+- Chambert et al. (2018): foundational framework — a subset of human-validated
+  detections dramatically improves occupancy estimates from automated classifiers
+- Wright et al. (2020): multi-species extension with confusion matrix modeling
 
-### DMD = eigendecomposition of A
+**Integration:** run ridge/GP to get initial predictions → feed into occupancy model
+with site/time covariates → get calibrated occupancy estimates accounting for
+imperfect detection.
 
-Given consecutive Perch logit observations z_t, z_{t+1} from unlabeled
-soundscapes, DMD finds the best-fit linear operator A ≈ z_{t+1} z_t^+
-(where z_t^+ is the pseudoinverse). Then A = VΛV^{-1}:
+### 12. HMSC (Hierarchical Modelling of Species Communities)
 
-- **Eigenvectors (DMD modes)**: spatial activation patterns. Each mode is a
-  coherent pattern of Perch logits that evolve together. Interpretable as
-  ecological communities — "these bird logits + these amphibian-correlated
-  logits activate and decay as a unit."
+Ovaskainen/Tikhonov et al. (2020) — joint model for hundreds of species with
+shared environmental responses and species-to-species associations.
 
-- **Eigenvalues (DMD spectrum)**: temporal behavior of each mode.
-  - |λ| < 1 → decaying (transient events: brief bird calls, alarm calls)
-  - |λ| ≈ 1 → persistent (background species: always-present frogs, insects)
-  - Complex λ → oscillatory. Period = 2π / arg(λ). A complex pair with
-    period ≈ 24h would be the diel cycle (dawn chorus ↔ nocturnal assemblage).
-  - |λ| > 1 → growing (unstable — shouldn't appear in a stationary ecosystem,
-    would indicate model misfit or non-stationarity)
+- GPU-accelerated via Hmsc-HPC (Tikhonov et al. 2024)
+- Models species correlations as latent factors
+- Could be downstream of Perch features: feed site-level detection summaries
+  into HMSC with environmental covariates
+- Produces community-level occupancy estimates with residual correlations
 
-- **Mode amplitudes**: how much each mode contributes to the overall dynamics.
-  Dominant modes explain most of the variance in species turnover.
+---
 
-### What DMD reveals
-
-1. **Ecosystem timescales**: the eigenvalue spectrum shows the characteristic
-   frequencies of species turnover. Expect clusters at:
-   - Very fast (|λ| ≈ 0): individual call events
-   - Slow (|λ| ≈ 0.9-0.99): gradual assemblage shifts
-   - Oscillatory (~24h period): diel cycle
-   - Near-unit (|λ| ≈ 1): persistent background
-
-2. **Ecological communities**: DMD modes group species by dynamical similarity.
-   Species that load on the same mode appear/disappear together. This is a
-   data-driven discovery of species assemblages — no taxonomy needed.
-
-3. **Diel regime structure**: if dominant modes are oscillatory with ~24h period,
-   the real/imaginary parts of those eigenvectors describe the dawn→day→dusk→night
-   species rotation. Projecting a specific time-of-day onto these modes gives
-   the expected species composition.
-
-4. **Low-rank dynamics**: if a few DMD modes explain most variance, the effective
-   dimensionality of species dynamics is low. This means the 234-species state
-   space can be compressed to a handful of community modes — massive simplification
-   for the EKF (run in mode space, not species space).
-
-### Computational approach
-
-DMD is cheap — just an SVD:
-1. Stack consecutive Perch logit vectors into matrices X = [z_1, ..., z_{T-1}]
-   and Y = [z_2, ..., z_T]
-2. SVD of X: X = UΣV*
-3. Project: Ã = U* Y V Σ^{-1} (reduced-rank A in the SVD basis)
-4. Eigendecompose Ã → modes and eigenvalues
-
-For 127K windows with 14,795-d logits, work in the reduced basis (truncated SVD
-to rank r ≈ 50-200). Total cost: one truncated SVD of a 14795 × 127K matrix,
-which is minutes on a CPU with randomized SVD.
-
-Can also run DMD separately per site or per diel period to discover site-specific
-or time-varying dynamics.
-
-### Pipeline integration
-
-1. Ridge regression → static observation model (H)
-2. DMD on unlabeled Perch logit time series → dynamical modes and A
-3. Interpret modes as ecological communities, eigenvalues as timescales
-4. Use DMD modes to inform/initialize EKF structure
-5. EKF with informed A → temporally smoothed species predictions
-6. Analyze EKF innovations (prediction errors) for anomaly detection
-
-DMD can be done *before* the EKF as a standalone analysis — it only needs the
-raw Perch logit time series from unlabeled soundscapes.
-
-## 10. Feature space selection: logits vs embeddings
-
-The two Perch outputs encode different information and suit different analyses.
-
-### Logits (14,795-d)
-
-- Each dimension = a specific species in Perch's pretrained taxonomy
-- Sparse, mostly near-zero, interpretable (you can name each dimension)
-- Bird-biased: non-bird sounds produce indirect activations ("which birds does
-  Perch think this frog sounds like?")
-- Best for: DMD (modes are interpretable species patterns), direct logit readout
-  (zero-shot), correlation analysis with BirdCLEF targets
-
-### Embeddings (1536-d)
-
-- Penultimate-layer acoustic representation, before taxonomic projection
-- Dense, encodes spectral/temporal features more generally
-- Better for non-bird species: captures acoustic similarity even for sounds
-  Perch was never trained to classify
-- Best for: ridge regression (1536 features vs 739 samples is much friendlier
-  than 14795 vs 739), prototype classification, UMAP visualization
-
-### Which to use where
+## Feature space selection: logits vs embeddings
 
 | Analysis | Logits | Embeddings | Both |
 |----------|--------|------------|------|
 | Zero-shot baseline | ✓ (direct readout) | | |
-| Ridge regression | try | **prefer** (better p/n ratio) | concatenate |
+| Ridge / empirical Bayes | try (PCA first) | **prefer** (p/n ≈ 2:1) | concatenate |
+| GP classification | | **prefer** | |
 | DMD | **prefer** (interpretable modes) | try (acoustic modes) | |
-| EKF observation model | | **prefer** (generalization) | concatenate |
-| Distribution shift | ✓ (per-logit KS test) | ✓ (UMAP, MMD) | both |
-| Site/temporal patterns | ✓ (which species active?) | ✓ (acoustic clusters) | both |
-| Insect sonotypes | | **prefer** (prototype/centroid) | |
+| HMM regimes | | **prefer** (dense features) | |
+| UKF observation model | | **prefer** (generalization) | concatenate |
+| Distribution shift | ✓ (per-logit KS) | ✓ (UMAP, MMD) | both |
+| Prototypes | | **prefer** (acoustic similarity) | |
+| Occupancy model | | **prefer** (fewer params) | |
 
-### Prototype learning connection
-
-Prototype networks classify by distance to class centroids in embedding space.
-The EKF approach extends this with temporal dynamics:
-
-- **Static prototype**: each species has a centroid in embedding space. Classify
-  by nearest prototype (cosine similarity). No temporal information.
-- **EKF observation model**: each species has an expected activation profile
-  (effectively a prototype), but beliefs are updated probabilistically and
-  temporal priors propagate information across windows.
-- **DMD modes**: dynamic prototypes — not a single point but a trajectory
-  pattern. A "nocturnal frog community mode" describes how a species group
-  activates and persists together over time.
-
-For **data-starved species** (insect sonotypes with 3-12 windows), static
-prototype classification in embedding space is the right starting point.
-The EKF can then smooth those prototype-based predictions temporally.
-
-The approaches layer naturally:
-1. Prototypes (embedding space) → baseline for rare species
-2. Ridge (embedding or logit space) → static observation model for common species
-3. EKF → temporal smoothing on top of either
-4. DMD (logit space) → interpret the dynamics
+---
 
 ## Priority order
 
-1. **Zero-shot baseline** — minutes of work, establishes floor
-2. **Ridge regression** — hours, try embeddings first, then logits, then concat
-3. **Distribution shift** — diagnostic, both feature spaces
-4. **Site/temporal patterns** — uses unlabeled data, informs priors
-5. **DMD on unlabeled logit time series** — dynamical modes, timescales, communities
-6. **State space / EKF** — temporal smoothing using DMD-informed dynamics
-7. **Prototype classification** — for insect sonotypes and other data-starved species
-8. **Transition matrix clustering** — ecological groupings from DMD modes
-9. **Non-bird correlations** — diagnostic for understanding ridge weights
+### Phase 1: Static baselines (days 1-3)
+1. **Zero-shot logit readout** — minutes, establishes floor
+2. **Empirical Bayes ridge on embeddings** — hours, main static result
+3. **Distribution shift diagnostics** — go/no-go gate for everything downstream
+4. **Prototype classifier for insect sonotypes** — hours, low-hanging fruit
+
+### Phase 2: Temporal structure (days 4-7)
+5. **Simple temporal pooling** — hours, establishes temporal baseline
+6. **HMM diel regimes on unlabeled data** — 1-2 days, practical temporal model
+7. **DMD on per-site time series** — 1 day, discover dynamical modes
+
+### Phase 3: Full pipeline (days 7-10)
+8. **UKF temporal smoothing** — using DMD-informed dynamics + ridge observation model
+9. **Classification-occupancy model** — calibrate FP/FN rates
+10. **GP classification** — if ridge saturates, try GP for uncertainty
+11. **Transition matrix / DMD mode analysis** — ecological interpretation
+
+### Research exploration (if time permits)
+12. **HMSC community modeling** — ecological gold standard
+13. **Multi-resolution DMD** — separate fast/slow dynamics
+14. **Bayesian DMD** — uncertainty over modes from short clips
+
+---
+
+## References
+
+### Bayesian transfer learning
+- Tang et al. 2020 — Deep Transfer Learning with Ridge Regression
+- Munch et al. 2022 — Semi-supervised empirical Bayes factor regression
+- Patacchiola et al. NeurIPS 2020 — Deep Kernel Transfer (GP on frozen features)
+- Hensman et al. AISTATS 2015 — Scalable Variational GP Classification
+- Ingram et al. 2020 — Multi-output GPs for species distribution modelling
+- Kim et al. 2023 — Bayesian continual learning on frozen features
+
+### State space models in ecology
+- Royle & Kery 2007 — Dynamic occupancy models as Bayesian SSMs
+- Newman et al. 2023 — Practical SSM fitting (EKF vs UKF vs particle filter)
+- Auger-Methe et al. 2021 — Guide to state-space modeling of ecological time series
+- D'Angelo et al. 2026 — HMM framework for PAM time series
+- Perez-Granados & Schuchmann 2025 — Diel vocal activity patterns via PAM
+
+### Occupancy-detection models
+- Ogawa et al. 2025 — Classification-occupancy model for automated species detection
+- Chambert et al. 2018 — Framework for acoustic monitoring with imperfect classifiers
+- Wright et al. 2020 — Multi-species misclassification modeling
+- Ovaskainen/Tikhonov et al. 2020 — HMSC 3.0 (hierarchical community modeling)
+
+### DMD variants
+- Takeishi & Kawahara, IJCAI 2017 — Bayesian DMD
+- Sashidhar & Kutz, Phil Trans A 2022 — BOP-DMD (bagged, uncertainty)
+- Kutz et al. 2015 — Multi-resolution DMD
+- Proctor et al. SIAM 2016 — DMDc (with control inputs)
+- Zhang et al. SIAM 2019 — Online DMD
+- Williams et al. 2015 — Kernel DMD
+- Baddoo et al. 2023 — Non-Stationary DMD
+- Frelat et al. 2017 — Tensor decomposition for ecological communities
+
+### Bioacoustic uncertainty
+- Bett et al. 2025 — Uncertainty calibration of bird sound classifiers
+- Iqbal et al. 2024 — Variational uncertainty for bioacoustic label smoothing
+- Denton 2024 — Bayesian call density estimation on Perch confidence scores
+- Metcalf et al. 2023 — Contextual information (temporal post-processing) for classifiers
+- Kershenbaum et al. 2025 — Practical guide to automatic detection in bioacoustics
+- Snell et al. 2017 — Prototypical networks for few-shot classification
