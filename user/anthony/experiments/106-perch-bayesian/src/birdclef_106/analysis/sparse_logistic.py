@@ -95,6 +95,10 @@ class SparseLogistic(AnalysisTask):
                     best_auroc = mean_auroc
                     best_c = C
 
+            if best_c is None:
+                per_species[sp] = {"auroc": None, "ap": None, "n_pos": n_pos, "note": "no valid CV folds"}
+                continue
+
             # Refit on all data with best C
             clf = LogisticRegression(
                 penalty="l1", C=best_c, solver="liblinear", max_iter=1000, random_state=42,
