@@ -101,22 +101,32 @@ confirming that Perch (a bird model) encodes little useful information for insec
 call discrimination. The 16 skipped sonotypes have all positives in a single site,
 making LOSO evaluation impossible.
 
-### 1.4 Feature selection (per-logit AUROC)
+### 1.4 Feature selection (per-logit AUROC) — EXPLORATORY, NOT A PERFORMANCE METRIC
 
 | Metric | Value |
 |--------|-------|
 | Species evaluated | 59/234 (≥5 positive windows) |
-| Mean max single-logit AUROC | **0.965** |
-| Median max single-logit AUROC | 0.974 |
+| Mean max single-logit AUROC | 0.965 (selection-biased — see caveat) |
+| Median max single-logit AUROC | 0.974 (selection-biased) |
 
-**Interpretation**: For most evaluable species, there exists at least one Perch
-logit that is highly predictive (>0.96 AUROC). This is the key finding — the
-information exists in the logit space, the zero-shot readout (0.701) just picks
-the wrong logit. The sparse logistic regression (Phase 2) should recover this
-signal by selecting the best logits per species.
+**Caveat**: The 0.965 figure is the max AUROC across 14,795 logits per species,
+selected and evaluated on the **same 739 windows**. Two sources of inflation:
+1. Cherry-picking: top 100 logits selected by mean_diff, then max AUROC reported
+2. No held-out evaluation: AUROC computed on the data used for selection
 
-**Gap**: zero-shot macro AUROC 0.701 vs best-single-logit 0.965 — there's a
-0.264 AUROC gap that learned models should close.
+With 14,795 candidates and small n_pos (5-80), random chance alone produces
+high max-AUROC due to multiple comparisons. This number is valid as **exploratory
+analysis** (which logits associate with which species?) but **should not be
+interpreted as achievable performance**.
+
+The rigorous logit-space performance number comes from the sparse logistic
+regression (Phase 2) which uses LOSO CV — feature selection and evaluation
+happen on different data.
+
+**What it does tell us**: there exist individual Perch logits with strong
+marginal association to BirdCLEF species. The zero-shot baseline (0.701) uses
+only the mapped logit per species — learned models can potentially do better
+by finding the right logits. How much better is an open question for Phase 2.
 
 ### 1.5 Logit covariance
 
@@ -130,9 +140,10 @@ Stored as float64 (778 MB compressed). Used as empirical Bayes prior in Phase 2.
 | Zero-shot | AUROC 0.701 — decent floor, room to improve |
 | Distribution shift | 96.8% of logits shifted — domain gap is severe |
 | Prototype (insects) | AUROC 0.529 — Perch can't discriminate sonotypes |
-| Feature selection | Single-logit AUROC 0.965 — signal exists, needs better selection |
+| Feature selection | Per-logit associations found (exploratory, selection-biased) |
 | Logit covariance | 778 MB matrix ready for empirical Bayes prior |
 
-**Phase 2 expectations**: Ridge regression and sparse logistic should close the
-gap between 0.701 (zero-shot) and 0.965 (best single logit). The empirical Bayes
-prior should help generalization from focal→soundscape.
+**Phase 2 expectations**: Ridge regression and sparse logistic (with LOSO CV)
+will give us rigorous performance numbers for learned models. Key questions:
+does the embedding covariance prior help ridge? Does focal training beat
+soundscape-only? How much does temporal pooling add on unbiased OOF predictions?
