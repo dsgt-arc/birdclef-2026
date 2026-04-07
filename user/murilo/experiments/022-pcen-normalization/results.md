@@ -1,6 +1,6 @@
 ---
 experiment: "022-pcen-normalization"
-status: in-progress
+status: rejected
 date: 2026-04-07
 author: Murilo Gustineli
 ---
@@ -18,7 +18,7 @@ BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 | v10a | PCEN → min-max | yes (1024 params) | 0.871 | **0.620** | **0.532** | 18 | **0.880** (−0.026) |
 | v10b | PCEN → min-max | no (frozen) | 0.870 | 0.610 | 0.515 | 18 | — |
 | v10c | PCEN → AmpToDB | no (frozen) | 0.870 | 0.602 | 0.514 | 17 | — |
-| v5j-repro | AmplitudeToDB | — | 0.873 | — | — | 18 | pending |
+| v5j-repro | AmplitudeToDB | — | 0.873 | — | — | 18 | **0.903** (−0.003) |
 
 ### Key Observations
 
@@ -35,9 +35,9 @@ BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 4. **v10c (PCEN+AmplitudeToDB) was worst offline** — PCEN adaptive gain control
    followed by dB compression doesn't add value over PCEN alone.
 
-5. **v5j-repro (AmplitudeToDB baseline retrained through exp 022 pipeline)
-   achieved val/auroc 0.873** (vs 0.874 original v5j) — pipeline is correct.
-   The −0.001 difference is within normal training variance. LB pending.
+5. **v5j-repro scored 0.903 LB** (vs 0.906 original v5j, −0.003) — pipeline
+   verified correct. The −0.003 is within normal variance (seed difference).
+   This confirms PCEN itself caused the v10a regression (0.880), not a pipeline bug.
 
 ## LB Submissions
 
@@ -46,10 +46,11 @@ BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 | v10a | **0.880** | **−0.026** | 2026-04-07 | Learnable PCEN regressed |
 | v10b | — | — | — | Not submitted (worse offline than v10a) |
 | v10c | — | — | — | Not submitted (worse offline than v10a) |
-| v5j-repro | pending | — | — | Pipeline verification (val/auroc 0.873 ≈ v5j 0.874) |
+| v5j-repro | **0.903** | **−0.003** | 2026-04-07 | Pipeline verified (≈v5j 0.906) |
 
-## Next Steps
+## Conclusion
 
-- v5j-repro exported to ONNX and submitted to LB — awaiting result
-- If v5j-repro ≈ 0.906: PCEN is the problem, experiment rejected
-- If v5j-repro << 0.906: pipeline bug, investigate
+**Experiment rejected.** v5j-repro (0.903) reproduced the v5j baseline within −0.003,
+confirming the exp 022 pipeline is correct. The v10a PCEN regression (0.880, −0.026)
+is caused by PCEN normalization itself, not a pipeline bug. AmplitudeToDB remains
+the superior normalization for this architecture and data domain.
