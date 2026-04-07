@@ -371,6 +371,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnet-b0-ns-sed-v6j",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnet-b0-ns-sed-v6j.json",
     },
+    # Exp 021 Phase G: manifold mixup
+    "hgnet-b0-sed-v6l": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v6l-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v6l",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v6l.json",
+    },
 }
 
 
