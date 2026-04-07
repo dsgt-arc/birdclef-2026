@@ -157,6 +157,7 @@ This was discovered 2026-04-06 when investigating G.3 (TTA implementation).
      is designed for variable-SNR environments like outdoor soundscapes —
      directly addresses the domain shift between clean focal recordings and
      noisy Pantanal soundscapes. High priority.
+     PyTorch implementation: https://github.com/daemon/pytorch-pcen
 
 3. **Hybrid SED + Perch approach** — our two best pipelines are complementary:
    - SED (0.906 single, 0.917 ensemble): fine-tuned on focal data, strong on
