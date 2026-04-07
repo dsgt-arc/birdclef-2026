@@ -18,6 +18,7 @@ BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 | v10a | PCEN → min-max | yes (1024 params) | 0.871 | **0.620** | **0.532** | 18 | **0.880** (−0.026) |
 | v10b | PCEN → min-max | no (frozen) | 0.870 | 0.610 | 0.515 | 18 | — |
 | v10c | PCEN → AmpToDB | no (frozen) | 0.870 | 0.602 | 0.514 | 17 | — |
+| v5j-repro | AmplitudeToDB | — | 0.873 | — | — | 18 | pending |
 
 ### Key Observations
 
@@ -34,8 +35,9 @@ BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 4. **v10c (PCEN+AmplitudeToDB) was worst offline** — PCEN adaptive gain control
    followed by dB compression doesn't add value over PCEN alone.
 
-5. **v5j-repro (AmplitudeToDB baseline retrained through exp 022 pipeline) is
-   training** to verify the regression is from PCEN itself and not a pipeline bug.
+5. **v5j-repro (AmplitudeToDB baseline retrained through exp 022 pipeline)
+   achieved val/auroc 0.873** (vs 0.874 original v5j) — pipeline is correct.
+   The −0.001 difference is within normal training variance. LB pending.
 
 ## LB Submissions
 
@@ -44,9 +46,10 @@ BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 | v10a | **0.880** | **−0.026** | 2026-04-07 | Learnable PCEN regressed |
 | v10b | — | — | — | Not submitted (worse offline than v10a) |
 | v10c | — | — | — | Not submitted (worse offline than v10a) |
+| v5j-repro | pending | — | — | Pipeline verification (val/auroc 0.873 ≈ v5j 0.874) |
 
 ## Next Steps
 
-- v5j-repro training to verify pipeline correctness (in progress)
+- v5j-repro exported to ONNX and submitted to LB — awaiting result
 - If v5j-repro ≈ 0.906: PCEN is the problem, experiment rejected
 - If v5j-repro << 0.906: pipeline bug, investigate

@@ -9,7 +9,7 @@ to close the domain gap between focal recordings and Pantanal soundscapes.
 **Target**: ≥0.910 LB single model
 **Baseline**: v5j (0.906 LB) — HGNetV2-B0, AmplitudeToDB, LSEHead, BCE, OneCycleLR, 20 epochs
 
-### Status: **IN PROGRESS — v10a 0.880 LB (−0.026), v5j-repro training to verify pipeline.**
+### Status: **IN PROGRESS — v10a 0.880 LB (−0.026), v5j-repro trained (0.873 val/auroc ≈ v5j), LB pending.**
 
 - **Proposal**: [`proposal.md`](proposal.md)
 - **Pattern analysis**: [`notes/2026-04-06-experiment-pattern-analysis.md`](../../notes/2026-04-06-experiment-pattern-analysis.md)
@@ -79,7 +79,7 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 
 ## Phase D: Pipeline Verification — IN PROGRESS
 
-- [ ] D.1 Train v5j-repro (AmplitudeToDB baseline through exp 022 pipeline) — **TRAINING**
+- [x] D.1 Train v5j-repro (AmplitudeToDB baseline through exp 022 pipeline) — **val/auroc 0.873, best epoch 18**
 - [ ] D.2 Export v5j-repro → ONNX → Kaggle LB
 - [ ] D.3 If v5j-repro ≈ 0.906: PCEN is the problem, experiment rejected
 - [ ] D.4 If v5j-repro << 0.906: pipeline bug, investigate
@@ -94,4 +94,4 @@ HGNetV2-B0, LSEHead, BCE, OneCycleLR, 20 epochs, 90/10 split, spectrogram MixUp.
 | v10a | 0.871 | 0.620 | **0.880** | Learnable PCEN | −0.026 regression |
 | v10b | 0.870 | 0.610 | — | Fixed PCEN | Not submitted |
 | v10c | 0.870 | 0.602 | — | PCEN + AmplitudeToDB | Not submitted |
-| v5j-repro | — | — | pending | AmplitudeToDB | Pipeline verification |
+| v5j-repro | 0.873 | — | pending | AmplitudeToDB | Pipeline verification (≈v5j 0.874) |

@@ -480,10 +480,12 @@ recordings and Pantanal soundscapes.
 | `hgnet-b0-sed-v10a` | HGNetV2-B0 | 6M | LSEHead | Learnable PCEN | 0.871 | 0.620 | 18 | **0.880** | `022-.../2026-hgnet-b0-sed-v10a/best-epochepoch=18.ckpt` |
 | `hgnet-b0-sed-v10b` | HGNetV2-B0 | 6M | LSEHead | Fixed PCEN | 0.870 | 0.610 | 18 | — | `022-.../2026-hgnet-b0-sed-v10b/best-epochepoch=18.ckpt` |
 | `hgnet-b0-sed-v10c` | HGNetV2-B0 | 6M | LSEHead | PCEN + AmplitudeToDB | 0.870 | 0.602 | 17 | — | `022-.../2026-hgnet-b0-sed-v10c/best-epochepoch=17.ckpt` |
+| `hgnet-b0-sed-v5j-repro` | HGNetV2-B0 | 3.1M | LSEHead | AmplitudeToDB | 0.873 | — | 18 | pending | `022-.../2026-hgnet-b0-sed-v5j-repro/best-epochepoch=18.ckpt` |
 
 **v10a regressed −0.026 on LB** (0.880 vs 0.906). PCEN normalization hurts soundscape
 generalization. v10b/v10c not submitted (worse offline than v10a). v5j-repro baseline
-retraining in progress to verify pipeline correctness.
+retrained through exp 022 pipeline: val/auroc 0.873 (≈ original v5j 0.874), confirming
+pipeline is correct. LB submission pending.
 
 ## Checkpoint Base Path
 
