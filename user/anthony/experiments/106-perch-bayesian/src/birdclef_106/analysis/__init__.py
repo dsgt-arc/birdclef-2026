@@ -11,6 +11,7 @@ from birdclef_106.analysis.ridge import EmpiricalBayesRidge
 from birdclef_106.analysis.sparse_logistic import SparseLogistic
 from birdclef_106.analysis.temporal_pooling import TemporalPooling
 from birdclef_106.analysis.dmd import DMDAnalysis
+from birdclef_106.analysis.focal_profiles import FocalSpeciesProfiles
 from birdclef_106.analysis.ukf import UKFSmoothing
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "SparseLogistic",
     "TemporalPooling",
     "DMDAnalysis",
+    "FocalSpeciesProfiles",
     "UKFSmoothing",
 ]

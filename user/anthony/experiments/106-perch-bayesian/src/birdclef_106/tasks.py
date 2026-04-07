@@ -12,6 +12,7 @@ from birdclef_106.analysis import (
     DistributionShift,
     PrototypeClassifier,
     FeatureSelection,
+    FocalSpeciesProfiles,
     EmpiricalBayesRidge,
     SparseLogistic,
     TemporalPooling,
@@ -42,6 +43,7 @@ class AllAnalysis(AnalysisTask):
             DistributionShift(**p),
             PrototypeClassifier(**p),
             FeatureSelection(**p),
+            FocalSpeciesProfiles(**p),
         ]
         phase2 = [
             EmpiricalBayesRidge(**p),
