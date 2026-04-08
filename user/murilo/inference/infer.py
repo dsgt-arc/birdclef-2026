@@ -310,33 +310,38 @@ def run_sed_inference(
     mel_transform,
     dataloader: DataLoader,
     device: torch.device,
+    framewise_logits_path: Path | None = None,
+    species_list: list[str] | None = None,
     gpu_monitor=None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+) -> tuple[np.ndarray, np.ndarray, dict, int]:
     """Run SED inference: extract embeddings, clip logits, and frame logits.
 
     Unlike run_inference(), this receives raw waveforms from the DataLoader
     and applies the mel transform on GPU. The LSEHead forward pass is split
     to extract the pre-head backbone embedding.
 
+    Framewise logits are written incrementally to parquet (too large for RAM).
+
     Args:
         module: SEDFinetuneModule with encoder and sed_head.
         mel_transform: NNAudioMelSpectrogram (moved to GPU).
         dataloader: DataLoader yielding (waveforms, metadata) tuples.
         device: Device to run inference on.
+        framewise_logits_path: Path to write framewise logits parquet (streamed).
+        species_list: Species names for framewise logits columns.
         gpu_monitor: Optional InferenceGPUMonitor.
 
     Returns:
         embeddings: (N, embed_dim) float32 — clip-level backbone embedding
         clip_logits: (N, num_classes) float32 — raw clipwise logits
-        frame_logits: (N, T, num_classes) float32 — per-frame logits
         metadata: dict of lists
+        num_frames: number of temporal frames per chunk
     """
     module = module.to(device)
     mel_transform = mel_transform.to(device)
 
     all_embeddings = []
     all_clip_logits = []
-    all_frame_logits = []
     all_metadata = {
         "filename": [],
         "source": [],
@@ -346,8 +351,14 @@ def run_sed_inference(
     }
 
     head = module.sed_head
+    num_frames = 0
 
-    for waveforms, metadata in tqdm(dataloader, desc="SED Inference"):
+    # Stream framewise logits to parquet in chunks to avoid OOM
+    frame_logits_parts = []
+    frame_metadata_parts = []
+    FLUSH_EVERY = 500  # flush to disk every N batches
+
+    for batch_idx, (waveforms, metadata) in enumerate(tqdm(dataloader, desc="SED Inference")):
         if gpu_monitor:
             gpu_monitor.batch_start()
 
@@ -380,10 +391,26 @@ def run_sed_inference(
             # Clip-level embedding: mean pool over time
             clip_emb = h.mean(dim=1)  # (B, C)
 
-        # Store as float32 on CPU
+        # Store clip-level outputs (small, safe in RAM)
         all_embeddings.append(clip_emb.float().cpu().numpy())
         all_clip_logits.append(clip_logits.float().cpu().numpy())
-        all_frame_logits.append(frame_logits.float().cpu().numpy())
+
+        # Buffer framewise logits for incremental writing
+        if framewise_logits_path is not None:
+            fl_np = frame_logits.float().cpu().numpy()  # (B, T, C)
+            num_frames = fl_np.shape[1]
+            frame_logits_parts.append(fl_np)
+            frame_metadata_parts.append({k: list(v) for k, v in metadata.items()})
+
+            if (batch_idx + 1) % FLUSH_EVERY == 0:
+                _flush_framewise_logits(
+                    frame_logits_parts,
+                    frame_metadata_parts,
+                    framewise_logits_path,
+                    species_list,
+                )
+                frame_logits_parts.clear()
+                frame_metadata_parts.clear()
 
         if gpu_monitor:
             gpu_monitor.batch_end(batch_size=waveforms.shape[0])
@@ -391,18 +418,73 @@ def run_sed_inference(
         for key in all_metadata:
             all_metadata[key].extend(metadata[key])
 
+    # Flush remaining framewise logits
+    if framewise_logits_path is not None and frame_logits_parts:
+        _flush_framewise_logits(
+            frame_logits_parts,
+            frame_metadata_parts,
+            framewise_logits_path,
+            species_list,
+        )
+        frame_logits_parts.clear()
+        frame_metadata_parts.clear()
+
     embeddings = np.concatenate(all_embeddings, axis=0)
     clip_logits_arr = np.concatenate(all_clip_logits, axis=0)
-    frame_logits_arr = np.concatenate(all_frame_logits, axis=0)
 
     logger.info(
         f"SED inference complete: {embeddings.shape[0]} chunks, "
         f"embedding dim={embeddings.shape[1]}, "
         f"num_classes={clip_logits_arr.shape[1]}, "
-        f"num_frames={frame_logits_arr.shape[1]}"
+        f"num_frames={num_frames}"
     )
 
-    return embeddings, clip_logits_arr, frame_logits_arr, all_metadata
+    return embeddings, clip_logits_arr, all_metadata, num_frames
+
+
+def _flush_framewise_logits(
+    frame_logits_parts: list[np.ndarray],
+    frame_metadata_parts: list[dict],
+    output_path: Path,
+    species_list: list[str],
+):
+    """Append framewise logits to a parquet file incrementally.
+
+    Explodes each chunk into T rows (one per frame) with a frame_idx column
+    and one column per species. This avoids storing large nested lists.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    rows = []
+    for fl_batch, meta_batch in zip(frame_logits_parts, frame_metadata_parts, strict=False):
+        # fl_batch: (B, T, num_classes)
+        B, T, C = fl_batch.shape
+        for i in range(B):
+            for t in range(T):
+                row = {
+                    "filename": meta_batch["filename"][i],
+                    "source": meta_batch["source"][i],
+                    "chunk_idx": meta_batch["chunk_idx"][i],
+                    "start_sec": meta_batch["start_sec"][i],
+                    "end_sec": meta_batch["end_sec"][i],
+                    "frame_idx": t,
+                }
+                for s, species in enumerate(species_list):
+                    row[species] = float(fl_batch[i, t, s])
+                rows.append(row)
+
+    if not rows:
+        return
+
+    table = pa.Table.from_pylist(rows)
+
+    if output_path.exists():
+        existing = pq.read_table(output_path)
+        table = pa.concat_tables([existing, table])
+
+    pq.write_table(table, output_path)
+    logger.info(f"  Flushed framewise logits: {len(rows)} rows → {output_path}")
 
 
 # ============================================================================
@@ -461,17 +543,18 @@ def save_results(
 def save_sed_results(
     embeddings: np.ndarray,
     clip_logits: np.ndarray,
-    frame_logits: np.ndarray,
     metadata: dict,
     species_list: list[str],
     output_dir: Path,
 ):
-    """Save SED inference outputs as 3 parquet files.
+    """Save SED inference outputs (embeddings + clip logits) as parquet files.
+
+    Framewise logits are written incrementally during inference (see
+    run_sed_inference + _flush_framewise_logits) and are NOT handled here.
 
     Args:
         embeddings: (N, embed_dim) clip-level embeddings
         clip_logits: (N, num_classes) raw clipwise logits
-        frame_logits: (N, T, num_classes) per-frame logits
         metadata: dict with filename, source, chunk_idx, start_sec, end_sec
         species_list: ordered list of species names (column headers for logits)
         output_dir: directory to write parquet files
@@ -506,20 +589,6 @@ def save_sed_results(
     logits_path = output_dir / "logits.parquet"
     logits_df.to_parquet(logits_path, index=False, engine="pyarrow")
     logger.info(f"Saved logits: {logits_path} ({n} rows, {len(species_list)} species)")
-
-    # 3. framewise_logits.parquet: per-frame logits stored flat
-    #    Each row: num_frames (int) + framewise_logits (list[float32] of T*num_classes)
-    #    Reshape with: np.array(row.framewise_logits).reshape(row.num_frames, num_classes)
-    frame_df = base_df.copy()
-    frame_df["num_frames"] = [frame_logits[i].shape[0] for i in range(n)]
-    frame_df["framewise_logits"] = [frame_logits[i].flatten().tolist() for i in range(n)]
-
-    frame_path = output_dir / "framewise_logits.parquet"
-    frame_df.to_parquet(frame_path, index=False, engine="pyarrow")
-    logger.info(
-        f"Saved framewise logits: {frame_path} ({n} rows, "
-        f"{frame_logits.shape[1]} frames × {frame_logits.shape[2]} species)"
-    )
 
 
 # ============================================================================
@@ -596,8 +665,20 @@ def _process_source(
     t0 = time.time()
 
     if model_type == "sed":
-        embeddings, clip_logits, frame_logits, metadata = run_sed_inference(
-            module, gpu_mel_transform, dataloader, device, gpu_monitor=gpu_monitor
+        # Prepare framewise logits path (written incrementally during inference)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        framewise_path = output_dir / "framewise_logits.parquet"
+        if framewise_path.exists():
+            framewise_path.unlink()  # remove stale file before streaming
+
+        embeddings, clip_logits, metadata, num_frames = run_sed_inference(
+            module,
+            gpu_mel_transform,
+            dataloader,
+            device,
+            framewise_logits_path=framewise_path,
+            species_list=species_list,
+            gpu_monitor=gpu_monitor,
         )
     else:
         embeddings, probabilities, metadata = run_inference(
@@ -613,7 +694,6 @@ def _process_source(
             save_sed_results(
                 embeddings=embeddings,
                 clip_logits=clip_logits,
-                frame_logits=frame_logits,
                 metadata=metadata,
                 species_list=species_list,
                 output_dir=output_dir,
