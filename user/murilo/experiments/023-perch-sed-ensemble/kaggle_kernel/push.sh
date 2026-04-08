@@ -38,14 +38,14 @@ fi
 
 cd "$KERNEL_DIR"
 
-# Convert YAML config to Python dict literal (JSON)
+# Convert YAML config to Python dict literal
 OVERRIDE=$(python3 -c "
-import yaml, json
+import yaml
 with open('$CONFIG_FILE') as f:
     cfg = yaml.safe_load(f)
 cfg.pop('name', None)
 cfg.pop('description', None)
-print(json.dumps(cfg))
+print(repr(cfg))
 ")
 
 # Generate unique kernel metadata from config name
