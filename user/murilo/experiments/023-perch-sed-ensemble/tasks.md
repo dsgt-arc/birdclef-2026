@@ -51,11 +51,20 @@ injects override into kernel, creates separate Kaggle notebook per config.
 - [x] B.3 Weight curve flat (0.926-0.927). Both models contribute equally.
   ONNX penalty is the binding constraint, not the blend weight.
 
-## Phase C: Advanced Ensembling (if needed)
+## Phase C: Ablations
 
-- [ ] C.1 Per-taxa weighting (different w for Aves vs texture taxa)
-- [ ] C.2 Calibration: normalize probability scales before averaging
-- [ ] C.3 PP order: ensemble before PP vs after PP
+- [ ] C.1 MLP-only (proto_weight=0.0, matching pantanal 0.930 reference) → awaiting LB
+  - Kernel: `birdclef-2026-perch-sed-mlp_only`
+  - Config: `ensemble_mlp_only.yaml`
+- [ ] C.2 No PP (raw ensemble, both PPs disabled) → awaiting LB
+  - Kernel: `birdclef-2026-perch-sed-no_pp`
+  - Config: `ensemble_no_pp.yaml`
+- [ ] C.3 TF Perch + SED single-fold (recover ONNX penalty) — requires code changes
+
+## Future Directions
+
+- [ ] D.1 Per-taxa weighting (different w for Aves vs texture taxa)
+- [ ] D.2 Calibration: normalize probability scales before averaging
 
 ---
 
@@ -66,3 +75,5 @@ injects override into kernel, creates separate Kaggle notebook per config.
 | **Phase A (w=0.5)** | **0.50** | **0.927** | **~64 min est.** | **New best overall** |
 | **Phase B (w=0.3)** | **0.30** | **0.927** | **~64 min est.** | **Tied with w=0.5** |
 | Phase B (w=0.7) | 0.70 | 0.926 | ~64 min est. | −0.001 |
+| Phase C MLP-only | 0.50 | — | — | proto_weight=0.0, awaiting LB |
+| Phase C No PP | 0.50 | — | — | Both PPs disabled, awaiting LB |
