@@ -14,7 +14,7 @@ single Kaggle kernel. Target: 0.930+ LB.
 | SED v5j-4fold-pp2 | 0.917 | Best SED (exp 021) |
 | Competition #1 | 0.939 | Target |
 
-Status: **Phase A complete: 0.927 LB (new best overall).** Phase B weight grid next.
+Status: **Phase A complete: 0.927 LB (new best overall).** Phase B submitted, awaiting LB scores.
 
 **Branch**: `mg/023-perch-sed-ensemble` — PR #25
 
@@ -40,8 +40,14 @@ Build kernel, validate, submit.
 
 ## Phase B: Weight Grid Search (2 more submissions)
 
-- [ ] B.1 Submit w=0.3 → record score
-- [ ] B.2 Submit w=0.7 → record score
+Config-driven submission system added: YAML configs in `configs/`, `push.sh <config_name>`
+injects override into kernel, creates separate Kaggle notebook per config.
+
+- [x] B.0 Add config-driven push system (YAML configs + push.sh injection)
+- [ ] B.1 Submit w=0.3 → dry-run passed, awaiting LB score
+  - Kernel: `birdclef-2026-perch-sed-w03`
+- [ ] B.2 Submit w=0.7 → dry-run passed, awaiting LB score
+  - Kernel: `birdclef-2026-perch-sed-w07`
 - [ ] B.3 Pick optimal weight, document findings
 
 ## Phase C: Advanced Ensembling (if needed)
@@ -57,5 +63,5 @@ Build kernel, validate, submit.
 | Variant | W_PERCH | LB | Runtime | Notes |
 |---------|---------|-----|---------|-------|
 | **Phase A (w=0.5)** | **0.50** | **0.927** | **~64 min est.** | **New best overall** |
-| Phase B (w=0.3) | 0.30 | — | — | |
-| Phase B (w=0.7) | 0.70 | — | — | |
+| Phase B (w=0.3) | 0.30 | — | — | SED-heavy, awaiting LB |
+| Phase B (w=0.7) | 0.70 | — | — | Perch-heavy, awaiting LB |
