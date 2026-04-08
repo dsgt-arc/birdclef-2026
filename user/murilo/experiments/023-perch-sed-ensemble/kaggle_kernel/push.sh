@@ -38,16 +38,15 @@ fi
 
 cd "$KERNEL_DIR"
 
-# Read config description and build override
-read -r CONFIG_DESC OVERRIDE <<< "$(python3 -c "
+# Convert YAML config to Python dict literal (JSON)
+OVERRIDE=$(python3 -c "
 import yaml, json
 with open('$CONFIG_FILE') as f:
     cfg = yaml.safe_load(f)
-desc = cfg.pop('description', '$CONFIG_NAME')
 cfg.pop('name', None)
-print(desc)
+cfg.pop('description', None)
 print(json.dumps(cfg))
-")"
+")
 
 # Generate unique kernel metadata from config name
 # e.g., ensemble_w03 -> birdclef-2026-perch-sed-ensemble-w03
