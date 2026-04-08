@@ -16,6 +16,8 @@ from birdclef_106.analysis import (
     SoundscapeProfiles,
     SiteResidualProfiles,
     SpeciesGraph,
+    MultiPrototypeProfiles,
+    SitePrototypes,
     EmpiricalBayesRidge,
     SparseLogistic,
     TemporalPooling,
@@ -56,6 +58,8 @@ class AllAnalysis(AnalysisTask):
             # DMDAnalysis(**p),  # paused — slow (5h+), value unclear vs site residuals
             SiteResidualProfiles(**p),
             SpeciesGraph(**p),
+            MultiPrototypeProfiles(**p),
+            SitePrototypes(**p),
         ]
         phase3 = [
             # UKFSmoothing(**p),  # blocked on DMD, paused

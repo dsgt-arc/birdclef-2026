@@ -145,16 +145,131 @@ provides the Mahalanobis metric for the embedding schema.
 | (S, S) logit | Done | `species_graph.npz: logit_cooc` |
 | (S, S) embedding | Done | `species_graph.npz: emb_cooc` |
 | (L, L) | Done | `site_residuals.npz` (cosine on residuals) |
-| (S, L) | Not yet | Species × site affinity |
-| (S, L×T) | Not yet | Spatiotemporal species prior |
-| (S, W) | Not yet | Per-window species predictions via graph |
+| (S×K_s, P) | Pending | `multi_prototypes.npz` — multi-prototype species profiles |
+| (L×K_l, P) | Pending | `site_prototypes.npz` — site-state prototypes |
+| (S, L×K_l) | Pending | `site_prototypes.npz: species_site_affinity` |
+| (S, L×T) | Not yet | Spatiotemporal species prior (superseded by site prototypes) |
+| (S, W) | Not yet | Per-window species predictions via multi-prototype graph |
+
+## Multi-prototype species profiles via Leiden clustering
+
+### Motivation
+
+The single-mean species profile averages over silent windows, background noise,
+and multiple call types. This dilutes the signal — a species with distinct song
+and alarm calls gets a centroid between the two, matching neither well.
+
+### Within-species residual covariance
+
+To cluster windows within a species, we need a similarity metric. Raw cosine in
+P-space has the same correlated-dimension problem the star schema identifies
+elsewhere (50 cicada detectors counting as 50 features). The fix: use the
+**within-species residual covariance** as the metric tensor.
+
+1. For each species s, compute residuals: `r_{s,i} = w_{s,i} - μ_s`
+2. Pool residuals across all species → within-species covariance `Σ_within`
+3. SVD of pooled residuals → top-k components + eigenvalues
+4. Whitening transform: project into PCA space, scale by 1/√eigenvalue
+
+This estimates "what varies around a species' centroid" — the right metric for
+asking "within a species, which windows are similar?" Crucially, this uses focal
+recording statistics, not soundscape statistics (the unlabeled covariance would
+describe the wrong domain).
+
+### Leiden community detection
+
+After whitening, the clustering pipeline:
+
+1. Per species: project residuals through whitening transform → (N_s, k) matrix
+2. Build k-NN graph on whitened vectors (cosine = Mahalanobis in P-space)
+3. Remove low-degree nodes (pre-filter for isolated/noise windows)
+4. Run Leiden algorithm → communities of variable number and size
+5. Each non-trivial community centroid (mapped back to P-space) = one prototype
+
+Leiden is preferred over HDBSCAN because:
+- Works natively with graph structure (cosine k-NN)
+- No need to specify number of clusters
+- Handles high-dimensional spaces well (via the k-NN graph indirection)
+- Naturally identifies isolated nodes for removal
+
+### Updated species profile matrix
+
+Instead of `(S, P)` with one row per species, the result is `(S×K, P)` with
+variable K prototypes per species. Window scoring becomes:
+
+```
+scores = prototypes @ window.T        # (total_prototypes,)
+per_species = group_max(scores, K)    # (S,) — max over each species' prototypes
+```
+
+This is piecewise-linear: the decision boundary is the union of K cones in
+P-space rather than a single halfspace. It captures multi-modal call types
+without requiring nonlinear models.
+
+### Validation
+
+- Primary cluster should activate the species' mapped Perch logit index
+- Species with single stereotyped call → K=1 (no change from mean)
+- Species with song + alarm + contact call → K=3-4
+- Compare multi-prototype (S,W) scoring against single-mean scoring on the
+  739 labeled soundscape windows
+
+## Site-state prototypes via Leiden clustering
+
+### Motivation
+
+A single mean per site flattens distinct ecological states: dawn chorus, night
+insect regime, rain events, quiet midday. The fixed diel bins (dawn/day/dusk/
+night) are coarse and may not align with the acoustic reality at each site.
+
+### Within-site residual covariance
+
+Same approach as species prototypes, but using soundscape windows:
+
+1. Per site l, subtract site mean: `r_{l,i} = w_{l,i} - μ_l`
+2. Pool residuals across all sites → within-site covariance `Σ_within_site`
+3. SVD → whitening transform
+
+This is computed from soundscape statistics (127K windows), not focal — the
+right domain for clustering soundscape windows. Pooling across sites assumes
+the within-site variation structure is shared (rain sounds similar everywhere,
+insect choruses have similar spectral structure), which is reasonable.
+
+### Pipeline
+
+Same as species prototypes: whiten residuals → k-NN cosine graph → Leiden →
+prototype centroids. Each prototype is characterized by:
+
+- **Temporal distribution**: fraction of dawn/day/dusk/night windows in the
+  cluster — reveals whether the state is diel-locked or weather-driven
+- **Top Perch taxa**: which detectors activate most strongly — interpretable
+  label for the state (e.g., "night insect cluster" vs "dawn bird chorus")
+
+### Updated location dimension
+
+Instead of `(L, P)` with one row per site, the result is `(L×K_l, P)` with
+variable K_l prototypes per site. The site-state prototypes replace both the
+mean site profiles and the fixed diel period binning.
+
+### Species × Site-state composition
+
+```
+(S×K_s, P) @ (L×K_l, P)^T = (S×K_s, L×K_l)
+group_max on both sides → (S, L)
+```
+
+Or keep the full resolution: for a test window from site l, identify which
+site-state prototype it's closest to, then use species affinities for that
+state as a context-dependent prior. This gives each window a tailored species
+prior based on what ecological state the site is currently in.
 
 ## Next steps
 
-1. Compute (S, L) species × site affinity from existing profiles
-2. Compute (S, L×T) spatiotemporal prior using diel signatures
-3. Compare (S, W) graph predictions against ridge OOF predictions
-4. Mahalanobis-weighted versions of the above
-5. Use (S, L×T) as a prior for the ridge model on soundscapes
-6. Focal-to-soundscape domain gap per species: correlate each species' focal
+1. **Multi-prototype profiles** (this section) — within-species Leiden clustering
+2. Compute (S, L) species × site affinity from prototypes
+3. Compute (S, L×T) spatiotemporal prior using diel signatures
+4. Compare multi-prototype (S, W) predictions against ridge OOF predictions
+5. Mahalanobis-weighted compositions using within-species precision
+6. Use (S, L×T) as a prior for the ridge model on soundscapes
+7. Focal-to-soundscape domain gap per species: correlate each species' focal
    profile with its soundscape labeled windows
