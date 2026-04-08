@@ -173,8 +173,8 @@ if [[ "${OVERWRITE}" == "false" ]]; then
     EXISTING=""
     for src in $CHECK_SOURCES; do
         if [[ "$HAS_FOLDS" -gt 0 ]]; then
-            # 4-fold: check under fold0/
-            if [[ -f "${OUTPUT_BASE}/fold0/${src}/${CHECK_FILE}" ]]; then
+            # 4-fold: check under source/fold0/
+            if [[ -f "${OUTPUT_BASE}/${src}/fold0/${CHECK_FILE}" ]]; then
                 EXISTING="${EXISTING} ${src}"
             fi
         else

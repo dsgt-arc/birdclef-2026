@@ -818,7 +818,7 @@ def main():
             module, gpu_mel_transform = load_sed_model(config)
 
             for source in sources:
-                output_dir = output_base / f"fold{fold_idx}" / source
+                output_dir = output_base / source / f"fold{fold_idx}"
                 _process_source(
                     source=source,
                     config=config,
