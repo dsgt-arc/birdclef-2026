@@ -496,11 +496,12 @@ average produces the final submission. Estimated runtime ~64 min for ~600 test f
 | Slug | W_PERCH | Perch Backend | SED Model | LB | Kaggle Kernel |
 |------|---------|--------------|-----------|-----|---------------|
 | **`perch-sed-ensemble-w05`** | **0.50** | **ONNX** | **v5j-4fold-pp2** | **0.927** | **`023-.../submission_ensemble.py`** |
-| `perch-sed-ensemble-w03` | 0.30 | ONNX | v5j-4fold-pp2 | pending | `023-.../submission_ensemble.py` |
-| `perch-sed-ensemble-w07` | 0.70 | ONNX | v5j-4fold-pp2 | pending | `023-.../submission_ensemble.py` |
+| **`perch-sed-ensemble-w03`** | **0.30** | **ONNX** | **v5j-4fold-pp2** | **0.927** | **`023-.../submission_ensemble.py`** |
+| `perch-sed-ensemble-w07` | 0.70 | ONNX | v5j-4fold-pp2 | 0.926 | `023-.../submission_ensemble.py` |
 
 **0.927 LB is the new best overall** (+0.002 vs Perch TF 0.925, +0.007 vs Perch ONNX 0.920).
-Ensemble gains more than compensate for the ONNX penalty (−0.005).
+Weight curve is flat (0.926-0.927 across w=0.3/0.5/0.7) — both models contribute equally.
+The ONNX penalty (−0.005) is the binding constraint, not the blend weight.
 
 ## Checkpoint Base Path
 

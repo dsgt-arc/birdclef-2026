@@ -5,8 +5,8 @@
 | Variant | W_PERCH | LB | Runtime (dry) | Notes |
 |---------|---------|-----|---------------|-------|
 | **Phase A (w=0.5)** | **0.50** | **0.927** | **145s (20 files)** | **New best overall. +0.002 vs Perch TF (0.925)** |
-| Phase B (w=0.3) | 0.30 | — | — | Pending |
-| Phase B (w=0.7) | 0.70 | — | — | Pending |
+| **Phase B (w=0.3)** | **0.30** | **0.927** | **181s (20 files)** | **Tied with w=0.5** |
+| Phase B (w=0.7) | 0.70 | 0.926 | 189s (20 files) | −0.001 vs w=0.5 |
 
 ## Phase A Analysis (w=0.5, 0.927 LB)
 
@@ -41,3 +41,24 @@ the optimal blend favors Perch or is truly balanced.
 | **Total** | **145s** | **~64 min** |
 
 Well within 90-min Kaggle CPU limit.
+
+## Phase B Analysis (Weight Grid)
+
+| W_PERCH | LB | Delta vs w=0.5 |
+|---------|-----|----------------|
+| 0.30 | **0.927** | 0.000 |
+| **0.50** | **0.927** | baseline |
+| 0.70 | 0.926 | −0.001 |
+
+The weight curve is remarkably flat — all three weights land at 0.926-0.927.
+This suggests:
+
+1. **Both models contribute roughly equally.** There's no clear winner; the
+   ensemble benefits from both at any reasonable blend.
+2. **The slight edge to SED-heavy (w=0.3) or balanced (w=0.5)** suggests SED
+   adds marginally more unique signal than ONNX Perch in this ensemble.
+3. **The ONNX penalty is the binding constraint.** If Perch were running at its
+   TF quality (0.925 vs 0.920), w=0.7 would likely match or beat w=0.5.
+4. **Diminishing returns from weight tuning.** The +0.001 difference between
+   best (0.927) and worst (0.926) is within noise. Further weight fine-tuning
+   (e.g., w=0.4, 0.6) is unlikely to yield meaningful gains.

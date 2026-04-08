@@ -14,7 +14,7 @@ single Kaggle kernel. Target: 0.930+ LB.
 | SED v5j-4fold-pp2 | 0.917 | Best SED (exp 021) |
 | Competition #1 | 0.939 | Target |
 
-Status: **Phase A complete: 0.927 LB (new best overall).** Phase B submitted, awaiting LB scores.
+Status: **Phases A+B complete. Best: 0.927 LB (w=0.3 and w=0.5 tied).** Weight curve is flat (0.926-0.927).
 
 **Branch**: `mg/023-perch-sed-ensemble` — PR #25
 
@@ -44,11 +44,12 @@ Config-driven submission system added: YAML configs in `configs/`, `push.sh <con
 injects override into kernel, creates separate Kaggle notebook per config.
 
 - [x] B.0 Add config-driven push system (YAML configs + push.sh injection)
-- [ ] B.1 Submit w=0.3 → dry-run passed, awaiting LB score
+- [x] B.1 Submit w=0.3 → **0.927 LB** (tied with w=0.5)
   - Kernel: `birdclef-2026-perch-sed-w03`
-- [ ] B.2 Submit w=0.7 → dry-run passed, awaiting LB score
+- [x] B.2 Submit w=0.7 → **0.926 LB** (−0.001)
   - Kernel: `birdclef-2026-perch-sed-w07`
-- [ ] B.3 Pick optimal weight, document findings
+- [x] B.3 Weight curve flat (0.926-0.927). Both models contribute equally.
+  ONNX penalty is the binding constraint, not the blend weight.
 
 ## Phase C: Advanced Ensembling (if needed)
 
@@ -63,5 +64,5 @@ injects override into kernel, creates separate Kaggle notebook per config.
 | Variant | W_PERCH | LB | Runtime | Notes |
 |---------|---------|-----|---------|-------|
 | **Phase A (w=0.5)** | **0.50** | **0.927** | **~64 min est.** | **New best overall** |
-| Phase B (w=0.3) | 0.30 | — | — | SED-heavy, awaiting LB |
-| Phase B (w=0.7) | 0.70 | — | — | Perch-heavy, awaiting LB |
+| **Phase B (w=0.3)** | **0.30** | **0.927** | **~64 min est.** | **Tied with w=0.5** |
+| Phase B (w=0.7) | 0.70 | 0.926 | ~64 min est. | −0.001 |
