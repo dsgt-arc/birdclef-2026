@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Push Kaggle kernel with config override for experiment 023.
+# Each config creates a SEPARATE Kaggle notebook (unique kernel ID).
 #
 # Usage:
 #   kaggle_kernel/push.sh <config_name>
@@ -12,8 +13,9 @@ set -euo pipefail
 
 KERNEL_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_DIR="$KERNEL_DIR/../configs"
-META="kernel-metadata-ensemble.json"
+BASE_META="kernel-metadata-ensemble.json"
 CODE_FILE="submission_ensemble.py"
+KAGGLE_USER="murilogustineli"
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <config_name>"
@@ -36,19 +38,36 @@ fi
 
 cd "$KERNEL_DIR"
 
-# Convert YAML config to Python dict literal (JSON subset)
-OVERRIDE=$(python3 -c "
+# Read config description and build override
+read -r CONFIG_DESC OVERRIDE <<< "$(python3 -c "
 import yaml, json
 with open('$CONFIG_FILE') as f:
     cfg = yaml.safe_load(f)
-# Remove metadata keys, keep only config values
+desc = cfg.pop('description', '$CONFIG_NAME')
 cfg.pop('name', None)
-cfg.pop('description', None)
+print(desc)
 print(json.dumps(cfg))
-")
+")"
+
+# Generate unique kernel metadata from config name
+# e.g., ensemble_w03 -> birdclef-2026-perch-sed-ensemble-w03
+KERNEL_SUFFIX="${CONFIG_NAME#ensemble_}"  # strip 'ensemble_' prefix
+KERNEL_ID="${KAGGLE_USER}/birdclef-2026-perch-sed-${KERNEL_SUFFIX}"
+KERNEL_TITLE="BirdCLEF 2026 Perch+SED ${KERNEL_SUFFIX}"
+
+python3 -c "
+import json
+with open('$BASE_META') as f:
+    meta = json.load(f)
+meta['id'] = '$KERNEL_ID'
+meta['title'] = '$KERNEL_TITLE'
+with open('kernel-metadata.json', 'w') as f:
+    json.dump(meta, f, indent=2)
+print(f'Kernel ID: {meta[\"id\"]}')
+print(f'Title: {meta[\"title\"]}')
+"
 
 echo "=== Pushing kernel: $CONFIG_NAME ==="
-echo "Config: $CONFIG_FILE"
 echo "Override: $OVERRIDE"
 
 # Inject override into kernel
@@ -56,10 +75,9 @@ cp "$CODE_FILE" "${CODE_FILE}.bak"
 sed -i "s|^CFG_OVERRIDE = {}.*|CFG_OVERRIDE = $OVERRIDE  # from configs/${CONFIG_NAME}.yaml|" "$CODE_FILE"
 
 # Push
-cp "$META" kernel-metadata.json
 kaggle kernels push -p .
 rm kernel-metadata.json
 
 # Restore original script
 mv "${CODE_FILE}.bak" "$CODE_FILE"
-echo "=== Pushed $CONFIG_NAME, $CODE_FILE restored ==="
+echo "=== Pushed $CONFIG_NAME as $KERNEL_ID ==="
