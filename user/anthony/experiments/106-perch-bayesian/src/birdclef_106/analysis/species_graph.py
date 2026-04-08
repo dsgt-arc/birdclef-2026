@@ -103,20 +103,32 @@ class SpeciesGraph(AnalysisTask):
         n_with_data = int(has_data.sum())
         logger.info("SpeciesGraph: %d/%d species have focal data", n_with_data, n_species)
 
-        # Compute and normalize mean profiles
+        # Compute mean profiles
         logit_means = np.zeros_like(sp_logit_sum)
         emb_means = np.zeros_like(sp_emb_sum)
         logit_means[has_data] = sp_logit_sum[has_data] / sp_count[has_data, None]
         emb_means[has_data] = sp_emb_sum[has_data] / sp_count[has_data, None]
 
+        # Global mean across all focal windows (for centering)
+        global_logit_mean = sp_logit_sum[has_data].sum(axis=0) / sp_count[has_data].sum()
+        global_emb_mean = sp_emb_sum[has_data].sum(axis=0) / sp_count[has_data].sum()
+
+        # Center: subtract global mean so cosine = Pearson correlation
+        # This removes the shared background (e.g., ubiquitous insect logits)
+        logit_centered = logit_means.copy()
+        emb_centered = emb_means.copy()
+        logit_centered[has_data] -= global_logit_mean[None, :]
+        emb_centered[has_data] -= global_emb_mean[None, :]
+
+        # Normalize centered profiles
         logit_norms = np.maximum(
-            np.linalg.norm(logit_means, axis=1, keepdims=True), 1e-8
+            np.linalg.norm(logit_centered, axis=1, keepdims=True), 1e-8
         )
         emb_norms = np.maximum(
-            np.linalg.norm(emb_means, axis=1, keepdims=True), 1e-8
+            np.linalg.norm(emb_centered, axis=1, keepdims=True), 1e-8
         )
-        logit_means_normed = logit_means / logit_norms  # (k, n)
-        emb_means_normed = emb_means / emb_norms  # (k, d)
+        logit_means_normed = logit_centered / logit_norms  # (k, n)
+        emb_means_normed = emb_centered / emb_norms  # (k, d)
 
         # =================================================================
         # Pass 2: window-level scoring
@@ -141,7 +153,9 @@ class SpeciesGraph(AnalysisTask):
             logits = logits_to_numpy(shard).astype(np.float64)
             embs = embeddings_to_numpy(shard).astype(np.float64)
 
-            # Normalize windows
+            # Center and normalize windows (same global mean as profiles)
+            logits -= global_logit_mean[None, :]
+            embs -= global_emb_mean[None, :]
             l_norms = np.maximum(np.linalg.norm(logits, axis=1, keepdims=True), 1e-8)
             e_norms = np.maximum(np.linalg.norm(embs, axis=1, keepdims=True), 1e-8)
             logits_normed = logits / l_norms
@@ -204,6 +218,8 @@ class SpeciesGraph(AnalysisTask):
             emb_asymmetry=asym_emb.astype(np.float32),
             logit_means_normed=logit_means_normed.astype(np.float32),
             emb_means_normed=emb_means_normed.astype(np.float32),
+            global_logit_mean=global_logit_mean.astype(np.float32),
+            global_emb_mean=global_emb_mean.astype(np.float32),
         )
         logger.info("SpeciesGraph: saved arrays to %s", self.output()[0].path)
 
