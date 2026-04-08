@@ -78,8 +78,21 @@ from tqdm.auto import tqdm  # noqa: E402
 
 warnings.filterwarnings("ignore")
 
+# --- Ensemble configuration (overridden by push.sh from YAML configs) ---
+CFG = {
+    "w_perch": 0.5,
+    "perch_enable_pp": True,
+    "perch_ensemble_weight_proto": None,  # None = use value from pretrained artifacts
+    "sed_weights_slug": "birdclef-2026-hgnet-b0-sed-v5j-4fold-pp2-weights",
+    "sed_enable_tta": True,
+    "sed_enable_pp": True,
+}
+CFG_OVERRIDE = {}  # INJECTED BY push.sh — do not edit this line
+for _k, _v in CFG_OVERRIDE.items():
+    CFG[_k] = _v
+print(f"CFG: {json.dumps({k: v for k, v in CFG.items()}, indent=2, default=str)}")
+
 # --- Constants ---
-W_PERCH = 0.5
 SR = 32000
 WINDOW_SEC = 5
 WINDOW_SAMPLES = SR * WINDOW_SEC  # 160000
@@ -1391,6 +1404,9 @@ def run_perch_pipeline(test_paths):
     _cfg_loaded = _artifacts["config"]
 
     ENSEMBLE_WEIGHT_PROTO = _cfg_loaded["ensemble_weight_proto"]
+    if CFG["perch_ensemble_weight_proto"] is not None:
+        ENSEMBLE_WEIGHT_PROTO = CFG["perch_ensemble_weight_proto"]
+        print(f"Proto weight overridden by config: {ENSEMBLE_WEIGHT_PROTO}")
     CORRECTION_WEIGHT = _cfg_loaded["correction_weight"]
     site_to_idx = _cfg_loaded["site_to_idx"]
 
@@ -1533,56 +1549,61 @@ def run_perch_pipeline(test_paths):
 
     # Step 9: 6-stage post-processing pipeline
 
-    # PP Stage 1: Per-taxon temperature scaling
-    temp_cfg = PERCH_CFG["temperature"]
-    T_AVES = temp_cfg["aves"]
-    T_TEXTURE = temp_cfg["texture"]
-
-    class_temperatures = np.ones(N_CLASSES, dtype=np.float32) * T_AVES
-    for ci, label in enumerate(PRIMARY_LABELS):
-        cn = CLASS_NAME_MAP.get(label, "Aves")
-        if cn in TEXTURE_TAXA:
-            class_temperatures[ci] = T_TEXTURE
-
-    scaled_scores = final_test_scores / class_temperatures[None, :]
-
     def _sigmoid_perch(x):
         return 1.0 / (1.0 + np.exp(-np.clip(x, -30, 30)))
 
-    probs = _sigmoid_perch(scaled_scores)
+    if CFG["perch_enable_pp"]:
+        # PP Stage 1: Per-taxon temperature scaling
+        temp_cfg = PERCH_CFG["temperature"]
+        T_AVES = temp_cfg["aves"]
+        T_TEXTURE = temp_cfg["texture"]
 
-    # PP Stage 2: File-level confidence scaling
-    top_k = PERCH_CFG.get("file_level_top_k", 0)
-    if top_k > 0:
-        probs = file_level_confidence_scale(probs, n_windows=N_WINDOWS, top_k=top_k)
-        probs = np.clip(probs, 0.0, 1.0)
+        class_temperatures = np.ones(N_CLASSES, dtype=np.float32) * T_AVES
+        for ci, label in enumerate(PRIMARY_LABELS):
+            cn = CLASS_NAME_MAP.get(label, "Aves")
+            if cn in TEXTURE_TAXA:
+                class_temperatures[ci] = T_TEXTURE
 
-    # PP Stage 3: Rank-aware scaling
-    if PERCH_CFG.get("rank_aware_scale", False):
-        power = PERCH_CFG.get("rank_aware_power", 0.5)
-        probs = rank_aware_scaling(probs, n_windows=N_WINDOWS, power=power)
-        probs = np.clip(probs, 0.0, 1.0)
+        scaled_scores = final_test_scores / class_temperatures[None, :]
+        probs = _sigmoid_perch(scaled_scores)
 
-    # PP Stage 4: Adaptive delta shift smoothing
-    def adaptive_delta_smooth(probs, n_windows, base_alpha=0.20):
-        n_files = probs.shape[0] // n_windows
-        result = probs.copy()
-        view = result.reshape(n_files, n_windows, -1)
-        p_view = probs.reshape(n_files, n_windows, -1)
-        for i in range(1, n_windows - 1):
-            conf = p_view[:, i, :].max(axis=-1, keepdims=True)
-            a = base_alpha * (1.0 - conf)
-            neighbor_avg = (p_view[:, i - 1, :] + p_view[:, i + 1, :]) / 2.0
-            view[:, i, :] = (1.0 - a) * p_view[:, i, :] + a * neighbor_avg
-        return result.reshape(probs.shape)
+        # PP Stage 2: File-level confidence scaling
+        top_k = PERCH_CFG.get("file_level_top_k", 0)
+        if top_k > 0:
+            probs = file_level_confidence_scale(probs, n_windows=N_WINDOWS, top_k=top_k)
+            probs = np.clip(probs, 0.0, 1.0)
 
-    alpha = PERCH_CFG.get("delta_shift_alpha", 0.0)
-    if alpha > 0:
-        probs = adaptive_delta_smooth(probs, n_windows=N_WINDOWS, base_alpha=alpha)
-        probs = np.clip(probs, 0.0, 1.0)
+        # PP Stage 3: Rank-aware scaling
+        if PERCH_CFG.get("rank_aware_scale", False):
+            power = PERCH_CFG.get("rank_aware_power", 0.5)
+            probs = rank_aware_scaling(probs, n_windows=N_WINDOWS, power=power)
+            probs = np.clip(probs, 0.0, 1.0)
 
-    # PP Stage 5: Per-class threshold sharpening
-    probs = apply_per_class_thresholds(probs, PER_CLASS_THRESHOLDS, n_windows=N_WINDOWS)
+        # PP Stage 4: Adaptive delta shift smoothing
+        def adaptive_delta_smooth(probs, n_windows, base_alpha=0.20):
+            n_files = probs.shape[0] // n_windows
+            result = probs.copy()
+            view = result.reshape(n_files, n_windows, -1)
+            p_view = probs.reshape(n_files, n_windows, -1)
+            for i in range(1, n_windows - 1):
+                conf = p_view[:, i, :].max(axis=-1, keepdims=True)
+                a = base_alpha * (1.0 - conf)
+                neighbor_avg = (p_view[:, i - 1, :] + p_view[:, i + 1, :]) / 2.0
+                view[:, i, :] = (1.0 - a) * p_view[:, i, :] + a * neighbor_avg
+            return result.reshape(probs.shape)
+
+        alpha = PERCH_CFG.get("delta_shift_alpha", 0.0)
+        if alpha > 0:
+            probs = adaptive_delta_smooth(probs, n_windows=N_WINDOWS, base_alpha=alpha)
+            probs = np.clip(probs, 0.0, 1.0)
+
+        # PP Stage 5: Per-class threshold sharpening
+        probs = apply_per_class_thresholds(probs, PER_CLASS_THRESHOLDS, n_windows=N_WINDOWS)
+        print("Perch PP: 6-stage pipeline applied")
+    else:
+        # No PP — just sigmoid on raw scores
+        probs = _sigmoid_perch(final_test_scores)
+        print("Perch PP: DISABLED (raw sigmoid only)")
 
     # Build output DataFrame
     submission = pd.DataFrame(probs, columns=PRIMARY_LABELS)
@@ -1705,10 +1726,10 @@ def sed_compute_mel(audio, mel_cfg):
 
 # --- 4B: SED inference + PP ---
 
-# Post-processing flags
-SED_ENABLE_TTA = True
-SED_ENABLE_TEMPORAL_SMOOTHING = True
-SED_ENABLE_TOPN = True
+# Post-processing flags (driven by CFG)
+SED_ENABLE_TTA = CFG["sed_enable_tta"]
+SED_ENABLE_TEMPORAL_SMOOTHING = CFG["sed_enable_pp"]
+SED_ENABLE_TOPN = CFG["sed_enable_pp"]
 
 
 def _sed_run_onnx(session, mel, mel_cfg):
@@ -1986,7 +2007,11 @@ def sed_predict_soundscape_ensemble(
         avg_probs = _sed_apply_topn(avg_probs)
 
     site, hour = _sed_parse_soundscape_metadata(audio_path)
-    if metadata_priors is not None and (site is not None or hour is not None):
+    if (
+        CFG["sed_enable_pp"]
+        and metadata_priors is not None
+        and (site is not None or hour is not None)
+    ):
         avg_probs = _sed_apply_metadata_priors(
             avg_probs, metadata_priors, site, hour, taxa_mapping, idx_map
         )
@@ -2015,11 +2040,10 @@ def run_sed_pipeline(test_paths):
     t_start = time.time()
 
     # Find SED weights
-    sed_weights_dir = _find_input("birdclef-2026-hgnet-b0-sed-v5j-4fold-pp2-weights")
+    sed_slug = CFG["sed_weights_slug"]
+    sed_weights_dir = _find_input(sed_slug)
     if sed_weights_dir is None or not os.path.exists(sed_weights_dir):
-        raise FileNotFoundError(
-            "SED weights not found at birdclef-2026-hgnet-b0-sed-v5j-4fold-pp2-weights"
-        )
+        raise FileNotFoundError(f"SED weights not found at {sed_slug}")
     sed_weights_dir = Path(sed_weights_dir)
     print(f"SED weights dir: {sed_weights_dir}")
 
@@ -2155,7 +2179,8 @@ def main():
 
     perch_probs = perch_df[PRIMARY_LABELS].values.astype(np.float32)
     sed_probs = sed_aligned[PRIMARY_LABELS].values.astype(np.float32)
-    final_probs = np.clip(W_PERCH * perch_probs + (1.0 - W_PERCH) * sed_probs, 0.0, 1.0)
+    w = CFG["w_perch"]
+    final_probs = np.clip(w * perch_probs + (1.0 - w) * sed_probs, 0.0, 1.0)
 
     # Build submission
     submission = pd.DataFrame(final_probs, columns=PRIMARY_LABELS)
@@ -2168,7 +2193,7 @@ def main():
 
     submission.to_csv("/kaggle/working/submission.csv", index=False)
 
-    print(f"\nEnsemble complete: W_PERCH={W_PERCH}")
+    print(f"\nEnsemble complete: w_perch={CFG['w_perch']}")
     print(f"Shape: {submission.shape}, range: [{final_probs.min():.6f}, {final_probs.max():.6f}]")
     print(f"Total: {time.time()-wall_start:.1f}s ({(time.time()-wall_start)/60:.1f}min)")
 

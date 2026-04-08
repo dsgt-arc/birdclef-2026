@@ -1,0 +1,3 @@
+name: ensemble-w03
+description: "Perch ONNX + SED v5j-4fold-pp2 (w=0.3) — SED-heavy"
+w_perch: 0.3
