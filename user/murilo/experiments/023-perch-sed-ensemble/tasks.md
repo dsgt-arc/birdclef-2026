@@ -14,7 +14,9 @@ single Kaggle kernel. Target: 0.930+ LB.
 | SED v5j-4fold-pp2 | 0.917 | Best SED (exp 021) |
 | Competition #1 | 0.939 | Target |
 
-Status: Implementation in progress.
+Status: Phase A implementation complete. Ready to push to Kaggle.
+
+**Branch**: `mg/023-perch-sed-ensemble` — PR #25
 
 ---
 
@@ -22,14 +24,14 @@ Status: Implementation in progress.
 
 Build kernel, validate, submit.
 
-- [ ] A.1 Create experiment directory + proposal
-- [ ] A.2 Build `submission_ensemble.py` combining both pipelines
-  - Perch ONNX inference (replace TF with ONNX)
+- [x] A.1 Create experiment directory + proposal
+- [x] A.2 Build `submission_ensemble.py` combining both pipelines (1,977 lines)
+  - Perch ONNX inference (replace TF with ONNX: `onnx_out[0]`=emb, `onnx_out[3]`=logits)
   - ProtoSSM + MLP probes + 6-stage PP (from pretrained artifacts)
   - SED 4-fold ONNX inference + TTA + smoothing + TopN + priors
   - Weighted average (w=0.5)
-- [ ] A.3 Create `kernel-metadata-ensemble.json` with all dataset deps
-- [ ] A.4 Syntax verification (local)
+- [x] A.3 Create `kernel-metadata-ensemble.json` with 5 dataset deps + model_sources
+- [x] A.4 Syntax verification (local) — 54 functions, 4 classes, all checks passed
 - [ ] A.5 Push to Kaggle, check logs for dry-run success
 - [ ] A.6 Submit to LB → record score and runtime
 
