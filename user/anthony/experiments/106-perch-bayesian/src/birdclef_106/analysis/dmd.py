@@ -161,7 +161,7 @@ class DMDAnalysis(AnalysisTask):
             summary[site] = {
                 "status": "ok",
                 "n_windows": len(rows),
-                "pca_dims": int(pca.n_components_),
+                "pca_dims": int(global_pca.n_components_),
                 "svd_rank": rank,
                 "reconstruction_error": recon_error,
                 "eigenvalue_magnitudes": [float(m) for m in sorted(magnitudes, reverse=True)],

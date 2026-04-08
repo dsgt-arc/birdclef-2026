@@ -14,6 +14,8 @@ from birdclef_106.analysis import (
     FeatureSelection,
     FocalSpeciesProfiles,
     SoundscapeProfiles,
+    SiteResidualProfiles,
+    SpeciesGraph,
     EmpiricalBayesRidge,
     SparseLogistic,
     TemporalPooling,
@@ -51,10 +53,12 @@ class AllAnalysis(AnalysisTask):
             EmpiricalBayesRidge(**p),
             SparseLogistic(**p),
             TemporalPooling(**p),
-            DMDAnalysis(**p),
+            # DMDAnalysis(**p),  # paused — slow (5h+), value unclear vs site residuals
+            SiteResidualProfiles(**p),
+            SpeciesGraph(**p),
         ]
         phase3 = [
-            UKFSmoothing(**p),
+            # UKFSmoothing(**p),  # blocked on DMD, paused
         ]
 
         if self.phase == 1:

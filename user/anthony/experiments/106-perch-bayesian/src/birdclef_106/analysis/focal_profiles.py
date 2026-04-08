@@ -231,7 +231,11 @@ class FocalSpeciesProfiles(AnalysisTask):
                         "species_b": species_list[sj],
                         "count": c,
                     })
-        cooc_df = pl.DataFrame(cooc_rows).sort("count", descending=True)
+        if cooc_rows:
+            cooc_df = pl.DataFrame(cooc_rows).sort("count", descending=True)
+        else:
+            cooc_df = pl.DataFrame({"species_a": [], "species_b": [], "count": []})
+            logger.warning("FocalProfiles: no co-occurrence pairs found")
         cooc_df.write_parquet(self.output()[1].path)
         logger.info("FocalProfiles: %d co-occurrence pairs", len(cooc_rows))
 

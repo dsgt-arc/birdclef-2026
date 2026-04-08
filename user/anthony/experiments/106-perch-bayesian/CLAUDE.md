@@ -8,7 +8,9 @@ Perch's pretrained taxonomy to BirdCLEF 2026's 234 targets.
 
 ## Status
 
-Phase 1 (extraction) COMPLETE. Phase 2 (analysis) NOT STARTED.
+Phase 1 (static baselines) COMPLETE. Phase 2 (models + temporal) MOSTLY COMPLETE.
+Best model: focal embedding ridge + empirical Bayes prior → **0.749 AUROC** (LOSO CV).
+DMD failed (bug in dmd.py line 162), UKF blocked on DMD.
 
 ## Extracted data
 

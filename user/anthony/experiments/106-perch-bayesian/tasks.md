@@ -15,24 +15,28 @@
 - [x] 2.4 Verify output parquets (row counts, schema)
 
 ## 3. Phase 1 — Static analysis
-- [ ] 3.1 Zero-shot baseline: direct Perch logit readout for 203 mapped species
-- [ ] 3.2 Empirical Bayes ridge on embeddings (unlabeled covariance as prior)
-- [ ] 3.3 Distribution shift diagnostics (focal vs soundscape, UMAP, KS tests)
-- [ ] 3.4 Prototype classifier for insect sonotypes (nearest centroid in embedding space)
-- [ ] 3.5 Compare: embeddings vs logits vs PCA-reduced logits vs concatenated
+- [x] 3.1 Zero-shot baseline: direct Perch logit readout for 203 mapped species
+- [x] 3.2 Distribution shift diagnostics (focal vs soundscape, KS tests)
+- [x] 3.3 Prototype classifier for insect sonotypes (nearest centroid in embedding space)
+- [x] 3.4 Feature selection (per-logit AUROC, exploratory)
+- [x] 3.5 Logit covariance + embedding covariance from unlabeled soundscapes
 
-## 4. Phase 2 — Temporal analysis
-- [ ] 4.1 Simple temporal baselines (max-pool, mean-pool ridge predictions across 12 windows)
-- [ ] 4.2 HMM diel regimes on unlabeled data (per-site Gaussian HMM)
-- [ ] 4.3 DMD on per-site embedding time series (discover dynamical modes)
-- [ ] 4.4 Site/temporal activation patterns (per-site profiles, diel analysis)
+## 4. Phase 2 — Models + temporal
+- [x] 4.1 Empirical Bayes ridge regression (6 configs, LOSO CV) — best: 0.749 AUROC
+- [x] 4.2 Sparse logistic regression (per-species L1) — 0.298 AUROC (not competitive)
+- [x] 4.3 Temporal pooling (max/mean/softmax on ridge OOF) — 0.698 clip AUROC
+- [x] 4.4 Soundscape profiles (per-site + diel signatures from unlabeled data)
+- [x] 4.5 Focal species profiles (per-species activation signatures)
+- [ ] 4.6 DMD on per-site time series — FAILED (bug: `pca` → `global_pca` line 162)
+- [ ] 4.7 Compare: embeddings vs logits vs PCA-reduced vs concatenated
 
 ## 5. Phase 3 — Full pipeline
-- [ ] 5.1 UKF temporal smoothing (DMD-informed dynamics + ridge observation model)
-- [ ] 5.2 Classification-occupancy model (calibrate FP/FN rates)
-- [ ] 5.3 GP classification on embeddings (if ridge saturates)
-- [ ] 5.4 DMD mode analysis and transition matrix clustering
+- [ ] 5.1 Fix DMD bug and rerun
+- [ ] 5.2 UKF temporal smoothing (DMD-informed dynamics + ridge observation model)
+- [ ] 5.3 Classification-occupancy model (calibrate FP/FN rates)
+- [ ] 5.4 GP classification on embeddings (if ridge saturates)
 
 ## 6. Documentation
 - [x] 6.1 Write analysis ideas doc with references
-- [ ] 6.2 Document results in results.md
+- [x] 6.2 Document Phase 1 results in results.md
+- [x] 6.3 Document Phase 2 results in results.md

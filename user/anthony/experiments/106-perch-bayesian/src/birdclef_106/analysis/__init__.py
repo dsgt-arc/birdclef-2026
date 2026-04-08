@@ -13,6 +13,8 @@ from birdclef_106.analysis.temporal_pooling import TemporalPooling
 from birdclef_106.analysis.dmd import DMDAnalysis
 from birdclef_106.analysis.focal_profiles import FocalSpeciesProfiles
 from birdclef_106.analysis.soundscape_profiles import SoundscapeProfiles
+from birdclef_106.analysis.site_residuals import SiteResidualProfiles
+from birdclef_106.analysis.species_graph import SpeciesGraph
 from birdclef_106.analysis.ukf import UKFSmoothing
 
 __all__ = [
@@ -29,5 +31,7 @@ __all__ = [
     "DMDAnalysis",
     "FocalSpeciesProfiles",
     "SoundscapeProfiles",
+    "SiteResidualProfiles",
+    "SpeciesGraph",
     "UKFSmoothing",
 ]
