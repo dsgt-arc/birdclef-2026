@@ -14,7 +14,7 @@ single Kaggle kernel. Target: 0.930+ LB.
 | SED v5j-4fold-pp2 | 0.917 | Best SED (exp 021) |
 | Competition #1 | 0.939 | Target |
 
-Status: Phase A implementation complete. Ready to push to Kaggle.
+Status: Phase A submitted, awaiting LB score.
 
 **Branch**: `mg/023-perch-sed-ensemble` — PR #25
 
@@ -32,8 +32,11 @@ Build kernel, validate, submit.
   - Weighted average (w=0.5)
 - [x] A.3 Create `kernel-metadata-ensemble.json` with 5 dataset deps + model_sources
 - [x] A.4 Syntax verification (local) — 54 functions, 4 classes, all checks passed
-- [ ] A.5 Push to Kaggle, check logs for dry-run success
-- [ ] A.6 Submit to LB → record score and runtime
+- [x] A.5 Push to Kaggle, dry-run success (20 train files, 145s)
+  - Perch: 42s (ONNX load 5.2s, inference 33s, ProtoSSM+PP 9s)
+  - SED: 103s (4-fold × 20 files, first file 15s cold start, rest ~4-5s)
+  - Estimated ~64 min for ~600 test files (within 90 min limit)
+- [ ] A.6 Submit to LB → awaiting score
 
 ## Phase B: Weight Grid Search (2 more submissions)
 
