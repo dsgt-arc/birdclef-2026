@@ -4,9 +4,11 @@
 
 | Variant | W_PERCH | LB | Runtime (dry) | Notes |
 |---------|---------|-----|---------------|-------|
-| **Phase A (w=0.5)** | **0.50** | **0.927** | **145s (20 files)** | **New best overall. +0.002 vs Perch TF (0.925)** |
-| **Phase B (w=0.3)** | **0.30** | **0.927** | **181s (20 files)** | **Tied with w=0.5** |
+| Phase A (w=0.5) | 0.50 | 0.927 | 145s (20 files) | +0.002 vs Perch TF (0.925) |
+| Phase B (w=0.3) | 0.30 | 0.927 | 181s (20 files) | Tied with w=0.5 |
 | Phase B (w=0.7) | 0.70 | 0.926 | 189s (20 files) | −0.001 vs w=0.5 |
+| **Phase C MLP-only** | **0.50** | **0.929** | — | **New best! proto_weight=0.0 (skip ProtoSSM)** |
+| Phase C No PP | 0.50 | 0.922 | — | Both PPs disabled, −0.005 vs w=0.5 |
 
 ## Phase A Analysis (w=0.5, 0.927 LB)
 
@@ -62,3 +64,47 @@ This suggests:
 4. **Diminishing returns from weight tuning.** The +0.001 difference between
    best (0.927) and worst (0.926) is within noise. Further weight fine-tuning
    (e.g., w=0.4, 0.6) is unlikely to yield meaningful gains.
+
+## Phase C Analysis (Ablations)
+
+### MLP-only (0.929 LB — new best!)
+
+| Variant | Proto Weight | LB | Delta vs baseline |
+|---------|-------------|-----|-------------------|
+| ProtoSSM + MLP (default) | 0.50 | 0.927 | baseline |
+| **MLP-only** | **0.00** | **0.929** | **+0.002** |
+
+Dropping ProtoSSM and using MLP probes only **improves LB by +0.002**. This
+matches the pantanal-distill reference (0.930 LB) which also used MLP-only.
+
+Why ProtoSSM hurts in the ensemble context: the ProtoSSM was trained on TF
+embeddings but runs on ONNX embeddings (−0.005 penalty). The MLP probes are
+simpler and more robust to this distribution shift. Additionally, ProtoSSM's
+gated fusion with Perch logits may introduce noise when those logits come from
+ONNX rather than TF.
+
+**This is the single biggest finding of exp 023**: the internal Perch pipeline
+blend matters more than the Perch-vs-SED ensemble weight.
+
+### No PP (0.922 LB)
+
+| Variant | PP | LB | Delta vs baseline |
+|---------|-----|-----|-------------------|
+| Full PP (default) | Both enabled | 0.927 | baseline |
+| **No PP** | **Both disabled** | **0.922** | **−0.005** |
+
+Disabling post-processing from both pipelines costs −0.005 LB. This confirms
+that the individual PPs are net positive even when their outputs are averaged.
+The PP gain (+0.005) is comparable to the ONNX penalty (−0.005), reinforcing
+that both calibration and backend quality matter.
+
+## Updated Scoreboard
+
+| Model | LB | Notes |
+|-------|-----|-------|
+| **Perch+SED MLP-only (exp 023)** | **0.929** | **New best overall** |
+| Perch+SED w=0.5 (exp 023) | 0.927 | |
+| Perch ProtoSSM v18 TF (exp 020) | 0.925 | Best individual |
+| Perch+SED no PP (exp 023) | 0.922 | PP disabled |
+| SED v5j-4fold-pp2 (exp 021) | 0.917 | Best SED |
+| Competition #1 | 0.939 | Target |
