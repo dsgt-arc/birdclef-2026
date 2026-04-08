@@ -487,6 +487,21 @@ generalization. v10b/v10c not submitted (worse offline than v10a). **v5j-repro s
 0.903 LB** (−0.003 vs original v5j 0.906), confirming pipeline is correct and PCEN
 is the cause of regression. **Experiment rejected.**
 
+## BirdCLEF 2026 — Perch + SED Ensemble (exp 023)
+
+Score-level fusion of Perch ProtoSSM v18 (ONNX) and SED v5j-4fold-pp2 in a single
+Kaggle CPU kernel. Each pipeline runs its own full post-processing, then weighted
+average produces the final submission. Estimated runtime ~64 min for ~600 test files.
+
+| Slug | W_PERCH | Perch Backend | SED Model | LB | Kaggle Kernel |
+|------|---------|--------------|-----------|-----|---------------|
+| **`perch-sed-ensemble-w05`** | **0.50** | **ONNX** | **v5j-4fold-pp2** | **0.927** | **`023-.../submission_ensemble.py`** |
+| `perch-sed-ensemble-w03` | 0.30 | ONNX | v5j-4fold-pp2 | pending | `023-.../submission_ensemble.py` |
+| `perch-sed-ensemble-w07` | 0.70 | ONNX | v5j-4fold-pp2 | pending | `023-.../submission_ensemble.py` |
+
+**0.927 LB is the new best overall** (+0.002 vs Perch TF 0.925, +0.007 vs Perch ONNX 0.920).
+Ensemble gains more than compensate for the ONNX penalty (−0.005).
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

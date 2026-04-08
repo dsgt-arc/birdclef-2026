@@ -14,7 +14,7 @@ single Kaggle kernel. Target: 0.930+ LB.
 | SED v5j-4fold-pp2 | 0.917 | Best SED (exp 021) |
 | Competition #1 | 0.939 | Target |
 
-Status: Phase A submitted, awaiting LB score.
+Status: **Phase A complete: 0.927 LB (new best overall).** Phase B weight grid next.
 
 **Branch**: `mg/023-perch-sed-ensemble` — PR #25
 
@@ -36,7 +36,7 @@ Build kernel, validate, submit.
   - Perch: 42s (ONNX load 5.2s, inference 33s, ProtoSSM+PP 9s)
   - SED: 103s (4-fold × 20 files, first file 15s cold start, rest ~4-5s)
   - Estimated ~64 min for ~600 test files (within 90 min limit)
-- [ ] A.6 Submit to LB → awaiting score
+- [x] A.6 Submit to LB → **0.927 LB** (new best overall, +0.002 vs Perch TF 0.925)
 
 ## Phase B: Weight Grid Search (2 more submissions)
 
@@ -56,6 +56,6 @@ Build kernel, validate, submit.
 
 | Variant | W_PERCH | LB | Runtime | Notes |
 |---------|---------|-----|---------|-------|
-| Phase A (w=0.5) | 0.50 | — | — | |
+| **Phase A (w=0.5)** | **0.50** | **0.927** | **~64 min est.** | **New best overall** |
 | Phase B (w=0.3) | 0.30 | — | — | |
 | Phase B (w=0.7) | 0.70 | — | — | |
