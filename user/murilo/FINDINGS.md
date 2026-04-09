@@ -31,7 +31,7 @@ Every LB submission in chronological order of improvement:
 | 0.927 | Perch+SED w=0.5 | Score-level ensemble (ProtoSSM+MLP) | 023 |
 | 0.929 | **Perch+SED MLP-only** | **Drop ProtoSSM, MLP probes only (current best)** | 023 |
 
-Target: 0.939 (competition #1). Gap: 0.010.
+Target: 0.946 (competition #1). Gap: 0.017.
 
 ---
 
@@ -167,19 +167,20 @@ normalization, and PCEN disrupted that learned mapping.
 
 ## Remaining Gap Analysis
 
-Current best: 0.929 (MLP-only ensemble). Target: 0.939 (#1). Gap: 0.010.
+Current best: 0.929 (MLP-only ensemble). Target: 0.946 (#1). Gap: 0.017.
 
 | Direction | Rationale | Expected Gain | Risk |
 |-----------|-----------|---------------|------|
-| TF Perch backend | ONNX costs -0.005 standalone; ensemble would recover some | +0.002-0.003 | Kaggle kernel may lack TF support |
+| TF Perch backend | ONNX costs −0.005 standalone (0.920 vs 0.925) | +0.002-0.005 | **Timed out** (exp 023 C.3): TF ~10s/file exceeds 90 min for 600 files. Not viable for ensemble. |
 | Better Perch probes (OOF, calibration) | MLP probes are simple; OOF calibration could help | +0.001-0.003 | Unknown |
 | SED backbone diversity | Train v5j on different backbone for ensemble diversity | +0.001-0.003 | Backbone swap historically high-yield |
 | More sophisticated PP fusion | Weight PP per-species or per-site rather than globally | +0.001-0.002 | Complex to tune |
-| Additional data sources | Xeno-canto, iNaturalist sound -- more species coverage | +0.001-0.005 | Data cleaning overhead |
-| Domain-adapted training | Train on soundscape-augmented focal data | +0.001-0.005 | Pseudo-labels failed before (exp 015) |
+| Knowledge distillation | Use 0.929 ensemble as teacher for stronger single SED | +0.003-0.005 | Exp 015 failed, but SED-to-SED might differ |
+| Additional data sources | Xeno-canto, iNaturalist sound — more species coverage | +0.001-0.005 | Data cleaning overhead |
+| Framewise max inference | Nikita (1st 2025) used framewise max, not attention pool | Unknown | Inference-only change, no retraining |
 
-Note: individual directions unlikely to close the full 0.010 gap. Need to
-stack 3-4 small gains.
+Note: individual directions unlikely to close the full 0.017 gap. Need to
+stack multiple small gains. TF Perch path confirmed not viable for ensemble.
 
 ---
 
