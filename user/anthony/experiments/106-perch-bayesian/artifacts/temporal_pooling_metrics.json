@@ -1,0 +1,56 @@
+{
+  "tracks": {
+    "focal": {
+      "config": "focal_emb_empirical_bayes",
+      "strategies": {
+        "max": {
+          "macro_auroc": 0.6982757418496284,
+          "macro_ap": 0.3877134326265976,
+          "n_evaluated": 46
+        },
+        "mean": {
+          "macro_auroc": 0.6816334662249465,
+          "macro_ap": 0.3535036136863635,
+          "n_evaluated": 46
+        },
+        "softmax": {
+          "macro_auroc": 0.6827962922393946,
+          "macro_ap": 0.3548079977461898,
+          "n_evaluated": 46
+        },
+        "window_level": {
+          "macro_auroc": 0.7146918767768804,
+          "macro_ap": 0.2817188831565691,
+          "n_evaluated": 70
+        }
+      }
+    },
+    "soundscape": {
+      "config": "sc_emb_identity",
+      "strategies": {
+        "max": {
+          "macro_auroc": 0.3924298631484731,
+          "macro_ap": 0.18534012346628023,
+          "n_evaluated": 46
+        },
+        "mean": {
+          "macro_auroc": 0.48949178546560285,
+          "macro_ap": 0.20137442220762797,
+          "n_evaluated": 46
+        },
+        "softmax": {
+          "macro_auroc": 0.4887787727298769,
+          "macro_ap": 0.2028500432785814,
+          "n_evaluated": 46
+        },
+        "window_level": {
+          "macro_auroc": 0.4530636105648898,
+          "macro_ap": 0.1068117888813546,
+          "n_evaluated": 70
+        }
+      }
+    }
+  },
+  "n_clips": 66,
+  "n_windows": 739
+}

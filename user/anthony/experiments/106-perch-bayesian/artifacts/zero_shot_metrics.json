@@ -1,0 +1,1265 @@
+{
+  "per_species": {
+    "1161364": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "1176823": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "209233": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "22930": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "22956": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "22961": {
+      "auroc": 0.43598862019914647,
+      "ap": 0.04362341951770295,
+      "n_pos": 36,
+      "method": "direct"
+    },
+    "22967": {
+      "auroc": 0.5723928413610252,
+      "ap": 0.2782378044660961,
+      "n_pos": 155,
+      "method": "direct"
+    },
+    "22973": {
+      "auroc": 0.8424641639443762,
+      "ap": 0.7149952601249985,
+      "n_pos": 213,
+      "method": "direct"
+    },
+    "22983": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "22985": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "23150": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "23154": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "23158": {
+      "auroc": 0.8778926038500507,
+      "ap": 0.8002720741523695,
+      "n_pos": 175,
+      "method": "direct"
+    },
+    "23176": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "23724": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "24279": {
+      "auroc": 0.7854327090014093,
+      "ap": 0.4911104562289503,
+      "n_pos": 173,
+      "method": "direct"
+    },
+    "24285": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "24287": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "24321": {
+      "auroc": 0.7716664615889423,
+      "ap": 0.4547240041158958,
+      "n_pos": 172,
+      "method": "direct"
+    },
+    "244024": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "25092": {
+      "auroc": 0.953904428904429,
+      "ap": 0.5118756618329893,
+      "n_pos": 24,
+      "method": "direct"
+    },
+    "25214": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "326272": {
+      "auroc": 0.6271556958950693,
+      "ap": 0.055708754029897736,
+      "n_pos": 23,
+      "method": "direct"
+    },
+    "41970": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "43435": {
+      "auroc": 0.9903713892709766,
+      "ap": 0.7781373544949747,
+      "n_pos": 12,
+      "method": "direct"
+    },
+    "47144": {
+      "auroc": 0.8882136279926336,
+      "ap": 0.20003184677294533,
+      "n_pos": 15,
+      "method": "direct"
+    },
+    "476521": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "517063": {
+      "auroc": 0.9067257645982391,
+      "ap": 0.8874699156205621,
+      "n_pos": 313,
+      "method": "direct"
+    },
+    "555123": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "555145": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "555146": {
+      "auroc": 0.587289585021154,
+      "ap": 0.30915130966728593,
+      "n_pos": 210,
+      "method": "direct"
+    },
+    "64898": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "65377": {
+      "auroc": 0.3188736681887367,
+      "ap": 0.009430881253879935,
+      "n_pos": 9,
+      "method": "direct"
+    },
+    "65380": {
+      "auroc": 0.8078743768398942,
+      "ap": 0.7594869393335704,
+      "n_pos": 333,
+      "method": "direct"
+    },
+    "66971": {
+      "auroc": 0.7187919463087249,
+      "ap": 0.371498124785596,
+      "n_pos": 149,
+      "method": "direct"
+    },
+    "67107": {
+      "auroc": 0.3165905631659056,
+      "ap": 0.009308554394620732,
+      "n_pos": 9,
+      "method": "direct"
+    },
+    "67252": {
+      "auroc": 0.9043419267299865,
+      "ap": 0.029166666666666667,
+      "n_pos": 2,
+      "method": "direct"
+    },
+    "70711": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "738183": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "74113": {
+      "auroc": 0.3677069199457259,
+      "ap": 0.0031256622165713073,
+      "n_pos": 2,
+      "method": "direct"
+    },
+    "760266": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "ashgre1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "astcra1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bafcur1": {
+      "auroc": 0.30669710806697104,
+      "ap": 0.009090463104208106,
+      "n_pos": 9,
+      "method": "direct"
+    },
+    "baffal1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "banana": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "barant1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "batbel1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "baymac": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bbwduc": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bcwfin2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bkcdon": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bkhpar": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "blchaw1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "blheag1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "blttit1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bncfly": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bobfly1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "brcmar1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "brnowl": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bucmot4": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bucpar": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "bufpar": {
+      "auroc": 0.9197044334975369,
+      "ap": 0.2778168138418133,
+      "n_pos": 14,
+      "method": "direct"
+    },
+    "bunibi1": {
+      "auroc": 0.5407055630936228,
+      "ap": 0.004299222219182828,
+      "n_pos": 2,
+      "method": "direct"
+    },
+    "burowl": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "camfli1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "chacha1": {
+      "auroc": 0.6154759187400137,
+      "ap": 0.12880221127038874,
+      "n_pos": 65,
+      "method": "direct"
+    },
+    "chbmoc1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "chobla1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "chvcon1": {
+      "auroc": 0.6569399350649351,
+      "ap": 0.08174892537722159,
+      "n_pos": 35,
+      "method": "direct"
+    },
+    "cibspi1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "coffal1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "compau": {
+      "auroc": 0.8605751182521211,
+      "ap": 0.4580162055392027,
+      "n_pos": 38,
+      "method": "direct"
+    },
+    "compot1": {
+      "auroc": 0.8990036231884059,
+      "ap": 0.025405222666885954,
+      "n_pos": 3,
+      "method": "direct"
+    },
+    "crbthr1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "crebec1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "dwatin1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "epaori4": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "eulfly1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "fabwre1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "fepowl": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "ficman1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "flawar1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "fotfly": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "fusfly1": {
+      "auroc": 0.7780797101449275,
+      "ap": 0.027347781217750257,
+      "n_pos": 3,
+      "method": "direct"
+    },
+    "gilhum1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "giwrai1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "glteme1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "grasal3": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "greani1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "greant1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "greela": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "grekis": {
+      "auroc": 0.8093622795115332,
+      "ap": 0.013925729442970823,
+      "n_pos": 2,
+      "method": "direct"
+    },
+    "grepot1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "gretho2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "greyel": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "grfdov1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "grhtan1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "gycwor1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "horscr1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "houspa": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "hyamac1": {
+      "auroc": 0.9831275720164608,
+      "ap": 0.2893476270106705,
+      "n_pos": 10,
+      "method": "direct"
+    },
+    "larela1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "lesela1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "lesgrf1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "limpki": {
+      "auroc": 0.8392210144927535,
+      "ap": 0.030408902691511384,
+      "n_pos": 3,
+      "method": "direct"
+    },
+    "linwoo1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "litcuc2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "litnig1": {
+      "auroc": 0.4040964040964041,
+      "ap": 0.039132855340896486,
+      "n_pos": 37,
+      "method": "direct"
+    },
+    "mabpar": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "magant1": {
+      "auroc": 0.8727520435967302,
+      "ap": 0.03460275360709006,
+      "n_pos": 5,
+      "method": "direct"
+    },
+    "magtan2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "masgna1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "nacnig1": {
+      "auroc": 0.9223276723276722,
+      "ap": 0.1330297959420906,
+      "n_pos": 11,
+      "method": "direct"
+    },
+    "ocecra1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "oliwoo1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "orbtro3": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "orwpar": {
+      "auroc": 0.8443526170798897,
+      "ap": 0.13205428596431643,
+      "n_pos": 13,
+      "method": "direct"
+    },
+    "osprey": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "pabspi1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "palhor3": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "paltan1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "phecuc1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "picpig2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "pirfly1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "plasla1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "platyr1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "plcjay1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 1,
+      "method": "direct"
+    },
+    "pluibi1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "purjay1": {
+      "auroc": 0.31634877384196186,
+      "ap": 0.005716625296878386,
+      "n_pos": 5,
+      "method": "direct"
+    },
+    "pvttyr1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "ragmac1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "rebscy1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "recfin1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "redjun": {
+      "auroc": 0.7120586886749198,
+      "ap": 0.03472052524289962,
+      "n_pos": 12,
+      "method": "direct"
+    },
+    "relser1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "rinkin1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "rivwar1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "roahaw": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "rubthr1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "rufcac2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "rufcas2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "rufgna3": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "rufhor2": {
+      "auroc": 0.9612244897959183,
+      "ap": 0.5415592783505154,
+      "n_pos": 4,
+      "method": "direct"
+    },
+    "rufnig1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "ruftho1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "ruftof1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "rumfly1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "ruther1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 1,
+      "method": "direct"
+    },
+    "rutjac1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 1,
+      "method": "direct"
+    },
+    "sabspa1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "saffin": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "saytan1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "scadov1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "schpar1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "scther1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "shcfly1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "shshaw": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "shtnig1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "sibtan2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 1,
+      "method": "direct"
+    },
+    "smbani": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "smbtin1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "sobcac1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "sobtyr1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "socfly1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "sofspi1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "souant1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "soulap1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "souscr1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "spbant3": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "spispi1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "sptnig1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "squcuc1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "stbwoo2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "strcuc1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "strher2": {
+      "auroc": 0.5542740841248304,
+      "ap": 0.004532054990770587,
+      "n_pos": 2,
+      "method": "direct"
+    },
+    "strowl1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "swthum1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "swtman1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "tattin1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "thlwre1": {
+      "auroc": 0.5156037991858887,
+      "ap": 0.004101444912703191,
+      "n_pos": 2,
+      "method": "direct"
+    },
+    "toctou1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "trokin": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "trsowl": {
+      "auroc": 0.5650555615492502,
+      "ap": 0.04405738969750174,
+      "n_pos": 26,
+      "method": "direct"
+    },
+    "undtin1": {
+      "auroc": 0.621959369152633,
+      "ap": 0.09048553156637554,
+      "n_pos": 43,
+      "method": "direct"
+    },
+    "varant1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "watjac1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "wesfie1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "wfwduc1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 1,
+      "method": "direct"
+    },
+    "whbant2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "whbwar2": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "whiwoo1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "whlspi1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "whnjay1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "whtdov": {
+      "auroc": 0.8609232647694186,
+      "ap": 0.2826400971904103,
+      "n_pos": 63,
+      "method": "direct"
+    },
+    "whwpic1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "y00678": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "yebcar": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "yebela1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "yecmac": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "yecpar": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "yehcar1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "yeofly1": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "direct"
+    },
+    "116570": {
+      "auroc": 0.6912481457936004,
+      "ap": 0.038073579302925556,
+      "n_pos": 13,
+      "method": "genus_proxy"
+    },
+    "1491113": {
+      "auroc": 0.46649405446873804,
+      "ap": 0.09352535460774612,
+      "n_pos": 79,
+      "method": "genus_proxy"
+    },
+    "1595929": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "genus_proxy"
+    },
+    "25073": {
+      "auroc": 0.7942457588262266,
+      "ap": 0.044251945579700615,
+      "n_pos": 12,
+      "method": "genus_proxy"
+    },
+    "516975": {
+      "auroc": 0.5605001059546514,
+      "ap": 0.02981407519752236,
+      "n_pos": 13,
+      "method": "genus_proxy"
+    },
+    "74580": {
+      "auroc": null,
+      "ap": null,
+      "n_pos": 0,
+      "method": "genus_proxy"
+    }
+  },
+  "macro_auroc": 0.7010229867136543,
+  "macro_ap": 0.2134635863743939,
+  "n_evaluated": 45,
+  "n_direct": 203,
+  "n_genus_proxy": 6,
+  "n_skipped": 164,
+  "n_unmapped": 25
+}
