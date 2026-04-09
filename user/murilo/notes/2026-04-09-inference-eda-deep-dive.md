@@ -581,21 +581,27 @@ The LB gap comes from the 159 species trained only on focal recordings. No amoun
 training recipe tuning will fix this — the model needs **soundscape-domain data** for
 these 159 species.
 
-### 10.2 Pseudo-labeling priorities
+### 10.2 Pseudo-labeling priorities (updated after Phase A)
+
+Using **max-across-folds** as the SED teacher component:
 
 | Priority | Species Group | Count | Strategy |
 |----------|--------------|-------|----------|
-| 1 | 80 unseen species with >0 pseudo-labels at 0.5 | 80 | Direct pseudo-labeling from v5j predictions |
-| 2 | 79 unseen species with zero pseudo-labels | 79 | Need ensemble teacher (Perch+SED) or lower threshold |
-| 3 | 75 seen species | 75 | Already well-served; pseudo-labels add marginal value |
-| 4 | 28 soundscape-only species | 28 | Already in labeled soundscapes; pseudo-labels expand coverage |
+| 1 | Unseen species covered by SED max-folds at >0.5 | 109 | Direct pseudo-labeling from max(fold0..fold3) |
+| 2 | Unseen species with zero SED coverage but possibly covered by Perch | 50 | Need Perch teacher — Phase B/C/D will determine coverage |
+| 3 | **Truly hard species** (zero even at >0.3 with max-folds) | 34 | Need Perch or external data — SED cannot detect these |
+| 4 | 75 seen species | 75 | Already well-served; pseudo-labels expand site/hour coverage |
+| 5 | 28 soundscape-only species | 28 | Already in labeled soundscapes; pseudo-labels add diversity |
 
-**The 79 zero-coverage species are the hardest problem.** These are likely rare Aves species
-that vocalize rarely in soundscapes, or species whose vocalizations overlap spectrally with
-more common species. For these, we may need:
-- The Perch+SED ensemble teacher (0.929) instead of v5j alone (0.906)
-- Lower threshold (0.3 instead of 0.5), accepting more noise
-- External data from Xeno-canto for species diversity
+**The 50 zero-coverage species (at >0.5 with max-folds) are the primary target for Perch.**
+Phase D (Perch vs SED comparative EDA) will determine how many Perch recovers. If Perch
+covers 30+ of these, the ensemble teacher is clearly justified. If only 5-10, we need
+lower thresholds or external data.
+
+**Preview opportunity**: Existing Perch mapped scores at
+`shared/embeddings/birdclef-2026/perch-v2/labeled/perch_mapped_scores.parquet` could give
+a quick comparison of Perch vs SED on the 75 labeled-soundscape species before Phase B
+completes.
 
 ### 10.3 Data quality priorities
 
@@ -644,10 +650,28 @@ would resolve this.
 
 ### 10.8 The Perch+SED ensemble should be the teacher
 
-The v5j model alone covers only 80/159 unseen species at threshold 0.5. The ensemble
-(Perch ONNX + SED v5j-4fold) scored 0.929 on LB — Perch's pre-trained bioacoustic
-knowledge likely covers species that SED misses. The ensemble should produce higher-coverage,
-higher-quality pseudo-labels than v5j alone.
+Using SED max-across-folds, 109/159 unseen species are covered at >0.5. The remaining 50
+need Perch. The ensemble (Perch + SED v5j-4fold) scored 0.929 on LB — Perch's pre-trained
+bioacoustic knowledge should cover species that SED misses.
+
+**Phase D (pending, blocked on Phase B) will answer the critical questions:**
+1. How many of the 50 SED-zero species does Perch cover?
+2. How many of the 34 truly hard species (zero at >0.3) does Perch cover?
+3. What's the union: `max(SED-4fold) + Perch MLP probes` total coverage?
+4. For species both detect, do they agree on which segments? (quality signal)
+5. Does Perch do better on the 14 unlabeled-only sites? (site diversity)
+
+If Perch covers 30+ of the 50 zero-coverage species, the combined teacher covers
+~140+/159 — a viable foundation for pseudo-labeling. If Perch covers <10, we need
+external data or much lower thresholds.
+
+### 10.9 Existing Perch data we haven't fully exploited
+
+We already have Perch 234-class mapped scores for the 66 labeled soundscapes at
+`shared/embeddings/birdclef-2026/perch-v2/labeled/perch_mapped_scores.parquet`.
+This was generated in exp 018 but never compared per-species against SED.
+A quick comparison could preview Perch vs SED complementarity on the 75 labeled
+species before Phase B completes.
 
 ---
 
@@ -797,8 +821,12 @@ occur in soundscapes.
 | v5j soundscape logits | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/train_soundscapes/logits.parquet` |
 | v5j focal logits | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/train_audio/logits.parquet` |
 | v5j-4fold soundscape logits | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/train_soundscapes/` |
+| Perch TF inference (running) | `shared/inference/birdclef-2026/perch-v2-tf/{train_soundscapes,train_audio}/` |
+| Perch labeled embeddings (exp 018) | `shared/embeddings/birdclef-2026/perch-v2/labeled/` |
+| MLP probes + ProtoSSM artifacts | `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/` |
 | Labeled soundscape labels | `shared/data/birdclef-2026/train_soundscapes_labels.csv` |
 | Focal metadata | `shared/data/birdclef-2026/train.csv` |
 | Original EDA | `docs/references/birdclef-2026-eda-analysis.md` |
 | EDA notebook | `user/murilo/notebooks/003-birdclef2026-eda.ipynb` |
 | Analysis script | `user/murilo/scripts/inference_eda.py` |
+| Perch inference script | `user/murilo/inference/perch_inference.py` |
