@@ -3,12 +3,11 @@
 Pipeline:
     1. Pass 1: per-species means from focal shards.
     2. Pass 2: subsample residuals → SVD whitening transform.
-    3. Pass 3: write per-species .npz files to scratch (projected + residuals).
-    4. Per species: load .npz, Leiden cluster, compute centroid prototypes.
-    5. Evaluate on labeled soundscapes.
-
-Per-species files on scratch (~15 GB total) make the pipeline robust to failure
-and allow restarting from step 4 without re-reading all shards.
+    3. Pass 3: project all windows to 200-d, write per-species projected .npy files.
+       Only 200-d vectors are cached (~200 MB total), not full 14795-d residuals.
+    4. Per species: load projected .npy, Leiden cluster on dense Gram matrix.
+    5. Pass 5: re-read shards, compute cluster centroids as running sums.
+    6. Evaluate on labeled soundscapes.
 
 Outputs:
     multi_prototypes.npz — prototype matrix, species assignments, metadata
@@ -49,20 +48,17 @@ def _leiden_cluster(projected_normed, n_windows, ig, leidenalg):
     gram = projected_normed @ projected_normed.T
     np.fill_diagonal(gram, 0.0)
     gram = np.maximum(gram, 0.0)
-
     sources, targets = np.triu_indices(n_windows, k=1)
     weights = gram[sources, targets]
     pos_mask = weights > 0
     if pos_mask.sum() == 0:
         return None
-
     g = ig.Graph(
         n=n_windows,
         edges=list(zip(sources[pos_mask].tolist(), targets[pos_mask].tolist())),
         directed=False,
     )
     g.es["weight"] = weights[pos_mask].tolist()
-
     partition = leidenalg.find_partition(
         g, leidenalg.RBConfigurationVertexPartition,
         weights="weight", resolution_parameter=LEIDEN_RESOLUTION, seed=42,
@@ -71,23 +67,20 @@ def _leiden_cluster(projected_normed, n_windows, ig, leidenalg):
 
 
 def _community_stats(labels, projected_normed):
-    """Compute per-community cohesion, apply size/cohesion/cap filters."""
+    """Compute per-community cohesion, apply filters, return accepted IDs."""
     unique_labels, label_counts = np.unique(labels, return_counts=True)
-
     communities = []
     for cl, count in zip(unique_labels, label_counts):
         cl_proj = projected_normed[labels == cl]
         cl_gram = cl_proj @ cl_proj.T
         n_cl = cl_gram.shape[0]
         cohesion = (cl_gram.sum() - n_cl) / max(n_cl * (n_cl - 1), 1)
-
         if count < MIN_CLUSTER_SIZE:
             status = "rejected_too_small"
         elif cohesion < MIN_COHESION:
             status = "rejected_low_cohesion"
         else:
             status = "pending"
-
         communities.append({
             "id": int(cl), "size": int(count),
             "cohesion": round(float(cohesion), 4), "status": status,
@@ -106,8 +99,7 @@ def _community_stats(labels, projected_normed):
     sizes = [c["size"] for c in communities]
     cohesions = [c["cohesion"] for c in communities]
     stats = {
-        "n_total": len(communities),
-        "n_accepted": len(accepted_ids),
+        "n_total": len(communities), "n_accepted": len(accepted_ids),
         "n_rejected_too_small": sum(1 for c in communities if c["status"] == "rejected_too_small"),
         "n_rejected_low_cohesion": sum(1 for c in communities if c["status"] == "rejected_low_cohesion"),
         "n_rejected_max_cap": sum(1 for c in communities if c["status"] == "rejected_max_cap"),
@@ -146,7 +138,6 @@ class MultiPrototypeProfiles(AnalysisTask):
         # =====================================================================
         # Pass 1: per-species means
         # =====================================================================
-
         logger.info("MultiPrototype: pass 1 — per-species means")
         logit_dim = None
         sp_sum = None
@@ -159,12 +150,12 @@ class MultiPrototypeProfiles(AnalysisTask):
                 sp_sum = np.zeros((n_species, logit_dim), dtype=np.float64)
             pls = shard["primary_label"].to_list()
             shard_si = np.array(
-                [species_to_idx.get(str(pl).strip(), -1) for pl in pls], dtype=np.int32,
-            )
+                [species_to_idx.get(str(pl).strip(), -1) for pl in pls], dtype=np.int32)
             valid = shard_si >= 0
             if valid.any():
-                np.add.at(sp_sum, shard_si[np.where(valid)[0]], logits[np.where(valid)[0]])
-                np.add.at(sp_count, shard_si[np.where(valid)[0]], 1)
+                vi = np.where(valid)[0]
+                np.add.at(sp_sum, shard_si[vi], logits[vi])
+                np.add.at(sp_count, shard_si[vi], 1)
             if i % 4 == 0:
                 logger.info("  pass 1 shard %d done", i)
 
@@ -177,18 +168,14 @@ class MultiPrototypeProfiles(AnalysisTask):
         # =====================================================================
         # Pass 2: subsample residuals → SVD
         # =====================================================================
-
         logger.info("MultiPrototype: pass 2 — SVD")
-        total_focal = int(sp_count[has_data].sum())
-        svd_rate = max(1, total_focal // 50_000)
+        svd_rate = max(1, int(sp_count[has_data].sum()) // 50_000)
         residual_samples = []
-
         for i, shard in enumerate(load_focal_shards(self.features_dir)):
             logits = logits_to_numpy(shard).astype(np.float64)
             pls = shard["primary_label"].to_list()
             shard_si = np.array(
-                [species_to_idx.get(str(pl).strip(), -1) for pl in pls], dtype=np.int32,
-            )
+                [species_to_idx.get(str(pl).strip(), -1) for pl in pls], dtype=np.int32)
             valid = shard_si >= 0
             if valid.any():
                 vi = np.where(valid)[0]
@@ -210,54 +197,68 @@ class MultiPrototypeProfiles(AnalysisTask):
         del res_matrix
 
         # =====================================================================
-        # Pass 3: write per-species .npz to scratch
+        # Pass 3: project to 200-d, write per-species .npy files incrementally
         #
-        # Each file: {projected: (N_s, 200) f32, residuals: (N_s, 14795) f32}
-        # Total: ~15 GB on scratch. Enables restart from clustering step.
+        # For each shard, compute projected vectors and APPEND to per-species
+        # files. Uses numpy memmap-friendly approach: collect per-species lists
+        # per shard and append-write to open file handles.
+        #
+        # Memory: only one shard's data (~16K × 200 × 4 = 13 MB) at a time.
+        # Disk: ~266K × 200 × 4 = 200 MB total across all species.
         # =====================================================================
+        logger.info("MultiPrototype: pass 3 — writing per-species projected caches")
 
-        logger.info("MultiPrototype: pass 3 — writing per-species caches")
-
-        # Collect per-species data as lists, flush after each shard
-        sp_projected: dict[int, list] = {si: [] for si in range(n_species) if has_data[si]}
-        sp_residuals: dict[int, list] = {si: [] for si in range(n_species) if has_data[si]}
+        # Open per-species file handles for append-writing
+        sp_files: dict[int, object] = {}
+        sp_written: dict[int, int] = {}
+        for si in range(n_species):
+            if has_data[si]:
+                path = cache_dir / f"species_{si:03d}.npy"
+                sp_files[si] = open(path, "wb")
+                sp_written[si] = 0
 
         for i, shard in enumerate(load_focal_shards(self.features_dir)):
             logits = logits_to_numpy(shard).astype(np.float64)
             pls = shard["primary_label"].to_list()
             shard_si = np.array(
-                [species_to_idx.get(str(pl).strip(), -1) for pl in pls], dtype=np.int32,
-            )
+                [species_to_idx.get(str(pl).strip(), -1) for pl in pls], dtype=np.int32)
             valid = shard_si >= 0
             if valid.any():
                 vi = np.where(valid)[0]
                 vsi = shard_si[vi]
                 res = logits[vi] - sp_means[vsi]
                 proj = ((res @ components.T) * whiten_scale[None, :]).astype(np.float32)
-                res_f32 = res.astype(np.float32)
-                for j, si in enumerate(vsi):
-                    sp_projected[si].append(proj[j])
-                    sp_residuals[si].append(res_f32[j])
+
+                # Write per-species chunks
+                for si_val in np.unique(vsi):
+                    mask = vsi == si_val
+                    chunk = proj[mask]
+                    sp_files[si_val].write(chunk.tobytes())
+                    sp_written[si_val] += len(chunk)
+
             if i % 4 == 0:
                 logger.info("  pass 3 shard %d done", i)
 
-        # Write per-species files
-        for si in sorted(sp_projected.keys()):
-            if not sp_projected[si]:
+        for f in sp_files.values():
+            f.close()
+
+        # Reshape raw bytes into numpy arrays
+        for si in list(sp_written.keys()):
+            path = cache_dir / f"species_{si:03d}.npy"
+            n_rows = sp_written[si]
+            if n_rows == 0:
+                path.unlink(missing_ok=True)
                 continue
-            out_path = cache_dir / f"species_{si:03d}.npz"
-            np.savez(
-                out_path,
-                projected=np.stack(sp_projected[si]),
-                residuals=np.stack(sp_residuals[si]),
-            )
-        del sp_projected, sp_residuals
-        logger.info("MultiPrototype: wrote %d species caches to %s", sum(1 for si in range(n_species) if has_data[si]), cache_dir)
+            raw = np.fromfile(path, dtype=np.float32).reshape(n_rows, n_comp)
+            np.save(path, raw)
+
+        logger.info("MultiPrototype: wrote %d species caches (%d total rows)",
+                     sum(1 for v in sp_written.values() if v > 0),
+                     sum(sp_written.values()))
 
         # =====================================================================
-        # Step 4: per-species clustering from cached files
+        # Step 4: per-species Leiden clustering from cached projected vectors
         # =====================================================================
-
         logger.info("MultiPrototype: step 4 — clustering")
 
         try:
@@ -266,95 +267,116 @@ class MultiPrototypeProfiles(AnalysisTask):
         except ImportError:
             raise ImportError("Requires igraph and leidenalg.")
 
-        all_prototypes = []
-        proto_species_idx = []
-        proto_cluster_id = []
+        per_species_labels = {}  # si -> labels array (for centroid pass)
+        per_species_accepted = {}  # si -> list of accepted cluster IDs or None
         per_species_info = {}
         active = sorted([si for si in range(n_species) if has_data[si]])
 
         for idx, si in enumerate(active):
             sp = species_list[si]
-            cache_path = cache_dir / f"species_{si:03d}.npz"
+            path = cache_dir / f"species_{si:03d}.npy"
 
-            if not cache_path.exists():
-                # No data
-                proto = (sp_means[si] - global_focal_mean).astype(np.float32)
-                all_prototypes.append(proto)
-                proto_species_idx.append(si)
-                proto_cluster_id.append(0)
+            if not path.exists() or sp_count[si] < MIN_CLUSTER_SIZE:
                 per_species_info[sp] = {
-                    "n_windows": 0, "n_prototypes": 1, "fallback": "no_cache",
+                    "n_windows": int(sp_count[si]), "n_prototypes": 1,
+                    "fallback": "too_few_windows",
                     "community_stats": {"n_total": 0}, "communities": [],
                 }
+                per_species_accepted[si] = None
                 continue
 
-            data = np.load(cache_path)
-            projected = data["projected"]  # (N_s, 200)
-            residuals = data["residuals"]  # (N_s, 14795)
+            projected = np.load(path)
             n_windows = projected.shape[0]
-
-            if n_windows < MIN_CLUSTER_SIZE:
-                proto = (sp_means[si] - global_focal_mean).astype(np.float32)
-                all_prototypes.append(proto)
-                proto_species_idx.append(si)
-                proto_cluster_id.append(0)
-                per_species_info[sp] = {
-                    "n_windows": n_windows, "n_prototypes": 1, "fallback": "too_few_windows",
-                    "community_stats": {"n_total": 0}, "communities": [],
-                }
-                continue
-
             norms = np.maximum(np.linalg.norm(projected, axis=1, keepdims=True), 1e-8)
             proj_normed = projected / norms
 
             labels = _leiden_cluster(proj_normed, n_windows, ig, leidenalg)
-
             if labels is None:
-                proto = (sp_means[si] - global_focal_mean).astype(np.float32)
-                all_prototypes.append(proto)
-                proto_species_idx.append(si)
-                proto_cluster_id.append(0)
                 per_species_info[sp] = {
-                    "n_windows": n_windows, "n_prototypes": 1, "fallback": "no_positive_edges",
+                    "n_windows": n_windows, "n_prototypes": 1,
+                    "fallback": "no_positive_edges",
                     "community_stats": {"n_total": 0}, "communities": [],
                 }
+                per_species_accepted[si] = None
                 continue
 
             accepted_ids, stats, communities = _community_stats(labels, proj_normed)
-
             if not accepted_ids:
-                proto = (sp_means[si] - global_focal_mean).astype(np.float32)
-                all_prototypes.append(proto)
-                proto_species_idx.append(si)
-                proto_cluster_id.append(0)
                 per_species_info[sp] = {
                     "n_windows": n_windows, "n_prototypes": 1,
                     "fallback": "no_cluster_passed_filters",
                     "community_stats": stats,
                     "communities": sorted(communities, key=lambda c: -c["size"]),
                 }
-                continue
+                per_species_accepted[si] = None
+            else:
+                per_species_labels[si] = labels
+                per_species_accepted[si] = accepted_ids
+                per_species_info[sp] = {
+                    "n_windows": n_windows, "n_prototypes": len(accepted_ids),
+                    "fallback": None, "community_stats": stats,
+                    "communities": sorted(communities, key=lambda c: -c["size"]),
+                }
 
-            # Build prototypes from accepted clusters
-            for cid in accepted_ids:
-                cl_residuals = residuals[labels == cid].astype(np.float64)
-                cluster_mean = cl_residuals.mean(axis=0)
-                proto = (sp_means[si] + cluster_mean - global_focal_mean).astype(np.float32)
+            if idx % 20 == 0:
+                n_p = len(accepted_ids) if accepted_ids else 1
+                logger.info("  species %d/%d (%s): %d windows → %d prototypes",
+                            idx, len(active), sp, n_windows, n_p)
+
+        # =====================================================================
+        # Pass 5: compute cluster centroids from raw shards (streaming sums)
+        # =====================================================================
+        logger.info("MultiPrototype: pass 5 — computing cluster centroids")
+
+        cluster_sums = {}
+        for si, accepted in per_species_accepted.items():
+            if accepted is None:
+                continue
+            for cid in accepted:
+                cluster_sums[(si, cid)] = [np.zeros(logit_dim, dtype=np.float64), 0]
+
+        sp_row_counters = np.zeros(n_species, dtype=np.int64)
+
+        for i, shard in enumerate(load_focal_shards(self.features_dir)):
+            logits = logits_to_numpy(shard).astype(np.float64)
+            pls = shard["primary_label"].to_list()
+            for j in range(len(shard)):
+                si = species_to_idx.get(str(pls[j]).strip(), -1)
+                if si < 0:
+                    continue
+                row = int(sp_row_counters[si])
+                sp_row_counters[si] += 1
+                if si not in per_species_labels:
+                    continue
+                cid = int(per_species_labels[si][row])
+                key = (si, cid)
+                if key in cluster_sums:
+                    cluster_sums[key][0] += logits[j] - sp_means[si]
+                    cluster_sums[key][1] += 1
+            if i % 4 == 0:
+                logger.info("  pass 5 shard %d done", i)
+
+        # Build prototypes
+        all_prototypes = []
+        proto_species_idx = []
+        proto_cluster_id = []
+
+        for si in active:
+            accepted = per_species_accepted.get(si)
+            if accepted is None:
+                proto = (sp_means[si] - global_focal_mean).astype(np.float32)
+                all_prototypes.append(proto)
+                proto_species_idx.append(si)
+                proto_cluster_id.append(0)
+                continue
+            for cid in accepted:
+                s, c = cluster_sums[(si, cid)]
+                cm = s / c if c > 0 else np.zeros(logit_dim)
+                proto = (sp_means[si] + cm - global_focal_mean).astype(np.float32)
                 all_prototypes.append(proto)
                 proto_species_idx.append(si)
                 proto_cluster_id.append(cid)
 
-            per_species_info[sp] = {
-                "n_windows": n_windows, "n_prototypes": len(accepted_ids), "fallback": None,
-                "community_stats": stats,
-                "communities": sorted(communities, key=lambda c: -c["size"]),
-            }
-
-            if idx % 20 == 0:
-                logger.info("  species %d/%d (%s): %d windows → %d prototypes",
-                            idx, len(active), sp, n_windows, len(accepted_ids))
-
-        # Stack prototypes
         prototype_matrix = np.stack(all_prototypes)
         proto_species_idx = np.array(proto_species_idx, dtype=np.int32)
         proto_cluster_id = np.array(proto_cluster_id, dtype=np.int32)
@@ -367,9 +389,8 @@ class MultiPrototypeProfiles(AnalysisTask):
                      total_protos / max(len(per_species_info), 1))
 
         # =====================================================================
-        # Evaluate on labeled soundscapes
+        # Evaluate
         # =====================================================================
-
         logger.info("MultiPrototype: evaluating")
         sc_df = load_labeled(self.features_dir)
         sc_logits = logits_to_numpy(sc_df).astype(np.float64)
@@ -416,15 +437,12 @@ class MultiPrototypeProfiles(AnalysisTask):
         # =====================================================================
         # Save
         # =====================================================================
-
         np.savez_compressed(
             self.output()[0].path,
             prototypes=prototype_matrix.astype(np.float32),
             prototypes_normed=prototype_matrix_normed.astype(np.float32),
-            proto_species_idx=proto_species_idx,
-            proto_cluster_id=proto_cluster_id,
-            species_list=np.array(species_list),
-            species_count=sp_count,
+            proto_species_idx=proto_species_idx, proto_cluster_id=proto_cluster_id,
+            species_list=np.array(species_list), species_count=sp_count,
             global_focal_mean=global_focal_mean.astype(np.float32),
             whiten_components=components.astype(np.float32),
             whiten_scale=whiten_scale.astype(np.float32),
@@ -432,22 +450,18 @@ class MultiPrototypeProfiles(AnalysisTask):
         )
 
         summary = {
-            "n_species": n_species,
-            "n_species_with_data": int(has_data.sum()),
+            "n_species": n_species, "n_species_with_data": int(has_data.sum()),
             "total_prototypes": total_protos,
             "avg_prototypes_per_species": round(total_protos / max(len(per_species_info), 1), 2),
             "whiten_n_components": n_comp,
             "whiten_explained_variance": round(float(explained), 4),
-            "min_cluster_size": MIN_CLUSTER_SIZE,
-            "leiden_resolution": LEIDEN_RESOLUTION,
-            "min_cohesion": MIN_COHESION,
-            "cache_dir": str(cache_dir),
+            "min_cluster_size": MIN_CLUSTER_SIZE, "leiden_resolution": LEIDEN_RESOLUTION,
+            "min_cohesion": MIN_COHESION, "cache_dir": str(cache_dir),
             "eval": {
                 "n_evaluated": len(eval_results),
                 "mean_auroc_multi": round(float(np.mean(aurocs_m)), 4) if aurocs_m else None,
                 "mean_auroc_single": round(float(np.mean(aurocs_s)), 4) if aurocs_s else None,
-                "n_improved_auroc": n_improved,
-                "per_species": eval_results,
+                "n_improved_auroc": n_improved, "per_species": eval_results,
             },
             "per_species": per_species_info,
         }
