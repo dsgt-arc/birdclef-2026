@@ -7,30 +7,20 @@ Last updated: 2026-04-09
 
 ## Read these files first
 
-**Priority 1 — Read fully at session start (~25K tokens):**
+Read ALL of these at session start to get full context.
 
-| File | Purpose |
-|------|---------|
-| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | **THE most important doc** — what the model sees and misses (11 sections) |
-| `user/murilo/experiments/024-data-centric-exploration/tasks.md` | Current experiment task tracking — what to do next |
-| `user/murilo/experiments/024-data-centric-exploration/results.md` | Results so far (Phase A complete) |
-| `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns (exps 006-023) |
-
-**Priority 2 — Read if discussing strategy or planning (~15K tokens):**
-
-| File | Purpose |
-|------|---------|
-| `user/murilo/notes/2026-04-09-data-centric-pivot.md` | Data-centric pivot plan with revised priorities |
-| `user/murilo/experiments/024-data-centric-exploration/proposal.md` | Experiment proposal and methodology |
-| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor intel + CV/LB correlation data |
-
-**Priority 3 — Read on demand as needed:**
-
-| File | Purpose | When to read |
-|------|---------|--------------|
-| `user/murilo/EXPERIMENTS.md` | Per-experiment methodology summaries (001-024) | When referencing a specific past experiment |
-| `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | When comparing model variants |
-| `user/murilo/MODEL-TRAINING.md` | Training techniques reference | When discussing training recipes |
+| File | Purpose | How to read |
+|------|---------|-------------|
+| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | **THE most important doc** — what the model sees and misses | Read fully (11 sections) |
+| `user/murilo/experiments/024-data-centric-exploration/tasks.md` | Current experiment task tracking | Read fully |
+| `user/murilo/experiments/024-data-centric-exploration/results.md` | Results so far (Phase A complete) | Read fully |
+| `user/murilo/experiments/024-data-centric-exploration/proposal.md` | Experiment proposal and methodology | Read fully |
+| `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns (exps 006-023) | Read fully |
+| `user/murilo/notes/2026-04-09-data-centric-pivot.md` | Data-centric pivot plan with revised priorities | Read fully |
+| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor intel + CV/LB correlation data | Read fully |
+| `user/murilo/EXPERIMENTS.md` | Per-experiment methodology summaries (001-024) | Skim Section 1 table, read exp 024 details |
+| `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | Skim latest sections (exp 020-023) |
+| `user/murilo/MODEL-TRAINING.md` | Training techniques reference (backbones, heads, loss, PP) | Skim relevant sections as needed |
 
 ## Current state
 
