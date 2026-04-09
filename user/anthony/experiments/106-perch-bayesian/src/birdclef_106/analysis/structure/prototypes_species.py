@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 N_PROTOTYPES = 4
 MIN_WINDOWS = 20
+MAX_SUBSAMPLE = 1000
+NMF_MAX_ITER = 100
 
 
 class SingleSpeciesPrototype(AnalysisTask):
@@ -67,10 +69,21 @@ class SingleSpeciesPrototype(AnalysisTask):
         else:
             k_actual = min(K, n_windows - 1)
 
+            # Subsample for NMF/k-means fitting (full data for sums)
+            if n_windows > MAX_SUBSAMPLE:
+                rng = np.random.RandomState(42)
+                idx = rng.choice(n_windows, MAX_SUBSAMPLE, replace=False)
+                fit_logits = logits[idx]
+                fit_emb = emb[idx]
+                info["subsampled_from"] = n_windows
+            else:
+                fit_logits = logits
+                fit_emb = emb
+
             # NMF on logits
-            logits_nn = np.maximum(logits, 0).astype(np.float64)
+            logits_nn = np.maximum(fit_logits, 0).astype(np.float64)
             try:
-                nmf = NMF(n_components=k_actual, init="nndsvda", max_iter=300,
+                nmf = NMF(n_components=k_actual, init="nndsvda", max_iter=NMF_MAX_ITER,
                           random_state=42)
                 nmf.fit_transform(logits_nn)
                 H = nmf.components_
@@ -85,7 +98,7 @@ class SingleSpeciesPrototype(AnalysisTask):
             # K-means on embeddings
             try:
                 km = KMeans(n_clusters=k_actual, random_state=42, n_init=3)
-                km.fit(emb)
+                km.fit(fit_emb)
                 centers = km.cluster_centers_
                 info["kmeans_inertia"] = round(float(km.inertia_), 4)
             except Exception as e:

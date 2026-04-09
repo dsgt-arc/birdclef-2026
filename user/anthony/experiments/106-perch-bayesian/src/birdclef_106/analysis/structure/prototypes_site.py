@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 N_PROTOTYPES = 6
 MIN_WINDOWS = 20
+MAX_SUBSAMPLE = 1000
+NMF_MAX_ITER = 100
 
 _TIME_RE = re.compile(r"_(\d{6})\.ogg$")
 
@@ -85,10 +87,21 @@ class SingleSitePrototype(AnalysisTask):
         else:
             k_actual = min(K, n_windows - 1)
 
+            # Subsample for NMF fitting (full data for sums/diel)
+            if n_windows > MAX_SUBSAMPLE:
+                rng = np.random.RandomState(42)
+                idx = rng.choice(n_windows, MAX_SUBSAMPLE, replace=False)
+                fit_logits = logits[idx]
+                fit_emb = emb[idx]
+                info["subsampled_from"] = n_windows
+            else:
+                fit_logits = logits
+                fit_emb = emb
+
             # NMF on logits
-            logits_nn = np.maximum(logits, 0).astype(np.float64)
+            logits_nn = np.maximum(fit_logits, 0).astype(np.float64)
             try:
-                nmf = NMF(n_components=k_actual, init="nndsvda", max_iter=300,
+                nmf = NMF(n_components=k_actual, init="nndsvda", max_iter=NMF_MAX_ITER,
                           random_state=42)
                 nmf.fit_transform(logits_nn)
                 H = nmf.components_
@@ -100,10 +113,11 @@ class SingleSitePrototype(AnalysisTask):
             if H.shape[0] < K:
                 H = np.vstack([H, np.tile(H.mean(axis=0), (K - H.shape[0], 1))])
 
-            # K-means on embeddings (also gives cluster labels for diel)
+            # K-means on embeddings — fit on subsample, predict on full for diel labels
             try:
                 km = KMeans(n_clusters=k_actual, random_state=42, n_init=3)
-                labels = km.fit_predict(emb)
+                km.fit(fit_emb)
+                labels = km.predict(emb)
                 centers = km.cluster_centers_
                 info["kmeans_inertia"] = round(float(km.inertia_), 4)
             except Exception as e:
