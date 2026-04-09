@@ -1,7 +1,4 @@
-"""Base class for all exp 106 analysis Luigi tasks.
-
-Mirrors the exp 100 EDATask pattern (eda_100/tasks.py:48-59).
-"""
+"""Base class for all exp 106 analysis Luigi tasks."""
 
 from __future__ import annotations
 
@@ -21,14 +18,11 @@ class AnalysisTask(luigi.Task):
     artifacts_dir = luigi.Parameter(default=ARTIFACTS_DIR)
 
     def artifact(self, name: str) -> luigi.LocalTarget:
-        """Return a LocalTarget in the artifacts directory."""
         path = Path(self.artifacts_dir) / name
         return luigi.LocalTarget(str(path))
 
     def ensure_parent(self, target: luigi.LocalTarget) -> None:
-        """Create parent directories for the target if they don't exist."""
         Path(target.path).parent.mkdir(parents=True, exist_ok=True)
 
     def _params(self) -> dict:
-        """Common parameters to pass when constructing dependency tasks."""
         return dict(features_dir=self.features_dir, artifacts_dir=self.artifacts_dir)
