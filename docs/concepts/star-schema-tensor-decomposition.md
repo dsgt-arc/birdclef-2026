@@ -673,6 +673,46 @@ hard retrieval. The tensor decomposition framework accommodates all three —
 the choice of combination function determines the expressivity/data-efficiency
 trade-off.
 
+## What NMF captures in each space
+
+An important distinction: NMF on Perch logits does NOT find acoustic call types
+(song, alarm, contact). It finds **detector co-activation patterns** — which of
+the 14,795 Perch species detectors fire together. A component might be "200 bird
+logits + 50 insect logits" — a recording condition pattern, not an acoustic
+feature.
+
+| Space | NMF/clustering captures | Interpretation |
+|-------|------------------------|----------------|
+| P (logits, 14795) | Detector activation patterns | Taxonomic/semantic structure |
+| E (embeddings, 1536) | Acoustic similarity clusters | Spectral/temporal grouping |
+| Spectrograms (raw) | Spectral bases + temporal activations | Actual source separation |
+
+The two-space approach is complementary:
+- **NMF on logits**: which Perch taxa patterns characterize this species
+- **K-means on embeddings**: which acoustic conditions the species appears in
+
+Neither gives call-type prototypes directly. For that, you'd need NMF on
+spectrograms — which is classic audio source separation (V ≈ W @ H, with
+W = spectral bases, H = time activations). Spectrogram NMF allows audio
+reconstruction: keep selected components, inverse STFT → separated audio.
+
+This connects to MixIT/source separation work: NMF on soundscape spectrograms
+could separate the multi-species mixture into components, then run Perch on
+each component independently for cleaner per-source logits/embeddings.
+
+### Implicit covariance handling
+
+NMF on logits implicitly resolves the covariance problem. If 50 cicada logits
+always co-activate, NMF puts them in one component. The prototype similarity
+for that component is one number, not 50 correlated features. The explicit
+14795×14795 precision matrix is replaced by the NMF projection from 14795-d
+into K-d prototype similarity space.
+
+Similarly, ridge regression on K prototype features doesn't need a covariance
+prior — the redundancy is resolved by the decomposition. This is why the
+practical MVP (ridge on prototype features) can skip the heavy covariance
+computation entirely.
+
 ## When to pursue this
 
 - **After** multi-prototype results are in and we know the sequential pipeline
@@ -701,3 +741,8 @@ trade-off.
   (Modern Hopfield = continuous attention with exponential storage capacity)
 - Vaswani et al. (2017). "Attention Is All You Need." NeurIPS.
   (Transformer attention as soft key-value retrieval)
+- Smaragdis & Brown (2003). "Non-negative Matrix Factorization for Polyphonic
+  Music Transcription." IEEE WASPAA. (NMF on spectrograms for source separation)
+- Févotte et al. (2009). "Nonnegative Matrix Factorization with the
+  Itakura-Saito Divergence." Neural Computation. (NMF for audio with
+  multiplicative updates and reconstruction)
