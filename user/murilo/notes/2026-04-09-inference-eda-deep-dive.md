@@ -26,6 +26,26 @@ This is not a model problem — it's a **data coverage problem**.
 | Species with zero soundscape data | 159 / 234 (68%) |
 | Species with zero focal data | 28 / 234 (12%) |
 
+**Important caveat on the 0.9958**: This metric is evaluated on the same 66 labeled
+soundscape files the model trained on — there is no held-out soundscape validation set.
+The model may be partly overfitting to the 9 training sites' acoustic conditions
+(especially Site 22, which has 40/66 files). Evidence:
+- 739 labeled segments is tiny — easy to memorize
+- Site 22 dominates: the model could learn "S22 background + frog = species X" rather
+  than generalizable species detection
+- Gaurav Rawat's data shows site-level GroupKFold gives erratic CV — consistent with
+  site-specific overfitting
+
+However, the 0.9958 is not purely overfitting:
+- Perch (frozen, never trained on our soundscapes) also scores 0.918-0.925 LB on these species
+- 47/75 species also have focal training data providing independent signal
+- Train/test sites overlap (Tucker Arrants), so site-specific learning partly helps on LB
+
+**The real problem remains the 159 unseen species** — even discounting the 0.9958 as partly
+inflated, those species have literally zero soundscape signal. Pseudo-labeling from diverse
+sites (especially the 14 new unlabeled sites) both addresses the 159-species gap AND breaks
+any site-specific overfitting by exposing the model to new acoustic environments.
+
 ---
 
 ## 1. Labeled Soundscape Performance (75 species)
