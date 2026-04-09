@@ -18,7 +18,7 @@ Last updated: 2026-04-08
 ## Current state
 
 **Best LB: 0.929** (Perch ONNX + SED v5j-4fold MLP-only ensemble, exp 023)
-**Target: 0.939** (competition #1). Gap: 0.010.
+**Target: 0.946** (competition #1). Gap: 0.017.
 **Branch**: `mg/023-perch-sed-ensemble` — PR #25
 
 | Model | LB | Notes |
