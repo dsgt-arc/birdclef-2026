@@ -1,10 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=perch-v2-tf
 #SBATCH --account=paceship-clef2026_birdclef
-#SBATCH --partition=cpu-small
+#SBATCH --partition=gpu-rtx6000
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-#SBATCH --time=28:00:00
+#SBATCH --mem=64G
+#SBATCH --time=8:00:00
 #SBATCH -qinferno
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=mgustineli3@gatech.edu
@@ -74,16 +75,25 @@ mkdir -p "$JOB_VENV_DIR"
 uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
-# Install TensorFlow (CPU-only) + inference dependencies
+# Install TensorFlow (GPU-enabled) + inference dependencies
 echo "  Installing TensorFlow + dependencies..."
-uv pip install "tensorflow-cpu>=2.15,<2.18" \
+uv pip install "tensorflow[and-cuda]>=2.15,<2.18" \
     pandas pyarrow soundfile numpy tqdm
 
 echo "  Virtual environment ready!"
 echo ""
 
-# Verify TensorFlow
-python -c "import tensorflow as tf; print(f'TensorFlow: {tf.__version__}')"
+# Verify TensorFlow + GPU
+python -c "
+import tensorflow as tf
+print(f'TensorFlow: {tf.__version__}')
+gpus = tf.config.list_physical_devices('GPU')
+print(f'GPUs available: {len(gpus)}')
+for gpu in gpus:
+    print(f'  {gpu}')
+"
+echo ""
+nvidia-smi
 echo ""
 
 # ============================================================================
