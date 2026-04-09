@@ -59,12 +59,18 @@ injects override into kernel, creates separate Kaggle notebook per config.
 - [x] C.2 No PP (raw ensemble, both PPs disabled) → **0.922 LB** (−0.005 vs w=0.5)
   - Kernel: `birdclef-2026-perch-sed-no_pp`
   - Confirms PP is worth +0.005. Individual PPs help even when averaged.
-- [ ] C.3 TF Perch + SED single-fold (recover ONNX penalty) — requires code changes
+- [x] C.3 TF Perch + SED single-fold + MLP-only — implemented, submitted
+  - Kernel: `birdclef-2026-perch-sed-tf_single_mlp`
+  - Config: `ensemble_tf_single_mlp.yaml` (perch_backend=tf, single SED, proto_weight=0.0)
+  - Dry-run: TF Perch 207s + single SED 64s = 271s for 20 files
+  - **Risk: TF ~10s/file → ~100 min for 600 files, may timeout**
+  - Awaiting LB score
 
 ## Future Directions
 
 - [ ] D.1 Per-taxa weighting (different w for Aves vs texture taxa)
 - [ ] D.2 Calibration: normalize probability scales before averaging
+- [ ] D.3 MLP-only + weight grid (w=0.3, 0.7 with MLP-only)
 
 ---
 
@@ -72,8 +78,9 @@ injects override into kernel, creates separate Kaggle notebook per config.
 
 | Variant | W_PERCH | LB | Runtime | Notes |
 |---------|---------|-----|---------|-------|
-| **Phase A (w=0.5)** | **0.50** | **0.927** | **~64 min est.** | **New best overall** |
-| **Phase B (w=0.3)** | **0.30** | **0.927** | **~64 min est.** | **Tied with w=0.5** |
+| Phase A (w=0.5) | 0.50 | 0.927 | ~64 min est. | +0.002 vs Perch TF |
+| Phase B (w=0.3) | 0.30 | 0.927 | ~64 min est. | Tied with w=0.5 |
 | Phase B (w=0.7) | 0.70 | 0.926 | ~64 min est. | −0.001 |
 | **Phase C MLP-only** | **0.50** | **0.929** | **~64 min est.** | **New best! proto_weight=0.0** |
 | Phase C No PP | 0.50 | 0.922 | ~64 min est. | Both PPs disabled, −0.005 |
+| Phase C TF+single+MLP | 0.50 | — | ~120 min est. | TF backend, may timeout |
