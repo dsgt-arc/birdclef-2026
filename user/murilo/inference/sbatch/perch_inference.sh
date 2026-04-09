@@ -4,7 +4,7 @@
 #SBATCH --partition=cpu-medium
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=64G
-#SBATCH --time=8:00:00
+#SBATCH --time=24:00:00
 #SBATCH -qinferno
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=mgustineli3@gatech.edu
