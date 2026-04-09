@@ -77,7 +77,7 @@ source "$JOB_VENV/bin/activate"
 
 # Install TensorFlow (GPU-enabled) + inference dependencies
 echo "  Installing TensorFlow + dependencies..."
-uv pip install "tensorflow[and-cuda]>=2.15,<2.18" \
+uv pip install "tensorflow[and-cuda]>=2.20" \
     pandas pyarrow soundfile numpy tqdm
 
 echo "  Virtual environment ready!"

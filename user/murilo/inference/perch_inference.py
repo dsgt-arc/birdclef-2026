@@ -318,7 +318,8 @@ def main():
             for f in output_dir.glob("*.parquet"):
                 f.unlink()
 
-        print(f"\nProcessing {source_name}: {len(file_list)} files")
+        n_files = min(len(file_list), args.max_files) if args.max_files else len(file_list)
+        print(f"\nProcessing {source_name}: {n_files} files (of {len(file_list)} total)")
         run_inference(
             perch_fn,
             file_list,
