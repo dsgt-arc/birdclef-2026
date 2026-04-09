@@ -1,24 +1,7 @@
 """Focal species profiles: per-species Perch logit signatures from focal recordings.
 
-For each of the 206 focal species, compute the Perch logit activation pattern:
-
-1. **Mean profile**: average logit values across all focal windows
-2. **Activation frequency**: fraction of windows where each logit exceeds a
-   threshold — captures the sparse structure
-
-Output is a single parquet with nested signature lists, queryable via polars:
-
-    df = pl.read_parquet("artifacts/focal_signatures.parquet")
-    df.sort("auroc_activation", descending=True)
-
-    # Explode to see which Perch species fire for each BirdCLEF species
-    df.explode("signature").unnest("signature")
-
-    # Which Perch species appear across many BirdCLEF signatures?
-    df.explode("signature").unnest("signature") \\
-        .group_by("perch_species").agg(pl.col("species").n_unique())
-
-Also outputs a co-occurrence parquet from secondary labels.
+Uses partitioned by_species/ parquets — loads one species at a time instead of
+scanning all 16 shards (15 GB). Peak memory: ~120 MB per species.
 """
 
 from __future__ import annotations
@@ -32,10 +15,12 @@ import polars as pl
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from birdclef_106.analysis.base import AnalysisTask
+from birdclef_106.analysis.structure.partition import PartitionFeatures
 from birdclef_106.data_loading import (
     build_binary_label_matrix,
     build_species_list,
-    load_focal_shards,
+    list_focal_species,
+    load_focal_species,
     load_labeled,
     logits_to_numpy,
 )
@@ -49,6 +34,9 @@ MIN_ACTIVATION_FREQ = 0.05
 
 class FocalSpeciesProfiles(AnalysisTask):
     """Build per-species logit signatures from focal data, evaluate on soundscapes."""
+
+    def requires(self):
+        return PartitionFeatures(**self._params())
 
     def output(self):
         return [
@@ -64,61 +52,61 @@ class FocalSpeciesProfiles(AnalysisTask):
         species_list = build_species_list(self.artifacts_dir)
         species_to_idx = {s: i for i, s in enumerate(species_list)}
         n_species = len(species_list)
+        available = set(list_focal_species(self.features_dir))
         perch_labels = self._load_perch_labels()
 
-        # === Pass 1: global activation threshold ===
-
-        logger.info("FocalProfiles: pass 1 — activation threshold")
-        sample = []
-        for i, shard in enumerate(load_focal_shards(self.features_dir)):
-            sample.append(logits_to_numpy(shard)[::8])
-            if i >= 3:
-                break
-        sample = np.concatenate(sample)
+        # === Pass 1: sample a few species for global activation threshold ===
+        sample_species = sorted(available)[:10]
+        sample_logits = []
+        for sp in sample_species:
+            df = load_focal_species(sp, self.features_dir)
+            sample_logits.append(logits_to_numpy(df)[::8])
+        sample = np.concatenate(sample_logits)
         threshold = float(np.percentile(sample, ACTIVATION_PERCENTILE))
-        logger.info("  threshold (p%d): %.4f", ACTIVATION_PERCENTILE, threshold)
-        del sample
+        logger.info("FocalProfiles: threshold (p%d): %.4f from %d samples",
+                     ACTIVATION_PERCENTILE, threshold, len(sample))
+        del sample, sample_logits
 
-        # === Pass 2: accumulate per-species stats ===
-
-        logger.info("FocalProfiles: pass 2 — accumulating")
+        # === Pass 2: iterate per species ===
+        logger.info("FocalProfiles: computing profiles for %d species", len(available))
         logit_dim = None
-        sp_sum = None
-        sp_sum_sq = None
-        sp_active = None
+        sp_sum = sp_sum_sq = sp_active = None
         sp_count = np.zeros(n_species, dtype=np.int64)
         cooc = np.zeros((n_species, n_species), dtype=np.int64)
 
-        for i, shard in enumerate(load_focal_shards(self.features_dir)):
-            logits = logits_to_numpy(shard)
+        for sp_i, sp in enumerate(species_list):
+            if sp not in available:
+                continue
+
+            df = load_focal_species(sp, self.features_dir)
+            logits = logits_to_numpy(df)
+
             if logit_dim is None:
                 logit_dim = logits.shape[1]
                 sp_sum = np.zeros((n_species, logit_dim), dtype=np.float64)
                 sp_sum_sq = np.zeros((n_species, logit_dim), dtype=np.float64)
                 sp_active = np.zeros((n_species, logit_dim), dtype=np.int64)
 
-            pls = shard["primary_label"].to_list()
-            gts = shard["ground_truth"].to_list()
+            logits_f64 = logits.astype(np.float64)
+            sp_sum[sp_i] = logits_f64.sum(axis=0)
+            sp_sum_sq[sp_i] = (logits_f64 ** 2).sum(axis=0)
+            sp_active[sp_i] = (logits > threshold).sum(axis=0)
+            sp_count[sp_i] = len(df)
 
-            for j in range(len(shard)):
-                si = species_to_idx.get(str(pls[j]).strip())
-                if si is None:
-                    continue
-                row = logits[j].astype(np.float64)
-                sp_sum[si] += row
-                sp_sum_sq[si] += row ** 2
-                sp_active[si] += (logits[j] > threshold).astype(np.int64)
-                sp_count[si] += 1
+            # Co-occurrence from ground_truth
+            if "ground_truth" in df.columns:
+                for gt in df["ground_truth"].to_list():
+                    if not gt:
+                        continue
+                    for co_sp in str(gt).split(";"):
+                        sj = species_to_idx.get(co_sp.strip())
+                        if sj is not None and sj != sp_i:
+                            cooc[sp_i, sj] += 1
 
-                gt = str(gts[j]).strip()
-                if gt:
-                    for sp in gt.split(";"):
-                        sj = species_to_idx.get(sp.strip())
-                        if sj is not None and sj != si:
-                            cooc[si, sj] += 1
+            if (sp_i + 1) % 50 == 0:
+                logger.info("  %d/%d species done", sp_i + 1, n_species)
 
-            if i % 4 == 0:
-                logger.info("  shard %d done", i)
+            del df, logits, logits_f64
 
         # Compute profiles
         has_data = sp_count > 0
@@ -134,7 +122,6 @@ class FocalSpeciesProfiles(AnalysisTask):
         logger.info("FocalProfiles: %d/%d species have focal data", has_data.sum(), n_species)
 
         # === Evaluate on soundscapes ===
-
         logger.info("FocalProfiles: evaluating on soundscapes")
         sc_df = load_labeled(self.features_dir)
         sc_logits = logits_to_numpy(sc_df).astype(np.float64)
@@ -164,7 +151,6 @@ class FocalSpeciesProfiles(AnalysisTask):
             eval_results[strat_name] = per_sp
 
         # === Build polars output ===
-
         rows = []
         for si in range(n_species):
             sp = species_list[si]
@@ -175,7 +161,6 @@ class FocalSpeciesProfiles(AnalysisTask):
             mv = mean_prof[si]
             sv = std_prof[si]
 
-            # Top logits by activation frequency
             top_idx = np.argsort(-freq)[:TOP_K]
             sig = []
             for j in top_idx:
@@ -206,8 +191,6 @@ class FocalSpeciesProfiles(AnalysisTask):
                 "signature": sig,
             })
 
-        # Build DataFrame with explicit signature struct type to handle empty lists.
-        # Polars can't infer List(Struct) from an empty list.
         sig_dtype = pl.List(pl.Struct({
             "logit_index": pl.Int32,
             "perch_species": pl.Utf8,
@@ -220,7 +203,6 @@ class FocalSpeciesProfiles(AnalysisTask):
         logger.info("FocalProfiles: wrote %d species to %s", len(rows), self.output()[0].path)
 
         # === Co-occurrence parquet ===
-
         cooc_rows = []
         for si in range(n_species):
             for sj in range(si + 1, n_species):
@@ -235,12 +217,9 @@ class FocalSpeciesProfiles(AnalysisTask):
             cooc_df = pl.DataFrame(cooc_rows).sort("count", descending=True)
         else:
             cooc_df = pl.DataFrame({"species_a": [], "species_b": [], "count": []})
-            logger.warning("FocalProfiles: no co-occurrence pairs found")
         cooc_df.write_parquet(self.output()[1].path)
-        logger.info("FocalProfiles: %d co-occurrence pairs", len(cooc_rows))
 
-        # === Raw profiles npz (for downstream ridge/matching) ===
-
+        # === Raw profiles npz ===
         np.savez_compressed(
             self.output()[2].path,
             mean_profiles=mean_prof.astype(np.float32),
@@ -251,18 +230,16 @@ class FocalSpeciesProfiles(AnalysisTask):
             activation_threshold=threshold,
         )
 
-        # Log summary
         aurocs_mean = [r["auroc_mean"] for r in rows if r["auroc_mean"] is not None]
         aurocs_act = [r["auroc_activation"] for r in rows if r["auroc_activation"] is not None]
         logger.info(
-            "FocalProfiles: mean matching AUROC=%.3f, activation matching AUROC=%.3f (%d species)",
+            "FocalProfiles: mean AUROC=%.3f, activation AUROC=%.3f (%d species)",
             np.mean(aurocs_mean) if aurocs_mean else 0,
             np.mean(aurocs_act) if aurocs_act else 0,
             len(aurocs_mean),
         )
 
     def _load_perch_labels(self) -> list[str]:
-        """Load Perch v2 species names for interpretable output."""
         path = Path(self.artifacts_dir) / "perch_v2_labels.csv"
         if not path.exists():
             return []

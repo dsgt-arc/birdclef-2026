@@ -4,15 +4,10 @@ Two evaluation tracks (not directly comparable):
 
 **Soundscape track**: train on 739 labeled soundscape windows with LOSO CV.
     Tests: emb+λI, emb+λΣ_emb^{-1}, logit+λI, logit+λΣ_logit^{-1}
-    OOF: LOSO out-of-fold predictions (each site held out in turn)
 
 **Focal→soundscape transfer track**: train on 265K focal windows, evaluate on
-    soundscape per-site. Focal models see no soundscape data during training,
-    so their predictions on soundscape are inherently unbiased.
-    Tests: emb+λI, emb+λΣ_emb^{-1}
-    OOF: direct application of focal W to all soundscape windows
-
-Saves the best model from each track separately.
+    soundscape per-site. Uses sufficient statistics (X'X, X'Y) accumulated
+    per species from partitioned data — never loads all 265K rows at once.
 
 References:
     Tang et al. 2020 — Deep Transfer Learning with Ridge Regression
@@ -32,12 +27,14 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from birdclef_106.analysis.base import AnalysisTask
 from birdclef_106.analysis.eda.covariance_logit import LogitCovariance
 from birdclef_106.analysis.eda.covariance_embedding import EmbeddingCovariance
+from birdclef_106.analysis.structure.partition import PartitionFeatures
 from birdclef_106.data_loading import (
     build_binary_label_matrix,
     build_species_list,
     embeddings_to_numpy,
     extract_site,
-    load_focal_shards,
+    list_focal_species,
+    load_focal_species,
     load_labeled,
     logits_to_numpy,
 )
@@ -54,8 +51,13 @@ def _ridge_solve(X, Y, reg_matrix):
     return scipy.linalg.solve(A, B, assume_a="pos")
 
 
+def _ridge_solve_from_stats(XtX, XtY, reg_matrix):
+    """Solve ridge from precomputed sufficient statistics."""
+    A = XtX + reg_matrix
+    return scipy.linalg.solve(A, XtY, assume_a="pos")
+
+
 def _evaluate(Y_true, Y_pred):
-    """Per-species AUROC and AP, skipping degenerate cases."""
     n_species = Y_true.shape[1]
     aurocs, aps = [], []
     for j in range(n_species):
@@ -78,6 +80,7 @@ class EmpiricalBayesRidge(AnalysisTask):
         return {
             "logit_cov": LogitCovariance(**self._params()),
             "emb_cov": EmbeddingCovariance(**self._params()),
+            "partition": PartitionFeatures(**self._params()),
         }
 
     def output(self):
@@ -92,8 +95,9 @@ class EmpiricalBayesRidge(AnalysisTask):
             self.ensure_parent(t)
 
         species_list = build_species_list(self.artifacts_dir)
+        species_to_idx = {s: i for i, s in enumerate(species_list)}
 
-        # Load labeled soundscape data
+        # Load labeled soundscape data (739 rows — small)
         df = load_labeled(self.features_dir)
         sc_emb = embeddings_to_numpy(df).astype(np.float64)
         sc_logits = logits_to_numpy(df).astype(np.float64)
@@ -128,35 +132,50 @@ class EmpiricalBayesRidge(AnalysisTask):
         results["sc_logit_empirical_bayes"] = self._cv_ridge(
             sc_logits, sc_Y, sc_sites, unique_sites, prior_inv=logit_cov_inv)
 
-        # Best soundscape config
-        sc_keys = [k for k in results if k.startswith("sc_")]
-        best_sc_key = max(sc_keys, key=lambda k: results[k]["best_auroc"])
+        best_sc_key = max(
+            [k for k in results if k.startswith("sc_")],
+            key=lambda k: results[k]["best_auroc"])
         logger.info("Ridge [soundscape]: best = %s (AUROC=%.3f)",
                      best_sc_key, results[best_sc_key]["best_auroc"])
 
-        # === FOCAL TRANSFER TRACK ===
+        # === FOCAL TRANSFER TRACK (sufficient statistics) ===
 
-        logger.info("Ridge [focal]: loading focal data")
-        focal_emb_parts, focal_Y_parts = [], []
-        for i, shard in enumerate(load_focal_shards(self.features_dir)):
-            focal_emb_parts.append(embeddings_to_numpy(shard).astype(np.float64))
-            focal_Y_parts.append(
-                build_binary_label_matrix(shard, species_list).astype(np.float64))
-            if i % 4 == 0:
-                logger.info("  focal shard %d loaded", i)
-        focal_emb = np.concatenate(focal_emb_parts)
-        focal_Y = np.concatenate(focal_Y_parts)
-        del focal_emb_parts, focal_Y_parts
+        logger.info("Ridge [focal]: accumulating X'X and X'Y from partitioned data")
+        available = set(list_focal_species(self.features_dir))
+        d_emb = sc_emb.shape[1]  # 1536
+        n_sp = len(species_list)
+
+        focal_XtX = np.zeros((d_emb, d_emb), dtype=np.float64)
+        focal_XtY = np.zeros((d_emb, n_sp), dtype=np.float64)
+        focal_count = 0
+
+        for sp_i, sp in enumerate(species_list):
+            if sp not in available:
+                continue
+            sp_df = load_focal_species(sp, self.features_dir)
+            emb = embeddings_to_numpy(sp_df).astype(np.float64)
+
+            focal_XtX += emb.T @ emb
+            # Y for this species: column sp_i is all 1s (it's focal data for this species)
+            focal_XtY[:, sp_i] += emb.sum(axis=0)
+            focal_count += len(sp_df)
+
+            del sp_df, emb
+            if (sp_i + 1) % 50 == 0:
+                logger.info("  %d/%d species accumulated (%d windows)",
+                             sp_i + 1, n_sp, focal_count)
+
+        logger.info("Ridge [focal]: %d total focal windows", focal_count)
 
         logger.info("Ridge [focal]: embeddings + λI → eval on soundscape")
-        results["focal_emb_identity"] = self._focal_ridge(
-            focal_emb, focal_Y, sc_emb, sc_Y, sc_sites, unique_sites, prior_inv=None)
+        results["focal_emb_identity"] = self._focal_ridge_from_stats(
+            focal_XtX, focal_XtY, sc_emb, sc_Y, sc_sites, unique_sites, prior_inv=None)
 
         logger.info("Ridge [focal]: embeddings + λΣ_emb^{-1} → eval on soundscape")
-        results["focal_emb_empirical_bayes"] = self._focal_ridge(
-            focal_emb, focal_Y, sc_emb, sc_Y, sc_sites, unique_sites, prior_inv=emb_cov_inv)
+        results["focal_emb_empirical_bayes"] = self._focal_ridge_from_stats(
+            focal_XtX, focal_XtY, sc_emb, sc_Y, sc_sites, unique_sites, prior_inv=emb_cov_inv)
 
-        # Best focal config — train final model
+        # Best focal config
         focal_keys = [k for k in results if k.startswith("focal_")]
         best_focal_key = max(focal_keys, key=lambda k: results[k]["best_auroc"])
         best_focal = results[best_focal_key]
@@ -164,15 +183,10 @@ class EmpiricalBayesRidge(AnalysisTask):
                      best_focal_key, best_focal["best_auroc"])
 
         focal_prior_inv = emb_cov_inv if "empirical" in best_focal_key else None
-        d = focal_emb.shape[1]
         focal_reg = best_focal["best_lambda"] * (
-            focal_prior_inv if focal_prior_inv is not None else np.eye(d))
-        focal_W = _ridge_solve(focal_emb, focal_Y, focal_reg)
-
-        # Focal OOF = direct application to soundscape (inherently unbiased)
-        focal_oof = (sc_emb @ focal_W)
-
-        del focal_emb, focal_Y
+            focal_prior_inv if focal_prior_inv is not None else np.eye(d_emb))
+        focal_W = _ridge_solve_from_stats(focal_XtX, focal_XtY, focal_reg)
+        focal_oof = sc_emb @ focal_W
 
         # === SOUNDSCAPE TRACK — save model + OOF ===
 
@@ -191,26 +205,18 @@ class EmpiricalBayesRidge(AnalysisTask):
         sc_oof = self._loso_oof(sc_X_all, sc_Y, sc_sites, unique_sites,
                                 best_sc["best_lambda"], sc_prior_inv)
 
-        # === DECIDE WHICH MODEL TO SAVE AS PRIMARY ===
-        # Save both, but mark which is which
-
-        # Use focal model as primary W (higher AUROC, and it's the model
-        # described in the analysis ideas as "focal for parameter estimation")
-        # Save soundscape OOF separately for comparison
-
+        # === Save ===
         overall_best = best_focal_key if best_focal["best_auroc"] >= best_sc["best_auroc"] else best_sc_key
         primary_W = focal_W if overall_best.startswith("focal") else sc_W
-        primary_feature_space = "embeddings"  # both tracks use embeddings here
         primary_oof = focal_oof if overall_best.startswith("focal") else sc_oof
 
         np.savez_compressed(
             self.output()[0].path,
             W=primary_W.astype(np.float32),
             best_lambda=results[overall_best]["best_lambda"],
-            feature_space=primary_feature_space,
+            feature_space="embeddings",
             config=overall_best,
             species_list=species_list,
-            # Also save the alternative model
             sc_W=sc_W.astype(np.float32),
             sc_config=best_sc_key,
             sc_lambda=best_sc["best_lambda"],
@@ -224,14 +230,12 @@ class EmpiricalBayesRidge(AnalysisTask):
             oof_predictions=primary_oof.astype(np.float32),
             config=overall_best,
             species_list=species_list,
-            # Also save alternative OOF
             sc_oof=sc_oof.astype(np.float32),
             sc_config=best_sc_key,
             focal_oof=focal_oof.astype(np.float32),
             focal_config=best_focal_key,
         )
 
-        # Add track summaries to results
         results["_best_soundscape"] = best_sc_key
         results["_best_focal"] = best_focal_key
         results["_primary_model"] = overall_best
@@ -240,14 +244,13 @@ class EmpiricalBayesRidge(AnalysisTask):
             json.dump(results, f, indent=2)
 
         logger.info(
-            "Ridge: saved primary=%s (%.3f), sc_best=%s (%.3f), focal_best=%s (%.3f)",
+            "Ridge: primary=%s (%.3f), sc=%s (%.3f), focal=%s (%.3f)",
             overall_best, results[overall_best]["best_auroc"],
             best_sc_key, best_sc["best_auroc"],
             best_focal_key, best_focal["best_auroc"],
         )
 
     def _loso_oof(self, X, Y, sites, unique_sites, lam, prior_inv):
-        """Generate LOSO out-of-fold predictions at a given lambda."""
         d = X.shape[1]
         reg = lam * (prior_inv if prior_inv is not None else np.eye(d))
         oof = np.zeros_like(Y)
@@ -261,7 +264,6 @@ class EmpiricalBayesRidge(AnalysisTask):
         return oof
 
     def _cv_ridge(self, X, Y, sites, unique_sites, prior_inv=None):
-        """LOSO cross-validation on soundscape data."""
         d = X.shape[1]
         best_auroc = -1
         best_lambda = None
@@ -297,16 +299,18 @@ class EmpiricalBayesRidge(AnalysisTask):
             "track": "soundscape",
         }
 
-    def _focal_ridge(self, focal_X, focal_Y, sc_X, sc_Y, sc_sites, unique_sites, prior_inv=None):
-        """Train on focal, evaluate per soundscape site (inherently unbiased)."""
-        d = focal_X.shape[1]
+    def _focal_ridge_from_stats(
+        self, XtX, XtY, sc_X, sc_Y, sc_sites, unique_sites, prior_inv=None
+    ):
+        """Train on focal (from sufficient stats), evaluate per soundscape site."""
+        d = XtX.shape[0]
         best_auroc = -1
         best_lambda = None
         all_results = []
 
         for lam in LAMBDA_GRID:
             reg = lam * (prior_inv if prior_inv is not None else np.eye(d))
-            W = _ridge_solve(focal_X, focal_Y, reg)
+            W = _ridge_solve_from_stats(XtX, XtY, reg)
             fold_aurocs, fold_aps = [], []
             for site in unique_sites:
                 test_mask = sc_sites == site
