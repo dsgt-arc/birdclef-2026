@@ -3,24 +3,27 @@
 Session handoff document for Murilo's BirdCLEF 2026 experiments.
 Read this first, then read the referenced docs to get full context.
 
-Last updated: 2026-04-08
+Last updated: 2026-04-09
 
 ## Read these files first
 
 | File | Purpose | How to read |
 |------|---------|-------------|
-| `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns | Read fully — it's the most important doc |
-| `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | Skim latest sections (exp 020-023) |
-| `user/murilo/MODEL-TRAINING.md` | Training techniques reference (backbones, heads, loss, PP) | Skim relevant sections as needed |
-| `user/murilo/EXPERIMENTS.md` | Per-experiment methodology summaries (001-023) | Skim Section 1 table, read exp 019-023 details |
-| `user/murilo/experiments/023-perch-sed-ensemble/results.md` | Current experiment results | Read fully |
-| `user/murilo/experiments/023-perch-sed-ensemble/tasks.md` | Current experiment task tracking | Read fully |
+| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | **THE most important doc** — what the model sees and misses | Read fully (11 sections) |
+| `user/murilo/notes/2026-04-09-data-centric-pivot.md` | Data-centric pivot plan with revised priorities | Read sections: Core Thesis, Revised Priority Ordering, Exp Proposal |
+| `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns (exps 006-023) | Read fully |
+| `user/murilo/experiments/024-data-centric-exploration/tasks.md` | Current experiment task tracking | Read fully |
+| `user/murilo/experiments/024-data-centric-exploration/proposal.md` | Experiment proposal and methodology | Skim phases A-F |
+| `user/murilo/experiments/024-data-centric-exploration/results.md` | Results so far (Phase A complete) | Read fully |
+| `user/murilo/EXPERIMENTS.md` | Per-experiment methodology summaries (001-024) | Skim Section 1 table |
+| `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | Skim latest sections |
+| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor intel + CV/LB correlation data | Read takeaways section |
 
 ## Current state
 
 **Best LB: 0.929** (Perch ONNX + SED v5j-4fold MLP-only ensemble, exp 023)
-**Target: 0.946** (competition #1). Gap: 0.017.
-**Branch**: `mg/023-perch-sed-ensemble` — PR #25
+**Target: 0.948** (competition #1). Gap: 0.019.
+**Branch**: `mg/024-data-centric-exploration` — PR #26
 
 | Model | LB | Notes |
 |-------|-----|-------|
@@ -30,57 +33,100 @@ Last updated: 2026-04-08
 | SED v5j-4fold-pp2 (exp 021) | 0.917 | Best SED |
 | SED v5j single (exp 019) | 0.906 | Best single-fold SED |
 
-## What happened in the last session
+## What happened in this session (2026-04-09)
 
-1. **Exp 023: Perch + SED Ensemble — 0.929 LB (new best overall)**
-   - Built single Kaggle CPU kernel combining Perch ONNX + SED v5j-4fold-pp2 (~2,200 lines)
-   - Config-driven submission system: YAML configs in `configs/`, `push.sh <config_name>`
-   - Phase A: w=0.5 → 0.927 LB (+0.002 vs Perch TF alone)
-   - Phase B: weight grid flat (w=0.3: 0.927, w=0.5: 0.927, w=0.7: 0.926)
-   - Phase C: **MLP-only (proto_weight=0.0): 0.929 LB** — best result
-   - Phase C: No PP: 0.922 (−0.005) — confirms PP adds value
-   - Phase C: TF Perch + single SED **timed out** — TF ~10s/file exceeds 90 min for 600 files
+### 1. Data-Centric Pivot
 
-2. **Documentation overhaul** — Three source-of-truth docs:
-   - `EXPERIMENTS.md` — per-experiment methodology (updated through exp 023)
-   - `MODEL-RUNS.md` — all model scores and checkpoints
-   - `FINDINGS.md` — cross-cutting insights and patterns (new)
+Analyzed Gemini Deep Research brainstorm against 23-experiment evidence base. Adopted
+Karpathy's "Recipe for Training Neural Networks" and MIT "Hacker's Guide to Deep Learning"
+philosophy: focus on data quality and quantity, not training recipes.
+
+Revised priority ordering (see `notes/2026-04-09-data-centric-pivot.md`):
+1. Data exploration & diagnostics
+2. VAD cleaning
+3. **Pseudo-labeling v2** (highest expected gain)
+4. Backbone diversity
+5. Hard negative mining
+6. Soundscape CV (demoted — no one has solved CV-LB correlation)
+7. Overlap reconstruction
+8. Waveform MixUp fix (deprioritized — 3 failed attempts)
+
+### 2. Inference EDA Deep Dive (CRITICAL FINDINGS)
+
+Ran comprehensive analysis on v5j predictions across all 127K soundscape segments
+and 265K focal segments. Key findings (`notes/2026-04-09-inference-eda-deep-dive.md`):
+
+- **0.9958 macro-AUC** on 75 labeled-soundscape species — model is saturated
+- **159/234 species (68%)** have zero soundscape representation — THIS is the LB gap
+- v5j covers only 80/159 unseen species at >0.5 threshold; 79 get zero pseudo-labels
+- **Max-across-folds recovers +29 species** (80 → 109/159) — use for pseudo-labeling
+- 12.6% of focal "confusions" are correct background species detections (secondary labels)
+- 54 species with 200+ focal recordings get zero soundscape predictions (domain shift)
+- 14/21 unlabeled soundscape sites have no labeled counterpart
+- **34 truly hard species** remain invisible even with max-folds at >0.3 — need Perch
+
+**The fundamental insight**: The LB gap is a DATA COVERAGE problem, not a model quality
+problem. The model is near-perfect on species it has soundscape data for.
+
+### 3. Exp 024: Data-Centric Exploration (in progress)
+
+- **Phase A: Max-across-folds** ✅ — Completed, findings above
+- **Phase B: Perch v2 TF inference** 🔄 — Jobs running
+  - `perch_inference.py` written and tested (10 files, 200 files)
+  - Throughput: 10.7 chunks/s on 24 CPUs (cpu-medium, TF 2.21)
+  - Two jobs submitted: train_soundscapes (~3.3h) + train_audio (~6.9h)
+  - Output: `shared/inference/birdclef-2026/perch-v2-tf/{train_soundscapes,train_audio}/`
+- **Phases C-F**: Pending (blocked on Phase B)
+
+### 4. Updated Kaggle Discussion Notes
+
+New competitor data on CV/LB correlation:
+- Gaurav Rawat: GroupKFold on site shows poor CV-LB correlation
+- Anil Ozturk: soundscape-only GKF OOF 0.608 → LB 0.879 (useless)
+- Tucker Arrants: GKF "overly harsh" because train/test sites overlap
+- hengck23: detailed diagnostics post (logit std, per-group AUC, overfit indicators)
+- Boredom is now #1, ceiling ~0.94-0.945 without unlabeled data
 
 ## What needs to happen next
 
-### Resolved: TF+single timed out
-- TF Perch + SED single-fold + MLP-only timed out (TF ~10s/file, >90 min)
-- TF backend is not viable for ensemble kernels
-- ONNX Perch (0.929 MLP-only) remains the best path
+### Immediate (when Phase B jobs complete)
 
-### High-value next steps (from FINDINGS.md gap analysis)
+1. **Verify Perch outputs**: Check parquet shapes, embedding/logit distributions
+2. **Phase C**: Apply saved MLP probes to Perch embeddings → 234-class predictions
+   - Artifacts at: `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/`
+3. **Phase D**: Perch vs SED comparative EDA — THE key analysis:
+   - How many of the 50 remaining zero-coverage species does Perch catch?
+   - Are Perch and SED complementary or redundant?
+   - What does the ensemble teacher coverage look like?
 
-| Option | Effort | Expected gain | Risk |
-|--------|--------|---------------|------|
-| MLP-only weight grid (w=0.3, 0.7) | Zero | +0.001 | Low — weight curve was flat for ProtoSSM+MLP |
-| Framewise max inference (Nikita 2025 trick) | Low | Unknown | Inference-only change, no retraining |
-| Better ensemble PP (unified PP after merge) | Medium | +0.001-0.003 | No-PP scored 0.922, current PP adds +0.005 |
-| Knowledge distillation from ensemble | High | +0.003-0.005 | Exp 015 showed pseudo-labels can hurt |
-| SED embedding probes (OOF linear) | Medium | Unknown | Diagnostic — reveals complementarity |
+### After Phase D
 
-## Key patterns (summary from FINDINGS.md)
+4. **Phase E**: Ecological sanity check on 54 suspect species
+5. **Phase F**: Design pseudo-labeling teacher strategy → exp 025 proposal
+6. **Exp 025**: Pseudo-labeling pipeline (highest expected LB gain)
 
-- **Only input representation and inference-time changes improve LB** — 15+ training recipe changes, 0 successes
+## Key patterns (updated)
+
+- **Only data and inference changes improve LB** — 15+ training recipe changes, 0 successes
+- **The LB gap is data coverage** — 0.9958 AUC on 75 known species, 159 species unseen in soundscapes
+- **Max-across-folds >> averaging for pseudo-labeling** — +29 species coverage at >0.5
+- **12.6% of focal "errors" are correct** — model is more multi-label capable than metrics show
 - **Offline metrics are anti-correlated with LB** — don't trust val/auroc
 - **Simpler models beat complex ones in ensemble** — MLP-only > ProtoSSM+MLP
-- **PP is worth +0.005** — both pipelines' PP contribute positively
-- **Weight doesn't matter much** — flat curve across w=0.3/0.5/0.7
-- **ONNX penalty is real but manageable** — −0.005 vs TF, compensated by ensemble gain
+- **34 truly hard species need Perch** — SED cannot detect them under any strategy
 
 ## Key files for current work
 
 | File | Purpose |
 |------|---------|
-| `user/murilo/experiments/023-perch-sed-ensemble/kaggle_kernel/submission_ensemble.py` | Combined ensemble kernel |
-| `user/murilo/experiments/023-perch-sed-ensemble/configs/*.yaml` | Submission configs |
-| `user/murilo/experiments/023-perch-sed-ensemble/kaggle_kernel/push.sh` | Config-driven Kaggle push |
-| `user/murilo/experiments/020-perch-onnx/kaggle_kernel/submission_perch_protossm.py` | Perch ProtoSSM source (3,748 lines) |
-| `user/murilo/experiments/010-submission-pipeline/kaggle_kernel/submission.py` | SED submission source (1,454 lines) |
-| `user/murilo/inference/infer.py` | Offline inference pipeline (SED + ProtoCLR) |
-| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor intel |
-| `user/murilo/notes/2026-04-05-sed-gap-analysis.md` | SED gap analysis vs competitors |
+| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | Inference EDA findings (11 sections) |
+| `user/murilo/notes/2026-04-09-data-centric-pivot.md` | Data-centric pivot plan |
+| `user/murilo/scripts/inference_eda.py` | Reproducible EDA script (9 sections) |
+| `user/murilo/inference/perch_inference.py` | Perch v2 TF inference script |
+| `user/murilo/inference/sbatch/run_perch.sh` | Perch SLURM job runner |
+| `user/murilo/experiments/024-data-centric-exploration/` | Exp 024 proposal, tasks, results |
+| `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/` | v5j inference outputs (embeddings, logits) |
+| `shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/` | v5j 4-fold inference outputs |
+| `shared/inference/birdclef-2026/perch-v2-tf/` | Perch TF inference outputs (running) |
+| `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/` | MLP probes, PCA, ProtoSSM weights |
+| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor intel + CV/LB data |
