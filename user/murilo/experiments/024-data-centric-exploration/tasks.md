@@ -21,7 +21,7 @@ Status: **Phase A complete. Phase B running (Perch TF inference on all data).**
   - 34 truly hard species at >0.3 — need Perch
 - [x] A.3 Update inference EDA doc (section 7 rewritten) and inference_eda.py script
 
-## Phase B: Perch v2 TF Inference
+## Phase B: Perch v2 TF Inference 🔄
 
 - [x] B.1 Write standalone `inference/perch_inference.py` (TF SavedModel, saves embeddings + logits)
 - [x] B.2 Write SLURM batch scripts (`inference/sbatch/perch_inference.sh` + `run_perch.sh`)
@@ -35,27 +35,46 @@ Status: **Phase A complete. Phase B running (Perch TF inference on all data).**
 
 ## Phase C: Apply MLP Probes
 
-- [ ] C.1 Load pretrained artifacts (scaler, PCA, probes) from `shared/artifacts/020-perch-onnx/`
-- [ ] C.2 Apply pipeline: raw embeddings → scale → PCA → MLP probes → 234-class predictions
-- [ ] C.3 Save Perch 234-class probabilities to parquet
+Artifacts: `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/`
+
+- [ ] C.0 Quick preview: compare existing `shared/embeddings/birdclef-2026/perch-v2/labeled/perch_mapped_scores.parquet`
+  against v5j per-species AUC on 75 labeled-soundscape species (can do before Phase B completes)
+- [ ] C.1 Load pretrained artifacts: `emb_scaler.joblib` → `pca_transformer.joblib` → `probe_models.joblib`
+- [ ] C.2 Apply pipeline to Phase B embeddings: raw 1536-dim → StandardScaler → PCA(128) → 5-fold MLP probes → 234-class probs
+- [ ] C.3 Save Perch 234-class probabilities to `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/perch_234_probs.parquet`
 
 ## Phase D: Perch vs SED Comparative EDA
 
-- [ ] D.1 Species coverage comparison (Perch vs SED vs union at multiple thresholds)
-- [ ] D.2 Complementarity analysis (Perch-only, SED-only, both, neither)
-- [ ] D.3 Per-species agreement (Spearman correlation for shared species)
-- [ ] D.4 Per-site analysis (does Perch do better on 14 unlabeled-only sites?)
-- [ ] D.5 Ensemble coverage simulation (what threshold/weight maximizes coverage?)
-- [ ] D.6 Update inference EDA doc with all findings
+The key analysis — answers the 5 questions from EDA deep dive section 10.8:
+
+- [ ] D.1 **Coverage**: How many of the 50 SED-zero species does Perch cover at >0.5?
+- [ ] D.2 **Truly hard species**: How many of the 34 species (zero even at >0.3 with SED max-folds) does Perch cover?
+- [ ] D.3 **Union coverage**: What's `max(SED-4fold) + Perch MLP probes` total species coverage at multiple thresholds?
+- [ ] D.4 **Complementarity**: Venn diagram — Perch-only, SED-only, both, neither
+- [ ] D.5 **Per-species agreement**: For species both detect, Spearman correlation per species (quality signal)
+- [ ] D.6 **Per-site analysis**: Does Perch do better on the 14 unlabeled-only sites? (site diversity)
+- [ ] D.7 **Ensemble teacher simulation**: What threshold/weight combo maximizes coverage?
+- [ ] D.8 Update inference EDA doc and script with all findings
+
+**Success criteria** (from proposal):
+- Phase D succeeds if Perch+SED union covers ≥120/159 unseen species at >0.3
+- If Perch covers 30+ of the 50 SED-zero species, ensemble teacher is justified
 
 ## Phase E: Ecological Sanity Check
 
-- [ ] E.1 Review 54 suspect species (high focal, zero soundscape) against Pantanal ecology
+- [ ] E.1 Review suspect species against Pantanal ecology
+  - Original 54 species (≥50 focal, 0 soundscape predictions from single-fold)
+  - Note: max-across-folds recovered some (House Sparrow, Swallow-tailed Manakin) — focus on
+    species still at zero even with max-folds
 - [ ] E.2 Categorize: genuinely absent / domain-shift failure / uncertain
 - [ ] E.3 Document findings in results.md
 
 ## Synthesis
 
-- [ ] F.1 Write results.md with all findings and recommendations
-- [ ] F.2 Design pseudo-labeling teacher strategy based on Perch+SED complementarity
+- [ ] F.1 Write final results.md with all findings and recommendations
+- [ ] F.2 Design pseudo-labeling teacher strategy:
+  - Which teacher: SED max-folds alone, Perch alone, or ensemble?
+  - What threshold and power transform parameters?
+  - Multi-label capture: threshold vs top-N vs soft labels?
+  - Loss weighting: ground truth vs pseudo-label weights?
 - [ ] F.3 Draft exp 025 proposal (pseudo-labeling pipeline)
