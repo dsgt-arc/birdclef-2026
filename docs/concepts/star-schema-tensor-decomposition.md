@@ -361,6 +361,175 @@ decomposition. Each piece is a special case or approximation:
 | Domain transfer weights | Supervised loss on soundscape labels |
 | Bayesian ensemble across spaces | Coupled decomposition |
 
+## Hopfield layers and attention as prototype retrieval
+
+### The connection
+
+Modern Hopfield networks (Ramsauer et al., 2021) and transformer attention are
+the same operation: soft prototype matching. The star schema prototypes are
+stored patterns, and scoring a window is a retrieval:
+
+```
+Our pipeline (hard):   score(s) = max_k cos(w, prototype_{s,k})
+Modern Hopfield (soft): output = softmax(w @ C^T / τ) @ V
+Transformer attention:  output = softmax(Q @ K^T / √d) @ V
+```
+
+Where Q = window, K = prototype matrix C, V = species loading matrix A.
+
+### Prototypes as key-value memory
+
+The CP factors map directly to attention:
+
+```python
+attention = softmax(w @ C^T / τ)     # (R,) — which prototypes match this window?
+scores = attention @ A                # (S,) — species predictions from matched prototypes
+```
+
+Temperature τ interpolates between hard-max (our current pipeline, τ → 0) and
+uniform averaging (τ → ∞). The CP decomposition is the τ → ∞ limit (linear
+combination); hard-max prototype matching is the τ → 0 limit.
+
+### Multi-head = multi-space
+
+Each representation space becomes an attention head:
+
+```python
+head_P = softmax(w_P @ C_P^T / τ) @ A    # logit-space head
+head_E = softmax(w_E @ C_E^T / τ) @ A    # embedding-space head
+output = W_out @ concat(head_P, head_E)   # fuse heads
+```
+
+The parallel spaces with Bayesian averaging become multi-head attention with
+shared species loadings A but different key spaces per head.
+
+### Site context as cross-attention
+
+```python
+# Layer 1: identify acoustic state (cross-attention to site prototypes)
+site_state = softmax(w @ C_site^T / τ) @ A_site
+
+# Layer 2: species scoring (attention to species prototypes)
+species_scores = softmax(w @ C_species^T / τ) @ A_species
+
+# Layer 3: modulate by site context
+final = species_scores * site_state
+```
+
+### Domain transfer as learned gating
+
+Per-dimension transfer weights become a learned gate:
+
+```python
+# Manual: score = (w * transfer_weights) @ prototype^T
+# Learned: score = (w * σ(W_gate)) @ prototype^T
+```
+
+W_gate is trained end-to-end to down-weight dimensions that don't transfer.
+
+### Full architecture
+
+```
+Input: window w (P-space + E-space), site l
+
+Layer 1 — Site state (cross-attention):
+  Q = w,  K = V = site prototypes for site l
+  → site_context
+
+Layer 2 — Species scoring (multi-head attention):
+  Q = w,  K = species prototypes (separate heads for P, E)
+  V = species loadings (shared)
+  → raw_scores per head
+
+Layer 3 — Fusion:
+  Combine heads + modulate by site context
+  → final_scores (S,)
+```
+
+A 3-layer transformer on the star schema. The "sequence" is the prototype set,
+not tokens. Attention patterns are interpretable: which prototypes activated
+for each prediction.
+
+### Hopfield vs transformer: trade-offs
+
+**Hopfield layers (energy-based, associative memory)**
+
+Pros:
+- Theoretical convergence guarantees — energy decreases monotonically during
+  retrieval, converges to a fixed point (stored pattern or metastable state)
+- Exponential storage capacity (2^(d/2) patterns in d dimensions) vs. linear
+  for classical Hopfield — our ~200-500 prototypes are well within capacity
+- Natural for one-shot retrieval: input a noisy/partial pattern, retrieve the
+  closest stored pattern. This IS our scoring problem — a noisy soundscape
+  window retrieves the closest species prototype
+- No positional encoding needed — prototypes are a set, not a sequence
+- Energy function provides a principled confidence measure: depth of the energy
+  well at the retrieved pattern indicates retrieval certainty
+
+Cons:
+- Single-step retrieval may not capture interactions between prototypes (species
+  that co-occur should jointly modulate each other's scores)
+- Fixed stored patterns — modern Hopfield can learn patterns, but the energy
+  landscape is more rigid than attention's learned Q/K/V projections
+- Less mature tooling and optimization compared to transformer ecosystems
+
+**Transformer attention (learned projections)**
+
+Pros:
+- Q/K/V projections add a learnable transformation before matching — can adapt
+  the comparison metric (e.g., learn to ignore shifted dimensions without
+  explicit transfer weights)
+- Multi-head naturally handles parallel spaces with learned fusion
+- Stacking layers allows prototype-prototype interactions: attention between
+  species prototypes can capture co-occurrence and competition
+- Mature ecosystem: flash attention, quantization, efficient inference
+- Layer norm, residual connections, MLPs between layers — standard toolkit for
+  regularization and expressivity
+
+Cons:
+- No convergence guarantees — output depends on learned parameters, not an
+  energy landscape
+- Requires positional encoding for temporal structure (TRMF connection is less
+  natural than in Hopfield where temporal patterns can be stored directly)
+- Heavier parameterization: Q/K/V projection matrices add parameters that need
+  training data to fit — risky with only 739 labeled samples
+- Attention patterns are "soft" by default — may spread mass across many
+  prototypes when sharp retrieval (one prototype matches) is what we want
+
+**For our problem specifically:**
+
+The Hopfield framing is more natural because:
+1. We want **retrieval**, not generation — find which stored pattern matches
+2. The energy function gives **confidence** — useful for Bayesian averaging
+3. We have **few labeled samples** (739) — fewer learnable parameters is better
+4. Prototypes are a **set**, not a sequence — no positional encoding needed
+5. Sharp retrieval (hard-max) is a reasonable starting point — most windows
+   should match one dominant prototype per species
+
+The transformer framing is better if:
+1. We need **prototype-prototype interactions** (co-occurring species)
+2. We want to **learn the comparison metric** end-to-end
+3. We have enough data to train Q/K/V projections without overfitting
+4. We want **multi-layer refinement** (iterative scoring)
+
+**Hybrid approach**: use Hopfield for the retrieval step (stored prototypes,
+energy-based confidence) but add a learned gating layer (transformer-style)
+for domain transfer and multi-space fusion. This keeps the retrieval principled
+while allowing the fusion to be learned.
+
+### Connection to CP decomposition
+
+```
+CP:         score(s,w) = Σ_r a_r[s] * (c_r @ w)              [linear]
+Attention:  score(s,w) = Σ_r softmax(c_r @ w / τ)[r] * a_r[s] [softmax-weighted]
+Hopfield:   score(s,w) = a_{r*}[s]  where r* = argmin E(w, C)  [energy-minimizing]
+```
+
+Three points on the same spectrum: linear combination → soft retrieval →
+hard retrieval. The tensor decomposition framework accommodates all three —
+the choice of combination function determines the expressivity/data-efficiency
+trade-off.
+
 ## When to pursue this
 
 - **After** multi-prototype results are in and we know the sequential pipeline
@@ -385,3 +554,7 @@ decomposition. Each piece is a special case or approximation:
   Dynamical Systems, and Control." Cambridge University Press. (Koopman/DMD)
 - Sandryhaila & Moura (2013). "Discrete Signal Processing on Graphs." IEEE TSP.
   (Graph signal processing foundations)
+- Ramsauer et al. (2021). "Hopfield Networks is All You Need." ICLR.
+  (Modern Hopfield = continuous attention with exponential storage capacity)
+- Vaswani et al. (2017). "Attention Is All You Need." NeurIPS.
+  (Transformer attention as soft key-value retrieval)
