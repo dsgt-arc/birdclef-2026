@@ -23,9 +23,11 @@ Status: **Phase A complete. Phase B next (Perch TF inference).**
 
 ## Phase B: Perch v2 TF Inference
 
-- [ ] B.1 Write Perch TF inference script (extend `inference/infer.py` or new script)
-- [ ] B.2 Write SLURM batch script for Perch TF on all soundscapes
+- [x] B.1 Write standalone `scripts/perch_inference.py` (TF SavedModel, saves embeddings + logits)
+- [x] B.2 Write SLURM batch scripts (`scripts/sbatch/perch_inference.sh` + `run_perch.sh`)
 - [ ] B.3 Run inference → save embeddings + raw logits to `shared/inference/birdclef-2026/perch-v2-tf/`
+  - Submit: `cd user/murilo/scripts && bash sbatch/run_perch.sh --source train_soundscapes`
+  - Estimated: ~21h CPU for 127K soundscape segments
 - [ ] B.4 Verify output shapes and sample predictions
 
 ## Phase C: Apply MLP Probes
