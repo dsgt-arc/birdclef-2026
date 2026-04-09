@@ -5,7 +5,7 @@
 Understand model coverage gaps and Perch/SED complementarity to inform the pseudo-labeling
 teacher strategy for exp 025.
 
-Status: **Phase A complete. Phase B next (Perch TF inference).**
+Status: **Phase A complete. Phase B running (Perch TF inference on all data).**
 
 **Branch**: `mg/024-data-centric-exploration` — PR #26
 
@@ -26,8 +26,11 @@ Status: **Phase A complete. Phase B next (Perch TF inference).**
 - [x] B.1 Write standalone `inference/perch_inference.py` (TF SavedModel, saves embeddings + logits)
 - [x] B.2 Write SLURM batch scripts (`inference/sbatch/perch_inference.sh` + `run_perch.sh`)
 - [ ] B.3 Run inference → save embeddings + raw logits to `shared/inference/birdclef-2026/perch-v2-tf/`
-  - Submit: `cd user/murilo/inference && bash sbatch/run_perch.sh --source train_soundscapes`
-  - Estimated: ~21h CPU for 127K soundscape segments
+  - ✅ Test: 10 files (TF version fix), 200 files (throughput benchmark: 10.7 chunks/s)
+  - 🔄 Running: train_soundscapes (10,658 files, ~3.3h estimated)
+  - 🔄 Running: train_audio (35,549 files, ~6.9h estimated)
+  - Submit: `cd user/murilo/inference && bash sbatch/run_perch.sh --source <source> --overwrite`
+  - Config: cpu-medium, 24 CPUs, 64GB RAM, 24h walltime, TF 2.21 CPU
 - [ ] B.4 Verify output shapes and sample predictions
 
 ## Phase C: Apply MLP Probes
