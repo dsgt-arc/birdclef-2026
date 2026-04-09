@@ -93,23 +93,26 @@ Venv: `~/scratch/birdclef-2026/.venv-106`
 
 ### Phase 2 (models + structure)
 - `EmpiricalBayesRidge` — ridge regression on embeddings (0.749 AUROC)
-- `SparseLogistic` — sparse logistic on selected features
 - `TemporalPooling` — per-species optimal window aggregation
 - `SiteResidualProfiles` — James-Stein shrunk site profiles
 - `SpeciesGraph` — species co-occurrence via window-level scoring
 - `PartitionFeatures` — re-partition shards by species/site (one-time)
-- `MultiPrototypeProfiles` — Leiden clustering on within-species residuals
-- `SitePrototypes` — Leiden clustering on within-site residuals
+- `MultiPrototypeProfiles` — NMF (logits) + k-means (embeddings) per species
+- `SitePrototypes` — NMF + k-means per site, diel characterization
+- `PrototypeRidge` — ridge on prototype similarity features (MVP test)
 
 ### Key concepts
 - **Star schema**: see `docs/star-schema.md`. Perch logit space (P=14795) is the
   shared dimension. All compositions (species×site, species×window) are matmuls
-  through P. Centering + Mahalanobis weighting are critical.
-- **Multi-prototype profiles**: within-species/site residual covariance → SVD
-  whitening → dense Mahalanobis Gram matrix → Leiden community detection →
-  variable-count prototypes per entity. Replaces single-mean profiles.
-- **Cohesion filtering**: communities must exceed MIN_COHESION (mean pairwise
-  cosine) to become prototypes. Rejects incoherent grab-bag clusters.
+  through P. Centering is critical (cosine → Pearson correlation).
+- **Multi-prototype profiles**: NMF on non-negative logits (parts-based, additive),
+  k-means on signed embeddings. Fixed K per entity → clean (S,K,P) tensor.
+- **Domain transfer**: 96.8% of logit dims shift focal↔soundscape. Transfer
+  precision = decorrelation × domain reliability × species specificity.
+- **Parallel spaces**: same pipeline on P (logits), E (embeddings), F (finetuned).
+  Bayesian model averaging with species-dependent mixing weights.
+- **Concept doc**: `docs/concepts/star-schema-tensor-decomposition.md` — tensor
+  CP/NMF, TRMF temporal dynamics, Hopfield retrieval, Bayesian inference.
 
 ## Known gotchas
 
@@ -119,7 +122,7 @@ Venv: `~/scratch/birdclef-2026/.venv-106`
   sbatch scripts use `python -c "from birdclef_106.cli import main; main()"`
 - Focal extraction needs 48 GB RAM (4 CPUs × 12 GB) — OOMs at 16 GB
 - `_setup-venv.sh` uses `$HOME/arc/...` not `realpath` for cross-node stability
-- Dense Gram matrix for large sites (S22: 40K windows) needs ~12 GB RAM
+- NMF on 40K×14795 (site S22) takes ~5 min, needs ~5 GB RAM
 
 ## Directory structure
 
@@ -131,11 +134,9 @@ Venv: `~/scratch/birdclef-2026/.venv-106`
 ├── configs/exp106.yaml
 ├── docs/
 │   ├── analysis-ideas.md             # Full analysis plan with references
-│   └── star-schema.md               # Dimensional analysis of Perch logit compositions
-├── artifacts/
-│   ├── perch_v2_labels.csv           # Perch taxonomy (14,796 names)
-│   ├── perch_v2_ebird_classes.csv    # eBird codes
-│   └── perch_species_mapping.json    # BirdCLEF → Perch index mapping
+│   ├── star-schema.md               # Star schema: compositions, prototypes, domain transfer
+│   └── submission-strategy.md       # Bayesian ensemble calibration from LB submissions
+├── artifacts/                        # Analysis outputs (JSON metrics, NPZ arrays)
 ├── sbatch/
 │   ├── _setup-venv.sh
 │   ├── analyze.sbatch                # Run Luigi analysis pipeline
@@ -143,8 +144,6 @@ Venv: `~/scratch/birdclef-2026/.venv-106`
 │   ├── extract-unlabeled.sbatch
 │   └── extract-focal.sbatch
 ├── src/birdclef_106/
-│   ├── __init__.py
-│   ├── __main__.py
 │   ├── cli.py
 │   ├── extract.py                    # Polars-based extraction pipeline
 │   ├── perch_onnx.py                 # Perch v2 ONNX session wrapper
@@ -152,13 +151,23 @@ Venv: `~/scratch/birdclef-2026/.venv-106`
 │   ├── data_loading.py               # Shared data loading (partitioned + sharded)
 │   └── analysis/
 │       ├── base.py                   # AnalysisTask base class
-│       ├── partition.py              # Re-partition shards by species/site
-│       ├── multi_prototype.py        # Multi-prototype Leiden clustering (species)
-│       ├── site_prototypes.py        # Site-state Leiden clustering
-│       ├── focal_profiles.py         # Per-species logit signatures
-│       ├── species_graph.py          # Species co-occurrence graph
-│       ├── site_residuals.py         # James-Stein shrunk site profiles
-│       ├── ridge.py                  # Empirical Bayes ridge regression
-│       └── ...                       # Other analysis modules
+│       ├── eda/                      # Exploratory / static baselines
+│       │   ├── baseline_zero_shot.py # Perch logit readout (0.701 AUROC)
+│       │   ├── covariance_logit.py   # 14795×14795 logit covariance
+│       │   ├── covariance_embedding.py # 1536×1536 embedding covariance
+│       │   ├── domain_shift.py       # Focal↔soundscape KS statistics
+│       │   └── feature_importance.py # Per-logit AUROC per species
+│       ├── structure/                # Star schema profiles, graphs, prototypes
+│       │   ├── partition.py          # Shard → per-entity parquets
+│       │   ├── profiles_focal.py     # Per-species logit signatures
+│       │   ├── profiles_site.py      # James-Stein site profiles
+│       │   ├── graph_species.py      # Species co-occurrence graph
+│       │   ├── prototypes_species.py # NMF (logits) + k-means (embeddings) per species
+│       │   └── prototypes_site.py    # NMF + k-means per site, diel characterization
+│       ├── models/                   # Learned scoring models
+│       │   ├── ridge_empirical_bayes.py  # Empirical Bayes ridge (0.749 AUROC)
+│       │   ├── ridge_prototype.py    # Ridge on prototype similarity features
+│       │   └── pooling_temporal.py   # Window aggregation strategies
+│       └── _archived/               # Broken/superseded (not imported)
 └── logs/                             # SLURM output logs
 ```
