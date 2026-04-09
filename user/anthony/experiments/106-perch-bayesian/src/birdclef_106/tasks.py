@@ -19,6 +19,7 @@ from birdclef_106.analysis import (
     PartitionFeatures,
     MultiPrototypeProfiles,
     SitePrototypes,
+    PrototypeRidge,
     EmpiricalBayesRidge,
     SparseLogistic,
     TemporalPooling,
@@ -62,6 +63,7 @@ class AllAnalysis(AnalysisTask):
             PartitionFeatures(**p),
             MultiPrototypeProfiles(**p),
             SitePrototypes(**p),
+            PrototypeRidge(**p),
         ]
         phase3 = [
             # UKFSmoothing(**p),  # blocked on DMD, paused
