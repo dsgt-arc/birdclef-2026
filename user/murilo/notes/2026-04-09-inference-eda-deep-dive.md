@@ -592,6 +592,145 @@ higher-quality pseudo-labels than v5j alone.
 
 ---
 
+## 11. Discussion Notes & Nuances
+
+Captured from follow-up Q&A on 2026-04-09. These clarify subtleties that the raw numbers
+don't convey.
+
+### 11.1 Why mean max-prob matters for unseen species
+
+Mean max-prob of 0.036 for 159 unseen species means: on a typical soundscape segment, the
+model's MOST confident prediction for ANY of the 159 unseen species is 3.6%. The model has
+learned "soundscapes contain the 75 species I know — nothing else." It isn't uncertain
+about unseen species — it's **confidently wrong**.
+
+Even the 80 species that DO get some pseudo-labels have sparse, scattered detections (the
+top one has only 221 segments out of 127K). The model occasionally catches these species
+but treats them as anomalies, not expected inhabitants. This means pseudo-labels for the
+80 partially-covered species will be thin — the bulk of pseudo-labels will go to the 75
+already-seen species where the model is already saturated.
+
+The 79 zero-coverage species need a **fundamentally different teacher** — the v5j SED model
+cannot provide pseudo-labels for them at any reasonable threshold. The Perch+SED ensemble
+(0.929 LB) has access to Perch's pre-trained bioacoustic knowledge for species v5j has
+never learned to detect in soundscapes. This is the strongest argument for using the
+ensemble as the teacher, not v5j alone.
+
+### 11.2 The 14 unlabeled-only sites and what they mean for pseudo-labeling
+
+The labeled soundscape data covers 9 sites. The unlabeled data covers 21 sites, of which
+14 are completely new — no labeled data exists for them. S01 (2,341 files) and S02 (2,505
+files) are the two largest and have LOW model confidence (0.315 and 0.440 mean max-prob).
+
+Pseudo-labeling these files serves two purposes:
+1. **Species-in-context data**: what species X sounds like at site S01 at 2am, mixed with
+   whatever background noise that specific site has
+2. **Site diversity**: the model learns that the same species can sound different across
+   acoustic environments (different vegetation, distance to mic, ambient noise levels)
+
+Both directly address the domain shift that causes the focal→soundscape gap. Tucker Arrants
+(Kaggle discussion) confirmed that train and test sites overlap, so the test set likely
+includes some of these 14 new sites. Training on pseudo-labeled data from S01/S02 could
+directly improve predictions on those sites if they appear in the test set.
+
+### 11.3 How to ensure pseudo-label correctness (layers of defense)
+
+There is no way to guarantee pseudo-labels are correct — that's inherent to semi-supervised
+learning. The defense is layering multiple quality controls:
+
+1. **Teacher quality**: Our 0.929 ensemble is much stronger than the 0.767 teacher that
+   failed in exp 015. Stronger teacher = better pseudo-labels.
+2. **Confidence thresholding**: Only keep predictions above a threshold (0.5 or 0.7).
+   Higher threshold = fewer but more accurate labels.
+3. **Power transform (P^1.5)**: Non-linearly suppresses uncertain predictions. P=0.6
+   becomes 0.465 (killed). P=0.9 becomes 0.854 (kept). Selectively removes borderline
+   predictions where the model is most likely wrong.
+4. **Soft labels with loss weighting**: Use probabilities as soft targets, not hard 0/1.
+   Weight pseudo-label loss lower than ground truth (e.g., w=0.3-0.5 vs w=1.0). Limits
+   damage from bad pseudo-labels.
+5. **Multi-iteration refinement**: Train student → student becomes teacher → better
+   pseudo-labels → repeat (Nikita used 3-4 iterations).
+6. **Density-weighted sampling**: Segments with too many high-confidence predictions
+   (dense chorus → confused) are downweighted. Segments with a few clean, high-confidence
+   predictions are upweighted.
+
+Even imperfect pseudo-labels for 80 species are better than the current zero soundscape
+representation for those species. The model literally has no soundscape signal for 68% of
+species — any signal, even noisy, is an improvement.
+
+### 11.4 Why 4-fold averaging hurts coverage but helps submission
+
+These are two different contexts with opposite requirements:
+
+**Submission (inference on test set)**: For the 75 well-known species (which dominate the
+LB score), averaging 4 folds **reduces noise and improves calibration**. If fold 1 says
+"frog at 0.85" and fold 3 says "0.75", averaging gives 0.80 — a more stable estimate.
+Better calibration → better AUC ranking. That's why 4-fold (0.913) beats single (0.906).
+
+**Pseudo-labeling (teacher predictions for training)**: Here we need to **detect rare
+species** that individual folds might catch but the average misses. If fold 2 detects a
+rare bird at 0.7 but the other three say 0.01, averaging gives 0.18 — the detection is
+lost. For rare species, a single confident fold detection is more valuable than consensus.
+
+Prescription:
+- **Submission**: keep averaged 4-fold (better calibration)
+- **Pseudo-labeling**: use `max(fold0, fold1, fold2, fold3)` per species per segment
+  (maximize rare species recall)
+
+The Kaggle submission pipeline (confirmed in `submission_ensemble.py:2058`) uses
+`fold_probs.mean(axis=0)` — correct for submission. The pseudo-labeling pipeline
+should use max instead.
+
+### 11.5 Multi-label pseudo-label capture strategy
+
+The approach: **store the full soft probability vector for every segment, filter at
+training time.**
+
+1. **Teacher inference**: Run ensemble on all 127K unlabeled segments. Save 234-dim
+   probability vector per segment (sigmoid outputs).
+2. **Power transform + threshold**: P^1.5, then keep species above threshold (e.g., 0.3).
+   If the model predicts species A at 0.85, B at 0.72, C at 0.15, after P^1.5 these
+   become 0.78, 0.60, 0.06. With threshold 0.3, the label is `A=0.78, B=0.60, others=0`.
+3. **Multi-label BCE loss**: Each species is an independent binary prediction. The pseudo-
+   label provides a soft target per species. The model learns "this segment contains A and
+   B" — matching the multi-label reality of soundscapes.
+
+The key question — how many species per segment to keep:
+- **Threshold approach** (recommended): Keep all species above threshold after power
+  transform. Flexible — some segments have 1 species, some have 8. Matches the EDA
+  finding that soundscapes average 4.2 species per segment.
+- **Top-N approach**: Keep only the N most confident. Risk: clips high-N segments.
+- **Soft labels**: Keep all 234 probabilities. Simplest but noisiest.
+
+The secondary label finding (12.6% of "confusions" are real) supports this: the model's
+multi-label predictions on soundscapes may be more trustworthy than focal metrics suggest.
+The "extra" species it detects beyond the primary are often genuinely present.
+
+### 11.6 Data augmentation vs pseudo-labeling for domain-shift species
+
+For the 54 species with 200+ focal recordings but zero soundscape predictions:
+
+**Augmentation** (adding noise to focal recordings) was tested globally in v6c (exp 021)
+and regressed on LB. Training recipe changes have been 0-for-14. However, *targeted*
+augmentation (only for failing species) hasn't been tested — this is a more nuanced
+approach that might work.
+
+**The deeper issue**: Some of these species (e.g., House Sparrow — urban bird) may
+genuinely not vocalize in Pantanal soundscapes. In that case, the correct prediction IS
+zero, and augmenting their focal data would inject false positives. **Manual inspection
+of the 54 suspects is needed before trying to "fix" them.**
+
+**Pseudo-labeling is still the better first path**: It gives the model actual soundscape
+examples of species (if they exist), not synthetically noisified focal recordings. The
+real soundscape context (background species, site-specific noise, reverberation) is hard
+to simulate with augmentation but trivially captured by pseudo-labeling.
+
+The two approaches aren't mutually exclusive: augmentation on pseudo-labeled soundscape
+data could help further in later iterations, once we've confirmed which species actually
+occur in soundscapes.
+
+---
+
 ## References
 
 | Data | Path |
