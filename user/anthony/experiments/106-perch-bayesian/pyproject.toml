@@ -16,8 +16,6 @@ dependencies = [
     "scipy>=1.12",
     "pydmd>=1.0",
     "filterpy>=1.4",
-    "igraph>=0.11",
-    "leidenalg>=0.10",
 ]
 
 [project.scripts]

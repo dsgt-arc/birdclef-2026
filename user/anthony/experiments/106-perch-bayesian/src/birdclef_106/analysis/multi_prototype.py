@@ -1,20 +1,17 @@
-"""Multi-prototype species profiles via Leiden clustering on within-species residuals.
+"""Multi-prototype species profiles: NMF on logits, k-means on embeddings.
 
-Depends on PartitionFeatures which provides per-species parquets at
-focal/by_species/{species}.parquet. Each species is processed independently:
-load parquet → compute residuals → project → Leiden cluster → prototypes.
+For each species, decompose focal windows into K prototype patterns:
+  - P-space (logits): NMF — non-negative, parts-based, additive
+  - E-space (embeddings): k-means — simple, fast, Voronoi centroids
 
-Pipeline:
-    1. Load all species parquets to compute global mean + SVD whitening.
-    2. Per species: load parquet, whiten residuals, dense Gram → Leiden,
-       extract prototype centroids from accepted clusters.
-    3. Evaluate on labeled soundscapes.
+Fixed K per species gives a clean (S, K, P) tensor — no ragged arrays.
+Both spaces run the same pipeline, just different decomposition method.
 
-Memory: one species at a time (~5K × 14795 × 8 = ~600 MB peak).
+Depends on PartitionFeatures for per-species parquets.
 
 Outputs:
-    multi_prototypes.npz — prototype matrix, species assignments, metadata
-    multi_prototypes_summary.json — per-species cluster counts, sizes, validation
+    multi_prototypes.npz — prototype tensors, global means, metadata
+    multi_prototypes_summary.json — per-species cluster info, evaluation
 """
 
 from __future__ import annotations
@@ -24,14 +21,17 @@ import logging
 from pathlib import Path
 
 import numpy as np
-from sklearn.decomposition import TruncatedSVD
+from sklearn.cluster import KMeans
+from sklearn.decomposition import NMF
 from sklearn.metrics import roc_auc_score, average_precision_score
+from sklearn.preprocessing import normalize
 
 from birdclef_106.analysis.base import AnalysisTask
 from birdclef_106.analysis.partition import PartitionFeatures
 from birdclef_106.data_loading import (
     build_binary_label_matrix,
     build_species_list,
+    embeddings_to_numpy,
     list_focal_species,
     load_focal_species,
     load_labeled,
@@ -40,82 +40,15 @@ from birdclef_106.data_loading import (
 
 logger = logging.getLogger(__name__)
 
-N_COMPONENTS = 200
-MIN_CLUSTER_SIZE = 20
-MAX_PROTOTYPES = 8
-LEIDEN_RESOLUTION = 1.0
-MIN_COHESION = 0.3
+# Number of prototypes per species (fixed K for clean tensor shape)
+N_PROTOTYPES = 4
 
-
-def _leiden_cluster(projected_normed, n_windows, ig, leidenalg):
-    """Run Leiden on dense Mahalanobis Gram matrix. Returns labels or None."""
-    gram = projected_normed @ projected_normed.T
-    np.fill_diagonal(gram, 0.0)
-    gram = np.maximum(gram, 0.0)
-    sources, targets = np.triu_indices(n_windows, k=1)
-    weights = gram[sources, targets]
-    pos_mask = weights > 0
-    if pos_mask.sum() == 0:
-        return None
-    g = ig.Graph(
-        n=n_windows,
-        edges=list(zip(sources[pos_mask].tolist(), targets[pos_mask].tolist())),
-        directed=False,
-    )
-    g.es["weight"] = weights[pos_mask].tolist()
-    partition = leidenalg.find_partition(
-        g, leidenalg.RBConfigurationVertexPartition,
-        weights="weight", resolution_parameter=LEIDEN_RESOLUTION, seed=42,
-    )
-    return np.array(partition.membership)
-
-
-def _community_stats(labels, projected_normed):
-    """Compute per-community cohesion, apply filters, return accepted IDs."""
-    unique_labels, label_counts = np.unique(labels, return_counts=True)
-    communities = []
-    for cl, count in zip(unique_labels, label_counts):
-        cl_proj = projected_normed[labels == cl]
-        cl_gram = cl_proj @ cl_proj.T
-        n_cl = cl_gram.shape[0]
-        cohesion = (cl_gram.sum() - n_cl) / max(n_cl * (n_cl - 1), 1)
-        if count < MIN_CLUSTER_SIZE:
-            status = "rejected_too_small"
-        elif cohesion < MIN_COHESION:
-            status = "rejected_low_cohesion"
-        else:
-            status = "pending"
-        communities.append({
-            "id": int(cl), "size": int(count),
-            "cohesion": round(float(cohesion), 4), "status": status,
-        })
-
-    accepted_ids = []
-    for comm in sorted(communities, key=lambda c: -c["size"]):
-        if comm["status"] != "pending":
-            continue
-        if len(accepted_ids) >= MAX_PROTOTYPES:
-            comm["status"] = "rejected_max_cap"
-            continue
-        comm["status"] = "accepted"
-        accepted_ids.append(comm["id"])
-
-    sizes = [c["size"] for c in communities]
-    cohesions = [c["cohesion"] for c in communities]
-    stats = {
-        "n_total": len(communities), "n_accepted": len(accepted_ids),
-        "n_rejected_too_small": sum(1 for c in communities if c["status"] == "rejected_too_small"),
-        "n_rejected_low_cohesion": sum(1 for c in communities if c["status"] == "rejected_low_cohesion"),
-        "n_rejected_max_cap": sum(1 for c in communities if c["status"] == "rejected_max_cap"),
-        "size_min": min(sizes), "size_max": max(sizes), "size_median": int(np.median(sizes)),
-        "cohesion_min": round(min(cohesions), 4), "cohesion_max": round(max(cohesions), 4),
-        "cohesion_median": round(float(np.median(cohesions)), 4),
-    }
-    return accepted_ids, stats, communities
+# Minimum windows to attempt decomposition (fall back to mean if fewer)
+MIN_WINDOWS = 20
 
 
 class MultiPrototypeProfiles(AnalysisTask):
-    """Build multi-prototype species profiles via Leiden clustering."""
+    """Build multi-prototype species profiles via NMF (logits) + k-means (embeddings)."""
 
     def requires(self):
         return PartitionFeatures(**self._params())
@@ -133,253 +66,238 @@ class MultiPrototypeProfiles(AnalysisTask):
         species_list = build_species_list(self.artifacts_dir)
         n_species = len(species_list)
         available = set(list_focal_species(self.features_dir))
+        K = N_PROTOTYPES
 
         # =====================================================================
-        # Step 1: compute per-species means + global mean + SVD whitening
-        #
-        # One pass per species parquet. Only means + SVD subsample in memory.
+        # Per-species decomposition
         # =====================================================================
-        logger.info("MultiPrototype: step 1 — per-species means + SVD")
+        logger.info("MultiPrototype: decomposing %d species (K=%d)", n_species, K)
 
         logit_dim = None
-        sp_means = {}
-        sp_counts = {}
-        global_sum = None
+        emb_dim = None
+
+        # Accumulators for global means
+        global_logit_sum = None
+        global_emb_sum = None
         global_count = 0
-        residual_samples = []
 
-        for sp in species_list:
-            if sp not in available:
-                continue
-            df = load_focal_species(sp, self.features_dir)
-            logits = logits_to_numpy(df).astype(np.float64)
-            if logit_dim is None:
-                logit_dim = logits.shape[1]
-                global_sum = np.zeros(logit_dim, dtype=np.float64)
-
-            sp_mean = logits.mean(axis=0)
-            sp_means[sp] = sp_mean
-            sp_counts[sp] = len(df)
-            global_sum += logits.sum(axis=0)
-            global_count += len(df)
-
-            # Subsample residuals for SVD
-            residuals = logits - sp_mean[None, :]
-            step = max(1, len(df) // 250)  # ~250 samples per species, ~50K total
-            for j in range(0, len(df), step):
-                residual_samples.append(residuals[j])
-
-        global_focal_mean = global_sum / global_count
-        logger.info("MultiPrototype: %d species with data, %d total windows",
-                     len(sp_means), global_count)
-
-        # Fit SVD on subsampled residuals
-        res_matrix = np.array(residual_samples, dtype=np.float64)
-        del residual_samples
-        n_comp = min(N_COMPONENTS, res_matrix.shape[0] - 1, res_matrix.shape[1])
-        svd = TruncatedSVD(n_components=n_comp, random_state=42)
-        svd.fit(res_matrix)
-        components = svd.components_
-        whiten_scale = 1.0 / np.maximum(svd.singular_values_, 1e-8)
-        explained = svd.explained_variance_ratio_.sum()
-        logger.info("MultiPrototype: %d components, %.1f%% variance", n_comp, explained * 100)
-        del res_matrix
-
-        # =====================================================================
-        # Step 2: per-species clustering
-        #
-        # Load each species' parquet, compute residuals, project, Leiden,
-        # extract prototypes. One species in memory at a time.
-        # =====================================================================
-        logger.info("MultiPrototype: step 2 — per-species clustering")
-
-        try:
-            import igraph as ig
-            import leidenalg
-        except ImportError:
-            raise ImportError("Requires igraph and leidenalg.")
-
-        all_prototypes = []
-        proto_species_idx = []
-        proto_cluster_id = []
+        # Per-species results (filled in loop below)
+        sp_logit_protos = {}   # species -> (K, P) or None
+        sp_emb_protos = {}     # species -> (K, E) or None
+        sp_counts = {}
         per_species_info = {}
-        species_to_idx = {s: i for i, s in enumerate(species_list)}
 
         for idx, sp in enumerate(species_list):
-            si = species_to_idx[sp]
-
-            if sp not in sp_means:
+            if sp not in available:
                 per_species_info[sp] = {
-                    "n_windows": 0, "n_prototypes": 1, "fallback": "no_data",
-                    "community_stats": {"n_total": 0}, "communities": [],
+                    "n_windows": 0, "n_prototypes": 0, "method": "none",
                 }
-                proto = (-global_focal_mean).astype(np.float32)  # zero-centered
-                all_prototypes.append(proto)
-                proto_species_idx.append(si)
-                proto_cluster_id.append(0)
                 continue
 
-            n_windows = sp_counts[sp]
-            if n_windows < MIN_CLUSTER_SIZE:
-                per_species_info[sp] = {
-                    "n_windows": n_windows, "n_prototypes": 1,
-                    "fallback": "too_few_windows",
-                    "community_stats": {"n_total": 0}, "communities": [],
-                }
-                proto = (sp_means[sp] - global_focal_mean).astype(np.float32)
-                all_prototypes.append(proto)
-                proto_species_idx.append(si)
-                proto_cluster_id.append(0)
-                continue
-
-            # Load this species' data
             df = load_focal_species(sp, self.features_dir)
             logits = logits_to_numpy(df).astype(np.float64)
-            residuals = logits - sp_means[sp][None, :]
+            emb = embeddings_to_numpy(df).astype(np.float64)
+            n_windows = len(df)
+            sp_counts[sp] = n_windows
 
-            # Project + whiten
-            projected = (residuals @ components.T) * whiten_scale[None, :]
-            norms = np.maximum(np.linalg.norm(projected, axis=1, keepdims=True), 1e-8)
-            proj_normed = (projected / norms).astype(np.float32)
+            if logit_dim is None:
+                logit_dim = logits.shape[1]
+                emb_dim = emb.shape[1]
+                global_logit_sum = np.zeros(logit_dim, dtype=np.float64)
+                global_emb_sum = np.zeros(emb_dim, dtype=np.float64)
 
-            # Leiden on dense Gram
-            labels = _leiden_cluster(proj_normed, n_windows, ig, leidenalg)
+            global_logit_sum += logits.sum(axis=0)
+            global_emb_sum += emb.sum(axis=0)
+            global_count += n_windows
 
-            if labels is None:
+            if n_windows < MIN_WINDOWS:
+                # Fall back to single mean (replicated K times)
+                sp_logit_protos[sp] = np.tile(logits.mean(axis=0), (K, 1))
+                sp_emb_protos[sp] = np.tile(emb.mean(axis=0), (K, 1))
                 per_species_info[sp] = {
-                    "n_windows": n_windows, "n_prototypes": 1,
-                    "fallback": "no_positive_edges",
-                    "community_stats": {"n_total": 0}, "communities": [],
+                    "n_windows": n_windows, "n_prototypes": K,
+                    "method": "mean_fallback",
                 }
-                proto = (sp_means[sp] - global_focal_mean).astype(np.float32)
-                all_prototypes.append(proto)
-                proto_species_idx.append(si)
-                proto_cluster_id.append(0)
                 continue
 
-            accepted_ids, stats, communities = _community_stats(labels, proj_normed)
+            # NMF on logits (non-negative → parts-based prototypes)
+            # Clip small negatives from numerical noise
+            logits_nn = np.maximum(logits, 0).astype(np.float64)
+            k_actual = min(K, n_windows - 1)
 
-            if not accepted_ids:
-                per_species_info[sp] = {
-                    "n_windows": n_windows, "n_prototypes": 1,
-                    "fallback": "no_cluster_passed_filters",
-                    "community_stats": stats,
-                    "communities": sorted(communities, key=lambda c: -c["size"]),
-                }
-                proto = (sp_means[sp] - global_focal_mean).astype(np.float32)
-                all_prototypes.append(proto)
-                proto_species_idx.append(si)
-                proto_cluster_id.append(0)
-            else:
-                for cid in accepted_ids:
-                    cluster_mean = residuals[labels == cid].mean(axis=0)
-                    proto = (sp_means[sp] + cluster_mean - global_focal_mean).astype(np.float32)
-                    all_prototypes.append(proto)
-                    proto_species_idx.append(si)
-                    proto_cluster_id.append(cid)
+            try:
+                nmf = NMF(n_components=k_actual, init="nndsvda", max_iter=300,
+                          random_state=42)
+                W = nmf.fit_transform(logits_nn)
+                H = nmf.components_  # (k_actual, P)
+                nmf_error = nmf.reconstruction_err_
+            except Exception as e:
+                logger.warning("  %s: NMF failed (%s), using mean", sp, e)
+                H = np.tile(logits.mean(axis=0), (k_actual, 1))
+                nmf_error = -1.0
 
-                per_species_info[sp] = {
-                    "n_windows": n_windows, "n_prototypes": len(accepted_ids),
-                    "fallback": None, "community_stats": stats,
-                    "communities": sorted(communities, key=lambda c: -c["size"]),
-                }
+            # Pad to K if k_actual < K
+            if H.shape[0] < K:
+                pad = np.tile(H.mean(axis=0), (K - H.shape[0], 1))
+                H = np.vstack([H, pad])
+            sp_logit_protos[sp] = H
+
+            # K-means on embeddings
+            try:
+                km = KMeans(n_clusters=k_actual, random_state=42, n_init=3)
+                km.fit(emb)
+                centers = km.cluster_centers_  # (k_actual, E)
+                km_inertia = km.inertia_
+            except Exception as e:
+                logger.warning("  %s: k-means failed (%s), using mean", sp, e)
+                centers = np.tile(emb.mean(axis=0), (k_actual, 1))
+                km_inertia = -1.0
+
+            if centers.shape[0] < K:
+                pad = np.tile(centers.mean(axis=0), (K - centers.shape[0], 1))
+                centers = np.vstack([centers, pad])
+            sp_emb_protos[sp] = centers
+
+            per_species_info[sp] = {
+                "n_windows": n_windows,
+                "n_prototypes": K,
+                "method": "nmf+kmeans",
+                "nmf_reconstruction_error": round(float(nmf_error), 4) if nmf_error >= 0 else None,
+                "kmeans_inertia": round(float(km_inertia), 4) if km_inertia >= 0 else None,
+            }
 
             if idx % 20 == 0:
-                n_p = per_species_info[sp]["n_prototypes"]
-                logger.info("  species %d/%d (%s): %d windows → %d prototypes",
-                            idx, n_species, sp, n_windows, n_p)
+                logger.info("  species %d/%d (%s): %d windows", idx, n_species, sp, n_windows)
 
-        # Stack
-        prototype_matrix = np.stack(all_prototypes)
-        proto_species_idx = np.array(proto_species_idx, dtype=np.int32)
-        proto_cluster_id = np.array(proto_cluster_id, dtype=np.int32)
-        proto_norms = np.maximum(np.linalg.norm(prototype_matrix, axis=1, keepdims=True), 1e-8)
-        prototype_matrix_normed = prototype_matrix / proto_norms
-        total_protos = len(all_prototypes)
+        # Global means
+        global_logit_mean = global_logit_sum / global_count
+        global_emb_mean = global_emb_sum / global_count
 
-        logger.info("MultiPrototype: %d prototypes across %d species (%.1f avg)",
-                     total_protos, len(per_species_info),
-                     total_protos / max(len(per_species_info), 1))
+        logger.info("MultiPrototype: %d species with data, %d total windows",
+                     len(sp_counts), global_count)
 
         # =====================================================================
-        # Step 3: evaluate
+        # Build prototype tensors (S, K, P) and (S, K, E)
+        # =====================================================================
+
+        proto_logits = np.zeros((n_species, K, logit_dim), dtype=np.float32)
+        proto_emb = np.zeros((n_species, K, emb_dim), dtype=np.float32)
+        has_data = np.zeros(n_species, dtype=bool)
+
+        for si, sp in enumerate(species_list):
+            if sp in sp_logit_protos:
+                proto_logits[si] = sp_logit_protos[sp].astype(np.float32)
+                proto_emb[si] = sp_emb_protos[sp].astype(np.float32)
+                has_data[si] = True
+
+        # Center and normalize logit prototypes for cosine scoring
+        proto_logits_centered = proto_logits - global_logit_mean[None, None, :]
+        proto_logits_normed = np.zeros_like(proto_logits_centered)
+        norms = np.linalg.norm(proto_logits_centered, axis=2, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        proto_logits_normed = proto_logits_centered / norms
+
+        # Normalize embedding prototypes
+        proto_emb_centered = proto_emb - global_emb_mean[None, None, :]
+        norms = np.maximum(np.linalg.norm(proto_emb_centered, axis=2, keepdims=True), 1e-8)
+        proto_emb_normed = proto_emb_centered / norms
+
+        # =====================================================================
+        # Evaluate on labeled soundscapes
         # =====================================================================
         logger.info("MultiPrototype: evaluating")
+
         sc_df = load_labeled(self.features_dir)
         sc_logits = logits_to_numpy(sc_df).astype(np.float64)
+        sc_emb = embeddings_to_numpy(sc_df).astype(np.float64)
         sc_Y = build_binary_label_matrix(sc_df, species_list)
+        n_sc = len(sc_df)
 
-        sc_centered = sc_logits - global_focal_mean[None, :]
-        sc_norms = np.maximum(np.linalg.norm(sc_centered, axis=1, keepdims=True), 1e-8)
-        sc_normed = sc_centered / sc_norms
+        # Logit-space scoring: max over K prototypes per species
+        sc_logit_centered = sc_logits - global_logit_mean[None, :]
+        sc_logit_normed = normalize(sc_logit_centered, norm="l2")
+        # (N_sc, S, K) via einsum, then max over K
+        logit_sims = np.einsum("wp,skp->wsk", sc_logit_normed, proto_logits_normed)
+        logit_scores = logit_sims.max(axis=2)  # (N_sc, S)
 
-        all_scores = sc_normed @ prototype_matrix_normed.T
-        multi_scores = np.full((len(sc_df), n_species), -1.0)
-        for pi in range(total_protos):
-            multi_scores[:, proto_species_idx[pi]] = np.maximum(
-                multi_scores[:, proto_species_idx[pi]], all_scores[:, pi])
+        # Embedding-space scoring
+        sc_emb_centered = sc_emb - global_emb_mean[None, :]
+        sc_emb_normed = normalize(sc_emb_centered, norm="l2")
+        emb_sims = np.einsum("we,ske->wsk", sc_emb_normed, proto_emb_normed)
+        emb_scores = emb_sims.max(axis=2)  # (N_sc, S)
 
-        # Single-mean baseline
-        has_data = np.array([sp in sp_means for sp in species_list])
-        single_mat = np.zeros((n_species, logit_dim), dtype=np.float64)
-        for i, sp in enumerate(species_list):
-            if sp in sp_means:
-                single_mat[i] = sp_means[sp] - global_focal_mean
-        s_norms = np.maximum(np.linalg.norm(single_mat, axis=1, keepdims=True), 1e-8)
-        single_scores = sc_normed @ (single_mat / s_norms).T
+        # Single-mean baseline (logits)
+        single_logit = proto_logits_centered.mean(axis=1)  # (S, P) — mean of K prototypes
+        single_logit_normed = normalize(single_logit, norm="l2")
+        single_logit_scores = sc_logit_normed @ single_logit_normed.T  # (N_sc, S)
 
+        # Single-mean baseline (embeddings)
+        single_emb = proto_emb_centered.mean(axis=1)
+        single_emb_normed = normalize(single_emb, norm="l2")
+        single_emb_scores = sc_emb_normed @ single_emb_normed.T
+
+        # Per-species metrics
         eval_results = {}
         for si in range(n_species):
             sp = species_list[si]
             if not has_data[si] or sc_Y[:, si].sum() < 2:
                 continue
             y = sc_Y[:, si]
-            am = float(roc_auc_score(y, multi_scores[:, si]))
-            a_s = float(roc_auc_score(y, single_scores[:, si]))
-            pm = float(average_precision_score(y, multi_scores[:, si]))
-            ps = float(average_precision_score(y, single_scores[:, si]))
+
             eval_results[sp] = {
-                "auroc_multi": round(am, 4), "auroc_single": round(a_s, 4),
-                "auroc_delta": round(am - a_s, 4),
-                "ap_multi": round(pm, 4), "ap_single": round(ps, 4),
-                "ap_delta": round(pm - ps, 4),
+                "auroc_logit_multi": round(float(roc_auc_score(y, logit_scores[:, si])), 4),
+                "auroc_logit_single": round(float(roc_auc_score(y, single_logit_scores[:, si])), 4),
+                "auroc_emb_multi": round(float(roc_auc_score(y, emb_scores[:, si])), 4),
+                "auroc_emb_single": round(float(roc_auc_score(y, single_emb_scores[:, si])), 4),
             }
 
-        aurocs_m = [v["auroc_multi"] for v in eval_results.values()]
-        aurocs_s = [v["auroc_single"] for v in eval_results.values()]
-        n_improved = sum(1 for v in eval_results.values() if v["auroc_delta"] > 0)
-        logger.info("MultiPrototype eval: AUROC %.4f (multi) vs %.4f (single), %d/%d improved",
-                     np.mean(aurocs_m), np.mean(aurocs_s), n_improved, len(eval_results))
+        for space in ["logit", "emb"]:
+            multi_key = f"auroc_{space}_multi"
+            single_key = f"auroc_{space}_single"
+            multi_vals = [v[multi_key] for v in eval_results.values()]
+            single_vals = [v[single_key] for v in eval_results.values()]
+            n_improved = sum(1 for v in eval_results.values() if v[multi_key] > v[single_key])
+            logger.info("  %s: multi=%.4f single=%.4f, %d/%d improved",
+                         space, np.mean(multi_vals), np.mean(single_vals),
+                         n_improved, len(eval_results))
 
         # =====================================================================
         # Save
         # =====================================================================
-        sp_count = np.array([sp_counts.get(sp, 0) for sp in species_list], dtype=np.int64)
+        sp_count_arr = np.array([sp_counts.get(sp, 0) for sp in species_list], dtype=np.int64)
+
         np.savez_compressed(
             self.output()[0].path,
-            prototypes=prototype_matrix.astype(np.float32),
-            prototypes_normed=prototype_matrix_normed.astype(np.float32),
-            proto_species_idx=proto_species_idx, proto_cluster_id=proto_cluster_id,
-            species_list=np.array(species_list), species_count=sp_count,
-            global_focal_mean=global_focal_mean.astype(np.float32),
-            whiten_components=components.astype(np.float32),
-            whiten_scale=whiten_scale.astype(np.float32),
-            explained_variance_ratio=svd.explained_variance_ratio_.astype(np.float32),
+            # (S, K, P) and (S, K, E) prototype tensors
+            proto_logits=proto_logits,
+            proto_logits_normed=proto_logits_normed.astype(np.float32),
+            proto_emb=proto_emb,
+            proto_emb_normed=proto_emb_normed.astype(np.float32),
+            # Flat versions for PrototypeRidge compatibility
+            prototypes_normed=proto_logits_normed.reshape(-1, logit_dim).astype(np.float32),
+            proto_species_idx=np.repeat(np.arange(n_species, dtype=np.int32), K),
+            proto_cluster_id=np.tile(np.arange(K, dtype=np.int32), n_species),
+            # Metadata
+            species_list=np.array(species_list),
+            species_count=sp_count_arr,
+            global_focal_mean=global_logit_mean.astype(np.float32),
+            global_emb_mean=global_emb_mean.astype(np.float32),
+            n_prototypes=K,
         )
 
         summary = {
-            "n_species": n_species, "n_species_with_data": len(sp_means),
-            "total_prototypes": total_protos,
-            "avg_prototypes_per_species": round(total_protos / max(len(per_species_info), 1), 2),
-            "whiten_n_components": n_comp,
-            "whiten_explained_variance": round(float(explained), 4),
-            "min_cluster_size": MIN_CLUSTER_SIZE, "leiden_resolution": LEIDEN_RESOLUTION,
-            "min_cohesion": MIN_COHESION,
+            "n_species": n_species,
+            "n_species_with_data": int(has_data.sum()),
+            "n_prototypes_per_species": K,
+            "total_prototypes": int(has_data.sum()) * K,
+            "decomposition": {"logits": "NMF", "embeddings": "k-means"},
             "eval": {
                 "n_evaluated": len(eval_results),
-                "mean_auroc_multi": round(float(np.mean(aurocs_m)), 4) if aurocs_m else None,
-                "mean_auroc_single": round(float(np.mean(aurocs_s)), 4) if aurocs_s else None,
-                "n_improved_auroc": n_improved, "per_species": eval_results,
+                "logit_multi_auroc": round(float(np.mean([v["auroc_logit_multi"] for v in eval_results.values()])), 4),
+                "logit_single_auroc": round(float(np.mean([v["auroc_logit_single"] for v in eval_results.values()])), 4),
+                "emb_multi_auroc": round(float(np.mean([v["auroc_emb_multi"] for v in eval_results.values()])), 4),
+                "emb_single_auroc": round(float(np.mean([v["auroc_emb_single"] for v in eval_results.values()])), 4),
+                "per_species": eval_results,
             },
             "per_species": per_species_info,
         }
