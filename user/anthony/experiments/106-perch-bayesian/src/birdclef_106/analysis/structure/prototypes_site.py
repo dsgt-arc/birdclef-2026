@@ -65,9 +65,6 @@ class SingleSitePrototype(AnalysisTask):
         return self.artifact(f"prototypes/site/{self.site}.npz")
 
     def run(self):
-        self._timed_run(self._do_run)
-
-    def _do_run(self):
         self.ensure_parent(self.output())
         K = N_PROTOTYPES
 
