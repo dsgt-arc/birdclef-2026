@@ -10,9 +10,12 @@ entities (species, sites, time periods, windows).
 
 ## Status
 
-Phase 1 (static baselines) COMPLETE. Phase 2 in progress.
+**Phase 1 + Phase 2 COMPLETE.**
 Best model: focal embedding ridge + empirical Bayes prior → **0.749 AUROC** (LOSO CV).
-Multi-prototype Leiden clustering + site-state prototypes: running.
+Star schema cosine matching: **0.816 AUROC** on 42 focal species, but 0.258 on 28
+species without focal data. Ridge wins overall (0.749 on all 70 evaluable species).
+Site/diel priors have zero effect (Pantanal sites too similar, cosine >0.94).
+Multi-prototypes: +0.016 AUROC (modest). All 206 species + 21 site prototypes done.
 
 ## Extracted data
 
@@ -94,12 +97,13 @@ Venv: `~/scratch/birdclef-2026/.venv-106`
 ### Phase 2 (models + structure)
 - `EmpiricalBayesRidge` — ridge regression on embeddings (0.749 AUROC)
 - `TemporalPooling` — per-species optimal window aggregation
-- `SiteResidualProfiles` — James-Stein shrunk site profiles
+- `SiteResidualProfiles` — James-Stein shrunk site profiles (uses partitioned data)
 - `SpeciesGraph` — species co-occurrence via window-level scoring
 - `PartitionFeatures` — re-partition shards by species/site (one-time)
-- `MultiPrototypeProfiles` — NMF (logits) + k-means (embeddings) per species
-- `SitePrototypes` — NMF + k-means per site, diel characterization
-- `PrototypeRidge` — ridge on prototype similarity features (MVP test)
+- `MultiPrototypeProfiles` — NMF (logits) + k-means (embeddings) per species (0.816 AUROC on 42 focal sp)
+- `SitePrototypes` — NMF + k-means per site, diel characterization, species×site affinity
+- `PrototypeRidge` — ridge on prototype similarity features (0.721 AUROC, not competitive)
+- `StarSchemaScorer` — compose species sim × site affinity × diel prior (site/diel priors have zero effect)
 
 ### Key concepts
 - **Star schema**: see `docs/star-schema.md`. Perch logit space (P=14795) is the
@@ -113,6 +117,29 @@ Venv: `~/scratch/birdclef-2026/.venv-106`
   Bayesian model averaging with species-dependent mixing weights.
 - **Concept doc**: `docs/concepts/star-schema-tensor-decomposition.md` — tensor
   CP/NMF, TRMF temporal dynamics, Hopfield retrieval, Bayesian inference.
+
+## Key results
+
+- **Ridge (focal emb + EB prior): 0.749 AUROC** — best overall model
+- Star schema cosine: 0.816 on 42 focal species, 0.258 on 28 without focal data
+- Ridge beats star schema even on focal species (0.858 vs 0.816)
+- Site/diel priors: zero effect (sites too similar)
+- Multi-prototypes: +0.016 AUROC (modest lift)
+- Prototype Ridge: 0.721 AUROC (worse than raw ridge)
+- Insect sonotypes: unsolvable with Perch (near-random on all approaches)
+
+## Technical lessons
+
+- **Polars fork deadlock**: Luigi multiprocessing workers deadlock on `pl.read_parquet`
+  when using fork start method. Fix: `multiprocessing.set_start_method("spawn")` before
+  `luigi.build()`. See cli.py.
+- **Subsample before numpy**: Large parquets (S22 = 2.3 GB, 40K rows) must be subsampled
+  at the DataFrame level before `logits_to_numpy()` — converting 40K×14795 to float64
+  allocates 4.7 GB per worker.
+- **Cache covariance derivatives**: Eigendecomposition (2 min) and matrix inverse (3 min)
+  saved in `*_derived.npz` files so downstream tasks load instantly.
+- **Partitioned data**: FocalSpeciesProfiles/SiteResidualProfiles/EmpiricalBayesRidge
+  rewritten to use by_species/ and by_site/ parquets instead of scanning all shards.
 
 ## Known gotchas
 
