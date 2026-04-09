@@ -12,7 +12,7 @@
 # Perch v2 TF inference: extract embeddings + logits from soundscapes
 #
 # Usage:
-#   cd user/murilo/scripts
+#   cd user/murilo/inference
 #   bash sbatch/run_perch.sh --source train_soundscapes
 #   bash sbatch/run_perch.sh --source all --max-files 100
 #
@@ -31,13 +31,13 @@ PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
 # ============================================================================
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    SCRIPTS_DIR="$SLURM_SUBMIT_DIR"
+    INFERENCE_DIR="$SLURM_SUBMIT_DIR"
 else
-    SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    SCRIPTS_DIR="$(dirname "$SCRIPTS_DIR")"
+    INFERENCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    INFERENCE_DIR="$(dirname "$INFERENCE_DIR")"
 fi
 
-REPO_DIR="$(cd "$SCRIPTS_DIR/../../.." && pwd)"
+REPO_DIR="$(cd "$INFERENCE_DIR/../../.." && pwd)"
 
 # ============================================================================
 # Print job info
@@ -52,7 +52,7 @@ echo "Date: $(date)"
 echo "Source: ${SOURCE}"
 echo "Batch size: ${BATCH_SIZE}"
 echo "Project: ${PROJECT_NAME}"
-echo "Scripts dir: ${SCRIPTS_DIR}"
+echo "Inference dir: ${INFERENCE_DIR}"
 echo "Repo: ${REPO_DIR}"
 echo ""
 
@@ -100,7 +100,7 @@ echo ""
 # Run inference
 # ============================================================================
 
-cd "$SCRIPTS_DIR"
+cd "$INFERENCE_DIR"
 
 echo "Starting Perch v2 TF inference..."
 echo ""

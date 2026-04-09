@@ -3,7 +3,7 @@
 # Submit Perch v2 TF inference SLURM job
 #
 # Usage:
-#   cd user/murilo/scripts
+#   cd user/murilo/inference
 #   bash sbatch/run_perch.sh --source train_soundscapes
 #   bash sbatch/run_perch.sh --source all --batch-size 16
 #   bash sbatch/run_perch.sh --source train_soundscapes --max-files 100 --dry-run
@@ -12,7 +12,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPTS_DIR="$(dirname "$SCRIPT_DIR")"
+INFERENCE_DIR="$(dirname "$SCRIPT_DIR")"
 JOB_SCRIPT="$SCRIPT_DIR/perch_inference.sh"
 
 # Defaults
@@ -63,7 +63,7 @@ if [[ -f "$CHECK_FILE" && "$OVERWRITE" != "true" ]]; then
 fi
 
 # Log directory
-LOG_DIR="$SCRIPTS_DIR/logs"
+LOG_DIR="$INFERENCE_DIR/logs"
 mkdir -p "$LOG_DIR"
 
 echo "=============================================="
