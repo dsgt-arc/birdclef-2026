@@ -234,6 +234,133 @@ def loss(params, X_focal, Y_sc_labeled, labels):
    optimization loop, GPU allocation. Days of work vs. the sequential pipeline
    which is running now.
 
+## TRMF: temporal structure in the factorization
+
+### Temporal Regularized Matrix Factorization
+
+The soundscape tensor has temporal ordering — windows within a site form a
+trajectory. Standard CP treats windows as exchangeable. TRMF adds autoregressive
+structure to the temporal factor:
+
+```
+Y[l, t, p] ≈ Σ_r  d_r[l] * b_r[t] * f_r[p]
+
+subject to: b_r[t] = Σ_lag A_r,lag * b_r[t-lag] + ε
+```
+
+- **f_r** = acoustic state prototypes (what Leiden finds as clusters)
+- **b_r[t]** = activation over time (what diel distributions characterize)
+- **A_r,lag** = state transition dynamics (what the Koopman operator captures)
+
+The AR dynamics on the temporal factor IS a linear Koopman operator in the
+factored low-rank space. The failed DMD analysis from phase 2 was trying to
+learn this on raw 14,795-d vectors — TRMF does it in the compact factor space.
+
+### Two temporal scales
+
+- **Within-recording** (focal): short-range AR captures call duration, song
+  patterns, silence gaps. A bird mid-song at t is likely singing at t+1.
+- **Within-site** (soundscape): long-range AR captures diel cycles, weather
+  events, seasonal shifts. Dawn chorus transitions to daytime activity.
+
+### Three equivalent views
+
+TRMF connects to established frameworks through different lenses:
+
+#### 1. Bayesian state-space / HMM equivalence
+
+The temporal factor b_r[t] with AR dynamics is a linear-Gaussian state-space
+model. The prototypes f_r are the emission matrix. Discretizing the temporal
+factor (hard cluster assignments instead of soft activations) recovers an HMM
+where hidden states are acoustic regimes.
+
+```
+Leiden clusters + transition matrix = discrete HMM
+TRMF temporal factor = continuous relaxation of HMM
+Full Bayesian (GP-BTTF) = uncertainty on everything
+```
+
+The Bayesian version puts priors on all factors:
+- Gaussian process on temporal factor (replaces AR with flexible dynamics)
+- Spike-and-slab on species loadings (principled sparsity)
+- Inverse-Wishart on noise (heteroscedastic across dimensions)
+
+The posterior gives uncertainty on prototypes and predictions — critical for
+knowing which species predictions to trust, especially for rare species with
+few focal windows.
+
+#### 2. Graph signal processing equivalence
+
+Three relational graphs exist in the star schema:
+- **Site graph**: (L, L) from site similarity in P-space (already computed)
+- **Species graph**: (S, S) from co-occurrence in P-space (already computed)
+- **Temporal graph**: chain graph (t → t+1) within each site
+
+TRMF with graph regularization:
+
+```
+L = L_recon + L_supervised
+    + λ_site * Σ_(l,l') w_{ll'} ||d_r[l] - d_r[l']||²    (site smoothness)
+    + λ_species * Σ_(s,s') w_{ss'} ||a_r[s] - a_r[s']||²  (species smoothness)
+    + λ_temporal * Σ_t ||b_r[t] - Σ_lag A * b_r[t-lag]||²  (temporal AR)
+```
+
+Similar sites should have similar prototype activations. Similar species should
+have similar loadings. The graph Laplacian penalties enforce this smoothness.
+
+This connects to graph neural networks: replacing the Laplacian smoothness
+penalty with graph convolution on the factor matrices gives a GNN that operates
+on the star schema graphs. The tensor decomposition is message passing through
+P-space across the species, site, and temporal relational structures.
+
+#### 3. Koopman operator equivalence
+
+The AR coefficient matrices A_r,lag define a linear dynamical system in the
+factor space. This is the finite-dimensional Koopman approximation — the
+factors b_r are Koopman eigenfunctions and the AR dynamics are the Koopman
+operator restricted to these observables.
+
+```
+DMD on raw vectors:  high-dimensional (14795-d), expensive, noisy
+TRMF temporal AR:    low-rank factor space, tractable, regularized
+Leiden + transitions: discrete Koopman (Markov chain on cluster labels)
+```
+
+All three compute the same object at different resolutions.
+
+### Unified view
+
+```
+TRMF
+ ├── Bayesian state-space
+ │   ├── HMM when discretized (≈ Leiden clusters + transition matrix)
+ │   └── GP-BTTF when fully Bayesian (uncertainty on everything)
+ │
+ ├── Graph signal processing
+ │   ├── Graph Laplacian smoothness on species/site factor matrices
+ │   └── GNN: message passing through P-space on relational graphs
+ │
+ └── Koopman operator theory
+     ├── AR dynamics on temporal factor = linear Koopman in factor space
+     └── DMD on projected vectors ≈ TRMF with identity spatial factors
+```
+
+The sequential pipeline we built (Leiden → prototypes → transition matrix →
+domain transfer → scoring) is computing fragments of this unified
+decomposition. Each piece is a special case or approximation:
+
+| Pipeline step | TRMF equivalent |
+|---------------|-----------------|
+| Species means | Rank-1 approximation per species |
+| Leiden prototypes | Discrete factor modes |
+| Site-state clusters | Discretized temporal factor |
+| Diel characterization | Empirical AR dynamics |
+| Transition matrix | Koopman operator (discrete) |
+| Species graph regularization | Graph Laplacian on species factor |
+| Site similarity | Graph Laplacian on site factor |
+| Domain transfer weights | Supervised loss on soundscape labels |
+| Bayesian ensemble across spaces | Coupled decomposition |
+
 ## When to pursue this
 
 - **After** multi-prototype results are in and we know the sequential pipeline
@@ -250,3 +377,11 @@ def loss(params, X_focal, Y_sc_labeled, labels):
 - Kim & Park (2012). "Nonnegative Matrix and Tensor Factorizations." Wiley.
 - Acar et al. (2011). "All-at-once optimization for coupled matrix and tensor
   factorizations." MLG Workshop.
+- Yu et al. (2016). "Temporal Regularized Matrix Factorization for High-Dimensional
+  Time Series Prediction." NeurIPS.
+- Zhao et al. (2019). "Bayesian CP Factorization of Incomplete Tensors with
+  Automatic Rank Determination." IEEE TPAMI.
+- Brunton & Kutz (2019). "Data-Driven Science and Engineering: Machine Learning,
+  Dynamical Systems, and Control." Cambridge University Press. (Koopman/DMD)
+- Sandryhaila & Moura (2013). "Discrete Signal Processing on Graphs." IEEE TSP.
+  (Graph signal processing foundations)
