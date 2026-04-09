@@ -1,6 +1,6 @@
 # Experiments Summary
 
-Consolidated findings from experiments 001–012, covering BirdSet benchmarks, architecture comparisons, tokenization studies, LoRA fine-tuning across three encoder families, Kaggle submission pipeline, and soundscape domain adaptation.
+Consolidated findings from experiments 001–023, covering BirdSet benchmarks, architecture comparisons, tokenization studies, LoRA fine-tuning across three encoder families, Kaggle submission pipeline, soundscape domain adaptation, source separation, pseudo-labeling, SED architecture pivot, Perch probes, and ensemble fusion.
 
 ## 1. Quick Reference
 
@@ -18,9 +18,21 @@ Consolidated findings from experiments 001–012, covering BirdSet benchmarks, a
 | 010 | Submission Pipeline | BirdCLEF 2026 | Can ONNX export + Kaggle CPU kernel work end-to-end? | 0.531‡ | Pipeline validated; 3 architectures export and score on Kaggle | Confirmed |
 | 011 | LoRA Baseline 2026 | BirdCLEF 2026 (206 cls) | Does the 2025 LoRA pipeline transfer to 2026 data? | 0.736‡ | Transfers without changes; ProtoCLR fulldata best single model | Confirmed |
 | 012 | Soundscape Fine-Tuning | BirdCLEF 2026 (234 cls) | Does labeled soundscape data improve LB scores? | 0.767‡ | All 3 models improve (+0.022 to +0.060); ProtoCLR 0.767 best overall | Confirmed |
+| 013 | MixIT Source Separation | 10,592 unlabeled soundscapes | Can Bird MixIT separate soundscapes into useful channels? | ~62% meaningful | TF1→ONNX pipeline works; ~62% of files show meaningful separation | Confirmed |
+| 014 | Teacher Pseudo-Labeling | 127K unlabeled segments | Can teacher ensemble pseudo-label unlabeled soundscapes? | 0.885‡‡ | ProtoCLR + ConvNeXt ensemble AUROC 0.885 on labeled val; EAT excluded (insect AUROC 0.673) | Confirmed |
+| 015 | Student Training | Focal + soundscape + 127K pseudo | Does pseudo-labeled data improve student models? | 0.762‡ | Regressed on LB (ProtoCLR −0.005, EAT −0.024); clip-level architecture is the bottleneck | Rejected |
+| 016 | SED Architecture | BirdCLEF 2026 (234 cls) | Does EfficientNet-B0 SED outperform clip-level models? | 0.827‡ | SED validates architecture pivot; PP (TTA+smoothing+TopN) adds +0.028 | Confirmed |
+| 017 | Mel Overhaul | BirdCLEF 2026 (234 cls) | Do high-res mel + AmplitudeToDB improve SED? | 0.859‡ | v4b AmplitudeToDB +0.034 over v4a; best single SED at the time | Confirmed |
+| 018 | Perch Probes | BirdCLEF 2026 (234 cls) | Can frozen Perch v2 + probes beat fine-tuned models? | 0.918‡ | Raw 0.825 → probes 0.893 → OOF 0.911 → ProtoSSM v4 0.918 | Confirmed |
+| 019 | SED Ablations | BirdCLEF 2026 (234 cls) | Which single variables improve SED most? | 0.913‡ | HGNetV2-B0 +0.037; v5j (AmplitudeToDB+NNAudio) 0.906; 4-fold 0.913 | Confirmed |
+| 020 | Perch ONNX + ProtoSSM | BirdCLEF 2026 (234 cls) | Can ONNX Perch match TF Perch on LB? | 0.925‡ | ONNX 9× faster but −0.005-0.010 penalty; V18+TF 0.925 best Perch | Confirmed |
+| 021 | SED Training Phases | BirdCLEF 2026 (234 cls) | Can training recipe changes improve SED beyond v5j? | 0.917‡ | Site/hour priors +0.003/+0.004; all training recipe changes 0-for-14 on LB | Confirmed |
+| 022 | PCEN Normalization | BirdCLEF 2026 (234 cls) | Does learnable PCEN improve domain invariance? | 0.880‡ | PCEN 0.880 (−0.026 vs v5j); v5j-repro 0.903 confirms pipeline correct | Rejected |
+| 023 | Perch + SED Ensemble | BirdCLEF 2026 (234 cls) | Does score-level fusion of Perch + SED improve LB? | 0.929‡ | MLP-only (proto_weight=0.0) 0.929 new best; config-driven YAML push system | Confirmed |
 
 † Exp 001 evaluated all 8 BirdSet datasets (HSN, PER, NES, UHH, POW, SSW, SNE, NBP); best cmAP shown is the mean across all 8 (HSN alone: 0.480 ConvNeXT, 0.380 EfficientNetB1).
-‡ BirdSet experiments (001–004) report cmAP; BirdCLEF experiments (005–012) report ROC-AUC. Experiments 005–009 report offline test-split AUROC; experiments 010–012 report Kaggle public LB macro-AUROC.
+‡ BirdSet experiments (001–004) report cmAP; BirdCLEF experiments (005–023) report ROC-AUC. Experiments 005–009 report offline test-split AUROC; experiments 010–023 report Kaggle public LB macro-AUROC.
+‡‡ Exp 014 reports ensemble AUROC on labeled validation, not LB.
 
 ### Data Splits
 
@@ -54,6 +66,12 @@ The LoRA fine-tuning arc (experiments 005–009) produced the most actionable re
 Experiments 010–012 moved from offline evaluation to real Kaggle leaderboard scores. Experiment 010 built the end-to-end submission pipeline: ONNX export with merged LoRA weights, species mapping, and a unified Kaggle CPU inference kernel supporting all three architectures. The first submission — ProtoCLR trained on BirdCLEF 2025 — scored 0.531 LB with only 41/234 species overlapping, validating the pipeline. Experiment 011 retrained the same LoRA configurations on BirdCLEF 2026 focal data (35,549 recordings, 206 species) with no hyperparameter changes, confirming that the pipeline generalizes across years. ProtoCLR fulldata reached 0.736 LB, the best focal-only score. EAT and ConvNeXt fulldata regressed (0.698 and 0.695 respectively), revealing that fixed-epoch training without early stopping causes overfitting — the faster a model converges, the more it overshoots.
 
 Experiment 012 addressed the focal-to-soundscape domain gap by fine-tuning from exp 011 checkpoints on mixed focal + labeled soundscape data, expanding the classification head from 206 to 234 species. All three models improved on the leaderboard: ProtoCLR reached **0.767** (+0.031), ConvNeXt **0.755** (+0.060), and EAT **0.720** (+0.022). ConvNeXt showed the largest gain, recovering from its fulldata overfitting and surpassing its original 80/10/10 score. The consistent improvement across all architectures confirms that soundscape domain adaptation and species expansion are both valuable, and positions these models as stronger teachers for pseudo-labeling in exp 013.
+
+Experiments 013–015 explored the pseudo-labeling pipeline: MixIT source separation (exp 013) converted Bird MixIT from TF1 to ONNX and separated 10,592 unlabeled soundscapes into 4 channels with ~62% showing meaningful separation. Experiment 014 used a ProtoCLR + ConvNeXt teacher ensemble (AUROC 0.885 on labeled validation) to pseudo-label 127K unlabeled segments, excluding EAT due to poor insect AUROC (0.673). However, experiment 015 trained students on focal + soundscape + pseudo-labels and regressed on LB (ProtoCLR −0.005, EAT −0.024), revealing that clip-level architecture — not data quantity — was the bottleneck. This dead end motivated the architecture pivot to SED.
+
+Experiments 016–017 and 019 built the SED pipeline from scratch. Experiment 016 validated the EfficientNet-B0 SED with GeM + AttHead, reaching 0.827 LB with post-processing (TTA + smoothing + TopN). Experiment 017 demonstrated that mel frontend improvements (n_fft=4096, n_mels=224, AmplitudeToDB) had outsized impact: v4b scored 0.859, a +0.034 improvement from AmplitudeToDB alone. Experiment 019 ran v5a–v5n single-variable ablations, finding HGNetV2-B0 backbone (+0.037 over EfficientNet), AmplitudeToDB + NNAudio (v5j, 0.906 LB), and 4-fold ensembling (v5j-4fold, 0.913). Critically, offline val/AUROC proved anti-correlated with LB performance — every model ranking had to be validated by submission. Experiment 021's 7-phase training recipe search (CE loss, waveform MixUp, AttHead, manifold mixup, multi-context) was 0-for-14 on LB, confirming that the SED backbone and mel frontend drive performance while training tricks do not transfer. Experiment 022 tested learnable PCEN for domain invariance and regressed to 0.880 (−0.026 vs v5j), closing that avenue.
+
+In parallel, experiments 018 and 020 developed the Perch probe pipeline. Frozen Perch v2 embeddings with LogReg/MLP probes progressed from 0.825 (raw) to 0.893 (probes) to 0.918 (ProtoSSM v4), establishing a separate strong submission track. Experiment 020 showed ONNX Perch runs 9× faster but carries a −0.005–0.010 LB penalty versus TF; the two-kernel V18+TF submission reached 0.925 LB, the best Perch result. Finally, experiment 023 fused Perch + SED via score-level ensembling in a single Kaggle kernel, discovering that MLP-only weights (proto_weight=0.0) achieved **0.929 LB** — the new best overall — with a config-driven YAML push system for rapid iteration.
 
 ## 3. Detailed Findings
 
@@ -359,7 +377,280 @@ Full results: [results.md](experiments/012-soundscape-finetune/results.md)
 
 ---
 
-## 4. Cross-Experiment Analysis (Experiments 001–012)
+### 3.13 Exp 013: MixIT Source Separation
+
+**Hypothesis**: Bird MixIT (converted TF1 → ONNX) can separate unlabeled soundscapes into individual source channels, improving downstream pseudo-label quality.
+
+**Dataset**: 10,592 unlabeled BirdCLEF 2026 soundscape files → 4-channel separation per file.
+
+**Models**: Bird MixIT (TF1 → ONNX conversion).
+
+- Converted TF1 SavedModel to ONNX via tf2onnx; pipeline processes all 10,592 files.
+- ~62% of files showed meaningful separation (distinct source content across channels).
+- Remaining ~38% produced redundant or near-silent channels — separation quality depends on source diversity in the mixture.
+- Pseudo-labeling of separated channels deferred to exp 014.
+
+**Limitation**: Non-bird taxa (frogs, insects) may not separate well since Bird MixIT was trained on bird audio. Quality validation was visual/manual, not quantitative.
+
+Full results: [results.md](experiments/013-mixit-source-separation/results.md)
+
+---
+
+### 3.14 Exp 014: Teacher Pseudo-Labeling
+
+**Hypothesis**: A ProtoCLR + ConvNeXt teacher ensemble can produce high-quality pseudo-labels for 127K unlabeled soundscape segments.
+
+**Dataset**: 127K 5s segments from unlabeled soundscapes (including MixIT-separated channels from exp 013).
+
+**Models**: ProtoCLR (exp 012) + ConvNeXt (exp 012) teacher ensemble.
+
+| Teacher | Labeled Val AUROC | Role |
+|---------|------------------|------|
+| ProtoCLR + ConvNeXt ensemble | **0.885** | Pseudo-labeler |
+| EAT | 0.673 (insects) | Excluded |
+
+- Ensemble of ProtoCLR + ConvNeXt achieves 0.885 AUROC on labeled validation, sufficient for pseudo-labeling.
+- EAT excluded due to poor insect/amphibian AUROC (0.673), which would inject noisy labels for the 28 soundscape-only sonotypes.
+- Produced pseudo-labels for all 127K segments with per-species confidence scores.
+
+**Limitation**: Pseudo-label quality bounded by teacher accuracy; no iterative refinement or self-training loop.
+
+Full results: [results.md](experiments/014-teacher-pseudo-labels/results.md)
+
+---
+
+### 3.15 Exp 015: Student Training
+
+**Hypothesis**: Training on focal + soundscape + 127K pseudo-labeled segments (w=0.5) will improve LB scores over exp 012 teachers.
+
+**Dataset**: BirdCLEF 2026 focal + labeled soundscape + 127K pseudo-labeled segments, 234 species.
+
+**Models**: ProtoCLR and EAT, fine-tuned with pseudo-label loss weight=0.5.
+
+| Model | Public LB | vs Exp 012 | Best Epoch |
+|-------|----------|-----------|------------|
+| ProtoCLR student | 0.762 | −0.005 | 1–5 |
+| EAT student | 0.696 | −0.024 | 1–5 |
+
+- **REJECTED**: Both models regressed on LB. Pseudo-labels did not help.
+- Student converges to teacher quality within 1–5 epochs, then overfits to noise in pseudo-labels.
+- The bottleneck is clip-level architecture (5s window, single label), not data quantity. This motivated the SED architecture pivot.
+
+**Limitation**: Only w=0.5 tested; no curriculum learning or confidence thresholding.
+
+Full results: [results.md](experiments/015-student-training/results.md)
+
+---
+
+### 3.16 Exp 016: SED Architecture
+
+**Hypothesis**: An EfficientNet-B0 SED (sound event detection) model with frame-level predictions and post-processing will outperform clip-level models on the soundscape evaluation.
+
+**Dataset**: BirdCLEF 2026, 234 species.
+
+**Models**: EfficientNet-B0 SED with GeM pooling + AttHead.
+
+| Variant | Raw LB | PP LB | PP Gain |
+|---------|--------|-------|---------|
+| v1 (base SED) | 0.795 | **0.827** | +0.028 |
+| v2 (NS-JFT + CE loss) | 0.755 | — | −0.040 |
+| v3 (waveform mixup) | 0.802 | — | — |
+| v3 (TF-ported) | 0.813 | — | — |
+
+- SED architecture validates the pivot from clip-level models. PP (TTA + temporal smoothing + TopN filtering) adds +0.028.
+- NS-JFT pretrained weights + CE loss (v2) regressed to 0.755 — pretrained weights don't always help.
+- Waveform-level mixup (v3, 0.802) slightly better than baseline; TF-ported weights (0.813) strongest v3 variant.
+
+**Limitation**: EfficientNet-B0 is small; larger backbones and mel frontend not yet explored.
+
+Full results: [results.md](experiments/016-sed-architecture/results.md)
+
+---
+
+### 3.17 Exp 017: Mel Overhaul
+
+**Hypothesis**: High-resolution mel spectrograms (n_fft=4096, n_mels=224) and AmplitudeToDB normalization will significantly improve SED performance.
+
+**Dataset**: BirdCLEF 2026, 234 species.
+
+**Models**: EfficientNet-B0 SED with upgraded mel frontend.
+
+| Variant | Key Change | Public LB | Δ vs v1 |
+|---------|-----------|----------|---------|
+| v4a | n_fft=4096, n_mels=224 | 0.825 | +0.030 |
+| v4b | + AmplitudeToDB | **0.859** | +0.064 |
+| Steps 3–5 | Combinations, fulldata, loss | < 0.859 | Regressed |
+
+- High-res mel (v4a) adds +0.030 over exp 016 v1, confirming frequency resolution matters for species discrimination.
+- AmplitudeToDB (v4b) adds another +0.034, making it the single largest gain in the SED pipeline. dB-scale normalization is critical.
+- Steps 3–5 (combining changes, fulldata training, loss ablations) all regressed — diminishing returns from stacking changes.
+
+**Limitation**: Best single SED at the time but still below Perch probes (exp 018).
+
+Full results: [results.md](experiments/017-mel-overhaul/results.md)
+
+---
+
+### 3.18 Exp 018: Perch Probes
+
+**Hypothesis**: Frozen Perch v2 embeddings with simple classifiers (LogReg, MLP, ProtoSSM) can outperform fine-tuned SED models by leveraging Google's large-scale bird audio pretraining.
+
+**Dataset**: BirdCLEF 2026, 234 species. Perch v2 embeddings extracted from all focal + soundscape data.
+
+**Models**: Perch v2 (frozen) → LogReg / MLP / ProtoSSM classifiers.
+
+| Variant | Approach | Public LB |
+|---------|----------|----------|
+| Raw Perch | Direct embedding similarity | 0.825 |
+| Genus proxy | Genus-level aggregation | 0.836 |
+| Probes | LogReg/MLP on embeddings | 0.893 |
+| OOF v2-fix | Out-of-fold with bug fix | 0.911 |
+| ProtoSSM v4 | Prototypical + state-space model | **0.918** |
+| ProtoSSM v4.2 | Batched 4 changes | 0.899 |
+
+- Perch probes dramatically outperform fine-tuned models: 0.893 LB from a simple LogReg/MLP, vs 0.859 best SED (exp 017).
+- ProtoSSM v4 reaches 0.918, establishing a new best by a large margin.
+- v4.2 regressed −0.019 by batching 4 changes simultaneously — single-variable testing is essential.
+- Perch's large-scale bird audio pretraining provides representations that simple classifiers can exploit effectively.
+
+**Limitation**: Frozen embeddings cannot adapt to novel species or domain shifts; TF dependency for Perch inference.
+
+Full results: [results.md](experiments/018-perch-probes/results.md)
+
+---
+
+### 3.19 Exp 019: SED Ablations
+
+**Hypothesis**: Systematic single-variable ablations (backbone, mel, normalization, loss, augmentation) will identify the optimal SED configuration.
+
+**Dataset**: BirdCLEF 2026, 234 species.
+
+**Models**: EfficientNet-B0 and HGNetV2-B0 SED variants, v5a–v5n.
+
+| Variant | Key Change | Public LB | Δ vs v5g |
+|---------|-----------|----------|----------|
+| v5f | EfficientNet-B0 + ttahara recipe | 0.855 | −0.037 |
+| v5g | HGNetV2-B0 + ttahara recipe | 0.892 | — |
+| v5j | AmplitudeToDB + NNAudio | **0.906** | +0.014 |
+| v5j-4fold | 4-fold ensemble | **0.913** | +0.021 |
+| v5m/v5n | embed_dim ablations | < 0.906 | Regressed |
+
+- HGNetV2-B0 backbone (v5g) outperforms EfficientNet-B0 (v5f) by +0.037 — backbone choice is the largest lever.
+- AmplitudeToDB + NNAudio mel (v5j) adds +0.014 on top, reaching 0.906 LB (best single SED).
+- 4-fold ensembling (v5j-4fold) pushes to 0.913, confirming fold diversity helps.
+- Offline val/AUROC is anti-correlated with LB — cannot rank models without submitting.
+
+**Limitation**: Single seed per variant; offline metrics unreliable for model selection.
+
+Full results: [results.md](experiments/019-sed-ablations/results.md)
+
+---
+
+### 3.20 Exp 020: Perch ONNX + ProtoSSM
+
+**Hypothesis**: ONNX-exported Perch can match TF Perch accuracy while enabling faster single-kernel inference on Kaggle.
+
+**Dataset**: BirdCLEF 2026, 234 species.
+
+**Models**: Perch v2 (TF vs ONNX) + ProtoSSM.
+
+| Variant | Runtime | Public LB | Δ vs V18+TF |
+|---------|---------|----------|-------------|
+| V17+TF | TF (two-kernel) | 0.922 | −0.003 |
+| V18+TF | TF (two-kernel) | **0.925** | — |
+| V18+ONNX | ONNX (single-kernel) | 0.920 | −0.005 |
+
+- ONNX Perch runs 9× faster than TF but incurs −0.005 to −0.010 LB penalty due to numerical differences in embedding extraction.
+- V18+TF (two-kernel workflow: TF extracts embeddings, then Python kernel classifies) reaches 0.925 — best Perch result.
+- Gap to pantanal reference (0.930) is −0.005, approaching the ceiling.
+- .ipynb kernels run 2× faster than .py on Kaggle — format matters for tight time budgets.
+
+**Limitation**: Two-kernel workflow adds complexity; ONNX accuracy gap not fully explained.
+
+Full results: [results.md](experiments/020-perch-onnx-protossm/results.md)
+
+---
+
+### 3.21 Exp 021: SED Training — 7 Phases
+
+**Hypothesis**: Training recipe modifications (loss functions, augmentation, head architecture, multi-context) can improve SED beyond the v5j baseline.
+
+**Dataset**: BirdCLEF 2026, 234 species.
+
+**Models**: HGNetV2-B0 SED, phases A–G.
+
+| Phase | Changes | Best LB | Δ vs v5j |
+|-------|---------|---------|----------|
+| A | Site/hour priors (PP) | 0.917 | +0.004 |
+| B | CE loss | < 0.906 | Regressed |
+| C | Waveform MixUp | < 0.906 | Regressed |
+| D | AttHead variants | < 0.906 | Regressed |
+| E | Multi-context LSEHead | < 0.906 | Regressed |
+| F | species_mapping bug fix | — | — |
+| G | Manifold mixup (v6l) | 0.899 | −0.007 |
+
+- Site/hour priors in post-processing (Phase A) add +0.003/+0.004, the only positive result.
+- **All training recipe changes (Phases B–G) are 0-for-14 on LB.** CE loss, waveform MixUp, attention heads, multi-context, and manifold mixup all regress.
+- v5j-4fold-pp2 (baseline + site/hour PP) reaches 0.917 — best SED overall.
+- Key insight: the SED backbone and mel frontend drive performance; training tricks do not transfer to this task.
+
+**Limitation**: No backbone or mel frontend changes tested in this experiment (those are the actual levers per exp 017/019).
+
+Full results: [results.md](experiments/021-sed-training/results.md)
+
+---
+
+### 3.22 Exp 022: PCEN Normalization
+
+**Hypothesis**: Learnable PCEN (Per-Channel Energy Normalization) will improve domain invariance between focal recordings and soundscapes, boosting LB scores.
+
+**Dataset**: BirdCLEF 2026, 234 species.
+
+**Models**: HGNetV2-B0 SED with learnable PCEN replacing AmplitudeToDB.
+
+| Variant | Normalization | Public LB | Δ vs v5j |
+|---------|--------------|----------|----------|
+| v10a | Learnable PCEN | 0.880 | −0.026 |
+| v5j-repro | AmplitudeToDB (reproduction) | 0.903 | −0.003 |
+
+- **REJECTED**: PCEN regresses to 0.880, a −0.026 deficit versus v5j (0.906).
+- v5j-repro (0.903) confirms the training pipeline is correct — PCEN itself is the cause of regression, not a bug.
+- Despite theoretical motivation for domain-invariant normalization, AmplitudeToDB empirically dominates on this task.
+
+**Limitation**: Only default PCEN hyperparameters tested; no grid search over PCEN's learnable parameters.
+
+Full results: [results.md](experiments/022-pcen-normalization/results.md)
+
+---
+
+### 3.23 Exp 023: Perch + SED Ensemble
+
+**Hypothesis**: Score-level fusion of Perch (ProtoSSM) and SED (v5j-4fold) predictions in a single Kaggle kernel will outperform either model alone.
+
+**Dataset**: BirdCLEF 2026, 234 species. Inference in a single Kaggle kernel.
+
+**Models**: Perch ProtoSSM + HGNetV2-B0 SED v5j-4fold, weighted score fusion.
+
+| Config | proto_weight | Public LB | Δ vs best single |
+|--------|-------------|----------|-----------------|
+| w=0.5 | 0.5 | 0.927 | — |
+| w=0.3 | 0.3 | 0.927 | — |
+| w=0.7 | 0.7 | 0.926 | — |
+| MLP-only | 0.0 | **0.929** | +0.004 |
+| No PP | — | 0.922 | −0.005 |
+
+- MLP-only (proto_weight=0.0, using only the MLP probe from Perch, no prototypical component) achieves **0.929 LB** — the new best overall score.
+- Score-level fusion at various weights (0.3–0.7) yields 0.926–0.927, slightly below MLP-only, suggesting the prototypical component adds noise.
+- Post-processing remains valuable: removing PP costs −0.005.
+- Config-driven YAML push system enables rapid submission iteration without code changes.
+
+**Limitation**: Only score-level fusion tested; no learned fusion or stacking. Gap to pantanal reference (0.930) is −0.001.
+
+Full results: [results.md](experiments/023-perch-sed-ensemble/results.md)
+
+---
+
+## 4. Cross-Experiment Analysis (Experiments 001–023)
 
 ### 4.1 Master Comparison Tables
 
@@ -405,20 +696,39 @@ All configurations evaluated on held-out test set (2,803 samples), sorted by ROC
 
 #### BirdCLEF 2026 Kaggle Leaderboard (234 classes)
 
-All models submitted via the exp 010 pipeline. Sorted by public LB macro-AUROC descending.
+All models submitted via exp 010+ pipelines. Sorted by public LB macro-AUROC descending.
 
-| Model | Exp | Training Data | Species | Public LB | vs Best Focal |
-|-------|-----|--------------|---------|----------|--------------|
-| ProtoCLR soundscape | 012 | Focal + soundscape | 234/234 | **0.767** | +0.031 |
-| ConvNeXt soundscape | 012 | Focal + soundscape | 234/234 | **0.755** | +0.060 |
-| ProtoCLR fulldata | 011 | Focal 100% | 206/234 | **0.736** | — |
-| ProtoCLR 80/10/10 | 011 | Focal 80% | 206/234 | **0.721** | — |
-| ConvNeXt 80/10/10 | 011 | Focal 80% | 206/234 | **0.720** | — |
-| EAT soundscape | 012 | Focal + soundscape | 234/234 | **0.720** | +0.022 |
-| EAT 80/10/10 | 011 | Focal 80% | 206/234 | **0.701** | — |
-| EAT fulldata | 011 | Focal 100% | 206/234 | **0.698** | — |
-| ConvNeXt fulldata | 011 | Focal 100% | 206/234 | **0.695** | — |
-| ProtoCLR 2025 | 010 | BirdCLEF 2025 | 41/234 | **0.531** | — |
+| Model | Exp | Architecture | Public LB |
+|-------|-----|-------------|----------|
+| Perch + SED ensemble (MLP-only) | 023 | Perch ProtoSSM + SED v5j-4fold | **0.929** |
+| Perch + SED ensemble (w=0.5) | 023 | Perch ProtoSSM + SED v5j-4fold | 0.927 |
+| Perch V18+TF | 020 | Perch v2 + ProtoSSM | 0.925 |
+| Perch V18+ONNX | 020 | Perch v2 + ProtoSSM | 0.920 |
+| Perch ProtoSSM v4 | 018 | Perch v2 + ProtoSSM | 0.918 |
+| SED v5j-4fold-pp2 | 021 | HGNetV2-B0 SED | 0.917 |
+| SED v5j-4fold | 019 | HGNetV2-B0 SED | 0.913 |
+| Perch OOF v2-fix | 018 | Perch v2 + probes | 0.911 |
+| SED v5j | 019 | HGNetV2-B0 SED | 0.906 |
+| SED v6l (manifold mixup) | 021 | HGNetV2-B0 SED | 0.899 |
+| Perch probes | 018 | Perch v2 + LogReg/MLP | 0.893 |
+| SED v5g (ttahara) | 019 | HGNetV2-B0 SED | 0.892 |
+| PCEN v10a | 022 | HGNetV2-B0 SED | 0.880 |
+| SED v4b (AmplitudeToDB) | 017 | EfficientNet-B0 SED | 0.859 |
+| SED v5f (EfficientNet) | 019 | EfficientNet-B0 SED | 0.855 |
+| SED v4a (hi-res mel) | 017 | EfficientNet-B0 SED | 0.825 |
+| SED v1 + PP | 016 | EfficientNet-B0 SED | 0.827 |
+| ProtoCLR soundscape | 012 | ProtoCLR/CvT-13 LoRA | 0.767 |
+| ProtoCLR student | 015 | ProtoCLR/CvT-13 LoRA | 0.762 |
+| ConvNeXt soundscape | 012 | ConvNeXt-Base LoRA | 0.755 |
+| ProtoCLR fulldata | 011 | ProtoCLR/CvT-13 LoRA | 0.736 |
+| ProtoCLR 80/10/10 | 011 | ProtoCLR/CvT-13 LoRA | 0.721 |
+| ConvNeXt 80/10/10 | 011 | ConvNeXt-Base LoRA | 0.720 |
+| EAT soundscape | 012 | EAT-base LoRA | 0.720 |
+| EAT 80/10/10 | 011 | EAT-base LoRA | 0.701 |
+| EAT fulldata | 011 | EAT-base LoRA | 0.698 |
+| EAT student | 015 | EAT-base LoRA | 0.696 |
+| ConvNeXt fulldata | 011 | ConvNeXt-Base LoRA | 0.695 |
+| ProtoCLR 2025 | 010 | ProtoCLR/CvT-13 LoRA | 0.531 |
 
 ### 4.2 Key Insights
 
@@ -446,30 +756,38 @@ All models submitted via the exp 010 pipeline. Sorted by public LB macro-AUROC d
 
 12. **ProtoCLR consistently leads despite smallest size.** Across both exp 011 and 012, ProtoCLR (~20M params) achieves the highest LB scores (0.736 fulldata, 0.767 soundscape) while being 5× smaller than EAT and ConvNeXt (~90M). Its Xeno-Canto bird-specific pretraining provides a persistent advantage that neither AudioSet (EAT) nor ImageNet (ConvNeXt) pretraining can match on this task.
 
+13. **Pseudo-labeling failed due to architecture, not data (exp 013–015).** The full pipeline worked technically — MixIT separated sources, teacher ensemble achieved 0.885 AUROC, and 127K segments were pseudo-labeled. But student training regressed on LB (ProtoCLR −0.005, EAT −0.024). Students converge to teacher quality in 1–5 epochs, then overfit to pseudo-label noise. The bottleneck was the clip-level 5s-window architecture, not data quantity, motivating the SED pivot.
+
+14. **Architecture pivot to SED was the breakthrough (exp 016–019).** Switching from clip-level LoRA models (~0.767 ceiling) to EfficientNet-B0 SED immediately reached 0.827 with PP. The SED pipeline benefits from frame-level predictions that naturally handle multi-species soundscapes. Subsequent improvements came from backbone (HGNetV2-B0 +0.037), mel frontend (AmplitudeToDB +0.034), and fold ensembling (+0.007).
+
+15. **Frozen Perch embeddings dominate fine-tuned models (exp 018, 020).** Simple probes on frozen Perch v2 embeddings (0.893) outperformed the best fine-tuned SED (0.859 at the time) with orders of magnitude less training. ProtoSSM v4 reached 0.918. Google's large-scale bird audio pretraining produces representations that simple classifiers can exploit more effectively than end-to-end fine-tuning on limited data.
+
+16. **Training recipe changes are 0-for-14 on LB (exp 021).** CE loss, waveform MixUp, AttHead, multi-context, manifold mixup — every training recipe modification regressed on LB. Only post-processing priors (site/hour) helped (+0.003/+0.004). The SED backbone and mel frontend are the actual levers; training tricks do not transfer.
+
+17. **Offline val/AUROC is anti-correlated with LB (exp 019, 021).** Models that score higher on the offline validation set consistently score lower on the public leaderboard. This makes offline metrics useless for model selection — every ranking decision requires a Kaggle submission.
+
+18. **Score-level ensemble reaches 0.929, near the 0.930 reference (exp 023).** Fusing Perch and SED predictions in a single kernel, with MLP-only weighting (proto_weight=0.0), achieves the best score. The prototypical component adds noise; the MLP probe alone captures the useful signal from Perch embeddings.
+
 ### 4.3 Open Questions
 
-**Representation Quality**
-- Would higher LoRA rank (r=16, r=32) or the adapters backend improve ProtoCLR and ConvNeXt, which were only tested with PEFT at r=8?
-- Can an MLP classification head on ProtoCLR (384→256→234) push beyond 0.767 LB, as MLP heads helped EAT in exp 006?
-- Is the ~0.77 LB ceiling a data-scale limitation, a domain gap issue, or a representation quality plateau?
+**Closing the Gap to 0.930+**
+- Can learned fusion (stacking, neural combiner) outperform score-level averaging?
+- Would a larger SED backbone (HGNetV2-B2/B4) improve the SED component of the ensemble?
+- Can multi-fold Perch probes (analogous to SED 4-fold) push Perch scores higher?
 
-**Pseudo-Labeling and Unlabeled Data (exp 013)**
-- Will MixIT source separation improve pseudo-label quality on the 10,592 unlabeled soundscapes?
-- How much do separated channels help for non-bird taxa (frogs, insects) where the pretrained Bird MixIT was not trained?
-- What confidence threshold maximizes pseudo-label precision without discarding too many true positives?
-- Will student training on pseudo-labeled data improve over the exp 012 teacher models?
+**SED Improvements**
+- Are there backbone or mel frontend changes beyond HGNetV2-B0 + AmplitudeToDB + NNAudio that help?
+- Would self-training or noisy student approaches work better now that SED provides frame-level labels?
 
-**Data and Augmentation**
-- How much would SpecAugment, mixup, or time-frequency masking improve generalization?
-- Does weighted sampling or loss reweighting help the 28 soundscape-only species with minimal training data?
-- Would fulldata soundscape fine-tuning (100% focal + soundscape, no val/test split, capped epochs) push scores higher?
+**Perch Pipeline**
+- Can the ONNX accuracy gap (−0.005–0.010) be closed with better quantization or calibration?
+- Would fine-tuning Perch (rather than freezing) help, or does it suffer the same overfitting as LoRA models?
 
-**Ensembles and Deployment**
-- Can ensemble inference be made feasible within the 90-minute Kaggle limit (currently ~120 min for 2 models)?
-- Do the three soundscape-adapted models (exp 012) make complementary errors at the per-sample level?
+**Ensemble and Deployment**
+- What is the optimal number of SED folds for the Kaggle time budget?
+- Can the two-kernel Perch workflow be simplified to a single kernel without accuracy loss?
 
 **Deferred Work**
-- BirdNET and Perch evaluation via linear probing on BirdSet (exp 001 Phase 2B)
-- Multi-seed runs to quantify variance in current single-seed results
-- Catastrophic forgetting check: compare exp 012 focal test AUROC against exp 011 baseline
-- Verify 28 soundscape-only species have non-zero predictions in exp 012 models
+- Multi-seed runs to quantify variance in SED and Perch pipelines
+- Explore additional post-processing: per-species thresholds, calibration
+- Test whether MixIT-separated pseudo-labels help SED (vs clip-level where they failed)
