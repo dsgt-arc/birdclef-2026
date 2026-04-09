@@ -11,6 +11,7 @@ Last updated: 2026-04-08
 |------|---------|-------------|
 | `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns | Read fully — it's the most important doc |
 | `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | Skim latest sections (exp 020-023) |
+| `user/murilo/MODEL-TRAINING.md` | Training techniques reference (backbones, heads, loss, PP) | Skim relevant sections as needed |
 | `user/murilo/EXPERIMENTS.md` | Per-experiment methodology summaries (001-023) | Skim Section 1 table, read exp 019-023 details |
 | `user/murilo/experiments/023-perch-sed-ensemble/results.md` | Current experiment results | Read fully |
 | `user/murilo/experiments/023-perch-sed-ensemble/tasks.md` | Current experiment task tracking | Read fully |
