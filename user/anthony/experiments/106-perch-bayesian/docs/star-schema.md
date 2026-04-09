@@ -173,6 +173,134 @@ Replaces fixed diel bins with data-driven acoustic states.
 For a test window from site l, identify which site-state prototype it's closest
 to, then use species affinities for that state as a context-dependent prior.
 
+## Domain transfer precision
+
+96.8% of Perch logit dimensions shift significantly between focal and soundscape
+domains (KS test, p < 0.05). Raw focal prototypes applied to soundscape windows
+are degraded by this shift. The domain transfer precision matrix corrects for
+this by down-weighting unreliable dimensions.
+
+### Three components
+
+**1. Mahalanobis decorrelation** (within-species Σ⁻¹): correlated detector
+banks (50 cicada logits) collapse to one effective dimension. Already applied
+via the SVD whitening in the prototype pipeline.
+
+**2. Domain shift reliability per dimension**:
+
+```
+reliability_d = σ²_within(d) / (σ²_within(d) + σ²_shift(d))
+```
+
+σ²_within is the within-species (or within-site) variance — "real" variation.
+σ²_shift is the between-domain variance — focal vs soundscape divergence.
+Dimensions where shift dominates get weight → 0. Distribution shift stats
+already computed in `distribution_shift.json`.
+
+**3. Species specificity from profile matrix**:
+
+```
+specificity_d = 1 / (number of species activating dimension d)
+```
+
+A logit dimension that fires for 200/206 species is background — high domain
+shift, low discriminative value. A dimension that fires for 3 species is
+discriminative and likely stable across domains. Column sparsity of the species
+profile matrix `(S, P)` provides this directly.
+
+### Combined transfer weight
+
+```
+transfer_weight_d = decorrelation_d × reliability_d × specificity_d
+```
+
+Applied as a diagonal weighting when scoring soundscape windows against focal
+prototypes:
+
+```
+score = (prototype * transfer_weights) @ (window * transfer_weights).T
+```
+
+This is the diagonal approximation to the full domain transfer precision matrix.
+
+## Parallel spaces
+
+The star schema is space-agnostic. Any model that produces per-window feature
+vectors can serve as the shared mediating dimension:
+
+| Space | Dim | Source | Strengths |
+|-------|-----|--------|-----------|
+| **P** (logits) | 14,795 | Pretrained Perch v2 | Interpretable, mediating taxa visible |
+| **E** (embeddings) | 1,536 | Pretrained Perch v2 | Compact, better conditioned |
+| **F_P** (finetuned logits) | N_classes | Finetuned model (e.g., exp 102) | Task-specific discriminative |
+| **F_E** (finetuned embeddings) | hidden_dim | Finetuned model | Task-specific acoustic similarity |
+
+Each space produces the full pipeline independently: prototypes, site states,
+affinity matrices, domain transfer weights. After composing through the
+mediating dimension, all collapse to the same shape: **(S, W)** species scores
+per window.
+
+### Bayesian model averaging across spaces
+
+Each space m gives a per-species, per-window score. Combine via species-dependent
+mixing weights:
+
+```
+P(species s | window w) = Σ_m  π_m(s) * P(s | w, space_m)
+```
+
+Mixing weights `π_m(s)` estimated from per-species AUROC on labeled soundscapes:
+
+```python
+# Per species, softmax over per-space AUROC
+π_P(s) = exp(auroc_P(s) / τ) / Σ_m exp(auroc_m(s) / τ)
+```
+
+Temperature τ controls concentration. Species-dependent: unmapped insects get
+π_P ≈ 0 (no logit signal), π_E ≈ 1. Well-mapped birds might get π_P = 0.6,
+π_E = 0.4.
+
+## Scoring a soundscape window
+
+Full pipeline for scoring a test window w from site l at time t:
+
+### Step 1: Identify acoustic state
+
+```
+w_proj = whiten_site(w - μ_l)
+k* = argmax_k cos(w_proj, site_prototype_{l,k})
+```
+
+Now we know: site l is in state k* (e.g., "dawn chorus", "night insects").
+
+### Step 2: Context-dependent species prior
+
+```
+prior(s) = affinity[s, (l, k*)]
+```
+
+Which species are expected in this site-state, from the composition
+`(S×K_s, P) @ (L×K_l, P)^T`.
+
+### Step 3: Multi-prototype species scoring (per space)
+
+```
+w_corrected = (w - global_focal_mean) * transfer_weights
+raw_score(s) = max_k cos(w_corrected, prototype_{s,k})
+```
+
+Piecewise-linear: union of cones per species in the transfer-corrected space.
+
+### Step 4: Combine across spaces + prior
+
+```
+score_m(s) = raw_score_m(s) * prior(s)     # per space
+final(s) = Σ_m π_m(s) * score_m(s)         # Bayesian average
+```
+
+Perch logits mediate every step: prototypes, site states, affinity, scoring,
+transfer weights — all expressed in and composed through the shared dimension.
+
 ## Computed artifacts
 
 | Composition | Status | Artifact |
@@ -187,9 +315,18 @@ to, then use species affinities for that state as a context-dependent prior.
 
 ## Next steps
 
-1. Evaluate multi-prototype vs single-mean on labeled soundscapes (built into task)
-2. Compare multi-prototype (S, W) predictions against ridge OOF predictions
-3. Use site-state affinity as a prior for the ridge model
-4. Focal-to-soundscape domain gap per species: correlate each species' focal
-   prototype with its soundscape labeled windows
-5. Full composition: `(S×K_s, P) @ (L×K_l, P)^T` with double group_max
+### Phase 2 (in progress)
+1. Multi-prototype + site-state prototypes via Leiden (running)
+2. Evaluate multi-prototype vs single-mean AUROC on labeled soundscapes
+
+### Phase 3 (domain transfer)
+3. Implement domain transfer precision weights (reliability × specificity)
+4. Domain-corrected multi-prototype scoring
+5. Per-species domain gap analysis (focal prototype vs soundscape labeled windows)
+
+### Phase 4 (parallel spaces + ensemble)
+6. Run E-space (embedding) pipeline — same code, swap feature column
+7. Per-species Bayesian mixing weights across P and E spaces
+8. F-space pipeline if finetuned model available (exp 102 EfficientNet)
+9. Calibrate local↔LB mapping from initial submissions
+10. Bayesian ensemble with submission-informed weights
