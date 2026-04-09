@@ -18,6 +18,7 @@ from birdclef_106.analysis import (
     MultiPrototypeProfiles,
     SitePrototypes,
     PrototypeRidge,
+    StarSchemaScorer,
     EmpiricalBayesRidge,
     TemporalPooling,
 )
@@ -54,6 +55,7 @@ class AllAnalysis(AnalysisTask):
             MultiPrototypeProfiles(**p),
             SitePrototypes(**p),
             PrototypeRidge(**p),
+            StarSchemaScorer(**p),
         ]
 
         if self.phase == 1:

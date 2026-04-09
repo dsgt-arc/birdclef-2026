@@ -26,6 +26,7 @@ from birdclef_106.analysis.structure import (
 from birdclef_106.analysis.models import (
     EmpiricalBayesRidge,
     PrototypeRidge,
+    StarSchemaScorer,
     TemporalPooling,
 )
 
@@ -47,5 +48,6 @@ __all__ = [
     # Models
     "EmpiricalBayesRidge",
     "PrototypeRidge",
+    "StarSchemaScorer",
     "TemporalPooling",
 ]
