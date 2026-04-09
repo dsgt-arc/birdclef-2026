@@ -147,9 +147,13 @@ class SitePrototypes(AnalysisTask):
     """Aggregate per-site prototypes, compute species × site-state affinity."""
 
     def requires(self):
+        from birdclef_106.analysis.structure.profiles_focal import FocalSpeciesProfiles
         sites = list_sites(self.features_dir)
         p = self._params()
-        return {site: SingleSitePrototype(site=site, **p) for site in sites}
+        return {
+            "focal_profiles": FocalSpeciesProfiles(**p),
+            **{site: SingleSitePrototype(site=site, **p) for site in sites},
+        }
 
     def output(self):
         return [
