@@ -22,6 +22,6 @@ mkdir -p logs
 source sbatch/_setup-venv.sh
 
 # Install analysis dependencies (idempotent — skips if already installed)
-uv pip install luigi scikit-learn scipy pydmd filterpy --quiet
+uv pip install luigi scikit-learn scipy pydmd filterpy igraph leidenalg --quiet
 
 python -c "from birdclef_106.cli import main; main()" analyze "$@"
