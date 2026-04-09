@@ -3,7 +3,7 @@
 #SBATCH --account=paceship-clef2026_birdclef
 #SBATCH -N1 -n1 --cpus-per-task=8 --mem-per-cpu=8G
 #SBATCH -p cpu-small
-#SBATCH -t 360
+#SBATCH -t 720
 #SBATCH -q inferno
 #SBATCH --output=logs/analyze-%j.out
 
@@ -24,7 +24,4 @@ source sbatch/_setup-venv.sh
 # Install analysis dependencies (idempotent — skips if already installed)
 uv pip install luigi scikit-learn scipy pydmd filterpy --quiet
 
-# workers=1 avoids polars fork deadlock in Luigi multiprocessing workers.
-# Prototype tasks (SingleSitePrototype, SingleSpeciesPrototype) deadlock on
-# polars read_parquet in forked child processes due to rayon thread pool state.
-python -c "from birdclef_106.cli import main; main()" analyze --workers 1 "$@"
+python -c "from birdclef_106.cli import main; main()" analyze "$@"

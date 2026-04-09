@@ -68,8 +68,12 @@ def main(argv: list[str] | None = None) -> None:
             )
         sys.exit(rc)
     elif args.command == "analyze":
+        import multiprocessing
         import os
         import luigi
+        # "spawn" starts fresh interpreter per worker — avoids polars/rayon
+        # fork deadlock where child inherits parent's stale thread pool locks.
+        multiprocessing.set_start_method("spawn", force=True)
         from birdclef_106.tasks import AllAnalysis
         luigi.build(
             [AllAnalysis(
