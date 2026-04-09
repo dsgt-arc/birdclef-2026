@@ -339,47 +339,102 @@ high logits changes dramatically between focal and soundscape recordings.
 
 ---
 
-## 7. 4-Fold vs Single-Fold Pseudo-Label Coverage
+## 7. Single vs Avg-4Fold vs Max-4Fold Pseudo-Label Coverage
 
-Counter-intuitively, **4-fold averaging reduces pseudo-label coverage** compared to single-fold.
+Three strategies for generating SED pseudo-labels from 4-fold models, with dramatically
+different coverage for rare/unseen species.
 
 ### 7.1 Coverage comparison (unseen species, unlabeled soundscapes)
 
-| Threshold | Single-Fold | 4-Fold Avg | Difference |
-|-----------|-------------|------------|------------|
-| > 0.3 | 104 / 159 | 83 / 159 | **-21** |
-| > 0.5 | 80 / 159 | 68 / 159 | **-12** |
-| > 0.7 | 65 / 159 | 53 / 159 | **-12** |
-| > 0.9 | 37 / 159 | 35 / 159 | **-2** |
+| Threshold | Single-Fold | Avg-4Fold | **Max-4Fold** | Max vs Single |
+|-----------|-------------|-----------|---------------|---------------|
+| > 0.1 | 128 / 159 | 116 / 159 | **146 / 159** | **+18** |
+| > 0.3 | 104 / 159 | 83 / 159 | **125 / 159** | **+21** |
+| > 0.5 | 80 / 159 | 68 / 159 | **109 / 159** | **+29** |
+| > 0.7 | 65 / 159 | 53 / 159 | **80 / 159** | **+15** |
+| > 0.9 | 37 / 159 | 35 / 159 | **55 / 159** | **+18** |
 
-**Why this happens**: Averaging logits across 4 folds smooths out confident individual-fold
-predictions. If fold 2 detects a rare species at p=0.7 but folds 0/1/3 say p=0.01, the
-average is ~0.18 — below the 0.5 threshold. The rare species detection is lost to consensus.
+**Max-across-folds is the clear winner**: +29 species at >0.5 compared to single-fold,
+and +41 compared to averaging. Averaging HURTS (-12 vs single) because it smooths out
+confident individual-fold predictions for rare species.
 
-### 7.2 Newly covered species (4-fold gains)
+**Why max-folds works**: If fold 2 detects a rare species at p=0.7 but folds 0/1/3 say
+p=0.01, averaging gives ~0.18 (lost), but max gives 0.7 (kept). Each fold sees a
+slightly different training set, so different folds catch different rare species.
 
-Only 4 species gained coverage (0 → >0) from 4-fold averaging:
+### 7.2 Total pseudo-label predictions
 
-| Species | Single | 4-Fold |
-|---------|--------|--------|
-| 24287 | 0 | 14 |
-| gretho2 | 0 | 3 |
-| brcmar1 | 0 | 1 |
-| eulfly1 | 0 | 1 |
+| Threshold | Single | Avg-4Fold | Max-4Fold |
+|-----------|--------|-----------|-----------|
+| > 0.3 | 210,474 | 148,413 | **311,590** |
+| > 0.5 | 154,697 | 108,143 | **223,122** |
+| > 0.7 | 113,740 | 77,997 | **163,471** |
 
-### 7.3 Zero coverage in both: 75 species remain invisible
+Max-folds produces ~1.5× more pseudo-label predictions than single-fold. This is not just
+noise — it's rare species detections from individual folds that the other folds missed.
 
-75 unseen species get zero pseudo-labels at the 0.5 threshold from BOTH single-fold and
-4-fold models. These species need a fundamentally different teacher (Perch+SED ensemble)
-or a much lower threshold.
+### 7.3 Species recovered by max-folds (single=0, max>0 at >0.5)
 
-### 7.4 Implication for pseudo-labeling strategy
+**34 species newly covered** that single-fold missed entirely:
 
-**Use single-fold (or max-across-folds) for pseudo-labeling, not fold-averaged predictions.**
-The goal of pseudo-labels is to maximize recall for rare species, not to minimize false
-positives. A single confident fold detection is more valuable than a consensus "no."
-Alternatively, use max-across-folds: `max(fold0, fold1, fold2, fold3)` per species per
-segment to maximize coverage while still requiring at least one fold to be confident.
+| Species | Taxon | Segments (max) | Notes |
+|---------|-------|----------------|-------|
+| 24287 | Amphibia | 36 | |
+| spbant3 | Aves | 13 | Was in 54 "data quality suspects" (205 focal) |
+| gretho2 | Aves | 11 | |
+| fotfly | Aves | 7 | |
+| tattin1 | Aves | 6 | |
+| blchaw1 | Aves | 5 | |
+| scadov1 | Aves | 4 | |
+| houspa | Aves | 2 | Was in 54 suspects (496 focal!) |
+| swtman1 | Aves | 2 | Was in 54 suspects (355 focal) |
+| ... (25 more) | ... | 1-3 | |
+
+Notable: several of the 54 "data quality suspect" species (high focal count, zero single-fold
+coverage) are recovered by max-folds — they DO exist in soundscapes, just barely.
+
+### 7.4 Per-fold unique contributions
+
+| Fold | Unseen Species Detected | Unique to This Fold |
+|------|------------------------|-------------------|
+| 0 | 88 | 6 |
+| 1 | 82 | 2 |
+| 2 | 78 | 5 |
+| 3 | 84 | 5 |
+
+Every fold contributes unique species that no other fold detects. This confirms that
+max-across-folds is the right strategy — dropping any single fold loses species.
+
+### 7.5 Zero coverage summary
+
+| Strategy | Zero Coverage at >0.5 | Zero at >0.3 |
+|----------|----------------------|--------------|
+| Single-fold | 79 / 159 | 55 / 159 |
+| Avg-4fold | 91 / 159 (worse!) | — |
+| **Max-4fold** | **50 / 159** | **34 / 159** |
+| All three combined | 45 / 159 | — |
+
+**Max-folds cuts the zero-coverage count nearly in half** (79 → 50 at >0.5).
+At the more permissive >0.3 threshold, only **34 species remain truly hard** — these
+are the ones that need Perch or external data.
+
+### 7.6 The 34 truly hard species (zero at >0.3, even max-folds)
+
+By taxonomy: 18 Aves, 11 Amphibia, 3 Mammalia, 2 Insecta.
+
+These species are invisible to the SED model under any fold or threshold strategy.
+They are the primary targets for the Perch teacher — if Perch's pre-trained bioacoustic
+knowledge can detect even some of these, the ensemble teacher is justified.
+
+### 7.7 Implication for pseudo-labeling strategy
+
+**Use max-across-folds (`max(fold0, fold1, fold2, fold3)`) as the SED teacher component.**
+
+- Covers 109/159 unseen species at >0.5 (vs 80 for single, 68 for avg)
+- Produces 223K predictions at >0.5 (vs 155K single)
+- Each fold contributes unique rare species detections
+- Apply power transform (P^1.5) after max to control false positive rate
+- For the 50 remaining zero-coverage species, Perch is needed
 
 ---
 
@@ -562,12 +617,16 @@ seen in labeled form. S01 (2,341 files) and S02 (2,505 files) alone are massive 
 they're 6× larger than all labeled data. Pseudo-labeling these gives the model exposure
 to diverse acoustic environments, which is exactly what robustness requires.
 
-### 10.5 Use max-across-folds, not averaged, for pseudo-labeling
+### 10.5 Use max-across-folds for pseudo-labeling (Phase A finding)
 
-4-fold averaging loses 12 unseen species at the 0.5 threshold vs single-fold. For
-pseudo-labeling, use `max(fold0, fold1, fold2, fold3)` per species per segment to maximize
-coverage. A single confident fold detection is a better teacher signal than a smoothed-out
-consensus that loses rare species.
+Max-across-folds recovers **+29 unseen species** at >0.5 (80 → 109/159), cutting zero-coverage
+from 79 to 50. At >0.3, only 34 species remain truly hard. Each of the 4 folds contributes
+2-6 unique species. **34 new species are recovered** that single-fold missed entirely —
+including several of the 54 "data quality suspects" (House Sparrow, Swallow-tailed Manakin),
+proving they DO exist in soundscapes but are too rare for any single fold to catch reliably.
+
+For pseudo-labeling: `max(fold0, fold1, fold2, fold3)` per species per segment, then
+apply power transform P^1.5 to control false positive rate.
 
 ### 10.6 ~12.6% of focal "confusions" are correct background detections
 

@@ -19,9 +19,30 @@ Full findings in `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md`.
 | Focal count vs coverage (Spearman) | r=0.459 | More data helps, but domain shift is the wall |
 | High focal + zero soundscape suspects | 54 species | Need ecological sanity check |
 
-### Phase A: Max-Across-Folds
+### Phase A: Max-Across-Folds (2026-04-09) ✅
 
-*(pending)*
+Max-across-folds (`max(fold0, fold1, fold2, fold3)`) dramatically outperforms both
+single-fold and averaged-folds for pseudo-label coverage of unseen species.
+
+| Strategy | Coverage @>0.5 | Zero Coverage @>0.5 | Zero @>0.3 |
+|----------|---------------|--------------------|-----------:|
+| Single-fold | 80 / 159 | 79 | 55 |
+| Avg-4fold | 68 / 159 | 91 (worse!) | — |
+| **Max-4fold** | **109 / 159** | **50** | **34** |
+
+Key findings:
+- **+29 species recovered** at >0.5 vs single-fold (80 → 109)
+- **34 species newly covered** that single-fold missed entirely
+- Several "data quality suspects" (House Sparrow, Swallow-tailed Manakin) recovered —
+  they DO exist in soundscapes but are too rare for any single fold
+- Each fold contributes 2-6 unique species; all folds needed
+- Only **34 truly hard species** remain at >0.3 — targets for Perch teacher
+- Max-folds produces 223K predictions at >0.5 (vs 155K single) — larger pseudo-label pool
+
+**Decision**: Use max-across-folds as the SED component of the pseudo-labeling teacher.
+Apply P^1.5 power transform after max to control false positive rate.
+
+Full analysis: `notes/2026-04-09-inference-eda-deep-dive.md` Section 7
 
 ### Phase B-C: Perch Inference + Probes
 

@@ -424,25 +424,24 @@ def section6_logit_stats(data: dict):
 
 
 # --------------------------------------------------------------------------- #
-# Section 7: 4-fold vs single-fold pseudo-label coverage
+# Section 7: Single vs Avg-4fold vs Max-4fold pseudo-label coverage
 # --------------------------------------------------------------------------- #
 def section7_fourfold_coverage(data: dict):
     print("\n" + "=" * 70)
-    print("SECTION 7: 4-FOLD vs SINGLE-FOLD PSEUDO-LABEL COVERAGE")
+    print("SECTION 7: SINGLE vs AVG-4FOLD vs MAX-4FOLD COVERAGE")
     print("=" * 70)
 
     species_cols = data["species_cols"]
     ss_species = data["ss_species"]
+    sp_to_class = data["sp_to_class"]
     unseen_species = [sp for sp in species_cols if sp not in ss_species]
     unseen_idx = [species_cols.index(sp) for sp in unseen_species]
 
-    # Single-fold unlabeled probs
     df = data["ss_logits"]
-    single_probs = 1 / (1 + np.exp(-df[species_cols].values.astype(np.float32)))
+    single_logits = df[species_cols].values.astype(np.float32)
     unlabeled_mask = ~df["is_labeled"].values
-    single_unlab = single_probs[unlabeled_mask]
 
-    # Load 4-fold
+    # Load 4-fold logits
     base_4fold = INFERENCE_BASE / "hgnet-b0-sed-v5j-4fold" / "train_soundscapes"
     fold_logits = []
     for fold in range(4):
@@ -450,29 +449,55 @@ def section7_fourfold_coverage(data: dict):
         fold_logits.append(fdf[species_cols].values.astype(np.float32))
 
     avg_logits = np.mean(fold_logits, axis=0)
+    max_logits = np.maximum.reduce(fold_logits)
+
+    single_probs = 1 / (1 + np.exp(-single_logits))
     avg_probs = 1 / (1 + np.exp(-avg_logits))
+    max_probs = 1 / (1 + np.exp(-max_logits))
+
+    single_unlab = single_probs[unlabeled_mask]
     avg_unlab = avg_probs[unlabeled_mask]
+    max_unlab = max_probs[unlabeled_mask]
 
-    print("\n--- Coverage comparison (unseen species, unlabeled) ---")
-    print(f"{'Threshold':>10s} | {'Single':>12s} | {'4-Fold Avg':>12s} | {'Gain':>6s}")
-    print("-" * 50)
-    for t in [0.3, 0.5, 0.7, 0.9]:
-        s_cov = sum((single_unlab[:, i] > t).sum() > 0 for i in unseen_idx)
-        a_cov = sum((avg_unlab[:, i] > t).sum() > 0 for i in unseen_idx)
-        print(f"  >{t:.1f}     | {s_cov:>8d}/159 | {a_cov:>8d}/159 | {a_cov - s_cov:>+4d}")
+    # Coverage comparison
+    print("\n--- Species coverage (159 unseen, unlabeled soundscapes) ---")
+    print(
+        f"{'Thresh':>7s} | {'Single':>10s} | {'Avg-4f':>10s} | {'Max-4f':>10s} | {'Max vs Single':>14s}"
+    )
+    print("-" * 62)
+    for t in [0.1, 0.3, 0.5, 0.7, 0.9]:
+        s = sum((single_unlab[:, i] > t).sum() > 0 for i in unseen_idx)
+        a = sum((avg_unlab[:, i] > t).sum() > 0 for i in unseen_idx)
+        m = sum((max_unlab[:, i] > t).sum() > 0 for i in unseen_idx)
+        print(f"  >{t:.1f}  | {s:>6d}/159 | {a:>6d}/159 | {m:>6d}/159 | {m - s:>+12d}")
 
-    # Newly covered
-    gained = []
+    # Total pseudo-label predictions
+    print("\n--- Total predictions (all 234 species, unlabeled) ---")
+    for t in [0.3, 0.5, 0.7]:
+        s = (single_unlab > t).sum()
+        a = (avg_unlab > t).sum()
+        m = (max_unlab > t).sum()
+        print(f"  >{t}: single={s:,d}  avg={a:,d}  max={m:,d}")
+
+    # Species recovered by max-folds at 0.5
+    recovered = []
     for sp, idx in zip(unseen_species, unseen_idx, strict=False):
         s_n = int((single_unlab[:, idx] > 0.5).sum())
-        a_n = int((avg_unlab[:, idx] > 0.5).sum())
-        if a_n > 0 and s_n == 0:
-            gained.append({"species": sp, "single": s_n, "fourfold": a_n})
-    print(f"\n  Newly covered (single=0 → 4fold>0 at 0.5): {len(gained)}")
-    for row in sorted(gained, key=lambda x: -x["fourfold"]):
-        print(f"    {row['species']:20s}  4fold={row['fourfold']}")
+        m_n = int((max_unlab[:, idx] > 0.5).sum())
+        if m_n > 0 and s_n == 0:
+            recovered.append(
+                {"species": sp, "max_folds": m_n, "taxon": sp_to_class.get(sp, "unknown")}
+            )
+    rec_df = (
+        pd.DataFrame(recovered).sort_values("max_folds", ascending=False)
+        if recovered
+        else pd.DataFrame()
+    )
+    print(f"\n--- Recovered by max-folds at >0.5 (single=0, max>0): {len(rec_df)} species ---")
+    for _, row in rec_df.head(15).iterrows():
+        print(f"    {row['species']:20s}  max={row['max_folds']:4d}  {row['taxon']}")
 
-    # Both zero
+    # Zero coverage counts
     s_zero = {
         sp
         for sp, i in zip(unseen_species, unseen_idx, strict=False)
@@ -483,7 +508,37 @@ def section7_fourfold_coverage(data: dict):
         for sp, i in zip(unseen_species, unseen_idx, strict=False)
         if (avg_unlab[:, i] > 0.5).sum() == 0
     }
-    print(f"\n  Zero in BOTH: {len(s_zero & a_zero)} / 159")
+    m_zero = {
+        sp
+        for sp, i in zip(unseen_species, unseen_idx, strict=False)
+        if (max_unlab[:, i] > 0.5).sum() == 0
+    }
+    print("\n--- Zero coverage at >0.5 ---")
+    print(
+        f"  Single: {len(s_zero)}  Avg: {len(a_zero)}  Max: {len(m_zero)}  All three: {len(s_zero & a_zero & m_zero)}"
+    )
+
+    # Truly hard at 0.3
+    m_zero_03 = {
+        sp
+        for sp, i in zip(unseen_species, unseen_idx, strict=False)
+        if (max_unlab[:, i] > 0.3).sum() == 0
+    }
+    print(f"  Zero at >0.3 (max-folds): {len(m_zero_03)} truly hard species")
+
+    # Per-fold unique contributions
+    fold_probs_unlab = [(1 / (1 + np.exp(-fl[unlabeled_mask]))) for fl in fold_logits]
+    print("\n--- Per-fold unique contributions (unseen, >0.5) ---")
+    for f in range(4):
+        total = sum((fold_probs_unlab[f][:, i] > 0.5).sum() > 0 for i in unseen_idx)
+        unique = 0
+        for idx in unseen_idx:
+            if (fold_probs_unlab[f][:, idx] > 0.5).sum() > 0:
+                if not any(
+                    (fold_probs_unlab[o][:, idx] > 0.5).sum() > 0 for o in range(4) if o != f
+                ):
+                    unique += 1
+        print(f"  Fold {f}: {total} species, {unique} unique")
 
 
 # --------------------------------------------------------------------------- #

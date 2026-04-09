@@ -9,11 +9,15 @@ Status: **Phase A in progress.**
 
 ---
 
-## Phase A: Max-Across-Folds Analysis
+## Phase A: Max-Across-Folds Analysis ✅
 
-- [ ] A.1 Compute max(fold0..fold3) from existing 4-fold parquets
-- [ ] A.2 Compare coverage: avg-folds vs max-folds vs single-fold for 159 unseen species
-- [ ] A.3 Update inference EDA doc with findings
+- [x] A.1 Compute max(fold0..fold3) from existing 4-fold parquets
+- [x] A.2 Compare coverage: avg-folds vs max-folds vs single-fold for 159 unseen species
+  - Max-folds: 109/159 at >0.5 (+29 vs single, +41 vs avg)
+  - 34 species newly recovered (single=0, max>0)
+  - Only 50 species remain at zero (vs 79 single, 91 avg)
+  - 34 truly hard species at >0.3 — need Perch
+- [x] A.3 Update inference EDA doc (section 7 rewritten) and inference_eda.py script
 
 ## Phase B: Perch v2 TF Inference
 
