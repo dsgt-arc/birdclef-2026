@@ -1,9 +1,11 @@
 # Data-Centric Pivot: Analysis & Action Plan
 
-**Date**: 2026-04-09
+**Date**: 2026-04-09 (revised)
 **Context**: Brainstormed with Google Gemini Deep Research based on our 23-experiment history,
 Karpathy's "Recipe for Training Neural Networks", and MIT's "Hacker's Guide to Deep Learning."
-**Goal**: Close the 0.017 gap from 0.929 → 0.946 (#1) via data-centric approaches.
+Revised after Kaggle discussion thread update (Gaurav Rawat, Anil Ozturk, Tucker Arrants CV data).
+**Goal**: Build a robust, generalizable BirdCLEF solution via data-centric approaches.
+Close the gap to competition leaders (0.929 → 0.948 #1) by improving the *data*, not the recipe.
 
 ---
 
@@ -63,7 +65,7 @@ CV on the 66 labeled soundscapes, grouped by recording site.
 **Key risks**:
 1. With only 9 sites and Site 22 dominating (40 files), the CV will be noisy
 2. 75/234 species means we're validating on only 32% of the label space
-3. This is a *diagnostic tool*, not a direct LB improvement — it won't close the 0.017 gap itself
+3. This is a *diagnostic tool*, not a direct LB improvement — it won't close the 0.019 gap itself
 
 **Recommended approach**:
 - Build soundscape-only CV as a *secondary* metric alongside our existing val/auroc
@@ -262,83 +264,137 @@ ensemble becomes viable, recovering the −0.005 ONNX penalty.
 
 ---
 
-## Corrected Priority Ordering
+## Revised Philosophy: Robustness Over Score-Chasing
 
-Based on cross-referencing Gemini's proposals with our 23-experiment evidence base:
+**Update (2026-04-09 PM)**: After reviewing the Kaggle discussion thread, we have critical
+new data on CV-LB correlation that changes our approach:
 
-| Priority | Step | Expected Gain | Effort | Risk | Rationale |
-|----------|------|---------------|--------|------|-----------|
-| **1** | **Site-level soundscape CV** (Step 1) | Diagnostic only | Low | Low | Must fix evaluation before testing anything else |
-| **2** | **Pseudo-labeling v2** (Step 4) | +0.005-0.010 | High | Medium | Strongest teacher (0.929), same-domain data, addresses 28-species problem, only viable path for data expansion |
-| **3** | **Backbone diversity** (missed) | +0.003-0.007 | Medium | Low | Proven technique (Nikita 7 models), inference-level change to ensemble |
-| **4** | **Overlap reconstruction** (missed) | +0.001-0.003 | Low | Low | Inference-only change, documented but untested |
-| **5** | **VAD cleaning** (Step 2) | +0.001-0.002 | Low | Low | Data hygiene, quick to run |
-| **6** | **Hard negative mining** (Step 3) | +0.001-0.003 | Medium | Medium | Novel, needs careful design |
-| **7** | **Waveform MixUp fix** (Step 5) | +0.000-0.002 | Low | High | 3 failed attempts, recipe coupling. Fix code quality but don't prioritize testing. |
+- **Gaurav Rawat** (GroupK on site): CV values of 0.82/0.94/0.97/0.87/0.942 map to LB
+  0.908/0.913/0.926/0.916/0.915. Not monotonic — no reliable ranking.
+- **Anil Ozturk** (soundscape-val-only GKF on sites): OOF 0.608 → LB 0.879. Essentially useless.
+- **Tucker Arrants** explains why: train and test sites **overlap**. GKF forces generalization
+  to *unseen* sites, but the test set includes *seen* sites. GKF is "overly harsh."
 
-**To close 0.017**: Stack priorities 2+3+4+5 for estimated +0.010-0.022. Pseudo-labeling is
-the single highest-value bet; backbone diversity and overlap reconstruction are proven techniques
-that work at the inference/ensemble level where our gains have always come from.
+**The key realization**: No one has solved CV-LB correlation for this competition. And the
+public LB itself is only 34% of the test data — the private LB (66%) determines final standings.
+Optimizing for a metric that tracks 34% of a hidden test set is chasing noise on top of noise.
+
+**Instead, we focus on robustness and generalizability:**
+- Does the model learn biological acoustic signals, not artifacts? → **data quality**
+- Does the model see enough diverse examples to generalize? → **data quantity/diversity**
+- Is the training pipeline sound? → **techniques, augmentation, regularization**
+- Does the ensemble cover failure modes? → **model diversity**
+
+A model built on these principles will perform well on *any* reasonable test distribution —
+whether that's the 34% public LB or the 66% private LB.
+
+---
+
+## Revised Priority Ordering
+
+Reordered for robustness, not score-chasing. The goal is to build a system where every
+component makes the model more generalizable, regardless of which test subset we're scored on.
+
+| Priority | Step | Why (robustness framing) | Effort |
+|----------|------|--------------------------|--------|
+| **1** | **Data exploration & diagnostics** | Karpathy: "spend copious time scanning data." Understand species distribution, per-class failures, data quality issues before changing anything. Implement hengck23's diagnostics (logit std, per-group AUC). | Low-Medium |
+| **2** | **VAD cleaning** (Step 2) | Remove spurious correlations (human speech → bird class). Makes model learn the right features. Data quality is the foundation. | Low |
+| **3** | **Pseudo-labeling v2** (Step 4) | The single biggest untapped data source: 127K same-domain soundscape segments. Addresses the 28-species problem (zero focal data). Karpathy: "adding more data is the only guaranteed way to improve." | High |
+| **4** | **Backbone diversity** (Gemini missed) | Diverse backbones = robust ensemble. Also required for pseudo-labeling iteration (prevents convergence to single-model failure mode). Nikita used 7 models × 5 backbones. | Medium |
+| **5** | **Hard negative mining** (Step 3) | Uses unlabeled data to find confident false positives. Improves training signal quality — the model learns what ISN'T a bird call. | Medium |
+| **6** | **Soundscape CV** (Step 1, demoted) | Lightweight diagnostic — NOT a gate. Use Tucker's joint validation (within-site + cross-site). Accept imperfection. Use to catch gross regressions only. | Low |
+| **7** | **Overlap reconstruction** (Gemini missed) | Inference improvement (Nikita's delta blending). Worth testing but lower priority than data work. | Low |
+| **8** | **Waveform MixUp fix** (Step 5) | Fix absmax normalization as code quality. Don't prioritize standalone testing (3 failed attempts). May become relevant if pseudo-labeling shifts the training distribution enough. | Low |
+
+**The through-line**: Priorities 1-5 are all about the DATA. Priority 6 is a diagnostic tool.
+Priorities 7-8 are recipe/inference tweaks that can wait.
 
 ---
 
 ## Key Unknowns & Risks
 
 1. **Will pseudo-labeling work this time?** Our one attempt (exp 015) failed badly. The
-   situation is fundamentally different now (stronger teacher, SED architecture, frame-level
-   labels), but there's no guarantee. The LB submission is the only test.
+   situation is fundamentally different now (5× stronger teacher, SED architecture, frame-level
+   labels), but there's no guarantee. We submit to LB to test, but also monitor hengck23's
+   robustness metrics (logit std, per-group AUC) to understand *why* it helps or hurts.
 
-2. **Will soundscape CV actually correlate with LB?** With 66 files, 9 sites, 75 species,
-   and Site 22 dominating, this might be too noisy to be useful. We need to backtest against
-   known LB scores before trusting it.
-
-3. **Is the v5j recipe still optimal with more data?** If we add 127K pseudo-labeled segments,
+2. **Is the v5j recipe still optimal with more data?** If we add 127K pseudo-labeled segments,
    the training distribution changes fundamentally. The "generalization cliff" around v5j may
-   shift, potentially opening up recipe changes that currently fail. This is speculative but
-   worth watching.
+   shift, potentially opening up recipe changes that currently fail. Monitor this — if pseudo-
+   labels work, revisit waveform MixUp and other recipe changes that failed on focal-only data.
 
-4. **How many pseudo-labeling iterations are needed?** Nikita used 3-4, but convergence depends
-   on teacher quality and data quality. We should submit after each iteration to track marginal
-   gains.
+3. **How much does data quality matter vs quantity?** VAD cleaning removes some focal files.
+   Pseudo-labeling adds 127K noisy segments. The net effect depends on the quality of the
+   pseudo-labels. Power transform and temperature scaling are the quality controls — but we
+   should also try a "conservative" variant (only high-confidence pseudo-labels) vs "aggressive"
+   (all pseudo-labels with soft weighting).
+
+4. **How many pseudo-labeling iterations are needed?** Nikita used 3-4 with 7 diverse models.
+   We may need backbone diversity (#4) before iteration can add value — iterating with the
+   same v5j recipe may just amplify the same errors.
+
+5. **Private LB surprise risk**: Our 0.929 is based on 34% of test data. The private LB could
+   be significantly different. A robust, generalizable approach insures against this — a model
+   that works on diverse acoustic conditions will be stable across both LB splits.
 
 ---
 
 ## Experiment Proposal: Exp 024 — Data-Centric Pipeline
 
-### Phase A: Soundscape CV (Step 1)
-- Build site-level GroupKFold on 66 labeled soundscapes
-- Backtest: evaluate our existing v5j, v5j-4fold, Perch models on this CV
-- Correlate with known LB scores
-- **Decision gate**: if correlation > 0.8 with LB, use as primary offline metric
+### Phase A: Data Exploration & Diagnostics
+- **Species distribution analysis**: per-class sample counts (focal vs soundscape), identify
+  the 28 species with zero focal data, find species with < 10 training examples
+- **Per-class performance breakdown**: run our v5j model on labeled soundscapes, compute
+  per-species AUC. Which species do we fail on? Are they the 28 soundscape-only species?
+  Are they rare Aves? Insects?
+- **hengck23's diagnostics**: implement logit std monitoring, per-group AUC splits
+  (common Aves, rare Aves, Insecta, Amphibia, Reptilia, Mammalia)
+- **Labeled soundscape quality check**: listen to a sample of labeled soundscapes. Are
+  labels accurate? Are there systematic issues?
+- Output: a data quality report that informs all subsequent phases
 
-### Phase B: Teacher Inference on Unlabeled Data
-- Run 0.929 ensemble (Perch ONNX MLP-only + SED v5j-4fold-pp2) on all 10,592 unlabeled soundscapes
+### Phase B: VAD Cleaning
+- Run Silero VAD on 35,549 focal recordings
+- Output: speech timestamps per file, contamination statistics by species
+- Analysis: how many files affected? Which species most contaminated?
+- Train v5j with speech-masked data as controlled experiment
+- Also run VAD on labeled soundscapes (66 files) — are there labeling issues?
+
+### Phase C: Teacher Inference on Unlabeled Data
+- Run 0.929 ensemble (Perch ONNX MLP-only + SED v5j-4fold-pp2) on all 10,592 unlabeled
+  soundscapes
 - Save: per-species probabilities for every 5s segment (127K segments total)
 - Analyze: prediction distributions, species frequency, high-confidence segments
-
-### Phase C: VAD Scan (Step 2)
-- Run Silero VAD on 35,549 focal recordings
-- Output: speech timestamps per file
-- Analysis: how many files affected? Which species most contaminated?
+- Identify potential hard negatives (Step 3 preparation)
 
 ### Phase D: Pseudo-Labeled Training Round 1
 - Power transform (P^1.5) on pseudo-labels
 - Temperature scaling (T=0.6 based on Nikita's range)
-- Train v5j on: focal + labeled soundscape + top-quality pseudo-labels
-- Submit to LB
-- **Decision gate**: if LB improves, proceed to iteration 2
+- Conservative variant: only segments where max species prob > 0.7
+- Aggressive variant: all segments with soft weighting by confidence
+- Train v5j on: focal + labeled soundscape + pseudo-labels
+- Monitor hengck23's robustness metrics during training
+- Submit both variants to LB
+- **Decision gate**: if LB improves, proceed to backbone diversity + iteration
 
 ### Phase E: Backbone Diversity
 - Train v5j recipe on EfficientNet-B3 NS (scored 0.893 in exp 021 Phase C with AttHead)
 - Also try RegNetY-008 (one of Nikita's backbones)
+- Compare: with and without pseudo-labels
 - Add to ensemble alongside HGNet v5j-4fold
 - Submit to LB
 
 ### Phase F: Pseudo-Labeling Iteration 2-3 (if Phase D succeeds)
-- Student from Phase D becomes teacher
-- Generate new pseudo-labels with improved teacher
-- Train on backbone-diverse models for ensemble diversity
-- Submit after each round
+- Backbone-diverse ensemble becomes new teacher
+- Generate new pseudo-labels with improved, diverse teacher
+- Train new students, submit after each round
+- Monitor: are iterations still adding value? When to stop?
+
+### Phase G: Lightweight Soundscape CV (diagnostic, non-blocking)
+- Build alongside other phases, not as a gate
+- Tucker's joint validation: within-site metric + cross-site metric
+- Use to catch gross regressions, not for fine-grained model selection
+- Backtest against known LB scores to calibrate trust level
 
 ---
 
