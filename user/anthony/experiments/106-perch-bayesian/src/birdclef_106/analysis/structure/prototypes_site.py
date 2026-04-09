@@ -25,7 +25,7 @@ from sklearn.decomposition import NMF
 from sklearn.preprocessing import normalize
 
 from birdclef_106.analysis.base import AnalysisTask
-from birdclef_106.analysis.partition import PartitionFeatures
+from birdclef_106.analysis.structure.partition import PartitionFeatures
 from birdclef_106.data_loading import (
     build_species_list,
     list_sites,

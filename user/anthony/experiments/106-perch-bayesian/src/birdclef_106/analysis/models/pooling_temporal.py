@@ -21,7 +21,7 @@ from scipy.special import softmax
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from birdclef_106.analysis.base import AnalysisTask
-from birdclef_106.analysis.ridge import EmpiricalBayesRidge
+from birdclef_106.analysis.models.ridge_empirical_bayes import EmpiricalBayesRidge
 from birdclef_106.data_loading import (
     build_binary_label_matrix,
     build_species_list,

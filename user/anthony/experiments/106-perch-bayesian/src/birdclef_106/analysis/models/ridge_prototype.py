@@ -32,8 +32,8 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.preprocessing import normalize
 
 from birdclef_106.analysis.base import AnalysisTask
-from birdclef_106.analysis.multi_prototype import MultiPrototypeProfiles
-from birdclef_106.analysis.site_prototypes import SitePrototypes
+from birdclef_106.analysis.structure.prototypes_species import MultiPrototypeProfiles
+from birdclef_106.analysis.structure.prototypes_site import SitePrototypes
 from birdclef_106.data_loading import (
     build_binary_label_matrix,
     build_species_list,

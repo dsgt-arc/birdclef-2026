@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 
 from birdclef_106.analysis.base import AnalysisTask
-from birdclef_106.analysis.focal_profiles import FocalSpeciesProfiles
+from birdclef_106.analysis.structure.profiles_focal import FocalSpeciesProfiles
 from birdclef_106.data_loading import (
     build_species_list,
     embeddings_to_numpy,

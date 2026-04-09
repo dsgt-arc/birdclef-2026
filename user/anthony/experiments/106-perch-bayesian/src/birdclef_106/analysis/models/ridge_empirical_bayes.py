@@ -30,8 +30,8 @@ import scipy.linalg
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from birdclef_106.analysis.base import AnalysisTask
-from birdclef_106.analysis.logit_covariance import LogitCovariance
-from birdclef_106.analysis.embedding_covariance import EmbeddingCovariance
+from birdclef_106.analysis.eda.covariance_logit import LogitCovariance
+from birdclef_106.analysis.eda.covariance_embedding import EmbeddingCovariance
 from birdclef_106.data_loading import (
     build_binary_label_matrix,
     build_species_list,

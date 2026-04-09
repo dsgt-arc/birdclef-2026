@@ -27,7 +27,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import normalize
 
 from birdclef_106.analysis.base import AnalysisTask
-from birdclef_106.analysis.partition import PartitionFeatures
+from birdclef_106.analysis.structure.partition import PartitionFeatures
 from birdclef_106.data_loading import (
     build_binary_label_matrix,
     build_species_list,
