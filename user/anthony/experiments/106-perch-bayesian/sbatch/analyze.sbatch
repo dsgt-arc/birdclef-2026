@@ -24,4 +24,7 @@ source sbatch/_setup-venv.sh
 # Install analysis dependencies (idempotent — skips if already installed)
 uv pip install luigi scikit-learn scipy pydmd filterpy --quiet
 
-python -c "from birdclef_106.cli import main; main()" analyze "$@"
+# workers=1 avoids polars fork deadlock in Luigi multiprocessing workers.
+# Prototype tasks (SingleSitePrototype, SingleSpeciesPrototype) deadlock on
+# polars read_parquet in forked child processes due to rayon thread pool state.
+python -c "from birdclef_106.cli import main; main()" analyze --workers 1 "$@"
