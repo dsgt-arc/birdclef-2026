@@ -10,10 +10,8 @@ from birdclef_106.analysis import (
     LogitCovariance,
     EmbeddingCovariance,
     DistributionShift,
-    PrototypeClassifier,
     FeatureSelection,
     FocalSpeciesProfiles,
-    SoundscapeProfiles,
     SiteResidualProfiles,
     SpeciesGraph,
     PartitionFeatures,
@@ -21,10 +19,7 @@ from birdclef_106.analysis import (
     SitePrototypes,
     PrototypeRidge,
     EmpiricalBayesRidge,
-    SparseLogistic,
     TemporalPooling,
-    DMDAnalysis,
-    UKFSmoothing,
 )
 
 import luigi
@@ -34,9 +29,8 @@ class AllAnalysis(AnalysisTask):
     """Run all analysis tasks, optionally limited to a specific phase.
 
     Phase 0 (default): all phases.
-    Phase 1: static baselines (zero-shot, covariance, shift, prototypes, features).
-    Phase 2: phase 1 + models (ridge, sparse logistic, temporal pooling, DMD).
-    Phase 3: phase 1 + 2 + UKF smoothing.
+    Phase 1: static baselines (zero-shot, covariance, shift, features).
+    Phase 2: phase 1 + models (ridge, prototypes, species/site structure).
     """
 
     phase = luigi.IntParameter(default=0)
@@ -48,16 +42,12 @@ class AllAnalysis(AnalysisTask):
             LogitCovariance(**p),
             EmbeddingCovariance(**p),
             DistributionShift(**p),
-            PrototypeClassifier(**p),
             FeatureSelection(**p),
             FocalSpeciesProfiles(**p),
-            SoundscapeProfiles(**p),
         ]
         phase2 = [
             EmpiricalBayesRidge(**p),
-            SparseLogistic(**p),
             TemporalPooling(**p),
-            # DMDAnalysis(**p),  # paused — slow (5h+), value unclear vs site residuals
             SiteResidualProfiles(**p),
             SpeciesGraph(**p),
             PartitionFeatures(**p),
@@ -65,17 +55,12 @@ class AllAnalysis(AnalysisTask):
             SitePrototypes(**p),
             PrototypeRidge(**p),
         ]
-        phase3 = [
-            # UKFSmoothing(**p),  # blocked on DMD, paused
-        ]
 
         if self.phase == 1:
             return phase1
         if self.phase == 2:
             return phase1 + phase2
-        if self.phase == 3:
-            return phase1 + phase2 + phase3
-        return phase1 + phase2 + phase3
+        return phase1 + phase2
 
     def output(self):
         return self.artifact(f"_analysis_phase{self.phase}_complete")
