@@ -289,7 +289,12 @@ def main():
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
     tf.get_logger().setLevel("ERROR")
 
-    print(f"  TF {tf.__version__} loaded in {time.time()-t0:.1f}s")
+    # Configure TF threading for CPU parallelism
+    n_threads = int(os.environ.get("OMP_NUM_THREADS", os.cpu_count() or 8))
+    tf.config.threading.set_inter_op_parallelism_threads(n_threads)
+    tf.config.threading.set_intra_op_parallelism_threads(n_threads)
+
+    print(f"  TF {tf.__version__} loaded in {time.time()-t0:.1f}s (threads={n_threads})")
 
     # Load Perch model
     print(f"Loading Perch v2 TF model from {args.model_dir}...")
