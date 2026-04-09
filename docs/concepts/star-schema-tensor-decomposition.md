@@ -517,6 +517,149 @@ energy-based confidence) but add a learned gating layer (transformer-style)
 for domain transfer and multi-space fusion. This keeps the retrieval principled
 while allowing the fusion to be learned.
 
+### Multi-label: sigmoid attention, not softmax
+
+Soundscape windows contain 5-20 co-occurring species. Standard softmax attention
+forces weights to sum to 1 — activating more prototypes dilutes each one. This
+is wrong for multi-label: a window with 10 species should activate 10 prototype
+groups at full strength.
+
+**Sigmoid attention** (independently gated prototypes):
+
+```python
+gates = σ(w @ C^T / τ)              # (R,) — each prototype independently on/off
+scores = gates @ A                    # (S,) — multiple species get high scores
+```
+
+Each prototype's activation is independent — sigmoid, not softmax. A dense
+soundscape window can activate many prototypes simultaneously without dilution.
+This is equivalent to running R independent binary classifiers (is this
+prototype present?) and aggregating via the species loading matrix.
+
+**Species interaction via the loading matrix**: the matrix A (R, S) encodes
+which prototypes co-activate for which species. If species A and B share
+background prototypes but have distinct call prototypes, the loading matrix
+captures this. Co-occurring species that are acoustically compatible (different
+frequency bands, different call patterns) will activate non-overlapping
+prototype subsets — no interference. Confusable species (similar calls) will
+compete for the same prototypes — the loading matrix must disambiguate.
+
+**Reconstruction with multi-source windows**: a soundscape window w is a
+mixture of multiple species' acoustic patterns plus background:
+
+```
+w ≈ Σ_r gates[r] * C[r]     (reconstruction as mixture of active prototypes)
+```
+
+The reconstruction loss decomposes the window into its constituent prototypes.
+This is a form of **source separation in P-space** — the prototypes are the
+basis functions and the gates are the mixing coefficients. The species loading
+matrix A then maps from "which acoustic patterns are present" to "which species
+are present."
+
+This connects to the BirdCLEF problem structure: the competition uses
+**row-wise sigmoid** (independent per-species binary predictions), not
+softmax (single-label). The sigmoid attention formulation matches this directly.
+
+### Graphical model: star schema as Bayesian network
+
+The star schema IS the graphical model. Each dimension (S, P, E, L, T, W) is a
+random variable, and compositions through P are conditional dependencies:
+
+```
+                    Prototypes C
+                    (R, P)
+                   ╱       ╲
+                  ╱         ╲
+    species_s ──→ focal_w    soundscape_w ←── site_state
+       │         (observed    (observed        (L×K, P)
+       │          in focal     in sc domain)      ↑
+       │          domain)          ↑           site_l ── time_t
+       │              ↑            │
+       │         P-dimension    gate_d
+       │         (shared)      (domain transfer:
+       │                        which P-dims
+       │                        are reliable)
+       │
+    primary_label              ground_truth
+    (always known              (known for 739,
+     in focal)                  unknown for 127K)
+```
+
+Three data regimes with different observed/latent variables:
+
+| Data | Species | Context | Domain | Count |
+|------|---------|---------|--------|-------|
+| Focal | Observed (primary_label) | — | Focal | 266K |
+| Soundscape labeled | Observed (multi-label) | Observed (site, time) | Soundscape | 739 |
+| Soundscape unlabeled | **Latent** | Observed (site, time) | Soundscape | 127K |
+
+### Bayesian inference with partial information
+
+Each data source contributes a different likelihood term:
+
+```
+P(all data | θ) = P(focal | species, prototypes)           [266K windows]
+                × P(labels | sc_windows, prototypes, gate)  [739 windows]
+                × P(sc_windows | site_states, prototypes)   [127K windows]
+```
+
+Where θ = {prototypes C, loadings A, gate, temperature τ, site_states}.
+
+**Focal likelihood** (266K, species known): contrastive — pull species s's
+windows toward its prototypes, push away from others. This is metric learning
+with free supervision from track-level annotation.
+
+```
+L_focal = -Σ_{w,s} log σ(Σ_r A[r,s] * gate(w @ C[r]))
+```
+
+**Soundscape supervised likelihood** (739, multi-label known): the bridge
+between domains. These windows tell you what species s looks like in a
+soundscape, not just in a focal recording.
+
+```
+L_super = BCE(y_multi, σ(gates @ A))
+```
+
+**Soundscape unsupervised likelihood** (127K, species unknown): reconstruction
+in the target domain. Species labels are marginalized out — the model explains
+the window as a mixture of prototypes without knowing which species are present.
+
+```
+L_recon = ||w - Σ_r gates[r] * C[r]||²
+```
+
+The missing species labels for 127K windows are latent variables. In the
+Bayesian framework, you marginalize over them. In practice, this is EM:
+
+- **E-step**: given current prototypes, infer which species are likely present
+  in each unlabeled window (soft multi-label predictions)
+- **M-step**: given inferred labels, update prototypes and gate to maximize
+  likelihood
+
+The star schema structure constrains this inference: species predictions must
+be compositions through P-space. The site context provides a prior (species
+expected at this site-state). The gate modulates which P-dimensions to trust.
+The prototypes are shared across both domains — the focal data locks them to
+species identity, the soundscape data adapts them to the target domain.
+
+### What each data source teaches
+
+| Source | Count | Teaches | Mechanism |
+|--------|-------|---------|-----------|
+| Focal (species known) | 266K | Prototype positions — what each species sounds like in P-space | Contrastive loss |
+| Soundscape unlabeled | 127K | Target domain manifold + site-state structure | Reconstruction loss |
+| Soundscape labeled | 739 | Domain bridge — how focal prototypes map to soundscape | Multi-label BCE |
+| Species graph (S,S) | — | Which species share acoustic structure | Graph regularization on A |
+| Site graph (L,L) | — | Which sites have similar ecology | Graph regularization on site factors |
+
+The 266K focal labels are the foundation — they define what each species IS in
+P-space. The 127K unlabeled soundscapes define what the target domain looks
+like. The 739 labeled soundscapes are the Rosetta Stone that connects the two.
+This is fundamentally a domain adaptation problem with rich source labels,
+abundant unlabeled target data, and sparse target labels.
+
 ### Connection to CP decomposition
 
 ```
