@@ -3,8 +3,10 @@
 Single source of truth for all training techniques explored, what worked, what didn't,
 and why. Organized by component. Updated as we learn more.
 
-See `MODEL-RUNS.md` for individual model results and `docs/references/deep-research/`
-for external research.
+Last updated: 2026-04-08
+
+See `MODEL-RUNS.md` for individual model results, `FINDINGS.md` for cross-cutting
+patterns, and `docs/references/deep-research/` for external research.
 
 ---
 
@@ -107,13 +109,15 @@ training recipe are coupled — can't swap one without the other.
 
 ### Parameters Explored
 
-| Config | n_fft | n_mels | hop | norm | Resize | Best LB |
-|--------|-------|--------|-----|------|--------|---------|
-| v1 (exp 016) | 1024 | 128 | 320 | audioset | No | 0.827 |
-| v4a (exp 017) | 4096 | 224 | 320 | audioset | No | 0.830 |
-| **v4b (exp 017)** | **4096** | **224** | **320** | **amplitude_to_db** | **No** | **0.860** |
-| ttahara (v5f/g) | 2048 | 256 | 313 | min-max | 256×256 | 0.855/pending |
-| Competitor 0.872 | 2048 | 224 | 512 | min-max | No | 0.872 |
+| Config | n_fft | n_mels | hop | norm | Resize | Mel Library | Best LB |
+|--------|-------|--------|-----|------|--------|-------------|---------|
+| v1 (exp 016) | 1024 | 128 | 320 | audioset | No | librosa | 0.827 |
+| v4a (exp 017) | 4096 | 224 | 320 | audioset | No | librosa | 0.830 |
+| v4b (exp 017) | 4096 | 224 | 320 | amplitude_to_db | No | librosa | 0.859 |
+| v5g (exp 019) | 2048 | 256 | 313 | min-max | 256×256 | torchaudio | 0.892 |
+| **v5j (exp 019)** | **2048** | **256** | **313** | **amplitude_to_db** | **No (256×511)** | **NNAudio** | **0.906** |
+| v10a (exp 022) | 2048 | 256 | 313 | PCEN | No | NNAudio | 0.880 |
+| Competitor 0.872 | 2048 | 224 | 512 | min-max | No | — | 0.872 |
 
 ### Normalization Methods
 
@@ -122,11 +126,34 @@ training recipe are coupled — can't swap one without the other.
 3. **Min-max only** (`AmplitudeToDB → min-max [0,1]`, no standardization): ttahara's approach
 4. **Min-max + 3-channel repeat**: Competitor's approach (matches ImageNet 3-ch pretrained weights)
 
+### NNAudio (GPU mel — used in v5j)
+
+NNAudio (`nnAudio.features.MelSpectrogram`) computes mel spectrograms on GPU rather
+than CPU. Critical for v5j because:
+- Mel computed during forward pass (not in DataLoader workers)
+- Enables learnable mel parameters (though v5j uses fixed params)
+- Avoids CPU bottleneck for n_fft=2048 at 32kHz
+- v5j uses NNAudio + AmplitudeToDB norm + no resize → output shape (256, 511)
+
+The switch from torchaudio (v5g, resize to 256×256) to NNAudio (v5j, no resize 256×511)
+is confounded with the AmplitudeToDB normalization change. MODEL-RUNS footnote notes
+v5j "also changes win_length (626→2048), removes resize, uses NNAudio." The +0.014
+gain (v5g 0.892 → v5j 0.906) is from all three changes combined, not AmplitudeToDB alone.
+
+### PCEN Normalization (exp 022 — REJECTED)
+
+Per-Channel Energy Normalization: IIR smoothing + power-law compression.
+Theoretically motivated for domain invariance (adapts to local signal energy).
+v10a (learnable PCEN): **0.880 LB (−0.026 vs v5j)**. Rejected.
+
+PCEN *transforms* the representation; AmplitudeToDB *adds* dynamic range information.
+The model had already learned to exploit AmplitudeToDB's characteristics.
+
 ### Key Finding
-- **n_fft=4096 was the single biggest lever**: v4a raw (0.825) nearly matched v1+pp2 (0.827)
-- **AmplitudeToDB norm** added +0.030 LB over audioset (v4a 0.830 → v4b 0.860)
-- **Resize to square (256×256)** may help match ImageNet pretraining spatial assumptions
-- ttahara's simpler mel (n_fft=2048) works because the recipe compensates
+- **AmplitudeToDB norm** is the biggest mel lever: +0.030 on EffNet (v4a→v4b), +0.014 on HGNet (v5g→v5j, confounded with NNAudio)
+- **n_fft=4096** added +0.030 raw LB (v1→v4a) but v5j uses n_fft=2048 — the recipe compensates
+- **NNAudio + no resize (256×511)** contributed to v5j's 0.906, confounded with AmplitudeToDB
+- **PCEN failed** (−0.026): transforms representation rather than adding information
 
 ---
 
@@ -396,6 +423,63 @@ It already has representations for insects, amphibians, and rare species. Our SE
 
 ---
 
+## v5j Winning SED Recipe (0.906 LB single, 0.917 4-fold+pp2)
+
+The best SED recipe, discovered through exp 019 ablations. Every single-variable
+deviation from this recipe regressed on LB (14 attempts, 0 successes in exp 021).
+
+| Component | Value | Notes |
+|-----------|-------|-------|
+| **Backbone** | HGNetV2-B0 (`hgnetv2_b0.ssld_stage2_ft_in1k`) | 6M params, embed_dim=1024, SSLD pretrained |
+| **Head** | LSEHead (mean freq pool + LSE temporal pool) | No attention — simpler than AttHead |
+| **Loss** | BCEWithLogitsLoss (clipwise only) | Multi-label native. No dual loss. |
+| **MixUp** | Per-sample spectrogram MixUp (α=1.0, θ=0.8, 5-ep warmup) | ttahara's stronger MixUp recipe |
+| **Mel** | NNAudio: n_fft=2048, n_mels=256, hop=313, fmax=None | GPU-computed, no resize (256×511 output) |
+| **Mel norm** | AmplitudeToDB + per-sample standardize + min-max [0,1] | Critical: +0.014 over min-max alone |
+| **Optimizer** | AdamW, OneCycleLR (lr=5e-4, wd=1e-4, pct_start=0.25) | Single param group, uniform LR |
+| **Training** | 20 epochs, batch_size=64, no grad accumulation | ~21 min per fold on RTX 6000 |
+| **Windows** | 5s chunks, 32kHz | Competition segment size |
+| **Data** | Focal + labeled soundscapes (234 classes) | 90/10 train/val split |
+| **Inference** | TTA ±2.5s (50/25/25), temporal smoothing, TopN | All baked into LB scores from v5g onward |
+
+### Why This Recipe Works
+
+The recipe was adopted wholesale from ttahara's 0.884 LB pipeline, then improved
+by adding AmplitudeToDB normalization and NNAudio mel. Individual components cannot
+be swapped freely — the head, loss, scheduler, MixUp, and mel are all coupled.
+See exp 021 (7 phases, all regressed) for evidence that perturbations fail.
+
+### What This Recipe Cannot Do
+
+The recipe plateaus around 0.906 single / 0.917 4-fold. The gap to 0.920+ single-model
+competitors (Boredom 0.922, Salman 0.921) is NOT in the training recipe — it's in
+something else (possibly data augmentation details, inference tricks, or architecture
+differences we haven't identified). See `FINDINGS.md` insight #3.
+
+---
+
+## Perch + SED Ensemble (exp 023, 0.929 LB)
+
+Score-level fusion of Perch ONNX (MLP probes) + SED v5j-4fold-pp2.
+
+| Component | Value | Notes |
+|-----------|-------|-------|
+| **Perch backend** | ONNX (0.920 standalone) | TF (0.925) timed out for ensemble |
+| **Perch probes** | MLP-only (proto_weight=0.0) | ProtoSSM hurts under ONNX mismatch |
+| **SED model** | v5j-4fold-pp2 (0.917 standalone) | 4 folds averaged |
+| **Ensemble weight** | w=0.5 (flat curve: 0.3/0.5/0.7 all ≈ 0.927) | MLP-only shifts best to 0.929 |
+| **PP** | Each pipeline's own PP, then average | Disabling PP costs −0.005 |
+| **Runtime** | ~64 min for 600 files | Within 90 min Kaggle limit |
+
+### Key Ensemble Findings
+
+- **MLP-only > ProtoSSM+MLP** (+0.002): simpler probes are more robust to ONNX embedding shift
+- **PP matters** (+0.005): both pipelines' individual PP contribute positively even after averaging
+- **Weight doesn't matter**: 0.926-0.927 across w=0.3/0.5/0.7 — models are equally complementary
+- **TF Perch not viable**: ~10s/file exceeds 90 min Kaggle limit for 600 files
+
+---
+
 ## Key Lessons Learned
 
 ### 1. Val/auroc is a poor LB predictor for SED
@@ -410,16 +494,22 @@ Swapping one component (loss, MixUp, head) while keeping everything else from v4
 consistently fails. ttahara's 0.884 requires ALL changes together: LSEHead + BCE +
 per-sample MixUp + OneCycleLR + 5s windows + min-max mel.
 
-### 3. The 0.860 SED ceiling is a data problem, not an architecture problem
-After exhaustive ablations (v4a-v4k, v5a-v5g), no single-model SED exceeds 0.860 LB.
-The bottleneck is the 28 soundscape-only species with minimal training data. Breaking
-through requires either a foundation model (Perch) or pseudo-labels from a strong teacher.
+### 3. The SED ceiling is a domain shift problem, not architecture
+After exhaustive ablations (v4a-v4k, v5a-v5n, v6a-v6l, v8a-v8b, v10a-v10c),
+the best single SED is 0.906 LB (v5j). 14 training recipe changes in exp 021
+all regressed. The gap to 0.920+ competitors is not in the recipe — it's in
+the domain shift between focal recordings and soundscapes.
 
 ### 4. Training speed matters for iteration
 ttahara's recipe trains in 21 min (vs 3-4h for v4b recipe). This enables faster
 experimentation. OneCycleLR + 20 epochs + 5s + no grad accum = 8-10x speedup.
 
 ### 5. Perch-based approaches have a fundamentally higher ceiling
-Our SED best: 0.860. Our Perch best: 0.918. The 0.058 gap comes from Perch's
-pre-trained bioacoustic knowledge, especially for rare/novel taxa. Scaling ProtoSSM
-(pantanal-distill V18) reaches 0.930.
+Our SED best: 0.906 (v5j). Our Perch best: 0.925 (V18+TF). The 0.019 gap comes
+from Perch's pre-trained bioacoustic knowledge, especially for rare/novel taxa.
+Ensemble of both: 0.929 (MLP-only).
+
+### 6. Ensembling orthogonal models works — simpler is better
+Perch + SED ensemble (0.929) beats both individuals. MLP-only probes outperform
+ProtoSSM+MLP by +0.002 in the ensemble context. The ONNX embedding mismatch
+hurts complex models (ProtoSSM) more than simple ones (MLP probes).

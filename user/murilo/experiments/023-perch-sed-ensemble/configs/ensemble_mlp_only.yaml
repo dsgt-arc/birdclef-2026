@@ -1,0 +1,4 @@
+name: ensemble-mlp-only
+description: "Perch ONNX MLP-only (skip ProtoSSM) + SED (w=0.5)"
+w_perch: 0.5
+perch_ensemble_weight_proto: 0.0

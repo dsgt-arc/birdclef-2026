@@ -1,0 +1,5 @@
+name: ensemble-no-pp
+description: "Raw ensemble — both PPs disabled, w=0.5"
+w_perch: 0.5
+perch_enable_pp: false
+sed_enable_pp: false
