@@ -301,19 +301,29 @@ These are baked into every score — there is no "raw" v5j LB without them.
 
 ## BirdCLEF 2026 — Perch Probes (exp 018)
 
-Frozen Perch v2 as feature extractor + LogReg probe classifiers. No GPU training —
+Frozen Perch v2 as feature extractor + probe classifiers. No GPU training —
 probes train in ~2s on CPU. All inference on Kaggle CPU kernel (~85 min for ~600 test files).
 
-| Slug | Pipeline | Probe Features | OOF | LB | Kaggle Kernel |
-|------|----------|---------------|-----|-----|---------------|
-| `perch-raw` | Perch logits only | — | No | 0.825 | `submission_perch_raw.py` |
-| `perch-cache-v1` | + genus proxy mapping | — | No | 0.836 | `submission_perch_cache.py` |
-| `perch-probes-v1` | + LogReg probes, logit-space | 39-dim (PCA32 + 7) | No | 0.893 | `submission_perch_probes.py` v1 |
-| `perch-probes-v2` | + OOF fold-safe priors | 39-dim (PCA32 + 7) | 5-fold | 0.898 | `submission_perch_probes.py` v2 (buggy) |
-| **`perch-probes-v2-fix`** | **+ 6-cat fuse, sc_clean priors** | **39-dim (PCA32 + 7)** | **5-fold** | **0.911** | **`submission_perch_probes.py` v2-fix** |
-| `perch-protossm-v4` | + BiSSM×2 + cross-attn + TTA + ResidualSSM + 6-stage PP | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.918** | `submission_perch_protossm.py` v1 |
-| `perch-protossm-v4.1` | v4 + OOF prior by filename, per-stage clipping, all-data train | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.918** | `submission_perch_protossm.py` v4 (no improvement) |
-| `perch-protossm-v4.2` | v4.1 + taxonomy 5-way, fixed ensemble 0.5, MLP seed, 1-based sites | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.899** | `submission_perch_protossm.py` v5 (**REGRESSED −0.019**) |
+| Slug | Pipeline | Probe Features | OOF | LB | Delta | Kaggle Kernel |
+|------|----------|---------------|-----|-----|-------|---------------|
+| `perch-raw` | Perch logits only | — | No | 0.825 | baseline | `submission_perch_raw.py` |
+| `perch-cache-v1` | + genus proxy mapping | — | No | 0.836 | +0.011 | `submission_perch_cache.py` |
+| `perch-probes-v1` | + LogReg probes, logit-space | 39-dim (PCA32 + 7) | No | 0.893 | +0.057 | `submission_perch_probes.py` v1 |
+| `perch-probes-v2` | + OOF fold-safe priors | 39-dim (PCA32 + 7) | 5-fold | 0.898 | +0.005 | `submission_perch_probes.py` v2 (buggy) |
+| **`perch-probes-v2-fix`** | **+ 6-cat fuse, sc_clean priors** | **39-dim (PCA32 + 7)** | **5-fold** | **0.911** | **+0.013** | **`submission_perch_probes.py` v2-fix** |
+| `perch-protossm-v4` | + BiSSM×2 + cross-attn + TTA + ResidualSSM + 6-stage PP | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.918** | +0.007 | `submission_perch_protossm.py` v1 |
+| `perch-protossm-v4.1` | v4 + OOF prior by filename, per-stage clipping, all-data train | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.918** | +0.000 | `submission_perch_protossm.py` v4 |
+| `perch-protossm-v4.2` | v4.1 + taxonomy 5-way, fixed ensemble 0.5, MLP seed, 1-based sites | 77-dim (PCA64 + 13) | 5-fold + 3-fold | **0.899** | **−0.019** | `submission_perch_protossm.py` v5 |
+
+### Perch Probe Progression Analysis
+
+| Transition | Key Change | LB Delta | Why it helped |
+|-----------|-----------|----------|---------------|
+| raw → cache | Genus proxy mapping for unmapped species | +0.011 | 31 unmapped species get non-zero predictions |
+| cache → probes-v1 | LogReg probes on PCA-compressed embeddings | +0.057 | Learned species-specific decision boundaries |
+| v1 → v2-fix | OOF fold-safe priors, 6-category fusion, sc_clean | +0.013 | Proper prior estimation, bug fixes (K_HOUR, labeled subset) |
+| v2-fix → v4 | ProtoSSM temporal modeling + ResidualSSM + TTA | +0.007 | Captures temporal patterns across 12 windows |
+| v4 → v4.2 | 4 simultaneous changes | **−0.019** | Batched changes; cannot isolate which one broke it |
 
 ## BirdCLEF 2026 — Perch ProtoSSM v5 (exp 020)
 

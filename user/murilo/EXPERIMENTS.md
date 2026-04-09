@@ -552,49 +552,51 @@ Full results: [results.md](experiments/019-sed-ablations/results.md)
 
 **Dataset**: BirdCLEF 2026, 234 species.
 
-**Models**: Perch v2 (TF vs ONNX) + ProtoSSM.
+**Models**: Perch v2 (TF vs ONNX) + ProtoSSM (V17 vs V18 configs).
 
-| Variant | Runtime | Public LB | Δ vs V18+TF |
-|---------|---------|----------|-------------|
-| V17+TF | TF (two-kernel) | 0.922 | −0.003 |
-| V18+TF | TF (two-kernel) | **0.925** | — |
-| V18+ONNX | ONNX (single-kernel) | 0.920 | −0.005 |
+| Variant | Config | Backend | Public LB | Δ vs V18+TF |
+|---------|--------|---------|----------|-------------|
+| V17+TF | d=256, 3L, 40ep, TTA×3 | TF | 0.922 | −0.003 |
+| V17+ONNX MLP-only | d=256, 3L, proto_w=0.0 | ONNX | 0.911 | −0.014 |
+| V18+ONNX | d=320, 4L, 80ep, TTA×5 | ONNX | 0.920 | −0.005 |
+| **V18+TF** | **d=320, 4L, 80ep, TTA×5** | **TF (two-kernel)** | **0.925** | **—** |
 
-- ONNX Perch runs 9× faster than TF but incurs −0.005 to −0.010 LB penalty due to numerical differences in embedding extraction.
-- V18+TF (two-kernel workflow: TF extracts embeddings, then Python kernel classifies) reaches 0.925 — best Perch result.
-- Gap to pantanal reference (0.930) is −0.005, approaching the ceiling.
-- .ipynb kernels run 2× faster than .py on Kaggle — format matters for tight time budgets.
+V18 scaling over V17: d_model 256→320, SSM layers 3→4, cross-attn heads 4→8,
+MLP probes PCA-64→128, training epochs 40→80, TTA shifts 3→5.
 
-**Limitation**: Two-kernel workflow adds complexity; ONNX accuracy gap not fully explained.
+- ONNX Perch runs 9× faster (~8 min vs ~65 min) but incurs −0.005 LB penalty (max logit diff 2.7e-4 compounds through MLP probes → ProtoSSM fusion → per-class thresholds → TTA).
+- Two-kernel split: training kernel saves artifacts → inference kernel loads AFTER TF inference (memory optimization: loading 75MB before TF caused 2× slowdown).
+- Gap to pantanal reference (0.930): −0.005.
 
-Full results: [results.md](experiments/020-perch-onnx-protossm/results.md)
+**Limitation**: ONNX penalty is real but small; two-kernel workflow adds complexity.
+
+Full results: [results.md](experiments/020-perch-onnx/results.md)
 
 ---
 
 ### 3.21 Exp 021: SED Training — 7 Phases
 
-**Hypothesis**: Training recipe modifications (loss functions, augmentation, head architecture, multi-context) can improve SED beyond the v5j baseline.
+**Hypothesis**: Training recipe modifications (loss functions, augmentation, head architecture, multi-context) can improve SED beyond the v5j baseline (0.906 LB).
 
 **Dataset**: BirdCLEF 2026, 234 species.
 
-**Models**: HGNetV2-B0 SED, phases A–G.
+**Models**: HGNetV2-B0 SED, phases A–G (14 training recipe changes).
 
-| Phase | Changes | Best LB | Δ vs v5j |
-|-------|---------|---------|----------|
-| A | Site/hour priors (PP) | 0.917 | +0.004 |
-| B | CE loss | < 0.906 | Regressed |
-| C | Waveform MixUp | < 0.906 | Regressed |
-| D | AttHead variants | < 0.906 | Regressed |
-| E | Multi-context LSEHead | < 0.906 | Regressed |
-| F | species_mapping bug fix | — | — |
-| G | Manifold mixup (v6l) | 0.899 | −0.007 |
+| Phase | Changes | Best Variant | val/auroc | LB | Δ vs v5j |
+|-------|---------|-------------|-----------|-----|----------|
+| A | Site/hour priors (PP only) | v5j-4fold-pp2 | — | **0.917** | **+0.004** |
+| B | CE loss, waveform MixUp, 25ep | v6b (wave MixUp) | 0.871 | 0.887 | −0.019 |
+| C | AttHead + backbone scaling | v6j (EffNet-B0 NS) | 0.874 | 0.893 | −0.013 |
+| D | Multi-context AttHead (15-20s) | v7c (EffNet 3×5s) | 0.851 | — | −0.023+ |
+| E | Multi-context LSEHead | v8b (HGNet 4×5s) | **0.881** | 0.896 | −0.010 |
+| F | Competition AttHead fix, fmax | v6k (fixed AttHead) | 0.871 | 0.888 | −0.018 |
+| G | Manifold Mixup | v6l | 0.874 | 0.899 | −0.007 |
 
-- Site/hour priors in post-processing (Phase A) add +0.003/+0.004, the only positive result.
-- **All training recipe changes (Phases B–G) are 0-for-14 on LB.** CE loss, waveform MixUp, attention heads, multi-context, and manifold mixup all regress.
-- v5j-4fold-pp2 (baseline + site/hour PP) reaches 0.917 — best SED overall.
-- Key insight: the SED backbone and mel frontend drive performance; training tricks do not transfer to this task.
+- **Phase A (PP only) is the sole positive result** — site/hour priors add +0.003 single, +0.004 4-fold. No retraining needed.
+- **Phases B–G: 0-for-14 on LB.** Best offline (v8b, 0.881 val) is worst on LB (0.896). Offline metrics are anti-correlated with LB.
+- v5j-4fold-pp2 (0.917) remains best SED. The v5j recipe is a local optimum — every perturbation falls off a generalization cliff.
 
-**Limitation**: No backbone or mel frontend changes tested in this experiment (those are the actual levers per exp 017/019).
+**Limitation**: The gap to 0.920+ competitors is not in the training recipe — it's in something else (data augmentation details, inference tricks, or architecture differences). See `FINDINGS.md` insight #3.
 
 Full results: [results.md](experiments/021-sed-training/results.md)
 
@@ -625,26 +627,28 @@ Full results: [results.md](experiments/022-pcen-normalization/results.md)
 
 ### 3.23 Exp 023: Perch + SED Ensemble
 
-**Hypothesis**: Score-level fusion of Perch (ProtoSSM) and SED (v5j-4fold) predictions in a single Kaggle kernel will outperform either model alone.
+**Hypothesis**: Score-level fusion of Perch (ONNX, MLP probes) and SED (v5j-4fold-pp2) predictions in a single Kaggle kernel will outperform either model alone.
 
-**Dataset**: BirdCLEF 2026, 234 species. Inference in a single Kaggle kernel.
+**Dataset**: BirdCLEF 2026, 234 species. Single Kaggle CPU kernel (~64 min for 600 files).
 
-**Models**: Perch ProtoSSM + HGNetV2-B0 SED v5j-4fold, weighted score fusion.
+**Models**: Perch ONNX + ProtoSSM/MLP probes (0.920 standalone) + HGNetV2-B0 SED v5j-4fold-pp2 (0.917 standalone).
 
-| Config | proto_weight | Public LB | Δ vs best single |
-|--------|-------------|----------|-----------------|
-| w=0.5 | 0.5 | 0.927 | — |
-| w=0.3 | 0.3 | 0.927 | — |
-| w=0.7 | 0.7 | 0.926 | — |
-| MLP-only | 0.0 | **0.929** | +0.004 |
-| No PP | — | 0.922 | −0.005 |
+| Config | w_perch | proto_weight | Perch Backend | SED Model | LB | Δ vs best single |
+|--------|---------|-------------|--------------|-----------|-----|-----------------|
+| w=0.5 | 0.5 | 0.5 | ONNX | 4-fold | 0.927 | +0.002 |
+| w=0.3 | 0.3 | 0.5 | ONNX | 4-fold | 0.927 | +0.002 |
+| w=0.7 | 0.7 | 0.5 | ONNX | 4-fold | 0.926 | +0.001 |
+| **MLP-only** | **0.5** | **0.0** | **ONNX** | **4-fold** | **0.929** | **+0.004** |
+| No PP | 0.5 | 0.5 | ONNX | 4-fold | 0.922 | −0.003 |
+| TF+single+MLP | 0.5 | 0.0 | TF | single | TIMEOUT | — |
 
-- MLP-only (proto_weight=0.0, using only the MLP probe from Perch, no prototypical component) achieves **0.929 LB** — the new best overall score.
-- Score-level fusion at various weights (0.3–0.7) yields 0.926–0.927, slightly below MLP-only, suggesting the prototypical component adds noise.
-- Post-processing remains valuable: removing PP costs −0.005.
-- Config-driven YAML push system enables rapid submission iteration without code changes.
+- **MLP-only (proto_weight=0.0): 0.929 LB — new best overall.** Dropping ProtoSSM (which was trained on TF embeddings but runs on ONNX) and using only MLP probes gains +0.002. Simpler probes are more robust to ONNX embedding distribution shift.
+- Weight curve is flat (0.926-0.927 across w=0.3/0.5/0.7) — both models contribute equally.
+- PP is worth +0.005: each pipeline's individual PP helps even when outputs are averaged.
+- **TF Perch timed out** (~10s/file × 600 files > 90 min) — TF backend not viable for ensemble.
+- Config-driven YAML push system: `push.sh <config_name>` injects override, creates separate Kaggle notebook per config.
 
-**Limitation**: Only score-level fusion tested; no learned fusion or stacking. Gap to pantanal reference (0.930) is −0.001.
+**Limitation**: Only score-level fusion tested; no learned fusion or stacking. TF Perch (0.925 quality) cannot fit within 90 min alongside SED.
 
 Full results: [results.md](experiments/023-perch-sed-ensemble/results.md)
 
