@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.decomposition import NMF
-from sklearn.metrics import roc_auc_score, average_precision_score
+from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import normalize
 
 from birdclef_106.analysis.base import AnalysisTask
@@ -192,9 +192,7 @@ class MultiPrototypeProfiles(AnalysisTask):
 
         # Center and normalize logit prototypes for cosine scoring
         proto_logits_centered = proto_logits - global_logit_mean[None, None, :]
-        proto_logits_normed = np.zeros_like(proto_logits_centered)
-        norms = np.linalg.norm(proto_logits_centered, axis=2, keepdims=True)
-        norms = np.maximum(norms, 1e-8)
+        norms = np.maximum(np.linalg.norm(proto_logits_centered, axis=2, keepdims=True), 1e-8)
         proto_logits_normed = proto_logits_centered / norms
 
         # Normalize embedding prototypes
@@ -211,7 +209,6 @@ class MultiPrototypeProfiles(AnalysisTask):
         sc_logits = logits_to_numpy(sc_df).astype(np.float64)
         sc_emb = embeddings_to_numpy(sc_df).astype(np.float64)
         sc_Y = build_binary_label_matrix(sc_df, species_list)
-        n_sc = len(sc_df)
 
         # Logit-space scoring: max over K prototypes per species
         sc_logit_centered = sc_logits - global_logit_mean[None, :]

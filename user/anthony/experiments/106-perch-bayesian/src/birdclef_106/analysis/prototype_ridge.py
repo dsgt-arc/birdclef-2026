@@ -1,8 +1,8 @@
 """Ridge regression on prototype similarity features.
 
-The practical MVP for the star schema prototype framework: use Leiden prototype
-similarities as features for multi-label ridge regression. Tests whether the
-prototype structure adds value over raw embeddings/logits.
+The practical MVP for the star schema prototype framework: use NMF/k-means
+prototype similarities as features for multi-label ridge regression. Tests
+whether the prototype structure adds value over raw embeddings/logits.
 
 Pipeline:
     1. Load multi-prototype and site-state prototype matrices.
@@ -13,8 +13,8 @@ Pipeline:
     3. Multi-label ridge regression (LOSO CV) on prototype features.
     4. Compare against ridge on raw embeddings (0.749 AUROC baseline).
 
-If prototype features beat raw features, the Leiden structure is valuable and
-the fancier approaches (Hopfield, tensor decomposition) are worth pursuing.
+If prototype features beat raw features, the prototype structure is valuable
+and fancier approaches (Hopfield, tensor decomposition) are worth pursuing.
 
 Outputs:
     prototype_ridge_metrics.json — AUROC comparison, per-species breakdown

@@ -28,7 +28,6 @@ from birdclef_106.analysis.base import AnalysisTask
 from birdclef_106.analysis.partition import PartitionFeatures
 from birdclef_106.data_loading import (
     build_species_list,
-    extract_site,
     list_sites,
     load_site,
     logits_to_numpy,
