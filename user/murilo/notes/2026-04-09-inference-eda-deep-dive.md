@@ -339,16 +339,194 @@ high logits changes dramatically between focal and soundscape recordings.
 
 ---
 
-## 7. Implications for Data-Centric Pivot
+## 7. 4-Fold vs Single-Fold Pseudo-Label Coverage
 
-### 7.1 The fundamental bottleneck is data coverage, not model quality
+Counter-intuitively, **4-fold averaging reduces pseudo-label coverage** compared to single-fold.
+
+### 7.1 Coverage comparison (unseen species, unlabeled soundscapes)
+
+| Threshold | Single-Fold | 4-Fold Avg | Difference |
+|-----------|-------------|------------|------------|
+| > 0.3 | 104 / 159 | 83 / 159 | **-21** |
+| > 0.5 | 80 / 159 | 68 / 159 | **-12** |
+| > 0.7 | 65 / 159 | 53 / 159 | **-12** |
+| > 0.9 | 37 / 159 | 35 / 159 | **-2** |
+
+**Why this happens**: Averaging logits across 4 folds smooths out confident individual-fold
+predictions. If fold 2 detects a rare species at p=0.7 but folds 0/1/3 say p=0.01, the
+average is ~0.18 — below the 0.5 threshold. The rare species detection is lost to consensus.
+
+### 7.2 Newly covered species (4-fold gains)
+
+Only 4 species gained coverage (0 → >0) from 4-fold averaging:
+
+| Species | Single | 4-Fold |
+|---------|--------|--------|
+| 24287 | 0 | 14 |
+| gretho2 | 0 | 3 |
+| brcmar1 | 0 | 1 |
+| eulfly1 | 0 | 1 |
+
+### 7.3 Zero coverage in both: 75 species remain invisible
+
+75 unseen species get zero pseudo-labels at the 0.5 threshold from BOTH single-fold and
+4-fold models. These species need a fundamentally different teacher (Perch+SED ensemble)
+or a much lower threshold.
+
+### 7.4 Implication for pseudo-labeling strategy
+
+**Use single-fold (or max-across-folds) for pseudo-labeling, not fold-averaged predictions.**
+The goal of pseudo-labels is to maximize recall for rare species, not to minimize false
+positives. A single confident fold detection is more valuable than a consensus "no."
+Alternatively, use max-across-folds: `max(fold0, fold1, fold2, fold3)` per species per
+segment to maximize coverage while still requiring at least one fold to be confident.
+
+---
+
+## 8. Secondary Labels & Confusion Analysis
+
+Many top-1 "errors" on focal recordings may actually be correct detections of background
+species that happen to be louder than the primary species in that 5s chunk.
+
+### 8.1 How many "confusions" are actually secondary labels?
+
+| Metric | Value |
+|--------|-------|
+| Total wrong top-1 predictions | 75,553 |
+| Prediction matches a secondary label | 9,498 (12.6%) |
+| Top-5 misses where ≥1 top-5 pred is secondary | 6,640 / 46,302 (14.3%) |
+
+**12.6% of "errors" are correct background species detections.** The model is detecting
+real acoustic events that happen to not be the primary label. This is actually desirable
+behavior for soundscape prediction where multiple species co-occur.
+
+### 8.2 Notable confusion pairs
+
+| True → Predicted | Count | Is Secondary (%) | Interpretation |
+|-----------------|-------|-------------------|----------------|
+| coffal1 → flawar1 | 430 | 0.0% | **True confusion** — model confuses these species |
+| compot1 → compau | 207 | 28.5% | **Partly correct** — Common Pauraque is background in 28% of Potoo recordings |
+| pluibi1 → baymac | 104 | **100.0%** | **Fully correct** — Bay Macaw is always a secondary label when model "confuses" it with Plumbeous Ibis |
+| roahaw → grekis | 107 | 10.3% | **Partly correct** — Great Kiskadee is a common background bird |
+
+**pluibi1 → baymac is not a confusion at all** — the model correctly detects Bay Macaw in
+the background of every Plumbeous Ibis recording where this "error" occurs.
+
+### 8.3 Files with secondary labels have higher "confusion" rates
+
+| File Type | Wrong Top-1 Rate | N Segments |
+|-----------|-----------------|------------|
+| With secondary labels | 0.334 | 53,389 |
+| Without secondary labels | 0.271 | 212,535 |
+
+Files with secondary labels have 23% more "errors" — but many of those errors are correct
+background species detections. **The model is multi-label aware even though it's evaluated
+as single-label on focal data.**
+
+### 8.4 Implications
+
+1. The **coffal1 ↔ flawar1 confusion** (430 cases, 0% secondary) is a true systematic error
+   worth investigating — are these species acoustically similar, or is there a data quality issue?
+2. The **nocturnal confusion cluster** (potoo/screech-owl/pauraque/nightjar) is partly explained
+   by co-occurrence: these species genuinely co-exist in nocturnal recordings.
+3. **Top-1 focal accuracy (0.716) understates the model's true ability** — ~12.6% of "errors"
+   are correct multi-species detections. The effective accuracy is closer to ~0.75.
+
+---
+
+## 9. Focal Sample Count vs Pseudo-Label Coverage
+
+Does having more focal training data help a species get detected in soundscapes?
+
+### 9.1 Correlation
+
+| Metric Pair | Spearman r | p-value |
+|-------------|-----------|---------|
+| Focal count vs pseudo-labels (>0.5) | **0.459** | <0.0001 |
+| Focal count vs pseudo-labels (>0.3) | **0.499** | <0.0001 |
+| Focal count vs max probability | **0.550** | <0.0001 |
+
+**Moderate positive correlation** — more focal data helps, but it's not the whole story.
+Many species with hundreds of focal recordings still get zero soundscape predictions.
+
+### 9.2 Coverage by focal sample count
+
+| Focal Count | N Species | Covered@0.5 | Covered@0.3 | Mean Max-Prob |
+|-------------|-----------|-------------|-------------|---------------|
+| 0-10 | 18 | 1 (6%) | 2 (11%) | 0.092 |
+| 10-50 | 15 | 7 (47%) | 9 (60%) | 0.428 |
+| 50-100 | 23 | 7 (30%) | 12 (52%) | 0.417 |
+| 100-200 | 48 | 24 (50%) | 33 (69%) | 0.510 |
+| 200-500 | 55 | 41 (75%) | 48 (87%) | 0.727 |
+
+Species with <10 focal recordings are nearly invisible in soundscapes (6% coverage).
+Species with 200+ focal recordings are well-covered (75%). But 25% of the 200+ group
+STILL gets zero pseudo-labels — these are the domain shift failures.
+
+### 9.3 Coverage by taxonomy (unseen species only)
+
+| Taxon | N | Covered@0.5 | Mean Focal | Mean Max-Prob |
+|-------|---|-------------|-----------|---------------|
+| Aves | 134 | 73 (54%) | 214 | 0.561 |
+| Amphibia | 18 | 5 (28%) | 8 | 0.295 |
+| Insecta | 3 | 1 (33%) | 66 | 0.372 |
+| Mammalia | 4 | 1 (25%) | 8 | 0.146 |
+
+Non-bird taxa have dramatically lower coverage despite the same model. **Mammalia is
+essentially invisible** (max prob 0.146 = the model never confidently predicts any mammal
+in soundscapes). This confirms the mel spectrogram is optimized for birds, not mammals.
+
+### 9.4 Data quality suspects: high focal count, zero soundscape predictions
+
+54 species have ≥50 focal recordings but zero pseudo-labels at >0.5. Top examples:
+
+| Species | Taxon | Focal Count | Max Prob |
+|---------|-------|-------------|----------|
+| houspa (House Sparrow) | Aves | 496 | 0.349 |
+| socfly1 (Social Flycatcher) | Aves | 494 | 0.440 |
+| squcuc1 (Squirrel Cuckoo) | Aves | 432 | 0.211 |
+| swtman1 (Swallow-tailed Manakin) | Aves | 355 | 0.351 |
+| baffal1 (Buff-necked Falcon) | Aves | 337 | 0.423 |
+| yebela1 (Yellow-bellied Elaenia) | Aves | 297 | 0.081 |
+| whbwar2 (White-bellied Warbler) | Aves | 243 | 0.034 |
+
+These species have plenty of focal data but the model refuses to predict them in soundscapes.
+Possible explanations:
+- These species may genuinely not vocalize in the Pantanal soundscapes (recording sites
+  don't overlap with their habitat)
+- Their focal recordings may have very different acoustic conditions than soundscapes
+- The model may have learned focal-specific artifacts rather than the species' true
+  acoustic signature
+
+**yebela1 and whbwar2 are the most extreme**: 297 and 243 focal recordings respectively,
+but max probability of only 0.081 and 0.034 in any soundscape segment. These are strong
+candidates for manual inspection.
+
+### 9.5 Bright spots: low focal count but good soundscape generalization
+
+| Species | Taxon | Focal Count | Pseudo-Labels@0.5 |
+|---------|-------|-------------|-------------------|
+| 24285 | Amphibia | 19 | 204 |
+| 22983 | Amphibia | 10 | 137 |
+| 22956 | Amphibia | 32 | 60 |
+| 555145 | Amphibia | 9 | 36 |
+
+All are **Amphibia** — frog species with distinctive spectral signatures that transfer well
+from focal to soundscape despite minimal training data. Their continuous stridulation patterns
+are spectrally unique and not easily confused with other species.
+
+---
+
+## 10. Implications for Data-Centric Pivot
+
+### 10.1 The fundamental bottleneck is data coverage, not model quality
 
 The model is near-perfect (0.9958 AUC) on the 75 species it has soundscape signal for.
 The LB gap comes from the 159 species trained only on focal recordings. No amount of
 training recipe tuning will fix this — the model needs **soundscape-domain data** for
 these 159 species.
 
-### 7.2 Pseudo-labeling priorities
+### 10.2 Pseudo-labeling priorities
 
 | Priority | Species Group | Count | Strategy |
 |----------|--------------|-------|----------|
@@ -364,7 +542,7 @@ more common species. For these, we may need:
 - Lower threshold (0.3 instead of 0.5), accepting more noise
 - External data from Xeno-canto for species diversity
 
-### 7.3 Data quality priorities
+### 10.3 Data quality priorities
 
 The 20 worst focal species (mean prob < 0.35) include:
 - 3 mammals with literally zero correct predictions (209233, 516975, 74580)
@@ -377,14 +555,35 @@ These species would benefit most from:
 - **Hard negative mining**: the nocturnal confusion cluster suggests the model needs
   explicit negative examples to distinguish similar-sounding species
 
-### 7.4 Site diversity is a major lever
+### 10.4 Site diversity is a major lever
 
 The 14 new sites in unlabeled data represent acoustic environments the model has never
 seen in labeled form. S01 (2,341 files) and S02 (2,505 files) alone are massive — together
 they're 6× larger than all labeled data. Pseudo-labeling these gives the model exposure
 to diverse acoustic environments, which is exactly what robustness requires.
 
-### 7.5 The Perch+SED ensemble should be the teacher
+### 10.5 Use max-across-folds, not averaged, for pseudo-labeling
+
+4-fold averaging loses 12 unseen species at the 0.5 threshold vs single-fold. For
+pseudo-labeling, use `max(fold0, fold1, fold2, fold3)` per species per segment to maximize
+coverage. A single confident fold detection is a better teacher signal than a smoothed-out
+consensus that loses rare species.
+
+### 10.6 ~12.6% of focal "confusions" are correct background detections
+
+The model is already partially multi-label aware from focal recordings. This means the
+model's predictions on unlabeled soundscapes may be *more* accurate than our focal-based
+evaluation suggests. When we pseudo-label soundscapes, the "extra" species the model
+predicts beyond the pseudo-label threshold may be real.
+
+### 10.7 54 high-focal-count species with zero soundscape predictions need investigation
+
+These species have plenty of training data but refuse to generalize. Before pseudo-labeling,
+we should inspect: are these species genuinely absent from soundscapes, or is the model
+failing to detect them? Manual listening to a few soundscapes from their known habitats
+would resolve this.
+
+### 10.8 The Perch+SED ensemble should be the teacher
 
 The v5j model alone covers only 80/159 unseen species at threshold 0.5. The ensemble
 (Perch ONNX + SED v5j-4fold) scored 0.929 on LB — Perch's pre-trained bioacoustic

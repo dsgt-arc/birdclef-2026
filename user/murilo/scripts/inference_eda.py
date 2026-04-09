@@ -424,6 +424,234 @@ def section6_logit_stats(data: dict):
 
 
 # --------------------------------------------------------------------------- #
+# Section 7: 4-fold vs single-fold pseudo-label coverage
+# --------------------------------------------------------------------------- #
+def section7_fourfold_coverage(data: dict):
+    print("\n" + "=" * 70)
+    print("SECTION 7: 4-FOLD vs SINGLE-FOLD PSEUDO-LABEL COVERAGE")
+    print("=" * 70)
+
+    species_cols = data["species_cols"]
+    ss_species = data["ss_species"]
+    unseen_species = [sp for sp in species_cols if sp not in ss_species]
+    unseen_idx = [species_cols.index(sp) for sp in unseen_species]
+
+    # Single-fold unlabeled probs
+    df = data["ss_logits"]
+    single_probs = 1 / (1 + np.exp(-df[species_cols].values.astype(np.float32)))
+    unlabeled_mask = ~df["is_labeled"].values
+    single_unlab = single_probs[unlabeled_mask]
+
+    # Load 4-fold
+    base_4fold = INFERENCE_BASE / "hgnet-b0-sed-v5j-4fold" / "train_soundscapes"
+    fold_logits = []
+    for fold in range(4):
+        fdf = pd.read_parquet(base_4fold / f"fold{fold}" / "logits.parquet")
+        fold_logits.append(fdf[species_cols].values.astype(np.float32))
+
+    avg_logits = np.mean(fold_logits, axis=0)
+    avg_probs = 1 / (1 + np.exp(-avg_logits))
+    avg_unlab = avg_probs[unlabeled_mask]
+
+    print("\n--- Coverage comparison (unseen species, unlabeled) ---")
+    print(f"{'Threshold':>10s} | {'Single':>12s} | {'4-Fold Avg':>12s} | {'Gain':>6s}")
+    print("-" * 50)
+    for t in [0.3, 0.5, 0.7, 0.9]:
+        s_cov = sum((single_unlab[:, i] > t).sum() > 0 for i in unseen_idx)
+        a_cov = sum((avg_unlab[:, i] > t).sum() > 0 for i in unseen_idx)
+        print(f"  >{t:.1f}     | {s_cov:>8d}/159 | {a_cov:>8d}/159 | {a_cov - s_cov:>+4d}")
+
+    # Newly covered
+    gained = []
+    for sp, idx in zip(unseen_species, unseen_idx, strict=False):
+        s_n = int((single_unlab[:, idx] > 0.5).sum())
+        a_n = int((avg_unlab[:, idx] > 0.5).sum())
+        if a_n > 0 and s_n == 0:
+            gained.append({"species": sp, "single": s_n, "fourfold": a_n})
+    print(f"\n  Newly covered (single=0 → 4fold>0 at 0.5): {len(gained)}")
+    for row in sorted(gained, key=lambda x: -x["fourfold"]):
+        print(f"    {row['species']:20s}  4fold={row['fourfold']}")
+
+    # Both zero
+    s_zero = {
+        sp
+        for sp, i in zip(unseen_species, unseen_idx, strict=False)
+        if (single_unlab[:, i] > 0.5).sum() == 0
+    }
+    a_zero = {
+        sp
+        for sp, i in zip(unseen_species, unseen_idx, strict=False)
+        if (avg_unlab[:, i] > 0.5).sum() == 0
+    }
+    print(f"\n  Zero in BOTH: {len(s_zero & a_zero)} / 159")
+
+
+# --------------------------------------------------------------------------- #
+# Section 8: Secondary labels & confusion analysis
+# --------------------------------------------------------------------------- #
+def section8_secondary_labels(data: dict):
+    print("\n" + "=" * 70)
+    print("SECTION 8: SECONDARY LABELS & CONFUSION ANALYSIS")
+    print("=" * 70)
+
+    ta = data["ta_logits"]
+    train_csv = data["train_csv"]
+    species_cols = data["species_cols"]
+
+    # Parse secondary labels
+    train_csv = train_csv.copy()
+    train_csv["sec_parsed"] = train_csv["secondary_labels"].apply(
+        lambda x: {
+            s.strip().strip("'\"") for s in x.strip("[]").split(",") if s.strip().strip("'\"") != ""
+        }
+        if pd.notna(x) and x.strip() not in ["", "[]"]
+        else set()
+    )
+    file_info = dict(
+        zip(
+            train_csv["filename"],
+            zip(train_csv["primary_label"], train_csv["sec_parsed"], strict=False),
+            strict=False,
+        )
+    )
+
+    logits = ta[species_cols].values.astype(np.float32)
+    probs = 1 / (1 + np.exp(-logits))
+    top_pred = np.array(species_cols)[probs.argmax(axis=1)]
+
+    primaries = ta["filename"].map(lambda f: file_info.get(f, ("", set()))[0]).values
+    secondaries = ta["filename"].map(lambda f: file_info.get(f, ("", set()))[1]).values
+
+    wrong_mask = top_pred != primaries
+    wrong_is_sec = np.array(
+        [
+            tp in sec if isinstance(sec, set) else False
+            for tp, sec in zip(top_pred[wrong_mask], secondaries[wrong_mask], strict=False)
+        ]
+    )
+
+    total_wrong = wrong_mask.sum()
+    n_sec = wrong_is_sec.sum()
+    print(f"\nTotal wrong top-1: {total_wrong}")
+    print(f"Prediction matches secondary label: {n_sec} ({n_sec / total_wrong * 100:.1f}%)")
+
+    # Top confusion pairs with secondary breakdown
+    wrong_df = pd.DataFrame(
+        {
+            "primary": primaries[wrong_mask],
+            "top_pred": top_pred[wrong_mask],
+            "is_secondary": wrong_is_sec,
+        }
+    )
+    conf = (
+        wrong_df.groupby(["primary", "top_pred"])
+        .agg(
+            count=("is_secondary", "size"),
+            n_sec=("is_secondary", "sum"),
+        )
+        .reset_index()
+    )
+    conf["pct_sec"] = (conf["n_sec"] / conf["count"] * 100).round(1)
+
+    print("\n--- Top 20 confusion pairs ---")
+    print(f"{'True':>20s} → {'Predicted':>20s}  {'N':>5s}  {'2nd':>5s}  {'%':>5s}")
+    print("-" * 62)
+    for _, row in conf.sort_values("count", ascending=False).head(20).iterrows():
+        print(
+            f"  {row['primary']:>18s} → {row['top_pred']:>18s}  "
+            f"{row['count']:5d}  {row['n_sec']:5d}  {row['pct_sec']:5.1f}%"
+        )
+
+    # Confusion rate by secondary label presence
+    has_sec = np.array([len(s) > 0 if isinstance(s, set) else False for s in secondaries])
+    print("\n--- Confusion rate: with/without secondary labels ---")
+    print(f"  With secondary:    {wrong_mask[has_sec].mean():.3f} (n={has_sec.sum()})")
+    print(f"  Without secondary: {wrong_mask[~has_sec].mean():.3f} (n={(~has_sec).sum()})")
+
+
+# --------------------------------------------------------------------------- #
+# Section 9: Focal sample count vs pseudo-label coverage
+# --------------------------------------------------------------------------- #
+def section9_sample_vs_coverage(data: dict):
+    print("\n" + "=" * 70)
+    print("SECTION 9: FOCAL SAMPLE COUNT vs PSEUDO-LABEL COVERAGE")
+    print("=" * 70)
+
+    df = data["ss_logits"]
+    species_cols = data["species_cols"]
+    ss_species = data["ss_species"]
+    sp_to_class = data["sp_to_class"]
+    train_csv = data["train_csv"]
+
+    probs = 1 / (1 + np.exp(-df[species_cols].values.astype(np.float32)))
+    unlab_probs = probs[~df["is_labeled"].values]
+
+    unseen_species = [sp for sp in species_cols if sp not in ss_species]
+    focal_counts = train_csv["primary_label"].value_counts().to_dict()
+
+    rows = []
+    for sp in unseen_species:
+        idx = species_cols.index(sp)
+        rows.append(
+            {
+                "species": sp,
+                "focal_count": focal_counts.get(sp, 0),
+                "n_pl_05": int((unlab_probs[:, idx] > 0.5).sum()),
+                "n_pl_03": int((unlab_probs[:, idx] > 0.3).sum()),
+                "max_prob": float(unlab_probs[:, idx].max()),
+                "taxon": sp_to_class.get(sp, "unknown"),
+            }
+        )
+    rdf = pd.DataFrame(rows)
+
+    from scipy import stats
+
+    corr, pval = stats.spearmanr(rdf["focal_count"], rdf["n_pl_05"])
+    print(f"\nSpearman (focal_count vs pseudo-labels@0.5): r={corr:.3f}, p={pval:.4f}")
+
+    corr_max, pval_max = stats.spearmanr(rdf["focal_count"], rdf["max_prob"])
+    print(f"Spearman (focal_count vs max_prob): r={corr_max:.3f}, p={pval_max:.4f}")
+
+    bins = [(0, 10), (10, 50), (50, 100), (100, 200), (200, 500)]
+    print("\n--- Coverage by focal count bucket ---")
+    print(f"{'Range':>12s} | {'N':>4s} | {'Cov@0.5':>8s} | {'Cov@0.3':>8s} | {'MaxProb':>8s}")
+    print("-" * 52)
+    for lo, hi in bins:
+        b = rdf[(rdf["focal_count"] >= lo) & (rdf["focal_count"] < hi)]
+        n = len(b)
+        if n == 0:
+            continue
+        c5 = (b["n_pl_05"] > 0).sum()
+        c3 = (b["n_pl_03"] > 0).sum()
+        print(
+            f"  {lo:>3d}-{hi:<4d}  | {n:>4d} | {c5:>4d}/{n:<3d} | {c3:>4d}/{n:<3d} | {b['max_prob'].mean():>8.3f}"
+        )
+
+    # Data quality suspects
+    suspects = rdf[(rdf["focal_count"] >= 50) & (rdf["n_pl_05"] == 0)].sort_values(
+        "focal_count", ascending=False
+    )
+    print(f"\n--- Data quality suspects (≥50 focal, 0 pseudo-labels): {len(suspects)} ---")
+    for _, row in suspects.head(10).iterrows():
+        print(
+            f"  {row['species']:20s}  focal={row['focal_count']:4d}  "
+            f"max_prob={row['max_prob']:.4f}  {row['taxon']}"
+        )
+
+    # Bright spots
+    bright = rdf[(rdf["focal_count"] < 50) & (rdf["n_pl_05"] > 10)].sort_values(
+        "n_pl_05", ascending=False
+    )
+    if len(bright) > 0:
+        print("\n--- Bright spots (<50 focal, >10 pseudo-labels) ---")
+        for _, row in bright.iterrows():
+            print(
+                f"  {row['species']:20s}  focal={row['focal_count']:4d}  "
+                f"n_pl@0.5={row['n_pl_05']:4d}  {row['taxon']}"
+            )
+
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 def main():
@@ -445,6 +673,9 @@ def main():
     section4_unlabeled_landscape(data)
     section5_pseudolabel_quality(data)
     section6_logit_stats(data)
+    section7_fourfold_coverage(data)
+    section8_secondary_labels(data)
+    section9_sample_vs_coverage(data)
 
     print("\n" + "=" * 70)
     print("DONE — see user/murilo/notes/2026-04-09-inference-eda-deep-dive.md")
