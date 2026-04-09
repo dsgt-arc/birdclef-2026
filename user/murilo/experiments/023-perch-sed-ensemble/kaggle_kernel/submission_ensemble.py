@@ -1,9 +1,9 @@
 # ruff: noqa
-# Exp 023: Perch ONNX + SED v5j-4fold-pp2 Ensemble
+# Exp 023: Perch + SED Ensemble
 # Combines two orthogonal pipelines:
-#   Pipeline 1: Perch ONNX → ProtoSSMv2 + MLP probes → 6-stage PP
-#   Pipeline 2: HGNet-B0 SED 4-fold → taxa-aware PP
-# Final: weighted average W_PERCH * perch + (1-W_PERCH) * sed
+#   Pipeline 1: Perch (ONNX or TF) → MLP probes / ProtoSSMv2 → 6-stage PP
+#   Pipeline 2: HGNet-B0 SED (single or 4-fold) → taxa-aware PP
+# Final: weighted average w_perch * perch + (1-w_perch) * sed
 
 # ============================================================================
 # SECTION 0: Dependency Install
@@ -27,10 +27,34 @@ def _find_input(slug):
     return candidates[0]  # fallback to old-style
 
 
-DEPS_DIR = _find_input("birdclef-deps")
-
 if os.path.exists("/kaggle/input"):
     print(f"Kaggle input contents: {os.listdir('/kaggle/input')}")
+
+# Install TF 2.20 if wheels are available (needed for TF Perch backend)
+_TF_WHEELS = [
+    "tensorboard-2.20.0-py3-none-any.whl",
+    "tensorflow-2.20.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+]
+_TF_DIRS = [
+    "/kaggle/input/birdclef-tf220-wheel",
+    "/kaggle/input/datasets/murilogustineli/birdclef-tf220-wheel",
+]
+_tf_installed = False
+for _d in _TF_DIRS:
+    if os.path.isdir(_d):
+        _paths = [os.path.join(_d, w) for w in _TF_WHEELS if os.path.isfile(os.path.join(_d, w))]
+        if _paths:
+            print(f"Installing TF 2.20 from {_d} ({len(_paths)} wheels)")
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "-q", "--no-deps"] + _paths
+            )
+            _tf_installed = True
+            break
+if not _tf_installed:
+    print("TF wheels not found (OK if using ONNX Perch backend)")
+
+# Install onnxruntime (always needed for SED)
+DEPS_DIR = _find_input("birdclef-deps")
 print(f"DEPS_DIR resolved to: {DEPS_DIR} (exists={os.path.exists(DEPS_DIR)})")
 
 if os.path.exists(DEPS_DIR):
@@ -76,11 +100,25 @@ from sklearn.neural_network import MLPClassifier  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 from tqdm.auto import tqdm  # noqa: E402
 
+# Conditional TF import (only needed for TF Perch backend)
+_TF_AVAILABLE = False
+try:
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    import tensorflow as tf  # noqa: E402
+
+    tf.experimental.numpy.experimental_enable_numpy_behavior()
+    _TF_AVAILABLE = True
+    print(f"TensorFlow: {tf.__version__}")
+except ImportError:
+    print("TensorFlow not available (OK if using ONNX Perch backend)")
+
 warnings.filterwarnings("ignore")
 
 # --- Ensemble configuration (overridden by push.sh from YAML configs) ---
 CFG = {
     "w_perch": 0.5,
+    "perch_backend": "onnx",  # "onnx" or "tf"
     "perch_enable_pp": True,
     "perch_ensemble_weight_proto": None,  # None = use value from pretrained artifacts
     "sed_weights_slug": "birdclef-2026-hgnet-b0-sed-v5j-4fold-pp2-weights",
@@ -431,8 +469,9 @@ def read_soundscape_60s(path):
 def infer_perch_with_embeddings(
     perch_session, paths, batch_files=16, verbose=True, proxy_reduce="max"
 ):
-    """Run Perch ONNX inference on soundscape files.
+    """Run Perch inference on soundscape files (ONNX or TF backend).
 
+    perch_session: ort.InferenceSession (ONNX) or TF signature function (TF)
     Returns: (meta_df, scores, embeddings)
     """
     paths = [Path(p) for p in paths]
@@ -477,10 +516,17 @@ def infer_perch_with_embeddings(
             x_pos += N_WINDOWS
             write_row += N_WINDOWS
 
-        # ONNX inference (replaces TF call)
-        onnx_out = perch_session.run(None, {"inputs": x.astype(np.float32)})
-        emb = onnx_out[0].astype(np.float32)  # (B, 1536) embeddings
-        logits = onnx_out[3].astype(np.float32)  # (B, 14795) label logits
+        # Backend-agnostic inference
+        if isinstance(perch_session, ort.InferenceSession):
+            # ONNX path
+            onnx_out = perch_session.run(None, {"inputs": x.astype(np.float32)})
+            emb = onnx_out[0].astype(np.float32)  # (B, 1536) embeddings
+            logits = onnx_out[3].astype(np.float32)  # (B, 14795) label logits
+        else:
+            # TF path
+            outputs = perch_session(inputs=tf.convert_to_tensor(x))
+            logits = outputs["label"].numpy().astype(np.float32)
+            emb = outputs["embedding"].numpy().astype(np.float32)
 
         scores[batch_row_start:write_row, MAPPED_POS] = logits[:, MAPPED_BC_INDICES]
         embeddings[batch_row_start:write_row] = emb
@@ -496,7 +542,7 @@ def infer_perch_with_embeddings(
                 raise ValueError("proxy_reduce must be 'max' or 'mean'")
             scores[batch_row_start:write_row, pos] = proxy_score.astype(np.float32)
 
-        del x, onnx_out, logits, emb
+        del x, logits, emb
         gc.collect()
 
     meta_df = pd.DataFrame(
@@ -1323,7 +1369,7 @@ def get_file_metadata(meta_df, file_list, site_to_idx, n_sites_max):
 
 
 def run_perch_pipeline(test_paths):
-    """Run Perch ONNX + ProtoSSM + MLP + 6-stage PP pipeline.
+    """Run Perch (ONNX or TF) + MLP/ProtoSSM + PP pipeline.
 
     Returns: pd.DataFrame with columns ["row_id"] + PRIMARY_LABELS
     """
@@ -1332,41 +1378,54 @@ def run_perch_pipeline(test_paths):
     # Initialize mapping globals
     _init_perch_mapping()
 
-    # Find and load Perch ONNX model
-    perch_onnx_candidates = [
-        Path(
-            "/kaggle/input/models/google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1/saved_model.onnx"
-        ),
-        Path(_find_input("birdclef-2026-perch-onnx")) / "perch_v2.onnx",
-    ]
-    # Also search in model dir for any .onnx file
-    model_dir = Path(
-        "/kaggle/input/models/google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
-    )
-    if model_dir.exists():
-        for f in model_dir.glob("*.onnx"):
-            perch_onnx_candidates.insert(0, f)
+    # Load Perch model (ONNX or TF based on config)
+    perch_backend = CFG["perch_backend"]
 
-    perch_onnx_path = None
-    for p in perch_onnx_candidates:
-        if p.exists():
-            perch_onnx_path = p
-            break
-
-    if perch_onnx_path is None:
-        raise FileNotFoundError(
-            f"Perch ONNX model not found. Searched: {[str(p) for p in perch_onnx_candidates]}"
+    if perch_backend == "tf":
+        if not _TF_AVAILABLE:
+            raise RuntimeError("TF Perch backend requested but TensorFlow not available")
+        model_dir = Path(
+            "/kaggle/input/models/google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
         )
+        print(f"Loading Perch TF model from {model_dir}")
+        birdclassifier = tf.saved_model.load(str(model_dir))
+        perch_session = birdclassifier.signatures["serving_default"]
+        print(f"Perch TF model loaded ({time.time() - t_start:.1f}s)")
+    else:
+        # ONNX backend
+        perch_onnx_candidates = [
+            Path(
+                "/kaggle/input/models/google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1/saved_model.onnx"
+            ),
+            Path(_find_input("birdclef-2026-perch-onnx")) / "perch_v2.onnx",
+        ]
+        model_dir = Path(
+            "/kaggle/input/models/google/bird-vocalization-classifier/tensorflow2/perch_v2_cpu/1"
+        )
+        if model_dir.exists():
+            for f in model_dir.glob("*.onnx"):
+                perch_onnx_candidates.insert(0, f)
 
-    print(f"Loading Perch ONNX model from {perch_onnx_path}")
-    sess_opts = ort.SessionOptions()
-    sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    sess_opts.intra_op_num_threads = os.cpu_count() or 4
-    sess_opts.inter_op_num_threads = 1
-    perch_session = ort.InferenceSession(
-        str(perch_onnx_path), sess_options=sess_opts, providers=["CPUExecutionProvider"]
-    )
-    print(f"Perch ONNX session created ({time.time() - t_start:.1f}s)")
+        perch_onnx_path = None
+        for p in perch_onnx_candidates:
+            if p.exists():
+                perch_onnx_path = p
+                break
+
+        if perch_onnx_path is None:
+            raise FileNotFoundError(
+                f"Perch ONNX model not found. Searched: {[str(p) for p in perch_onnx_candidates]}"
+            )
+
+        print(f"Loading Perch ONNX model from {perch_onnx_path}")
+        sess_opts = ort.SessionOptions()
+        sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_opts.intra_op_num_threads = os.cpu_count() or 4
+        sess_opts.inter_op_num_threads = 1
+        perch_session = ort.InferenceSession(
+            str(perch_onnx_path), sess_options=sess_opts, providers=["CPUExecutionProvider"]
+        )
+        print(f"Perch ONNX session created ({time.time() - t_start:.1f}s)")
 
     # Step 1: Run Perch inference
     meta_test, scores_test_raw, emb_test = infer_perch_with_embeddings(
@@ -1378,8 +1437,10 @@ def run_perch_pipeline(test_paths):
     )
     print(f"Perch inference done: {meta_test.shape[0]} windows from {len(test_paths)} files")
 
-    # Free ONNX session
+    # Free Perch model (ONNX session or TF model)
     del perch_session
+    if perch_backend == "tf":
+        del birdclassifier
     gc.collect()
 
     # Step 2: Load pretrained artifacts

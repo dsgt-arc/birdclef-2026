@@ -48,8 +48,12 @@ cfg.pop('description', None)
 print(repr(cfg))
 ")
 
+# Select base metadata: TF configs use kernel-metadata-tf-ensemble.json
+if echo "$OVERRIDE" | grep -q "'perch_backend': 'tf'"; then
+    BASE_META="kernel-metadata-tf-ensemble.json"
+fi
+
 # Generate unique kernel metadata from config name
-# e.g., ensemble_w03 -> birdclef-2026-perch-sed-ensemble-w03
 KERNEL_SUFFIX="${CONFIG_NAME#ensemble_}"  # strip 'ensemble_' prefix
 KERNEL_ID="${KAGGLE_USER}/birdclef-2026-perch-sed-${KERNEL_SUFFIX}"
 KERNEL_TITLE="BirdCLEF 2026 Perch+SED ${KERNEL_SUFFIX}"
@@ -64,6 +68,8 @@ with open('kernel-metadata.json', 'w') as f:
     json.dump(meta, f, indent=2)
 print(f'Kernel ID: {meta[\"id\"]}')
 print(f'Title: {meta[\"title\"]}')
+print(f'Base metadata: $BASE_META')
+print(f'Datasets: {meta[\"dataset_sources\"]}')
 "
 
 echo "=== Pushing kernel: $CONFIG_NAME ==="
