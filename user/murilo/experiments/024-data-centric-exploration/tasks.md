@@ -5,7 +5,9 @@
 Understand model coverage gaps and Perch/SED complementarity to inform the pseudo-labeling
 teacher strategy for exp 025.
 
-Status: **Phase A in progress.**
+Status: **Phase A complete. Phase B next (Perch TF inference).**
+
+**Branch**: `mg/024-data-centric-exploration` — PR #26
 
 ---
 
