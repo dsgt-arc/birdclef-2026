@@ -32,10 +32,14 @@ class DistributionShift(AnalysisTask):
     """Compare Perch logit distributions between focal and soundscape data."""
 
     def output(self):
-        return self.artifact("distribution_shift.json")
+        return [
+            self.artifact("distribution_shift.json"),
+            self.artifact("distribution_shift.npz"),
+        ]
 
     def run(self):
-        self.ensure_parent(self.output())
+        for t in self.output():
+            self.ensure_parent(t)
 
         # Load labeled soundscape logits (all 739)
         labeled_df = load_labeled(self.features_dir)
@@ -108,8 +112,18 @@ class DistributionShift(AnalysisTask):
             "top_mean_diff_logits": top_mean_diff,
         }
 
-        with open(self.output().path, "w") as f:
+        with open(self.output()[0].path, "w") as f:
             json.dump(results, f, indent=2)
+
+        # Save full per-dimension vectors for domain transfer weights
+        np.savez_compressed(
+            self.output()[1].path,
+            ks_stats=ks_stats.astype(np.float32),
+            ks_pvals=ks_pvals.astype(np.float32),
+            focal_mean=focal_mean.astype(np.float32),
+            soundscape_mean=soundscape_mean.astype(np.float32),
+            mean_diff=mean_diff.astype(np.float32),
+        )
 
         logger.info(
             "DistributionShift: %d/%d logits significantly shifted (%.1f%%)",
