@@ -11,9 +11,9 @@ import logging
 from pathlib import Path
 
 import numpy as np
-from scipy import linalg
 
 from birdclef_106.analysis.base import AnalysisTask
+from birdclef_106.analysis.eda.covariance_logit import LogitCovariance
 from birdclef_106.analysis.structure.partition import PartitionFeatures
 from birdclef_106.data_loading import (
     extract_site,
@@ -35,7 +35,11 @@ class SiteResidualProfiles(AnalysisTask):
     """Residual + shrinkage + Mahalanobis site profiles from unlabeled soundscapes."""
 
     def requires(self):
-        return PartitionFeatures(**self._params())
+        p = self._params()
+        return {
+            "partition": PartitionFeatures(**p),
+            "logit_cov": LogitCovariance(**p),
+        }
 
     def output(self):
         return [
@@ -212,23 +216,16 @@ class SiteResidualProfiles(AnalysisTask):
         logger.info("SiteResiduals: saved summary to %s", self.output()[1].path)
 
     def _mahalanobis_weight(self, residuals: np.ndarray) -> np.ndarray:
-        cov_path = Path(self.artifacts_dir) / "logit_covariance.npz"
-        if not cov_path.exists():
-            logger.warning("SiteResiduals: logit_covariance.npz not found, "
+        derived_path = Path(self.artifacts_dir) / "logit_covariance_derived.npz"
+        if not derived_path.exists():
+            logger.warning("SiteResiduals: logit_covariance_derived.npz not found, "
                            "falling back to unweighted residuals")
             return residuals.copy()
 
-        logger.info("  loading logit covariance for Mahalanobis weighting")
-        data = np.load(str(cov_path))
-        cov = data["cov"].astype(np.float64)
-
-        PCA_K = 500
-        logger.info("  computing top-%d eigendecomposition of covariance", PCA_K)
-        eigenvalues, eigenvectors = linalg.eigh(
-            cov, subset_by_index=[cov.shape[0] - PCA_K, cov.shape[0] - 1]
-        )
-        eigenvalues = eigenvalues[::-1]
-        eigenvectors = eigenvectors[:, ::-1]
+        logger.info("  loading cached eigendecomposition for Mahalanobis weighting")
+        data = np.load(str(derived_path))
+        eigenvalues = data["eigenvalues"].astype(np.float64)
+        eigenvectors = data["eigenvectors"].astype(np.float64)
 
         inv_eigenvalues = 1.0 / (eigenvalues + MAHAL_REG)
 
@@ -237,8 +234,10 @@ class SiteResidualProfiles(AnalysisTask):
         mahal = weighted @ eigenvectors.T
 
         logger.info(
-            "  eigenvalue range: [%.4f, %.4f], condition number: %.1f",
-            eigenvalues[-1], eigenvalues[0], eigenvalues[0] / max(eigenvalues[-1], 1e-10),
+            "  eigenvalue range: [%.4f, %.4f], condition=%.1f (loaded cached, k=%d)",
+            eigenvalues[-1], eigenvalues[0],
+            eigenvalues[0] / max(eigenvalues[-1], 1e-10),
+            len(eigenvalues),
         )
 
         return mahal

@@ -105,12 +105,12 @@ class EmpiricalBayesRidge(AnalysisTask):
         sc_sites = np.array([extract_site(f) for f in df["filename"].to_list()])
         unique_sites = sorted(set(sc_sites))
 
-        # Load covariances and pre-compute inverses
-        logit_cov = np.load(self.input()["logit_cov"].path)["cov"].astype(np.float64)
-        emb_cov = np.load(self.input()["emb_cov"].path)["cov"].astype(np.float64)
-        logger.info("Ridge: inverting covariance matrices")
-        logit_cov_inv = scipy.linalg.inv(logit_cov)
-        emb_cov_inv = scipy.linalg.inv(emb_cov)
+        # Load cached covariance inverses
+        logger.info("Ridge: loading cached covariance inverses")
+        logit_derived = np.load(self.input()["logit_cov"][1].path)
+        logit_cov_inv = logit_derived["cov_inv"].astype(np.float64)
+        emb_derived = np.load(self.input()["emb_cov"][1].path)
+        emb_cov_inv = emb_derived["cov_inv"].astype(np.float64)
 
         results = {}
 

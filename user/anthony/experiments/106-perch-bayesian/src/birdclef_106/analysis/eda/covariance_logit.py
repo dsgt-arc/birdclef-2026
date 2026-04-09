@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+from scipy import linalg
 
 from birdclef_106.analysis.base import AnalysisTask
 from birdclef_106.data_loading import load_unlabeled_shards, logits_to_numpy
@@ -28,10 +29,14 @@ class LogitCovariance(AnalysisTask):
     """Compute the 14795×14795 logit covariance from unlabeled soundscapes."""
 
     def output(self):
-        return self.artifact("logit_covariance.npz")
+        return [
+            self.artifact("logit_covariance.npz"),
+            self.artifact("logit_covariance_derived.npz"),
+        ]
 
     def run(self):
-        self.ensure_parent(self.output())
+        for t in self.output():
+            self.ensure_parent(t)
 
         # Incremental accumulation: maintain running sum and outer-product sum.
         # Avoids loading all 127K rows at once.
@@ -60,13 +65,38 @@ class LogitCovariance(AnalysisTask):
         cov += 1e-6 * np.eye(cov.shape[0])
 
         np.savez_compressed(
-            self.output().path,
+            self.output()[0].path,
             mean=mean,  # float64 — preserve precision for downstream inversion
             cov=cov,    # float64 — 14795^2 * 8 bytes ≈ 1.75 GB uncompressed
             n_samples=n_total,
         )
 
         logger.info(
-            "LogitCovariance: %d×%d matrix from %d samples, saved to %s",
-            cov.shape[0], cov.shape[1], n_total, self.output().path,
+            "LogitCovariance: %d×%d matrix from %d samples", cov.shape[0], cov.shape[1], n_total,
+        )
+
+        # Cache derived quantities so downstream tasks don't recompute them.
+        # Top-500 eigendecomposition (~2 min) + full inverse (~3 min).
+        EIGEN_K = 500
+        logger.info("LogitCovariance: computing top-%d eigendecomposition", EIGEN_K)
+        eigenvalues, eigenvectors = linalg.eigh(
+            cov, subset_by_index=[cov.shape[0] - EIGEN_K, cov.shape[0] - 1]
+        )
+        eigenvalues = eigenvalues[::-1]
+        eigenvectors = eigenvectors[:, ::-1]
+
+        logger.info("LogitCovariance: computing full inverse")
+        cov_inv = linalg.inv(cov)
+
+        np.savez_compressed(
+            self.output()[1].path,
+            eigenvalues=eigenvalues.astype(np.float64),
+            eigenvectors=eigenvectors.astype(np.float32),  # float32 saves ~30 MB
+            cov_inv=cov_inv,  # float64 for ridge precision
+            eigen_k=EIGEN_K,
+        )
+
+        logger.info(
+            "LogitCovariance: eigenvalue range [%.4f, %.4f], condition=%.1f, saved derived",
+            eigenvalues[-1], eigenvalues[0], eigenvalues[0] / max(eigenvalues[-1], 1e-10),
         )

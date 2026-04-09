@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+from scipy import linalg
 
 from birdclef_106.analysis.base import AnalysisTask
 from birdclef_106.data_loading import embeddings_to_numpy, load_unlabeled_shards
@@ -28,10 +29,14 @@ class EmbeddingCovariance(AnalysisTask):
     """Compute the 1536×1536 embedding covariance from unlabeled soundscapes."""
 
     def output(self):
-        return self.artifact("embedding_covariance.npz")
+        return [
+            self.artifact("embedding_covariance.npz"),
+            self.artifact("embedding_covariance_derived.npz"),
+        ]
 
     def run(self):
-        self.ensure_parent(self.output())
+        for t in self.output():
+            self.ensure_parent(t)
 
         sum_x = None
         sum_xx = None
@@ -62,7 +67,7 @@ class EmbeddingCovariance(AnalysisTask):
         effective_rank = float(np.exp(-np.sum(p * np.log(p))))
 
         np.savez_compressed(
-            self.output().path,
+            self.output()[0].path,
             mean=mean,  # float64
             cov=cov,    # float64, ~19 MB
             n_samples=n_total,
@@ -70,6 +75,16 @@ class EmbeddingCovariance(AnalysisTask):
         )
 
         logger.info(
-            "EmbeddingCovariance: %d×%d matrix from %d samples, effective rank=%.0f, saved to %s",
-            cov.shape[0], cov.shape[1], n_total, effective_rank, self.output().path,
+            "EmbeddingCovariance: %d×%d from %d samples, effective rank=%.0f",
+            cov.shape[0], cov.shape[1], n_total, effective_rank,
         )
+
+        # Cache inverse for ridge regression
+        logger.info("EmbeddingCovariance: computing inverse")
+        cov_inv = linalg.inv(cov)
+
+        np.savez_compressed(
+            self.output()[1].path,
+            cov_inv=cov_inv,  # float64, ~19 MB
+        )
+        logger.info("EmbeddingCovariance: saved derived")
