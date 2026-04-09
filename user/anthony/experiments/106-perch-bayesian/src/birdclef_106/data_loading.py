@@ -105,6 +105,34 @@ def build_binary_label_matrix(
     return matrix
 
 
+def load_focal_species(species: str, features_dir: str = FEATURES_DIR) -> pl.DataFrame:
+    """Load a single species' focal data from the partitioned parquet."""
+    path = Path(features_dir).expanduser() / "focal" / "by_species" / f"{species}.parquet"
+    return pl.read_parquet(path)
+
+
+def load_site(site: str, features_dir: str = FEATURES_DIR) -> pl.DataFrame:
+    """Load a single site's unlabeled soundscape data from the partitioned parquet."""
+    path = Path(features_dir).expanduser() / "soundscape_unlabeled" / "by_site" / f"{site}.parquet"
+    return pl.read_parquet(path)
+
+
+def list_focal_species(features_dir: str = FEATURES_DIR) -> list[str]:
+    """List species that have partitioned focal parquets."""
+    d = Path(features_dir).expanduser() / "focal" / "by_species"
+    if not d.exists():
+        return []
+    return sorted(p.stem for p in d.glob("*.parquet"))
+
+
+def list_sites(features_dir: str = FEATURES_DIR) -> list[str]:
+    """List sites that have partitioned unlabeled parquets."""
+    d = Path(features_dir).expanduser() / "soundscape_unlabeled" / "by_site"
+    if not d.exists():
+        return []
+    return sorted(p.stem for p in d.glob("*.parquet"))
+
+
 def embeddings_to_numpy(df: pl.DataFrame) -> np.ndarray:
     """Convert polars List(Float32) 'embedding' column to (N, 1536) numpy array."""
     return np.stack(df["embedding"].to_list()).astype(np.float32)

@@ -15,6 +15,7 @@ from birdclef_106.analysis.focal_profiles import FocalSpeciesProfiles
 from birdclef_106.analysis.soundscape_profiles import SoundscapeProfiles
 from birdclef_106.analysis.site_residuals import SiteResidualProfiles
 from birdclef_106.analysis.species_graph import SpeciesGraph
+from birdclef_106.analysis.partition import PartitionFeatures
 from birdclef_106.analysis.multi_prototype import MultiPrototypeProfiles
 from birdclef_106.analysis.site_prototypes import SitePrototypes
 from birdclef_106.analysis.ukf import UKFSmoothing
@@ -35,6 +36,7 @@ __all__ = [
     "SoundscapeProfiles",
     "SiteResidualProfiles",
     "SpeciesGraph",
+    "PartitionFeatures",
     "MultiPrototypeProfiles",
     "SitePrototypes",
     "UKFSmoothing",

@@ -16,6 +16,7 @@ from birdclef_106.analysis import (
     SoundscapeProfiles,
     SiteResidualProfiles,
     SpeciesGraph,
+    PartitionFeatures,
     MultiPrototypeProfiles,
     SitePrototypes,
     EmpiricalBayesRidge,
@@ -58,6 +59,7 @@ class AllAnalysis(AnalysisTask):
             # DMDAnalysis(**p),  # paused — slow (5h+), value unclear vs site residuals
             SiteResidualProfiles(**p),
             SpeciesGraph(**p),
+            PartitionFeatures(**p),
             MultiPrototypeProfiles(**p),
             SitePrototypes(**p),
         ]

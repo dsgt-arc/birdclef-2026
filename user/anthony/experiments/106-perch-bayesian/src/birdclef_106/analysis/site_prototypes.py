@@ -1,15 +1,15 @@
 """Site-state prototypes via Leiden clustering on within-site residuals.
 
-Pipeline:
-    1. Pass 1: per-site means + hour metadata from unlabeled soundscapes.
-    2. Pass 2: subsample residuals → SVD whitening transform.
-    3. Pass 3: project to 200-d, write per-site parquet files incrementally.
-    4. Per site: load parquet, Leiden cluster on dense Gram matrix.
-    5. Pass 5: re-read shards, compute cluster centroids as running sums.
-    6. Compute species × site-state affinity.
+Depends on PartitionFeatures which provides per-site parquets at
+soundscape_unlabeled/by_site/{site}.parquet. Each site is processed independently.
 
-Per-site parquets on scratch (~100 MB total for 200-d projected + hours).
-Robust to failure — clustering restarts from cached parquets.
+Pipeline:
+    1. Load all site parquets to compute global mean + SVD whitening.
+    2. Per site: load parquet, whiten residuals, dense Gram → Leiden,
+       extract prototype centroids. Diel characterization from hours.
+    3. Compute species × site-state affinity.
+
+Memory: one site at a time (~40K × 14795 × 8 = ~4.7 GB peak for S22).
 
 Outputs:
     site_prototypes.npz — prototype matrix, site assignments, whitening transform
@@ -24,15 +24,15 @@ import re
 from pathlib import Path
 
 import numpy as np
-import polars as pl
 from sklearn.decomposition import TruncatedSVD
 
 from birdclef_106.analysis.base import AnalysisTask
-from birdclef_106.analysis.focal_profiles import FocalSpeciesProfiles
+from birdclef_106.analysis.partition import PartitionFeatures
 from birdclef_106.data_loading import (
     build_species_list,
     extract_site,
-    load_unlabeled_shards,
+    list_sites,
+    load_site,
     logits_to_numpy,
 )
 
@@ -66,7 +66,7 @@ class SitePrototypes(AnalysisTask):
     """Build site-state prototypes via Leiden clustering on soundscape windows."""
 
     def requires(self):
-        return FocalSpeciesProfiles(**self._params())
+        return PartitionFeatures(**self._params())
 
     def output(self):
         return [
@@ -74,67 +74,48 @@ class SitePrototypes(AnalysisTask):
             self.artifact("site_prototypes_summary.json"),
         ]
 
-    def _cache_dir(self):
-        return Path(self.features_dir).expanduser() / "site_proto_cache"
-
     def run(self):
         for t in self.output():
             self.ensure_parent(t)
 
         perch_labels = self._load_perch_labels()
-        cache_dir = self._cache_dir()
-        cache_dir.mkdir(parents=True, exist_ok=True)
+        sites = list_sites(self.features_dir)
 
         # =====================================================================
-        # Pass 1: per-site means
+        # Step 1: per-site means + global mean + SVD whitening
         # =====================================================================
-        logger.info("SitePrototypes: pass 1 — per-site means")
-        site_sums: dict[str, np.ndarray] = {}
-        site_counts: dict[str, int] = {}
+        logger.info("SitePrototypes: step 1 — per-site means + SVD")
+
         logit_dim = None
+        site_means = {}
+        site_counts = {}
+        global_sum = None
+        global_count = 0
+        residual_samples = []
 
-        for i, shard in enumerate(load_unlabeled_shards(self.features_dir)):
-            logits = logits_to_numpy(shard).astype(np.float64)
+        for site in sites:
+            df = load_site(site, self.features_dir)
+            logits = logits_to_numpy(df).astype(np.float64)
             if logit_dim is None:
                 logit_dim = logits.shape[1]
-            filenames = shard["filename"].to_list()
-            shard_sites = [extract_site(str(fn)) for fn in filenames]
-            for site in set(shard_sites):
-                if site not in site_sums:
-                    site_sums[site] = np.zeros(logit_dim, dtype=np.float64)
-                    site_counts[site] = 0
-            site_arr = np.array(shard_sites)
-            for site in set(shard_sites):
-                idx = np.where(site_arr == site)[0]
-                site_sums[site] += logits[idx].sum(axis=0)
-                site_counts[site] += len(idx)
-            if i % 4 == 0:
-                logger.info("  pass 1 shard %d done", i)
+                global_sum = np.zeros(logit_dim, dtype=np.float64)
 
-        sites = sorted(site_sums.keys())
-        site_means = {s: site_sums[s] / site_counts[s] for s in sites}
-        total_windows = sum(site_counts.values())
-        global_sc_mean = sum(site_sums.values()) / total_windows
-        logger.info("SitePrototypes: %d sites, %s windows",
-                     len(sites), {s: site_counts[s] for s in sites})
+            site_mean = logits.mean(axis=0)
+            site_means[site] = site_mean
+            site_counts[site] = len(df)
+            global_sum += logits.sum(axis=0)
+            global_count += len(df)
 
-        # =====================================================================
-        # Pass 2: subsample residuals → SVD
-        # =====================================================================
-        logger.info("SitePrototypes: pass 2 — SVD")
-        svd_rate = max(1, total_windows // 50_000)
-        residual_samples = []
-        counter = 0
-        for i, shard in enumerate(load_unlabeled_shards(self.features_dir)):
-            logits = logits_to_numpy(shard).astype(np.float64)
-            filenames = shard["filename"].to_list()
-            for j in range(len(shard)):
-                if counter % svd_rate == 0:
-                    site = extract_site(str(filenames[j]))
-                    residual_samples.append(logits[j] - site_means[site])
-                counter += 1
-            if i % 4 == 0:
-                logger.info("  pass 2 shard %d (%d samples)", i, len(residual_samples))
+            # Subsample residuals for SVD
+            residuals = logits - site_mean[None, :]
+            step = max(1, len(df) // 2500)  # ~2500 per site, ~50K total
+            for j in range(0, len(df), step):
+                residual_samples.append(residuals[j])
+
+            logger.info("  %s: %d windows loaded", site, len(df))
+
+        global_sc_mean = global_sum / global_count
+        logger.info("SitePrototypes: %d sites, %d total windows", len(sites), global_count)
 
         res_matrix = np.array(residual_samples, dtype=np.float64)
         del residual_samples
@@ -148,50 +129,9 @@ class SitePrototypes(AnalysisTask):
         del res_matrix
 
         # =====================================================================
-        # Pass 3: project to 200-d, write per-site parquets incrementally
-        #
-        # Each shard: compute projected vectors, group by site, append to
-        # per-site parquet files. Memory: one shard at a time (~8K × 200 × 4).
-        # Disk: ~127K × 200 × 4 = ~100 MB total.
+        # Step 2: per-site clustering
         # =====================================================================
-        logger.info("SitePrototypes: pass 3 — writing per-site projected caches")
-
-        # Accumulate per-site dataframes across shards, write at the end
-        # Since there are only 21 sites, we can collect lists of small DFs
-        site_dfs: dict[str, list[pl.DataFrame]] = {s: [] for s in sites}
-
-        for i, shard in enumerate(load_unlabeled_shards(self.features_dir)):
-            logits = logits_to_numpy(shard).astype(np.float64)
-            filenames = shard["filename"].to_list()
-            shard_sites = [extract_site(str(fn)) for fn in filenames]
-            shard_hours = [_extract_hour(str(fn)) for fn in filenames]
-
-            site_arr = np.array(shard_sites)
-            for site in set(shard_sites):
-                idx = np.where(site_arr == site)[0]
-                res = logits[idx] - site_means[site]
-                proj = ((res @ components.T) * whiten_scale[None, :]).astype(np.float32)
-
-                # Build a small DataFrame for this site's chunk
-                proj_cols = {f"p{k}": proj[:, k] for k in range(n_comp)}
-                proj_cols["hour"] = [shard_hours[oi] if shard_hours[oi] is not None else -1 for oi in idx]
-                site_dfs[site].append(pl.DataFrame(proj_cols))
-
-            if i % 4 == 0:
-                logger.info("  pass 3 shard %d done", i)
-
-        # Write per-site parquets
-        for site in sites:
-            if site_dfs[site]:
-                df = pl.concat(site_dfs[site])
-                df.write_parquet(cache_dir / f"{site}.parquet")
-        del site_dfs
-        logger.info("SitePrototypes: wrote %d site caches to %s", len(sites), cache_dir)
-
-        # =====================================================================
-        # Step 4: per-site Leiden clustering from cached parquets
-        # =====================================================================
-        logger.info("SitePrototypes: step 4 — clustering")
+        logger.info("SitePrototypes: step 2 — per-site clustering")
 
         try:
             import igraph as ig
@@ -199,31 +139,38 @@ class SitePrototypes(AnalysisTask):
         except ImportError:
             raise ImportError("Requires igraph and leidenalg.")
 
-        per_site_labels = {}
-        per_site_accepted = {}
+        all_prototypes = []
+        proto_site_list = []
+        proto_cluster_id = []
         per_site_info = {}
 
         for site in sites:
-            cache_path = cache_dir / f"{site}.parquet"
             n_windows = site_counts[site]
 
-            if not cache_path.exists() or n_windows < MIN_CLUSTER_SIZE:
+            if n_windows < MIN_CLUSTER_SIZE:
                 per_site_info[site] = {
                     "n_windows": n_windows, "n_prototypes": 1,
                     "fallback": "too_few_windows",
                     "community_stats": {"n_total": 0}, "communities": [],
                 }
-                per_site_accepted[site] = None
+                proto = (site_means[site] - global_sc_mean).astype(np.float32)
+                all_prototypes.append(proto)
+                proto_site_list.append(site)
+                proto_cluster_id.append(0)
                 continue
 
-            df = pl.read_parquet(cache_path)
-            proj_cols = [f"p{k}" for k in range(n_comp)]
-            projected = df.select(proj_cols).to_numpy().astype(np.float32)
-            hours = df["hour"].to_numpy()
-            n_windows = projected.shape[0]
+            # Load this site's data
+            df = load_site(site, self.features_dir)
+            logits = logits_to_numpy(df).astype(np.float64)
+            hours = np.array([
+                _extract_hour(str(fn)) if _extract_hour(str(fn)) is not None else -1
+                for fn in df["filename"].to_list()
+            ], dtype=np.int16)
 
+            residuals = logits - site_means[site][None, :]
+            projected = (residuals @ components.T) * whiten_scale[None, :]
             norms = np.maximum(np.linalg.norm(projected, axis=1, keepdims=True), 1e-8)
-            proj_normed = projected / norms
+            proj_normed = (projected / norms).astype(np.float32)
 
             # Dense Gram → Leiden
             gram = proj_normed @ proj_normed.T
@@ -240,7 +187,10 @@ class SitePrototypes(AnalysisTask):
                     "fallback": "no_positive_edges",
                     "community_stats": {"n_total": 0}, "communities": [],
                 }
-                per_site_accepted[site] = None
+                proto = (site_means[site] - global_sc_mean).astype(np.float32)
+                all_prototypes.append(proto)
+                proto_site_list.append(site)
+                proto_cluster_id.append(0)
                 continue
 
             g = ig.Graph(
@@ -258,7 +208,7 @@ class SitePrototypes(AnalysisTask):
             labels = np.array(partition.membership)
             unique_labels, label_counts = np.unique(labels, return_counts=True)
 
-            # Community stats with cohesion + diel
+            # Community stats with cohesion + diel characterization
             communities = []
             for cl, count in zip(unique_labels, label_counts):
                 cl_mask = labels == cl
@@ -304,10 +254,21 @@ class SitePrototypes(AnalysisTask):
                     "community_stats": self._build_comm_stats(communities),
                     "communities": sorted(communities, key=lambda c: -c["size"]),
                 }
-                per_site_accepted[site] = None
+                proto = (site_means[site] - global_sc_mean).astype(np.float32)
+                all_prototypes.append(proto)
+                proto_site_list.append(site)
+                proto_cluster_id.append(0)
             else:
-                per_site_labels[site] = labels
-                per_site_accepted[site] = accepted_ids
+                for cid in accepted_ids:
+                    cluster_mean = residuals[labels == cid].mean(axis=0)
+                    proto = (site_means[site] + cluster_mean - global_sc_mean).astype(np.float32)
+                    all_prototypes.append(proto)
+                    proto_site_list.append(site)
+                    proto_cluster_id.append(cid)
+                    for comm in communities:
+                        if comm["id"] == cid and comm["status"] == "accepted":
+                            comm["top_perch_taxa"] = self._top_taxa(proto, perch_labels)
+
                 per_site_info[site] = {
                     "n_windows": n_windows, "n_prototypes": len(accepted_ids),
                     "fallback": None,
@@ -316,65 +277,10 @@ class SitePrototypes(AnalysisTask):
                 }
 
             logger.info("  %s: %d windows → %d communities → %d prototypes",
-                         site, n_windows, len(communities), max(len(accepted_ids), 1))
+                         site, n_windows, len(communities),
+                         per_site_info[site]["n_prototypes"])
 
-        # =====================================================================
-        # Pass 5: compute cluster centroids from raw shards (streaming sums)
-        # =====================================================================
-        logger.info("SitePrototypes: pass 5 — computing cluster centroids")
-
-        cluster_sums = {}
-        for site, accepted in per_site_accepted.items():
-            if accepted is None:
-                continue
-            for cid in accepted:
-                cluster_sums[(site, cid)] = [np.zeros(logit_dim, dtype=np.float64), 0]
-
-        site_row_counters = {s: 0 for s in sites}
-
-        for i, shard in enumerate(load_unlabeled_shards(self.features_dir)):
-            logits = logits_to_numpy(shard).astype(np.float64)
-            filenames = shard["filename"].to_list()
-            for j in range(len(shard)):
-                site = extract_site(str(filenames[j]))
-                row = site_row_counters[site]
-                site_row_counters[site] += 1
-                if site not in per_site_labels:
-                    continue
-                cid = int(per_site_labels[site][row])
-                key = (site, cid)
-                if key in cluster_sums:
-                    cluster_sums[key][0] += logits[j] - site_means[site]
-                    cluster_sums[key][1] += 1
-            if i % 4 == 0:
-                logger.info("  pass 5 shard %d done", i)
-
-        # Build prototypes
-        all_prototypes = []
-        proto_site_list = []
-        proto_cluster_id = []
-
-        for site in sites:
-            accepted = per_site_accepted.get(site)
-            if accepted is None:
-                proto = (site_means[site] - global_sc_mean).astype(np.float32)
-                all_prototypes.append(proto)
-                proto_site_list.append(site)
-                proto_cluster_id.append(0)
-                continue
-            for cid in accepted:
-                s, c = cluster_sums[(site, cid)]
-                cm = s / c if c > 0 else np.zeros(logit_dim)
-                proto = (site_means[site] + cm - global_sc_mean).astype(np.float32)
-                all_prototypes.append(proto)
-                proto_site_list.append(site)
-                proto_cluster_id.append(cid)
-
-                # Add top taxa
-                for comm in per_site_info[site]["communities"]:
-                    if comm["id"] == cid and comm["status"] == "accepted":
-                        comm["top_perch_taxa"] = self._top_taxa(proto, perch_labels)
-
+        # Stack
         prototype_matrix = np.stack(all_prototypes)
         proto_site_arr = np.array(proto_site_list)
         proto_cluster_id_arr = np.array(proto_cluster_id, dtype=np.int32)
@@ -386,7 +292,7 @@ class SitePrototypes(AnalysisTask):
                      total_protos, len(sites), total_protos / max(len(sites), 1))
 
         # =====================================================================
-        # Species × Site-state affinity
+        # Step 3: species × site-state affinity
         # =====================================================================
         logger.info("SitePrototypes: computing species × site-state affinity")
         species_list = build_species_list(self.artifacts_dir)
@@ -420,13 +326,13 @@ class SitePrototypes(AnalysisTask):
         )
 
         summary = {
-            "n_sites": len(sites), "total_windows": total_windows,
+            "n_sites": len(sites), "total_windows": global_count,
             "total_prototypes": total_protos,
             "avg_prototypes_per_site": round(total_protos / max(len(sites), 1), 2),
             "whiten_n_components": n_comp,
             "whiten_explained_variance": round(float(explained), 4),
             "min_cluster_size": MIN_CLUSTER_SIZE, "leiden_resolution": LEIDEN_RESOLUTION,
-            "min_cohesion": MIN_COHESION, "cache_dir": str(cache_dir),
+            "min_cohesion": MIN_COHESION,
             "per_site": per_site_info,
         }
         with open(self.output()[1].path, "w") as f:
@@ -437,7 +343,8 @@ class SitePrototypes(AnalysisTask):
         sizes = [c["size"] for c in communities]
         cohesions = [c["cohesion"] for c in communities]
         return {
-            "n_total": len(communities), "n_accepted": sum(1 for c in communities if c["status"] == "accepted"),
+            "n_total": len(communities),
+            "n_accepted": sum(1 for c in communities if c["status"] == "accepted"),
             "n_rejected_too_small": sum(1 for c in communities if c["status"] == "rejected_too_small"),
             "n_rejected_low_cohesion": sum(1 for c in communities if c["status"] == "rejected_low_cohesion"),
             "n_rejected_max_cap": sum(1 for c in communities if c["status"] == "rejected_max_cap"),
