@@ -9,6 +9,7 @@
 | Phase B (w=0.7) | 0.70 | 0.926 | 189s (20 files) | −0.001 vs w=0.5 |
 | **Phase C MLP-only** | **0.50** | **0.929** | — | **New best! proto_weight=0.0 (skip ProtoSSM)** |
 | Phase C No PP | 0.50 | 0.922 | — | Both PPs disabled, −0.005 vs w=0.5 |
+| Phase C TF+single+MLP | 0.50 | TIMEOUT | 271s (20 files) | TF Perch ~10s/file, exceeded 90 min limit |
 
 ## Phase A Analysis (w=0.5, 0.927 LB)
 

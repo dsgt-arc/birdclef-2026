@@ -38,7 +38,7 @@ Last updated: 2026-04-08
    - Phase B: weight grid flat (w=0.3: 0.927, w=0.5: 0.927, w=0.7: 0.926)
    - Phase C: **MLP-only (proto_weight=0.0): 0.929 LB** — best result
    - Phase C: No PP: 0.922 (−0.005) — confirms PP adds value
-   - Phase C: TF Perch + single SED submitted but likely to timeout (~120 min est.)
+   - Phase C: TF Perch + single SED **timed out** — TF ~10s/file exceeds 90 min for 600 files
 
 2. **Documentation overhaul** — Three source-of-truth docs:
    - `EXPERIMENTS.md` — per-experiment methodology (updated through exp 023)
@@ -47,10 +47,10 @@ Last updated: 2026-04-08
 
 ## What needs to happen next
 
-### Immediate: Check TF+single result
-- TF Perch + SED single-fold + MLP-only was submitted but may timeout
-- If it succeeds: could score 0.932+ (TF recovers 0.005 ONNX penalty)
-- If it times out: TF path is not viable for ensemble
+### Resolved: TF+single timed out
+- TF Perch + SED single-fold + MLP-only timed out (TF ~10s/file, >90 min)
+- TF backend is not viable for ensemble kernels
+- ONNX Perch (0.929 MLP-only) remains the best path
 
 ### High-value next steps (from FINDINGS.md gap analysis)
 

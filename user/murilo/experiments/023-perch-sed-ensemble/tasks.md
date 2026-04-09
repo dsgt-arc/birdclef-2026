@@ -59,12 +59,12 @@ injects override into kernel, creates separate Kaggle notebook per config.
 - [x] C.2 No PP (raw ensemble, both PPs disabled) → **0.922 LB** (−0.005 vs w=0.5)
   - Kernel: `birdclef-2026-perch-sed-no_pp`
   - Confirms PP is worth +0.005. Individual PPs help even when averaged.
-- [x] C.3 TF Perch + SED single-fold + MLP-only — implemented, submitted
+- [x] C.3 TF Perch + SED single-fold + MLP-only — **TIMED OUT**
   - Kernel: `birdclef-2026-perch-sed-tf_single_mlp`
   - Config: `ensemble_tf_single_mlp.yaml` (perch_backend=tf, single SED, proto_weight=0.0)
   - Dry-run: TF Perch 207s + single SED 64s = 271s for 20 files
-  - **Risk: TF ~10s/file → ~100 min for 600 files, may timeout**
-  - Awaiting LB score
+  - TF Perch ~10s/file → ~100 min for 600 files exceeded 90 min limit
+  - **TF backend is not viable for ensemble kernels**
 
 ## Future Directions
 
@@ -83,4 +83,4 @@ injects override into kernel, creates separate Kaggle notebook per config.
 | Phase B (w=0.7) | 0.70 | 0.926 | ~64 min est. | −0.001 |
 | **Phase C MLP-only** | **0.50** | **0.929** | **~64 min est.** | **New best! proto_weight=0.0** |
 | Phase C No PP | 0.50 | 0.922 | ~64 min est. | Both PPs disabled, −0.005 |
-| Phase C TF+single+MLP | 0.50 | — | ~120 min est. | TF backend, may timeout |
+| Phase C TF+single+MLP | 0.50 | TIMEOUT | >90 min | TF Perch too slow for ensemble |
