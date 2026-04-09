@@ -56,29 +56,28 @@ class SingleSpeciesPrototype(AnalysisTask):
         K = N_PROTOTYPES
 
         df = load_focal_species(self.species, self.features_dir)
-        logits = logits_to_numpy(df).astype(np.float64)
-        emb = embeddings_to_numpy(df).astype(np.float64)
         n_windows = len(df)
 
         info = {"n_windows": n_windows, "n_prototypes": K}
 
+        # Subsample DataFrame BEFORE converting to numpy (avoids GB allocations)
+        if n_windows > MAX_SUBSAMPLE:
+            rng = np.random.RandomState(42)
+            idx = rng.choice(n_windows, MAX_SUBSAMPLE, replace=False)
+            fit_df = df[idx.tolist()]
+            info["subsampled_from"] = n_windows
+        else:
+            fit_df = df
+
+        fit_logits = logits_to_numpy(fit_df).astype(np.float64)
+        fit_emb = embeddings_to_numpy(fit_df).astype(np.float64)
+
         if n_windows < MIN_WINDOWS:
-            H = np.tile(logits.mean(axis=0), (K, 1))
-            centers = np.tile(emb.mean(axis=0), (K, 1))
+            H = np.tile(fit_logits.mean(axis=0), (K, 1))
+            centers = np.tile(fit_emb.mean(axis=0), (K, 1))
             info["method"] = "mean_fallback"
         else:
             k_actual = min(K, n_windows - 1)
-
-            # Subsample for NMF/k-means fitting (full data for sums)
-            if n_windows > MAX_SUBSAMPLE:
-                rng = np.random.RandomState(42)
-                idx = rng.choice(n_windows, MAX_SUBSAMPLE, replace=False)
-                fit_logits = logits[idx]
-                fit_emb = emb[idx]
-                info["subsampled_from"] = n_windows
-            else:
-                fit_logits = logits
-                fit_emb = emb
 
             # NMF on logits
             logits_nn = np.maximum(fit_logits, 0).astype(np.float64)
@@ -90,7 +89,7 @@ class SingleSpeciesPrototype(AnalysisTask):
                 info["nmf_error"] = round(float(nmf.reconstruction_err_), 4)
             except Exception as e:
                 logger.warning("%s: NMF failed (%s), using mean", self.species, e)
-                H = np.tile(logits.mean(axis=0), (k_actual, 1))
+                H = np.tile(fit_logits.mean(axis=0), (k_actual, 1))
 
             if H.shape[0] < K:
                 H = np.vstack([H, np.tile(H.mean(axis=0), (K - H.shape[0], 1))])
@@ -103,19 +102,26 @@ class SingleSpeciesPrototype(AnalysisTask):
                 info["kmeans_inertia"] = round(float(km.inertia_), 4)
             except Exception as e:
                 logger.warning("%s: k-means failed (%s), using mean", self.species, e)
-                centers = np.tile(emb.mean(axis=0), (k_actual, 1))
+                centers = np.tile(fit_emb.mean(axis=0), (k_actual, 1))
 
             if centers.shape[0] < K:
                 centers = np.vstack([centers, np.tile(centers.mean(axis=0), (K - centers.shape[0], 1))])
 
             info["method"] = "nmf+kmeans"
 
+        # Approximate sums from subsample (scaled by n_windows/n_fit)
+        scale = n_windows / len(fit_df)
+        logit_sum = fit_logits.sum(axis=0) * scale
+        emb_sum = fit_emb.sum(axis=0) * scale
+
+        del df, fit_df
+
         np.savez(
             self.output().path,
             proto_logits=H.astype(np.float32),
             proto_emb=centers.astype(np.float32),
-            logit_sum=logits.sum(axis=0),
-            emb_sum=emb.sum(axis=0),
+            logit_sum=logit_sum,
+            emb_sum=emb_sum,
             n_windows=n_windows,
             info=json.dumps(info),
         )
