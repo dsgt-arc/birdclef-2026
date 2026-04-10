@@ -83,25 +83,27 @@ Perch logit→BirdCLEF mapping → prior fusion → temporal smoothing → MLP p
 discarding valid genus proxy signal for some amphibia. Phase D should use raw_probs for
 fair detection comparison.
 
-## Phase D: Perch vs SED Comparative EDA ← UNBLOCKED
+## Phase D: Perch vs SED Comparative EDA ✅
 
-The key analysis — answers the 5 questions from EDA deep dive section 10.8.
+Script: `user/murilo/scripts/perch_sed_comparison.py`
+Output: `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` sections 12-13
 
-Script: `user/murilo/scripts/perch_sed_comparison.py` (new)
-Output: Updated `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` sections 12-13
+- [x] D.1 **Coverage**: Perch rescues **40** SED-zero species at >0.5 (109→149/159)
+- [x] D.2 **Truly hard species**: Perch covers **28/34** at >0.3, **24/34** at >0.5. Only 6 invisible.
+- [x] D.3 **Union coverage**: **153/159** unseen at >0.3 ✓ PASS (target: ≥120)
+- [x] D.4 **Complementarity**: **Zero SED-only species** at any threshold. 28 Perch-only at >0.3.
+- [x] D.5 **Per-species agreement**: Spearman ρ mean=0.223 — models are highly complementary
+- [x] D.6 **Per-site analysis**: Perch ~145/159 per site vs SED ~13/159. Equal on labeled/unlabeled sites.
+- [x] D.7 **Ensemble teacher**: SED=5K pseudo-labels, Perch=15M (!). **Perch calibration problem.**
+- [x] D.8 Updated EDA doc sections 12-13 with all findings + calibration analysis
 
-- [ ] D.1 **Coverage**: How many of the 50 SED-zero species does Perch cover at >0.5?
-- [ ] D.2 **Truly hard species**: How many of the 34 species (zero even at >0.3 with SED max-folds) does Perch cover?
-- [ ] D.3 **Union coverage**: What's `max(SED-4fold) + Perch raw probs` total species coverage at multiple thresholds?
-- [ ] D.4 **Complementarity**: Venn diagram — Perch-only, SED-only, both, neither
-- [ ] D.5 **Per-species agreement**: For species both detect, Spearman correlation per species (quality signal)
-- [ ] D.6 **Per-site analysis**: Does Perch do better on the 14 unlabeled-only sites? (site diversity)
-- [ ] D.7 **Ensemble teacher simulation**: What threshold/weight combo maximizes coverage?
-- [ ] D.8 Update inference EDA doc and script with all findings
+**Success criteria**: Both ✓ PASS
+- ✅ Union ≥120/159 unseen at >0.3: **153/159**
+- ✅ Perch covers 30+ of 50 SED-zero: **40**
 
-**Success criteria** (from proposal):
-- Phase D succeeds if Perch+SED union covers ≥120/159 unseen species at >0.3
-- If Perch covers 30+ of the 50 SED-zero species, ensemble teacher is justified
+**CRITICAL finding**: Perch raw probabilities are severely miscalibrated (15M pseudo-labels
+vs SED's 5K). Perch predicts most species in most segments. Must use tiered teacher:
+SED-primary + Perch-rescue for SED-blind species with aggressive filtering.
 
 ## Phase E: Ecological Sanity Check
 

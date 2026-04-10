@@ -83,9 +83,36 @@ PCA embeddings. Full pipeline: logit mapping → prior fusion → temporal smoot
 **Pipeline can hurt**: unmapped inactive species get suppressed to -8.0, discarding valid
 genus proxy signal. Use raw_probs for fair detection comparison in Phase D.
 
-### Phase D: Perch vs SED Comparison
+### Phase D: Perch vs SED Comparison (2026-04-10) ✅
 
-*(pending)*
+Full analysis: `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` sections 13.1-13.9
+
+**Both success criteria passed:**
+- ✅ Union ≥120/159 unseen at >0.3: **153/159**
+- ✅ Perch covers 30+ of 50 SED-zero species: **40 rescued** at >0.5
+
+| Finding | Value | Implication |
+|---------|-------|-------------|
+| Perch coverage (unseen) @>0.5 | 149/159 | Perch detects 94% of unseen species |
+| SED coverage (unseen) @>0.5 | 109/159 | SED detects 69% |
+| Perch rescues (SED=0) @>0.5 | +40 species | Ensemble teacher justified |
+| SED-only species | **0** (any threshold) | Every SED detection, Perch also detects |
+| Truly hard: Perch @>0.3 | 28/34 | Only 6 remain invisible |
+| Neither @>0.3 | 6 species | 5 Amphibia + 1 Mammalia |
+| Spearman ρ (both detect) | 0.223 mean | Low correlation = high complementarity |
+| Perch pseudo-labels @>0.5 | **15,091,757** | vs SED: 5,033 — 3000× difference |
+
+**CRITICAL: Perch calibration problem.** Perch raw probabilities are massively miscalibrated.
+Species like socfly1 show Perch >0.5 in 127K/127K segments (100%). Perch's 14,795-class
+taxonomy gives permanently positive logits for common taxa regardless of whether the species
+is actually vocalizing. Coverage numbers are valid (Perch CAN detect signal) but precision
+is terrible (15M pseudo-labels vs 5K for SED).
+
+**Teacher strategy (recommended — tiered)**:
+1. **SED-covered species** (109/159): SED max-folds as teacher, P^1.5 power transform
+2. **Perch-only species** (40): Perch with aggressive filtering (>0.9, per-file consistency)
+3. **Neither species** (10 at >0.5): No teacher; focal-only or external data
+4. **Seen species** (75): Pseudo-labels from both expand site/hour coverage
 
 ### Phase E: Ecological Sanity Check
 

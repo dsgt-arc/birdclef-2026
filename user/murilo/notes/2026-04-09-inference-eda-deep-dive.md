@@ -834,7 +834,228 @@ occur in soundscapes.
 
 ---
 
+## 12. Phase C: Perch 234-Class Predictions (2026-04-10)
+
+Applied the full Perch→BirdCLEF pipeline from the exp 023 submission kernel to Phase B
+embeddings + logits for all 127,896 soundscape segments.
+
+### 12.1 Pipeline details
+
+The MLP probes require **142 features per species** (not just PCA embeddings):
+- 128 PCA-compressed embedding dimensions
+- 14 contextual: raw Perch logit, prior logit, fused base score, 5 temporal features
+  (prev/next/mean/max/std within file), 3 diffs, 3 interaction terms
+
+Full pipeline: Perch 14,795 logits → 234 BirdCLEF mapping (203 direct, 3 genus proxy,
+28 unmapped sonotypes) → prior fusion (site/hour) → temporal smoothing → 58 MLP probes
+→ alpha blend (0.45) → sigmoid.
+
+### 12.2 Embedding validation
+
+Phase B TF embeddings are **identical** to the embeddings used to train the probes in
+exp 020 (cosine similarity = 1.000000 on the 792 labeled soundscape segments). Both use
+the same Perch v2 TF SavedModel. No retraining needed.
+
+### 12.3 Coverage results
+
+| Metric | Raw Perch (no priors) | Full Pipeline |
+|--------|----------------------|---------------|
+| Species with max prob >0.5 | 195 / 234 | 212 / 234 |
+| Species with max prob >0.3 | 199 / 234 | 220 / 234 |
+| Species with max prob >0.9 | 189 / 234 | 201 / 234 |
+| True zeros (<0.001) | 28 (sonotypes) | 6 |
+
+The 28 unmapped sonotypes have no Perch taxonomy match and rely entirely on prior tables.
+The full pipeline recovers most via site/hour priors.
+
+### 12.4 Pipeline behavior on inactive species
+
+The pipeline **suppresses unmapped inactive species** to -8.0 (sigmoid ≈ 0.0003), which
+discards valid genus proxy signal. Example: species 1595929 (Uruguay Harlequin Frog) has
+raw Perch max prob 0.41 via genus proxy, but gets set to 0.0003 because it's unmapped and
+not in labeled soundscapes. Use `perch_234_raw_probs.parquet` (before prior suppression)
+for fair detection comparison in Phase D.
+
+Script: `user/murilo/scripts/apply_perch_probes.py`
+
+---
+
+## 13. Phase D: Perch vs SED Comparative EDA (2026-04-10)
+
+The critical analysis comparing Perch and SED predictions on the same 127K soundscape
+segments. Uses Perch raw probabilities (no prior suppression) vs SED max-across-folds.
+
+Script: `user/murilo/scripts/perch_sed_comparison.py`
+
+### 13.1 Coverage: Perch rescues 40 SED-zero species at >0.5
+
+| Threshold | SED Max-Folds | Perch Raw | Perch Rescues |
+|-----------|---------------|-----------|---------------|
+| > 0.1 | 146 / 159 | 155 / 159 | +11 |
+| > 0.3 | 125 / 159 | 153 / 159 | +28 |
+| > 0.5 | 109 / 159 | 149 / 159 | +40 |
+| > 0.7 | 80 / 159 | 146 / 159 | +66 |
+| > 0.9 | 55 / 159 | 145 / 159 | +90 |
+
+Perch dramatically outperforms SED on unseen species coverage. At every threshold, Perch
+covers more species. At >0.5, Perch rescues **40 species** that SED max-folds missed entirely.
+
+### 13.2 Truly hard species: Perch covers 28/34
+
+Of the 34 species invisible to SED even at >0.3 with max-folds:
+
+| Perch Threshold | Species Covered |
+|-----------------|-----------------|
+| > 0.1 | 30 / 34 |
+| > 0.3 | 28 / 34 |
+| > 0.5 | 24 / 34 |
+
+Only **6 species** remain invisible to both models (all Amphibia + 1 Mammalia):
+23150, 23154, 23724, 25214, 476521 (Amphibia), 74580 (Mammalia).
+
+These 6 species have <50 focal recordings each and extremely low-SNR vocalizations. They
+may require external data or specialized handling.
+
+### 13.3 Union coverage exceeds success criteria
+
+| Threshold | SED | Perch | Union | Union (all 234) |
+|-----------|-----|-------|-------|-----------------|
+| > 0.1 | 146/159 | 155/159 | 157/159 | 231/234 |
+| > 0.3 | 125/159 | 153/159 | **153/159** | 222/234 |
+| > 0.5 | 109/159 | 149/159 | **149/159** | 216/234 |
+
+**Success criterion: ≥120/159 unseen at >0.3 → 153/159 ✓ PASS**
+
+Union at >0.3 doesn't improve over Perch alone because **every species SED detects, Perch
+also detects**. There are zero SED-only species at any threshold. Perch is a strict superset
+of SED for species coverage.
+
+### 13.4 Complementarity: zero SED-only species
+
+| Group (at >0.3) | Count | Interpretation |
+|------------------|-------|----------------|
+| Both detect | 125 | Core species — both models agree |
+| SED only | **0** | SED adds nothing for coverage |
+| Perch only | 28 | Perch exclusively detects these |
+| Neither | 6 | Truly hard — need external data |
+
+At >0.5: Both=109, SED-only=0, Perch-only=40, Neither=10.
+
+### 13.5 CRITICAL: Perch calibration problem
+
+**Perch's raw probabilities are severely miscalibrated.** The coverage numbers above are
+real (Perch CAN detect signal for those species) but the precision is terrible:
+
+| Teacher | Pseudo-labels at >0.5 (unseen species, unlabeled soundscapes) |
+|---------|--------------------------------------------------------------|
+| SED max-folds | 5,033 |
+| Perch raw | **15,091,757** |
+
+Perch produces **3,000× more pseudo-labels** than SED. Many "rescued" species show Perch
+max=1.000 across 120K+ of 127K segments — Perch thinks the species is present in >95% of
+all recordings. Example: Social Flycatcher (`socfly1`) at >0.5 in 127,017/127,104 segments.
+This is a diurnal bird — it cannot be present in all nocturnal recordings.
+
+**Root cause**: Perch was trained on 14,795 classes. When a BirdCLEF species maps to a
+common taxon in Perch's training data, the raw logit is permanently positive regardless
+of whether the species is actually vocalizing. The sigmoid output reflects Perch's prior
+that the taxon exists somewhere, not that it's detected in this specific segment.
+
+**Implication for teacher strategy**: Perch raw probabilities are NOT directly usable as
+pseudo-labels. The teacher must either:
+1. Use SED as primary teacher + Perch only for SED-zero species
+2. Apply aggressive thresholding (>0.9 or >0.95) to Perch predictions
+3. Use Perch for species DETECTION (binary: present/absent per file) rather than
+   segment-level pseudo-labels
+4. Calibrate Perch probabilities against SED or labeled soundscapes before use
+
+### 13.6 Per-species agreement: low correlation (models are complementary)
+
+For the 125 species both detect at >0.3:
+
+| Metric | Value |
+|--------|-------|
+| Spearman ρ mean | 0.223 |
+| Spearman ρ median | 0.222 |
+| Spearman ρ range | -0.099 to 0.572 |
+
+Low correlation confirms the models make **different predictions on different segments**.
+This is good for ensemble diversity but means Perch and SED "see" different acoustic events.
+
+Highest agreement: Amphibia and distinctive Aves (frogs, nightjars — unique spectral signatures).
+Lowest agreement: common Aves where Perch gives flat high scores while SED is segment-specific.
+
+### 13.7 Per-site analysis: Perch dominates everywhere
+
+| Site Group | N Sites | SED Mean Coverage | Perch Mean Coverage |
+|-----------|---------|-------------------|---------------------|
+| Labeled | 7 | 16.3 / 159 | 145.3 / 159 |
+| Unlabeled-only | 14 | 12.6 / 159 | 145.9 / 159 |
+
+Perch covers ~145 unseen species per site vs SED's ~12-16. The Perch advantage is equally
+strong on new (unlabeled) sites as on familiar (labeled) sites — consistent with Perch's
+domain-general pretrained knowledge not depending on site-specific training.
+
+SED shows a modest labeled-site advantage (16.3 vs 12.6) — it generalizes slightly better
+to sites it has seen labeled data for. But this is dwarfed by Perch's advantage.
+
+### 13.8 Ensemble teacher: SED for precision, Perch for recall
+
+The D.7 analysis reveals the optimal teacher strategy is NOT a simple weighted average:
+
+| Strategy | Coverage@0.5 | Pseudo-labels@0.5 | Issue |
+|----------|-------------|-------------------|-------|
+| SED only | 109/159 | 5,033 | Misses 50 species |
+| Perch only | 149/159 | 15,091,757 | Massive FP rate |
+| w=0.5 blend | 143/159 | 178,734 | Middle ground |
+| max(SED,Perch) | 149/159 | 15,091,758 | Same as Perch alone |
+
+**Recommended strategy**: Tiered teacher
+
+1. **SED-covered species** (109/159 at >0.5): Use SED max-folds as teacher.
+   SED has 5K precise pseudo-labels. Apply P^1.5 power transform.
+2. **Perch-only species** (40 species): Use Perch predictions BUT with aggressive
+   filtering — require per-file consistency (species present in ≥N/12 windows),
+   high threshold (>0.9), or site-level frequency caps.
+3. **Neither species** (10 at >0.5, 6 at >0.3): No teacher available. These 6-10
+   species must rely on focal training only or external data.
+4. **Seen species** (75): Already well-served. Pseudo-labels from both models expand
+   site/hour coverage.
+
+### 13.9 Updated implications for exp 025
+
+Phase D **passes both success criteria**:
+- ✅ Union covers 153/159 unseen species at >0.3 (target: ≥120)
+- ✅ Perch covers 40 of 50 SED-zero species at >0.5 (target: ≥30)
+
+But the calibration finding changes the pseudo-labeling design:
+- Cannot use Perch raw probabilities directly (15M FPs)
+- Need tiered teacher: SED-primary + Perch-rescue for SED-blind species
+- Perch predictions need calibration or aggressive filtering before use
+- The 6 truly invisible species (5 Amphibia + 1 Mammalia) need external data
+
+---
+
 ## References
+
+| Data | Path |
+|------|------|
+| v5j soundscape logits | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/train_soundscapes/logits.parquet` |
+| v5j focal logits | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/train_audio/logits.parquet` |
+| v5j-4fold soundscape logits | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/train_soundscapes/` |
+| Perch TF embeddings + logits | `shared/inference/birdclef-2026/perch-v2-tf/{train_soundscapes,train_audio}/` |
+| Perch 234-class raw probs | `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/perch_234_raw_probs.parquet` |
+| Perch 234-class full pipeline | `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/perch_234_probs.parquet` |
+| Perch labeled embeddings (exp 018) | `shared/embeddings/birdclef-2026/perch-v2/labeled/` |
+| MLP probes + ProtoSSM artifacts | `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/` |
+| Labeled soundscape labels | `shared/data/birdclef-2026/train_soundscapes_labels.csv` |
+| Focal metadata | `shared/data/birdclef-2026/train.csv` |
+| Original EDA | `docs/references/birdclef-2026-eda-analysis.md` |
+| EDA notebook | `user/murilo/notebooks/003-birdclef2026-eda.ipynb` |
+| Analysis script (SED) | `user/murilo/scripts/inference_eda.py` |
+| Analysis script (Perch vs SED) | `user/murilo/scripts/perch_sed_comparison.py` |
+| Perch probe application | `user/murilo/scripts/apply_perch_probes.py` |
+| Perch inference script | `user/murilo/inference/perch_inference.py` |
 
 | Data | Path |
 |------|------|
