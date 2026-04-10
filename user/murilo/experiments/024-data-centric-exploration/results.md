@@ -114,9 +114,25 @@ is terrible (15M pseudo-labels vs 5K for SED).
 3. **Neither species** (10 at >0.5): No teacher; focal-only or external data
 4. **Seen species** (75): Pseudo-labels from both expand site/hour coverage
 
-### Phase E: Ecological Sanity Check
+### Phase E: Ecological Sanity Check (2026-04-10) ✅
 
-*(pending)*
+Full findings: `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` section 14
+
+**All 54 original suspects resolved**: 32 by SED max-folds, 22 by Perch. Zero still problematic.
+
+**6 truly invisible species** (neither model at >0.3) — all have 1-5 focal recordings:
+
+| Species | Common Name | Focal | Pantanal? | Root Cause |
+|---------|-------------|-------|-----------|------------|
+| 23150 | Central Dwarf Frog | 1 | Yes | Data scarcity |
+| 23154 | Bahia Dwarf Frog | 5 | **No** (NE Brazil) | Wrong range |
+| 23724 | Waxy Monkey Tree Frog | 1 | Yes | Data scarcity |
+| 25214 | Muller's Termite Frog | 3 | Yes | Data scarcity |
+| 476521 | Cuyaba Dwarf Frog | 3 | Yes | Data scarcity |
+| 74580 | Black-tailed Marmoset | 3 | Yes but diurnal | Activity mismatch |
+
+**Conclusion**: The 6 invisible species are a hard floor — 4 need more training data,
+1 is genuinely out of range, 1 is diurnal. None can be helped by pseudo-labeling.
 
 ---
 

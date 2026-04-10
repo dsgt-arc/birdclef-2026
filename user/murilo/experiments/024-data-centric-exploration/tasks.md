@@ -5,7 +5,7 @@
 Understand model coverage gaps and Perch/SED complementarity to inform the pseudo-labeling
 teacher strategy for exp 025.
 
-Status: **Phase A complete. Phase B complete. Phase C complete (train_soundscapes). Phase D unblocked.**
+Status: **Phases A-E complete. Phase F (synthesis) remaining.**
 
 **Branch**: `mg/024-data-centric-exploration` — PR #26
 
@@ -105,14 +105,14 @@ Output: `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` sections 12-13
 vs SED's 5K). Perch predicts most species in most segments. Must use tiered teacher:
 SED-primary + Perch-rescue for SED-blind species with aggressive filtering.
 
-## Phase E: Ecological Sanity Check
+## Phase E: Ecological Sanity Check ✅
 
-- [ ] E.1 Review suspect species against Pantanal ecology
-  - Original 54 species (≥50 focal, 0 soundscape predictions from single-fold)
-  - Note: max-across-folds recovered some (House Sparrow, Swallow-tailed Manakin) — focus on
-    species still at zero even with max-folds
-- [ ] E.2 Categorize: genuinely absent / domain-shift failure / uncertain
-- [ ] E.3 Document findings in results.md
+- [x] E.1 Review 54 suspect species: ALL recovered (32 SED max-folds, 22 Perch only)
+- [x] E.2 Ecological assessment of 6 truly invisible species (1-5 focal recordings each):
+  - 4 ecologically expected in Pantanal (nocturnal frogs) — data scarcity, not absence
+  - 1 out of range (P. albifrons — NE Brazil only, likely confused with Pantanal congeners)
+  - 1 present but diurnal (M. melanurus — absence from nocturnal soundscapes is expected)
+- [x] E.3 Documented in EDA doc section 14 and results.md
 
 ## Synthesis
 

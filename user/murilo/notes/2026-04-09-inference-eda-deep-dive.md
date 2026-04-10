@@ -1120,6 +1120,72 @@ coverage — there, any signal (even noisy) is better than nothing.
 
 ---
 
+## 14. Phase E: Ecological Sanity Check (2026-04-10)
+
+### 14.1 All 54 original suspects are resolved
+
+The 54 species with ≥50 focal recordings but zero single-fold SED predictions at >0.5
+are ALL recovered by either SED max-folds or Perch:
+
+| Recovery Method | Count |
+|-----------------|-------|
+| SED max-folds (>0.5) | 32 |
+| Perch only (>0.5) | 22 |
+| Still problematic | **0** |
+
+The "data quality suspect" framing from section 9.4 is resolved — these species are not
+data quality issues. They are rare-in-soundscapes species that single-fold SED missed
+but multi-fold or Perch can detect. No ecological sanity check needed for the 54.
+
+### 14.2 The 6 truly invisible species: data scarcity, not ecological absence
+
+The 6 species invisible to both models at >0.3 all have **1-5 focal recordings**:
+
+| Species | Taxon | Common Name | Focal | SED Max | Perch Max | In Pantanal? |
+|---------|-------|-------------|-------|---------|-----------|-------------|
+| 23150 | Amphibia | Central Dwarf Frog | 1 | 0.057 | 0.003 | **Yes** (wet season nocturnal) |
+| 23154 | Amphibia | Bahia Dwarf Frog | 5 | 0.208 | 0.010 | **No** (NE Brazil only) |
+| 23724 | Amphibia | Waxy Monkey Tree Frog | 1 | 0.006 | 0.278 | **Yes** (Chaco/Pantanal, nocturnal) |
+| 25214 | Amphibia | Muller's Termite Frog | 3 | 0.262 | 0.190 | **Yes** (explosive breeder, distinctive call) |
+| 476521 | Amphibia | Cuyaba Dwarf Frog | 3 | 0.163 | 0.011 | **Yes** (type locality is Cuiabá!) |
+| 74580 | Mammalia | Black-tailed Marmoset | 3 | 0.002 | 0.000 | **Yes** but **diurnal** |
+
+**Ecological assessment**:
+- **4/6 are ecologically expected** in Pantanal nocturnal soundscapes (P. centralis,
+  P. sauvagii, D. muelleri, P. nattereri). The Cuyaba Dwarf Frog was literally named
+  after the Pantanal capital.
+- **1 is out of range**: P. albifrons (Bahia Dwarf Frog) is restricted to NE Brazil.
+  If it appears in test predictions, it's likely confusion with congeners P. centralis
+  or P. nattereri that ARE present.
+- **1 is present but diurnal**: M. melanurus (Black-tailed Marmoset) is documented in
+  Pantanal but only active during daylight. Since soundscapes are mostly nocturnal, its
+  absence from predictions is expected. Could appear in dawn/dusk segments only.
+
+### 14.3 Root cause: data scarcity, not domain shift
+
+Unlike the original 54 suspects (which had 50-496 focal recordings and suffered from
+focal→soundscape domain shift), the 6 invisible species have **1-5 focal recordings**.
+With this little training data, neither SED nor Perch can learn the species' acoustic
+signature well enough to detect it in noisy soundscapes.
+
+These species cannot be helped by pseudo-labeling (no teacher can detect them), better
+augmentation, or training recipe changes. They need **more training data** — either
+external recordings from xeno-canto/Macaulay Library, or discovery in soundscapes
+through manual annotation.
+
+### 14.4 Implications
+
+1. The ecological sanity check confirms the data-centric thesis: the model's failures
+   are **data problems** (coverage, scarcity), not model quality problems.
+2. The 54 original suspects are all recoverable with existing models — no manual
+   intervention needed.
+3. The 6 invisible species are a hard floor: 4 are genuinely present in Pantanal but
+   have too few recordings. 1 is out of range. 1 is diurnal.
+4. For exp 025, these 6 species should be excluded from pseudo-label evaluation — they
+   cannot improve regardless of teacher strategy.
+
+---
+
 ## References
 
 | Data | Path |
