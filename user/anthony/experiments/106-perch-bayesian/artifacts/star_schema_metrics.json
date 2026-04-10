@@ -1,0 +1,44 @@
+{
+  "logit_raw": {
+    "macro_auroc": 0.6274568614257234,
+    "macro_ap": 0.5468551202078505,
+    "n_folds": 9
+  },
+  "logit_weighted": {
+    "macro_auroc": 0.646466493017649,
+    "macro_ap": 0.578184252192184,
+    "n_folds": 9
+  },
+  "emb_sim": {
+    "macro_auroc": 0.6954508414947022,
+    "macro_ap": 0.6105849536054694,
+    "n_folds": 9
+  },
+  "logit_w_site_w": {
+    "macro_auroc": 0.646466493017649,
+    "macro_ap": 0.578184252192184,
+    "n_folds": 9
+  },
+  "logit_w_site_raw": {
+    "macro_auroc": 0.646466493017649,
+    "macro_ap": 0.578184252192184,
+    "n_folds": 9
+  },
+  "emb_site_w": {
+    "macro_auroc": 0.6954508414947022,
+    "macro_ap": 0.6105849536054694,
+    "n_folds": 9
+  },
+  "logit_w_add_site_03": {
+    "macro_auroc": 0.646466493017649,
+    "macro_ap": 0.578184252192184,
+    "n_folds": 9
+  },
+  "emb_add_site_w_03": {
+    "macro_auroc": 0.6954508414947022,
+    "macro_ap": 0.6105849536054694,
+    "n_folds": 9
+  },
+  "_best": "emb_sim",
+  "_best_auroc": 0.6954508414947022
+}
