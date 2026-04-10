@@ -79,13 +79,22 @@ class SingleSpeciesPrototype(AnalysisTask):
         else:
             k_actual = min(K, n_windows - 1)
 
-            # NMF on logits
+            # NMF on logits — use for clustering, then compute data centroids
+            # (NMF components are basis vectors, not data points; centroids
+            # are proper representatives in the original logit space)
             logits_nn = np.maximum(fit_logits, 0).astype(np.float64)
             try:
                 nmf = NMF(n_components=k_actual, init="nndsvda", max_iter=NMF_MAX_ITER,
                           random_state=42)
-                nmf.fit_transform(logits_nn)
-                H = nmf.components_
+                W = nmf.fit_transform(logits_nn)
+                assignments = W.argmax(axis=1)
+                H = np.zeros((k_actual, fit_logits.shape[1]), dtype=np.float64)
+                for ci in range(k_actual):
+                    mask = assignments == ci
+                    if mask.sum() > 0:
+                        H[ci] = fit_logits[mask].mean(axis=0)
+                    else:
+                        H[ci] = fit_logits.mean(axis=0)
                 info["nmf_error"] = round(float(nmf.reconstruction_err_), 4)
             except Exception as e:
                 logger.warning("%s: NMF failed (%s), using mean", self.species, e)

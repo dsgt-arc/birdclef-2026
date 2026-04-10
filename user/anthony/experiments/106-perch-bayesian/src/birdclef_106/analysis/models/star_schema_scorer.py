@@ -138,7 +138,7 @@ class StarSchemaScorer(AnalysisTask):
 
         # Load site prototypes
         sp = np.load(str(Path(self.artifacts_dir) / "site_prototypes.npz"))
-        site_proto_logits = sp["proto_logits"]          # (L, K_site, P) raw centered
+        site_proto_logits = sp["proto_logits"]          # (L, K_site, P) raw
         sites_arr = list(sp["sites"])
         site_to_idx = {s: i for i, s in enumerate(sites_arr)}
         global_sc_mean = sp["global_soundscape_mean"]
@@ -147,55 +147,66 @@ class StarSchemaScorer(AnalysisTask):
         transfer_w = _build_transfer_weights(self.artifacts_dir)  # (P,)
         sqrt_w = np.sqrt(transfer_w)  # for weighted cosine: w-dot(a,b) = dot(sqrt(w)*a, sqrt(w)*b)
 
+        # === Bug #5 fix: use soundscape mean for ALL centering ===
+        # Both species and site prototypes centered by soundscape mean so
+        # affinity compositions happen in a single reference frame.
+        # Test windows are also soundscape data, so soundscape centering is natural.
+        center_mean = global_sc_mean
+
         # === Weighted logit-space scoring ===
 
-        # Center test windows and apply transfer weights
-        sc_logits_c = sc_logits - global_focal_mean[None, :]
+        sc_logits_c = sc_logits - center_mean[None, :]
         sc_logits_w = sc_logits_c * sqrt_w[None, :]
         sc_logits_wn = normalize(sc_logits_w, norm="l2")
 
-        # Weight + normalize species prototypes
-        proto_logits_c = proto_logits - global_focal_mean[None, None, :]
+        # Center species prototypes by soundscape mean, apply transfer weights
+        proto_logits_c = proto_logits - center_mean[None, None, :]
         proto_logits_w = proto_logits_c * sqrt_w[None, None, :]
         proto_logits_wn = proto_logits_w / np.maximum(
             np.linalg.norm(proto_logits_w, axis=2, keepdims=True), 1e-8)
 
-        # Weighted cosine similarity: max over K prototypes
         sim_logit_weighted = np.einsum("wp,skp->wsk", sc_logits_wn, proto_logits_wn).max(axis=2)
 
-        # Unweighted logit similarity (baseline)
+        # Unweighted logit similarity (also soundscape-centered)
         sc_ln = normalize(sc_logits_c, norm="l2")
-        proto_ln = mp["proto_logits_normed"]
+        proto_ln = proto_logits_c / np.maximum(
+            np.linalg.norm(proto_logits_c, axis=2, keepdims=True), 1e-8)
         sim_logit_raw = np.einsum("wp,skp->wsk", sc_ln, proto_ln).max(axis=2)
 
-        # Embedding similarity (no transfer weighting — embeddings are 1536-d, no per-dim shift data)
+        # Embedding similarity
         sc_en = normalize(sc_emb - global_emb_mean[None, :], norm="l2")
         sim_emb = np.einsum("we,ske->wsk", sc_en, proto_emb_normed).max(axis=2)
 
-        # === Weighted site affinity ===
+        # === Site affinity (consistent centering) ===
 
-        # Recompute affinity with transfer weights
-        # Species profiles: mean over prototypes, weighted
-        sp_profiles_w = (proto_logits_c.mean(axis=1)) * sqrt_w[None, :]
+        # Species profiles: mean over prototypes, soundscape-centered, weighted
+        sp_profiles_c = proto_logits_c.mean(axis=1)  # (S, P)
+        sp_profiles_w = sp_profiles_c * sqrt_w[None, :]
         sp_profiles_wn = normalize(sp_profiles_w, norm="l2")
 
-        # Site prototypes: center by soundscape mean, weight
-        site_proto_c = site_proto_logits - global_sc_mean[None, None, :]
+        # Site prototypes: ALSO soundscape-centered (same center_mean)
+        site_proto_c = site_proto_logits - center_mean[None, None, :]
         site_proto_w = site_proto_c * sqrt_w[None, None, :]
         site_proto_wn = site_proto_w / np.maximum(
             np.linalg.norm(site_proto_w, axis=2, keepdims=True), 1e-8)
 
-        # Affinity: (S, P) @ (L, K_site, P).T → max over K_site
         n_sites = len(sites_arr)
         K_site = site_proto_wn.shape[1]
-        flat_site = site_proto_wn.reshape(-1, site_proto_wn.shape[2])  # (L*K_site, P)
-        affinity_flat = sp_profiles_wn @ flat_site.T  # (S, L*K_site)
-        affinity_w = affinity_flat.reshape(n_species, n_sites, K_site).max(axis=2)  # (S, L)
+        flat_site = site_proto_wn.reshape(-1, site_proto_wn.shape[2])
+        affinity_flat = sp_profiles_wn @ flat_site.T
+        affinity_w = affinity_flat.reshape(n_species, n_sites, K_site).max(axis=2)
 
-        # Also compute unweighted affinity for comparison
-        affinity_raw = sp["species_site_affinity_max"]
+        # Unweighted affinity (also consistently soundscape-centered)
+        sp_profiles_cn = normalize(sp_profiles_c, norm="l2")
+        site_proto_cn = site_proto_c / np.maximum(
+            np.linalg.norm(site_proto_c, axis=2, keepdims=True), 1e-8)
+        flat_site_raw = site_proto_cn.reshape(-1, site_proto_cn.shape[2])
+        affinity_raw_flat = sp_profiles_cn @ flat_site_raw.T
+        affinity_raw = affinity_raw_flat.reshape(n_species, n_sites, K_site).max(axis=2)
 
-        # Build per-window site prior (weighted and raw)
+        # Bug #4 fix: min-max normalization with neutral fallback
+        # When affinity range is tiny (<0.01), species has no site preference →
+        # set prior to 1.0 (neutral) instead of 0.0 (which would halve scores).
         def _site_prior_matrix(affinity):
             prior = np.zeros((len(sc_df), n_species), dtype=np.float64)
             for i, site in enumerate(sc_sites):
@@ -204,8 +215,13 @@ class StarSchemaScorer(AnalysisTask):
                     prior[i] = affinity[:, si]
             sp_min = prior.min(axis=0, keepdims=True)
             sp_max = prior.max(axis=0, keepdims=True)
-            sp_range = np.maximum(sp_max - sp_min, 1e-8)
-            return (prior - sp_min) / sp_range
+            sp_range = sp_max - sp_min
+            result = np.where(
+                sp_range > 0.01,
+                (prior - sp_min) / np.maximum(sp_range, 1e-8),
+                1.0,  # neutral: no modulation for species with uniform affinity
+            )
+            return result
 
         site_prior_w = _site_prior_matrix(affinity_w)
         site_prior_raw = _site_prior_matrix(affinity_raw)
