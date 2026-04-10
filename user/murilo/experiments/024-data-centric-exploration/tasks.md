@@ -5,7 +5,7 @@
 Understand model coverage gaps and Perch/SED complementarity to inform the pseudo-labeling
 teacher strategy for exp 025.
 
-Status: **Phase A complete. Phase B running (Perch TF inference on all data).**
+Status: **Phase A complete. Phase B: train_soundscapes done, train_audio running (~47%, ETA tomorrow).**
 
 **Branch**: `mg/024-data-centric-exploration` — PR #26
 
@@ -25,17 +25,24 @@ Status: **Phase A complete. Phase B running (Perch TF inference on all data).**
 
 - [x] B.1 Write standalone `inference/perch_inference.py` (TF SavedModel, saves embeddings + logits)
 - [x] B.2 Write SLURM batch scripts (`inference/sbatch/perch_inference.sh` + `run_perch.sh`)
-- [ ] B.3 Run inference → save embeddings + raw logits to `shared/inference/birdclef-2026/perch-v2-tf/`
+- [x] B.3 Run inference → save embeddings + raw logits to `shared/inference/birdclef-2026/perch-v2-tf/`
   - ✅ Test: 10 files (TF version fix), 200 files (throughput benchmark: 10.7 chunks/s)
-  - 🔄 Running: train_soundscapes (10,658 files, ~3.3h estimated)
-  - 🔄 Running: train_audio (35,549 files, ~6.9h estimated)
+  - ✅ Done: train_soundscapes (10,658 files) — 127,896 rows (12 chunks/file)
+  - 🔄 Running: train_audio (35,549 files, ~47% complete, ETA 2026-04-10)
   - Submit: `cd user/murilo/inference && bash sbatch/run_perch.sh --source <source> --overwrite`
   - Config: cpu-medium, 24 CPUs, 64GB RAM, 24h walltime, TF 2.21 CPU
-- [ ] B.4 Verify output shapes and sample predictions
+- [x] B.4 Verify output shapes and sample predictions (train_soundscapes)
+  - embeddings.parquet: 127,896 rows × 1,541 cols (5 metadata + 1,536 dims), 1.19 GB
+  - logits.parquet: 127,896 rows × 14,800 cols (5 metadata + 14,795 Perch taxonomy), 11.3 GB
+  - No NaN/inf, embedding mean ~0, logit mean ~-1.3
+  - Row counts match: 10,658 files × 12 chunks = 127,896 ✅
+- [ ] B.5 Verify train_audio outputs when job completes (pending)
 
-## Phase C: Apply MLP Probes
+## Phase C: Apply MLP Probes ← UNBLOCKED for train_soundscapes
 
 Artifacts: `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/`
+
+**train_soundscapes embeddings are ready** — Phase C can proceed on soundscapes while train_audio job continues.
 
 - [ ] C.0 Quick preview: compare existing `shared/embeddings/birdclef-2026/perch-v2/labeled/perch_mapped_scores.parquet`
   against v5j per-species AUC on 75 labeled-soundscape species (can do before Phase B completes)

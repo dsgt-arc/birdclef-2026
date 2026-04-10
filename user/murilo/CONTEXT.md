@@ -3,7 +3,7 @@
 Session handoff document for Murilo's BirdCLEF 2026 experiments.
 Read this first, then read the referenced docs to get full context.
 
-Last updated: 2026-04-09
+Last updated: 2026-04-10
 
 ## Read these files first
 
@@ -36,7 +36,7 @@ Read ALL of these at session start to get full context.
 | SED v5j-4fold-pp2 (exp 021) | 0.917 | Best SED |
 | SED v5j single (exp 019) | 0.906 | Best single-fold SED |
 
-## What happened in this session (2026-04-09)
+## What happened in this session (2026-04-09 → 2026-04-10)
 
 ### 1. Data-Centric Pivot
 
@@ -74,14 +74,29 @@ problem. The model is near-perfect on species it has soundscape data for.
 ### 3. Exp 024: Data-Centric Exploration (in progress)
 
 - **Phase A: Max-across-folds** ✅ — Completed, findings above
-- **Phase B: Perch v2 TF inference** 🔄 — Jobs running
+- **Phase B: Perch v2 TF inference** 🔄 — train_soundscapes DONE, train_audio running (~47%)
   - `perch_inference.py` written and tested (10 files, 200 files)
   - Throughput: 10.7 chunks/s on 24 CPUs (cpu-medium, TF 2.21)
-  - Two jobs submitted: train_soundscapes (~3.3h) + train_audio (~6.9h)
+  - ✅ train_soundscapes: 127,896 rows (10,658 files × 12 chunks), verified
+    - embeddings.parquet: 1.19 GB (1,536 dims), logits.parquet: 11.3 GB (14,795 Perch taxonomy)
+    - No NaN/inf, distributions look correct
+  - 🔄 train_audio: ~47% complete, ETA 2026-04-10
   - Output: `shared/inference/birdclef-2026/perch-v2-tf/{train_soundscapes,train_audio}/`
-- **Phases C-F**: Pending (blocked on Phase B)
+- **Phase C**: UNBLOCKED for train_soundscapes — can apply MLP probes now
+- **Phases D-F**: Pending (Phase D needs both train_soundscapes + train_audio for full comparison)
 
-### 4. Updated Kaggle Discussion Notes
+### 4. Phase B Verification (2026-04-10)
+
+Perch TF train_soundscapes job completed. Verified outputs:
+- embeddings.parquet: 127,896 rows × 1,541 cols (5 meta + 1,536 emb dims), 1.19 GB
+- logits.parquet: 127,896 rows × 14,800 cols (5 meta + 14,795 Perch taxonomy), 11.3 GB
+- Row count exact: 10,658 files × 12 chunks = 127,896 ✅
+- No NaN/inf, embedding mean ~0, logit mean ~-1.3
+- train_audio job still running (~47%), ETA 2026-04-10
+
+Phase C is now unblocked for train_soundscapes.
+
+### 5. Updated Kaggle Discussion Notes
 
 New competitor data on CV/LB correlation:
 - Gaurav Rawat: GroupKFold on site shows poor CV-LB correlation
@@ -92,21 +107,29 @@ New competitor data on CV/LB correlation:
 
 ## What needs to happen next
 
-### Immediate (when Phase B jobs complete)
+### Immediate (train_soundscapes ready NOW)
 
-1. **Verify Perch outputs**: Check parquet shapes, embedding/logit distributions
-2. **Phase C**: Apply saved MLP probes to Perch embeddings → 234-class predictions
+1. ~~**Verify Perch outputs**~~: ✅ Done — 127,896 rows, correct shapes, no NaN/inf
+2. **Phase C**: Apply saved MLP probes to train_soundscapes Perch embeddings → 234-class predictions
    - Artifacts at: `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/`
+   - Pipeline: raw 1536-dim → StandardScaler → PCA(128) → 5-fold MLP probes → 234-class probs
+   - Can proceed NOW — only needs train_soundscapes embeddings (ready)
 3. **Phase D**: Perch vs SED comparative EDA — THE key analysis:
    - How many of the 50 remaining zero-coverage species does Perch catch?
    - Are Perch and SED complementary or redundant?
    - What does the ensemble teacher coverage look like?
+   - Can start on train_soundscapes as soon as Phase C completes
+
+### When train_audio job finishes (~2026-04-10)
+
+4. **Verify train_audio outputs** (same checks as train_soundscapes)
+5. Extend Phase C/D analysis to focal recordings if needed
 
 ### After Phase D
 
-4. **Phase E**: Ecological sanity check on 54 suspect species
-5. **Phase F**: Design pseudo-labeling teacher strategy → exp 025 proposal
-6. **Exp 025**: Pseudo-labeling pipeline (highest expected LB gain)
+6. **Phase E**: Ecological sanity check on 54 suspect species
+7. **Phase F**: Design pseudo-labeling teacher strategy → exp 025 proposal
+8. **Exp 025**: Pseudo-labeling pipeline (highest expected LB gain)
 
 ## Key patterns (updated)
 
@@ -130,6 +153,7 @@ New competitor data on CV/LB correlation:
 | `user/murilo/experiments/024-data-centric-exploration/` | Exp 024 proposal, tasks, results |
 | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/` | v5j inference outputs (embeddings, logits) |
 | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/` | v5j 4-fold inference outputs |
-| `shared/inference/birdclef-2026/perch-v2-tf/` | Perch TF inference outputs (running) |
+| `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/` | Perch TF soundscape outputs (VERIFIED: 127,896 rows) |
+| `shared/inference/birdclef-2026/perch-v2-tf/train_audio/` | Perch TF focal outputs (running ~47%) |
 | `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/` | MLP probes, PCA, ProtoSSM weights |
 | `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor intel + CV/LB data |
