@@ -10,6 +10,7 @@
 [submodule "vendor/WavTokenizer"]
 	path = vendor/WavTokenizer
 	url = git@github.com:jishengpeng/WavTokenizer.git
+	ignore = untracked
 [submodule "vendor/best-rq-pytorch"]
 	path = vendor/best-rq-pytorch
 	url = git@github.com:lucasnewman/best-rq-pytorch.git
@@ -58,6 +59,7 @@
 [submodule "vendor/ssamba"]
 	path = vendor/ssamba
 	url = https://github.com/SiavashShams/ssamba.git
+	ignore = untracked
 [submodule "vendor/ssast"]
 	path = vendor/ssast
 	url = https://github.com/YuanGongND/ssast.git
@@ -70,6 +72,7 @@
 [submodule "vendor/bambird"]
 	path = vendor/bambird
 	url = https://github.com/ear-team/bambird.git
+	ignore = untracked
 [submodule "vendor/scikit-maad"]
 	path = vendor/scikit-maad
 	url = https://github.com/scikit-maad/scikit-maad.git
