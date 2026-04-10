@@ -10,7 +10,7 @@ Produces findings for sections 12-13 of the EDA deep dive doc.
 Usage:
     python user/murilo/scripts/perch_sed_comparison.py
 
-Requires: pandas, numpy, scipy
+Requires: pandas, numpy, scipy, scikit-learn
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy import stats
+from sklearn.metrics import roc_auc_score
 
 # ============================================================================
 # Paths
@@ -119,6 +120,44 @@ def load_data():
     # Unlabeled mask (exclude the 66 labeled files)
     unlabeled_mask = ~sed_meta["filename"].isin(labeled_files).values
 
+    # Build ground truth matrix for labeled soundscapes (for D.10 validation)
+    labeled_mask = sed_meta["filename"].isin(labeled_files).values
+    N_CLASSES = len(PRIMARY_LABELS)
+
+    # Parse multi-label soundscape labels into per-window multi-hot matrix
+    sc_labels["primary_label"] = sc_labels["primary_label"].astype(str)
+    sc_clean = (
+        sc_labels.groupby(["filename", "start", "end"])["primary_label"]
+        .apply(
+            lambda s: sorted(
+                {
+                    lbl.strip()
+                    for x in s
+                    for lbl in (str(x).split(";") if pd.notna(x) else [])
+                    if lbl.strip()
+                }
+            )
+        )
+        .reset_index(name="label_list")
+    )
+    sc_clean["start_sec"] = pd.to_timedelta(sc_clean["start"]).dt.total_seconds().astype(int)
+    sc_clean["end_sec"] = pd.to_timedelta(sc_clean["end"]).dt.total_seconds().astype(int)
+    # Match to chunk_idx: chunk_idx=0 → end_sec=5, chunk_idx=1 → end_sec=10, etc.
+    sc_clean["chunk_idx"] = (sc_clean["end_sec"] // 5) - 1
+
+    Y_labeled = np.zeros((labeled_mask.sum(), N_CLASSES), dtype=np.uint8)
+    labeled_meta = sed_meta[labeled_mask].reset_index(drop=True)
+    for _, row in sc_clean.iterrows():
+        match = labeled_meta[
+            (labeled_meta["filename"] == row["filename"])
+            & (labeled_meta["chunk_idx"] == row["chunk_idx"])
+        ]
+        if len(match) == 1:
+            ridx = match.index[0]
+            for lbl in row["label_list"]:
+                if lbl in label_to_idx:
+                    Y_labeled[ridx, label_to_idx[lbl]] = 1
+
     return {
         "sed_max": sed_max,
         "perch_raw": perch_raw_vals,
@@ -134,6 +173,8 @@ def load_data():
         "seen_idx": seen_idx,
         "unseen_idx": unseen_idx,
         "labeled_files": labeled_files,
+        "labeled_mask": labeled_mask,
+        "Y_labeled": Y_labeled,
         "sp_cols": perch_raw_sp,
     }
 
@@ -550,6 +591,235 @@ def d7_ensemble_teacher(data):
 
 
 # ============================================================================
+# D.8: Taxonomy breakdown
+# ============================================================================
+
+
+def d8_taxonomy_breakdown(data):
+    print("\n" + "=" * 70)
+    print("D.8: Coverage by taxonomy (unseen species)")
+    print("=" * 70)
+
+    sed = data["sed_max"]
+    perch = data["perch_raw"]
+    mask = data["unlabeled_mask"]
+    unseen_idx = data["unseen_idx"]
+    labels = data["PRIMARY_LABELS"]
+    cn = data["CLASS_NAME_MAP"]
+
+    sed_u = sed[mask][:, unseen_idx]
+    perch_u = perch[mask][:, unseen_idx]
+    unseen_labels = [labels[i] for i in unseen_idx]
+
+    # Group unseen species by taxonomy
+    taxa = {}
+    for i, sp in enumerate(unseen_labels):
+        t = cn.get(sp, "Unknown")
+        taxa.setdefault(t, []).append(i)
+
+    print(
+        f"\n  {'Taxon':>12s} | {'N':>4s} | {'SED@0.3':>8s} | {'SED@0.5':>8s} | {'Perch@0.3':>9s} | {'Perch@0.5':>9s} | {'Neither@0.3':>11s}"
+    )
+    print(f"  {'-'*12} | {'-'*4} | {'-'*8} | {'-'*8} | {'-'*9} | {'-'*9} | {'-'*11}")
+
+    for taxon in ["Aves", "Amphibia", "Insecta", "Mammalia"]:
+        idx = taxa.get(taxon, [])
+        if not idx:
+            continue
+        n = len(idx)
+        s3 = (sed_u[:, idx].max(axis=0) > 0.3).sum()
+        s5 = (sed_u[:, idx].max(axis=0) > 0.5).sum()
+        p3 = (perch_u[:, idx].max(axis=0) > 0.3).sum()
+        p5 = (perch_u[:, idx].max(axis=0) > 0.5).sum()
+        neither = ((sed_u[:, idx].max(axis=0) <= 0.3) & (perch_u[:, idx].max(axis=0) <= 0.3)).sum()
+        print(
+            f"  {taxon:>12s} | {n:>4d} | {s3:>4d}/{n:<3d} | {s5:>4d}/{n:<3d} | {p3:>5d}/{n:<3d} | {p5:>5d}/{n:<3d} | {neither:>5d}/{n:<3d}"
+        )
+
+    # Perch's Aves problem: does it distinguish species or predict all equally?
+    aves_idx = taxa.get("Aves", [])
+    if aves_idx:
+        aves_perch = perch_u[:, aves_idx]
+        print("\n  Aves detail (Perch calibration check):")
+        print(f"    Mean prob across all Aves×segments: {aves_perch.mean():.4f}")
+        print(
+            f"    Std prob across species (per segment mean): {aves_perch.mean(axis=0).std():.4f}"
+        )
+
+        # Per-species mean prob — how flat is the distribution?
+        sp_means = aves_perch.mean(axis=0)
+        print(
+            f"    Species mean prob: min={sp_means.min():.4f}, median={np.median(sp_means):.4f}, max={sp_means.max():.4f}"
+        )
+        print(f"    Species with mean prob >0.5: {(sp_means > 0.5).sum()}/{len(aves_idx)}")
+        print(f"    Species with mean prob >0.9: {(sp_means > 0.9).sum()}/{len(aves_idx)}")
+
+
+# ============================================================================
+# D.9: Calibration quantification
+# ============================================================================
+
+
+def d9_calibration(data):
+    print("\n" + "=" * 70)
+    print("D.9: Calibration — species per segment and pseudo-label density")
+    print("=" * 70)
+
+    sed = data["sed_max"]
+    perch = data["perch_raw"]
+    mask = data["unlabeled_mask"]
+    unseen_idx = data["unseen_idx"]
+
+    sed_u = sed[mask][:, unseen_idx]
+    perch_u = perch[mask][:, unseen_idx]
+    n_seg = sed_u.shape[0]
+    n_unseen = len(unseen_idx)
+
+    # Species per segment
+    print("\n  Species predicted per segment (unseen only):")
+    print(
+        f"  {'Threshold':>10s} | {'SED mean':>9s} | {'SED max':>8s} | {'Perch mean':>11s} | {'Perch max':>10s}"
+    )
+    print(f"  {'-'*10} | {'-'*9} | {'-'*8} | {'-'*11} | {'-'*10}")
+    for thresh in [0.3, 0.5, 0.7, 0.9]:
+        s_per = (sed_u > thresh).sum(axis=1)
+        p_per = (perch_u > thresh).sum(axis=1)
+        print(
+            f"  >{thresh:>8.1f} | {s_per.mean():>9.1f} | {s_per.max():>8d} | {p_per.mean():>11.1f} | {p_per.max():>10d}"
+        )
+
+    # Pseudo-label density per species
+    print("\n  Pseudo-labels per species at >0.5 (unseen, unlabeled):")
+    sed_segs = (sed_u > 0.5).sum(axis=0)
+    perch_segs = (perch_u > 0.5).sum(axis=0)
+
+    sed_covered = sed_segs[sed_segs > 0]
+    perch_covered = perch_segs[perch_segs > 0]
+
+    print(f"    SED ({len(sed_covered)} species with >0 segments):")
+    if len(sed_covered) > 0:
+        print(
+            f"      min={sed_covered.min()}, median={int(np.median(sed_covered))}, "
+            f"mean={sed_covered.mean():.0f}, max={sed_covered.max()}"
+        )
+        print(f"      Total pseudo-labels: {sed_segs.sum()}")
+
+    print(f"    Perch ({len(perch_covered)} species with >0 segments):")
+    if len(perch_covered) > 0:
+        print(
+            f"      min={perch_covered.min()}, median={int(np.median(perch_covered))}, "
+            f"mean={perch_covered.mean():.0f}, max={perch_covered.max()}"
+        )
+        print(f"      Total pseudo-labels: {perch_segs.sum()}")
+        # How many species are in >50% of segments?
+        n_majority = (perch_segs > n_seg * 0.5).sum()
+        n_near_all = (perch_segs > n_seg * 0.9).sum()
+        print(f"      Species in >50% of segments: {n_majority}/{n_unseen}")
+        print(f"      Species in >90% of segments: {n_near_all}/{n_unseen}")
+
+    # Ratio comparison
+    print("\n  Calibration ratio (Perch / SED):")
+    print(
+        f"    Total pseudo-labels: {perch_segs.sum()} / {sed_segs.sum()} = {perch_segs.sum() / max(sed_segs.sum(), 1):.0f}x"
+    )
+    print(
+        f"    Mean species per segment: {(perch_u > 0.5).sum(axis=1).mean():.1f} / {(sed_u > 0.5).sum(axis=1).mean():.2f}"
+    )
+
+
+# ============================================================================
+# D.10: Labeled soundscape validation
+# ============================================================================
+
+
+def d10_labeled_validation(data):
+    print("\n" + "=" * 70)
+    print("D.10: Labeled soundscape validation (75 known species)")
+    print("=" * 70)
+
+    sed = data["sed_max"]
+    perch = data["perch_raw"]
+    lmask = data["labeled_mask"]
+    Y = data["Y_labeled"]
+    labels = data["PRIMARY_LABELS"]
+    cn = data["CLASS_NAME_MAP"]
+    seen_idx = data["seen_idx"]
+
+    sed_labeled = sed[lmask][:, seen_idx]
+    perch_labeled = perch[lmask][:, seen_idx]
+    Y_seen = Y[:, seen_idx]
+
+    n_seg = sed_labeled.shape[0]
+    n_seen = len(seen_idx)
+    seen_labels = [labels[i] for i in seen_idx]
+
+    print(f"\n  Labeled segments: {n_seg}")
+    print(f"  Seen species: {n_seen}")
+    print(f"  Positive labels: {Y_seen.sum()} (across {n_seg} segments × {n_seen} species)")
+
+    # Per-species AUC (skip species with <2 positives)
+    sed_aucs = []
+    perch_aucs = []
+    species_detail = []
+    for i in range(n_seen):
+        n_pos = Y_seen[:, i].sum()
+        if n_pos < 2 or n_pos >= n_seg - 1:
+            continue
+        sp = seen_labels[i]
+        s_auc = roc_auc_score(Y_seen[:, i], sed_labeled[:, i])
+        p_auc = roc_auc_score(Y_seen[:, i], perch_labeled[:, i])
+        sed_aucs.append(s_auc)
+        perch_aucs.append(p_auc)
+        species_detail.append((sp, cn.get(sp, "?"), s_auc, p_auc, n_pos))
+
+    print(f"\n  Species with enough data for AUC: {len(sed_aucs)}/{n_seen}")
+    print("\n  Macro-AUC on labeled soundscapes:")
+    print(f"    SED max-folds: {np.mean(sed_aucs):.4f}")
+    print(f"    Perch raw:     {np.mean(perch_aucs):.4f}")
+
+    # Precision at different thresholds
+    print("\n  Precision (positive predictions that are correct):")
+    print(
+        f"  {'Threshold':>10s} | {'SED prec':>9s} | {'SED preds':>10s} | {'Perch prec':>10s} | {'Perch preds':>12s}"
+    )
+    print(f"  {'-'*10} | {'-'*9} | {'-'*10} | {'-'*10} | {'-'*12}")
+    for thresh in [0.3, 0.5, 0.7, 0.9]:
+        s_pred = sed_labeled > thresh
+        p_pred = perch_labeled > thresh
+        s_tp = (s_pred & (Y_seen == 1)).sum()
+        p_tp = (p_pred & (Y_seen == 1)).sum()
+        s_total = s_pred.sum()
+        p_total = p_pred.sum()
+        s_prec = s_tp / max(s_total, 1)
+        p_prec = p_tp / max(p_total, 1)
+        print(
+            f"  >{thresh:>8.1f} | {s_prec:>8.4f} | {s_total:>10d} | {p_prec:>9.4f} | {p_total:>12d}"
+        )
+
+    # Species where Perch is better vs SED is better
+    species_detail.sort(key=lambda x: x[3] - x[2])
+    perch_wins = [(sp, t, sa, pa, n) for sp, t, sa, pa, n in species_detail if pa > sa + 0.01]
+    sed_wins = [(sp, t, sa, pa, n) for sp, t, sa, pa, n in species_detail if sa > pa + 0.01]
+
+    print(f"\n  SED better (AUC gap >0.01): {len(sed_wins)} species")
+    print(f"  Perch better (AUC gap >0.01): {len(perch_wins)} species")
+
+    if sed_wins:
+        print("\n  Top 5 SED advantages:")
+        for sp, taxon, sa, pa, n in sorted(sed_wins, key=lambda x: x[2] - x[3])[-5:][::-1]:
+            print(
+                f"    {sp:15s} ({taxon:10s}): SED={sa:.3f}, Perch={pa:.3f}, Δ={sa-pa:+.3f} (n={n})"
+            )
+
+    if perch_wins:
+        print("\n  Top 5 Perch advantages:")
+        for sp, taxon, sa, pa, n in sorted(perch_wins, key=lambda x: x[3] - x[2])[-5:][::-1]:
+            print(
+                f"    {sp:15s} ({taxon:10s}): SED={sa:.3f}, Perch={pa:.3f}, Δ={pa-sa:+.3f} (n={n})"
+            )
+
+
+# ============================================================================
 # Summary
 # ============================================================================
 
@@ -617,6 +887,9 @@ def main():
     d5_agreement(data)
     d6_per_site(data)
     d7_ensemble_teacher(data)
+    d8_taxonomy_breakdown(data)
+    d9_calibration(data)
+    d10_labeled_validation(data)
     summary(data)
 
     print("\nDone — update notes/2026-04-09-inference-eda-deep-dive.md sections 12-13")
