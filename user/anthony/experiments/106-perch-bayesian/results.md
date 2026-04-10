@@ -106,19 +106,42 @@ ridge inputs don't add value over raw embeddings.
 
 ### 2.6 Star Schema Scorer
 
-Composes through shared Perch logit space: species similarity × site affinity × diel prior.
+Composes through shared Perch logit space: species similarity × site affinity,
+with domain transfer precision weights on all logit-space dot products.
+
+**Transfer weights** (per-dimension, applied before all logit-space dot products):
+```
+weight_d = reliability_d × specificity_d × decorrelation_d
+```
+- Reliability: `(1 - KS_stat_d)` — suppress the 96.8% shifted dimensions
+- Specificity: `1/sqrt(n_species_activating_d)` — upweight rare discriminative logits
+- Decorrelation: diagonal of `V @ diag(1/sqrt(λ)) @ V.T` from covariance eigen
 
 **LOSO AUROC** (per-site average, all 70 evaluable species):
 
-| Config | AUROC | AP |
-|--------|-------|----|
-| emb_sim (cosine only) | 0.696 | 0.611 |
-| emb_site (+ site affinity) | 0.696 | 0.611 |
-| emb_site_diel (+ diel) | 0.696 | 0.608 |
-| logit_sim | 0.628 | 0.547 |
+| Config | AUROC | AP | Notes |
+|--------|-------|----|-------|
+| **emb_sim** | **0.696** | **0.611** | Best overall (embedding cosine) |
+| logit_weighted | 0.647 | 0.578 | Transfer weights help logit space (+0.019) |
+| logit_raw | 0.628 | 0.547 | Unweighted logit cosine |
+| Any + site affinity | no change | — | Site prior has zero effect |
 
-**Site affinity has zero effect.** All Pantanal sites have cosine similarity >0.94
-— there isn't enough site-level variation to exploit as a prior.
+**Transfer weights improved logit scoring** (0.628 → 0.647, +0.019) by suppressing
+shifted dimensions. But embedding space (0.696) still dominates — the 1536-d
+embedding is inherently more domain-robust than 14795-d weighted logits.
+
+**Site affinity has zero effect** even with transfer-weighted recomputation.
+Investigation revealed a fundamental tension:
+
+1. Sites ARE acoustically different: residual cosine ranges from -0.68 to +0.89,
+   species Jaccard similarity is 0.00–0.25 (sites share almost no species).
+2. But the star schema's affinity (focal profile · site prototype through logit
+   space) doesn't capture this. Weighted affinity correlates WORSE with empirical
+   species presence (Spearman 0.155) than unweighted (0.192).
+3. Root cause: the dimensions that shift most between focal↔soundscape (cicadas,
+   frogs) are the SAME dimensions that discriminate between sites. Transfer
+   weights that suppress domain shift also suppress site signal. The domain gap
+   and site structure are entangled in the same logit dimensions.
 
 **Critical breakdown by focal data availability:**
 
@@ -151,9 +174,12 @@ species. Ridge also beats star schema on the focal species (0.858 vs 0.816).
    species) but fails completely for the 28 species without focal recordings.
    Ridge covers all species by learning from labeled soundscapes.
 
-3. **Site and diel priors don't help.** The Pantanal sites are too acoustically
-   similar (cosine >0.94) for site-level conditioning to add signal. Diel
-   variation exists but is uniform across species in our current formulation.
+3. **Site priors don't help despite real site differences.** Sites ARE different
+   (residual cosine -0.68 to +0.89, Jaccard 0.00–0.25). But composing focal
+   profiles × site prototypes through logit space fails because domain shift
+   and site structure are entangled: the shifted dimensions (cicadas, frogs)
+   are the same ones that discriminate sites. Transfer weights that fix one
+   break the other. Diel variation is captured implicitly by multi-prototypes.
 
 4. **Multi-prototypes provide modest lift** (+0.016 AUROC in embedding space).
    Most species are well-captured by a single mean profile.
