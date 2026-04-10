@@ -6,6 +6,31 @@ This document specifies the module-level design for exp 107: file layout,
 module responsibilities, dependencies, and data flow. No code snippets —
 see `design.md` for the model API and algorithm details.
 
+## Finalized architecture decisions
+
+Before reading the details, here are the decisions that are locked in:
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Input features | **Embeddings only** (1536-d) | Simpler baseline; logits deferred as future ablation |
+| Memory bank count | **Two** (species + site) | Matches star schema factored structure |
+| Species head normalization | **Sigmoid** (max-over-K) | Multi-label: independent per-class probabilities |
+| Site head normalization | **Sigmoid** (max-over-K) | Consistency with species head; single-scalar gate |
+| Multi-head attention | **No** | One projection is sufficient; multi-head adds complexity for a 2-source problem |
+| Iterative Hopfield refinement | **No** | One-shot retrieval; iteration collapses multi-label signal |
+| Pattern separation regularizer | **No** | Start simple; add only if prototypes collapse in training |
+| Library dependency | **None** (plain PyTorch) | hflayers doesn't support sigmoid; einsum is 5 lines |
+| Hopfield framing | **Yes** in docs, not in code | Intellectual lineage preserved; implementation stays simple |
+
+Deferred to future work (explicitly out of scope for exp 107):
+
+- Dual-space (logits + embeddings) with parallel banks
+- Per-species site affinity (vs the current scalar site gate)
+- Iterative Hopfield refinement
+- Transformer-style multi-head attention
+- Pattern separation or coherence regularizers
+- Calibration (Platt scaling) on output scores
+
 ## Directory structure
 
 ```
@@ -247,13 +272,20 @@ instead of softmax. The energy landscape still has attractors near each
 stored pattern, but multiple attractors can be simultaneously "high" without
 competing.
 
-**Why softmax is correct for site:**
+**Site head: also sigmoid (for simplicity and consistency):**
 
-A window at a site is in ONE acoustic state (dawn chorus OR midday quiet
-OR night insects, not a mixture). The state selection is a single-winner
-retrieval problem — softmax attention is the right tool. The retrieved
-state's similarity to the query gives the overall "how typical is this
-window for this site" score.
+Although site state selection is conceptually a single-winner problem (a
+window is in one acoustic state at its site), we use the same max-over-K +
+sigmoid pattern as the species head for implementation consistency. The
+site head produces a scalar per window representing "how well does this
+window match any of its site's prototypes" — interpretable as a typicality
+score. This scalar gates the species predictions via the learned gate.
+
+Strictly speaking, a softmax-attention site head would be more Hopfield-pure
+(retrieving a weighted site state and measuring its similarity to the query).
+We pick sigmoid for consistency and to avoid the coupling issues softmax
+introduces when combining with the species head. If ablations show the site
+head is ineffective, we can revisit with softmax attention.
 
 **No library dependency:**
 

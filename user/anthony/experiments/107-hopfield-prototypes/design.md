@@ -15,9 +15,8 @@ Trained on cached Perch v2 embeddings from three domains — focal recordings
 soundscapes (127K, no labels). No audio processing, no large backbone.
 
 The implementation uses plain PyTorch primitives (no `hflayers` dependency).
-The computation is equivalent to modern Hopfield retrieval with per-head
-choice of normalization (sigmoid for multi-label species, softmax for
-single-winner site state).
+Both heads use sigmoid for consistency — species for multi-label probabilities,
+site for a single-scalar typicality gate that modulates species predictions.
 
 ## Input format
 
