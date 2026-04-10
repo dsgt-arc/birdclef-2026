@@ -5,14 +5,14 @@ Runs the frozen Perch v2 TensorFlow SavedModel on 5-second audio chunks,
 saving 1536-dim embeddings and 14,795-class raw logits to parquet.
 
 Usage:
-    python user/murilo/scripts/perch_inference.py \
-        --source train_soundscapes \
-        --batch-size 32
+    python perch_inference.py --source train_soundscapes --batch-size 32
+    python perch_inference.py --source train_audio --batch-size 16
 
-    python user/murilo/scripts/perch_inference.py \
-        --source all \
-        --max-files 100 \
-        --batch-size 16
+    # Resume after interrupted job (default — skips already-processed files):
+    python perch_inference.py --source train_audio
+
+    # Start fresh, discarding any partial results:
+    python perch_inference.py --source train_audio --overwrite
 
 Outputs:
     shared/inference/birdclef-2026/perch-v2-tf/{source}/
@@ -115,39 +115,129 @@ def enumerate_train_audio() -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# Parquet I/O
+# Chunked parquet I/O (memory-safe)
 # --------------------------------------------------------------------------- #
-def flush_to_parquet(
+def flush_chunk(
     embeddings: list[np.ndarray],
     logits: list[np.ndarray],
     metadata: list[dict],
-    emb_path: Path,
-    logits_path: Path,
-    emb_columns: list[str] | None = None,
-    logit_columns: list[str] | None = None,
+    output_dir: Path,
+    chunk_idx: int,
+    emb_columns: list[str],
+    logit_columns: list[str],
 ):
-    """Append accumulated results to parquet files."""
+    """Write one batch of results to numbered chunk parquet files.
+
+    Each flush writes a small independent file (~100MB). No existing files are
+    reloaded, so memory stays constant regardless of total dataset size.
+    """
     if not embeddings:
         return
+
+    chunks_dir = output_dir / "chunks"
+    chunks_dir.mkdir(exist_ok=True)
 
     emb_arr = np.concatenate(embeddings, axis=0)
     logit_arr = np.concatenate(logits, axis=0)
     meta_df = pd.DataFrame(metadata)
 
-    # Embedding parquet
-    emb_cols = emb_columns or [f"emb_{i}" for i in range(emb_arr.shape[1])]
-    emb_df = pd.concat([meta_df, pd.DataFrame(emb_arr, columns=emb_cols)], axis=1)
+    emb_df = pd.concat([meta_df, pd.DataFrame(emb_arr, columns=emb_columns)], axis=1)
+    log_df = pd.concat([meta_df, pd.DataFrame(logit_arr, columns=logit_columns)], axis=1)
 
-    # Logits parquet
-    log_cols = logit_columns or [f"logit_{i}" for i in range(logit_arr.shape[1])]
-    log_df = pd.concat([meta_df, pd.DataFrame(logit_arr, columns=log_cols)], axis=1)
+    emb_df.to_parquet(chunks_dir / f"emb_{chunk_idx:04d}.parquet", index=False, engine="pyarrow")
+    log_df.to_parquet(chunks_dir / f"log_{chunk_idx:04d}.parquet", index=False, engine="pyarrow")
 
-    # Append or create
-    for df, path in [(emb_df, emb_path), (log_df, logits_path)]:
-        if path.exists():
-            existing = pd.read_parquet(path)
-            df = pd.concat([existing, df], ignore_index=True)
-        df.to_parquet(path, index=False, engine="pyarrow")
+
+def get_processed_filenames(output_dir: Path) -> set[str]:
+    """Get filenames already processed from main files and/or chunk files.
+
+    Reads only the 'filename' column (a few MB) rather than full data.
+    """
+    filenames: set[str] = set()
+
+    # Check main embeddings file (much smaller than logits)
+    emb_path = output_dir / "embeddings.parquet"
+    if emb_path.exists():
+        try:
+            df = pd.read_parquet(emb_path, columns=["filename"])
+            filenames.update(df["filename"].unique())
+            print(f"  Found {len(filenames):,} files in existing {emb_path.name}")
+        except Exception as e:
+            print(f"  Warning: could not read {emb_path}: {e}")
+
+    # Check chunk files
+    chunks_dir = output_dir / "chunks"
+    if chunks_dir.exists():
+        chunk_files = sorted(chunks_dir.glob("emb_*.parquet"))
+        for f in chunk_files:
+            try:
+                df = pd.read_parquet(f, columns=["filename"])
+                filenames.update(df["filename"].unique())
+            except Exception as e:
+                print(f"  Warning: could not read chunk {f.name}: {e}")
+        if chunk_files:
+            print(f"  Found {len(chunk_files)} chunk files in {chunks_dir}")
+
+    return filenames
+
+
+def merge_chunks(output_dir: Path):
+    """Merge main parquet + chunk files into final output using streaming writes.
+
+    Memory-efficient: reads one source file at a time in 50K-row batches,
+    so peak memory is ~100-200 MB regardless of total dataset size.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    chunks_dir = output_dir / "chunks"
+    if not chunks_dir.exists():
+        return
+
+    for name, prefix in [("embeddings", "emb"), ("logits", "log")]:
+        main_path = output_dir / f"{name}.parquet"
+        chunk_files = sorted(chunks_dir.glob(f"{prefix}_*.parquet"))
+
+        if not chunk_files:
+            continue
+
+        # Collect all sources: existing main file first, then chunks in order
+        sources: list[Path] = []
+        if main_path.exists():
+            sources.append(main_path)
+        sources.extend(chunk_files)
+
+        print(f"  Merging {name}: {len(sources)} source(s)...")
+        tmp_path = output_dir / f"{name}_merged.parquet"
+
+        writer = None
+        total_rows = 0
+        for src in sources:
+            pf = pq.ParquetFile(src)
+            for batch in pf.iter_batches(batch_size=50_000):
+                table = pa.Table.from_batches([batch])
+                if writer is None:
+                    writer = pq.ParquetWriter(str(tmp_path), table.schema)
+                writer.write_table(table)
+                total_rows += len(batch)
+
+        if writer:
+            writer.close()
+            # Atomic replace
+            if main_path.exists():
+                main_path.unlink()
+            tmp_path.rename(main_path)
+            size_gb = main_path.stat().st_size / 1e9
+            print(f"    {name}.parquet: {total_rows:,} rows, {size_gb:.2f} GB")
+
+        # Clean up chunk files
+        for f in chunk_files:
+            f.unlink()
+
+    # Remove chunks dir if empty
+    if chunks_dir.exists() and not any(chunks_dir.iterdir()):
+        chunks_dir.rmdir()
+        print("  Cleaned up chunks directory")
 
 
 # --------------------------------------------------------------------------- #
@@ -159,6 +249,7 @@ def run_inference(
     output_dir: Path,
     batch_size: int = 32,
     max_files: int | None = None,
+    skip_filenames: set[str] | None = None,
 ):
     """Run Perch TF inference on a list of audio files.
 
@@ -168,15 +259,25 @@ def run_inference(
         output_dir: where to save parquet files
         batch_size: number of 5s chunks per TF call
         max_files: limit for debugging
+        skip_filenames: set of filenames to skip (for resume)
     """
     import tensorflow as tf
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    emb_path = output_dir / "embeddings.parquet"
-    logits_path = output_dir / "logits.parquet"
 
     if max_files:
         file_list = file_list[:max_files]
+
+    # Filter out already-processed files
+    if skip_filenames:
+        original_count = len(file_list)
+        file_list = [f for f in file_list if f["filename"] not in skip_filenames]
+        skipped = original_count - len(file_list)
+        print(f"  Resuming: {skipped:,} already done, {len(file_list):,} remaining")
+
+    if not file_list:
+        print("  All files already processed — nothing to do.")
+        return
 
     # Get label column names from a single forward pass
     dummy = np.zeros((1, WINDOW_SAMPLES), dtype=np.float32)
@@ -187,10 +288,18 @@ def run_inference(
     logit_columns = [f"logit_{i}" for i in range(n_logits)]
     print(f"  Perch outputs: embedding={n_emb}-dim, logits={n_logits}-dim")
 
-    # Accumulators (flushed periodically)
-    acc_emb = []
-    acc_logits = []
-    acc_meta = []
+    # Determine starting chunk index (continue numbering from existing chunks)
+    chunks_dir = output_dir / "chunks"
+    if chunks_dir.exists():
+        existing_chunks = list(chunks_dir.glob("emb_*.parquet"))
+        chunk_idx = len(existing_chunks)
+    else:
+        chunk_idx = 0
+
+    # Accumulators (flushed periodically as independent chunk files)
+    acc_emb: list[np.ndarray] = []
+    acc_logits: list[np.ndarray] = []
+    acc_meta: list[dict] = []
     total_chunks = 0
     t_start = time.time()
 
@@ -219,24 +328,26 @@ def run_inference(
 
             total_chunks += batch_end - batch_start
 
-        # Periodic flush
+        # Periodic flush to independent chunk file (no reload)
         if (file_idx + 1) % FLUSH_EVERY == 0:
             elapsed = time.time() - t_start
-            rate = total_chunks / elapsed
-            eta = (len(file_list) - file_idx - 1) * (elapsed / (file_idx + 1))
+            rate = total_chunks / elapsed if elapsed > 0 else 0
+            remaining_files = len(file_list) - file_idx - 1
+            eta = remaining_files * (elapsed / (file_idx + 1)) if file_idx > 0 else 0
             print(
                 f"  [{file_idx+1}/{len(file_list)}] {total_chunks} chunks, "
-                f"{rate:.1f} chunks/s, ETA {eta/3600:.1f}h — flushing..."
+                f"{rate:.1f} chunks/s, ETA {eta/3600:.1f}h — flushing chunk {chunk_idx}..."
             )
-            flush_to_parquet(
+            flush_chunk(
                 acc_emb,
                 acc_logits,
                 acc_meta,
-                emb_path,
-                logits_path,
+                output_dir,
+                chunk_idx,
                 emb_columns,
                 logit_columns,
             )
+            chunk_idx += 1
             acc_emb.clear()
             acc_logits.clear()
             acc_meta.clear()
@@ -244,20 +355,22 @@ def run_inference(
 
     # Final flush
     if acc_emb:
-        flush_to_parquet(
+        print(f"  Final flush: chunk {chunk_idx} ({total_chunks} total new chunks)")
+        flush_chunk(
             acc_emb,
             acc_logits,
             acc_meta,
-            emb_path,
-            logits_path,
+            output_dir,
+            chunk_idx,
             emb_columns,
             logit_columns,
         )
 
     elapsed = time.time() - t_start
+    rate = total_chunks / elapsed if elapsed > 0 else 0
     print(
-        f"  Done: {total_chunks} chunks from {len(file_list)} files in {elapsed/3600:.2f}h "
-        f"({total_chunks/elapsed:.1f} chunks/s)"
+        f"  Done: {total_chunks:,} chunks from {len(file_list):,} files "
+        f"in {elapsed/3600:.2f}h ({rate:.1f} chunks/s)"
     )
 
 
@@ -275,7 +388,11 @@ def main():
     parser.add_argument("--batch-size", type=int, default=32, help="Chunks per TF call")
     parser.add_argument("--max-files", type=int, default=None, help="Limit files (debug)")
     parser.add_argument("--model-dir", type=str, default=str(MODEL_DIR), help="Perch TF model path")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing outputs")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Discard partial results and start fresh",
+    )
     args = parser.parse_args()
 
     # Lazy TF import (avoid loading TF if just checking --help)
@@ -312,26 +429,40 @@ def main():
 
     for source_name, file_list in sources:
         output_dir = OUTPUT_BASE / source_name
-        emb_path = output_dir / "embeddings.parquet"
 
-        if emb_path.exists() and not args.overwrite:
-            print(f"  Skipping {source_name} — output exists. Use --overwrite to rerun.")
-            continue
-
-        if args.overwrite and emb_path.exists():
-            # Remove existing files to start fresh
-            for f in output_dir.glob("*.parquet"):
-                f.unlink()
+        if args.overwrite:
+            # Clean everything for fresh start
+            if output_dir.exists():
+                for f in output_dir.glob("*.parquet"):
+                    f.unlink()
+                chunks_dir = output_dir / "chunks"
+                if chunks_dir.exists():
+                    for f in chunks_dir.glob("*.parquet"):
+                        f.unlink()
+                    chunks_dir.rmdir()
+            skip_filenames = None
+        else:
+            # Resume: find already-processed files
+            skip_filenames = get_processed_filenames(output_dir)
 
         n_files = min(len(file_list), args.max_files) if args.max_files else len(file_list)
         print(f"\nProcessing {source_name}: {n_files} files (of {len(file_list)} total)")
+
         run_inference(
             perch_fn,
             file_list,
             output_dir,
             batch_size=args.batch_size,
             max_files=args.max_files,
+            skip_filenames=skip_filenames,
         )
+
+        # Merge chunk files into final parquet
+        chunks_dir = output_dir / "chunks"
+        if chunks_dir.exists() and any(chunks_dir.glob("*.parquet")):
+            print(f"\nMerging chunks for {source_name}...")
+            merge_chunks(output_dir)
+            print()
 
     print("\nAll done.")
 

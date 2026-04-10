@@ -74,27 +74,27 @@ problem. The model is near-perfect on species it has soundscape data for.
 ### 3. Exp 024: Data-Centric Exploration (in progress)
 
 - **Phase A: Max-across-folds** ✅ — Completed, findings above
-- **Phase B: Perch v2 TF inference** 🔄 — train_soundscapes DONE, train_audio running (~47%)
+- **Phase B: Perch v2 TF inference** ✅ — COMPLETE (both sources verified)
   - `perch_inference.py` written and tested (10 files, 200 files)
   - Throughput: 10.7 chunks/s on 24 CPUs (cpu-medium, TF 2.21)
-  - ✅ train_soundscapes: 127,896 rows (10,658 files × 12 chunks), verified
-    - embeddings.parquet: 1.19 GB (1,536 dims), logits.parquet: 11.3 GB (14,795 Perch taxonomy)
-    - No NaN/inf, distributions look correct
-  - 🔄 train_audio: ~47% complete, ETA 2026-04-10
+  - ✅ train_soundscapes: 127,896 rows (10,658 files × 12 chunks), 1.19 GB emb + 11.3 GB logits
+  - ✅ train_audio: 265,924 rows (35,549 files, variable chunks), 2.4 GB emb + 23.2 GB logits
+  - No NaN/inf in either, distributions correct
+  - Note: initial train_audio job OOM'd at 70% — fixed flush pattern (chunked writes + resume)
   - Output: `shared/inference/birdclef-2026/perch-v2-tf/{train_soundscapes,train_audio}/`
-- **Phase C**: UNBLOCKED for train_soundscapes — can apply MLP probes now
-- **Phases D-F**: Pending (Phase D needs both train_soundscapes + train_audio for full comparison)
+- **Phase C**: UNBLOCKED — can apply MLP probes to both sources now
+- **Phases D-F**: UNBLOCKED — Phase D can use both train_soundscapes + train_audio
 
-### 4. Phase B Verification (2026-04-10)
+### 4. Phase B Complete (2026-04-10)
 
-Perch TF train_soundscapes job completed. Verified outputs:
-- embeddings.parquet: 127,896 rows × 1,541 cols (5 meta + 1,536 emb dims), 1.19 GB
-- logits.parquet: 127,896 rows × 14,800 cols (5 meta + 14,795 Perch taxonomy), 11.3 GB
-- Row count exact: 10,658 files × 12 chunks = 127,896 ✅
-- No NaN/inf, embedding mean ~0, logit mean ~-1.3
-- train_audio job still running (~47%), ETA 2026-04-10
+Both Perch TF inference jobs completed and verified:
+- train_soundscapes: 127,896 rows × 1,541 cols, 1.19 GB emb + 11.3 GB logits ✅
+- train_audio: 265,924 rows × 1,541 cols, 2.4 GB emb + 23.2 GB logits ✅
+- No NaN/inf, all files represented, row counts match between emb and logits
+- train_audio initial job OOM'd at 70% — fixed `perch_inference.py` with chunked
+  parquet writes (no read-concat-write) + resume support. Completed on second run.
 
-Phase C is now unblocked for train_soundscapes.
+All phases C-F are now unblocked.
 
 ### 5. Updated Kaggle Discussion Notes
 
@@ -107,23 +107,18 @@ New competitor data on CV/LB correlation:
 
 ## What needs to happen next
 
-### Immediate (train_soundscapes ready NOW)
+### Immediate (all data ready)
 
-1. ~~**Verify Perch outputs**~~: ✅ Done — 127,896 rows, correct shapes, no NaN/inf
-2. **Phase C**: Apply saved MLP probes to train_soundscapes Perch embeddings → 234-class predictions
+1. ~~**Verify Perch outputs**~~: ✅ Done — both train_soundscapes and train_audio verified
+2. **Phase C**: Apply saved MLP probes to Perch embeddings → 234-class predictions
    - Artifacts at: `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/`
    - Pipeline: raw 1536-dim → StandardScaler → PCA(128) → 5-fold MLP probes → 234-class probs
-   - Can proceed NOW — only needs train_soundscapes embeddings (ready)
+   - Can proceed NOW on both train_soundscapes and train_audio
 3. **Phase D**: Perch vs SED comparative EDA — THE key analysis:
    - How many of the 50 remaining zero-coverage species does Perch catch?
    - Are Perch and SED complementary or redundant?
    - What does the ensemble teacher coverage look like?
-   - Can start on train_soundscapes as soon as Phase C completes
-
-### When train_audio job finishes (~2026-04-10)
-
-4. **Verify train_audio outputs** (same checks as train_soundscapes)
-5. Extend Phase C/D analysis to focal recordings if needed
+   - Can start as soon as Phase C completes
 
 ### After Phase D
 
@@ -154,6 +149,6 @@ New competitor data on CV/LB correlation:
 | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/` | v5j inference outputs (embeddings, logits) |
 | `shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/` | v5j 4-fold inference outputs |
 | `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/` | Perch TF soundscape outputs (VERIFIED: 127,896 rows) |
-| `shared/inference/birdclef-2026/perch-v2-tf/train_audio/` | Perch TF focal outputs (running ~47%) |
+| `shared/inference/birdclef-2026/perch-v2-tf/train_audio/` | Perch TF focal outputs (VERIFIED: 265,924 rows, 35,549 files) |
 | `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/` | MLP probes, PCA, ProtoSSM weights |
 | `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor intel + CV/LB data |

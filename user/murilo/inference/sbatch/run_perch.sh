@@ -57,9 +57,7 @@ else
 fi
 
 if [[ -f "$CHECK_FILE" && "$OVERWRITE" != "true" ]]; then
-    echo "Output already exists: $CHECK_FILE"
-    echo "Use --overwrite to rerun."
-    exit 0
+    echo "Partial output exists: $CHECK_FILE — job will resume from last checkpoint."
 fi
 
 # Log directory

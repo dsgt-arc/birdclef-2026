@@ -5,7 +5,7 @@
 Understand model coverage gaps and Perch/SED complementarity to inform the pseudo-labeling
 teacher strategy for exp 025.
 
-Status: **Phase A complete. Phase B: train_soundscapes done, train_audio running (~47%, ETA tomorrow).**
+Status: **Phase A complete. Phase B complete (both train_soundscapes and train_audio verified). Phase C unblocked.**
 
 **Branch**: `mg/024-data-centric-exploration` — PR #26
 
@@ -28,21 +28,28 @@ Status: **Phase A complete. Phase B: train_soundscapes done, train_audio running
 - [x] B.3 Run inference → save embeddings + raw logits to `shared/inference/birdclef-2026/perch-v2-tf/`
   - ✅ Test: 10 files (TF version fix), 200 files (throughput benchmark: 10.7 chunks/s)
   - ✅ Done: train_soundscapes (10,658 files) — 127,896 rows (12 chunks/file)
-  - 🔄 Running: train_audio (35,549 files, ~47% complete, ETA 2026-04-10)
+  - ✅ Done: train_audio (35,549 files) — 265,924 rows (variable chunks/file)
   - Submit: `cd user/murilo/inference && bash sbatch/run_perch.sh --source <source> --overwrite`
   - Config: cpu-medium, 24 CPUs, 64GB RAM, 24h walltime, TF 2.21 CPU
+  - Note: initial train_audio job OOM'd at 70% due to read-concat-write flush pattern.
+    Fixed `perch_inference.py` to use chunked parquet writes + streaming merge.
+    Added resume support (skips already-processed files). Resumed and completed.
 - [x] B.4 Verify output shapes and sample predictions (train_soundscapes)
   - embeddings.parquet: 127,896 rows × 1,541 cols (5 metadata + 1,536 dims), 1.19 GB
   - logits.parquet: 127,896 rows × 14,800 cols (5 metadata + 14,795 Perch taxonomy), 11.3 GB
   - No NaN/inf, embedding mean ~0, logit mean ~-1.3
   - Row counts match: 10,658 files × 12 chunks = 127,896 ✅
-- [ ] B.5 Verify train_audio outputs when job completes (pending)
+- [x] B.5 Verify train_audio outputs
+  - embeddings.parquet: 265,924 rows × 1,541 cols (5 metadata + 1,536 dims), 2.4 GB
+  - logits.parquet: 265,924 rows × 14,800 cols (5 metadata + 14,795 Perch taxonomy), 23.2 GB
+  - No NaN/inf, embedding mean ~0.003, logit mean ~-1.1
+  - All 35,549 files represented, row counts match between embeddings and logits ✅
 
-## Phase C: Apply MLP Probes ← UNBLOCKED for train_soundscapes
+## Phase C: Apply MLP Probes ← UNBLOCKED (both sources ready)
 
 Artifacts: `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/`
 
-**train_soundscapes embeddings are ready** — Phase C can proceed on soundscapes while train_audio job continues.
+**Both train_soundscapes and train_audio embeddings are ready.**
 
 - [ ] C.0 Quick preview: compare existing `shared/embeddings/birdclef-2026/perch-v2/labeled/perch_mapped_scores.parquet`
   against v5j per-species AUC on 75 labeled-soundscape species (can do before Phase B completes)
