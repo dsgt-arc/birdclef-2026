@@ -87,28 +87,41 @@ falls back to species-only scoring.
 
 ### Training
 
-**Supervised signal**: 739 labeled soundscape windows with BCE loss.
+Three data sources, each window fed one at a time through the same model:
 
-**Semi-supervised regularizer on 127K unlabeled windows**:
-- **Consistency**: augment by adding noise to embeddings, enforce that predictions
-  are similar across augmentations (mean-teacher style).
-- **Entropy minimization**: encourage confident predictions on unlabeled windows
-  (low entropy in the species assignment).
-- **Prototype coherence**: prototypes should be close to the centroid of their
-  assigned windows (EM-style, differentiable).
+| Source | Count | Labels | Site ID | What it teaches |
+|--------|-------|--------|---------|-----------------|
+| Focal | 265K | One-hot (single species) | None | Species identity (clean signal) |
+| Labeled SC | 739 | Multi-hot | Yes | Species + site + domain anchor |
+| Unlabeled SC | 127K | None | Yes | Domain structure (entropy min) |
+
+**Focal windows** have no site ID — the model returns species-only scores
+(site bank and gate are skipped). This trains the projection and species
+memory to recognize species across domains. 265K clean labels is the
+strongest species identity signal.
+
+**Labeled soundscapes** train everything — species identity in the target
+domain, site bank behavior, and the gate. Only 739 windows but RIGHT domain.
+
+**Unlabeled soundscapes** train via entropy minimization — encouraging
+confident predictions shapes prototypes and the site bank with 127K windows.
+
+**Domain bridging**: The projection sees both focal and soundscape embeddings
+and must map both to a shared space where species memory retrieval works.
+No explicit domain adaptation loss — the shared species bank forces alignment.
 
 **Training schedule**:
-- Phase 1: train species bank only on labeled data (ridge-equivalent warmup)
-- Phase 2: add site bank, fine-tune jointly
-- Phase 3: add unlabeled regularizer
+- Phase 1: focal + labeled SC, species bank only (no site bank)
+- Phase 2: add site bank + gate
+- Phase 3: add unlabeled entropy regularizer
 
 ### Setup
 
 | Component | Details |
 |-----------|---------|
-| Data | Exp 106 cached embeddings: 739 labeled, 127K unlabeled, 265K focal (all on scratch) |
-| Compute | CPU sufficient (small model, cached features). GPU optional for speed. |
-| Dependencies | PyTorch, exp 106 package (data loading, evaluation) |
+| Data | Exp 106 cached Perch v2 embeddings: 265K focal, 739 labeled SC, 127K unlabeled SC |
+| Compute | CPU sufficient (~665K params, cached features). GPU optional for speed. |
+| Dependencies | PyTorch, exp 106 package (`birdclef_106.data_loading`) |
 | Code | `user/anthony/experiments/107-hopfield-prototypes/` |
 | Init | Exp 106 prototypes (`multi_prototypes.npz`, `site_prototypes.npz`) |
 
