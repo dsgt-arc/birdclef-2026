@@ -81,12 +81,29 @@ No code is copied from exp 106. The exp 106 infrastructure is reused as-is.
 
 ### `model.py`
 
-- `HopfieldPrototypeModel`: the full model. Exposes:
+- `HopfieldPrototypeModel`: the full model. Architecturally a **modern Hopfield
+  network** (Ramsauer et al. 2020) with two memory banks (species, site) and
+  a shared query projection. The species head uses **sigmoid attention** for
+  multi-label retrieval; the site head uses **softmax attention** for
+  single-winner state selection. Implemented with plain PyTorch primitives
+  (einsum + sigmoid/softmax) — no library dependency, but the computation is
+  the same as the hflayers package would perform, just with the
+  sigmoid/softmax choice made per head.
+
+  Exposes:
   - `forward(emb, site_idx)` — main entry point, handles both focal (no site)
     and soundscape (with site) windows
-  - `species_head(q)` — multi-label species scoring (bilinear + max + sigmoid)
-  - `site_head(q, site_idx)` — single-winner site state scoring
+  - `species_head(q)` — multi-label Hopfield retrieval:
+    `σ(β_s · q · M_s)` max-pooled over K prototypes per species
+  - `site_head(q, site_idx)` — single-winner Hopfield retrieval:
+    `softmax(β_l · q · M_l[site])` aggregated to a scalar match score
   - Learnable components: projection, species memory, site memory, log-betas, gate
+
+  The Hopfield connection: each memory bank is a set of stored patterns in a
+  D-dimensional space. Retrieval is one-shot attention (no iterative dynamics
+  — the multi-label setting prefers independent per-class scoring over
+  convergence to a single attractor). β parameters control the sharpness of
+  the retrieval (inverse temperature in the Hopfield energy function).
 
 ### `losses.py`
 
@@ -190,6 +207,70 @@ a linear model can't match ridge, something is broken.
 - Resources: 4 CPUs × 8 GB RAM, 3h walltime (conservative for LOSO + ablations)
 - Venv: reuses `~/scratch/birdclef-2026/.venv-106` with added torch (CPU build)
 - Spawn multiprocessing fix from exp 106 not needed — we're not using Luigi
+
+## Hopfield framing
+
+The model is a **modern Hopfield network** (Ramsauer et al. 2020) specialized
+for multi-label classification. The lineage:
+
+```
+Classical Hopfield (1982)
+    └─→ discrete patterns, local update rule, polynomial capacity
+        │
+        ▼
+Modern Hopfield (Ramsauer et al. 2020)
+    └─→ continuous patterns, exponential capacity,
+        update rule = softmax(β · q · M^T) · M
+        = scaled dot-product attention
+        │
+        ▼
+Exp 107: multi-memory-bank Hopfield
+    ├─→ species bank: sigmoid attention (multi-label retrieval)
+    ├─→ site bank: softmax attention (single-winner state selection)
+    └─→ gated fusion: learned combination
+```
+
+**Why sigmoid instead of softmax for species:**
+
+The classical Hopfield update rule uses softmax because it's designed to
+retrieve ONE stored pattern (the nearest attractor). For multi-label output,
+we want independent per-class probabilities — a window can contain species
+A AND species B AND species C simultaneously. Sigmoid gives this; softmax
+forces the attention weights to sum to 1 (normalized blend).
+
+Mathematically, the species head computes:
+
+    score_s = σ(β_s · q · m_s)   for each species s independently
+
+This is equivalent to the Hopfield energy gradient with sigmoid output
+instead of softmax. The energy landscape still has attractors near each
+stored pattern, but multiple attractors can be simultaneously "high" without
+competing.
+
+**Why softmax is correct for site:**
+
+A window at a site is in ONE acoustic state (dawn chorus OR midday quiet
+OR night insects, not a mixture). The state selection is a single-winner
+retrieval problem — softmax attention is the right tool. The retrieved
+state's similarity to the query gives the overall "how typical is this
+window for this site" score.
+
+**No library dependency:**
+
+We use plain PyTorch primitives (`nn.Linear`, `nn.Parameter`, `torch.einsum`,
+`torch.sigmoid`, `torch.softmax`) rather than the `hflayers` package. The
+computation is identical to what `hflayers.Hopfield` would perform with
+`scaling=beta, normalization="softmax"` (for the site head) except:
+
+1. The species head uses sigmoid instead of softmax (not supported by hflayers).
+2. We don't iterate the update rule — one-shot retrieval is sufficient for
+   classification (iteration is useful for memory recall, not discrimination).
+3. We keep the projection layer separate from the attention computation for
+   clarity and to share it across both memory banks.
+
+The design is consistent with the Hopfield literature and can be described
+as such in publications and documentation without introducing a library
+dependency that would force design compromises.
 
 ## Open decisions
 

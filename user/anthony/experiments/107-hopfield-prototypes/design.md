@@ -2,11 +2,22 @@
 
 ## Overview
 
-A small PyTorch model that implements the star schema's factored structure
-(species × site) as learnable Hopfield attention over prototype memory banks.
+A small PyTorch model implementing a **modern Hopfield network** (Ramsauer
+et al. 2020) with two memory banks (species, site). The species bank uses
+sigmoid attention for multi-label retrieval; the site bank uses softmax
+attention for single-winner state selection. This gives the star schema's
+factored structure (species × site) a concrete computational realization:
+prototype memory banks with attention-based retrieval through a shared
+learned projection space.
+
 Trained on cached Perch v2 embeddings from three domains — focal recordings
 (265K, single-label), labeled soundscapes (739, multi-label), and unlabeled
 soundscapes (127K, no labels). No audio processing, no large backbone.
+
+The implementation uses plain PyTorch primitives (no `hflayers` dependency).
+The computation is equivalent to modern Hopfield retrieval with per-head
+choice of normalization (sigmoid for multi-label species, softmax for
+single-winner site state).
 
 ## Input format
 
