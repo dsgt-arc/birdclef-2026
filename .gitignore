@@ -70,6 +70,10 @@ checkpoints/
 **/artifacts/**/*.arrow
 **/artifacts/**/*.parquet
 
+# Anthony: ignore all new experiment artifacts going forward
+# (historical tracked artifacts in 001/009/013/106 remain tracked)
+user/anthony/experiments/*/artifacts/
+
 # Logs
 *.log
 slurm-*.out
