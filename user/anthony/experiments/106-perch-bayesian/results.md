@@ -210,3 +210,62 @@ The most promising use of exp 106 outputs for competition scoring is as
 **ensemble features** — the ridge OOF predictions, prototype cosine similarities,
 and site affinity priors are complementary signals that could be stacked with
 neural model predictions (exp 102, murilo/018).
+
+## Future Directions
+
+### Semi-supervised soundscape prototypes
+
+The core limitation: we have per-species signatures from focal recordings (clean,
+wrong domain) but need per-species signatures in the soundscape domain. The 127K
+unlabeled soundscape windows are the biggest untapped resource.
+
+**EM / pseudo-label iteration**: Use the ridge model (0.749) to soft-label the
+127K unlabeled windows, then re-estimate species prototypes from soundscape-domain
+pseudo-labels. Iterate. Previous pseudo-label attempts (exp 014-015) hurt with
+neural models, but a linear ridge model may iterate more stably. The key difference:
+ridge has far fewer parameters than a neural SED, so pseudo-label noise has less
+room to compound.
+
+**Perch logits as bridge**: Perch's own logit predictions on unlabeled soundscapes
+ARE soundscape-domain species signatures — for the 209 mapped species. These could
+bridge focal prototypes and soundscape behavior: use Perch's per-window species
+predictions to estimate P(species | site, time) empirically from 127K windows,
+giving a principled site prior without the dot-product-through-logit-space approach
+that failed due to domain shift.
+
+### Calibration
+
+Per-species Platt scaling (`P(present | score) = sigmoid(a·score + b)`) on the
+739 labeled windows. Calibration doesn't fix the domain shift in features but
+normalizes score scales so that Bayesian composition with priors is valid. Would
+test whether calibrated cosine + site prior beats uncalibrated ridge.
+
+### Why CORAL / feature alignment won't work here
+
+The focal→soundscape shift is not a covariance rotation — it's a fundamental
+change in the data generating process (single species → multi-species mixtures).
+Focal recordings have sparse, peaked logit activations; soundscapes have dense,
+blurred activations from overlapping sources. Aligning statistics makes prototypes
+match soundscape *covariance* but not the actual mixing structure. The ridge model
+sidesteps this by learning directly in the target domain.
+
+### Star schema: what worked, what didn't
+
+**Worked**: Species similarity via multi-prototype cosine matching (0.816 AUROC
+on 42 focal species). NMF discovers interpretable acoustic modes per species.
+Transfer weights improve logit-space scoring (+0.019 AUROC). The Bayesian
+interpretation (prototypes as likelihood, site affinity as prior) is sound.
+
+**Didn't work**: Site affinity as a compositional prior through logit space. Three
+bugs (centering mismatch, NMF basis vs centroid, normalization collapse) were
+found and fixed, but the fundamental issue remains: domain shift and site structure
+are entangled in the same logit dimensions (cicadas/frogs that vary by site also
+vary by domain). The sites ARE different (Jaccard 0.00–0.25, residual cosine -0.68
+to +0.89), but the star schema's dot-product composition can't capture this
+because focal and soundscape live in different manifolds of the logit space.
+
+**The lesson**: Unsupervised composition through a shared feature space is elegant
+but fragile when domain shift is severe. The ridge model (supervised, 739 labeled
+windows) beats the star schema (unsupervised, 265K focal + 127K unlabeled) because
+even a small amount of target-domain supervision outweighs large amounts of
+source-domain structure when the domains don't align.
