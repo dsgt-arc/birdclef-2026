@@ -44,9 +44,44 @@ Apply P^1.5 power transform after max to control false positive rate.
 
 Full analysis: `notes/2026-04-09-inference-eda-deep-dive.md` Section 7
 
-### Phase B-C: Perch Inference + Probes
+### Phase B: Perch v2 TF Inference (2026-04-10) ✅
 
-*(pending)*
+Full Perch v2 TF inference on both data sources. See tasks.md Phase B for details.
+
+| Source | Rows | Embeddings | Logits |
+|--------|------|------------|--------|
+| train_soundscapes | 127,896 (10,658 × 12) | 1.19 GB | 11.3 GB |
+| train_audio | 265,924 (35,549 files) | 2.4 GB | 23.2 GB |
+
+### Phase C: Apply MLP Probes (2026-04-10) ✅
+
+Applied full Perch→234 pipeline from exp 023 submission kernel to Phase B embeddings.
+Script: `user/murilo/scripts/apply_perch_probes.py`
+
+**Key discovery**: MLP probes require 142 features (128 PCA + 14 contextual), not just
+PCA embeddings. Full pipeline: logit mapping → prior fusion → temporal smoothing → probes.
+
+**Validation**: Phase B TF embeddings are **identical** to exp 020 probe training embeddings
+(cosine similarity = 1.000000). No retraining needed.
+
+| Output | Description | Size |
+|--------|-------------|------|
+| `perch_234_raw_probs.parquet` | Pure Perch (mapped logits + genus proxy) | 158 MB |
+| `perch_234_scores.parquet` | Full pipeline (logit-space) | 172 MB |
+| `perch_234_probs.parquet` | Full pipeline (prob-space) | 171 MB |
+
+**Species mapping**: 203 direct, 3 genus proxy, 28 unmapped (sonotypes)
+
+| Metric | Raw Perch | Full Pipeline |
+|--------|-----------|---------------|
+| Species with max prob >0.5 | 195 / 234 | 212 / 234 |
+| Species with max prob >0.3 | 199 / 234 | 220 / 234 |
+| Species with max prob >0.9 | 189 / 234 | 201 / 234 |
+| True zeros (<0.001) | 28 | 6 |
+
+**Pipeline helps most**: sonotype species (prior tables rescue from 0.0 to >0.95).
+**Pipeline can hurt**: unmapped inactive species get suppressed to -8.0, discarding valid
+genus proxy signal. Use raw_probs for fair detection comparison in Phase D.
 
 ### Phase D: Perch vs SED Comparison
 

@@ -5,7 +5,7 @@
 Understand model coverage gaps and Perch/SED complementarity to inform the pseudo-labeling
 teacher strategy for exp 025.
 
-Status: **Phase A complete. Phase B complete (both train_soundscapes and train_audio verified). Phase C unblocked.**
+Status: **Phase A complete. Phase B complete. Phase C complete (train_soundscapes). Phase D unblocked.**
 
 **Branch**: `mg/024-data-centric-exploration` — PR #26
 
@@ -45,25 +45,54 @@ Status: **Phase A complete. Phase B complete (both train_soundscapes and train_a
   - No NaN/inf, embedding mean ~0.003, logit mean ~-1.1
   - All 35,549 files represented, row counts match between embeddings and logits ✅
 
-## Phase C: Apply MLP Probes ← UNBLOCKED (both sources ready)
+## Phase C: Apply MLP Probes ✅
 
 Artifacts: `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/`
+Script: `user/murilo/scripts/apply_perch_probes.py`
 
-**Both train_soundscapes and train_audio embeddings are ready.**
+**Key discovery**: The MLP probes require **142 features** (128 PCA + 14 contextual), not
+just PCA embeddings. The full pipeline from the exp 023 submission kernel was extracted:
+Perch logit→BirdCLEF mapping → prior fusion → temporal smoothing → MLP probes → alpha blend.
 
-- [ ] C.0 Quick preview: compare existing `shared/embeddings/birdclef-2026/perch-v2/labeled/perch_mapped_scores.parquet`
-  against v5j per-species AUC on 75 labeled-soundscape species (can do before Phase B completes)
-- [ ] C.1 Load pretrained artifacts: `emb_scaler.joblib` → `pca_transformer.joblib` → `probe_models.joblib`
-- [ ] C.2 Apply pipeline to Phase B embeddings: raw 1536-dim → StandardScaler → PCA(128) → 5-fold MLP probes → 234-class probs
-- [ ] C.3 Save Perch 234-class probabilities to `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/perch_234_probs.parquet`
+- [x] C.0 Verified Phase B embeddings match exp 020 probe training data
+  - Cosine similarity = 1.000000 between Phase B and exp 018/020 labeled embeddings
+  - Same Perch v2 TF SavedModel → identical embedding space → no retraining needed
+- [x] C.1 Wrote `apply_perch_probes.py` extracting full Perch→234 pipeline from exp 023 kernel
+  - Perch 14,795 logits → 234 BirdCLEF mapping (203 direct, 3 genus proxy, 28 unmapped sonotypes)
+  - Prior fusion (site/hour tables), temporal smoothing (texture + event)
+  - 58 MLP probes with 142-dim features: PCA(128) + raw/prior/base logits + temporal + interactions
+  - Alpha blend (0.45) with base scores
+  - Memory-optimized: reads only 220/14,795 logit columns (avoids OOM on login node)
+- [x] C.2 Applied pipeline to train_soundscapes (127,896 segments, 62 seconds on CPU)
+- [x] C.3 Saved three outputs to `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/`:
+  - `perch_234_raw_probs.parquet` — pure Perch signal (mapped logits + genus proxy, sigmoid), 158 MB
+  - `perch_234_scores.parquet` — full pipeline logit-space (+ priors, smoothing, probes), 172 MB
+  - `perch_234_probs.parquet` — full pipeline probability-space, 171 MB
+- [x] C.4 Verified outputs: no NaN/inf, correct shapes, distribution sanity
 
-## Phase D: Perch vs SED Comparative EDA
+**Coverage preview** (full pipeline):
+- 212/234 species at >0.5 (vs SED max-folds: 109/159 unseen at >0.5)
+- 201/234 species at >0.9
+- 28 sonotypes have no Perch mapping (rely entirely on priors)
 
-The key analysis — answers the 5 questions from EDA deep dive section 10.8:
+**Raw Perch coverage** (before priors/probes — fair comparison with SED):
+- 195/234 species at >0.5
+- 28 true zeros (unmapped sonotypes)
+
+**Note**: Full pipeline suppresses unmapped inactive species to -8.0 (sigmoid ≈ 0.0003),
+discarding valid genus proxy signal for some amphibia. Phase D should use raw_probs for
+fair detection comparison.
+
+## Phase D: Perch vs SED Comparative EDA ← UNBLOCKED
+
+The key analysis — answers the 5 questions from EDA deep dive section 10.8.
+
+Script: `user/murilo/scripts/perch_sed_comparison.py` (new)
+Output: Updated `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` sections 12-13
 
 - [ ] D.1 **Coverage**: How many of the 50 SED-zero species does Perch cover at >0.5?
 - [ ] D.2 **Truly hard species**: How many of the 34 species (zero even at >0.3 with SED max-folds) does Perch cover?
-- [ ] D.3 **Union coverage**: What's `max(SED-4fold) + Perch MLP probes` total species coverage at multiple thresholds?
+- [ ] D.3 **Union coverage**: What's `max(SED-4fold) + Perch raw probs` total species coverage at multiple thresholds?
 - [ ] D.4 **Complementarity**: Venn diagram — Perch-only, SED-only, both, neither
 - [ ] D.5 **Per-species agreement**: For species both detect, Spearman correlation per species (quality signal)
 - [ ] D.6 **Per-site analysis**: Does Perch do better on the 14 unlabeled-only sites? (site diversity)
