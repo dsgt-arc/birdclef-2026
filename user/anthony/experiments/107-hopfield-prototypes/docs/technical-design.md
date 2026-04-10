@@ -16,6 +16,7 @@ Before reading the details, here are the decisions that are locked in:
 | Memory bank count | **Two** (species + site) | Matches star schema factored structure |
 | Species head normalization | **Sigmoid** (max-over-K) | Multi-label: independent per-class probabilities |
 | Site head normalization | **Sigmoid** (max-over-K) | Consistency with species head; single-scalar gate |
+| Per-species calibration | **Built-in Platt scaling** | Per-species scale + bias before sigmoid; learned from BCE |
 | Multi-head attention | **No** | One projection is sufficient; multi-head adds complexity for a 2-source problem |
 | Iterative Hopfield refinement | **No** | One-shot retrieval; iteration collapses multi-label signal |
 | Pattern separation regularizer | **No** | Start simple; add only if prototypes collapse in training |
@@ -29,7 +30,38 @@ Deferred to future work (explicitly out of scope for exp 107):
 - Iterative Hopfield refinement
 - Transformer-style multi-head attention
 - Pattern separation or coherence regularizers
-- Calibration (Platt scaling) on output scores
+
+## Built-in Platt scaling
+
+The species head applies per-species affine calibration before the sigmoid:
+
+    score_s = σ(a_s · max_k(q · m_{s,k}) + b_s)
+
+where `a_s` (scale) and `b_s` (bias) are learnable per-species parameters.
+Total: 2 × 234 = 468 extra parameters.
+
+This is Platt scaling baked into the model. Three reasons it belongs here
+rather than as a post-hoc fix:
+
+1. **BCE assumes calibrated outputs.** Uncalibrated scores produce biased
+   BCE gradients. In-model calibration improves training dynamics, not just
+   output quality.
+
+2. **Multi-label composition needs calibrated probabilities.** The gated
+   fusion multiplies species × site scores. This is only valid as Bayes
+   rule if both sides are proper probabilities. Systematic per-species
+   offsets break the composition.
+
+3. **Semi-supervised entropy minimization assumes probabilities.** The
+   entropy term `-p log p - (1-p) log(1-p)` only makes sense if `p`
+   represents confidence in a binary event. Uncalibrated scores make entropy
+   min sharpen whatever bias the model has.
+
+Initialization: `a_s = 1.0`, `b_s = 0.0` (identity transform). The model
+starts as the uncalibrated baseline and learns corrections during training.
+
+The site head doesn't need per-site calibration — it produces a single
+scalar per window, and the gate handles any systematic bias.
 
 ## Directory structure
 
@@ -118,11 +150,12 @@ No code is copied from exp 106. The exp 106 infrastructure is reused as-is.
   Exposes:
   - `forward(emb, site_idx)` — main entry point, handles both focal (no site)
     and soundscape (with site) windows
-  - `species_head(q)` — multi-label Hopfield retrieval:
-    `σ(β_s · q · M_s)` max-pooled over K prototypes per species
-  - `site_head(q, site_idx)` — single-winner Hopfield retrieval:
-    `softmax(β_l · q · M_l[site])` aggregated to a scalar match score
-  - Learnable components: projection, species memory, site memory, log-betas, gate
+  - `species_head(q)` — multi-label Hopfield retrieval with per-species
+    Platt scaling: `σ(a_s · max_k(q · m_{s,k}) + b_s)`
+  - `site_head(q, site_idx)` — Hopfield retrieval as a single-scalar
+    gate: `σ(β_l · max_k(q · m_{l,k}))`
+  - Learnable components: projection, species memory, site memory,
+    per-species calibration (scale + bias), log-beta for site, gate
 
   The Hopfield connection: each memory bank is a set of stored patterns in a
   D-dimensional space. Retrieval is one-shot attention (no iterative dynamics

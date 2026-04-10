@@ -57,7 +57,11 @@ class HopfieldPrototypeModel(nn.Module):
         self.species_memory = nn.Parameter(torch.randn(n_species, K_species, d_proj))
         self.site_memory = nn.Parameter(torch.randn(n_sites, K_site, d_proj))
 
-        self.beta_species = nn.Parameter(torch.tensor(1.0))
+        # Per-species Platt scaling (built-in calibration)
+        # Initialized to identity: score passes through unchanged
+        self.cal_scale = nn.Parameter(torch.ones(n_species))
+        self.cal_bias = nn.Parameter(torch.zeros(n_species))
+
         self.beta_site = nn.Parameter(torch.tensor(1.0))
 
         self.gate = nn.Linear(d_proj, 1)
@@ -69,15 +73,14 @@ class HopfieldPrototypeModel(nn.Module):
             site_idx: (B,) int site indices, or None for focal windows
 
         Returns:
-            scores: (B, 234) multi-label probabilities
+            scores: (B, 234) calibrated multi-label probabilities
         """
         q = self.proj(emb)                                           # (B, D)
 
-        # Species attention: sigmoid for multi-label
+        # Species retrieval + Platt calibration (no global beta — per-species scale)
         sp_sim = torch.einsum('bd,skd->bsk', q, self.species_memory) # (B, S, K)
-        sp_score = torch.sigmoid(
-            self.beta_species * sp_sim.max(dim=2).values             # (B, S)
-        )
+        sp_max = sp_sim.max(dim=2).values                            # (B, S)
+        sp_score = torch.sigmoid(self.cal_scale * sp_max + self.cal_bias)  # (B, S)
 
         if site_idx is None:
             # Focal: no site info → species-only scoring
