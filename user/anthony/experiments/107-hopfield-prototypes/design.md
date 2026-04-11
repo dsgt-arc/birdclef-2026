@@ -1,155 +1,110 @@
-# Design: Hopfield Prototype Retrieval
+# Design: Prototype Retrieval for Amphibian-Dominated Soundscapes
 
 ## Overview
 
-A PyTorch model implementing a **modern Hopfield network** (Ramsauer et
-al. 2020) with two memory banks (species, site) over a shared 512-d
-space learned by **Perch-logit distillation** on all 400K+ cached
-windows. The species bank uses sigmoid attention for multi-label
-retrieval; the site bank uses sigmoid attention as a single-scalar
-typicality gate. This gives the star schema's factored structure
-(species × site) a concrete computational realization: prototype memory
-banks with attention-based retrieval over a shared learned projection.
+A PyTorch memory-bank classifier operating on cached Perch v2 embeddings.
+Species and site prototypes live in a learned 512-d projection space,
+scored by modern-Hopfield logsumexp aggregation over prototype slots,
+gated by a per-window mixing factor, and calibrated by per-species Platt
+scaling. The projection is shaped by BCE losses across multiple label
+sources that differ in quality by species regime (see `proposal.md`).
 
-**The core experimental question** is whether a learned shared space
-disentangles focal and soundscape manifolds in a way that Perch's fixed
-logit space (exp 106) could not. The phase-0 distillation pretraining is
-what makes this question testable — without it, the model has to learn
-the shared space from 739 labeled windows alone, which is too thin a
-supervised signal for the architecture's capacity.
+**The core experimental question**: can a learned projection aligned by
+cross-domain bird supervision carry non-bird prototypes across the
+focal↔soundscape domain gap?
 
-**The Hopfield framing is a theoretical gloss on standard multi-prototype
-attention, not a load-bearing mechanism.** The same architecture could
-be described as "factored multi-prototype retrieval with learned
-projections, explicit Q/K transforms, per-class Platt calibration, and
-knowledge distillation pretraining" — and nothing would change. The
-Hopfield label gives us a clean lineage back to Ramsauer et al. and
-motivates specific choices (logsumexp aggregation, the soft-EM gradient
-identity, the one-shot vs iterative decision), but if the experiment
-fails it won't be because "Hopfield" was wrong.
+The implementation uses plain PyTorch + einops — no Hopfield library,
+no distillation infrastructure, no multi-phase scheduler. One training
+loop, one loss, one optimizer.
 
-Trained on cached Perch v2 embeddings + logits from three domains —
-focal recordings (265K, single-label), labeled soundscapes (739,
-multi-label), and unlabeled soundscapes (127K, no labels). No audio
-processing, no large backbone. Phase 0 needs Perch logits (not just
-embeddings) as distillation targets.
-
-The implementation uses plain PyTorch + einops (no `hflayers`
-dependency). Both memory-bank heads use sigmoid — species for
-multi-label probabilities, site for a single-scalar typicality gate that
-modulates species predictions.
-
-See `docs/star-schema-dimensional-analysis.md` for the tensor framework,
-recommendation-system framing, and the soft-EM gradient identity that
-this design implements.
+See `docs/star-schema-dimensional-analysis.md` for the tensor framework
+underpinning the memory-bank forward pass and the eval-time species ×
+site affinity matrix.
 
 ## Locked architecture decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Input features | **Embeddings only** (1536-d) | Simpler baseline; logits deferred as future ablation |
-| Memory bank count | **Two** (species + site) | Matches star schema factored structure |
-| Shared space dim | **D = 512** | Enough capacity for the projection to disentangle focal/soundscape manifolds |
-| Projection architecture | **2-layer MLP** (`Linear(1536, 1024) → GELU → Linear(1024, 512) → LayerNorm`) | Nonlinear alignment of focal and soundscape manifolds; unlocked by phase 0 distillation which provides 400K+ supervised targets for the extra capacity |
-| Retrieval projections | **Explicit `W_Q`, `W_K`** (both `(512, 512)`) | Standard Ramsauer et al. 2020 formulation; lets retrieval space differ from embedding space without breaking the Hopfield framing |
-| Prototypes per bank | **K_s = K_l = 16** | Abstract capacity; let training discover acoustic modes instead of hard-coding 4 biologically-named ones |
-| Species head retrieval | **Logsumexp over K**, then sigmoid | Soft-max Hopfield energy: differentiable, all prototypes receive gradient, avoids dead-prototype pathology at large K |
-| Site head retrieval | **Logsumexp over K**, then sigmoid | Consistency with species head; single-scalar gate |
-| Per-species calibration | **Built-in Platt scaling** | Per-species scale + bias before sigmoid; learned from BCE |
-| Pretraining | **Phase 0: Perch logit distillation** on all 400K+ windows | Main training signal; removes the 739-window bottleneck for projection and species bank learning. Fine-tuning on labels becomes polish, not the primary signal. |
-| Species memory init | **K-means on phase-0 projected embeddings** | After phase 0 the projection is meaningful, so k-means on its output is no longer a "stale space" problem; per-species clusters computed from focal windows in the pretrained shared space |
-| Site memory init | **K-means on phase-0 projected embeddings** | Same rationale — phase 0 provides a meaningful space to cluster in. Per-site clusters computed from unlabeled soundscape windows |
-| Multi-head attention | **No** | One projection suffices; multi-head adds complexity for a 2-source problem |
-| Iterative Hopfield refinement | **Deferred** (one-shot) | One-shot retrieval is the right abstraction for multi-label scoring (iteration drags the query toward one attractor); stacked attention layers are the upgrade path if needed |
-| Stacked cross-attention layers | **Deferred to exp 108** | Depth beyond one retrieval layer is the natural follow-up *given* a pretrained shared space; out of scope here to keep the headline comparison clean |
-| Pattern separation regularizer | **No** | Start simple; add only if prototypes collapse in training |
-| Tensor operations | **einops** (`einsum`, `reduce`, `rearrange`) | Matches project convention (used across Murilo's exps, WavTokenizer); makes star-schema contractions self-documenting |
-
-Deferred to future work (out of scope for exp 107):
-
-- Dual-space (logits + embeddings) with parallel banks
-- Per-species site affinity (vs the current scalar site gate)
-- Stacked cross-attention layers on top of the memory bank (exp 108 hypothesis: does depth help given a pretrained shared space?)
-- Pattern separation or coherence regularizers
-- Recording-level context (mean-pool, self-attention, triplet SSL, MIL loss) — temporal modeling is a separate hypothesis, exp 108+
-- Post-hoc calibration comparison via `netcal` (Platt vs beta vs isotonic vs histogram binning)
+| Input features | Perch v2 pooled embeddings (1536-d) | Cached from exp 106; logits used only for the label preparation pass |
+| Output dim | 235 (234 species + silence) | Explicit silence class removes "silence = recording label" pathology on focal between-call windows |
+| Memory bank count | Two (species + site) | Star schema factored structure; eval-time affinity matrix is a deliverable |
+| Species bank parameterization | Hierarchical: `M_species[s] = M_family[family_of(s)] + Δ_species[s]` | Low-resource species inherit family prior under weight decay; high-resource species specialize. Structural fix instead of per-species hacks. |
+| Shared space dim | D = 512 | Enough capacity for a nonlinear projection to align focal and soundscape manifolds; ~3× compression from 1536 |
+| Projection architecture | `Linear(1536, 1024) → GELU → Linear(1024, 512) → LayerNorm` | Nonlinear alignment of focal and soundscape manifolds; data regime (400K+ BCE-supervised windows across strong + weak streams) supports the extra capacity |
+| Retrieval projections | Explicit `W_Q`, `W_K_species`, `W_K_site` (all `(512, 512)`) | Standard Ramsauer et al. 2020 modern Hopfield formulation; separates retrieval space from projection output space |
+| Prototypes per bank | K_s = K_l = 8 | Enough to capture intra-species acoustic modes (song/call, dawn/night, solo/chorus) without over-parameterizing against small per-site fine-tune data |
+| Retrieval aggregation | Logsumexp over K, then sigmoid | Soft-max Hopfield energy — all prototypes receive gradient weighted by softmax attention; avoids dead-prototype pathology |
+| Per-species calibration | Built-in Platt scaling (`a_s · score + b_s` before sigmoid) | BCE assumes calibrated outputs; per-class scale + bias corrects systematic offsets that would bias BCE gradients |
+| Gated fusion | `g · species + (1 - g) · species · site` with `g = σ(Linear(q))` | Per-window fallback to species-only when site context doesn't help |
+| Pretraining | **None** | Reframed 2026-04-11: the training signal is BCE on weak + strong streams in one phase. Perch-verified label prep replaces distillation. |
+| Family memory init | K-means on raw Perch focal embeddings pooled across all species in each family | Families with any focal data get well-populated prototypes; seeds the inheritance path for low-resource species |
+| Species delta init | Zero | Starts as pure family fallback; gradient descent + weight decay control whether the delta develops |
+| Site memory init | K-means on raw Perch unlabeled SC embeddings per site | Per-site acoustic mode initialization from 127K unlabeled windows |
+| Multi-head attention | No | One projection suffices for a 2-bank problem |
+| Iterative Hopfield refinement | Deferred (one-shot) | Multi-label scoring wants independent per-species probs; iteration drags the query toward one attractor |
+| Stacked cross-attention layers | Deferred to exp 108 | Out of scope for the headline comparison |
+| Tensor operations | einops `einsum`, `reduce`, `rearrange` | Matches project convention; makes star-schema contractions self-documenting |
 
 ## Built-in Platt scaling
 
 The species head applies per-species affine calibration before the sigmoid:
 
-    score_s = σ(a_s · max_k(q · m_{s,k}) + b_s)
+    score_s = σ(a_s · (1/β) · logsumexp_k(β · q_r · W_K · M_{s,k}) + b_s)
 
-where `a_s` (scale) and `b_s` (bias) are learnable per-species parameters.
-Total: 2 × 234 = 468 extra parameters. Initialized to identity
-(`a_s = 1.0`, `b_s = 0.0`) so the model starts as the uncalibrated baseline
-and learns corrections during training.
+where `a_s` (scale) and `b_s` (bias) are learnable per-species parameters,
+initialized to identity (`a_s = 1`, `b_s = 0`). Total extra: 2 × 235 = 470
+parameters (one pair per species, including the silence class).
 
-Three reasons calibration belongs in the model rather than as a post-hoc fix:
+Three reasons calibration belongs in the model, not as a post-hoc fix:
 
 1. **BCE assumes calibrated outputs.** Uncalibrated scores produce biased
-   BCE gradients. In-model calibration improves training dynamics, not just
-   output quality.
-
+   BCE gradients. In-model calibration improves training dynamics.
 2. **Multi-label composition needs calibrated probabilities.** The gated
-   fusion multiplies species × site scores. This is only valid as Bayes
-   rule if both sides are proper probabilities. Systematic per-species
-   offsets break the composition.
+   fusion multiplies species × site scores. Valid as Bayes rule only if
+   both sides are proper probabilities.
+3. **Entropy minimization assumes probabilities.** The entropy term on
+   unconfident unlabeled windows only makes sense if `p` represents
+   confidence in a binary event.
 
-3. **Semi-supervised entropy minimization assumes probabilities.** The
-   entropy term `-p log p - (1-p) log(1-p)` only makes sense if `p`
-   represents confidence in a binary event. Uncalibrated scores make
-   entropy min sharpen whatever bias the model has.
-
-The site head doesn't need per-site calibration — it produces a single
-scalar per window, and the gate handles any systematic bias.
-
-## Input format
-
-Each training example is a single window:
-
-```
-window = {
-    "embedding": tensor(1536),     # Perch v2 embedding
-    "domain": "focal" | "labeled_sc" | "unlabeled_sc",
-    "site_id": int | None,         # None for focal (no site info)
-    "labels": tensor(234) | None,  # one-hot (focal), multi-hot (labeled_sc), None (unlabeled)
-}
-```
-
-All three domains are fed through the same projection and species bank.
-The site bank and gate are only active when `site_id` is available (soundscapes).
+The site head produces a single scalar per window and doesn't need
+per-site Platt; the gate handles systematic bias.
 
 ## Model
 
 ```python
 from einops import einsum, rearrange
 
-class HopfieldPrototypeModel(nn.Module):
+class PrototypeRetrievalModel(nn.Module):
     """
-    Species and site memory banks with modern Hopfield (logsumexp) retrieval.
-    2-layer MLP projection into a shared D-space, explicit W_Q/W_K on the
-    retrieval side, per-species Platt calibration on the species head.
+    Hierarchical species (family + delta) and site memory banks with
+    modern-Hopfield logsumexp retrieval over a learned 512-d projection
+    of Perch v2 embeddings. Per-species Platt calibration on the species
+    head, gated fusion with site head. Silence is output class index 234
+    (last position, after the 234 competition species at indices 0..233).
 
     Parameters:
-        n_species: 234
+        n_species: 235 (234 competition species + 1 silence class)
+        n_families: ~30 (from BirdCLEF taxonomy metadata + 1 silence "family")
         n_sites: 21
-        K_species: 16 (prototype slots per species)
-        K_site: 16 (prototype slots per site)
-        d_input: 1536 (Perch embedding dim)
-        d_hidden: 1024 (MLP hidden dim)
-        d_proj: 512 (shared projection dim)
+        K_species: 8 prototype slots per species
+        K_site: 8 prototype slots per site
+        d_input: 1536 (Perch embedding)
+        d_hidden: 1024 (MLP hidden)
+        d_proj: 512 (shared projection)
+        family_of: (n_species,) int tensor — species_idx → family_idx
     """
 
-    def __init__(self, n_species=234, n_sites=21,
-                 K_species=16, K_site=16,
-                 d_input=1536, d_hidden=1024, d_proj=512):
+    def __init__(self, n_species=235, n_families=30, n_sites=21,
+                 K_species=8, K_site=8,
+                 d_input=1536, d_hidden=1024, d_proj=512,
+                 family_of=None):
         super().__init__()
+        assert family_of is not None and family_of.shape == (n_species,)
+        self.register_buffer("family_of", family_of.long())
 
-        # Nonlinear projection into the shared D-space. The extra capacity vs
-        # a single linear layer is what lets the projection *nonlinearly*
-        # align focal and soundscape manifolds. Safe to make nonlinear because
-        # phase 0 distillation trains it on 400K+ windows, not just 739.
+        # Nonlinear projection into the shared D-space. Extra capacity vs
+        # a linear projection is supported by the 400K+ BCE-supervised
+        # windows (strong + weak streams combined).
         self.proj = nn.Sequential(
             nn.Linear(d_input, d_hidden),
             nn.GELU(),
@@ -157,52 +112,38 @@ class HopfieldPrototypeModel(nn.Module):
             nn.LayerNorm(d_proj),
         )
 
-        # Explicit Ramsauer et al. W_Q / W_K: query and keys each get their
-        # own learned linear projection before the dot product. Lets the
-        # retrieval space differ from the embedding space without breaking
-        # the Hopfield framing. W_V is identity here — we return the
-        # aggregated similarity, not a weighted value vector.
+        # Explicit W_Q / W_K (Ramsauer et al.): separate retrieval-space
+        # projections for query and memory banks.
         self.W_Q = nn.Linear(d_proj, d_proj, bias=False)
         self.W_K_species = nn.Linear(d_proj, d_proj, bias=False)
         self.W_K_site = nn.Linear(d_proj, d_proj, bias=False)
 
-        # Species bank: initialized by k-means on phase-0 projected focal
-        # embeddings (see init section). Placeholder zeros here; filled by
-        # init_species_memory_kmeans() after phase 0 pretraining completes.
-        self.species_memory = nn.Parameter(
+        # Hierarchical species memory: M_species[s] = M_family[f(s)] + Δ_species[s]
+        # Family prototypes: shared across all species in the family, trained
+        # from the pooled gradient of every species in that family.
+        # Species deltas: zero-initialized, weight-decay-regularized toward 0.
+        self.family_memory = nn.Parameter(
+            torch.zeros(n_families, K_species, d_proj))
+        self.species_delta = nn.Parameter(
             torch.zeros(n_species, K_species, d_proj))
 
-        # Site bank: initialized by k-means on phase-0 projected unlabeled
-        # soundscape embeddings. Placeholder zeros here; filled by
-        # init_site_memory_kmeans() after phase 0 pretraining completes.
+        # Site memory bank (flat; no hierarchy on the site side).
         self.site_memory = nn.Parameter(
             torch.zeros(n_sites, K_site, d_proj))
 
         # Learnable Hopfield temperatures (stored as log for positivity).
-        # β = 1 at init; training picks its own sharpness per head.
         self.log_beta_species = nn.Parameter(torch.zeros(()))
         self.log_beta_site = nn.Parameter(torch.zeros(()))
 
-        # Per-species Platt scaling (built-in calibration).
-        # Initialized to identity: score passes through unchanged.
+        # Per-species Platt calibration, initialized to identity.
         self.cal_scale = nn.Parameter(torch.ones(n_species))
         self.cal_bias = nn.Parameter(torch.zeros(n_species))
 
         self.gate = nn.Linear(d_proj, 1)
 
-        # Phase 0 distillation head: projects the D-space query back to
-        # Perch's logit space (14795) for the pretraining target. Used only
-        # during phase 0; detached and frozen afterwards (or discarded).
-        self.distill_head = nn.Linear(d_proj, 14795)
-
-    def project(self, emb):
-        """Phase-0 and downstream: shared projection into D-space."""
-        return self.proj(emb)                                           # (b d)
-
-    def distill_forward(self, emb):
-        """Phase 0: project + predict Perch logits. No memory bank retrieval."""
-        q = self.project(emb)
-        return self.distill_head(q)                                     # (b 14795)
+    def effective_species_memory(self):
+        """M_species[s] = M_family[family_of(s)] + Δ_species[s]   (s k d)"""
+        return self.family_memory[self.family_of] + self.species_delta
 
     def forward(self, emb, site_idx=None):
         """
@@ -211,25 +152,26 @@ class HopfieldPrototypeModel(nn.Module):
             site_idx: (B,) int site indices, or None for focal windows
 
         Returns:
-            scores: (B, 234) calibrated multi-label probabilities
+            scores: (B, 235) calibrated multi-label probabilities
+                    (index 234 is the silence class)
         """
-        q = self.project(emb)                                           # (b d)
-        q_r = self.W_Q(q)                                               # (b d) — retrieval-space query
+        q = self.proj(emb)                                              # (b d)
+        q_r = self.W_Q(q)                                               # (b d)
 
-        # Species retrieval: logsumexp over K (soft-max Hopfield energy).
-        # All K prototypes receive gradient weighted by softmax attention;
-        # β → ∞ recovers hard max, β → 0 recovers mean.
+        # Hierarchical species retrieval: compute effective memory, then
+        # project into the retrieval space, then logsumexp over K.
         beta_s = self.log_beta_species.exp()
-        M_s = self.W_K_species(self.species_memory)                     # (s k d)
+        M_species = self.effective_species_memory()                     # (s k d)
+        M_s = self.W_K_species(M_species)                               # (s k d)
         sp_sim = einsum(q_r, M_s, 'b d, s k d -> b s k')                # (b s k)
         sp_agg = torch.logsumexp(beta_s * sp_sim, dim=-1) / beta_s      # (b s)
         sp_score = torch.sigmoid(self.cal_scale * sp_agg + self.cal_bias)
 
         if site_idx is None:
-            # Focal: no site info → species-only scoring
+            # Focal: species-only scoring
             return sp_score
 
-        # Site retrieval: logsumexp over K site prototypes → typicality scalar.
+        # Site retrieval: per-window site typicality scalar
         beta_l = self.log_beta_site.exp()
         M_l = self.W_K_site(self.site_memory[site_idx])                 # (b k d)
         site_sim = einsum(q_r, M_l, 'b d, b k d -> b k')                # (b k)
@@ -240,386 +182,326 @@ class HopfieldPrototypeModel(nn.Module):
         g = torch.sigmoid(self.gate(q)).squeeze(-1)                     # (b,)
         score = (g * sp_score
                  + (1 - g) * sp_score * rearrange(site_score, 'b -> b 1'))
-
         return score
 ```
 
-The species × site affinity matrix `A(s, l)` from the dimensional analysis
-doc is computed at eval time (not in forward) using the W_K-projected
-memory banks — both sides live in the retrieval space:
+### Weight decay on species deltas
+
+Weight decay on `Δ_species` is load-bearing for low-resource species —
+it's what keeps them from overfitting their few windows and pushes them
+toward the family prototype. Use a separate optimizer parameter group:
 
 ```python
-# A(s, l) = (1/β) · logsumexp over (k_s, k_l) pairs
-beta = self.log_beta_species.exp()  # or a shared affinity temperature
-M_s = self.W_K_species(self.species_memory)                            # (s ks d)
+param_groups = [
+    {"params": model.species_delta, "weight_decay": 1e-2},   # strong shrinkage
+    {"params": [p for n, p in model.named_parameters()
+                if n != "species_delta"], "weight_decay": 1e-5},
+]
+optimizer = torch.optim.AdamW(param_groups, lr=3e-4)
+```
+
+The high weight decay on species deltas is the "fall back to family
+prior when data is scarce" mechanism. Low-resource species can't
+generate enough gradient to counteract the 1e-2 shrinkage and stay
+near Δ = 0. High-resource species generate plenty of gradient and
+push Δ away from zero into a specialized position. Tune the shrinkage
+rate via LOSO if needed.
+
+Eval-time species × site affinity matrix (computed outside forward):
+
+```python
+beta = self.log_beta_species.exp()
+M_species = self.effective_species_memory()                            # (s ks d)
+M_s = self.W_K_species(M_species)                                      # (s ks d)
 M_l = self.W_K_site(self.site_memory)                                  # (l kl d)
 pair = einsum(M_s, M_l, 's ks d, l kl d -> s l ks kl')
 affinity = rearrange(pair, 's l ks kl -> s l (ks kl)')
 A = torch.logsumexp(beta * affinity, dim=-1) / beta                    # (s l)
 ```
 
-When `site_idx=None` (focal windows), the model returns species-only scores.
-The site bank and gate never see focal data — they are trained exclusively
-by soundscape windows.
+See `docs/star-schema-dimensional-analysis.md` for the dimensional
+framework and recommendation-system interpretation.
 
-## Three data sources
+## Label preparation pass (one-time, pre-training)
 
-| Source | Count | Labels | Site | Domain | Role |
-|--------|-------|--------|------|--------|------|
-| Focal recordings | 265K | Single-label (one-hot) | None | Clean, single-species | Species identity |
-| Labeled soundscapes | 739 | Multi-label (multi-hot) | Yes | Target (Pantanal) | Species identity + site + domain anchor |
-| Unlabeled soundscapes | 127K | None | Yes | Target (Pantanal) | Domain structure |
+Before training, run a one-time preprocessing step that computes
+per-window labels from raw focal recording labels + cached Perch logits.
+Output: per-window parquet files alongside the cached embeddings in
+`~/scratch/birdclef-2026/features/exp107/labels/`.
 
-All cached as Perch v2 embeddings on scratch from exp 106:
+### Inputs (from exp 106)
+
+- `~/scratch/birdclef-2026/features/exp106/focal/by_species/*.parquet` —
+  per-species focal embeddings + raw Perch logits
+- `~/scratch/birdclef-2026/features/exp106/soundscape_labeled.parquet` —
+  739 labeled SC windows + raw Perch logits
+- `~/scratch/birdclef-2026/features/exp106/soundscape_unlabeled/by_site/*.parquet` —
+  per-site unlabeled SC embeddings + raw Perch logits
+- `perch_species_mapping.json` — Perch species index → BirdCLEF species id
+  (for the 234 competition taxonomy subset)
+- Species classification into **bird** vs **non-bird** — from exp 100 EDA
+- **Species → family mapping** — from BirdCLEF species list (eBird taxonomy
+  for birds, iNaturalist for amphibians/insects). Verified during label
+  prep; pulled from an external taxonomy CSV if missing from the comp metadata.
+- **Per-window RMS energy** — computed during label prep (or pre-cached
+  during embedding extraction in exp 106 if easy to add there). Used to
+  assign the silence class.
+
+### Processing
+
+```python
+SILENCE_CLASS_IDX = 234   # 235th output, index after the 234 species
+
+def prepare_labels(
+    focal_pq, labeled_sc_pq, unlabeled_sc_pq,
+    bird_species_ids, non_bird_species_ids,
+    perch_taxo_map, conf_threshold=0.3,
+    silence_db_threshold=-60.0,
+):
+    # ---- Silence detection: RMS-based, not Perch-based
+    # (Perch has low confidence on amphibians too — don't conflate those
+    # with silence.) Compute per-window dB, classify below threshold as silent.
+    def silence_mask(df):
+        rms = df["rms_linear"]  # linear amplitude, cached in label prep
+        db = 20.0 * log10(rms + 1e-10)
+        return db < silence_db_threshold
+
+    # ---- Strong stream: labeled SC, window-level GT (235-d)
+    strong = labeled_sc_pq.select("window_id", "emb", "site_id", "labels_235")
+
+    # ---- Weak (bird focal): Perch-verified + silence override
+    bird_focal = focal_pq.filter(col("species_id").is_in(bird_species_ids))
+    bird_focal_topk = topk_in_taxo(bird_focal["perch_logits"], perch_taxo_map, k=5)
+    bird_focal_verified = bird_focal.filter(
+        verified(bird_focal_topk, bird_focal["species_id"], conf_threshold)
+    )
+    # Multi-hot over 235 outputs (234 species + silence)
+    bird_focal_labels = multi_hot_from_topk(bird_focal_topk, conf_threshold, dim=235)
+    # Silence windows get silence-positive, species-negative
+    bird_focal_labels = override_silence(
+        bird_focal_labels, silence_mask(bird_focal_verified), SILENCE_CLASS_IDX
+    )
+
+    # ---- Weak (non-bird focal): bag-level, with silence override
+    # This is where the silence class pays off most — silent windows of
+    # non-bird focal recordings no longer propagate "silence = species s".
+    non_bird_focal = focal_pq.filter(col("species_id").is_in(non_bird_species_ids))
+    non_bird_focal_labels = one_hot(non_bird_focal["species_id"], dim=235)
+    non_bird_focal_labels = override_silence(
+        non_bird_focal_labels, silence_mask(non_bird_focal), SILENCE_CLASS_IDX
+    )
+
+    # ---- Weak (unlabeled SC): Perch pseudo-labels, split by confidence + silence
+    unlabeled_topk = topk_in_taxo(unlabeled_sc_pq["perch_logits"], perch_taxo_map, k=5)
+    silent_sc = unlabeled_sc_pq.filter(silence_mask(unlabeled_sc_pq))
+    silent_sc_labels = silence_only_labels(len(silent_sc), dim=235)
+    not_silent = unlabeled_sc_pq.filter(~silence_mask(unlabeled_sc_pq))
+    not_silent_topk = topk_in_taxo(not_silent["perch_logits"], perch_taxo_map, k=5)
+    confident = not_silent.filter(max_conf(not_silent_topk) >= conf_threshold)
+    confident_labels = multi_hot_from_topk(
+        confident["perch_topk"], conf_threshold, dim=235
+    )
+    unconfident = not_silent.filter(max_conf(not_silent_topk) < conf_threshold)
+
+    return {
+        "strong": strong,
+        "weak_bird_focal": (bird_focal_verified, bird_focal_labels),
+        "weak_non_bird_focal": (non_bird_focal, non_bird_focal_labels),
+        "weak_unlabeled_sc_confident": (confident, confident_labels),
+        "weak_silence_sc": (silent_sc, silent_sc_labels),
+        "unlabeled_sc_unconfident": unconfident,  # entropy-min only
+    }
 ```
-~/scratch/birdclef-2026/features/exp106/
-├── focal/by_species/{species}.parquet          # 206 species
-├── soundscape_labeled.parquet                   # 739 windows
-└── soundscape_unlabeled/by_site/{site}.parquet  # 21 sites
-```
+
+Expected output sizes (rough estimates):
+- Strong: 739 windows
+- Weak bird focal (verified): ~60–70% of ~150K bird focal windows ≈ 90–105K
+- Weak non-bird focal (bag-level): ~115K
+- Weak unlabeled SC (confident): ~50% of 127K ≈ 60K
+- Unconfident unlabeled SC (entropy only): ~70K
+
+Total windows touched by training: ~260K across strong + weak streams,
+plus ~70K for entropy minimization.
+
+### Baselines computed in the same pass
+
+| Baseline | Computation |
+|----------|-------------|
+| Perch top-1 direct | For each labeled SC window, take Perch's top-1 in taxonomy, compute macro AUROC against GT |
+| Perch top-1 in-taxonomy | Same but compute multi-hot over top-k, useful sanity check |
+| Coverage statistics | What fraction of each species' focal windows pass the Perch-verified filter? Per-species retention rate. |
 
 ## Batch construction
 
-Each training step samples from all three sources independently:
+Three streams sampled independently per step:
 
 ```python
 batch = {
-    "focal":      sample(focal_windows, n=64),       # single-label, no site
-    "labeled_sc": sample(labeled_windows, n=32),      # multi-label, with site
-    "unlabeled":  sample(unlabeled_windows, n=256),   # no labels, with site
+    "strong": sample(strong_windows, n=32),              # 739 total, resample heavily
+    "weak":   sample(weak_windows, n=256),               # ~260K, uniform
+    "unconfident": sample(unconfident_windows, n=128),   # ~70K, entropy only
 }
 ```
 
-Focal sampling: uniform across species (not windows) to handle the 499x class
-imbalance. Each species contributes equally to the gradient regardless of how
-many focal recordings it has.
+`weak` is sampled uniformly across the combined (bird focal, non-bird
+focal, unlabeled SC confident) pool. No per-stream subsampling — the
+loss doesn't need to know which weak subsource a window came from, only
+whether it has a label and whether it has a site.
 
-Labeled SC sampling: with replacement (739 is small, will be resampled many times).
-
-Unlabeled sampling: uniform across windows (already site-partitioned on disk;
-sample from a random site parquet per step for I/O efficiency).
+`strong` is sampled with replacement (739 will be cycled many times per
+epoch).
 
 ## Loss
 
 ```python
-def compute_loss(model, batch, lambda_ent=0.1, alpha_focal=0.5):
-    # === Focal: species identity, no site ===
-    pred_f = model(batch["focal"]["emb"], site_idx=None)   # species bank only
-    L_focal = F.binary_cross_entropy(pred_f, batch["focal"]["labels"])
+def compute_loss(model, batch, gamma_weak, lam_ent):
+    # Strong: labeled SC, window-level GT
+    pred_s = model(batch["strong"]["emb"], batch["strong"]["site_idx"])
+    L_strong = F.binary_cross_entropy(pred_s, batch["strong"]["labels"])
 
-    # === Labeled soundscape: species + site + gate ===
-    pred_l = model(batch["labeled_sc"]["emb"], batch["labeled_sc"]["site"])
-    L_sup = F.binary_cross_entropy(pred_l, batch["labeled_sc"]["labels"])
+    # Weak: Perch-verified focal + Perch-pseudo unlabeled SC
+    pred_w = model(batch["weak"]["emb"], batch["weak"]["site_idx"])
+    L_weak = F.binary_cross_entropy(pred_w, batch["weak"]["labels"])
 
-    # === Unlabeled soundscape: entropy minimization ===
-    pred_u = model(batch["unlabeled"]["emb"], batch["unlabeled"]["site"])
-    p = pred_u.clamp(1e-7, 1 - 1e-7)
+    # Entropy min on unconfident unlabeled SC
+    pred_e = model(batch["unconfident"]["emb"], batch["unconfident"]["site_idx"])
+    p = pred_e.clamp(1e-7, 1 - 1e-7)
     L_ent = -(p * p.log() + (1 - p) * (1 - p).log()).mean()
 
-    return alpha_focal * L_focal + L_sup + lambda_ent * L_ent
+    return L_strong + gamma_weak * L_weak + lam_ent * L_ent
 ```
 
-What each loss teaches:
+### Ramp schedule
 
-- **L_focal**: Species memory bank learns what each species sounds like.
-  265K clean labels — strongest species identity signal. The projection
-  must map focal embeddings into the shared space where species retrieval works.
+```python
+def ramp(epoch, end_epoch=5, target=1.0):
+    return target * min(1.0, epoch / end_epoch)
 
-- **L_sup**: Everything. Species identity in soundscape domain, site bank
-  behavior, gate learning. Only 739 windows but RIGHT domain — anchors the
-  shared space to soundscape reality.
-
-- **L_ent**: Confidence on unlabeled data. Pushes prototypes apart, pulls
-  windows toward nearest prototypes, shapes the site bank with 127K windows.
-  No species labels needed.
-
-## Domain bridging
-
-The projection layer sees both focal and soundscape embeddings:
-
-```
-proj(focal_emb)     → q_focal     ─┐
-proj(sc_emb)        → q_sc        ─┤── same D-space, same species memory
-                                    │
-species_memory (234, K, D)  ────────┘
+gamma_weak = ramp(epoch, end_epoch=5, target=1.0)
+lam_ent    = ramp(epoch, end_epoch=5, target=0.1)
 ```
 
-L_focal forces species memory to work for focal queries.
-L_sup forces species memory to work for soundscape queries.
-Both losses backprop into the same projection — it must implicitly align
-the two domains. This is domain bridging without an explicit domain
-adaptation loss.
-
-If the domains are too different for a linear projection to align, the
-model will prioritize soundscape (L_sup anchors it) and L_focal will
-plateau. That's fine — the focal data becomes less useful but doesn't hurt.
+Rationale: start from the clean 739 GT, then progressively trust the
+weak streams and the entropy regularizer. Same protection the four-phase
+schedule gave, without the phase boundaries.
 
 ## Initialization
 
-Initialization is no longer a delicate balance between "warm start" and
-"bias the optimization" because **phase 0 distillation pretraining does
-the heavy lifting** — by the time the memory banks need sensible starting
-values, the projection has already been trained on 400K+ windows against
-a strong teacher, and k-means in that pretrained space is well-posed for
-both species and site banks.
+**Projection MLP**: standard Kaiming init.
 
-**No transfer from exp 106 prototypes.** `multi_prototypes.npz` and
-`site_prototypes.npz` are not loaded. Exp 106's prototypes live in
-Perch's entangled logit space; exp 107's memory banks live in the phase-0
-projected space. They're not dimensionally compatible.
+**Family memory** (K-means on raw Perch focal embeddings pooled per family):
 
-**Projection — random Kaiming init, then trained in phase 0.** The 2-layer
-MLP starts from standard Kaiming init and is trained end-to-end against
-Perch logit distillation on all 400K+ windows (see phase 0 below). PCA
-warm start is deferred as an ablation — with 20+ epochs of distillation,
-the start point matters little.
+1. Group focal windows by family (using the species → family mapping).
+   For each family f, concatenate focal embeddings from all its member
+   species. Families with at least one species having focal data will
+   typically have ≥100 windows — plenty for k-means.
+2. Run k-means with K=8 on the pooled 1536-d raw Perch embeddings.
+3. Project the 8 cluster centers through the randomly-initialized `proj`
+   to get 512-d vectors, write to `self.family_memory[family_idx]`.
+4. Families with zero focal data across all their member species
+   (expected rare): initialize with small Gaussian noise; their
+   prototypes will only move if a species in the family has labeled SC
+   positives in the training strong stream.
 
-**Species memory — k-means on phase-0 projected focal embeddings.** After
-phase 0 the projection is meaningful (it was trained to preserve Perch's
-species-discriminative information in 512-d), so k-means in that space
-answers the "cluster species modes" question well. Procedure:
+Why pooling per family works: species within a family usually share
+acoustic signatures (call morphology, frequency ranges, temporal
+structure). Pooling gives us more data per clustering, so k-means finds
+stable family-level modes that generalize across sibling species.
 
-1. Freeze the phase-0 projection.
-2. Project all focal recordings through it to get `(265K, 512)` focal
-   queries, partitioned by species.
-3. For each species s with ≥K_species=16 focal windows, run k-means with
-   K=16 on its focal queries. For species with fewer windows, use all
-   windows as centers and pad with small Gaussian noise to fill K slots.
-4. Write the 16 cluster centers per species into
-   `self.species_memory[species_idx]`.
+**Species delta memory**: zero-initialized. Species start as pure family
+fallback; weight decay + BCE gradient determine whether each species
+develops a specialized delta.
 
-Note the key difference from the earlier "random init, let soft-EM sort
-it out" plan: the projection is no longer cold at init time. The soft-EM
-gradient identity still applies during fine-tuning (phases 2–3), but the
-starting point is a real clustering of focal data in a meaningful space,
-not random noise. Small-species edge cases (≤16 focal windows) are
-handled by padding with noise around the few available windows.
+**Site memory**: k-means on unlabeled SC embeddings partitioned by site
+(21 × K=8 = 168 prototype slots). Per-site window counts are high (6K+),
+so k-means is well-posed.
 
-**Site memory — k-means on phase-0 projected unlabeled soundscapes.** Same
-procedure, applied to unlabeled soundscape embeddings partitioned by site:
+**W_Q, W_K_species, W_K_site**: default linear init.
 
-1. Freeze the phase-0 projection.
-2. Project unlabeled soundscapes through it, grouped by site (already
-   partitioned on disk as `by_site/{site}.parquet`).
-3. Run k-means (K=16) per site on the projected embeddings.
-4. Write the 16 cluster centers per site into `self.site_memory[site_idx]`.
+**Platt calibration**: identity (`a_s = 1`, `b_s = 0`).
 
-This warm-starts the site bank at the actual acoustic states of each site
-(dawn chorus, midday quiet, rain, insect wall, …) after the projection
-has learned what Perch considers species-relevant. Because both banks are
-initialized from the same phase-0 projection, the species × site affinity
-matrix `A(s, l)` is meaningful from step 1 of phase 2 — not something
-that only becomes valid after many fine-tuning epochs.
+**Hopfield temperatures**: `log β = 0` (β = 1).
 
-**W_Q, W_K_species, W_K_site** start at identity-like random init (standard
-linear layer init). They're trained from scratch during fine-tuning, not
-phase 0 — phase 0 only touches the projection + distill head.
-
-**Platt calibration** starts at identity (`a_s = 1`, `b_s = 0`).
-**Hopfield temperatures** start at `log β = 0` (β = 1).
-
-Deferred alternative (ablation): **skip phase 0 entirely** and fall back
-to the earlier "random species init, k-means site init in PCA space"
-recipe. This is the most important ablation — it directly measures what
-phase 0 distillation is worth.
-
-## Phase 0: Perch logit distillation
-
-Phase 0 is where exp 107 does most of its actual learning. The previous
-design treated 739 labeled windows as the anchor and sprinkled focal +
-unlabeled in as helpers; that framing put the supervised signal/capacity
-ratio in a dangerous regime (2.9M params vs 739 labels). The reframe
-inverts the priorities: **distill Perch into a compressed 512-d shared
-space using all 400K+ windows, then use the 739 labels only to fine-tune
-the site bank and gate.**
-
-### Data
-
-All windows with cached Perch features — no domain split:
-
-| Source | Count | Role in phase 0 |
-|--------|-------|-----------------|
-| Focal recordings | 265K | Teacher: Perch's logits on focal audio |
-| Labeled soundscapes | 739 | Teacher: Perch's logits (labels ignored) |
-| Unlabeled soundscapes | 127K | Teacher: Perch's logits |
-
-Labels are intentionally **not used** in phase 0. The supervised signal
-is Perch's own output on each window — a soft target over 14,795 species.
-The 739 labels are held for later phases.
-
-### Loss
-
-Per window, student predicts the teacher's logits:
-
-```python
-def distill_loss(model, emb, perch_logits, T=2.0):
-    # Student: projection + distill head
-    student_logits = model.distill_forward(emb)                    # (b, 14795)
-
-    # Teacher: cached Perch logits, temperature-softened
-    teacher = F.log_softmax(perch_logits / T, dim=-1)
-    student = F.log_softmax(student_logits / T, dim=-1)
-
-    # KL divergence (Hinton-style distillation)
-    return F.kl_div(student, teacher, reduction='batchmean', log_target=True) * T * T
-```
-
-Temperature `T=2.0` softens the teacher's distribution enough to carry
-similarity-structure information (not just the argmax). Hinton-style
-distillation scaling (`T²`) keeps the gradient magnitude comparable across
-temperatures.
-
-### What phase 0 trains
-
-Only the projection MLP and the distill head. The memory banks, W_Q/W_K,
-Platt, gate, and log_β are **not touched** in phase 0 — they get their
-start from k-means (memory banks) or random init (W_Q/W_K/gate) after
-phase 0 completes.
-
-### What phase 0 teaches
-
-The projection learns to compress Perch's 14,795-d logit space into 512-d
-in a way that preserves species discrimination. Focal and soundscape
-embeddings both flow through the same projection supervised by the same
-teacher, so the projection is forced to find a shared representation
-that works for both domains. This is the actual domain-alignment step —
-the one that in the previous design was hoped to fall out of 739
-supervised labels.
-
-Importantly, the student is a *bottleneck* (512-d) vs the teacher's
-14,795-d output. It cannot reproduce Perch exactly; it must compress. The
-compression is what makes the space useful — irrelevant Perch dimensions
-(the 96.8% that shift between domains) get collapsed, and the
-species-discriminative axes survive.
-
-## Training schedule
-
-| Phase | Epochs | Sources | Components trained | Loss |
-|-------|--------|---------|-------------------|------|
-| **0** | **30** | **All 400K+ windows** | **proj, distill_head** | **KL(student, Perch\|T)** |
-| 1 | 10 | Focal + labeled SC | proj, species_memory, W_Q, W_K_species, log_β_s, Platt | α·L_focal + L_sup |
-| 2 | 10 | Focal + labeled SC | + site_memory, W_K_site, log_β_l, gate | α·L_focal + L_sup |
-| 3 | 20 | All three | All (small lr) | α·L_focal + L_sup + λ·L_ent |
-
-Optimizer: AdamW, lr=1e-3 for phase 0, lr=3e-4 for phase 1, lr=1e-4 for
-phase 2, lr=3e-5 for phase 3. Cosine decay within each phase.
-Early stopping on LOSO AUROC (evaluated every 5 epochs, starting at phase 1).
-
-Phase 0 is the bulk of the compute but runs once per fold (or once across
-all folds — see LOSO evaluation below). Phases 1–3 are small fine-tunes.
-
-Phase 1 (run after k-means initialization of memory banks) refines the
-species bank in the pretrained shared space. This is the "learned species
-retriever" — if it can't beat ridge (0.749) after phase 1, the pretrained
-projection isn't adding value and we stop. **This is the go/no-go gate**
-— it's the cheapest possible test of whether phase 0 distillation gave
-us something better than exp 106 could.
+**Gate**: default linear init (gate output ~0.5 at the start).
 
 ## LOSO evaluation
 
-7 folds (sites with ≥20 labeled windows). **Phase 0 runs once across all
-folds** — it uses no labels, so there is no held-out-site leakage risk
-from training the projection on unlabeled soundscapes from all sites
-simultaneously. Phases 1–3 are re-run per fold with a reset of the
-supervised components (species memory, site memory, W_Q/W_K, Platt, gate).
+7 folds (sites with ≥20 labeled SC windows). Each fold:
 
-Per fold:
+1. **Split strong stream**: train on labeled SC from all sites except
+   the held-out site; test on held-out site's labeled SC.
+2. **Init**: k-means memory banks on focal / unlabeled SC as above. Full
+   model reset per fold (no carry-over from previous folds).
+3. **Train**: 30–40 epochs of the one-phase loop with ramped γ_weak,
+   λ_ent. Early stopping on held-out AUROC evaluated every 5 epochs.
+4. **Evaluate**: macro AUROC on held-out labeled SC windows, with
+   subset breakdowns (bird/non-bird, with/without focal,
+   has-family-sibling-with-focal/orphaned, silence class).
 
-1. **Shared phase 0 checkpoint**: load the once-trained projection +
-   distill head.
-2. **K-means init**: cluster phase-0 projected focal embeddings into
-   species memory, cluster phase-0 projected unlabeled soundscapes (from
-   all non-held-out sites) into site memory. Re-initialize W_Q, W_K_*,
-   Platt, gate, log_β.
-3. **Fold split**: train (labeled SC from all sites except held-out) /
-   test (held-out labeled SC).
-4. **Train phases 1→2→3** (focal always in train; unlabeled SC from
-   non-held-out sites in phase 3).
-5. **Evaluate on held-out site**.
+Final metric: mean of per-fold AUROC. Report overall + subset splits.
+Species flagged as **unlearnable** (no training signal from any source
+— no focal, no positive in strong stream, no family sibling with focal)
+are excluded from the aggregate AUROC and listed separately.
 
-Final metric: mean of per-fold macro AUROC (same as exp 106).
-
-Phase 0 is shared across folds to save compute (30 epochs × 400K windows
-is the bulk of the cost). Phases 1–3 are small fine-tunes (~40 epochs on
-focal + 739 − fold-held-out labeled SC, plus unlabeled entropy min). With
-~4.1M params, phase 0 dominates wall time; the per-fold fine-tune is
-quick.
-
-Leakage audit: phase 0 sees held-out-site *embeddings* (via unlabeled SC),
-but never their *labels* — labels don't exist for unlabeled SC. This is
-standard semi-supervised LOSO practice. An optional stricter ablation
-re-runs phase 0 per fold with the held-out site's unlabeled windows
-excluded; expected to make no measurable difference.
+Leakage audit: unlabeled SC and focal data are shared across folds
+(no held-out labels exist for unlabeled SC, and focal has no site_id).
+This is standard semi-supervised LOSO practice.
 
 ## Ablations
 
-| Config | Phase 0 | Species bank | Site bank | Focal | Unlabeled | Tests |
-|--------|---------|-------------|-----------|-------|-----------|-------|
-| A0 | ✗ | ✓ | ✗ | ✗ | ✗ | Earlier baseline: random init, labeled SC only (drops to ridge-equivalent) |
-| **A** | **✓** | **✓** | **✗** | **✗** | **✗** | **Does phase 0 distillation + k-means init beat ridge on labeled SC alone?** |
-| B | ✓ | ✓ | ✗ | ✓ | ✗ | Does focal fine-tuning add lift after phase 0? |
-| C | ✓ | ✓ | ✓ | ✓ | ✗ | Does site composition work in the pretrained space? |
-| D | ✓ | ✓ | ✓ | ✓ | ✓ | Does entropy-min semi-supervision add value on top? |
-| **E** | **✗** | **✓** | **✓** | **✓** | **✓** | **Critical ablation: full model without phase 0 — measures what phase 0 is worth** |
-
-Expected outcome:
-- A0 ≈ 0.60–0.70 (random init on tiny supervised data — probably bad)
-- A ≈ 0.74–0.78 (matches or beats ridge)
-- B > A (focal fine-tune refines species identity)
-- C > B (site composition finally works in the pretrained space)
-- D ≈ C or slightly higher (entropy min is polish)
-- E ≪ D if phase 0 matters; E ≈ D if it doesn't
-
-**E vs D is the headline ablation of this experiment**: it measures
-whether distillation pretraining is what makes the learned star schema
-work, or whether end-to-end supervised training on 739 windows could
-have found the same shared space. If E ≈ D, phase 0 was a complexity
-tax with no benefit and the original design was correct. If E ≪ D,
-distillation was the unlock — and that result generalizes to other
-small-supervised-data problems in this project.
-
-If C ≤ B (even with phase 0), site composition doesn't help even in a
-pretrained shared space, and the star schema's factored structure is
-rejected for this data.
+| Config | Tests |
+|--------|-------|
+| **Primary**: full model, all streams, ramped weights, hierarchical species bank, silence class | Headline LOSO AUROC |
+| Architecture: linear classifier on the projection | Does the memory bank beat a linear head on non-bird species? |
+| Label cleaning: raw focal one-hot, no Perch-verified filter | Does label cleaning matter? (exp 102 crossover) |
+| Weak stream off: `γ_weak = 0` | How much do 260K weak-labeled windows add beyond 739 GT? |
+| Site bank off: species-only, no gate | Does site composition work in the learned space? |
+| Entropy min off: `λ_ent = 0` | Is entropy min on unconfident unlabeled SC useful? |
+| Silence class off: 234 outputs, no RMS labeling, drop silent windows instead | Does the explicit silence class help, or can the model learn "all species → 0" on its own? |
+| Flat species bank: replace `M_family + Δ_species` with direct species memory `(235, K, D)`, no weight decay split | Does hierarchical prototyping beat flat prototypes, especially on low-resource and zero-focal species? |
+| Site classifier aux: add a small CE loss predicting `site_idx` from the site bank | Does explicit site supervision help or hurt? Prior: hurts (encodes artifacts). |
+| Self-training round 2 | Use trained bank to pseudo-label non-bird species in unlabeled SC, retrain. Risk: feedback loops. |
 
 ## Directory structure
 
 ```
 user/anthony/experiments/107-hopfield-prototypes/
-├── proposal.md                          # hypothesis, method, success criteria
+├── proposal.md                          # thesis, method, success criteria
 ├── design.md                            # ← this file
 ├── docs/
 │   └── star-schema-dimensional-analysis.md  # tensor framework + recsys framing
 ├── pyproject.toml                       # declares dependency on birdclef_106
 ├── src/birdclef_107/
 │   ├── __init__.py
-│   ├── cli.py                           # entry point: distill, train, evaluate, ablate
-│   ├── data.py                          # datasets + multi-domain batch sampler
-│   ├── model.py                         # HopfieldPrototypeModel (incl. distill_forward)
-│   ├── losses.py                        # three-source loss composition + KL distillation
-│   ├── init.py                          # k-means memory bank init from phase-0 projection
-│   ├── distill.py                       # phase 0: Perch logit distillation training loop
-│   ├── train.py                         # phases 1-3 training loop
-│   └── evaluate.py                      # LOSO cross-validation
+│   ├── cli.py                           # entry: prepare-labels, init-banks, train, evaluate
+│   ├── label_prep.py                    # one-time Perch-verified label preparation
+│   ├── data.py                          # datasets + multi-stream batch sampler
+│   ├── model.py                         # PrototypeRetrievalModel
+│   ├── losses.py                        # strong + weak + entropy composition
+│   ├── init.py                          # k-means init for species and site banks
+│   ├── train.py                         # one-phase training loop with ramp
+│   └── evaluate.py                      # LOSO cross-validation + subset metrics
 ├── configs/
 │   ├── base.yaml                        # default hyperparameters
-│   ├── distill.yaml                     # phase 0 distillation config
-│   ├── ablation_a0.yaml                 # no phase 0, species only (old baseline)
-│   ├── ablation_a.yaml                  # + phase 0, species only
-│   ├── ablation_b.yaml                  # + focal fine-tune
-│   ├── ablation_c.yaml                  # + site bank
-│   ├── ablation_d.yaml                  # + unlabeled entropy (full model)
-│   └── ablation_e.yaml                  # full model without phase 0 (critical ablation)
+│   ├── ablation_architecture.yaml       # linear classifier variant
+│   ├── ablation_label_cleaning.yaml     # raw focal one-hot
+│   ├── ablation_no_weak.yaml            # 739 GT only
+│   ├── ablation_no_site.yaml            # species-only
+│   ├── ablation_no_entropy.yaml         # λ_ent = 0
+│   └── ablation_self_training.yaml      # round-2 self-training
 ├── sbatch/
 │   ├── _setup-venv.sh                   # reuses exp 106 venv, adds torch + einops
-│   ├── distill.sbatch                   # phase 0, GPU, shared across folds
-│   └── finetune.sbatch                  # phases 1-3, per-fold LOSO run
+│   ├── prepare_labels.sbatch            # one-time label prep (CPU)
+│   └── train_loso.sbatch                # one training + LOSO run (CPU-tractable)
 └── artifacts/                           # gitignored
+    ├── labels/                          # per-window label parquets from label prep
     ├── checkpoints/
-    │   ├── phase0.pt                    # shared distilled projection
-    │   └── fold_{i}/phase{1,2,3}.pt     # per-fold fine-tune checkpoints
+    │   └── fold_{i}/{epoch}.pt
     ├── metrics/
-    └── loso_results.json
+    │   ├── loso_results.json            # overall + subset breakdowns
+    │   └── projection_distances.json    # bird focal↔SC diagnostic
+    └── affinity/
+        └── species_site_matrix.npz      # (235, 21) eval-time affinity
 ```
 
 ## Dependencies
@@ -628,30 +510,20 @@ user/anthony/experiments/107-hopfield-prototypes/
 
 | Package | Used for |
 |---------|----------|
-| `torch` | Model, training loop, gradient computation (GPU recommended for phase 0) |
+| `torch` | Model, training loop (GPU optional — CPU-tractable on cached features) |
 | `einops` | `einsum`, `reduce`, `rearrange` — memory-bank contractions and affinity matrix |
-| `numpy`, `polars` | Data loading (inherited from exp 106) |
-| `scikit-learn` | Metrics (roc_auc_score), k-means for species and site memory init |
+| `polars` | Cached parquet IO (inherited from exp 106) |
+| `numpy`, `scikit-learn` | Metrics, k-means init |
 | `pyyaml` | Config loading |
 
-**Cached artifacts consumed from exp 106:**
+**Cached artifacts consumed from exp 106**
 
-| Artifact | Size | Used for |
-|----------|------|----------|
-| Perch v2 embeddings | 265K focal + 739 labeled + 127K unlabeled | Student input for all phases |
-| Perch v2 logits (14,795-d) | Same windows | Phase 0 distillation target |
-| Species mapping | JSON | Species ordering for fine-tune phases |
-
-Phase 0 distillation requires that Perch *logits* (not just pooled
-embeddings) are cached for all windows. Exp 106 stores these in
-`~/scratch/birdclef-2026/features/exp106/` alongside the embeddings;
-verify both are present before starting phase 0.
-
-Deferred (ablation-only):
-
-| Package | Used for |
-|---------|----------|
-| `netcal` | Post-hoc calibration comparison — Platt vs beta vs isotonic vs histogram binning against the in-model Platt baseline |
+| Artifact | Used for |
+|----------|----------|
+| Perch v2 embeddings (265K focal + 739 labeled + 127K unlabeled) | Model input |
+| Perch v2 logits (same windows) | Label preparation pass only |
+| `perch_species_mapping.json` | Restrict Perch's 14,795 outputs to the 234 competition taxonomy |
+| Species bird/non-bird classification (from exp 100) | Regime split in label prep |
 
 **Internal**
 
@@ -660,65 +532,53 @@ Exp 107 imports from the exp 106 package (declared in `pyproject.toml`):
 - `birdclef_106.data_loading` — cached parquet loaders, label matrix builder,
   site extraction, species list construction
 
-Artifacts consumed (not imported):
-- `perch_species_mapping.json` — species ordering
-
-No code is copied from exp 106. The species and site memories are
-k-means-initialized from phase-0 projected embeddings; exp 106's
-`multi_prototypes.npz` and `site_prototypes.npz` are **not** used.
+No code copied. Memory banks are k-means-initialized from raw Perch
+focal / unlabeled SC embeddings — **not** from exp 106's
+`multi_prototypes.npz` or `site_prototypes.npz`, which live in a fixed
+space that exp 107's learned projection replaces.
 
 ## Testing plan
 
 Run before any training:
 
-1. **Shape tests**: `model.forward` produces correct output shape for focal
-   (site_idx=None) and soundscape (site_idx=int) inputs;
-   `model.distill_forward` returns `(B, 14795)`
+1. **Shape tests**: `model.forward` produces correct output shape for
+   focal (site_idx=None) and soundscape (site_idx=int) inputs
 2. **Gradient tests**: all learnable parameters receive gradients for
-   appropriate inputs (site memory only for soundscape, W_Q/W_K_* trained
-   only in phases 1+ not phase 0, distill_head trained only in phase 0)
-3. **Phase-0 freeze test**: during phase 0, only `proj` and `distill_head`
-   receive gradients; memory banks, W_Q/W_K_*, Platt, gate, log_β are zero
-4. **Phase-1 freeze test**: during phase 1, `site_memory`, `W_K_site`,
-   `log_beta_site`, `gate`, `distill_head` receive zero gradients
-5. **K-means init tests**: phase-0-projected k-means init produces finite,
-   correctly-shaped species `(234, 16, 512)` and site `(21, 16, 512)`
-   tensors; per-species/per-site centers are distinct (not collapsed);
-   small-species padding case handled (species with <16 focal windows)
-6. **Affinity test**: `A(s, l)` computed via einsum using `W_K_species`
-   and `W_K_site` matches a brute-force quadruple loop over
-   `(s, l, k_s, k_l)` on a small synthetic model
-7. **Distillation target test**: phase-0 `distill_forward` can drive KL
-   loss on a random 64-window batch to near-zero in 500 steps (sanity
-   check that the MLP projection + distill head has capacity to reproduce
-   Perch's logits on a tiny sample)
-8. **Overfit test**: full fine-tune model can drive a single 32-window
-   supervised batch's BCE to near-zero in 100 steps
-9. **Phase-0 sanity**: after phase 0, held-out window top-K species
-   (argmax of student distill_head output) overlaps with Perch's top-K at
-   >80% (student has learned to reproduce the teacher's discriminative
-   structure)
-10. **Parity test**: ablation A (phase 0 + species-only fine-tune)
-    produces LOSO AUROC within 0.02 of exp 106's ridge baseline (0.749).
-    If this fails, phase 0 isn't producing a useful shared space and
-    something is wrong with the distillation setup.
+   appropriate inputs (site memory and gate only for soundscape inputs)
+3. **K-means init tests**: per-family k-means produces finite,
+   correctly-shaped `(F, 8, 512)` family memory (F ≈ 30); species
+   delta is zero-initialized `(235, 8, 512)`; per-site k-means produces
+   `(21, 8, 512)` site memory; families with zero focal data (rare
+   edge case) handled via small Gaussian noise init
+4. **Affinity test**: `A(s, l)` via einsum matches a brute-force quadruple
+   loop over `(s, l, k_s, k_l)` on a small synthetic model
+5. **Label prep test**: running label prep on 100 synthetic windows with
+   known Perch logits produces the expected filtered output
+6. **Overfit test**: full model drives a single 32-window supervised
+   batch's BCE to near-zero in 100 steps
+7. **Parity test**: ablation "739 GT only, no weak stream" LOSO AUROC
+   is within 0.02 of a ridge baseline computed in the same feature
+   space. If this fails, the model is broken in a way that prevents
+   even matching a linear classifier.
+8. **Diagnostic test**: bird focal↔SC projection distance diagnostic
+   produces reasonable numbers on untrained model (baseline) and shrinks
+   after a few epochs on a toy run
 
-Tests 1–8 are seconds each. Test 9 runs after phase 0 completes and is
-the "did pretraining work" sanity check. Test 10 is the "did the learned
-space beat the fixed one" go/no-go gate.
+Tests 1–6 are seconds to minutes each. Test 7 is the cheapest
+end-to-end correctness check. Test 8 is the mechanism sanity check.
 
 ## SLURM setup
 
-Phase 0 wants a GPU for throughput — 400K+ windows × 30 epochs is
-non-trivial on CPU even with cached embeddings. Fine-tuning phases are
-CPU-tractable.
-
-- **Phase 0**: Partition `gpu-rtx6000`, 1× RTX 6000, 16 GB RAM, 6h walltime.
-  Single job, shared across folds.
-- **Phases 1–3 + LOSO**: Partition `cpu-small`, 4 CPUs × 8 GB RAM, 3h walltime.
-  7 folds × 4 ablation configs.
-- Venv: reuses `~/scratch/birdclef-2026/.venv-106` with added torch + einops.
-- No Luigi, no spawn multiprocessing — single-process training loop.
+- **Label prep**: one-time CPU job, ~1h, `cpu-small` partition. Produces
+  the per-window label parquets reused across all folds and ablations.
+- **Training + LOSO**: one job runs all 7 folds sequentially. CPU-tractable
+  on cached features. Partition `cpu-small`, 8 CPUs × 16 GB RAM, 8h
+  walltime. Can also run on GPU if queue is favorable — negligible speedup
+  given cached-feature input.
+- **Ablations**: each ablation is a separate sbatch with a different
+  config yaml. 6 ablations → 6 jobs, same shape as primary.
+- Venv: reuses `~/scratch/birdclef-2026/.venv-106` with torch + einops
+  added. Per `CLAUDE.md`, never install `.venv` under `$HOME`.
 
 ## Connection to exp 106
 
@@ -726,33 +586,39 @@ CPU-tractable.
 Exp 106 infrastructure (reused):
 ├── Cached embeddings on scratch (739 + 127K + 265K)
 ├── Partitioned parquets (by_species/, by_site/)
+├── Cached Perch logits (needed by exp 107's label preparation pass)
 ├── Species mapping (perch_species_mapping.json)
 ├── Label matrix construction (build_binary_label_matrix)
 ├── LOSO evaluation utilities
 └── data_loading.py (load_focal_species, load_site, load_labeled, etc.)
 
-Note: `multi_prototypes.npz` and `site_prototypes.npz` are intentionally
-not inherited — memory banks learn from scratch.
+Not inherited (intentionally):
+├── multi_prototypes.npz, site_prototypes.npz — exp 106's prototypes
+│   live in Perch's fixed logit space; exp 107's memory banks live in
+│   the learned projection's output space.
+└── Star schema cosine score (exp 106 baseline only)
 
 Exp 107 adds:
-├── PyTorch model (~120 lines)
-├── Dataset + batch sampler (~80 lines)
-├── Training loop with three-source loss (~100 lines)
-├── LOSO cross-validation wrapper (~60 lines)
-└── Ablation configs + evaluation (~40 lines)
+├── Label preparation pass: Perch-verified focal + pseudo-label unlabeled SC
+├── PyTorch memory-bank model (~150 LOC)
+├── One-phase training loop with ramped weights (~120 LOC)
+├── LOSO cross-validation wrapper with subset metrics (~80 LOC)
+└── Ablation configs + evaluation harness (~60 LOC)
 ```
 
 ## Open decisions
 
-1. **Shared vs per-domain projection**: Start with one `proj` layer for both
-   focal and soundscape. Revisit if L_focal plateaus while L_sup improves.
-2. **Memory L2 normalization**: Optional projection step after each gradient
-   update to constrain memory vectors to the unit sphere. Makes β
-   interpretable but may slow learning. Start without it.
-3. **K ablation**: K_s = K_l = 16 is the default. Sweep {4, 8, 16, 32} to
-   see where capacity saturates. With logsumexp retrieval, extra slots are
-   wasted capacity rather than a hard failure.
-4. **Projection init**: PCA on soundscape embeddings vs pure random. PCA is
-   expected to converge faster but final LOSO should be similar.
-5. **Focal loss weight α**: Starts at 0.5. Tune based on relative L_focal
-   and L_sup magnitudes in early training.
+1. **Perch confidence threshold**: 0.3 is a guess. Sweep 0.2 / 0.3 / 0.5
+   during label prep; the right threshold depends on Perch's raw score
+   distribution on the 234 taxonomy and on the coverage/quality trade-off.
+2. **K_species, K_site**: default K=8. Sweep {4, 8, 16} as a capacity
+   ablation if primary results are close to the go/no-go threshold.
+3. **Projection dim**: D=512 default. If the model underfits (ablation A
+   below ridge), bump to D=768. If it overfits, drop to D=384.
+4. **Weak stream weight `γ_weak` target**: 1.0 (equal with strong). May
+   need to tune down if weak-stream label noise hurts. Sweep 0.5 / 1.0 / 2.0.
+5. **Non-bird focal bag cleaning**: current design leaves non-bird focal
+   bag-level. Future work could try self-labeling (train round 1 on
+   Perch-verified + bag-level, then use round 1 predictions to clean
+   non-bird focal, retrain). Deferred — listed as the "self-training r2"
+   ablation.
