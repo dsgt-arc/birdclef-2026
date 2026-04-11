@@ -988,15 +988,70 @@ backbone knowing what's happening in neighboring chunks.
 | v8a | 15s | LSEHead (3 chunks) | hengck23's approach | 0.882 |
 | v8b | 20s | LSEHead (4 chunks) | hengck23's extended | 0.896 |
 | v7a | 15s | AttHeadMultiContext | Tattaka approach | — (offline −0.054) |
-| Salman | 20s | AttHead? | Single prediction | **0.922** |
+| **v9a** | **10s** | **AttHead** | **Single pred (exp 026)** | **0.868** |
+| **v9b** | **15s** | **AttHead** | **Single pred (exp 026)** | **0.877** |
+| **v9c** | **20s** | **AttHead** | **Single pred (exp 026)** | **0.878** |
+| Salman | 20s | AttHead? | Unknown inference | **0.922** |
 
-**Key observations**:
-- v5i (10s, naive pooling): massive regression. LSE over 32 frames dilutes signal.
-- v8a/v8b (multi-chunk LSEHead): better than v5i, but still worse than v5j.
-  The multi-chunk approach preserves 5s resolution but doesn't fully close the gap.
-- **Untested**: AttHead + 20s (single prediction, attention selects frames).
-  This is the key hypothesis for exp 026 — attention may work better than LSE
-  for longer windows where most audio is background noise.
+**Every longer-window experiment regresses on LB.** The pattern:
+- LSEHead single pool (v5i): -0.026 → dilutes signal over more frames
+- LSEHead multi-chunk (v8a/v8b): -0.010 to -0.024 → chunk label noise
+- AttHead single pred (v9a-v9c): -0.025 to -0.035 → worst of all despite best
+  offline metrics
+
+### The train/inference window mismatch problem
+
+**This is likely our biggest blind spot.** Our Kaggle inference kernel processes
+5-second segments independently — regardless of what window the model was trained
+on. When a model trained on 20s receives 5s input at inference:
+
+```
+Training:  20s audio → backbone → 64 temporal positions → AttHead attention
+Inference:  5s audio → backbone → 16 temporal positions → AttHead attention
+```
+
+**For LSEHead**: LSE pooling is a fixed mathematical operation (smooth-max) that
+works identically on 16 or 64 positions. The regression is mild (-0.010 for v8b)
+because the operation itself doesn't change — only the backbone features differ
+(trained to expect 20s context, receives 5s).
+
+**For AttHead**: The learned attention weights were calibrated for 64 temporal
+positions. Softmax over 64 positions distributes attention differently than
+softmax over 16 positions. The attention mechanism trained on 20s spectrograms
+doesn't transfer to 5s spectrograms — the temporal distribution it learned to
+attend to simply doesn't exist in the shorter input. This explains the severe
+regression (-0.025 for v9c).
+
+**What competitors likely do differently**: Competitors training on 20s probably
+also **infer on 20s** — loading wider context around each 5s test segment and
+using sliding-window inference with overlap. We never changed our inference
+pipeline to match the training window. This is a fundamental mismatch that
+makes all longer-window experiments unfairly penalized.
+
+**The implication**: We cannot fairly evaluate longer windows or AttHead until
+we fix the inference pipeline to use matching window sizes. Every experiment
+with window > 5s has been evaluated with a handicapped inference setup.
+
+### What we don't know
+
+The gap between our best (0.903) and competitors (0.922+) remains unexplained.
+We've tested:
+- ✗ Longer windows (regressed — but inference mismatch)
+- ✗ AttHead (regressed — but inference mismatch)
+- ✗ Pseudo-labels (regressed)
+- ✗ Soundscape checkpoint selection (regressed)
+- ✗ Multi-chunk LSEHead (regressed)
+- ✗ CE loss (regressed 6 times)
+- ✗ Waveform MixUp (regressed offline, never submitted)
+- ✗ Various other recipe changes (15+ attempts, 0 successes)
+
+**What we haven't tested properly**:
+1. Longer windows with **matching inference** (sliding-window 20s inference)
+2. Waveform MixUp submitted to LB (only tested offline where metrics are unreliable)
+3. CE loss + sigmoid inference combination
+4. Variable-length training (mix of 5s/10s/20s crops)
+5. Energy-based crop selection (select loudest region instead of random)
+6. The exact inference strategy that competitors use on Kaggle
 
 ---
 
@@ -1026,40 +1081,59 @@ Implementation: the data module returns two separate val dataloaders (focal and
 soundscape), and the Lightning module dispatches to separate metric sets based
 on `dataloader_idx`.
 
+**Result**: The corrected val_sc/auroc reaches 0.956 (vs broken 0.094 before the
+fix). However, the soundscape-selected checkpoint (epoch 17) scored **0.897 LB** —
+worse than the original v5j (0.903, epoch 19). Soundscape AUC does not improve
+checkpoint selection for LB, at least with only 86 val segments from 8 files.
+The val set is too small and too site-biased (Site 22 dominates) to reliably
+predict LB performance.
+
 ---
 
 ## 11. Key Lessons (exps 016–026)
 
-1. **Only input representation and inference-time changes improve LB.** 15+
-   training recipe changes (loss, augmentation, head, regularization) have zero
-   successes. Every positive LB delta came from mel processing, backbone choice,
-   post-processing, or ensembling.
+1. **Only input representation and inference-time changes improve LB.** 20+
+   training recipe changes (loss, augmentation, head, regularization, window
+   length, pseudo-labels) have zero successes. Every positive LB delta came from
+   mel processing, backbone choice, post-processing, or ensembling.
 
-2. **Offline val/auroc does not predict LB.** Models with better offline metrics
-   frequently score worse on the leaderboard. The domain shift between focal
-   recordings and soundscapes makes focal-dominated validation unreliable.
+2. **Offline metrics are actively misleading.** Models with the best offline
+   numbers consistently score worst on LB. v9c (20s AttHead) had the best-ever
+   cmap (0.681) and top1 (0.862) but scored 0.878 LB — the worst single-model
+   result in exp 026. The offline/LB anti-correlation is not noise; it's
+   systematic. DO NOT use offline metrics to decide what to submit.
 
-3. **LSEHead > AttHead at 5s windows.** Simpler smooth-max beats learned attention
-   on LB, likely because it can't overfit. But this may reverse with longer windows.
+3. **LSEHead > AttHead at ALL window sizes tested.** AttHead regressed on LB in
+   every experiment: 7 times at 5s (exp 021), 3 more times at 10/15/20s (exp 026).
+   The hypothesis that AttHead would shine at longer windows was wrong — or at
+   least, it can't be tested fairly without fixing the inference pipeline.
 
-4. **Don't change multiple variables at once.** Phase D (exp 021) changed head +
-   window + batch size simultaneously — impossible to know what caused the
-   regression. Phase E isolated window_duration only.
+4. **Train/inference window mismatch invalidates longer-window experiments.**
+   We train on 10-20s but always infer on 5s segments. LSEHead tolerates this
+   (fixed smooth-max, mild -0.010 regression). AttHead does not tolerate it
+   (learned attention calibrated for wrong sequence length, severe -0.025 to
+   -0.035 regression). Until we implement matching-window inference, all
+   longer-window experiments are handicapped.
 
-5. **Context comes from the backbone, not the head.** hengck23's approach feeds
-   longer audio to the backbone (convolutions see more context) but keeps the head
-   at 5s resolution. Fundamentally different from making the head aggregate over
-   longer periods.
+5. **The v5j recipe is an island.** Every perturbation in any direction regresses.
+   5s → longer: regresses. LSEHead → AttHead: regresses. BCE → CE: regresses.
+   Spectrogram MixUp → waveform: regresses offline (untested on LB). Pseudo-labels:
+   regresses. Soundscape checkpoint selection: regresses. The recipe found an
+   accidental optimum that we can't improve by local search.
 
 6. **AmplitudeToDB normalization is a major lever** (+0.014 LB). Don't touch it.
 
-7. **The v5j recipe is very strong but may have hit a ceiling.** Every perturbation
-   regresses at 5s. The path to 0.920+ likely requires a structural change (longer
-   windows, different head) rather than recipe tuning.
+7. **The 0.903 → 0.922 gap remains completely unexplained.** Salman achieves
+   0.922 with 20s windows on the same data. We achieve 0.878 with 20s windows.
+   That's a 0.044 gap that can't be attributed to any single factor we've tested.
+   The gap likely comes from multiple interacting differences (inference strategy,
+   loss function, augmentation, crop selection) that we haven't correctly identified.
 
-8. **The LB gap is data coverage (exp 024).** 0.9958 AUC on 75 known species,
-   but 159 species have zero soundscape data. Pseudo-labeling attempted to fix
-   this (exp 025) but regressed — the base model needs to be stronger first.
+8. **We need to understand the full competitor pipeline before more experiments.**
+   After 20+ failed ablations, continuing to guess is not productive. The next
+   step should be deep research into what winning BirdCLEF pipelines actually do
+   end-to-end, including the inference kernel — which may be where our real
+   problem lies.
 
 ---
 
