@@ -533,13 +533,15 @@ Goal: close the single-model gap (0.903 → 0.922+).
 *val_sc/auroc is broken — macro AUROC over 234 species when only ~35 appear in
 86 soundscape val segments. See `026-domain-shift-training/results.md`.
 
-### Phase 3: AttHead + window ablation (training in progress)
+### Phase 3: AttHead + window ablation
 
-| Slug | Window | Head | val/auroc | val_sc/auroc | LB | Status |
-|------|--------|------|-----------|-------------|-----|--------|
-| `v9a-10s-att` | 10s | AttHead | — | — | — | Training |
-| `v9b-15s-att` | 15s | AttHead | — | — | — | Training |
-| `v9c-20s-att` | 20s | AttHead | — | — | — | Training |
+All Phase 3 jobs ran with old broken val_sc/auroc (~0.093). Compare using val/auroc.
+
+| Slug | Window | Head | val/auroc | val/cmap | val/top1 | LB | Checkpoint |
+|------|--------|------|-----------|----------|----------|-----|------------|
+| `v9a-10s-att` | 10s | AttHead | 0.859 | 0.645 | 0.827 | — | `026-.../best-epochepoch=09.ckpt` |
+| `v9b-15s-att` | 15s | AttHead | — | — | — | — | Training |
+| `v9c-20s-att` | 20s | AttHead | — | — | — | — | Training |
 
 ## Checkpoint Base Path
 

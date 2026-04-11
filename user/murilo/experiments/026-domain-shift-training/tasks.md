@@ -56,10 +56,12 @@ Already tested (from exp 021):
 
 Untested: **AttHead + longer windows** (single prediction, attention selects frames)
 
-- [ ] Train 10s + AttHead (v9a) — submitted job 6426103
-- [ ] Train 15s + AttHead (v9b) — submitted job 6426104
-- [ ] Train 20s + AttHead (v9c) — submitted job 6426105
-- [ ] Record offline metrics for all three
+- [x] Train 10s + AttHead (v9a) ✅ — job 6426103, 1h07m, val/auroc=0.859,
+  val/cmap=0.645, val/top1=0.827. Best checkpoint epoch 9 (broken val_sc metric).
+  Strong offline improvement vs v5j-dualval (+0.010 auroc, +0.049 cmap, +0.075 top1).
+- [ ] Train 15s + AttHead (v9b) — submitted job 6426104 (training)
+- [ ] Train 20s + AttHead (v9c) — submitted job 6426105 (training)
+- [ ] Record offline metrics for v9b/v9c when complete
 - [ ] Submit most promising to LB
 - [ ] Compare against v5j baseline (0.903–0.906)
 
