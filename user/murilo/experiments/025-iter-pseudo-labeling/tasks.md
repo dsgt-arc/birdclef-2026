@@ -7,39 +7,40 @@ pseudo-labeled soundscapes, using a tiered teacher: SED max-folds for 184 specie
 SED has good predictions, and Perch with per-species z-normalization for 44 species where
 SED is blind.
 
-Status: **In progress — Phase A next.**
+Status: **Phase A complete. Phase B next (data loader + training).**
 
 **Branch**: `mg/025-iter-pseudo-labeling`
 
 ---
 
-## Phase A: Generate Pseudo-Labels
+## Phase A: Generate Pseudo-Labels ✅
 
-### A.1: SED pseudo-labels (Tiers A+B — 184 species)
+Script: `generate_pseudo_labels.py` (config-driven, reads `configs/v1.yaml`)
+Output: `shared/pseudo-labels/birdclef-2026/v1/`
 
-- [ ] Write `scripts/generate_pseudo_labels.py`
-- [ ] Load SED 4-fold logits → sigmoid → max-across-folds
-- [ ] Apply temperature scaling (T=0.6) → power transform (P^1.5)
-- [ ] Save `shared/pseudo-labels/v1/sed_pseudo_labels.parquet`
-- [ ] Verify: coverage stats, per-species segment counts, sanity checks
+### A.1: SED pseudo-labels (Tiers A+B — 184 species) ✅
 
-### A.2: Perch pseudo-labels (Tier C — 44 SED-zero species)
+- [x] Write `generate_pseudo_labels.py` (config-driven, versioned output)
+- [x] Load SED 4-fold logits → sigmoid → max-across-folds
+- [x] Apply temperature scaling (T=0.6) → power transform (P^1.5)
+- [x] Save `shared/pseudo-labels/birdclef-2026/v1/sed_pseudo_labels.parquet`
+- [x] Verify: 198K pseudo-labels >0.5, 162/184 species covered
 
-- [ ] Identify the 44 Tier C species (unseen, SED max <0.5, Perch raw >0.3)
-- [ ] For each: compute mean/std of Perch raw prob across 127K segments
-- [ ] Skip species with std < 0.01 (no Perch signal variation)
-- [ ] Z-normalize per species → keep z > 2.0 → sigmoid(z) → P^1.5
-- [ ] Save `shared/pseudo-labels/v1/perch_pseudo_labels.parquet`
-- [ ] Verify: per-species segment counts, z-score distributions
+### A.2: Perch pseudo-labels (Tier C — 44 SED-zero species) ✅
 
-### A.3: Merge and validate
+- [x] Identify 44 Tier C species (unseen, SED max <0.5)
+- [x] Per-species z-normalization: mean/std across 127K segments
+- [x] 1 species skipped (1595929, std=0.0097 < 0.01 threshold)
+- [x] Z > 2.0 → sigmoid → P^1.5 → 43 active species
+- [x] Save `shared/pseudo-labels/birdclef-2026/v1/perch_pseudo_labels.parquet`
+- [x] Verify: 149K pseudo-labels >0.5, 34/43 species covered, median 3,728 segments/species
 
-- [ ] Merge SED + Perch labels → `shared/pseudo-labels/v1/pseudo_labels.parquet`
-  - Tiers A+B: SED labels
-  - Tier C: Perch labels
-  - Tier D: zeros (6 invisible species)
-- [ ] Summary statistics: species coverage, segments per species, label density
-- [ ] Sanity: no overlap between SED and Perch tiers
+### A.3: Merge and validate ✅
+
+- [x] Merged → `shared/pseudo-labels/birdclef-2026/v1/pseudo_labels.parquet`
+- [x] **347K pseudo-labels >0.5** across **196/234 species**, **2.73 species/segment** average
+- [x] Tier assignment saved to `tier_assignment.csv`, stats to `stats.json`
+- [x] Config copied to output dir for reproducibility
 
 ## Phase B: Train Student (Round 1)
 
