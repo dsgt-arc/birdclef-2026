@@ -42,10 +42,10 @@ segments, ~35 of 234 species have any positives. The macro average includes ~199
 species with zero positives (AUROC undefined → ~0), dragging the average to ~0.09.
 The metric barely moved across training (0.046 → 0.094) — it's noise.
 
-**Fix needed**: compute AUROC only for species with ≥1 positive in soundscape val.
-This requires a custom metric or post-hoc filtering. Not blocking Phase 3
-(AttHead configs don't depend on this), but must be fixed before soundscape AUC
-can guide checkpoint selection.
+**Fix applied**: compute per-class AUROC, filter to species with ≥1 positive,
+average only those. Re-run confirmed val_sc/auroc = 0.956 (epoch 17). However,
+soundscape-based checkpoint selection (epoch 17) scored **0.897 LB** — worse than
+original v5j (0.903, epoch 19). Soundscape AUC does not improve checkpoint selection.
 
 ## Phase 3: Window Length + Head Ablation (training in progress)
 
@@ -64,9 +64,14 @@ Untested: **AttHead + longer windows** (single prediction, attention selects fra
   val/cmap=0.664, val/top1=0.847. Best cmap and top1 of all models so far.
   Checkpoint epoch 10 (broken val_sc metric).
 - [ ] Train 20s + AttHead (v9c) — submitted job 6426105 (training)
-- [ ] Record offline metrics for v9b/v9c when complete
-- [ ] Submit most promising to LB
-- [ ] Compare against v5j baseline (0.903–0.906)
+- [ ] Record offline metrics for v9c when complete
+- [x] Added v9a/v9b/v9c to exp 010 submission pipeline
+- [x] Submitted v9a (10s) to LB — awaiting score
+- [x] Submitted v9b (15s) to LB — awaiting score
+- [ ] Submit v9c (20s) to LB when training completes
+- [ ] Compare all against v5j baseline (0.903)
+  Using last checkpoint (epoch 19) for all submissions since soundscape-based
+  checkpoint selection (broken metric) picked suboptimal epochs.
 
 ## Phase 4: Further Ablations (conditional on Phase 3)
 
@@ -76,7 +81,8 @@ Untested: **AttHead + longer windows** (single prediction, attention selects fra
 
 ## Success Criteria
 
-- [x] Dual validation infrastructure works — ✅ (but metric needs fixing)
-- [ ] Fix val_sc/auroc to only include species with positives
+- [x] Dual validation infrastructure works ✅
+- [x] Fix val_sc/auroc to only include species with positives ✅ (0.956 vs broken 0.094)
+- [x] v5j-dualval LB: 0.897 — soundscape checkpoint selection did NOT improve over v5j (0.903)
 - [ ] Single model LB > 0.910 (Phase 3 — meaningful improvement over 0.906)
 - [ ] Single model LB > 0.920 (stretch — match Salman's level)
