@@ -257,7 +257,7 @@ SED v5j max-across-folds is the teacher. Validated at 94% precision on labeled s
 
 Pipeline:
 1. Load 4-fold logits → sigmoid → `max(fold0..fold3)` per species per segment
-2. Apply temperature scaling with T ≈ 0.7 (mild sharpening)
+2. Apply temperature scaling with T=0.6 (sharpening — Nikita's range)
 3. Apply power transform P^1.5 (suppress borderline predictions)
 4. Keep as **soft labels** (no hard thresholding for Tiers A+B — let the power transform
    and loss weighting manage quality)
@@ -304,7 +304,156 @@ source external recordings from xeno-canto or Macaulay Library.
 
 ---
 
-## 5. Pseudo-Label Generation Pipeline
+## 5. Step-by-Step Walkthrough
+
+This section walks through the entire pipeline with concrete examples, so someone
+unfamiliar with the project can follow every transformation.
+
+### Step 1: Categorize species into tiers
+
+First, we classify all 234 competition species by what teacher signal is available:
+
+| Tier | Which species | N | Teacher | Why |
+|------|--------------|---|---------|-----|
+| **A** | 75 species that appear in labeled soundscapes | 75 | SED | SED validated at 0.9987 AUC on these |
+| **B** | 109 unseen species where SED max-folds predicts >0.5 somewhere | 109 | SED | SED has sparse but precise predictions (94% precision) |
+| **C** | 44 unseen species where SED predicts <0.5 everywhere, but Perch has signal | 44 | Perch | SED gives literally zero; Perch is the only option |
+| **D** | 6 species invisible to both models | 6 | None | 1-5 focal recordings each; can't help |
+
+**Tier C (44 species) is the highest-value target** — they have zero soundscape
+representation today and account for a large share of the LB gap.
+
+### Step 2: Generate SED pseudo-labels (Tiers A+B — 184 species)
+
+Starting from the 4-fold SED logits we already have:
+
+```
+Raw logits (4 folds × 127K segments × 234 species)
+    ↓
+Sigmoid → probabilities per fold
+    ↓
+Max across folds (take the MOST confident fold per species per segment)
+    ↓
+Temperature scaling T=0.6 (sharpen: confident → more confident, uncertain → more uncertain)
+    ↓
+Power transform P^1.5 (crush borderline predictions, preserve confident ones)
+    ↓
+Result: soft probability per species per segment
+```
+
+**Example**: What happens to a probability through this pipeline:
+
+| Original prob | After max-folds | After T=0.6 | After P^1.5 | Survives >0.5? |
+|--------------|-----------------|-------------|-------------|----------------|
+| 0.95 | 0.95 | 0.98 | 0.97 | Yes (strong signal) |
+| 0.80 | 0.80 | 0.87 | 0.81 | Yes (good signal) |
+| 0.60 | 0.60 | 0.65 | 0.52 | Barely (weak signal) |
+| 0.50 | 0.50 | 0.53 | 0.38 | No — killed by P^1.5 |
+| 0.30 | 0.30 | 0.25 | 0.13 | No — strongly suppressed |
+
+The pipeline keeps high-confidence predictions and kills borderline ones. The output is
+**soft** — we don't force 0/1, we keep the actual probability as the training target.
+
+Note: We don't apply a hard >0.5 threshold. The power transform naturally suppresses low
+probabilities, and the soft label format means weak predictions (e.g., 0.38) contribute
+very little to the training gradient anyway.
+
+**Expected yield**: ~5K species×segment predictions above 0.5 for the 109 unseen Tier B
+species, plus expanded site/hour diversity for the 75 Tier A species.
+
+### Step 3: Generate Perch pseudo-labels (Tier C — 44 species)
+
+This is the hardest part. The problem: Perch raw probabilities are miscalibrated. Example:
+Social Flycatcher (`socfly1`) has Perch prob >0.5 in **127,017 out of 127,104 segments**
+(99.9%). Standard thresholding is useless — everything passes.
+
+**The insight**: Even though absolute probabilities are wrong, the **relative ranking
+within a species** carries signal. If Perch gives species X probability 0.98 in one
+segment and 0.72 in another, the 0.98 segment is genuinely more likely to contain
+species X.
+
+**Per-species z-normalization**:
+
+```
+For species X across all 127K segments:
+  mean = 0.85  (average Perch prob for this species)
+  std  = 0.08  (standard deviation)
+
+  Segment A: prob = 0.98  →  z = (0.98 - 0.85) / 0.08 = +1.6  (above average)
+  Segment B: prob = 0.85  →  z = (0.85 - 0.85) / 0.08 =  0.0  (at average)
+  Segment C: prob = 0.72  →  z = (0.72 - 0.85) / 0.08 = -1.6  (below average)
+  Segment D: prob = 0.99  →  z = (0.99 - 0.85) / 0.08 = +1.75 (well above)
+  Segment E: prob = 1.00  →  z = (1.00 - 0.85) / 0.08 = +1.88 (peak confidence)
+```
+
+Keep only segments where z > 2.0 (top ~2.3% for that species). These are the segments
+where Perch is **unusually confident** relative to its own baseline.
+
+Then convert z-scores to soft labels: `sigmoid(2.0) = 0.88`, `sigmoid(3.0) = 0.95`.
+Apply P^1.5 after sigmoid.
+
+**Safety check**: If a species has std < 0.01 (Perch gives essentially identical
+predictions for all segments), the z-scores are noise → skip that species.
+
+**Expected yield per species**: 127K × 2.3% ≈ ~3,000 segments at z > 2.0.
+Total for Tier C: ~3,000 × 44 species ≈ ~130K pseudo-labels.
+
+### Step 4: Merge into one pseudo-label file
+
+```
+For each of the 127K segments × 234 species:
+  If Tier A or B species → use SED pseudo-label (from Step 2)
+  If Tier C species     → use Perch pseudo-label (from Step 3)
+  If Tier D species     → 0 (no pseudo-label available)
+```
+
+Save as one parquet: `merged_pseudo_labels.parquet` (127,896 × 234).
+
+### Step 5: Train the student model
+
+Use the **exact same v5j recipe** (HGNetV2-B0, LSEHead, BCE, 5s windows, 20 epochs).
+The ONLY change is adding pseudo-labeled soundscapes to the training data.
+
+| Data source | Segments | Label type | Loss weight |
+|-------------|----------|------------|-------------|
+| Focal recordings | ~265K | Hard ground truth (primary label = 1, rest = 0) | 1.0 |
+| Labeled soundscapes | ~792 | Hard ground truth (multi-label, 0/1 per species) | 1.0 |
+| **Pseudo-labeled soundscapes** | **~127K** | **Soft probabilities (0.0 to ~0.97)** | **0.5** |
+
+Each training batch has:
+- 50% from focal recordings + labeled soundscapes (hard ground truth, loss weight 1.0)
+- 50% from pseudo-labeled soundscapes (soft pseudo-labels, loss weight 0.5)
+
+The reduced loss weight (0.5) means pseudo-labels influence the model half as much as
+ground truth per sample — limiting damage from incorrect labels while still allowing the
+model to learn soundscape patterns.
+
+**Why train from scratch, not fine-tune**: We train a new v5j model on ALL data (focal +
+labeled + pseudo-labeled), not fine-tune the existing v5j on pseudo-labels only. This
+ensures the model maintains its focal recording knowledge while adding soundscape knowledge.
+
+### Step 6: Evaluate
+
+1. Train fold 0 as sanity check → submit to LB → compare vs v5j fold 0 (0.906)
+2. **Decision gate**: If fold 0 > 0.906 → proceed. If regression → diagnose and adjust.
+3. If promising: train folds 1-3, submit 4-fold ensemble (compare vs 0.913)
+4. Submit student + Perch ensemble (compare vs 0.929 current best)
+
+### Step 7: Iterate (if round 1 works)
+
+The round 1 student was trained on soundscape data, so its predictions on soundscapes
+should be **better calibrated** than the original SED/Perch teacher.
+
+1. Run student inference on all 127K soundscapes
+2. Generate new pseudo-labels (student predictions should be cleaner)
+3. Particularly for Tier C: student may now have genuine signal for those 44 species
+   (it learned from Perch pseudo-labels), so its predictions are more trustworthy
+4. Train round 2 student → submit → compare
+5. Consider relaxing Perch z-threshold (2.0 → 1.5) for more coverage in round 2
+
+---
+
+## 6. Implementation Phases
 
 ### Phase A: Generate pseudo-labels
 
@@ -314,7 +463,7 @@ source external recordings from xeno-canto or Macaulay Library.
 Input:  4-fold SED logits (shared/inference/.../hgnet-b0-sed-v5j-4fold/train_soundscapes/)
 Step 1: sigmoid(logits) per fold → 4 probability matrices (127,896 × 234)
 Step 2: max(fold0, fold1, fold2, fold3) per species per segment
-Step 3: temperature scaling: logit = log(p/(1-p)), logit_T = logit/T, p_T = sigmoid(logit_T)
+Step 3: temperature scaling: logit = log(p/(1-p)), logit_T = logit / 0.6, p_T = sigmoid(logit_T)
 Step 4: power transform: p_final = p_T ^ 1.5
 Output: sed_pseudo_labels.parquet (127,896 × 234, soft probabilities)
 ```
@@ -324,16 +473,16 @@ Output: sed_pseudo_labels.parquet (127,896 × 234, soft probabilities)
 ```
 Input:  Perch raw probs (shared/inference/.../perch-v2-tf/train_soundscapes/perch_234_raw_probs.parquet)
 Step 1: For each of the 44 Tier C species:
-          - Compute mean, std across all segments
-          - Skip if std < 0.01 (no signal)
+          - Compute mean, std across all 127K segments
+          - Skip if std < 0.01 (no signal variation)
           - z = (prob - mean) / std
-          - Keep segments where z > Z_THRESH (default 2.0)
+          - Keep segments where z > 2.0 (top ~2.3%)
           - Soft label = sigmoid(z) ^ 1.5
 Step 2: For all non-Tier-C species: set to 0 (Perch doesn't contribute)
 Output: perch_pseudo_labels.parquet (127,896 × 234, soft probabilities, mostly zeros)
 ```
 
-**A.3: Merge teachers**
+**A.3: Merge and validate**
 
 ```
 For each species:
@@ -343,64 +492,41 @@ For each species:
 Output: merged_pseudo_labels.parquet (127,896 × 234)
 ```
 
-### Phase B: Train student
+### Phase B: Train student (Round 1)
 
-Train v5j recipe on expanded dataset. The recipe is **unchanged** — only the data changes.
-
-| Data source | Segments | Labels | Loss weight |
-|-------------|----------|--------|-------------|
-| Focal (train_audio) | ~265K chunks | Hard ground truth (primary label) | 1.0 |
-| Labeled soundscapes | ~792 segments | Hard ground truth (multi-label) | 1.0 |
-| Pseudo-labeled soundscapes | ~127K segments | Soft pseudo-labels | 0.3-0.5 |
-
-Training details:
-- **Recipe**: v5j (HGNetV2-B0, LSEHead, BCE, 5s windows, 20 epochs, OneCycleLR)
-- **Batch composition**: Stratified sampling — each batch contains both focal/labeled
-  samples and pseudo-labeled samples (ratio TBD, start with 50/50)
-- **Loss**: BCE on all sources. For pseudo-labels, the soft probability IS the target.
-  For focal data, the primary label is a hard 1/0 target.
-- **No other changes**: Same backbone, same head, same augmentations, same optimizer.
-  FINDINGS.md establishes that every recipe change regresses — only data changes help.
+Extend v5j training pipeline. Recipe unchanged — only data changes.
 
 ### Phase C: Evaluate and iterate
 
-1. Train fold 0 first as a sanity check
-2. Submit fold 0 to LB → compare against v5j fold 0 baseline (0.906)
-3. If promising: train folds 1-3, submit 4-fold ensemble
-4. Submit student + Perch ensemble → compare against 0.929 best
-
-**Iteration** (if round 1 improves LB):
-- Round 1 student becomes teacher for round 2
-- Student's predictions should be better calibrated than original SED/Perch
-  (it has seen soundscape data during training)
-- Re-generate pseudo-labels with student as teacher → train round 2 student
-- Consider expanding Tier C z-threshold (more segments per species)
+1. Fold 0 → LB → decision gate
+2. If promising → full 4-fold + ensemble
+3. If round 1 improves → student-as-teacher for round 2
 
 ---
 
-## 6. Hyperparameters and Tuning Plan
+## 7. Hyperparameters and Tuning Plan
 
 All hyperparameters for round 1, with the rationale for each starting value:
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| SED temperature T | 0.7 | Mild sharpening. Nikita used 0.55-0.6; we start conservative |
-| Power transform α | 1.5 | Nikita's value. Suppresses p<0.63 below 0.5 threshold |
-| Perch z-threshold | 2.0 | Top ~2.5% of segments per species. Conservative start |
-| PL loss weight | 0.5 | Reduced influence from noisy labels. Can try 0.3 if too noisy |
-| Batch PL fraction | 0.5 | 50% focal/labeled, 50% pseudo-labeled |
-| Hard threshold | None | Soft labels — let P^1.5 + loss weight manage quality |
-| Training epochs | 20 | Same as v5j baseline |
+| **SED temperature T** | **0.6** | Nikita used 0.55-0.6 and won. Our teacher is strong (0.929 LB, 94% precision) — we can trust its confidence signal, so sharper is appropriate. |
+| **Power transform α** | **1.5** | Nikita's technique. After T=0.6, a probability must be >0.63 originally to survive above 0.5 after P^1.5. This kills borderline predictions while preserving confident ones. |
+| **Perch z-threshold** | **2.0** | Selects top ~2.3% of segments per species (≈3,000 per species). Enough data to learn from (~130K total for 44 species), but selective enough to exclude the 97.7% of segments where Perch's signal is average or below. |
+| **PL loss weight** | **0.5** | Pseudo-labels get half the per-sample influence of ground truth. Combined with soft labels (uncertain predictions already contribute less gradient) and P^1.5 (borderline already suppressed), this lets good pseudo-labels teach while limiting damage from bad ones. Too low (0.2-0.3) and we waste the soundscape data; too high (0.7+) and noise from pseudo-labels can override ground truth. |
+| **Batch PL fraction** | **0.5** | 50% focal/labeled, 50% pseudo-labeled per batch. Ensures every batch trains on both domains. |
+| **Hard threshold** | **None** | Soft labels — P^1.5 + loss weight manage quality without discarding information. A prediction of 0.38 after P^1.5 contributes almost nothing to the gradient anyway. |
+| **Training epochs** | **20** | Same as v5j baseline. More data does not require more epochs — the model sees the same total gradient steps. |
 
 **Tuning priority** (if round 1 needs adjustment):
-1. PL loss weight (0.3 → 0.5 → 0.7) — biggest lever
+1. PL loss weight (0.3 → 0.5 → 0.7) — biggest lever for controlling pseudo-label influence
 2. Perch z-threshold (1.5 → 2.0 → 2.5) — controls Tier C noise level
 3. Power transform (1.5 → 2.0) — more aggressive noise suppression
-4. SED temperature (0.7 → 0.5 → 0.9) — sharpening intensity
+4. SED temperature (0.5 → 0.6 → 0.8) — sharpening intensity
 
 ---
 
-## 7. Evaluation
+## 8. Evaluation
 
 ### Metrics
 
@@ -440,7 +566,7 @@ All hyperparameters for round 1, with the rationale for each starting value:
 
 ---
 
-## 8. Iteration Strategy
+## 9. Iteration Strategy
 
 | Round | Teacher | What changes | Goal |
 |-------|---------|--------------|------|
@@ -455,7 +581,7 @@ All hyperparameters for round 1, with the rationale for each starting value:
 
 ---
 
-## 9. Risk Assessment
+## 10. Risk Assessment
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
@@ -468,7 +594,7 @@ All hyperparameters for round 1, with the rationale for each starting value:
 
 ---
 
-## 10. Key References
+## 11. Key References
 
 | Document | Location |
 |----------|----------|

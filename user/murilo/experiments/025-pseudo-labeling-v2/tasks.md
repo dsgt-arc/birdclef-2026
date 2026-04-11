@@ -19,7 +19,7 @@ Status: **Proposed — awaiting review.**
 
 - [ ] Write `scripts/generate_pseudo_labels.py`
 - [ ] Load SED 4-fold logits → sigmoid → max-across-folds
-- [ ] Apply temperature scaling (T=0.7) → power transform (P^1.5)
+- [ ] Apply temperature scaling (T=0.6) → power transform (P^1.5)
 - [ ] Save `shared/pseudo-labels/v1/sed_pseudo_labels.parquet`
 - [ ] Verify: coverage stats, per-species segment counts, sanity checks
 
