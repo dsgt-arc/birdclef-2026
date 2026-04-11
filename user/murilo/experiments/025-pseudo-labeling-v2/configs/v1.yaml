@@ -1,0 +1,54 @@
+# Pseudo-label generation config: v1
+# Round 1: SED max-folds teacher (Tiers A+B) + Perch z-normalized (Tier C)
+#
+# Usage:
+#   python scripts/generate_pseudo_labels.py --config configs/v1.yaml
+#
+# This config is copied into the output directory (shared/pseudo-labels/birdclef-2026/v1/)
+# alongside the generated parquets for full reproducibility.
+
+version: v1
+created: "2026-04-10"
+parent_version: null  # First round — no parent
+
+# --- Teacher: SED (Tiers A+B — 184 species) ---
+sed:
+  source_dir: shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/train_soundscapes
+  n_folds: 4
+  fold_strategy: max  # max-across-folds (not avg)
+  temperature: 0.6    # Sharpening (Nikita used 0.55-0.6)
+  power_transform: 1.5
+  tiers: [A, B]       # Applied to Tier A (75 seen) + Tier B (109 unseen SED-covered)
+
+# --- Teacher: Perch (Tier C — 44 SED-zero species) ---
+perch:
+  source_path: shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/perch_234_raw_probs.parquet
+  strategy: per_species_z_normalization
+  z_threshold: 2.0    # Top ~2.3% of segments per species
+  min_std: 0.01       # Skip species with std < this (no signal variation)
+  power_transform: 1.5
+  tiers: [C]           # Applied only to Tier C (44 SED-zero, Perch-covered)
+
+# --- Tier D: No teacher (6 invisible species) ---
+tier_d_species:
+  - "23150"   # Central Dwarf Frog (1 focal recording)
+  - "23154"   # Bahia Dwarf Frog (5 focal, out of range)
+  - "23724"   # Waxy Monkey Tree Frog (1 focal)
+  - "25214"   # Muller's Termite Frog (3 focal)
+  - "476521"  # Cuyaba Dwarf Frog (3 focal)
+  - "74580"   # Black-tailed Marmoset (3 focal, diurnal)
+
+# --- Output ---
+output_dir: shared/pseudo-labels/birdclef-2026/v1
+
+# --- Training config (for reference — actual training uses SED training pipeline) ---
+training:
+  recipe: v5j
+  pl_loss_weight: 0.5
+  batch_pl_fraction: 0.5
+  epochs: 20
+  base_model: HGNetV2-B0
+  head: LSEHead
+  loss: BCE
+  window_sec: 5
+  scheduler: OneCycleLR

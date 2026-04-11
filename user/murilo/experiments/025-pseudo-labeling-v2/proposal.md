@@ -504,7 +504,92 @@ Extend v5j training pipeline. Recipe unchanged — only data changes.
 
 ---
 
-## 7. Hyperparameters and Tuning Plan
+## 7. Directory Structure and Versioning
+
+Each pseudo-labeling round produces a versioned set of outputs. Configs live in the
+experiment directory (source of truth) and are **copied** into the output directory
+when the script runs, so each output is self-contained and reproducible.
+
+### Experiment directory (under version control)
+
+```
+user/murilo/experiments/025-pseudo-labeling-v2/
+├── proposal.md                     # This document
+├── tasks.md                        # Task tracking
+├── results.md                      # Results per round
+├── configs/
+│   ├── v1.yaml                     # Round 1: SED + Perch teachers
+│   ├── v2.yaml                     # Round 2: student-as-teacher (created after round 1)
+│   └── ...
+├── artifacts/
+│   └── training/
+│       ├── hgnet_b0_sed_v5j_pl_v1_fold0/   # Round 1 fold 0 metrics
+│       │   └── metrics.json
+│       ├── hgnet_b0_sed_v5j_pl_v1_fold1/
+│       └── ...
+├── outputs/
+│   └── tensorboard/                # Training curves
+└── sbatch/                         # SLURM job scripts
+```
+
+### Shared outputs (large files, NOT version-controlled)
+
+```
+shared/pseudo-labels/birdclef-2026/
+├── v1/                              # Round 1 pseudo-labels
+│   ├── config.yaml                  # COPY of configs/v1.yaml (for reproducibility)
+│   ├── pseudo_labels.parquet        # Merged labels (127K × 234 soft probs)
+│   ├── sed_pseudo_labels.parquet    # SED component (before merge)
+│   ├── perch_pseudo_labels.parquet  # Perch component (before merge)
+│   ├── tier_assignment.csv          # Which tier each species was assigned
+│   └── stats.json                   # Coverage stats, species counts, distributions
+├── v2/                              # Round 2 pseudo-labels
+│   ├── config.yaml                  # Points to v1 as parent_version
+│   └── ...
+└── ...
+
+shared/inference/birdclef-2026/
+├── hgnet-b0-sed-v5j-pl-v1/         # Round 1 student inference outputs
+│   └── train_soundscapes/
+│       ├── logits.parquet
+│       └── embeddings.parquet
+├── hgnet-b0-sed-v5j-pl-v1-4fold/   # Round 1 4-fold student inference
+│   └── train_soundscapes/
+│       ├── fold0/ ... fold3/
+├── hgnet-b0-sed-v5j-pl-v2/         # Round 2 student (if applicable)
+└── ...
+
+shared/artifacts/025-pseudo-labeling-v2/
+├── v1-fold0/                        # Round 1 fold 0 model checkpoint
+│   ├── best.ckpt
+│   └── config.yaml
+├── v1-fold1/ ... v1-fold3/
+└── v2-fold0/ ...                    # Round 2 (if applicable)
+```
+
+### Naming conventions
+
+| Component | Pattern | Example |
+|-----------|---------|---------|
+| Config file | `v{N}.yaml` | `v1.yaml`, `v2.yaml` |
+| Pseudo-label dir | `shared/pseudo-labels/birdclef-2026/v{N}/` | `v1/`, `v2/` |
+| Training artifact | `hgnet_b0_sed_v5j_pl_v{N}_fold{F}` | `hgnet_b0_sed_v5j_pl_v1_fold0` |
+| Inference output | `hgnet-b0-sed-v5j-pl-v{N}` | `hgnet-b0-sed-v5j-pl-v1` |
+| Shared checkpoint | `shared/artifacts/025-pseudo-labeling-v2/v{N}-fold{F}/` | `v1-fold0/` |
+
+### Config versioning
+
+Each `v{N}.yaml` records:
+- `parent_version`: which previous round's student was the teacher (null for v1)
+- All teacher sources and hyperparameters
+- Training config (loss weight, batch fraction, epochs)
+
+The `generate_pseudo_labels.py` script reads the config, generates labels, and copies the
+config into the output directory. Running the same config again produces identical output.
+
+---
+
+## 8. Hyperparameters and Tuning Plan
 
 All hyperparameters for round 1, with the rationale for each starting value:
 
@@ -526,7 +611,7 @@ All hyperparameters for round 1, with the rationale for each starting value:
 
 ---
 
-## 8. Evaluation
+## 9. Evaluation
 
 ### Metrics
 
@@ -566,7 +651,7 @@ All hyperparameters for round 1, with the rationale for each starting value:
 
 ---
 
-## 9. Iteration Strategy
+## 10. Iteration Strategy
 
 | Round | Teacher | What changes | Goal |
 |-------|---------|--------------|------|
@@ -581,7 +666,7 @@ All hyperparameters for round 1, with the rationale for each starting value:
 
 ---
 
-## 10. Risk Assessment
+## 11. Risk Assessment
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
@@ -594,7 +679,7 @@ All hyperparameters for round 1, with the rationale for each starting value:
 
 ---
 
-## 11. Key References
+## 12. Key References
 
 | Document | Location |
 |----------|----------|
