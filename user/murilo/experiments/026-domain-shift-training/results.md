@@ -158,6 +158,35 @@ unreliable — LB submission needed.
 is the strongest model offline with +0.012 auroc, +0.085 cmap, +0.110 top1, +0.076
 top5 over the 5s baseline. The cmap and top1 improvements are particularly large.
 
-**Caveat**: offline metrics have been anti-correlated with LB in past experiments.
-The v5j-dualval 0.897 LB (epoch 17, worse than v5j 0.903) is a reminder. All three
-v9 models submitted with last checkpoint (epoch 19) to LB — awaiting scores.
+### LB Results — ALL REGRESSED
+
+| Model | Window | Head | val/auroc | val/cmap | val/top1 | LB | Delta vs v5j |
+|-------|--------|------|-----------|----------|----------|-----|-------------|
+| v5j (exp 019) | 5s | LSEHead | 0.874 | — | — | **0.903** | — |
+| v5j-dualval | 5s | LSEHead | 0.849 | 0.596 | 0.752 | 0.897 | -0.006 |
+| v9a | 10s | AttHead | 0.859 | 0.645 | 0.827 | 0.868 | **-0.035** |
+| v9b | 15s | AttHead | 0.858 | 0.664 | 0.847 | 0.877 | **-0.026** |
+| v9c | 20s | AttHead | 0.861 | 0.681 | 0.862 | 0.878 | **-0.025** |
+
+**AttHead is catastrophically worse on LB** despite best-ever offline metrics.
+The offline/LB disconnect is extreme: v9c has the best cmap (+0.085) and top1
+(+0.110) offline but the worst LB (-0.025). This is the strongest evidence yet
+that offline metrics are anti-correlated with LB for training changes.
+
+**Window length does help within AttHead**: 0.868 → 0.877 → 0.878 (10s→15s→20s),
+but all are far below the 5s LSEHead baseline (0.903).
+
+### Critical finding: train/inference window mismatch
+
+The Kaggle inference pipeline processes **5s segments** regardless of training
+window. A model trained on 20s (64 temporal positions) receives 5s input (16
+positions) at inference. For LSEHead this is less problematic because LSE is a
+fixed smooth-max operation that works on any sequence length. For AttHead, the
+learned attention weights are calibrated for 64 positions — when applied to 16
+positions at inference, the attention distribution changes unpredictably.
+
+This train/inference mismatch likely explains why:
+- v8b (20s LSEHead): -0.010 from v5j → LSE is length-invariant, mild regression
+- v9c (20s AttHead): -0.025 from v5j → attention is NOT length-invariant, severe regression
+- Competitors train on 20s and get 0.922+ → they likely infer on longer windows
+  too (sliding window), or handle the mismatch differently

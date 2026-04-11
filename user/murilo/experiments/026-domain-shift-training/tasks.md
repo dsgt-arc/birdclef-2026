@@ -68,12 +68,12 @@ Untested: **AttHead + longer windows** (single prediction, attention selects fra
   Monotonic improvement with window length. Checkpoint epoch 10 (broken metric).
 - [x] Record offline metrics for all three ✅
 - [x] Added v9a/v9b/v9c to exp 010 submission pipeline
-- [x] Submitted v9a (10s) to LB — awaiting score
-- [x] Submitted v9b (15s) to LB — awaiting score
-- [x] Submitted v9c (20s) to LB — awaiting score
-- [ ] Compare all against v5j baseline (0.903)
-  Using last checkpoint (epoch 19) for all submissions since soundscape-based
-  checkpoint selection (broken metric) picked suboptimal epochs.
+- [x] v9a (10s) LB: **0.868** ❌ — regressed -0.035 from v5j
+- [x] v9b (15s) LB: **0.877** ❌ — regressed -0.026 from v5j
+- [x] v9c (20s) LB: **0.878** ❌ — regressed -0.025 from v5j
+- [x] All AttHead models regressed on LB despite best-ever offline metrics.
+  Train/inference window mismatch (20s train → 5s infer) likely a major factor.
+  **Pausing experiment to do deep research before more experiments.**
 
 ## Phase 4: Further Ablations (conditional on Phase 3)
 

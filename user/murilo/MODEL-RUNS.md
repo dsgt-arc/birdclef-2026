@@ -539,9 +539,12 @@ All Phase 3 jobs ran with old broken val_sc/auroc (~0.093). Compare using val/au
 
 | Slug | Window | Head | val/auroc | val/cmap | val/top1 | LB | Checkpoint |
 |------|--------|------|-----------|----------|----------|-----|------------|
-| `v9a-10s-att` | 10s | AttHead | 0.859 | 0.645 | 0.827 | — | `026-.../best-epochepoch=09.ckpt` |
-| `v9b-15s-att` | 15s | AttHead | 0.858 | 0.664 | 0.847 | — | `026-.../best-epochepoch=10.ckpt` |
-| `v9c-20s-att` | 20s | AttHead | 0.861 | 0.681 | 0.862 | — | `026-.../best-epochepoch=10.ckpt` |
+| `v9a-10s-att` | 10s | AttHead | 0.859 | 0.645 | 0.827 | **0.868** | `026-.../last.ckpt` (ep19) |
+| `v9b-15s-att` | 15s | AttHead | 0.858 | 0.664 | 0.847 | **0.877** | `026-.../last.ckpt` (ep19) |
+| `v9c-20s-att` | 20s | AttHead | 0.861 | 0.681 | 0.862 | **0.878** | `026-.../last.ckpt` (ep19) |
+
+All AttHead models regressed on LB despite best-ever offline metrics. Train/inference
+window mismatch (train on 10-20s, infer on 5s) likely causes attention calibration issues.
 
 ## Checkpoint Base Path
 
