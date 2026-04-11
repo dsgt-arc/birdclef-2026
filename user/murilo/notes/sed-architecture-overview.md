@@ -728,45 +728,209 @@ why multi-chunk LSEHead (v8b: 0.896) underperformed single-chunk (v5j: 0.906).
 
 ---
 
-## 7. Inference Pipeline
+## 7. Backward Pass, Optimizer, and Training Loop
+
+### Backward pass: computing gradients
+
+After the loss is computed as a single scalar, PyTorch's autograd traces backward
+through every operation — from the loss, through BCE, through LSE pooling, through
+the linear layers, through every convolution in the backbone.
+
+For each of the 3.1M parameters, it computes: "if I nudge this weight up by a
+tiny amount, how much does the loss change?" That derivative is the **gradient** —
+the direction to adjust each weight to reduce the loss.
+
+The gradient flows through the same path as the forward pass, but in reverse:
+
+```
+loss (scalar)
+  ← BCE: which species predictions were most wrong?
+  ← LSE pooling: which frames contributed to the clip prediction?
+  ← Linear layers: which feature→species mappings need adjusting?
+  ← Backbone convolutions: which filters need adjusting?
+```
+
+**LSE pooling focuses the gradient.** Because LSE is dominated by the
+highest-scoring frame, gradients flow mainly through that peak frame. Silent
+frames (low logits) get almost no gradient. This means the backbone learns to
+sharpen detections at the frames where a call is present, rather than being
+pulled in 16 different directions equally.
+
+### Optimizer: AdamW
+
+v5j uses **AdamW** (Adam with decoupled weight decay). For each parameter, AdamW
+maintains running averages of the gradient (momentum) and squared gradient
+(variance), and adapts the step size per-parameter:
+
+- Parameters with consistently large gradients → smaller steps (more cautious)
+- Parameters with small, noisy gradients → larger steps (more exploratory)
+
+With `scheduler_type="one_cycle"` (v5j), all parameters — backbone AND head —
+share a single learning rate (5e-4). No separate head_lr. Weight decay is 1e-4
+(gently shrinks weights toward zero each step to prevent overfitting).
+
+### Learning rate schedule: OneCycleLR
+
+The learning rate follows a warmup → peak → decay curve across 20 epochs:
+
+```
+LR
+5e-4 ┤             ╱ peak at epoch 5
+     │           ╱
+     │         ╱
+     │       ╱        ╲
+     │     ╱            ╲
+     │   ╱                ╲
+2e-5 ┤ ╱ start               ╲
+     │                         ╲───── ~1.25e-4 final
+     └──┬─────┬─────┬─────┬────┬──
+        0     5    10    15   20  epoch
+       warmup       decay
+```
+
+Three phases:
+1. **Warmup (epochs 0–5)**: LR ramps from 2e-5 to 5e-4. Small initial steps
+   prevent the randomly-initialized head from producing wild gradients that
+   destabilize the pretrained backbone features.
+2. **Peak and decay (epochs 5–20)**: LR decreases from 5e-4 following a cosine
+   curve. Large steps in the middle (exploration), smaller toward the end
+   (refinement).
+3. **Final**: LR settles at ~1.25e-4 for fine-grained adjustments.
+
+**Per-step updates**: Unlike CosineAnnealing (per-epoch), OneCycleLR adjusts LR
+every batch (~500 batches/epoch × 20 epochs = ~10,000 steps). Smoother curve.
+
+### Mixed precision (16-mixed)
+
+Forward pass and loss use float16 (half precision) for speed and memory savings.
+Gradients and optimizer state remain in float32 for numerical stability. PyTorch's
+GradScaler handles the conversion. This lets us fit batch_size=64 with 5s windows
+on a 24GB RTX 6000.
+
+### The full training loop
+
+```
+For each epoch (0 to 19):
+
+  Training (~500 batches of 64 samples):
+    1. DataLoader loads batch: raw waveforms (64, 160000)
+    2. [Optional] Waveform augmentations (noise, stretch)
+    3. Mel conversion on GPU → (64, 1, 256, 511)
+    4. [Default] Spectrogram MixUp → blend pairs
+    5. Forward pass → clipwise_logits (64, 234)
+    6. Loss: BCE(clipwise_logits, labels) → scalar
+    7. Backward pass → gradients for 3.1M parameters
+    8. AdamW step → update all parameters
+    9. OneCycleLR step → adjust learning rate
+    10. Log train/loss every 50 steps
+
+  Validation (after all training batches, no gradient):
+    For each val batch:
+      Forward pass → compute AUROC, cmap, F1, loss
+    Log: val/auroc, val_sc/auroc (dual validation), etc.
+
+  Checkpoint: save model if val_sc/auroc is best so far
+```
+
+After 20 epochs, the best checkpoint (by `val_sc/auroc`) is selected for export.
+Typically the best epoch is 17–19 (late training, after the LR has decayed for
+fine-grained refinement).
+
+---
+
+## 8. Inference Pipeline
+
+After training, the model goes through three stages to produce a Kaggle
+submission: ONNX export (on PACE GPU), weight upload, and kernel execution
+(on Kaggle CPU). The full pipeline is managed by exp 010.
 
 ### ONNX export
 
-The trained model is exported to ONNX format for Kaggle CPU inference:
+The trained PyTorch model (encoder + head) is wrapped in a thin module that
+combines clipwise and framewise predictions into a single probability output:
 
 ```python
 class SEDWrapper(nn.Module):
     def forward(self, mel):
-        features = encoder.forward_features(mel)
-        clipwise_logits, framewise_logits = sed_head(features)
-        framewise_max = framewise_logits.max(dim=-1).values
-        probs = 0.75 * sigmoid(clipwise_logits) + 0.25 * sigmoid(framewise_max)
-        return probs  # (B, 234) probabilities
+        features = encoder.forward_features(mel)          # backbone
+        clipwise_logits, framewise_logits = sed_head(features)  # head
+        framewise_max = framewise_logits.max(dim=-1).values     # best frame
+        probs = 0.75 * sigmoid(clipwise_logits) \
+              + 0.25 * sigmoid(framewise_max)
+        return probs  # (B, 234) probabilities in [0, 1]
 ```
+
+This wrapper is traced with a dummy input and exported to ONNX format (opset 17).
+The ONNX file contains the full computation graph — backbone + head + blending —
+as a single portable model that runs without PyTorch.
+
+The export also saves:
+- `species_list.json`: ordered list of 234 species IDs matching model output indices
+- `mel_config.json`: mel spectrogram parameters (n_fft, hop_length, n_mels, etc.)
+  so the inference kernel knows how to preprocess audio identically to training
+- `species_mapping.json`: maps model output indices to submission column names
 
 ### Kaggle kernel inference
 
-Runs on Kaggle CPU (no GPU). For each test soundscape file (60 seconds):
+The submission kernel runs on Kaggle CPU (no GPU, 90-minute time limit). For each
+test soundscape file (60 seconds of audio):
 
+```
 1. Load full 60s audio at 32kHz → 1,920,000 samples
-2. Compute mel spectrogram for the entire file at once
-3. Slice the mel into twelve 5s segments (511 frames each)
-4. Run ONNX inference on each segment → (234,) probability vector
-5. Map model output indices to competition species columns
-6. Write 12 rows to `submission.csv`
 
-Runtime: ~20 minutes for a single model on ~600 test files (well within the
-90-minute Kaggle limit).
+2. Compute mel spectrogram for the ENTIRE 60s file at once
+   → (1, 1, 256, 6132) — one giant spectrogram
+   This is more efficient than computing 12 separate 5s spectrograms
+   because the STFT window overlaps at segment boundaries are handled once.
+
+3. Slice the mel into twelve 5s segments
+   → 12 × (1, 1, 256, 511) — one spectrogram per 5s segment
+   Each segment is exactly 511 frames (5s × 32kHz / hop_length=313)
+
+4. Run ONNX inference on each segment
+   → 12 × (234,) probability vectors
+   Each vector: P(species_k present in this 5s segment) for k=0..233
+
+5. Map model output indices to competition species columns
+   via species_mapping.json (identity for 234-class models)
+
+6. Write 12 rows to submission.csv
+   Each row: row_id, species_0_prob, species_1_prob, ..., species_233_prob
+```
+
+**Runtime**: ~20 minutes for a single model on ~600 test files. Well within the
+90-minute Kaggle limit, leaving room for ensembles or post-processing.
+
+**Key detail**: the inference processes 5s segments independently — each segment
+gets its own prediction with no information from neighboring segments. This is
+different from training, where longer windows (v8b: 20s) give the backbone
+context from neighboring segments. At inference with a 5s-trained model (v5j),
+each segment is isolated.
 
 ### Post-processing (optional)
 
-Site/hour priors: multiply predictions by prior probabilities based on recording
-site and time of day (from labeled soundscape statistics). Effect: +0.003 single
-model / +0.004 with 4-fold ensemble.
+**Site/hour priors**: Multiply predictions by prior probabilities derived from
+labeled soundscape statistics (which species tend to appear at which site and
+time of day). For example, a nocturnal frog species gets suppressed during
+daytime segments.
+
+Effect: +0.003 single model / +0.004 with 4-fold ensemble on LB.
+
+### 4-fold ensemble
+
+Train the same model 4 times with different train/val splits (4-fold CV). At
+inference, average the 4 models' probabilities per segment:
+
+```
+final_prob = (prob_fold0 + prob_fold1 + prob_fold2 + prob_fold3) / 4
+```
+
+Each fold sees slightly different training data, so their errors are partially
+uncorrelated. Averaging reduces variance. Effect: +0.007 LB (0.906 → 0.913).
 
 ---
 
-## 8. The Window Length Question
+## 9. The Window Length Question
 
 ### Why 5s may not be optimal
 
@@ -836,7 +1000,7 @@ backbone knowing what's happening in neighboring chunks.
 
 ---
 
-## 9. Dual Validation (exp 026)
+## 10. Dual Validation (exp 026)
 
 ### The problem with our current validation
 
@@ -864,7 +1028,7 @@ on `dataloader_idx`.
 
 ---
 
-## 10. Key Lessons (exps 016–026)
+## 11. Key Lessons (exps 016–026)
 
 1. **Only input representation and inference-time changes improve LB.** 15+
    training recipe changes (loss, augmentation, head, regularization) have zero
@@ -899,7 +1063,7 @@ on `dataloader_idx`.
 
 ---
 
-## 11. Identified Gaps and Open Questions
+## 12. Identified Gaps and Open Questions
 
 Potential improvements we haven't explored yet, ordered by expected impact:
 
@@ -996,7 +1160,7 @@ we haven't tested. CE + AttHead + 20s is an untested combination that might work
 
 ---
 
-## 12. Score Progression
+## 13. Score Progression
 
 | LB | Model | Key Change | Exp |
 |-----|-------|-----------|-----|
