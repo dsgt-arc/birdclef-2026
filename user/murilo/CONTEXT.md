@@ -3,7 +3,7 @@
 Session handoff document for Murilo's BirdCLEF 2026 experiments.
 Read this first, then read the referenced docs to get full context.
 
-Last updated: 2026-04-10
+Last updated: 2026-04-11
 
 ## Read these files first
 
@@ -11,16 +11,14 @@ Read ALL of these at session start to get full context.
 
 | File | Purpose | How to read |
 |------|---------|-------------|
-| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | **THE most important doc** — 14 sections of model analysis + Perch vs SED comparison | Read fully (14 sections) |
-| `user/murilo/experiments/024-data-centric-exploration/tasks.md` | Current experiment task tracking (Phases A-E ✅, F pending) | Read fully |
-| `user/murilo/experiments/024-data-centric-exploration/results.md` | Results so far (Phases A-E complete) | Read fully |
-| `user/murilo/experiments/024-data-centric-exploration/proposal.md` | Experiment proposal and methodology | Read fully |
+| `user/murilo/experiments/025-iter-pseudo-labeling/proposal.md` | **Current experiment** — full methodology (12 sections) with step-by-step walkthrough | Read fully |
+| `user/murilo/experiments/025-iter-pseudo-labeling/tasks.md` | Current task tracking (Phase A ✅, Phase B in progress) | Read fully |
+| `user/murilo/experiments/025-iter-pseudo-labeling/findings/v1-pseudo-labels.md` | v1 pseudo-label generation results and quality validation | Read fully |
+| `user/murilo/experiments/025-iter-pseudo-labeling/README.md` | Experiment overview, directory structure, commands | Read fully |
+| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | 14 sections of model analysis + Perch vs SED comparison | Skim sections 12-14 (Phase C/D/E findings) |
+| `user/murilo/experiments/024-data-centric-exploration/results.md` | Exp 024 findings that motivate exp 025 | Skim synthesis section |
 | `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns (exps 006-024) | Read fully |
-| `user/murilo/notes/2026-04-09-data-centric-pivot.md` | Data-centric pivot plan with revised priorities | Read fully |
-| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor intel + CV/LB correlation data | Read fully |
-| `user/murilo/EXPERIMENTS.md` | Per-experiment methodology summaries (001-024) | Skim Section 1 table, read exp 024 details |
 | `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | Skim latest sections (exp 020-023) |
-| `user/murilo/MODEL-TRAINING.md` | Training techniques reference (backbones, heads, loss, PP) | Skim relevant sections as needed |
 
 ## Current state
 
@@ -34,129 +32,86 @@ Read ALL of these at session start to get full context.
 | Perch+SED w=0.5 (exp 023) | 0.927 | ProtoSSM+MLP blend |
 | Perch ProtoSSM v18 TF (exp 020) | 0.925 | Best individual model |
 | SED v5j-4fold-pp2 (exp 021) | 0.917 | Best SED |
-| SED v5j single (exp 019) | 0.906 | Best single-fold SED |
+| SED v5j single (exp 019) | 0.906 | Best single-fold SED — **baseline for exp 025** |
 
-## What happened in this session (2026-04-10)
+## What happened in this session (2026-04-11)
 
-### 1. Phase C: Applied MLP Probes to Perch Embeddings ✅
+### 1. Exp 025 Setup
 
-Extracted the full Perch→234 pipeline from the exp 023 Kaggle submission kernel and
-applied it to Phase B embeddings for all 127,896 soundscape segments.
+- Renamed experiment from `025-pseudo-labeling-v2` to `025-iter-pseudo-labeling`
+- Created branch `mg/025-iter-pseudo-labeling`, opened PR #27
+- Comprehensive proposal (12 sections), README, versioned configs, pyproject.toml
 
-Key discoveries:
-- MLP probes need **142 features** (128 PCA + 14 contextual), not just PCA embeddings
-- Pipeline: logit mapping (203 direct, 3 genus proxy, 28 unmapped) → prior fusion → temporal smoothing → 58 MLP probes → alpha blend
-- Memory-optimized to read only 220/14,795 logit columns (login node OOM fix)
-- Verified Phase B embeddings identical to exp 020 training data (cosine sim = 1.0)
-- Script: `user/murilo/scripts/apply_perch_probes.py`
+### 2. Phase A: v1 Pseudo-Labels Generated ✅
 
-Output (at `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/`):
-- `perch_234_raw_probs.parquet` — pure Perch signal (158 MB)
-- `perch_234_scores.parquet` — full pipeline logit-space (172 MB)
-- `perch_234_probs.parquet` — full pipeline probability-space (171 MB)
+Script: `generate_pseudo_labels.py` with `configs/v1.yaml`
+Output: `shared/pseudo-labels/birdclef-2026/v1/`
 
-### 2. Phase D: Perch vs SED Comparative EDA ✅ (CRITICAL FINDINGS)
+| Teacher | Tier | Species | Pseudo-labels >0.5 |
+|---------|------|---------|---------------------|
+| SED max-folds (T=0.6, P^1.5) | A+B | 162/184 | 198K |
+| Perch z-norm (z>2.0, P^1.5) | C | 34/43 | 149K |
+| **Merged** | **All** | **196/234** | **347K** |
 
-Comprehensive comparison on 127K unlabeled soundscape segments.
-Script: `user/murilo/scripts/perch_sed_comparison.py`
-Findings in EDA doc sections 13.1-13.12.
+Key validation: Perch z-normalization pairwise overlap = 5.1% (species-specific signal, not noise).
+Mean 2.73 species/segment. Training balance: 19.3% PL / 80.7% GT.
 
-**Success criteria — both pass:**
-- ✅ Union ≥120/159 unseen at >0.3: **153/159**
-- ✅ Perch covers 30+ of 50 SED-zero: **40 rescued at >0.5**
+### 3. Phase B: Training Pipeline Implemented ✅
 
-**Key findings (D.1-D.7):**
-- Perch rescues **40 SED-zero species** at >0.5 (109→149/159 coverage)
-- 28/34 truly hard species covered by Perch at >0.3; only **6 truly invisible**
-- **Zero SED-only species** at any threshold — Perch is strict superset for coverage
-- Per-species Spearman ρ = 0.223 — models are highly complementary
-- Perch ~145/159 species per site vs SED ~13/159
+Shared src modifications (backward compatible with exp 021):
+- `src/birdclef/data/sed.py`: `PseudoLabelSoundscapeDataset`, `GTDatasetWrapper`,
+  `StratifiedBatchSampler`, extended `SEDDataModule` with pseudo-label params
+- `src/birdclef/lightning/sed_finetune.py`: per-sample loss weighting (BCE path),
+  4-tuple batch `(x, labels, primary_idx, loss_weight)`, mixup loss_weight blending
 
-**CRITICAL — Perch calibration problem (D.8-D.10):**
-- Perch predicts **119 unseen species per segment** at >0.5 (vs SED: 0.04)
-- **15M pseudo-labels** vs SED's **5K** — a 3,000x difference
-- 126/159 species appear in >50% of all segments (not segment-specific detection)
-- On labeled soundscapes: SED macro-AUC **0.9987** vs Perch **0.7311**
-- SED precision **94%** vs Perch **6%** at >0.5
-- SED better on **62/70 species**, Perch better on **0/70**
-- Root cause: Perch's 14,795-class taxonomy gives permanently positive logits for common taxa
-- **Perch raw probs NOT directly usable as pseudo-labels**
+Exp 025 files: `train.py`, `configs/v1_train.yaml`, `sbatch/`, `fold_assignments.json`
 
-**Taxonomy breakdown:**
-- Perch covers 134/134 unseen Aves (saturated — not real detection)
-- Only 10/18 Amphibia, 3/4 Mammalia covered
-- 5 Amphibia + 1 Mammalia truly invisible (hard floor)
+### 4. Validation
 
-### 3. Phase E: Ecological Sanity Check ✅
-
-- All **54 original suspects resolved**: 32 by SED max-folds, 22 by Perch
-- **6 truly invisible species** all have 1-5 focal recordings:
-  - 4 ecologically expected in Pantanal (nocturnal frogs) — data scarcity
-  - 1 out of range (P. albifrons — NE Brazil only)
-  - 1 present but diurnal (M. melanurus — won't appear in nocturnal recordings)
-- Root cause: data scarcity, not domain shift or model failure
-
-### 4. Teacher Strategy (from Phase D analysis)
-
-**Recommended tiered teacher for exp 025:**
-
-| Tier | Species | Teacher | Rationale |
-|------|---------|---------|-----------|
-| 1 | 109 SED-covered unseen | SED max-folds + P^1.5 | High precision (94%), 5K labels |
-| 2 | 75 seen species | SED max-folds | Already saturated (0.9987 AUC) |
-| 3 | 40 Perch-only species | Perch with aggressive filtering | Only signal available, but 6% precision |
-| 4 | 6 truly invisible | No teacher — focal only | 1-5 recordings, can't help |
+- **Fast-dev-run** ✅ — 5 batches, 32724 GT + 127896 PL = 160620 total,
+  50/50 batch composition confirmed, loss_weight=0.5 for PL
+- **GPU-check** ✅ — 1 epoch, memory and throughput OK on RTX 6000
+- **Full training run submitted** — 90/10 split (same as v5j baseline), awaiting completion
 
 ## What needs to happen next
 
-### Immediate — Phase F: Synthesis + Exp 025 Design
+### Immediate — awaiting training completion
 
-1. **F.1**: Write final results.md consolidating all Phase A-E findings
-2. **F.2**: Design pseudo-labeling teacher strategy:
-   - Tiered teacher: SED-primary (tiers 1-2) + Perch-rescue (tier 3)
-   - SED: max-across-folds, P^1.5 power transform, threshold >0.5
-   - Perch (tier 3 only): Need calibration strategy — options:
-     - Very high threshold (>0.9 or >0.95)
-     - Per-file consistency (species in ≥N/12 windows)
-     - Site-level frequency caps
-     - Calibrate against SED on shared species
-   - Multi-label: threshold approach (keep all species above thresh after power transform)
-   - Loss weighting: ground truth w=1.0, pseudo-labels w=0.3-0.5
-3. **F.3**: Draft exp 025 proposal (pseudo-labeling pipeline)
+1. Check training logs when job completes (loss curves, val/auroc)
+2. Export checkpoint → ONNX → Kaggle submission
+3. Submit to LB → compare against v5j baseline (0.906)
+4. **Decision gate**: If LB > 0.906 → proceed to 4-fold + ensemble
 
-### After Exp 024
+### If round 1 succeeds
 
-4. **Exp 025**: Pseudo-labeling pipeline (highest expected LB gain)
-5. **Backbone diversity**: Train v5j on different backbone for ensemble diversity
-6. **VAD cleaning**: Remove speech contamination from focal data
+5. Train 4-fold ensemble → submit (compare vs 0.913)
+6. Student + Perch ensemble → submit (compare vs 0.929)
+7. Student-as-teacher → v2 pseudo-labels → round 2
+
+### If round 1 fails
+
+5. Diagnose: check per-species analysis, val curves
+6. Try variants: PL weight 0.3, power P^2.0, Perch z=2.5
+7. Try without Tier C (SED-only pseudo-labels)
 
 ## Key patterns (updated)
 
 - **Only data and inference changes improve LB** — 15+ training recipe changes, 0 successes
-- **The LB gap is data coverage** — 0.9958 AUC on 75 known species, 159 species unseen in soundscapes
-- **Max-across-folds >> averaging for pseudo-labeling** — +29 species coverage at >0.5
-- **SED is precise but narrow, Perch is broad but noisy** — 94% vs 6% precision
-- **Perch raw probs are NOT directly usable** — 15M FPs, 119 species/segment
-- **Perch is strict superset of SED for coverage** — zero SED-only species at any threshold
-- **6 species are a hard floor** — 1-5 focal recordings, neither model can detect them
-- **12.6% of focal "confusions" are correct** — model is multi-label capable
-- **Offline metrics are anti-correlated with LB** — don't trust val/auroc
-- **Simpler models beat complex ones in ensemble** — MLP-only > ProtoSSM+MLP
+- **The LB gap is data coverage** — 0.9958 AUC on 75 known species, 159 species unseen
+- **SED is precise but narrow** (94% precision, 109/159), **Perch is broad but noisy** (6%, 149/159)
+- **Perch raw probs NOT directly usable** — 15M FPs, 119 species/segment
+- **Per-species z-normalization works** — 5.1% overlap, extracts species-specific signal from Perch
+- **v5j recipe unchanged** — only data changes. BCE loss, soft labels, w=0.5 for PL
 
 ## Key files for current work
 
 | File | Purpose |
 |------|---------|
-| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | Inference EDA findings (14 sections) |
-| `user/murilo/notes/2026-04-09-data-centric-pivot.md` | Data-centric pivot plan |
-| `user/murilo/scripts/inference_eda.py` | SED inference EDA script (9 sections) |
-| `user/murilo/scripts/perch_sed_comparison.py` | Perch vs SED comparison script (D.1-D.10) |
-| `user/murilo/scripts/apply_perch_probes.py` | Phase C: Perch→234 probe application |
-| `user/murilo/inference/perch_inference.py` | Perch v2 TF inference script |
-| `user/murilo/experiments/024-data-centric-exploration/` | Exp 024 proposal, tasks, results |
-| `shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/` | v5j 4-fold inference outputs |
-| `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/` | Perch TF outputs + 234-class probs |
-| `shared/inference/birdclef-2026/perch-v2-tf/train_audio/` | Perch TF focal outputs |
-| `shared/artifacts/020-perch-onnx/pretrained-protossm-v18/pretrained_artifacts/` | MLP probes, PCA, ProtoSSM weights |
-| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor intel + CV/LB data |
-| `user/murilo/experiments/023-perch-sed-ensemble/kaggle_kernel/submission_ensemble.py` | Perch+SED submission kernel (reference for pipelines) |
+| `user/murilo/experiments/025-iter-pseudo-labeling/` | Current experiment (proposal, tasks, configs, train.py) |
+| `user/murilo/experiments/025-iter-pseudo-labeling/findings/v1-pseudo-labels.md` | v1 generation results |
+| `user/murilo/src/birdclef/data/sed.py` | Data module with PL support |
+| `user/murilo/src/birdclef/lightning/sed_finetune.py` | Training module with loss weighting |
+| `shared/pseudo-labels/birdclef-2026/v1/` | v1 pseudo-labels (parquets + stats) |
+| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | EDA findings (14 sections) |
+| `user/murilo/experiments/024-data-centric-exploration/results.md` | Exp 024 synthesis |
+| `user/murilo/experiments/023-perch-sed-ensemble/kaggle_kernel/submission_ensemble.py` | Submission pipeline reference |
