@@ -119,6 +119,23 @@ for these species. This domain shift is what limits our LB score.
 
 ## 3. Audio Processing: From .ogg to Model Input
 
+### Why 32kHz sample rate?
+
+All audio is resampled to 32kHz regardless of the source file's native sample rate
+(many `.ogg` files are 48kHz on disk). The Nyquist theorem says you can capture
+frequencies up to half the sample rate: 32kHz → max 16kHz. Bird vocalizations
+mostly fall below 12kHz, so 16kHz captures everything we need.
+
+- **16kHz** (used by some pipelines): captures up to 8kHz — misses high-pitched
+  insect calls and some bird harmonics
+- **32kHz** (our choice): captures up to 16kHz — covers all species in this
+  competition. Also matches the Perch model's sample rate.
+- **48kHz**: captures up to 24kHz — wastes compute on ultrasonic frequencies
+
+We use 32kHz for both training and inference so the mel spectrograms are identical.
+If we trained at 32kHz but inferred at 16kHz, the spectrograms would have different
+frequency resolution and the model would produce wrong predictions.
+
 ### Why spectrograms, not raw waveforms?
 
 A raw audio waveform is just a sequence of air pressure measurements over time.
@@ -190,18 +207,59 @@ Why each step matters:
    distorting temporal resolution. We keep the natural 256×511 shape so the backbone
    sees actual temporal structure without warping.
 
-### Where does mel computation happen?
+### Where does mel computation happen? The full training_step flow
 
-In our pipeline, mel computation runs **on GPU** (using the NNAudio library), not
-in the CPU DataLoader workers. The DataLoader loads raw waveforms from disk, and
-the Lightning module computes mel on GPU in `training_step()`. This is faster,
-especially for large FFT sizes.
+The datasets return **raw waveforms** — the mel conversion does NOT happen in
+the DataLoader. Instead, it runs **on GPU** inside the Lightning module's
+`training_step()`. This is faster (GPU STFT outperforms CPU, especially for
+large FFT sizes) and allows waveform augmentations before mel conversion.
 
-```python
-# In SEDFinetuneModule.training_step():
-mel = self.mel_transform(waveform)  # GPU: raw audio → mel spectrogram
-features = self.encoder(mel)        # GPU: mel → backbone features
+Here's the complete sequence for one training step:
+
 ```
+1. DataLoader loads batch from disk:
+   (x, labels, primary_idx) where x = raw waveforms (64, 160000)
+   → 64 samples × 5s × 32kHz, loaded by SEDFocalDataset/SEDSoundscapeDataset
+   → Transferred to GPU automatically by PyTorch Lightning
+
+2. [Optional] Waveform augmentations (on raw audio, before mel):
+   → Pink noise injection (adds realistic background noise)
+   → Time stretch (speeds up or slows down the audio)
+   (v5j doesn't use these — Salman does)
+
+3. Mel spectrogram conversion ON GPU:
+   mel = self.mel_transform(x.float())
+   → x: (64, 160000) raw waveforms
+   → mel: (64, 1, 256, 511) spectrograms
+   This is NNAudioMelSpectrogram: STFT + mel filterbank + AmplitudeToDB +
+   standardization, all computed on GPU in one call. Runs under torch.no_grad()
+   since the mel transform has no learnable parameters.
+
+4. [Default] Spectrogram MixUp (on mel spectrograms):
+   mel, labels = self._apply_mixup(mel, labels)
+   → Blends pairs of spectrograms and their labels
+
+   [Alternative] Waveform MixUp (between steps 2 and 3):
+   x, labels = self._apply_mixup(x, labels)  → then compute mel
+   → Mixes raw audio before mel conversion (Salman's approach)
+
+5. Forward pass through the model:
+   clipwise_logits, framewise_logits = self(mel)
+   → self.encoder(mel) → backbone features (64, 1024, 8, 16)
+   → self.sed_head(features) → predictions
+
+6. Loss computation:
+   loss = self._compute_chunked_loss(clipwise, framewise, labels)
+   → BCEWithLogitsLoss on clipwise logits vs label vectors
+
+7. Backward pass → optimizer step → scheduler step
+```
+
+**Why GPU mel matters for waveform MixUp**: If mel runs on CPU (in the DataLoader),
+we can only mix spectrograms (step 4). With GPU mel, we can mix raw waveforms
+(step 2) then compute mel — this creates acoustic interference patterns between
+overlapping species that don't occur with spectrogram mixing, potentially better
+simulating real multi-species soundscapes.
 
 ### Spectrogram MixUp (data augmentation)
 
@@ -243,21 +301,70 @@ yields different crops each epoch, providing data augmentation for free.
 
 **The noisy label problem**: A random 5s crop from a 60s recording might contain
 only silence — the bird might call for just 10 seconds of the recording. But the
-label still says "this species is present." The model learns to handle this
-through LSE pooling (section 5), which focuses on the frames with the strongest
-signal and ignores silence.
+label still says "this species is present." How often does the crop actually
+contain the call?
+
+| Window | Recording | Call duration | P(call in crop) |
+|--------|-----------|---------------|-----------------|
+| 5s | 45s | 5s | ~11% |
+| 5s | 45s | 15s | ~33% |
+| 20s | 45s | 5s | ~57% |
+| 20s | 45s | 15s | ~100% |
+
+With 5s windows, most crops of short-calling species are **pure noise with a
+positive label**. The model survives this because:
+- Over 20 epochs, each recording is sampled ~20 times with different random crops.
+  Some crops catch the call (strong gradient) while silent crops produce weak
+  confused gradients that average out.
+- LSE pooling (section 5) learns to output low scores when no call is present,
+  so the "silent crop" case produces a small loss.
+
+Longer windows dramatically improve the call-capture probability. **Energy-based
+crop selection** (picking the loudest region instead of random) could push this
+further — e.g., 95%+ for 20s windows — but we haven't implemented this yet.
+Competitors may be doing this (Gemini suggested "RMS energy sampling").
 
 ### Soundscape recordings: context windows
 
-The `SEDSoundscapeDataset` handles labeled soundscape segments:
+The `SEDSoundscapeDataset` handles labeled soundscape segments. Unlike focal
+recordings (random crop, no ground truth for which seconds contain the call),
+soundscapes have **exact per-5s labels**.
 
 1. Each segment is a labeled 5s chunk (from `train_soundscapes_labels.csv`)
-2. Load a `context_duration` window centered on the 5s target
+2. Load a `context_duration` window **centered** on the 5s target
    - With `window_duration=5.0` (v5j): load exactly the 5s segment
    - With `window_duration=20.0`: load 20s centered on the 5s segment
      (7.5s before + 5s target + 7.5s after)
 3. The label comes from the CSV: multi-hot vector with all species present
 4. Return `(waveform, label_vector, primary_species_index)`
+
+There is **no randomness** here — the same segment always loads the same context
+window. The label is the ground truth for the center 5s.
+
+**Label mismatch with longer windows**: When loading 20s context around a labeled
+5s segment, the flanking 15s may contain **different species** than the center 5s.
+A frog calling in seconds 0–5 might not be calling in seconds 10–15. But the
+label only covers the center 5s — the model receives 20s of audio with a label
+that describes only the middle portion. With AttHead producing a single prediction
+over the full 20s, this creates a training conflict if the attention focuses on
+flanking species. In practice, this is mitigated by soundscapes being only 2% of
+training data, and dense species co-occurrence (many species persist across
+adjacent segments).
+
+### Batch shape alignment
+
+Every sample in a batch must have the **same tensor shape** — PyTorch's DataLoader
+stacks them into a single tensor. This means focal and soundscape samples must
+return the same waveform length.
+
+The `SEDDataModule` ensures this by passing `window_duration` to both datasets:
+- `SEDFocalDataset` gets `window_duration` directly → random crop of that length
+- `SEDSoundscapeDataset` gets `context_duration=window_duration` → centered window
+  of that length
+
+With `window_duration=20.0`: focal samples are 640,000 samples (20s random crop),
+soundscape samples are also 640,000 samples (20s centered on 5s target). Both fit
+in the same batch.
 
 ### Batch composition
 
@@ -434,6 +541,14 @@ At inference, we blend: `probs = 0.75 × sigmoid(clipwise) + 0.25 × sigmoid(max
 The framewise-max term adds a "strongest frame" signal without requiring framewise
 training labels.
 
+**Train/inference mismatch**: The v5j config specifies `clipwise_weight=1.0,
+framewise_weight=0.0` (clipwise-only training), but the ONNX export used the
+script defaults of `blend_clip=0.75, blend_frame=0.25`. So v5j's 0.906 LB
+includes framewise signal that the model was **never trained to optimize**. The
+framewise-max logits are a byproduct of the forward pass (computed but not
+supervised). This works because the framewise head shares weights with the
+clipwise path — but it's an accidental win, not a deliberate design choice.
+
 ---
 
 ## 7. Inference Pipeline
@@ -607,7 +722,63 @@ on `dataloader_idx`.
 
 ---
 
-## 11. Score Progression
+## 11. Identified Gaps and Open Questions
+
+Potential improvements we haven't explored yet, ordered by expected impact:
+
+### 1. Random cropping is wasteful (high priority)
+
+With 5s random crops from focal recordings, we catch the bird call only ~11% of
+the time for a species that calls for 5s in a 45s recording. The model wastes most
+training steps on silence-with-positive-labels. Longer windows help (57% at 20s)
+but still miss calls in long recordings.
+
+**Energy-based crop selection**: Instead of random start position, compute the RMS
+energy across the recording and select the window with the highest energy. This
+virtually guarantees the vocalization is in the crop. Competitors may be doing this
+(Salman trains on 20s with "original labels" — may imply smart cropping).
+
+Implementation: compute RMS in `__getitem__` before loading (or precompute and
+cache). Adds CPU cost but dramatically improves label quality.
+
+### 2. Train/inference blend mismatch (medium priority)
+
+v5j trains with `clipwise_weight=1.0, framewise_weight=0.0` but infers with
+`blend_clip=0.75, blend_frame=0.25`. The model was never trained to optimize the
+framewise predictions that contribute 25% of the inference score.
+
+**Fix**: either train with framewise supervision (add `framewise_weight=0.25`) or
+export with `blend_frame=0.0` (clipwise-only inference). The current setup is an
+accidental mismatch that happens to work.
+
+### 3. Soundscape label mismatch with longer windows (low priority, but worth noting)
+
+When loading 20s context around a labeled 5s soundscape segment, the flanking
+15s may contain different species. The label covers only the center 5s, but the
+model sees 20s. With AttHead producing a single prediction over 20s, the
+attention might focus on a flanking species not in the label.
+
+Mitigation: soundscapes are only 2% of training. For multi-chunk approaches
+(hengck23), we COULD load per-chunk labels from the CSV for soundscape segments
+(neighboring 5s segments have their own labels). Not implemented.
+
+### 4. No curriculum or difficulty-aware sampling (speculative)
+
+All focal recordings are sampled uniformly. Species with 5 recordings get the same
+sampling rate as species with 500. A curriculum that oversamples rare species or
+undersamples easy species might help the long-tail problem.
+
+### 5. CE loss mystery (open question)
+
+We tested CE loss 6 times and it always regressed. But Salman (0.922) and Boredom
+(#1) both use CE during training with sigmoid at inference. Either our CE
+implementation is wrong (forcing single-label prediction on multi-label data), or
+CE interacts with other choices (window length, augmentation, head type) in ways
+we haven't tested. CE + AttHead + 20s is an untested combination that might work.
+
+---
+
+## 12. Score Progression
 
 | LB | Model | Key Change | Exp |
 |-----|-------|-----------|-----|
