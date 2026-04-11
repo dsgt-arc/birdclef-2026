@@ -7,9 +7,9 @@ pseudo-labeled soundscapes, using a tiered teacher: SED max-folds for 184 specie
 SED has good predictions, and Perch with per-species z-normalization for 44 species where
 SED is blind.
 
-Status: **Proposed — awaiting review.**
+Status: **In progress — Phase A next.**
 
-**Branch**: TBD
+**Branch**: `mg/025-iter-pseudo-labeling`
 
 ---
 

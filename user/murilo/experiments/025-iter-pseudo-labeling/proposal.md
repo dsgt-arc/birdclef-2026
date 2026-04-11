@@ -1,9 +1,9 @@
 # Proposal: Iterative Pseudo-Labeling
 
-**Status**: proposed
+**Status**: in-progress
 **Created**: 2026-04-10
 **Author**: Murilo Gustineli
-**Branch**: TBD
+**Branch**: `mg/025-iter-pseudo-labeling`
 **Depends on**: Exp 024 (data-centric exploration findings)
 
 ---

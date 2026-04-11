@@ -10,8 +10,8 @@ parameter rationale (12 sections including key concepts explained from first pri
 See [tasks.md](tasks.md) for the task checklist per phase.
 See [results.md](results.md) for results per iteration round.
 
-**Branch**: TBD
-**Status**: PROPOSED
+**Branch**: `mg/025-iter-pseudo-labeling`
+**Status**: IN PROGRESS
 **Current best**: 0.929 LB (Perch+SED ensemble, exp 023)
 **Target**: 0.935+ LB
 
