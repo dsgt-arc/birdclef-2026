@@ -7,7 +7,7 @@ pseudo-labeled soundscapes, using a tiered teacher: SED max-folds for 184 specie
 SED has good predictions, and Perch with per-species z-normalization for 44 species where
 SED is blind.
 
-Status: **Phase A complete. Phase B next (data loader + training).**
+Status: **Phase A complete. Phase B.1 complete (code). B.2 fast-dev-run submitted.**
 
 **Branch**: `mg/025-iter-pseudo-labeling`
 
@@ -44,19 +44,35 @@ Output: `shared/pseudo-labels/birdclef-2026/v1/`
 
 ## Phase B: Train Student (Round 1)
 
-### B.1: Extend data loader
+### B.1: Extend data loader ✅
 
-- [ ] Modify SED training pipeline to load pseudo-label parquet
-- [ ] Implement stratified batch sampling (50% focal/labeled, 50% pseudo-labeled)
-- [ ] Add per-source loss weighting (w=1.0 ground truth, w=0.5 pseudo-labels)
-- [ ] Soft label support in BCE loss (pseudo-labels are probabilities, not 0/1)
+Shared src modifications (backward compatible with exp 021):
+
+- [x] `src/birdclef/data/sed.py`: Add `PseudoLabelSoundscapeDataset` (loads OGG + soft
+  pseudo-labels from parquet, returns 4-tuple with loss_weight)
+- [x] `src/birdclef/data/sed.py`: Add `GTDatasetWrapper` (wraps 3-tuple → 4-tuple with w=1.0)
+- [x] `src/birdclef/data/sed.py`: Add `StratifiedBatchSampler` (50/50 GT vs PL per batch)
+- [x] `src/birdclef/data/sed.py`: Extend `SEDDataModule` with `pseudo_label_path`,
+  `pseudo_label_weight`, `pseudo_label_batch_fraction` params + fold leakage prevention
+- [x] `src/birdclef/lightning/sed_finetune.py`: Per-sample loss weighting in `_compute_loss`
+  (BCE path, `reduction='none'` → weight → mean)
+- [x] `src/birdclef/lightning/sed_finetune.py`: Pass `loss_weight` through `_compute_chunked_loss`,
+  `training_step` (4-tuple unpack), `_apply_mixup`, `_apply_manifold_mixup`
+
+Exp 025 files:
+
+- [x] `train.py`: Copied from exp 021, added `--pseudo-label-path` arg, updated experiment name
+- [x] `configs/v1_train.yaml`: v5j recipe + pseudo-label data config (BCE, w=0.5)
+- [x] `sbatch/_job.sh` + `run.sh`: SLURM scripts with `PSEUDO_LABEL_PATH` forwarding
+- [x] `fold_assignments.json`: Copied from exp 021 (same 4-fold splits)
 
 ### B.2: Train and evaluate
 
-- [ ] Train fold 0 (sanity check — compare against v5j fold 0 = 0.906)
-- [ ] Submit fold 0 to LB
-- [ ] **Decision gate**: If fold 0 > 0.906 → proceed. If not → diagnose and adjust.
-- [ ] Train folds 1-3
+- [ ] Fast-dev-run sanity check (submitted — awaiting result)
+- [ ] Train with 90/10 split (same as v5j baseline — no `--fold`, apples-to-apples)
+- [ ] Submit to LB → compare against v5j baseline (0.906)
+- [ ] **Decision gate**: If LB > 0.906 → proceed to 4-fold. If not → diagnose and adjust.
+- [ ] Train 4-fold ensemble (if single model improves)
 - [ ] Submit 4-fold ensemble (compare against v5j 4-fold = 0.913)
 - [ ] Submit student + Perch ensemble (compare against 0.929 best)
 
@@ -87,7 +103,7 @@ Output: `shared/pseudo-labels/birdclef-2026/v1/`
 
 ## Success Criteria
 
-- [ ] Round 1 fold 0: **>0.906** LB (v5j baseline)
-- [ ] Round 1 4-fold: **>0.913** LB (v5j ensemble)
+- [ ] Round 1 single model (90/10): **>0.906** LB (v5j baseline)
+- [ ] Round 1 4-fold ensemble: **>0.913** LB (v5j ensemble)
 - [ ] Round 1 + Perch ensemble: **>0.929** LB (current best)
 - [ ] Stretch: **>0.935** LB
