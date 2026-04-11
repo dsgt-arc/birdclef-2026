@@ -230,6 +230,7 @@ class SEDFinetuneModule(pl.LightningModule):
         logits: torch.Tensor,
         labels: torch.Tensor,
         primary_idx: torch.Tensor | None = None,
+        loss_weight: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Compute loss based on configured loss_type.
 
@@ -241,9 +242,11 @@ class SEDFinetuneModule(pl.LightningModule):
 
         Args:
             logits: (B, num_classes) raw logits.
-            labels: (B, num_classes) multi-hot labels (0s and 1s).
+            labels: (B, num_classes) multi-hot labels (0s and 1s, or soft probs).
             primary_idx: (B,) integer tensor with primary species index per sample.
                 Used by "ce" loss. Ignored by other loss types.
+            loss_weight: (B,) optional per-sample weights for pseudo-label training.
+                When None, all samples weighted equally (backward compatible).
 
         Returns:
             Scalar loss.
@@ -251,6 +254,12 @@ class SEDFinetuneModule(pl.LightningModule):
         if self.hparams.loss_type == "asl":
             return self.asl_loss(logits, labels)
         elif self.hparams.loss_type == "bce":
+            if loss_weight is not None:
+                # Per-sample weighting: reduction='none' → per-sample mean → weight → mean
+                per_sample = F.binary_cross_entropy_with_logits(
+                    logits, labels.float(), reduction="none"
+                ).mean(dim=1)  # (B, C) → (B,)
+                return (per_sample * loss_weight).mean()
             return F.binary_cross_entropy_with_logits(logits, labels.float())
         elif self.hparams.loss_type == "ce":
             # Standard CE on primary label (not argmax of multi-hot)
@@ -263,8 +272,11 @@ class SEDFinetuneModule(pl.LightningModule):
             return F.cross_entropy(logits, soft_targets)
 
     def _apply_mixup(
-        self, x: torch.Tensor, labels: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        self,
+        x: torch.Tensor,
+        labels: torch.Tensor,
+        loss_weight: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Apply mixup augmentation on input tensor (mel spectrogram or raw waveform).
 
         Shuffles the batch and mixes inputs with a random lambda from
@@ -279,6 +291,10 @@ class SEDFinetuneModule(pl.LightningModule):
         the entire batch.
 
         Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N).
+
+        When loss_weight is provided (pseudo-label training), it is also
+        blended: mixing GT (w=1.0) with PL (w=0.5) at lam=0.7 gives
+        blended weight 0.7*1.0 + 0.3*0.5 = 0.85.
         """
         indices = torch.randperm(x.size(0), device=x.device)
 
@@ -295,20 +311,27 @@ class SEDFinetuneModule(pl.LightningModule):
 
             x = x_lam * x + (1 - x_lam) * x[indices]
             labels = label_lam * labels + (1 - label_lam) * labels[indices]
+            if loss_weight is not None:
+                loss_weight = lam * loss_weight + (1 - lam) * loss_weight[indices]
         else:
             lam = np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
             lam = max(lam, 1.0 - lam)  # Enforce lam >= 0.5
             x = lam * x + (1 - lam) * x[indices]
             labels = lam * labels + (1 - lam) * labels[indices]
+            if loss_weight is not None:
+                loss_weight = lam * loss_weight + (1 - lam) * loss_weight[indices]
 
         theta = self.hparams.mixup_theta
         if theta < 1.0:
             labels = torch.where(labels >= theta, torch.ones_like(labels), labels)
-        return x, labels
+        return x, labels, loss_weight
 
     def _apply_manifold_mixup(
-        self, features: torch.Tensor, labels: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        self,
+        features: torch.Tensor,
+        labels: torch.Tensor,
+        loss_weight: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Apply mixup in embedding space (after backbone, before head).
 
         Same mixing logic as _apply_mixup but operates on backbone feature maps
@@ -332,16 +355,20 @@ class SEDFinetuneModule(pl.LightningModule):
 
             features = feat_lam * features + (1 - feat_lam) * features[indices]
             labels = label_lam * labels + (1 - label_lam) * labels[indices]
+            if loss_weight is not None:
+                loss_weight = lam * loss_weight + (1 - lam) * loss_weight[indices]
         else:
             lam = np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
             lam = max(lam, 1.0 - lam)
             features = lam * features + (1 - lam) * features[indices]
             labels = lam * labels + (1 - lam) * labels[indices]
+            if loss_weight is not None:
+                loss_weight = lam * loss_weight + (1 - lam) * loss_weight[indices]
 
         theta = self.hparams.mixup_theta
         if theta < 1.0:
             labels = torch.where(labels >= theta, torch.ones_like(labels), labels)
-        return features, labels
+        return features, labels, loss_weight
 
     def _blended_probs(
         self, clipwise_logits: torch.Tensor, framewise_logits: torch.Tensor
@@ -367,6 +394,7 @@ class SEDFinetuneModule(pl.LightningModule):
         framewise_logits: torch.Tensor,
         labels: torch.Tensor,
         primary_idx: torch.Tensor | None = None,
+        loss_weight: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Compute loss handling both single-chunk and multi-chunk clipwise outputs.
 
@@ -381,16 +409,16 @@ class SEDFinetuneModule(pl.LightningModule):
             chunk_losses = []
             for i in range(n_chunks):
                 chunk_clip = clipwise_logits[:, i, :]  # (B, C)
-                clip_loss = self._compute_loss(chunk_clip, labels, primary_idx)
+                clip_loss = self._compute_loss(chunk_clip, labels, primary_idx, loss_weight)
                 chunk_losses.append(clip_loss)
             clipwise_loss = sum(chunk_losses) / n_chunks
         else:
             # Single-chunk: (B, C) — standard loss
-            clipwise_loss = self._compute_loss(clipwise_logits, labels, primary_idx)
+            clipwise_loss = self._compute_loss(clipwise_logits, labels, primary_idx, loss_weight)
 
         # Framewise loss (always on full temporal extent, unchanged)
         framewise_max_logits = framewise_logits.max(dim=-1).values
-        framewise_loss = self._compute_loss(framewise_max_logits, labels, primary_idx)
+        framewise_loss = self._compute_loss(framewise_max_logits, labels, primary_idx, loss_weight)
 
         return (
             self.hparams.clipwise_weight * clipwise_loss
@@ -446,7 +474,17 @@ class SEDFinetuneModule(pl.LightningModule):
         return stretched
 
     def training_step(self, batch, batch_idx):
-        x, labels, primary_idx = batch
+        # Support both 3-tuple (backward compat) and 4-tuple (pseudo-label training)
+        if len(batch) == 4:
+            x, labels, primary_idx, loss_weight = batch
+            # Convert scalar loss_weight to tensor if needed
+            if not isinstance(loss_weight, torch.Tensor):
+                loss_weight = torch.full((x.size(0),), loss_weight, device=x.device, dtype=x.dtype)
+            else:
+                loss_weight = loss_weight.to(x.device).float()
+        else:
+            x, labels, primary_idx = batch
+            loss_weight = None
 
         # Waveform augmentations (before mixup and mel, only when input is raw audio)
         if self.mel_transform is not None:
@@ -475,7 +513,7 @@ class SEDFinetuneModule(pl.LightningModule):
             if self.mel_transform is not None and self.hparams.waveform_mixup:
                 # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
                 if do_mixup:
-                    x, labels = self._apply_mixup(x, labels)
+                    x, labels, loss_weight = self._apply_mixup(x, labels, loss_weight)
                 with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
                     mel = self.mel_transform(x.float())
             elif self.mel_transform is not None:
@@ -483,12 +521,12 @@ class SEDFinetuneModule(pl.LightningModule):
                 with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
                     mel = self.mel_transform(x.float())
                 if do_mixup:
-                    mel, labels = self._apply_mixup(mel, labels)
+                    mel, labels, loss_weight = self._apply_mixup(mel, labels, loss_weight)
             else:
                 # CPU mel mode (default): input is pre-computed mel, spectrogram mixup
                 mel = x
                 if do_mixup:
-                    mel, labels = self._apply_mixup(mel, labels)
+                    mel, labels, loss_weight = self._apply_mixup(mel, labels, loss_weight)
 
             clipwise_logits, framewise_logits = self(mel)
         else:
@@ -501,10 +539,14 @@ class SEDFinetuneModule(pl.LightningModule):
                 mel = x
 
             features = self.encoder.forward_features(mel)
-            features, labels = self._apply_manifold_mixup(features, labels)
+            features, labels, loss_weight = self._apply_manifold_mixup(
+                features, labels, loss_weight
+            )
             clipwise_logits, framewise_logits = self.sed_head(features)
 
-        loss = self._compute_chunked_loss(clipwise_logits, framewise_logits, labels, primary_idx)
+        loss = self._compute_chunked_loss(
+            clipwise_logits, framewise_logits, labels, primary_idx, loss_weight
+        )
 
         # Blended probabilities for metrics (handles multi-chunk automatically)
         probs = self._blended_probs(clipwise_logits, framewise_logits)
