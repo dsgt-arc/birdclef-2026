@@ -1,297 +1,287 @@
-# Star Schema: Dimensional Analysis and Bayesian Interpretation
+# Star Schema: Tensor Framework
 
-## The problem
+A formal description of the tensor structure behind exp 107. The model is a
+factored recommendation system over species × site, with prototype memory
+banks as learned entity embeddings and bilinear compositions as scoring
+functions. This document specifies the framework; see `../design.md` for the
+training procedure and implementation.
 
-Given a 5-second soundscape window from site l at time t, predict which of S=234
-species are present. Available data:
-
-| Source | Count | Domain | Labels |
-|--------|-------|--------|--------|
-| Focal recordings | 265K windows | Clean, single-species | Species known |
-| Unlabeled soundscapes | 127K windows | Target (Pantanal) | None |
-| Labeled soundscapes | 739 windows | Target (Pantanal) | Species known |
-
-All windows are encoded by Perch v2 into embeddings (ℝ^E, E=1536) and logits
-(ℝ^P, P=14795). The challenge: focal and soundscape domains are severely shifted
-(96.8% of logit dimensions shift significantly via KS test).
-
-## Entities and dimensions
+## Entities
 
 | Symbol | Name | Size | Description |
 |--------|------|------|-------------|
 | S | Species | 234 | BirdCLEF targets |
 | L | Sites | 21 | Pantanal monitoring locations |
-| K_s | Species prototypes | 4 | Acoustic modes per species |
-| K_l | Site prototypes | 6 | Acoustic states per site |
-| D | Shared space | 256 | Learned projection (exp 107) |
-| P | Perch logits | 14,795 | Pretrained space (exp 106) |
-| E | Perch embeddings | 1,536 | Pretrained space |
-| W | Windows | 127K+ | Individual observations |
+| K_s | Species prototype slots | 16 | Soft-EM components per species (mode count is learned, not hard-coded) |
+| K_l | Site prototype slots | 16 | Soft-EM components per site |
+| D | Shared space | 512 | Learned projection dimension (where memory banks and queries live) |
+| H | MLP hidden | 1024 | Nonlinear projection hidden layer |
+| E | Perch embeddings | 1,536 | Pretrained input space |
+| P | Perch logits | 14,795 | Phase 0 distillation target vocabulary |
+| W | Windows | 400K+ | Individual observations (focal + labeled SC + unlabeled SC) |
 
-## The star schema structure
+Every entity lives in a single shared D-dimensional space. Relationships
+between entities are bilinear forms through D, with explicit `W_Q` and
+`W_K` projections on the retrieval side (standard Ramsauer formulation).
 
-Every entity is represented as a set of vectors in a shared D-dimensional space.
-Relationships between entities are dot products through D.
+## Tensor representations
 
-### Entity representations
+**Species memory** — `M_s ∈ ℝ^{S × K_s × D}`
 
-**Species memory**: M_s ∈ ℝ^{S × K_s × D}
+Each species s has K_s prototype vectors in the shared space. The slots
+are unlabeled soft-EM components — training assigns each window to a
+softmax mixture over the K prototypes, and the slots specialize to
+whatever modes the data demands (song vs call, dawn vs nocturnal, solo
+vs chorus). K_s = 16 is abstract capacity; not all slots are expected to
+be active for every species, and with soft-max (logsumexp) retrieval,
+unused slots drift toward nearest attractors rather than dying.
 
-Each species has K_s=4 prototype vectors in the shared space. These represent
-distinct acoustic modes — e.g., dawn song, alarm call, flight call, juvenile.
-The multi-prototype structure gives a piecewise-linear decision boundary:
-the acceptance region for species s is the union of K_s cones in D-space.
+**Site memory** — `M_l ∈ ℝ^{L × K_l × D}`
 
-**Site memory**: M_l ∈ ℝ^{L × K_l × D}
+Each site l has K_l prototype vectors capturing acoustic states. As with
+the species bank, the slots are unlabeled — training discovers site
+states (dawn chorus, midday quiet, rain event, etc.) from the data
+rather than inheriting them from upstream clustering.
 
-Each site has K_l=6 prototype vectors capturing acoustic states — e.g., dawn
-chorus, midday quiet, nocturnal insect, rain event. These are data-driven
-(discovered by NMF/k-means in exp 106, learned end-to-end in exp 107).
+**Window query** — `q_w ∈ ℝ^D`
 
-**Window query**: q ∈ ℝ^D
+A test window projected into the shared space: `q_w = proj(emb_w)` where
+`proj : ℝ^E → ℝ^D` is a learned linear projection.
 
-A test window projected into the shared space: q = proj(emb_w) where
-proj: ℝ^E → ℝ^D is a learned linear projection.
+## Bilinear compositions
 
-### Compositions
-
-All compositions are bilinear forms through the shared D dimension:
+All compositions are bilinear forms through the shared D dimension.
 
 **Species scoring** (what it sounds like):
 
-    score_species(w, s) = max_{k=1..K_s} σ(β_s · q_w · M_s[s, k])
+    score_species(w, s) = σ(a_s · (1/β_s) · logsumexp_{k=1..K_s}(β_s · q_w · M_s[s, k]) + b_s)
 
-Dimensions: (D,) · (D,) → scalar, over K_s prototypes → scalar per species.
-Full matrix: (W, D) @ (S·K_s, D)^T → (W, S·K_s) → reshape + max → (W, S).
-
-The σ (sigmoid) gives multi-label probabilities. The max over K selects the
-best-matching prototype — the mode of species s most similar to window w.
+Shape: `(W, D) @ (S·K_s, D)^T → (W, S·K_s) → reshape + lse over K → (W, S)`.
+The logsumexp is the modern Hopfield retrieval energy — a differentiable
+soft-max that aggregates across K slots. The affine `(a_s, b_s)` is
+per-species Platt calibration. `β_s` is a learnable global temperature
+that controls how sharply one slot dominates.
 
 **Site scoring** (where it is):
 
-    score_site(w, l) = max_{k=1..K_l} σ(β_l · q_w · M_l[l, k])
+    score_site(w, l_w) = σ((1/β_l) · logsumexp_{k=1..K_l}(β_l · q_w · M_l[l_w, k]))
 
-Dimensions: same structure, (D,) · (D,) → scalar.
-
-This scores how well the window matches its site's acoustic state prototypes.
-High score = the window is typical for this site. Low score = unusual
-(rare event, equipment anomaly, etc.).
+Where `l_w` is the known site of window w. This scores how typical the
+window is for its site — high = expected acoustic state, low = unusual
+(rare event, equipment anomaly, hard window).
 
 **Species × Site affinity** (what's expected where):
 
-    affinity(s, l) = max_{k_s, k_l} M_s[s, k_s] · M_l[l, k_l]
+    A(s, l) = (1/β) · logsumexp_{k_s, k_l}(β · M_s[s, k_s] · M_l[l, k_l])
 
-Dimensions: (D,) · (D,) → scalar, over K_s × K_l pairs → scalar.
-Full matrix: (S·K_s, D) @ (L·K_l, D)^T → (S·K_s, L·K_l) → reshape + max → (S, L).
+Shape: `(S·K_s, D) @ (L·K_l, D)^T → (S·K_s, L·K_l) → reshape + lse → (S, L)`.
 
-This is the star schema's core composition: species and sites interact through
-the shared D-space. No cross-domain features needed — both representations
-are in the same learned space.
+A static compatibility matrix computed directly from the learned memory
+banks — no window input needed. It encodes which species the model has
+learned to expect at which sites. The key property of the learned space:
+this bilinear form is meaningful because both M_s and M_l live in the same
+D, unlike exp 106 where species and site prototypes lived in incompatible
+regions of Perch's logit space.
 
-**Composed score** (posterior):
+**Composed window score** (posterior):
 
-    score(w, s, l) = score_species(w, s) × score_site(w, l)
+    score(w, s) = g · score_species(w, s)
+                + (1 - g) · score_species(w, s) · score_site(w, l_w)
 
-    or with gating:
+where `g = σ(gate(q_w)) ∈ [0, 1]` is a learned per-window gate. When site
+context isn't informative, g → 1 and the model falls back to species-only
+scoring. The gate is conditional on the query, not global — different
+windows can use site context to different degrees.
 
-    score(w, s, l) = g · score_species + (1-g) · score_species × score_site
+## Dimensional summary
 
-The gate g ∈ [0,1] (learned) controls how much site context influences
-the prediction. If sites aren't informative, g → 1 and the model ignores them.
-
-### Dimensional summary
-
-| Operation | Input shapes | Shared dim | Output shape |
+| Operation | Input shapes | Contracted dim | Output shape |
 |-----------|-------------|------------|--------------|
-| Species scoring | (W, D) × (S, K_s, D) | D | (W, S) |
-| Site scoring | (W, D) × (L, K_l, D) | D | (W,) |
-| Species×Site affinity | (S, K_s, D) × (L, K_l, D) | D | (S, L) |
-| Composed score | (W, S) × (W,) | — | (W, S) |
-| Projection | (W, E) | — | (W, D) |
+| Projection (MLP) | `(W, E) → (W, H) → (W, D)` | E, H | `(W, D)` |
+| Query transform | `(W, D) @ W_Q` | D | `(W, D)` |
+| Species key transform | `(S, K_s, D) @ W_K_s` | D | `(S, K_s, D)` |
+| Site key transform | `(L, K_l, D) @ W_K_l` | D | `(L, K_l, D)` |
+| Species scoring | `(W, D) × (S, K_s, D)` | D | `(W, S)` |
+| Site scoring | `(W, D) × (L, K_l, D)` | D | `(W,)` |
+| Species × Site affinity | `(S, K_s, D) × (L, K_l, D)` (post-W_K) | D | `(S, L)` |
+| Gated composition | `(W, S) × (W,) × (W,)` | — | `(W, S)` |
+| Distill head (phase 0 only) | `(W, D) → (W, P)` | D | `(W, 14795)` |
 
-Total learnable parameters:
+Total parameters:
 
 | Component | Shape | Parameters |
 |-----------|-------|-----------|
-| Projection | (E, D) = (1536, 256) | 393K |
-| Species memory | (S, K_s, D) = (234, 4, 256) | 240K |
-| Site memory | (L, K_l, D) = (21, 6, 256) | 32K |
-| Temperatures | β_s, β_l | 2 |
-| Gate | (D, 1) = (256, 1) | 257 |
-| **Total** | | **~665K** |
+| Projection MLP | `(E, H) + (H, D) + LN` | ~2.1M |
+| `W_Q` | `(D, D) = (512, 512)` | 262K |
+| `W_K_species` | `(D, D) = (512, 512)` | 262K |
+| `W_K_site` | `(D, D) = (512, 512)` | 262K |
+| Species memory | `(S, K_s, D) = (234, 16, 512)` | 1.92M |
+| Site memory | `(L, K_l, D) = (21, 16, 512)` | 172K |
+| Platt calibration | `2 · S = 468` | 468 |
+| Hopfield temperatures | `β_s, β_l` | 2 |
+| Gate | `(D, 1) + bias = 513` | 513 |
+| Distill head (phase 0 only) | `(D, P) = (512, 14795)` | ~7.6M |
+| **Total (phases 1-3)** | | **~5.0M** |
+| **Total (phase 0)** | | **~12.6M** |
 
-## Bayesian interpretation
+The distill head is large because `P = 14795` — Perch's full species
+vocabulary. It's used only in phase 0 and discarded (or frozen) afterwards;
+the persistent model is ~5M parameters. Phase 0 is the "temporary
+teacher-reproducer" head that exists to carry the distillation gradient
+through the projection.
 
-The star schema implements approximate Bayesian inference over a latent
-variable model.
+## Logsumexp over K as soft EM (Hopfield retrieval)
 
-### Generative model
-
-For window w at site l, time t:
-
-    1. Site l is in acoustic state k_l ~ Cat(π_l)         prior over site states
-    2. Species s is present with prob P(s | l, k_l)        species-site prior
-    3. If present, s vocalizes in mode k_s ~ Cat(π_s)      species mode prior
-    4. Perch encodes the audio: x_w ~ P(x | s, k_s)        likelihood
-
-### What each component computes
-
-| Component | Bayesian role | Distribution |
-|-----------|--------------|-------------|
-| q_w · M_s[s,k] | Log-likelihood log P(x_w \| s, k_s) | Gaussian with shared Σ |
-| max_k(...) | ≈ log max_k P(x_w \| s, k_s) | Hard EM on mixture |
-| σ(β · score) | Calibrated P(s present \| x_w) | Sigmoid link |
-| affinity(s,l) | Log-prior log P(s \| l) | Composition through D |
-| score × site | ∝ P(s \| x_w, l) | Posterior ∝ likelihood × prior |
-
-### The cosine-Gaussian connection
-
-If per-species-mode representations are approximately Gaussian in D-space:
-
-    P(x | s, k) ∝ exp(-½ (x - μ_{s,k})^T Σ^{-1} (x - μ_{s,k}))
-
-With shared covariance Σ and after whitening (Σ → I):
-
-    log P(x | s, k) ∝ -½ ||x - μ_{s,k}||²
-                     = x · μ_{s,k} - ½||x||² - ½||μ_{s,k}||²
-
-After L2 normalization (||x|| = ||μ|| = 1), this is proportional to cosine
-similarity. So cosine matching = Gaussian log-likelihood with shared covariance,
-evaluated on the unit sphere.
-
-The sigmoid σ(β · cos) then maps this to a probability. The temperature β
-controls the sharpness — high β means the model is confident, low β means
-uncertain. Learning β from data is equivalent to estimating the precision
-(inverse variance) of the Gaussian.
-
-### Why max over K, not sum
-
-The full Bayesian marginal is:
+The full mixture marginal over species modes is:
 
     P(x | s) = Σ_k π_k P(x | s, k)
 
-We approximate with:
+The model approximates this with the modern Hopfield retrieval energy:
 
-    P(x | s) ≈ max_k P(x | s, k)
+    score_s(x) = (1/β) · logsumexp_k(β · q · M_s[s, k])
 
-This is a hard EM approximation. It's exact when one mode dominates (high β),
-which is typical for bird vocalizations (a window contains a dawn song OR an
-alarm call, rarely both from the same species). The max is also more robust
-to "dead" prototypes (modes with no matching windows) than sum, which would
-dilute the signal.
+This is the Ramsauer et al. 2020 energy function and also the temperature-β
+soft-max approximation to the hard maximum. It interpolates between two
+limits:
 
-### The semi-supervised regularizer
+- **β → ∞**: logsumexp → max_k (hard EM, winner-take-all). Each window
+  routes to one prototype per species; other slots receive zero gradient.
+- **β → 0**: logsumexp → mean_k + log(K)/β. All slots contribute equally;
+  the mixture has no sharpness.
 
-The 127K unlabeled windows provide two signals:
+At finite β, all K prototypes receive gradient proportional to their
+softmax attention weight `softmax_k(β · q · M_{s,k})`. This is the key
+property that lets us set K abstractly (16 slots rather than 4
+biologically motivated modes): unused prototypes don't cause
+dead-slot pathologies, they just receive small gradients and drift toward
+the nearest active attractor. Training discovers how many modes each
+species actually needs.
 
-**Entropy minimization**: P(s | x_w) should be confident (low entropy) even
-on unlabeled windows. This encourages the model to use the full capacity of
-its prototypes — each window should clearly match or not match each species.
+β itself is learnable per head (`log_beta_species`, `log_beta_site`). The
+model picks its own sharpness — a species with a single dominant mode
+drives β large, a species with many subtly different calls keeps β small.
 
-    L_ent = -Σ_w Σ_s [p log p + (1-p) log (1-p)]     where p = score(w, s)
+### The soft-EM gradient identity
 
-**Prototype coherence**: Each species prototype should be close to the centroid
-of the windows it claims (high sigmoid score). This is the M-step of EM, made
-differentiable:
+SGD on the logsumexp retrieval loss is *exactly* a stochastic soft EM
+update on the memory bank. Take the gradient of the aggregated species
+score with respect to a prototype:
 
-    L_coh = Σ_s Σ_k || M_s[s,k] - E_{w: σ(q_w · M_s[s,k]) > τ}[q_w] ||²
+    s(q) = (1/β) · logsumexp_k(β · q · M_{s,k})
 
-These regularizers use unlabeled data to shape the shared space without
-requiring labels. The labeled 739 windows provide the supervised BCE signal
-that anchors species identity.
+    ∂s/∂M_{s,k} = softmax_k(β · q · M_{s,k}) · q
+                = r_{s,k}(q) · q
 
-## Why exp 106 failed and exp 107 should work
+where `r_{s,k}(q) = softmax_k(β · q · M_{s,k})` is the soft responsibility
+of prototype k for window q under species s. This is the E-step and the
+M-step rolled into one:
 
-### Exp 106: fixed space, broken compositions
+- **E-step** (implicit): `r_{s,k}(q)` is computed during the forward pass
+  by the softmax inside the logsumexp gradient.
+- **M-step** (implicit): SGD moves `M_{s,k}` toward `q`, scaled by
+  `r_{s,k}(q)` — exactly the weighted-centroid update of soft EM.
 
-Exp 106 used Perch's pretrained logit space (P=14795) as the shared dimension D.
-The assumption: Perch logits are compositional — each species' contribution to
-the logit vector is independent and additive.
+The sigmoid+BCE on top adds a logistic reweighting per (window, species)
+pair: the effective gradient on `M_{s,k}` is scaled by
+`(y_{s} − σ(a_s · s(q) + b_s))`, so well-predicted windows contribute less
+and misclassified windows contribute more. This is just BCE shaping — it
+doesn't break the EM structure, it focuses it on the hard cases.
 
-This assumption fails because:
+Entropy minimization on unlabeled data is also EM-flavored: sharpening the
+posteriors is equivalent to sharpening the responsibilities `r_{s,k}`,
+tightening the M-step update toward each prototype's high-confidence
+queries.
 
-1. **Perch is a neural network.** Its representations are entangled — a species'
-   logit activation depends on what else is in the audio (other species, noise,
-   recording conditions). The logit vector is not a superposition of per-species
-   signals.
+**Consequence for initialization.** Random init of the species bank is
+safe specifically because gradient descent is already doing clustering.
+An explicit k-means pass before training would just warm-start the same
+EM procedure — and k-means in the raw Perch space is a stale warm start
+because the target clustering space (the learned 512-d projection)
+doesn't exist yet at init time. For the species bank, letting soft EM
+discover modes in the current projection space on every step is strictly
+more appropriate than pinning slots to a pre-projection k-means solution.
 
-2. **Domain shift corrupts the shared space.** 96.8% of logit dimensions shift
-   between focal and soundscape. The species prototypes (from focal) and the
-   site prototypes (from soundscape) live in different manifolds of P-space.
-   Their dot product is dominated by the domain gap, not the species-site
-   relationship.
+The site bank is different: 6K+ windows per site makes k-means
+well-posed, the projection-drift problem is mitigated by PCA init of the
+projection, and the warm start on the large-data head saves real
+training effort. Asymmetric init (random species, k-means site) reflects
+the asymmetric data regimes.
 
-3. **Domain shift and site structure are entangled.** The dimensions that shift
-   most (cicada and frog logits) are the same dimensions that discriminate
-   between sites. Transfer weights that suppress shift also suppress site signal.
-   You can't fix one without breaking the other in a fixed space.
+Consequence: the species bank operates as a soft mixture model over K
+learned components, with mode discovery emerging as a side effect of BCE
+training plus the unlabeled entropy regularizer. No separate clustering
+step, no fixed mode count, no need to name the modes up front.
 
-Results: Species cosine similarity works (0.816 AUROC on focal species) because
-it only requires within-domain scoring (soundscape window × focal prototype).
-But site affinity has zero effect because it requires cross-domain composition
-(focal prototype × soundscape site prototype through shifted P-space).
+## Recommendation-system framing
 
-### Exp 107: learned space, valid compositions
+The star schema is a factored recommendation model over species and sites:
 
-Exp 107 learns the shared space D (256-d) via a projection from Perch embeddings.
-The projection is trained to make compositions valid:
+| Recsys concept | Exp 107 analog |
+|----------------|----------------|
+| Items | Species (S = 234) |
+| Users | Sites (L = 21) |
+| Item embeddings | Species memory `M_s` (multi-prototype) |
+| User embeddings | Site memory `M_l` (multi-prototype) |
+| Query | Window embedding `q_w` |
+| Bilinear score | `q · M` through shared D |
+| Content features | Focal recordings (species identity prior) |
+| Explicit feedback | Labeled soundscapes (739 windows) |
+| Implicit feedback | Unlabeled soundscapes (127K "impressions") |
 
-1. **The space is task-specific.** The projection learns which directions in
-   Perch embedding space are compositional for BirdCLEF species × Pantanal sites.
-   Entangled directions are disentangled by the linear projection.
+Concretely, exp 107 combines three retrieval paradigms:
 
-2. **Everything is in one domain.** Both species and site memories are updated
-   by backprop on soundscape-domain data (739 labeled + 127K unlabeled). There
-   is no cross-domain composition — the shared space is defined by how entities
-   relate in the target domain.
+1. **Two-tower retrieval** — query tower `q_w = proj(emb)` and item tower
+   `M_s[s, k]` scored by dot product. Standard dense retrieval.
+2. **Multi-prototype items** — items (species) have K prototypes instead of
+   a single vector, supporting multi-modal distributions. Equivalent to
+   item-side memory networks, or a nearest-neighbor retrieval with K stored
+   vectors per class.
+3. **Contextual gating** — the gate `g(q_w)` is a per-query mixing weight
+   over the species-only score and the species × site composition. Matches
+   contextual bandits where the context (site) modulates item scores
+   conditionally on the query.
 
-3. **The gate handles uncertainty.** If site information doesn't help (some species
-   are ubiquitous), the learned gate g → 1 and the model ignores the site bank.
-   No need for transfer weights — the model learns what to ignore.
+The species × site affinity matrix `A(s, l)` is the recovered analog of a
+classical user-item matrix factorization. Instead of fitting it directly
+against observed counts (sparse and noisy at 739 labeled windows), it is
+recovered from the learned per-entity embeddings — regularized by the focal
+and unlabeled losses that shape each side independently.
 
-4. **Semi-supervision exploits unlabeled data.** The 127K unlabeled soundscapes
-   shape the shared space via entropy minimization and prototype coherence.
-   This is the untapped resource that exp 106's unsupervised compositions
-   couldn't leverage.
+## Modern Hopfield framing
 
-### The key shift
+Modern Hopfield networks (Ramsauer et al. 2020) generalize classical
+associative memory by replacing discrete patterns with continuous vectors
+and the local update rule with scaled dot-product attention. The update
 
-Exp 106 asks: "Does Perch's pretrained space support compositional inference?"
-Answer: no, the domain shift breaks it.
+    q_{t+1} = softmax(β · q_t · M^T) · M
 
-Exp 107 asks: "Can we learn a small space where compositional inference works?"
-The star schema structure (factored species × site) remains the same. Only the
-instantiation changes — from a pretrained fixed space to a learned task-specific
-space.
+converges to the stored pattern closest to the initial query, with
+exponential storage capacity in D.
 
-## Relationship to existing approaches
+Each memory bank in exp 107 is a Hopfield store:
 
-### Murilo's ProtoSSM (0.918 LB)
+- Species bank: `M_s` flattened to `(S · K_s, D)` — stored patterns for
+  every species × mode pair.
+- Site bank: `M_l[l_w]` — stored patterns for the current window's site.
 
-ProtoSSM uses BiSSM + cross-attention + gated fusion on Perch features. This is
-architecturally similar to what exp 107 proposes — temporal modeling (BiSSM) +
-cross-attention (Hopfield retrieval) + gated fusion (species × context). The
-difference: ProtoSSM is a larger model trained end-to-end on more data.
-Exp 107 is a minimal version testing whether the factored structure alone
-(without temporal modeling) captures meaningful signal.
+Differences from the canonical Hopfield setup:
 
-### Recommender systems
+1. **One-shot retrieval, no iteration.** Multi-label classification doesn't
+   need convergence to a single attractor — we want independent scoring per
+   species. Iteration would collapse the signal.
+2. **Two-stage aggregation.** Canonical Hopfield applies a single softmax
+   over all stored patterns. Exp 107 splits this into two stages: softmax
+   (via logsumexp) *within* a species to aggregate over its K modes, and
+   sigmoid *across* species for multi-label independence. Otherwise a
+   single global softmax would force species to compete for attention
+   mass, which is wrong for multi-label outputs.
+3. **Per-species Platt calibration.** Before the final sigmoid, the
+   logsumexp score is transformed by a learnable affine `(a_s, b_s)`.
+   This lets each species have its own inverse temperature on top of the
+   shared Hopfield β, and it absorbs systematic per-species offsets that
+   would otherwise bias the BCE gradient.
 
-The star schema is a factored recommendation model. Species are "items," sites
-are "users," and the score is a bilinear form through a shared embedding space.
-The semi-supervised regularizer corresponds to implicit feedback (unlabeled
-windows = "impressions" without "clicks"). Matrix factorization, neural
-collaborative filtering, and two-tower retrieval models all share this structure.
-
-### Modern Hopfield networks (Ramsauer et al. 2020)
-
-The species and site memory banks with sigmoid attention are exactly the modern
-Hopfield framework. The energy function:
-
-    E(q, M) = -log Σ_k exp(β · q · M[k])     (log-sum-exp)
-
-has a unique global minimum (for β < critical temperature) and the dynamics
-(iterating the softmax/sigmoid attention) provably converge. In our case,
-we don't iterate at inference time (one-shot attention is sufficient), but
-the energy provides a principled confidence measure: low energy = the query
-clearly matches a stored pattern; high energy = ambiguous.
+The Hopfield framing is a useful lens for intuition — the memory banks
+are an associative store, the logsumexp is the Hopfield energy, β is
+inverse temperature — and the implementation is plain einsum + logsumexp
++ sigmoid. No library dependency, no iteration.
