@@ -1,10 +1,10 @@
 # Findings
 
 Living document tracking cross-cutting insights from all BirdCLEF 2026
-experiments (006-023, 40+ model variants). Replaces
+experiments (006-024, 40+ model variants). Replaces
 `notes/2026-04-06-experiment-pattern-analysis.md` as the canonical reference.
 
-Last updated: 2026-04-08
+Last updated: 2026-04-09
 
 ---
 
@@ -31,7 +31,7 @@ Every LB submission in chronological order of improvement:
 | 0.927 | Perch+SED w=0.5 | Score-level ensemble (ProtoSSM+MLP) | 023 |
 | 0.929 | **Perch+SED MLP-only** | **Drop ProtoSSM, MLP probes only (current best)** | 023 |
 
-Target: 0.946 (competition #1). Gap: 0.017.
+Target: 0.948 (competition #1). Gap: 0.019.
 
 ---
 
@@ -163,24 +163,86 @@ representation changes: mel resolution and AmplitudeToDB **add information**
 representation -- the model had already learned to handle AmplitudeToDB
 normalization, and PCEN disrupted that learned mapping.
 
+### 10. The LB gap is a data coverage problem, not model quality (exp 024)
+
+The v5j model achieves **0.9958 macro-AUC** on the 75 species present in labeled
+soundscapes — near-perfect. Yet it scores only 0.906 on the public LB (234 species).
+The gap is almost entirely explained by **159 species that never appear in labeled
+soundscape data**. These species are trained only on focal recordings and must
+generalize blindly to the soundscape domain. No amount of training recipe tuning
+can fix this — the model needs soundscape-domain data for these 159 species.
+
+Full analysis: `notes/2026-04-09-inference-eda-deep-dive.md`
+
+### 11. Max-across-folds dramatically outperforms averaging for rare species (exp 024)
+
+For pseudo-labeling, `max(fold0, fold1, fold2, fold3)` per species per segment
+recovers **+29 unseen species** at >0.5 threshold compared to single-fold (80 → 109/159).
+4-fold averaging actually **hurts** coverage (-12 species vs single-fold) because it
+smooths out confident individual-fold predictions for rare species. Each fold contributes
+2-6 unique species that no other fold detects.
+
+| Strategy | Coverage @>0.5 | Zero Coverage |
+|----------|---------------|---------------|
+| Single-fold | 80 / 159 | 79 |
+| Avg-4fold | 68 / 159 | 91 (worse!) |
+| **Max-4fold** | **109 / 159** | **50** |
+
+34 species remain invisible even with max-folds at >0.3 — these need Perch.
+
+### 12. 12.6% of focal "confusions" are correct background species detections (exp 024)
+
+9,498 / 75,553 wrong top-1 predictions on focal recordings match a secondary species
+label. The model is detecting real background species that happen to be louder than
+the primary species in that 5s chunk. This means the model's multi-label capability
+is better than focal metrics suggest, and its predictions on multi-species soundscapes
+may be more trustworthy than the 0.716 top-1 accuracy implies.
+
+### 13. Domain shift is species-specific, not global (exp 024)
+
+The overall logit distribution is similar between focal and soundscape recordings
+(mean logit -9.20 vs -9.23). But which species get high logits changes dramatically:
+- 75 seen species: mean max-prob 0.579 on soundscapes (actively detected)
+- 159 unseen species: mean max-prob 0.036 (confidently predicted as absent)
+
+The model isn't generally confused by soundscapes — it's specifically blind to species
+it hasn't seen in the soundscape domain.
+
+### 14. Focal sample count moderately predicts soundscape coverage (exp 024)
+
+Spearman r=0.459 between focal recording count and pseudo-label coverage on soundscapes.
+Species with 200+ focal recordings: 75% get pseudo-labels at >0.5. Species with <10:
+only 6%. However, **54 species with 200+ focal recordings still get zero soundscape
+predictions** — these are pure domain-shift failures, not data scarcity. Manual
+inspection needed to determine if they're genuinely absent from Pantanal soundscapes.
+
 ---
 
 ## Remaining Gap Analysis
 
-Current best: 0.929 (MLP-only ensemble). Target: 0.946 (#1). Gap: 0.017.
+Current best: 0.929 (MLP-only ensemble). Target: 0.948 (#1). Gap: 0.019.
+
+**Data-centric directions** (highest priority — see `notes/2026-04-09-data-centric-pivot.md`):
 
 | Direction | Rationale | Expected Gain | Risk |
 |-----------|-----------|---------------|------|
-| TF Perch backend | ONNX costs −0.005 standalone (0.920 vs 0.925) | +0.002-0.005 | **Timed out** (exp 023 C.3): TF ~10s/file exceeds 90 min for 600 files. Not viable for ensemble. |
-| Better Perch probes (OOF, calibration) | MLP probes are simple; OOF calibration could help | +0.001-0.003 | Unknown |
-| SED backbone diversity | Train v5j on different backbone for ensemble diversity | +0.001-0.003 | Backbone swap historically high-yield |
-| More sophisticated PP fusion | Weight PP per-species or per-site rather than globally | +0.001-0.002 | Complex to tune |
-| Knowledge distillation | Use 0.929 ensemble as teacher for stronger single SED | +0.003-0.005 | Exp 015 failed, but SED-to-SED might differ |
-| Additional data sources | Xeno-canto, iNaturalist sound — more species coverage | +0.001-0.005 | Data cleaning overhead |
-| Framewise max inference | Nikita (1st 2025) used framewise max, not attention pool | Unknown | Inference-only change, no retraining |
+| **Pseudo-labeling v2** | 127K unlabeled soundscape segments, 0.929 teacher, addresses 159 unseen species | **+0.005-0.010** | Medium — exp 015 failed, but teacher is 5× stronger + SED architecture now |
+| **Backbone diversity** | Nikita used 7 models × 5 backbones; we use 1. Diverse ensemble + diverse teachers for PL iteration | +0.003-0.007 | Low — proven technique |
+| **VAD cleaning** | Remove speech contamination from focal data, improve data quality | +0.001-0.002 | Low — data hygiene |
+| **Hard negative mining** | Use unlabeled data to find confident FPs, add as explicit negatives | +0.001-0.003 | Medium — needs careful design |
 
-Note: individual directions unlikely to close the full 0.017 gap. Need to
-stack multiple small gains. TF Perch path confirmed not viable for ensemble.
+**Inference/ensemble directions** (lower priority):
+
+| Direction | Rationale | Expected Gain | Risk |
+|-----------|-----------|---------------|------|
+| Overlap reconstruction | Nikita's 20s windows + delta blending (inference-only) | +0.001-0.003 | Low |
+| SED backbone diversity | Train v5j on different backbone for ensemble diversity | +0.001-0.003 | Low |
+| Better Perch probes (OOF, calibration) | MLP probes are simple; OOF calibration could help | +0.001-0.003 | Unknown |
+| More sophisticated PP fusion | Weight PP per-species or per-site rather than globally | +0.001-0.002 | Complex to tune |
+
+Note: the gap widened from 0.017 to 0.019 (#1 moved from 0.946 to 0.948). The #1 team
+is almost certainly using unlabeled data (Boredom says ceiling without unlabeled is ~0.94-0.945).
+Pseudo-labeling is the single highest-value bet for closing the gap.
 
 ---
 
@@ -202,5 +264,7 @@ Confirmed dead ends -- do not revisit without strong new evidence:
   when running on ONNX embeddings.
 - **Backbone scaling (B0 to B2)**: regressed -0.017 (confounded with AttHead,
   but not worth retesting given diminishing returns).
-- **Pseudo-labels / student training**: failed twice in exp 015. Would need
-  fundamentally different approach to succeed.
+- **Pseudo-labels / student training (exp 015 approach)**: failed twice with
+  0.767 teacher + clip-level architecture. The approach itself is NOT dead —
+  it needs fundamentally better conditions: stronger teacher (0.929), SED
+  architecture, power transform filtering. See exp 024/025.
