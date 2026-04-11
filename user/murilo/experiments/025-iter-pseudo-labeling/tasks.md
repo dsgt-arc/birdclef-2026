@@ -1,4 +1,4 @@
-# Experiment 025: Pseudo-Labeling v2 — Tasks
+# Experiment 025: Iterative Pseudo-Labeling — Tasks
 
 ## Goal
 
@@ -81,6 +81,8 @@ Status: **Proposed — awaiting review.**
 - [ ] Try power transform P^2.0 (more noise suppression)
 - [ ] Try Perch z-threshold 1.5 or 2.5
 - [ ] Try SED temperature 0.5 or 0.9
+- [ ] Try leave-one-fold-out pseudo-labels (if fold leakage is suspected):
+  fold K trains on max(other 3 folds) only — cleaner but slightly less coverage
 
 ## Success Criteria
 

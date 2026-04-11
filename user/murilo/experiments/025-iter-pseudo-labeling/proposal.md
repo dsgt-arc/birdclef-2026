@@ -1,4 +1,4 @@
-# Proposal: Pseudo-Labeling v2
+# Proposal: Iterative Pseudo-Labeling
 
 **Status**: proposed
 **Created**: 2026-04-10
@@ -513,7 +513,7 @@ when the script runs, so each output is self-contained and reproducible.
 ### Experiment directory (under version control)
 
 ```
-user/murilo/experiments/025-pseudo-labeling-v2/
+user/murilo/experiments/025-iter-pseudo-labeling/
 ├── proposal.md                     # This document
 ├── tasks.md                        # Task tracking
 ├── results.md                      # Results per round
@@ -559,7 +559,7 @@ shared/inference/birdclef-2026/
 ├── hgnet-b0-sed-v5j-pl-v2/         # Round 2 student (if applicable)
 └── ...
 
-shared/artifacts/025-pseudo-labeling-v2/
+shared/artifacts/025-iter-pseudo-labeling/
 ├── v1-fold0/                        # Round 1 fold 0 model checkpoint
 │   ├── best.ckpt
 │   └── config.yaml
@@ -575,7 +575,7 @@ shared/artifacts/025-pseudo-labeling-v2/
 | Pseudo-label dir | `shared/pseudo-labels/birdclef-2026/v{N}/` | `v1/`, `v2/` |
 | Training artifact | `hgnet_b0_sed_v5j_pl_v{N}_fold{F}` | `hgnet_b0_sed_v5j_pl_v1_fold0` |
 | Inference output | `hgnet-b0-sed-v5j-pl-v{N}` | `hgnet-b0-sed-v5j-pl-v1` |
-| Shared checkpoint | `shared/artifacts/025-pseudo-labeling-v2/v{N}-fold{F}/` | `v1-fold0/` |
+| Shared checkpoint | `shared/artifacts/025-iter-pseudo-labeling/v{N}-fold{F}/` | `v1-fold0/` |
 
 ### Config versioning
 
@@ -676,6 +676,32 @@ All hyperparameters for round 1, with the rationale for each starting value:
 | Exp 015 repeats (student worse than teacher) | Low | High | Fundamentally different: 5× teacher, SED arch, domain match |
 | 6 invisible species hurt LB | Low | Low | <2.5% of species, ~0.5% of LB. Accept the loss |
 | Overfitting to pseudo-labels | Medium | Medium | w=0.5 loss weight, batch mixing, monitor labeled AUC |
+| **Fold leakage in pseudo-labels** | High (by design) | Low-Medium | See section 11.1 below |
+
+### 11.1 Fold leakage in pseudo-labels
+
+The SED pseudo-labels use `max(fold0, fold1, fold2, fold3)`. When training fold 0, the
+pseudo-labels include fold 0's own predictions on soundscapes. This means fold 0 is
+partially training on its own predictions — a mild form of self-distillation.
+
+**Why this happens**: Max-across-folds gives the best species coverage (+29 species vs
+single-fold). Using leave-one-fold-out pseudo-labels (fold 0 trains on max(fold1,2,3)
+only) would be cleaner but loses coverage — some rare species are only detected by one fold.
+
+**Why it's probably fine**:
+- Standard practice in pseudo-labeling (Nikita used all models including the student's
+  own architecture for teacher predictions)
+- The max is dominated by the 3 OTHER folds for most species — fold 0's contribution
+  is 1/4 of the signal at most
+- The pseudo-labels are soft probabilities with reduced loss weight (0.5), further
+  limiting any self-reinforcement
+- The real validation is LB, not offline metrics — if fold leakage inflates offline
+  metrics but LB improves, it doesn't matter
+
+**Fallback**: If round 1 shows suspiciously high offline metrics but flat/regressed LB,
+try leave-one-fold-out as a diagnostic: generate fold-specific pseudo-labels where
+fold K trains on max of the other 3 folds only. This reduces coverage slightly but
+eliminates self-distillation.
 
 ---
 

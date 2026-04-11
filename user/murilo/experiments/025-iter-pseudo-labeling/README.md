@@ -1,4 +1,4 @@
-# Experiment 025: Pseudo-Labeling v2 — Multi-Iterative Noisy Student
+# Experiment 025: Iterative Pseudo-Labeling
 
 Train SED models on pseudo-labeled soundscape data to close the LB gap caused by
 159 species having zero soundscape representation. Uses a tiered teacher strategy:
@@ -58,7 +58,7 @@ Each round:
 ## Directory Structure
 
 ```
-025-pseudo-labeling-v2/
+025-iter-pseudo-labeling/
 ├── README.md                           # This file
 ├── proposal.md                         # Full methodology (12 sections)
 ├── tasks.md                            # Task tracking per phase
@@ -91,7 +91,7 @@ shared/pseudo-labels/birdclef-2026/
 ├── v2/                                 # Round 2 (TBD)
 └── ...
 
-shared/artifacts/025-pseudo-labeling-v2/
+shared/artifacts/025-iter-pseudo-labeling/
 ├── v1-fold0/                           # Model checkpoints
 └── ...
 
@@ -113,7 +113,7 @@ shared/inference/birdclef-2026/
 ### Generate pseudo-labels
 
 ```bash
-cd user/murilo/experiments/025-pseudo-labeling-v2
+cd user/murilo/experiments/025-iter-pseudo-labeling
 
 # Generate v1 pseudo-labels (reads configs/v1.yaml)
 python scripts/generate_pseudo_labels.py --config configs/v1.yaml

@@ -123,4 +123,4 @@ SED-primary + Perch-rescue for SED-blind species with aggressive filtering.
   - **Tier D** (6 species): No teacher (data scarcity hard floor)
   - Multi-label: threshold approach (all species above thresh after P^1.5)
   - Training: v5j recipe unchanged, 50/50 batch split, BCE with weighted loss
-- [x] F.3 Exp 025 proposal drafted: `user/murilo/experiments/025-pseudo-labeling-v2/proposal.md`
+- [x] F.3 Exp 025 proposal drafted: `user/murilo/experiments/025-iter-pseudo-labeling/proposal.md`
