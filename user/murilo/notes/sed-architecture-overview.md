@@ -603,46 +603,128 @@ seconds of silence. This is the key hypothesis for exp 026.
 | clipwise_weight | 1.0 | Only clipwise loss |
 | framewise_weight | 0.0 | No framewise supervision |
 
+### How loss is computed: the full path
+
+After the forward pass produces `clipwise_logits (64, 234)` and
+`framewise_logits (64, 234, 16)`, the loss computation answers: "how wrong
+were the predictions, and in which direction should the weights be adjusted?"
+
+The training step calls `_compute_chunked_loss`, which computes a weighted sum:
+
+```
+total_loss = clipwise_weight × clipwise_loss + framewise_weight × framewise_loss
+```
+
+With v5j settings (`clipwise_weight=1.0, framewise_weight=0.0`), only the
+clipwise loss contributes. The framewise term is computed but multiplied by zero.
+
 ### Loss function: BCE (Binary Cross-Entropy with Logits)
 
-For each of the 234 species independently: "is this species present?" Binary
-yes/no for each species, allowing multiple species to be present simultaneously
-(multi-label classification). The loss is:
+BCE treats each of the 234 species as an **independent binary classification**:
+"is species k present?" The formula for one species:
 
 ```
 BCE(logit, label) = −[label × log(σ(logit)) + (1 − label) × log(1 − σ(logit))]
 ```
 
-Where σ is the sigmoid function. Summed across all 234 species, averaged across
-the batch. Soft labels from MixUp (e.g., label=0.7) work naturally with BCE.
+Where σ is the sigmoid function: `σ(x) = 1/(1+exp(-x))`.
 
-**Why not Cross-Entropy (CE)?** CE treats species prediction as a single-choice
-problem (pick THE species), but soundscapes have multiple species calling
-simultaneously. We tested CE loss 6 times and it always regressed on LB (−0.015
-to −0.030). However, Salman and Boredom both use CE — they may handle the
-multi-label issue differently (CE during training for gradient strength, sigmoid
-at inference for independent probabilities). This remains an open question.
+**Concrete example** — a batch sample where species 42 is the target bird:
 
-### What "clipwise-only loss" means
+| Species | Logit | σ(logit) | Label | BCE | Meaning |
+|---------|-------|----------|-------|-----|---------|
+| 41 | -3.5 | 0.03 | 0.0 | 0.03 | Correctly absent — low loss |
+| **42** | **0.8** | **0.69** | **1.0** | **0.37** | Present but only 69% confident — moderate loss |
+| 43 | 1.2 | 0.77 | 0.0 | 1.47 | False positive! Model says 77% but absent — high loss |
+| 44 | -5.0 | 0.01 | 0.0 | 0.01 | Correctly absent — very low loss |
 
-We only compute loss on the `clipwise_logits` (the single (B, 234) prediction
-after LSE pooling). We don't supervise the `framewise_logits` (per-frame
-predictions). In theory, framewise supervision could teach the model which frames
-contain the call, but in practice the file-level labels from focal recordings
-don't tell us WHEN the bird calls — so framewise supervision would push the model
-to predict the species in every frame, even silent ones.
+The per-sample loss averages across all 234 species, then averages across the
+batch of 64 → one scalar loss value. The gradients from high-loss species
+(false positives and missed detections) dominate the weight updates.
 
-At inference, we blend: `probs = 0.75 × sigmoid(clipwise) + 0.25 × sigmoid(max(framewise))`.
-The framewise-max term adds a "strongest frame" signal without requiring framewise
-training labels.
+### After MixUp: soft labels
 
-**Train/inference mismatch**: The v5j config specifies `clipwise_weight=1.0,
-framewise_weight=0.0` (clipwise-only training), but the ONNX export used the
-script defaults of `blend_clip=0.75, blend_frame=0.25`. So v5j's 0.906 LB
-includes framewise signal that the model was **never trained to optimize**. The
-framewise-max logits are a byproduct of the forward pass (computed but not
-supervised). This works because the framewise head shares weights with the
-clipwise path — but it's an accidental win, not a deliberate design choice.
+After spectrogram MixUp, labels become soft (not binary). If we mix two samples
+with λ=0.7:
+
+```
+label_A: [0, 0, 1, 0, ...]    species 2 present
+label_B: [0, 1, 0, 0, ...]    species 1 present
+mixed:   [0, 0.3, 0.7, 0, ...]  70% species 2, 30% species 1
+```
+
+BCE handles soft labels naturally — a label of 0.7 means "70% confident this
+species is present." The model learns proportional confidence, which is useful
+for soundscape generalization where species overlap and certainty varies.
+
+### Why not Cross-Entropy (CE)?
+
+**BCE** treats each species independently — "is bird A present?" and "is bird B
+present?" are separate yes/no questions. Multiple species can be present.
+
+**CE** treats it as a single-choice problem — "which ONE species is this?" It
+uses softmax (probabilities sum to 1 across species), so predicting "bird A = 80%"
+forces all others to share 20%. This is wrong for multi-species soundscapes.
+
+We tested CE loss 6 times and it always regressed (−0.015 to −0.030). However,
+Salman (0.922) and Boredom (#1) both use CE during training with sigmoid at
+inference. They may apply CE only to the primary label, getting stronger gradients
+for the dominant species while relying on the sigmoid output space at test time
+for multi-label predictions. CE + AttHead + 20s is an untested combination.
+
+### Clipwise vs framewise loss
+
+The forward pass produces two outputs (section 5):
+
+- **framewise_logits** `(64, 234, 16)`: a prediction at each of 16 time
+  positions. "At frame 7 (~second 2.1), how likely is each species?"
+- **clipwise_logits** `(64, 234)`: one prediction per species for the whole
+  clip, from LSE-pooling the framewise logits. "What's the strongest evidence
+  for each species anywhere in this clip?"
+
+The clipwise prediction is derived FROM framewise — LSE pooling reads all 16
+frames and extracts the peak. They share the same linear layer weights.
+
+**Clipwise loss** (`clipwise_weight=1.0`): BCE on the LSE-pooled prediction.
+This is the only loss we optimize. The model learns to make the overall clip
+prediction correct.
+
+**Framewise loss** (`framewise_weight=0.0`): BCE on `max(framewise)` — the
+single most confident frame per species. Currently disabled (weight=0.0). Even
+though it could teach the model which frames contain the call, we don't know
+WHEN the bird calls in focal recordings (only file-level labels). Enabling
+framewise loss would push the model to predict "present" at every frame, even
+silent ones.
+
+### Train/inference blend mismatch
+
+At inference, we blend both signals:
+```
+probs = 0.75 × sigmoid(clipwise) + 0.25 × sigmoid(max(framewise))
+```
+
+The v5j config specifies `clipwise_weight=1.0, framewise_weight=0.0`
+(clipwise-only training), but the ONNX export used `blend_clip=0.75,
+blend_frame=0.25`. So v5j's 0.906 LB includes framewise signal the model was
+**never trained to optimize**. It works because the framewise head shares weights
+with the clipwise path — the per-frame logits are a byproduct of the same
+computation that produces the clip-level prediction. But it's an accidental win.
+
+### Multi-chunk loss (v8a/v8b)
+
+When using multi-chunk LSEHead (e.g., 4 chunks for 20s), `clipwise_logits` has
+shape `(64, 4, 234)` — 4 predictions per sample. The loss averages across chunks:
+
+```
+clip_loss = (BCE(chunk0, label) + BCE(chunk1, label) + ... + BCE(chunk3, label)) / 4
+```
+
+All 4 chunks get the **same label** (the file-level species label). For focal
+recordings this is correct — the species is labeled for the entire file. But for
+a 45s recording with a 5s call and a 20s crop, typically only 1 of 4 chunks
+actually contains the call. The other 3 chunks are silence being trained as
+positive — adding label noise. This "same label for all chunks" issue may explain
+why multi-chunk LSEHead (v8b: 0.896) underperformed single-chunk (v5j: 0.906).
 
 ---
 
