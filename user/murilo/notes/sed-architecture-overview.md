@@ -945,7 +945,48 @@ All focal recordings are sampled uniformly. Species with 5 recordings get the sa
 sampling rate as species with 500. A curriculum that oversamples rare species or
 undersamples easy species might help the long-tail problem.
 
-### 5. CE loss mystery (open question)
+### 5. Negative-class gradient dominance (medium priority)
+
+For a focal recording with 1 positive species, the BCE loss sums over 234 species:
+1 positive + 233 negatives. The negative-class gradients collectively overwhelm
+the positive gradient by ~233:1. The model gets 233 signals saying "push down"
+for every 1 saying "push up."
+
+This has two consequences:
+- **The model is conservative on rare species.** With few positive examples and
+  overwhelming negative pressure, the model learns to predict low probabilities
+  for rare species — contributing to the LB gap on 159 unseen species.
+- **Noisy positive labels are especially damaging.** A false positive (from a bad
+  crop or noisy pseudo-label) adds a strong "push up" signal that fights against
+  233× more "push down" signals from all other samples where that species is
+  absent. The model may learn to just stay low on that species entirely.
+
+Potential fixes: per-species loss weighting (upweight rare species), focal loss
+(downweight easy negatives), or oversampling rare species in the dataloader.
+
+### 6. No per-species loss weighting (medium priority)
+
+All 234 species contribute equally to the loss. A species with 500 focal
+recordings generates ~500× more gradient than one with 1 recording. The 82 species
+with <100 recordings are systematically undertrained relative to common species.
+Competitors may address this with weighted sampling, class-balanced losses, or
+species-specific thresholds.
+
+### 7. Multi-chunk label noise amplification (explains v8b regression)
+
+With multi-chunk training (v8b: 4 chunks for 20s), each chunk gets the file-level
+label. For a focal recording where the bird calls for 5s out of 45s: even when the
+20s crop contains the call, typically only 1 of 4 chunks has it — the other 3
+are silence with a positive label. This means ~75% of chunk-level training signals
+are wrong, which is **worse** than single-chunk v5j where the whole 5s crop either
+has the call or doesn't.
+
+This label noise amplification — not the longer window itself — may be the real
+reason v8b (0.896) underperformed v5j (0.906). **Note**: this problem does NOT
+apply to the AttHead + 20s approach (exp 026 Phase 3), where a single prediction
+covers the full window and attention can learn to ignore silent regions.
+
+### 8. CE loss mystery (open question)
 
 We tested CE loss 6 times and it always regressed. But Salman (0.922) and Boredom
 (#1) both use CE during training with sigmoid at inference. Either our CE
