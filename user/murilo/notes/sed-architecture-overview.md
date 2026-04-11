@@ -523,10 +523,10 @@ mel spectrogram (64, 1, 256, 511)
          │
          ▼
 ┌─── HGNetV2-B0 backbone (4 conv stages) ───┐
-│  Input:  (64, 1, 256, 511)                  │
-│  Output: (64, 1024, 8, 16)                  │
-│  32× spatial reduction in each dim          │
-└─────────────────────────────────────────────┘
+│  Input:  (64, 1, 256, 511)                │
+│  Output: (64, 1024, 8, 16)                │
+│  32× spatial reduction in each dim        │
+└───────────────────────────────────────────┘
          │
          ▼  mean over frequency dim
 temporal sequence (64, 1024, 16)
