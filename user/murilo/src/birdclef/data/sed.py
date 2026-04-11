@@ -584,6 +584,8 @@ class SEDDataModule(pl.LightningDataModule):
         pseudo_label_path: str | Path | None = None,
         pseudo_label_weight: float = 0.5,
         pseudo_label_batch_fraction: float = 0.5,
+        # Dual validation (exp 026): separate focal and soundscape val dataloaders
+        dual_validation: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["transform", "eval_transform"])
@@ -609,6 +611,7 @@ class SEDDataModule(pl.LightningDataModule):
         self.pseudo_label_path = Path(pseudo_label_path) if pseudo_label_path else None
         self.pseudo_label_weight = pseudo_label_weight
         self.pseudo_label_batch_fraction = pseudo_label_batch_fraction
+        self.dual_validation = dual_validation
 
         # Build species lists
         self.species_list = build_full_species_list(taxonomy_csv)
@@ -618,6 +621,9 @@ class SEDDataModule(pl.LightningDataModule):
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+        # Dual validation: separate datasets for focal and soundscape
+        self.focal_val_dataset = None
+        self.soundscape_val_dataset = None
 
     def setup(self, stage=None):
         if self.train_dataset is not None:
@@ -731,7 +737,14 @@ class SEDDataModule(pl.LightningDataModule):
                 context_duration=self.window_duration,
                 transform=self.eval_transform,
             )
-            self.val_dataset = ConcatDataset([focal_val, sc_val])
+            if self.dual_validation:
+                # Dual validation: keep focal and soundscape val separate
+                self.focal_val_dataset = focal_val
+                self.soundscape_val_dataset = sc_val
+                # Combined dataset for backward compat (used as fallback)
+                self.val_dataset = ConcatDataset([focal_val, sc_val])
+            else:
+                self.val_dataset = ConcatDataset([focal_val, sc_val])
         else:
             self.val_dataset = None
 
@@ -843,11 +856,10 @@ class SEDDataModule(pl.LightningDataModule):
             drop_last=True,
         )
 
-    def val_dataloader(self):
-        if self.val_dataset is None:
-            return []
+    def _val_loader(self, dataset):
+        """Create a validation DataLoader for a given dataset."""
         return DataLoader(
-            self.val_dataset,
+            dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
@@ -855,6 +867,17 @@ class SEDDataModule(pl.LightningDataModule):
             persistent_workers=self.num_workers > 0,
             prefetch_factor=4 if self.num_workers > 0 else None,
         )
+
+    def val_dataloader(self):
+        if self.val_dataset is None:
+            return []
+        if self.dual_validation and self.focal_val_dataset is not None:
+            # Return [focal_loader, soundscape_loader] for separate metric tracking
+            return [
+                self._val_loader(self.focal_val_dataset),
+                self._val_loader(self.soundscape_val_dataset),
+            ]
+        return self._val_loader(self.val_dataset)
 
     def test_dataloader(self):
         if self.test_dataset is None:

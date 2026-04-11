@@ -160,6 +160,7 @@ class SEDFinetuneModule(pl.LightningModule):
         scheduler_type: str = "cosine",
         onecycle_div_factor: float = 25.0,
         onecycle_final_div_factor: float = 4.0,
+        dual_validation: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform"])
@@ -203,6 +204,28 @@ class SEDFinetuneModule(pl.LightningModule):
             )
             setattr(self, f"{split}_top1", MultiLabelTopKAccuracy(k=1))
             setattr(self, f"{split}_top5", MultiLabelTopKAccuracy(k=5))
+
+        # Dual validation: separate soundscape metrics (exp 026)
+        self.dual_validation = dual_validation
+        if dual_validation:
+            for metric_name, metric_cls, metric_kwargs in [
+                (
+                    "val_sc_cmap",
+                    torchmetrics.AveragePrecision,
+                    {"task": "multilabel", "num_labels": num_classes, "average": "macro"},
+                ),
+                (
+                    "val_sc_auroc",
+                    torchmetrics.AUROC,
+                    {"task": "multilabel", "num_labels": num_classes, "average": "macro"},
+                ),
+                (
+                    "val_sc_f1_macro",
+                    torchmetrics.F1Score,
+                    {"task": "multilabel", "average": "macro", "num_labels": num_classes},
+                ),
+            ]:
+                setattr(self, metric_name, metric_cls(**metric_kwargs))
 
     def _mel_grad_context(self):
         """Return no_grad context unless mel_transform has learnable params (e.g. PCEN)."""
@@ -586,7 +609,7 @@ class SEDFinetuneModule(pl.LightningModule):
                 return self.mel_transform(x.float())
         return x
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         mel, labels, primary_idx = batch
         mel = self._to_mel(mel)
         clipwise_logits, framewise_logits = self(mel)
@@ -596,14 +619,29 @@ class SEDFinetuneModule(pl.LightningModule):
         probs = self._blended_probs(clipwise_logits, framewise_logits)
         preds = (probs > self.threshold).int()
 
-        self.val_cmap.update(probs, labels.int())
-        self.val_auroc.update(probs, labels.int())
-        self.val_f1_macro.update(preds, labels.int())
-        self.val_f1_micro.update(preds, labels.int())
-        self.val_top1.update(probs, labels.int())
-        self.val_top5.update(probs, labels.int())
+        if self.dual_validation and dataloader_idx == 1:
+            # Soundscape-only validation (dataloader_idx=1)
+            self.val_sc_cmap.update(probs, labels.int())
+            self.val_sc_auroc.update(probs, labels.int())
+            self.val_sc_f1_macro.update(preds, labels.int())
+            self.log("val_sc/loss", loss, on_step=False, on_epoch=True, add_dataloader_idx=False)
+        else:
+            # Focal + soundscape combined (dataloader_idx=0), or single-dataloader mode
+            self.val_cmap.update(probs, labels.int())
+            self.val_auroc.update(probs, labels.int())
+            self.val_f1_macro.update(preds, labels.int())
+            self.val_f1_micro.update(preds, labels.int())
+            self.val_top1.update(probs, labels.int())
+            self.val_top5.update(probs, labels.int())
+            self.log(
+                "val/loss",
+                loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                add_dataloader_idx=False,
+            )
 
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def on_validation_epoch_end(self):
@@ -622,6 +660,14 @@ class SEDFinetuneModule(pl.LightningModule):
             self.val_top5,
         ):
             m.reset()
+
+        # Dual validation: log soundscape-only metrics
+        if self.dual_validation:
+            self.log("val_sc/cmap", self.val_sc_cmap.compute(), prog_bar=False)
+            self.log("val_sc/auroc", self.val_sc_auroc.compute(), prog_bar=True)
+            self.log("val_sc/f1_macro", self.val_sc_f1_macro.compute(), prog_bar=False)
+            for m in (self.val_sc_cmap, self.val_sc_auroc, self.val_sc_f1_macro):
+                m.reset()
 
     def test_step(self, batch, batch_idx):
         mel, labels, primary_idx = batch
