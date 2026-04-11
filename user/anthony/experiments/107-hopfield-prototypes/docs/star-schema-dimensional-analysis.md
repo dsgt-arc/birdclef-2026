@@ -17,7 +17,7 @@ works. The star schema formalizes this:
 
 - Each **family** (~30 taxonomic families) gets a prototype set, shared
   across all species in that family
-- Each **species** (235, including silence) gets a prototype set
+- Each **species** (234 BirdCLEF targets) gets a prototype set
   parameterized as `family prototype + species-specific delta`
 - Each **site** (21 Pantanal monitoring locations) gets a prototype set
 - Per-window scoring is a bilinear retrieval over a shared
@@ -43,15 +43,16 @@ per-family as well) for eval-time ecological interpretation.
 
 | Symbol | Name | Size | Description |
 |--------|------|------|-------------|
-| S | Species (incl. silence) | 235 | 234 BirdCLEF 2026 targets + 1 silence/background class |
-| F | Families | ~30 | Taxonomic families (from BirdCLEF species metadata) + 1 silence "family" containing only the silence class |
+| S | Species | 234 | BirdCLEF 2026 targets |
+| F | Families | ~30 | Taxonomic families (from BirdCLEF species metadata) |
 | L | Sites | 21 | Pantanal monitoring locations |
 | K_s | Species / family prototype slots | 8 | Soft-EM components per species / per family |
 | K_l | Site prototype slots | 8 | Soft-EM components per site |
 | D | Shared space | 512 | Learned projection dimension (where all memory banks and queries live) |
 | H | MLP hidden | 1024 | Nonlinear projection hidden layer |
-| E | Perch embeddings | 1,536 | Pretrained input space |
-| W | Windows | ~330K | Strong + weak + unconfident training windows |
+| E | Perch embeddings | 1,536 | Pretrained input space (frozen) |
+| W_sup | Labeled windows | ~266K | Strong (739) + weak focal (~265K) for supervised BCE |
+| W_unsup | Unlabeled SC windows | 127K | For unsupervised site Hopfield energy loss |
 
 Every entity lives in a single shared D-dimensional space. Relationships
 between entities are bilinear forms through D, with explicit `W_Q` and
@@ -162,9 +163,10 @@ ecological interpretation.
 
 The key property of the learned space: this bilinear form is meaningful
 because both `M_s` and `M_l` live in the same D, shaped by a projection
-that was aligned via bird cross-domain BCE supervision. Exp 106's
-analogous composition failed because species and site prototypes lived
-in incompatible regions of Perch's fixed logit space.
+that was jointly supervised by labeled BCE (species side) and the
+unsupervised Hopfield energy loss on unlabeled soundscapes (site side).
+Exp 106's analogous composition failed because species and site
+prototypes lived in incompatible regions of Perch's fixed logit space.
 
 **Composed window score** (posterior):
 
@@ -175,6 +177,53 @@ where `g = σ(gate(q_w)) ∈ [0, 1]` is a learned per-window gate. When site
 context isn't informative, g → 1 and the model falls back to species-only
 scoring. The gate is conditional on the query, not global — different
 windows can use site context to different degrees.
+
+**Unsupervised site clustering** (the novel training loss):
+
+For each unlabeled soundscape window `w_u` with known site `l(w_u)`, the
+**Hopfield retrieval energy** is minimized against the window's own site
+memory bank:
+
+    L_site_unsup(w_u) = -(1/β_l) · logsumexp_{k=1..K_l}(β_l · q_r · W_K_l · M_l[l(w_u), k])
+
+where `q_r = W_Q · proj(emb_{w_u}).detach()`. The projection is detached
+from the gradient — this term trains **only** `M_l`, `W_K_site`, and
+`log_β_l`, not the projection itself.
+
+This uses the same retrieval equation (`logsumexp_k(β·q·W_K·M)`) as the
+forward-pass site scoring. Minimizing the negative logsumexp is the
+Hopfield energy function, which pulls each window toward **some**
+prototype in its site's memory bank via the same soft-EM gradient
+identity derived below. In recommendation-system terms, this is
+**unsupervised clustering of target-domain windows into per-site
+prototype sets**, supervised by the known `site_idx` metadata.
+
+Why projection detachment matters: if the projection were trained by
+this loss, it would encode site-identifying features (microphone
+fingerprints, ambient noise signatures, recording equipment biases).
+That's the exp 106 failure mode — site structure entangled with domain
+shift. Detaching keeps the projection shaped by species supervision
+(via `L_labeled`), while letting the site bank adapt its prototypes to
+cluster within that species-shaped space.
+
+Training signal routing:
+
+| Parameter | Labeled BCE (`L_labeled`) | Unsupervised site energy (`L_site_unsup`) |
+|-----------|---------------------------|-------------------------------------------|
+| `proj` MLP | ✓ | ✗ (detached) |
+| `W_Q` | ✓ | ✓ |
+| `W_K_species`, `M_family`, `Δ_species`, Platt | ✓ | ✗ |
+| `W_K_site`, `M_site`, `log_β_l` | ✓ (via gated fusion on labeled SC) | ✓ |
+| `gate` | ✓ | ✗ |
+
+The site bank therefore gets gradient from two complementary sources:
+the labeled stream routes species × site composition error into the
+site bank through the gated fusion, and the unsupervised stream routes
+per-window Hopfield clustering into the same bank from 127K unlabeled
+target-domain windows. These two signals cooperate: labeled data says
+"prototype `M_l[l, k]` should activate when species `s` is present at
+site `l`" and unsupervised data says "prototype `M_l[l, k]` should fit
+the typical acoustic modes observed at site `l`."
 
 ## Dimensional summary
 
@@ -199,30 +248,24 @@ Total parameters:
 | `W_K_species` | `(D, D) = (512, 512)` | 262K |
 | `W_K_site` | `(D, D) = (512, 512)` | 262K |
 | Family memory | `(F, K_s, D) = (30, 8, 512)` | 123K |
-| Species delta memory | `(S, K_s, D) = (235, 8, 512)` | 963K |
+| Species delta memory | `(S, K_s, D) = (234, 8, 512)` | 959K |
 | Site memory | `(L, K_l, D) = (21, 8, 512)` | 86K |
-| Platt calibration | `2 · S = 470` | 470 |
+| Platt calibration | `2 · S = 468` | 468 |
 | Hopfield temperatures | `β_s, β_l` | 2 |
 | Gate | `(D, 1) + bias = 513` | 513 |
 | **Total** | | **~4.1M** |
 
 The hierarchical species memory (family + delta) adds ~123K parameters
 for the family bank without reducing the species delta bank — the total
-is slightly larger than a flat `(235, 8, 512)` species bank by exactly
-the family bank size. This is a small cost for a mechanism that converts
+is slightly larger than a flat `(234, 8, 512)` species bank by exactly
+the family bank size. Small cost for a mechanism that converts
 low-resource species from "unlearnable" to "learnable via family prior."
 
-Output dimension is now 235 (234 competition species + 1 silence class),
-which adds 5 rows to the species delta bank (+10K params) and 2 extra
-Platt parameters vs the pre-silence version. The silence class is
-treated as a species in its own single-member family for indexing
-purposes.
-
-Weight decay asymmetry: `Δ_s` uses 1e-2 weight decay (strong shrinkage);
-all other parameters use 1e-5 (essentially none). This shrinkage is
-load-bearing — it's what collapses low-resource species deltas toward
-zero and lets the family prior dominate for species without enough
-data.
+Weight decay asymmetry: `Δ_s` uses `1e-2` (strong shrinkage toward
+zero, so low-resource species collapse to the family template); all
+other parameters use `1e-5`. This asymmetry is the "fall back to
+family prior" mechanism, operationalized through the optimizer
+parameter-group split rather than an explicit regularizer term.
 
 ## Logsumexp over K as soft EM (Hopfield retrieval)
 
@@ -274,34 +317,38 @@ M-step rolled into one:
 - **M-step** (implicit): SGD moves `M_{s,k}` toward `q`, scaled by
   `r_{s,k}(q)` — exactly the weighted-centroid update of soft EM.
 
-The sigmoid + BCE on top adds a logistic reweighting per (window, species)
-pair: the effective gradient on `M_{s,k}` is scaled by
-`(y_{s} − σ(a_s · s(q) + b_s))`, so well-predicted windows contribute less
-and misclassified windows contribute more. BCE shaping focuses the EM
-procedure on hard cases without breaking the EM structure.
+The sigmoid + BCE on top (on labeled data) adds a logistic reweighting
+per (window, species) pair: the effective gradient on `M_{s,k}` is
+scaled by `(y_{s} − σ(a_s · s(q) + b_s))`, so well-predicted windows
+contribute less and misclassified windows contribute more. BCE shaping
+focuses the EM procedure on hard cases without breaking the EM structure.
 
-Entropy minimization on unconfident unlabeled data (exp 107's `L_ent` on
-windows below Perch's confidence threshold) is also EM-flavored: sharpening
-the posteriors is equivalent to sharpening the responsibilities `r_{s,k}`,
-tightening the M-step update toward each prototype's high-confidence queries.
+**The unsupervised site loss uses the same identity.** Minimizing
+`-score_l(q) = -(1/β_l) · logsumexp_k(β_l · q · W_K_l · M_l[l_w, k])`
+on an unlabeled window with known site `l_w` pulls the site prototypes
+toward the window's projected query `q` with soft responsibilities
+`r_{l_w, k}(q)`. This is unsupervised soft-EM clustering of target-domain
+windows per site — the same E/M update that labeled BCE performs for
+species, applied to the site bank with unlabeled data. Unlike labeled
+BCE, there is no logistic reweighting term because there is no label
+to compare against; the loss unconditionally pulls prototypes toward
+observed windows of that site.
 
 **Consequence for initialization.** Because gradient descent is already
-doing soft EM, k-means init is a warm start, not a necessity. Exp 107
-k-means-initializes the **family memory and site memory** on raw Perch
-embeddings (pooled per family and per site respectively), then projects
-the centers through the untrained MLP once and writes them into the
-parameter tensors. The species delta memory is **zero-initialized** —
-species start as pure family fallback and develop their own specialization
-only if they have enough training gradient to overcome weight decay.
-The soft-EM gradient identity carries the family-level clustering
-structure forward as the projection evolves, and the delta parameters
-form a species-specific residual layer on top of the family template.
+doing soft EM on both the labeled BCE gradient and the unsupervised
+Hopfield energy loss, **k-means warm-start is not necessary**. Exp 107
+initializes all memory banks from random Gaussian noise (species delta
+from zero), and gradient descent performs the soft-EM clustering itself
+over the course of training. K-means init in raw Perch space, followed
+by a projection through an untrained MLP, would partially destroy the
+cluster structure anyway — random init is strictly cleaner.
 
 Consequence: the species bank operates as a soft mixture model over K
-learned components, with mode discovery emerging as a side effect of BCE
-training plus the unconfident-SC entropy regularizer. No separate
-clustering step during training, no fixed mode count, no need to name
-the modes up front.
+learned components; the site bank operates as a soft mixture model
+trained jointly by labeled BCE (via gated fusion) and the unsupervised
+Hopfield energy loss. Mode discovery emerges as a side effect of
+training. No separate clustering step, no fixed mode count, no need to
+name the modes up front.
 
 ## Recommendation-system framing
 
@@ -311,35 +358,25 @@ inheriting from families) and contextual gating over user (site) state:
 
 | Recsys concept | Exp 107 analog |
 |----------------|----------------|
-| Items | Species (S = 235, incl. silence) |
+| Items | Species (S = 234) |
 | Item categories | Families (F ≈ 30) — items share category-level priors |
 | Users | Sites (L = 21) |
 | Item embeddings | Effective species memory `M_s = M_f[family_of(s)] + Δ_s` (multi-prototype, hierarchical) |
-| Category embeddings | Family memory `M_f` (multi-prototype, shared across category members) |
+| Category embeddings | Family memory `M_f` (shared across category members) |
 | User embeddings | Site memory `M_l` (multi-prototype) |
 | Query | Window embedding `q_w` |
 | Bilinear score | `q · W_K · M_s` through shared D |
-| Content features (strong) | 739 labeled SC windows (ground truth) |
-| Content features (weak) | Perch-verified focal + Perch-pseudo unlabeled SC |
-| Implicit feedback | Unconfident unlabeled SC ("impressions" with no explicit label) |
-| Cold-start handling | Zero-focal species inherit their family's prototype via `M_f`, weight decay pushes `Δ_s` toward zero |
-
-Concretely, exp 107 combines three retrieval paradigms:
-
-1. **Two-tower retrieval** — query tower `q_w = proj(emb)` and item tower
-   `W_K_s · M_s[s, k]` scored by dot product. Standard dense retrieval.
-2. **Multi-prototype items** — items (species) have K prototypes instead
-   of a single vector, supporting multi-modal distributions. Equivalent
-   to item-side memory networks.
-3. **Contextual gating** — the gate `g(q_w)` is a per-query mixing weight
-   over the species-only score and the species × site composition.
-   Context (site) modulates item scores conditionally on the query.
+| Strong feedback | 739 labeled SC windows (window-level ground truth) |
+| Weak feedback | Focal recording bag labels (per-recording, noisy per-window) |
+| Implicit feedback | 127K unlabeled SC windows — "impressions" with no species label, trained via unsupervised Hopfield clustering against their known site's prototype bank |
+| Cold-start handling | Zero-focal species inherit their family's prototype via `M_f`; weight decay pushes `Δ_s` toward zero |
 
 The species × site affinity matrix `A(s, l)` is the recovered analog of
-a classical user-item matrix factorization. Instead of fitting it
+a classical user-item matrix factorization. Rather than fitting it
 directly against observed counts (sparse and noisy at 739 labeled
 windows), it is recovered from the learned per-entity embeddings —
-regularized by the weak stream that shapes both sides independently.
+shaped by labeled BCE on the species side and by the unsupervised
+Hopfield energy loss on the site side.
 
 ## Modern Hopfield framing
 
@@ -352,46 +389,32 @@ and the local update rule with scaled dot-product attention. The update
 converges to the stored pattern closest to the initial query, with
 exponential storage capacity in D.
 
-Each memory bank in exp 107 is a Hopfield store:
+Each memory bank in exp 107 is a Hopfield store: the species bank holds
+effective patterns `M_s = M_f[family_of] + Δ_s` (hierarchical —
+low-rank family templates shared across siblings, plus sparse
+species-specific corrections), and the site bank holds flat
+per-site prototypes `M_l[l_w]` for the current window's site. The
+hierarchical parameterization of the species store is analogous to a
+**low-rank + sparse decomposition of the Hopfield memory matrix** and
+gains sample efficiency for low-resource items by sharing stored
+patterns across taxonomic relatives. Retrieval dynamics are unchanged —
+only storage is structured.
 
-- Species bank: effective `M_s = M_f[family_of] + Δ_s` flattened to
-  `(S · K_s, D)` — stored patterns for every species × mode pair. The
-  family / delta decomposition is a **structured parameterization** of
-  the stored patterns: low-rank dense (the family templates) plus
-  sparse per-item corrections (the species deltas). At retrieval time
-  the Hopfield network sees a single flat `M_s`; at training time the
-  decomposition controls which patterns gradient flows into and how
-  weight decay regularizes them.
-- Site bank: `M_l[l_w]` — stored patterns for the current window's site.
+Exp 107 differs from canonical associative-memory Hopfield in three
+ways: (1) **one-shot retrieval, no iteration** — multi-label scoring
+doesn't converge to a single attractor; (2) **two-stage aggregation** —
+softmax within a species' K slots, sigmoid across species, so species
+don't compete for attention mass; (3) **per-species Platt calibration**
+— learnable affine before the sigmoid makes species scores proper
+probabilities, load-bearing for the Bayesian `species · site`
+multiplicative fusion.
 
-The hierarchical parameterization is analogous to a **low-rank + sparse
-decomposition of the Hopfield memory matrix**: `M_s = (family template
-matrix, replicated across sibling species) + (sparse species corrections)`.
-Canonical Hopfield networks have a flat `M`; exp 107 gains sample
-efficiency for low-resource items by sharing stored patterns across
-taxonomic relatives. Retrieval dynamics are unchanged — only storage is
-structured.
-
-Differences from the canonical Hopfield setup:
-
-1. **One-shot retrieval, no iteration.** Multi-label classification doesn't
-   need convergence to a single attractor — we want independent scoring
-   per species. Iteration would collapse the signal.
-2. **Two-stage aggregation.** Canonical Hopfield applies a single softmax
-   over all stored patterns. Exp 107 splits this into two stages: softmax
-   (via logsumexp) *within* a species to aggregate over its K modes, and
-   sigmoid *across* species for multi-label independence. A single global
-   softmax would force species to compete for attention mass, which is
-   wrong for multi-label outputs.
-3. **Per-species Platt calibration.** Before the final sigmoid, the
-   logsumexp score is transformed by a learnable affine `(a_s, b_s)`,
-   giving each species its own inverse temperature on top of the shared
-   Hopfield β and absorbing systematic per-species offsets that would
-   otherwise bias the BCE gradient.
-
-The Hopfield framing is a useful lens for intuition — the memory banks
-are an associative store, the logsumexp is the Hopfield energy, β is
-inverse temperature — and the implementation is plain einsum + logsumexp
-+ sigmoid. No library dependency, no iteration. If the experiment fails,
-it won't be because "Hopfield" was wrong; the load-bearing hypothesis is
-the learned projection's domain-alignment story from `../proposal.md`.
+The Hopfield framing is both a mechanism and a training objective: the
+same energy function that scores species retrieval at inference is
+minimized on unlabeled soundscape windows against their sites' memory
+banks (see "Unsupervised site clustering" above), turning self-supervised
+site clustering into a direct application of Ramsauer et al.'s energy
+formulation. The experiment's core hypothesis is that a **learned**
+projection, trained by this dual supervised/unsupervised Hopfield
+system, dissolves the domain-shift entanglement that made exp 106's
+fixed-space star schema fail.
