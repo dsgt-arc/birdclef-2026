@@ -5,7 +5,7 @@
 Understand model coverage gaps and Perch/SED complementarity to inform the pseudo-labeling
 teacher strategy for exp 025.
 
-Status: **Phases A-E complete. Phase F (synthesis) remaining.**
+Status: **All phases complete (A-F). Exp 025 proposal ready.**
 
 **Branch**: `mg/024-data-centric-exploration` — PR #26
 
@@ -114,12 +114,13 @@ SED-primary + Perch-rescue for SED-blind species with aggressive filtering.
   - 1 present but diurnal (M. melanurus — absence from nocturnal soundscapes is expected)
 - [x] E.3 Documented in EDA doc section 14 and results.md
 
-## Synthesis
+## Phase F: Synthesis ✅
 
-- [ ] F.1 Write final results.md with all findings and recommendations
-- [ ] F.2 Design pseudo-labeling teacher strategy:
-  - Which teacher: SED max-folds alone, Perch alone, or ensemble?
-  - What threshold and power transform parameters?
-  - Multi-label capture: threshold vs top-N vs soft labels?
-  - Loss weighting: ground truth vs pseudo-label weights?
-- [ ] F.3 Draft exp 025 proposal (pseudo-labeling pipeline)
+- [x] F.1 Final results.md with all findings, tiered teacher strategy, risk assessment
+- [x] F.2 Teacher strategy designed:
+  - **Tier A+B** (184 species): SED max-folds, P^1.5, threshold >0.5, w=0.5 loss weight
+  - **Tier C** (40 species): Perch top-K per species — deferred to round 2
+  - **Tier D** (6 species): No teacher (data scarcity hard floor)
+  - Multi-label: threshold approach (all species above thresh after P^1.5)
+  - Training: v5j recipe unchanged, 50/50 batch split, BCE with weighted loss
+- [x] F.3 Exp 025 proposal drafted: `user/murilo/experiments/025-pseudo-labeling-v2/proposal.md`
