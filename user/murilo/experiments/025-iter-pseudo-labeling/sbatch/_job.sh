@@ -62,6 +62,9 @@ uv venv "$JOB_VENV" --python 3.11
 source "$JOB_VENV/bin/activate"
 
 echo "  Installing dependencies..."
+# Install shared src/birdclef package from user-level pyproject.toml
+uv pip install -e "$USER_DIR"
+# Install experiment-specific deps (pseudo-label generation, etc.)
 uv pip install -e "$EXPERIMENT_DIR"
 
 echo "  Installing PyTorch with CUDA..."
