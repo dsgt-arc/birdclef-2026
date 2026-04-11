@@ -10,8 +10,8 @@ parameter rationale (12 sections including key concepts explained from first pri
 See [tasks.md](tasks.md) for the task checklist per phase.
 See [results.md](results.md) for results per iteration round.
 
-**Branch**: TBD
-**Status**: PROPOSED
+**Branch**: `mg/025-iter-pseudo-labeling`
+**Status**: IN PROGRESS
 **Current best**: 0.929 LB (Perch+SED ensemble, exp 023)
 **Target**: 0.935+ LB
 
@@ -116,10 +116,10 @@ shared/inference/birdclef-2026/
 cd user/murilo/experiments/025-iter-pseudo-labeling
 
 # Generate v1 pseudo-labels (reads configs/v1.yaml)
-python scripts/generate_pseudo_labels.py --config configs/v1.yaml
+python generate_pseudo_labels.py --config configs/v1.yaml
 
-# Verify output
-python scripts/generate_pseudo_labels.py --config configs/v1.yaml --stats-only
+# Verify output (print stats without saving)
+python generate_pseudo_labels.py --config configs/v1.yaml --stats-only
 ```
 
 ### Training

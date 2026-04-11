@@ -1,0 +1,56 @@
+# Pseudo-label generation config: v2-sed-only
+# Round 2: SED max-folds teacher ONLY (Tiers A+B) — Perch Tier C disabled.
+#
+# Rationale: v1 regressed on LB (0.897 vs 0.903 baseline). The most likely
+# culprit is Perch Tier C labels (148K from a 6%-precision model). This config
+# isolates the SED-only signal to test whether SED pseudo-labels alone help.
+#
+# Usage:
+#   cd user/murilo/experiments/025-iter-pseudo-labeling
+#   python generate_pseudo_labels.py --config configs/v2_sed_only.yaml
+
+version: v2-sed-only
+created: "2026-04-11"
+parent_version: v1  # Same SED source as v1, Perch disabled
+
+# --- Teacher: SED (Tiers A+B — 184 species) ---
+sed:
+  source_dir: shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/train_soundscapes
+  n_folds: 4
+  fold_strategy: max  # max-across-folds (not avg)
+  temperature: 0.6    # Sharpening (same as v1)
+  power_transform: 1.5
+  tiers: [A, B]
+
+# --- Teacher: Perch (DISABLED for this variant) ---
+perch:
+  source_path: shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/perch_234_raw_probs.parquet
+  strategy: per_species_z_normalization
+  z_threshold: 999.0  # Effectively disabled — no species will pass z>999
+  min_std: 0.01
+  power_transform: 1.5
+  tiers: [C]
+
+# --- Tier D: No teacher (6 invisible species) ---
+tier_d_species:
+  - "23150"   # Central Dwarf Frog (1 focal recording)
+  - "23154"   # Bahia Dwarf Frog (5 focal, out of range)
+  - "23724"   # Waxy Monkey Tree Frog (1 focal)
+  - "25214"   # Muller's Termite Frog (3 focal)
+  - "476521"  # Cuyaba Dwarf Frog (3 focal)
+  - "74580"   # Black-tailed Marmoset (3 focal, diurnal)
+
+# --- Output ---
+output_dir: shared/pseudo-labels/birdclef-2026/v2-sed-only
+
+# --- Training config (for reference) ---
+training:
+  recipe: v5j
+  pl_loss_weight: 0.5
+  batch_pl_fraction: 0.25  # Reduced from 0.50 — GT gets 75% of each batch
+  epochs: 20
+  base_model: HGNetV2-B0
+  head: LSEHead
+  loss: BCE
+  window_sec: 5
+  scheduler: OneCycleLR
