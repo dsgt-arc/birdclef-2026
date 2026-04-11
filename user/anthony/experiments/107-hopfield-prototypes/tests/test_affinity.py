@@ -13,18 +13,22 @@ from birdclef_107.model import PrototypeRetrievalModel, affinity_matrix
 
 
 def _reference_affinity(model: PrototypeRetrievalModel) -> torch.Tensor:
-    beta = float(model.log_beta_species.exp().item())
-    M_s = model.W_K_species(model.M_species)  # (s ks d)
-    M_l = model.W_K_site(model.site_memory)  # (l kl d)
+    sp = model.species_head
+    si = model.site_head
+    beta = float(sp.log_beta.exp().item())
+    M_s = sp.W_K(sp.M)  # (s ks d)
+    M_l = si.W_K(si.M)  # (l kl d)
     s, ks, d = M_s.shape
     l, kl, _ = M_l.shape
     logits = torch.empty(s, l, ks * kl, dtype=M_s.dtype, device=M_s.device)
-    for si in range(s):
-        for li in range(l):
+    for s_i in range(s):
+        for l_i in range(l):
             idx = 0
-            for ki in range(ks):
-                for lj in range(kl):
-                    logits[si, li, idx] = torch.dot(M_s[si, ki], M_l[li, lj])
+            for k_i in range(ks):
+                for l_j in range(kl):
+                    logits[s_i, l_i, idx] = torch.dot(
+                        M_s[s_i, k_i], M_l[l_i, l_j]
+                    )
                     idx += 1
     return torch.logsumexp(beta * logits, dim=-1) / beta  # (s l)
 

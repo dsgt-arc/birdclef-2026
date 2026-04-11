@@ -3,7 +3,20 @@
 See `design.md` for the full architecture and loss derivation.
 """
 
-from birdclef_107.model import PrototypeRetrievalModel, affinity_matrix
+from birdclef_107.model import (
+    HopfieldSiteHead,
+    HopfieldSpeciesHead,
+    PerchProjection,
+    PrototypeRetrievalModel,
+    affinity_matrix,
+)
 from birdclef_107.losses import compute_loss
 
-__all__ = ["PrototypeRetrievalModel", "affinity_matrix", "compute_loss"]
+__all__ = [
+    "PerchProjection",
+    "HopfieldSpeciesHead",
+    "HopfieldSiteHead",
+    "PrototypeRetrievalModel",
+    "affinity_matrix",
+    "compute_loss",
+]
