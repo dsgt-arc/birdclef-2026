@@ -7,9 +7,10 @@ Reads a YAML config (e.g., configs/v1.yaml) and generates:
   - Perch pseudo-labels (Tier C): per-species z-normalization → sigmoid → power transform
   - Merged pseudo-labels: one parquet with all tiers combined
 
-Usage:
-    python scripts/generate_pseudo_labels.py --config configs/v1.yaml
-    python scripts/generate_pseudo_labels.py --config configs/v1.yaml --stats-only
+Usage (from experiment directory):
+    cd user/murilo/experiments/025-iter-pseudo-labeling
+    python generate_pseudo_labels.py --config configs/v1.yaml
+    python generate_pseudo_labels.py --config configs/v1.yaml --stats-only
 
 Output directory: shared/pseudo-labels/birdclef-2026/v{N}/
 """
@@ -269,14 +270,13 @@ def main():
 
     t0 = time.time()
 
-    # Load config
+    # Load config — resolve relative to script directory (experiment dir)
+    SCRIPT_DIR = Path(__file__).resolve().parent
     config_path = Path(args.config)
     if not config_path.is_absolute():
-        # Try relative to cwd first, then relative to experiment dir
+        # Try relative to cwd first, then relative to script directory
         if not config_path.exists():
-            config_path = (
-                REPO / "user" / "murilo" / "experiments" / "025-iter-pseudo-labeling" / config_path
-            )
+            config_path = SCRIPT_DIR / config_path
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
 

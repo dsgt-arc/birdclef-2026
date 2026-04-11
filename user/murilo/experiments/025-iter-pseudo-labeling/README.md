@@ -116,10 +116,10 @@ shared/inference/birdclef-2026/
 cd user/murilo/experiments/025-iter-pseudo-labeling
 
 # Generate v1 pseudo-labels (reads configs/v1.yaml)
-python scripts/generate_pseudo_labels.py --config configs/v1.yaml
+python generate_pseudo_labels.py --config configs/v1.yaml
 
-# Verify output
-python scripts/generate_pseudo_labels.py --config configs/v1.yaml --stats-only
+# Verify output (print stats without saving)
+python generate_pseudo_labels.py --config configs/v1.yaml --stats-only
 ```
 
 ### Training

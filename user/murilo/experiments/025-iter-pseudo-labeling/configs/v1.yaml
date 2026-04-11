@@ -2,7 +2,8 @@
 # Round 1: SED max-folds teacher (Tiers A+B) + Perch z-normalized (Tier C)
 #
 # Usage:
-#   python scripts/generate_pseudo_labels.py --config configs/v1.yaml
+#   cd user/murilo/experiments/025-iter-pseudo-labeling
+#   python generate_pseudo_labels.py --config configs/v1.yaml
 #
 # This config is copied into the output directory (shared/pseudo-labels/birdclef-2026/v1/)
 # alongside the generated parquets for full reproducibility.
