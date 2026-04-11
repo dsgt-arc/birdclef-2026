@@ -38,7 +38,7 @@ USER_DIR="$(dirname "$(dirname "$EXPERIMENT_DIR")")"
 REPO_DIR="$(dirname "$(dirname "$USER_DIR")")"
 
 echo "=============================================="
-echo "Job: Experiment 021 - SED Training"
+echo "Job: Experiment 025 - Iterative Pseudo-Labeling"
 echo "=============================================="
 echo "Job ID: ${SLURM_JOB_ID:-local}"
 echo "Node: $(hostname)"
