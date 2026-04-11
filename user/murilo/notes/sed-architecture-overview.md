@@ -388,31 +388,51 @@ soundscape metrics separately to see which better predicts LB performance.
 
 ---
 
-## 5. Model Architecture
+## 5. Model Architecture & Forward Pass
 
-### Backbone: HGNetV2-B0
+The `forward()` method of our Lightning module is just two lines:
 
-From the `timm` library (`hgnetv2_b0.ssld_stage2_ft_in1k`). A CNN originally
-trained on ImageNet (photograph classification), adapted to our 1-channel mel
-spectrogram input by averaging the 3-channel RGB stem weights into a single
-channel.
-
-The backbone is a standard feature extractor — it takes the 2D spectrogram and
-produces a compressed feature representation:
-
-```
-Input:  (B, 1, 256, 511)   — mel spectrogram
-         batch, channels, frequency, time
-
-  → 4 stages of convolution + downsampling
-
-Output: (B, 1024, 8, 16)   — feature map
-         batch, 1024 feature channels, 8 freq positions, 16 time positions
+```python
+def forward(self, mel):
+    features = self.encoder.forward_features(mel)   # backbone
+    return self.sed_head(features)                   # head
 ```
 
-The spatial reduction is ~32× in each dimension: 256 freq → 8 positions, 511
-time → 16 positions. Each temporal position in the feature map "sees" roughly
-0.3 seconds of audio through the backbone's receptive field.
+But a lot happens inside each. Here's the complete forward pass with concrete
+tensor shapes for v5j (batch_size=64, 5s window):
+
+### Step 1: Backbone — compress the spectrogram into features
+
+The backbone is HGNetV2-B0 from the `timm` library
+(`hgnetv2_b0.ssld_stage2_ft_in1k`). Originally trained on ImageNet photographs,
+adapted to 1-channel input by averaging the 3-channel RGB stem weights.
+
+It's a standard CNN with 4 stages of convolution + downsampling. Each stage
+roughly halves the spatial dimensions:
+
+```
+Input (mel):     (64, 1,    256, 511)    # mel spectrogram
+After stage 1:   (64, 32,   128, 256)    # 2× downsample
+After stage 2:   (64, 64,    64, 128)    # 4×
+After stage 3:   (64, 512,   16,  32)    # 16×
+After stage 4:   (64, 1024,   8,  16)    # 32× ← we use this
+```
+
+We take only the last stage output: `features = (64, 1024, 8, 16)`.
+
+What each dimension means:
+- **1024 channels**: each channel is a learned "detector" — one might fire on
+  rising frequency sweeps, another on harmonic stacks, another on broadband noise.
+  These are abstract learned features, not interpretable individually.
+- **8 frequency positions**: the 256 mel bins compressed to 8 (each covers ~32
+  mel bins ≈ a wide frequency band)
+- **16 time positions**: the 511 frames compressed to 16 (each covers ~32 frames
+  ≈ 0.31 seconds of audio)
+
+Each "pixel" in this 8×16 feature map represents about a 0.3-second ×
+wide-frequency-band patch of the spectrogram, described by 1024 features. The
+backbone's convolutional receptive field means each pixel is influenced by a
+wider area — nearby pixels share information through overlapping convolutions.
 
 **Why HGNetV2-B0 over EfficientNet-B0**: In exp 019, HGNetV2-B0 outperformed
 EfficientNet-B0 by +0.037 LB (0.892 vs 0.855) with the exact same recipe. The
@@ -421,68 +441,143 @@ also noted "MBConvs from EfficientNets are not learning that well" for mel
 spectrograms. Exception: Boredom (#1) claims EfficientNet can "easily reach
 925+" — the full recipe may matter more than the backbone alone.
 
-### SED Head: LSEHead
+### Step 2: Frequency pooling — collapse the frequency axis
 
-The head converts the 4D backbone feature map into per-species predictions. This
-is where the model answers: "is species X present in this audio clip?"
+The head first eliminates the frequency dimension. We only need to know **when**
+a species is calling, not at which exact frequency — that information is already
+encoded in the 1024 feature channels by the backbone:
 
-```
-Backbone features: (B, 1024, 8, 16)
-  → Mean frequency pool: average over F=8 → (B, 1024, 16)
-      Collapses frequency dimension — we only need temporal information now
-  → Permute → (B, 16, 1024)
-  → Linear(1024, 1024) + ReLU + Dropout(0.5)
-  → Linear(1024, 234)
-      → framewise_logits: (B, 16, 234) — per-frame species scores
-         "At each of the 16 time positions, how likely is each species?"
-  → LSE temporal pool: smooth-max over T=16 → (B, 234)
-      → clipwise_logits: one score per species for the whole clip
-         "What's the strongest evidence for each species anywhere in this clip?"
+```python
+h = features.mean(dim=2)   # (64, 1024, 8, 16) → (64, 1024, 16)
+                            #  average over F=8 frequency positions
 ```
 
-**LSE (Log-Sum-Exp) pooling** is the key design. It's a smooth approximation to
-max pooling:
+Now we have a **temporal sequence**: 16 time positions, each described by 1024
+features.
+
+### Step 3: Per-frame classification — what species are at each time position?
+
+Two linear layers map each time position independently from 1024 features to
+234 species scores:
+
+```python
+h = h.permute(0, 2, 1)             # (64, 1024, 16) → (64, 16, 1024)
+framewise_logits = self.cls_fc(h)   # (64, 16, 1024) → (64, 16, 234)
+```
+
+`cls_fc` is: `Linear(1024→1024) → ReLU → Dropout(0.5) → Linear(1024→234)`
+
+Now `framewise_logits[b, t, s]` is: "in batch sample b, at time position t
+(~0.3s window), the raw score (logit) for species s."
+
+These are **logits**, not probabilities — they're raw unnormalized scores ranging
+from -∞ to +∞. A logit of +5.0 means "very likely present", -5.0 means "very
+likely absent", and 0.0 means "50/50". Converting to probability requires the
+sigmoid function: `prob = 1 / (1 + exp(-logit))`.
+
+The linear layers are applied **independently to each time position** (same
+weights shared across all 16 positions). This means the classifier doesn't know
+about temporal order — it just asks "what species evidence is at this position?"
+
+### Step 4: LSE pooling — find the peak evidence across time
+
+```python
+clipwise_logits = self.lse_pool(framewise_logits)  # (64, 16, 234) → (64, 234)
+```
+
+For each of the 234 species independently, LSE reads the 16 frame-level scores
+and produces one summary score. The formula:
 
 ```
-LSE(x) = T × (logsumexp(x / T) − log(N))
+LSE(x₁...x₁₆) = T × (log(exp(x₁/T) + ... + exp(x₁₆/T)) − log(16))
 ```
 
-At temperature T→0 it becomes hard max; at T→∞ it becomes mean. We use T=1.0.
+With T=1.0, this behaves like a **soft max** — dominated by the highest-scoring
+frame but slightly influenced by others.
+
+**Concrete example**: A bird calls at frame 7 (logit = 5.0), all other frames are
+silent (logits ≈ -2.0). The LSE output is approximately 5.0 — the peak is
+preserved. With mean pooling it would be: `(5.0 + 15×(-2.0)) / 16 = -1.56` —
+the call is completely lost.
 
 **Why LSE works for bird audio**: A bird might call for just 0.5 seconds out of
 a 5-second clip. That creates one high-scoring frame out of 16 — LSE captures
-that peak while mostly ignoring the 15 silent frames. It answers: "find the
-strongest evidence for species X anywhere in this window." This is much better
-than mean pooling (which would dilute the 0.5s call across 5s of silence) or
-attention (which must learn what to focus on and can overfit with limited data).
+that peak while mostly ignoring the 15 silent frames. It answers: "what's the
+strongest evidence for species X anywhere in this window?"
 
-**Why LSEHead beats AttHead**: LSE has **no learned temporal aggregation
-parameters** — it's a deterministic smooth-max operation. It can't learn bad
-attention patterns, can't collapse, can't focus on wrong frames. For BirdCLEF
-where the question is "find the peak call," the simplest approach works best.
-We tested several attention-based heads (7 times across exp 021) and LSEHead won
-every time on LB, even when AttHead had better offline metrics.
+### Step 5: Return both outputs
 
-### AttHead (attention-based alternative)
+```python
+return clipwise_logits, framewise_logits.permute(0, 2, 1)
+# clipwise:  (64, 234)        — one prediction per species per clip
+# framewise: (64, 234, 16)    — per-frame predictions (kept for inference blend)
+```
 
-Attention heads learn per-species weights for temporal aggregation:
+Both are returned because at inference we blend them (section 6). During training,
+only `clipwise_logits` is used for the loss.
+
+### Complete forward pass diagram
 
 ```
-Backbone features → per-frame logits + per-frame attention weights
-  → attention_weights = softmax(attention_raw, dim=time)
-  → clipwise = sum(attention_weights × per_frame_predictions, dim=time)
+mel spectrogram (64, 1, 256, 511)
+         │
+         ▼
+┌─── HGNetV2-B0 backbone (4 conv stages) ───┐
+│  Input:  (64, 1, 256, 511)                  │
+│  Output: (64, 1024, 8, 16)                  │
+│  32× spatial reduction in each dim          │
+└─────────────────────────────────────────────┘
+         │
+         ▼  mean over frequency dim
+temporal sequence (64, 1024, 16)
+    "16 time positions × 1024 features each"
+         │
+         ▼  Linear(1024→1024) → ReLU → Dropout → Linear(1024→234)
+framewise_logits (64, 16, 234)
+    "at each of 16 time positions, how likely is each species?"
+         │
+         ├──────────────────────── kept for inference blend
+         │
+         ▼  LSE pool over 16 time positions
+clipwise_logits (64, 234)
+    "what's the strongest evidence for each species in this clip?"
+         │
+         ▼  used for training loss (BCE)
+```
+
+The entire forward pass is differentiable — gradients flow backward from the loss
+through LSE pooling, through the linear layers, through the backbone convolutions,
+all the way back to the spectrogram input. The backbone learns what frequency-time
+patterns to detect, and the head learns how to map those patterns to species.
+
+### LSEHead vs AttHead — why it matters
+
+**LSEHead** has **no learned temporal aggregation parameters** — LSE pooling is a
+fixed mathematical operation (smooth max). It can't learn bad attention patterns,
+can't collapse, can't focus on wrong frames. For BirdCLEF where the question is
+"find the peak call," the simplest approach works best. We tested AttHead 7 times
+across exp 021 and LSEHead won every time on LB, even when AttHead had better
+offline metrics.
+
+**AttHead** replaces LSE pooling with learned attention:
+
+```python
+# AttHead forward (simplified):
+attention_weights = softmax(attention_network(framewise), dim=time)   # (B, 234, 16)
+clipwise = sum(attention_weights × sigmoid(framewise), dim=time)      # (B, 234)
 ```
 
 The attention mechanism learns "which frames to focus on" for each species. In
 theory, this is more flexible than LSE's fixed smooth-max. In practice, it
-underperformed on LB for our data regime (0.889–0.893 vs 0.906 for LSEHead).
+underperformed on LB (0.889–0.893 vs 0.906 for LSEHead).
 
 **However**: AttHead may work better with **longer windows** (10–20s). With 5s
 windows, the entire clip likely contains the bird call, so attention doesn't add
-value over smooth-max. With 20s windows, most of the audio is background noise,
-and attention's ability to **select the 3–5 seconds where the bird actually
-calls** becomes critical. LSE's uniform pooling over 20s would dilute the signal.
-This is the key hypothesis for exp 026.
+value over smooth-max — both produce similar results, but LSE is more stable.
+With 20s windows, most of the audio is background noise, and attention's ability
+to **select the 3–5 seconds where the bird actually calls** becomes critical.
+LSE pools uniformly over all time positions, diluting a 3-second call across 20
+seconds of silence. This is the key hypothesis for exp 026.
 
 ---
 
