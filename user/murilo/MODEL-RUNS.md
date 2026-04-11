@@ -528,7 +528,7 @@ Goal: close the single-model gap (0.903 → 0.922+).
 
 | Slug | Window | Head | val/auroc | val_sc/auroc | LB | Checkpoint |
 |------|--------|------|-----------|-------------|-----|------------|
-| `v5j-dualval` | 5s | LSEHead | 0.849 | 0.094* | — | `026-.../2026-exp026-v5j-dualval/best-epochepoch=17.ckpt` |
+| `v5j-dualval` | 5s | LSEHead | 0.849 | 0.956 | 0.897 | `026-.../2026-exp026-v5j-dualval/best-epochepoch=17.ckpt` |
 
 *val_sc/auroc is broken — macro AUROC over 234 species when only ~35 appear in
 86 soundscape val segments. See `026-domain-shift-training/results.md`.
@@ -540,7 +540,7 @@ All Phase 3 jobs ran with old broken val_sc/auroc (~0.093). Compare using val/au
 | Slug | Window | Head | val/auroc | val/cmap | val/top1 | LB | Checkpoint |
 |------|--------|------|-----------|----------|----------|-----|------------|
 | `v9a-10s-att` | 10s | AttHead | 0.859 | 0.645 | 0.827 | — | `026-.../best-epochepoch=09.ckpt` |
-| `v9b-15s-att` | 15s | AttHead | — | — | — | — | Training |
+| `v9b-15s-att` | 15s | AttHead | 0.858 | 0.664 | 0.847 | — | `026-.../best-epochepoch=10.ckpt` |
 | `v9c-20s-att` | 20s | AttHead | — | — | — | — | Training |
 
 ## Checkpoint Base Path

@@ -55,8 +55,11 @@ The val/auroc difference (0.874 vs 0.849) could be due to:
 3. The fact that val_metrics are logged at epoch 19 (end of training), not at
    the best checkpoint epoch
 
-**We should still submit this to LB** — the val/auroc gap might not translate
-to LB (as we've seen many times). And we need the LB datapoint regardless.
+**LB result: 0.897** — same as the first v5j-dualval run. The soundscape-based
+checkpoint selection (epoch 17) did not improve over the original v5j (0.903,
+epoch 19). The checkpoint picked 2 epochs earlier but scored the same on LB.
+This suggests the soundscape val metric is not selecting a better checkpoint,
+though the training is identical.
 
 ## Phase 3: AttHead + Window Length Ablation
 
@@ -96,7 +99,34 @@ Needs LB submission to confirm.
 
 ### v9b: 15s + AttHead
 
-*(Training in progress)*
+**Config**: `configs/v9b_15s_att.yaml`
+**SLURM**: Job 6426104, RTX 6000, 1h38m walltime
+**Checkpoint**: epoch 10 (best by broken val_sc/auroc)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc (focal) | 0.858 |
+| val/cmap | 0.664 |
+| val/f1_macro | 0.588 |
+| val/top1_acc | 0.847 |
+| val/top5_acc | 0.938 |
+| val/loss | 0.010 |
+| val_sc/auroc | 0.094 (broken) |
+| LB | — (pending) |
+
+### Comparison across all Phase 3 models (focal metrics)
+
+| Model | Window | Head | val/auroc | val/cmap | val/top1 | val/top5 | LB |
+|-------|--------|------|-----------|----------|----------|----------|-----|
+| v5j-dualval | 5s | LSEHead | 0.849 | 0.596 | 0.752 | 0.866 | 0.897 |
+| v9a | 10s | AttHead | 0.859 | 0.645 | 0.827 | 0.918 | — |
+| **v9b** | **15s** | **AttHead** | **0.858** | **0.664** | **0.847** | **0.938** | **—** |
+| v9c | 20s | AttHead | — | — | — | — | — |
+
+**Trend**: Longer windows show strong improvements in cmap (+0.068), top1 (+0.095),
+and top5 (+0.072) vs baseline. val/auroc is similar across all (~0.858-0.859).
+v9b (15s) has the best cmap and top1 so far. But offline metrics have been
+unreliable — LB submission needed.
 
 ### v9c: 20s + AttHead
 

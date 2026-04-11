@@ -31,7 +31,8 @@ Status: **Phase 2 complete. Phase 3 training in progress (v9a/v9b/v9c).**
 - [x] Record focal AUC vs soundscape AUC:
   - val/auroc (focal): **0.849**
   - val_sc/auroc (soundscape): **0.094** ⚠️ BROKEN (see below)
-- [ ] Submit to LB → compare vs v5j (0.903–0.906)
+- [x] Submit to LB ✅ — **0.897 LB** (same as first run, no improvement from
+  soundscape checkpoint selection vs original v5j 0.903)
 - [x] Best checkpoint: epoch 17 (by val_sc/auroc)
 
 ### ⚠️ val_sc/auroc metric is broken
@@ -59,7 +60,9 @@ Untested: **AttHead + longer windows** (single prediction, attention selects fra
 - [x] Train 10s + AttHead (v9a) ✅ — job 6426103, 1h07m, val/auroc=0.859,
   val/cmap=0.645, val/top1=0.827. Best checkpoint epoch 9 (broken val_sc metric).
   Strong offline improvement vs v5j-dualval (+0.010 auroc, +0.049 cmap, +0.075 top1).
-- [ ] Train 15s + AttHead (v9b) — submitted job 6426104 (training)
+- [x] Train 15s + AttHead (v9b) ✅ — job 6426104, 1h38m, val/auroc=0.858,
+  val/cmap=0.664, val/top1=0.847. Best cmap and top1 of all models so far.
+  Checkpoint epoch 10 (broken val_sc metric).
 - [ ] Train 20s + AttHead (v9c) — submitted job 6426105 (training)
 - [ ] Record offline metrics for v9b/v9c when complete
 - [ ] Submit most promising to LB
