@@ -541,7 +541,7 @@ All Phase 3 jobs ran with old broken val_sc/auroc (~0.093). Compare using val/au
 |------|--------|------|-----------|----------|----------|-----|------------|
 | `v9a-10s-att` | 10s | AttHead | 0.859 | 0.645 | 0.827 | — | `026-.../best-epochepoch=09.ckpt` |
 | `v9b-15s-att` | 15s | AttHead | 0.858 | 0.664 | 0.847 | — | `026-.../best-epochepoch=10.ckpt` |
-| `v9c-20s-att` | 20s | AttHead | — | — | — | — | Training |
+| `v9c-20s-att` | 20s | AttHead | 0.861 | 0.681 | 0.862 | — | `026-.../best-epochepoch=10.ckpt` |
 
 ## Checkpoint Base Path
 

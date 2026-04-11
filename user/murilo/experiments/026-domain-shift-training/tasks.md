@@ -63,12 +63,14 @@ Untested: **AttHead + longer windows** (single prediction, attention selects fra
 - [x] Train 15s + AttHead (v9b) ✅ — job 6426104, 1h38m, val/auroc=0.858,
   val/cmap=0.664, val/top1=0.847. Best cmap and top1 of all models so far.
   Checkpoint epoch 10 (broken val_sc metric).
-- [ ] Train 20s + AttHead (v9c) — submitted job 6426105 (training)
-- [ ] Record offline metrics for v9c when complete
+- [x] Train 20s + AttHead (v9c) ✅ — job 6426105, 2h09m, val/auroc=0.861,
+  val/cmap=0.681, val/top1=0.862. Best offline metrics across all models.
+  Monotonic improvement with window length. Checkpoint epoch 10 (broken metric).
+- [x] Record offline metrics for all three ✅
 - [x] Added v9a/v9b/v9c to exp 010 submission pipeline
 - [x] Submitted v9a (10s) to LB — awaiting score
 - [x] Submitted v9b (15s) to LB — awaiting score
-- [ ] Submit v9c (20s) to LB when training completes
+- [x] Submitted v9c (20s) to LB — awaiting score
 - [ ] Compare all against v5j baseline (0.903)
   Using last checkpoint (epoch 19) for all submissions since soundscape-based
   checkpoint selection (broken metric) picked suboptimal epochs.

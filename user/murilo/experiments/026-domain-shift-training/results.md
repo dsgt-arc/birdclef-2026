@@ -130,4 +130,34 @@ unreliable — LB submission needed.
 
 ### v9c: 20s + AttHead
 
-*(Training in progress)*
+**Config**: `configs/v9c_20s_att.yaml`
+**SLURM**: Job 6426105, RTX 6000, 2h09m walltime
+**Checkpoint**: epoch 10 (best by broken val_sc/auroc)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc (focal) | 0.861 |
+| val/cmap | 0.681 |
+| val/f1_macro | 0.605 |
+| val/top1_acc | 0.862 |
+| val/top5_acc | 0.942 |
+| val/loss | 0.010 |
+| val_sc/auroc | 0.091 (broken) |
+| LB | — (pending) |
+
+### Full Phase 3 comparison (focal metrics, all at epoch 19 / last checkpoint)
+
+| Model | Window | Head | val/auroc | val/cmap | val/top1 | val/top5 | LB |
+|-------|--------|------|-----------|----------|----------|----------|-----|
+| v5j-dualval | 5s | LSEHead | 0.849 | 0.596 | 0.752 | 0.866 | 0.897 |
+| v9a | 10s | AttHead | 0.859 | 0.645 | 0.827 | 0.918 | — |
+| v9b | 15s | AttHead | 0.858 | 0.664 | 0.847 | 0.938 | — |
+| **v9c** | **20s** | **AttHead** | **0.861** | **0.681** | **0.862** | **0.942** | **—** |
+
+**Trend**: Monotonic improvement across all metrics with longer windows. v9c (20s)
+is the strongest model offline with +0.012 auroc, +0.085 cmap, +0.110 top1, +0.076
+top5 over the 5s baseline. The cmap and top1 improvements are particularly large.
+
+**Caveat**: offline metrics have been anti-correlated with LB in past experiments.
+The v5j-dualval 0.897 LB (epoch 17, worse than v5j 0.903) is a reminder. All three
+v9 models submitted with last checkpoint (epoch 19) to LB — awaiting scores.
