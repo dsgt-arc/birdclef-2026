@@ -91,6 +91,10 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 026 Phase 3: AttHead + window length ablation
+    "birdclef-2026-hgnet-b0-sed-v9c-20s-att-weights",
+    "birdclef-2026-hgnet-b0-sed-v9b-15s-att-weights",
+    "birdclef-2026-hgnet-b0-sed-v9a-10s-att-weights",
     # Exp 026: v5j + dual validation (soundscape checkpoint selection)
     "birdclef-2026-hgnet-b0-sed-v5j-dualval-weights",
     # Exp 025: v5j + pseudo-label training (round 1)
