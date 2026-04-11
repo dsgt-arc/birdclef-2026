@@ -1,9 +1,10 @@
 """Build the species → family index tensor consumed by ``L_family``.
 
-The raw mapping lives in ``docs/families.csv`` (built by
-``scripts/fetch_families.py`` via the iNat API). This module reads that CSV,
-aligns to a canonical 234-species ordering, and returns a contiguous
-integer encoding suitable for ``PrototypeRetrievalModel.family_shrinkage_loss``.
+The raw mapping is ``families.csv``, bundled with the package under
+``assets/``. It is built out-of-band by ``scripts/fetch_families.py`` via
+the iNat API. This module reads that CSV, aligns to a canonical
+234-species ordering, and returns a contiguous integer encoding suitable
+for ``PrototypeRetrievalModel.family_shrinkage_loss``.
 """
 
 from __future__ import annotations
@@ -12,6 +13,12 @@ import csv
 from pathlib import Path
 
 import torch
+
+#: Path to the package-bundled families.csv. Resolved relative to this
+#: module so editable installs and wheel installs both work.
+DEFAULT_FAMILIES_CSV: Path = (
+    Path(__file__).resolve().parent / "assets" / "families.csv"
+)
 
 
 #: Pseudo-family bucket for Insecta morphotypes whose taxonomy doesn't
@@ -63,7 +70,7 @@ def _load_species_to_family(families_csv: Path) -> dict[str, str]:
 
 def build_family_index(
     species_list: list[str],
-    families_csv: str | Path,
+    families_csv: str | Path | None = None,
 ) -> torch.LongTensor:
     """Return a ``(n_species,)`` long tensor of contiguous family indices.
 
@@ -72,6 +79,8 @@ def build_family_index(
             ``n_species`` dimension of ``M_species``. Typically
             ``birdclef_106.data_loading.build_species_list()``.
         families_csv: path to the ``primary_label,family,...`` CSV.
+            Defaults to the package-bundled
+            ``src/birdclef_107/assets/families.csv``.
 
     Returns:
         A ``torch.LongTensor`` of shape ``(len(species_list),)`` with values
@@ -83,7 +92,7 @@ def build_family_index(
         ValueError: if any species in ``species_list`` is missing from the
             CSV, or if the CSV is malformed.
     """
-    families_csv = Path(families_csv)
+    families_csv = Path(families_csv) if families_csv else DEFAULT_FAMILIES_CSV
     if not families_csv.exists():
         raise FileNotFoundError(f"families CSV not found: {families_csv}")
 

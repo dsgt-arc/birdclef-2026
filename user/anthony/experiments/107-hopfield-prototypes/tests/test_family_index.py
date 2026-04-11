@@ -7,16 +7,13 @@ without shape or encoding errors.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import torch
 
-from birdclef_107.family_utils import build_family_index
+from birdclef_107.family_utils import DEFAULT_FAMILIES_CSV, build_family_index
 from birdclef_107.model import PrototypeRetrievalModel
 
-REPO_EXP_DIR = Path(__file__).resolve().parents[1]
-FAMILIES_CSV = REPO_EXP_DIR / "docs" / "families.csv"
+FAMILIES_CSV = DEFAULT_FAMILIES_CSV
 
 
 def _all_species_from_csv() -> list[str]:
@@ -36,7 +33,8 @@ def test_build_family_index_shape_and_range() -> None:
         f"expected 234 species rows in families.csv, got {len(species_list)}"
     )
 
-    idx = build_family_index(species_list, FAMILIES_CSV)
+    # No explicit path — exercise the DEFAULT_FAMILIES_CSV resolution.
+    idx = build_family_index(species_list)
     assert idx.dtype == torch.long
     assert idx.shape == (234,)
 

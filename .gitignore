@@ -93,6 +93,9 @@ logs/
 *.flac
 *.ogg
 *.csv
+# Package-bundled asset: families.csv ships with the birdclef_107 wheel,
+# so it must enter git even though *.csv is otherwise ignored.
+!user/anthony/experiments/107-hopfield-prototypes/src/birdclef_107/assets/families.csv
 *.parquet
 *.arrow
 *.h5
