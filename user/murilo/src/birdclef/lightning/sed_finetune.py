@@ -206,26 +206,20 @@ class SEDFinetuneModule(pl.LightningModule):
             setattr(self, f"{split}_top5", MultiLabelTopKAccuracy(k=5))
 
         # Dual validation: separate soundscape metrics (exp 026)
+        # Uses average="none" (per-class) instead of "macro" — at epoch end we
+        # manually filter to species with ≥1 positive in soundscape val and
+        # average only those. With only ~86 soundscape val segments, ~199 of 234
+        # species have zero positives — macro average would be dragged to ~0.09.
         self.dual_validation = dual_validation
         if dual_validation:
-            for metric_name, metric_cls, metric_kwargs in [
-                (
-                    "val_sc_cmap",
-                    torchmetrics.AveragePrecision,
-                    {"task": "multilabel", "num_labels": num_classes, "average": "macro"},
-                ),
-                (
-                    "val_sc_auroc",
-                    torchmetrics.AUROC,
-                    {"task": "multilabel", "num_labels": num_classes, "average": "macro"},
-                ),
-                (
-                    "val_sc_f1_macro",
-                    torchmetrics.F1Score,
-                    {"task": "multilabel", "average": "macro", "num_labels": num_classes},
-                ),
-            ]:
-                setattr(self, metric_name, metric_cls(**metric_kwargs))
+            self.val_sc_auroc = torchmetrics.AUROC(
+                task="multilabel", num_labels=num_classes, average="none"
+            )
+            self.val_sc_cmap = torchmetrics.AveragePrecision(
+                task="multilabel", num_labels=num_classes, average="none"
+            )
+            # Track which species have positives in soundscape val
+            self.register_buffer("_val_sc_pos_counts", torch.zeros(num_classes, dtype=torch.long))
 
     def _mel_grad_context(self):
         """Return no_grad context unless mel_transform has learnable params (e.g. PCEN)."""
@@ -623,7 +617,7 @@ class SEDFinetuneModule(pl.LightningModule):
             # Soundscape-only validation (dataloader_idx=1)
             self.val_sc_cmap.update(probs, labels.int())
             self.val_sc_auroc.update(probs, labels.int())
-            self.val_sc_f1_macro.update(preds, labels.int())
+            self._val_sc_pos_counts += labels.int().sum(dim=0)
             self.log("val_sc/loss", loss, on_step=False, on_epoch=True, add_dataloader_idx=False)
         else:
             # Focal + soundscape combined (dataloader_idx=0), or single-dataloader mode
@@ -661,13 +655,34 @@ class SEDFinetuneModule(pl.LightningModule):
         ):
             m.reset()
 
-        # Dual validation: log soundscape-only metrics
+        # Dual validation: log soundscape-only metrics (filtered to species with positives)
         if self.dual_validation:
-            self.log("val_sc/cmap", self.val_sc_cmap.compute(), prog_bar=False)
-            self.log("val_sc/auroc", self.val_sc_auroc.compute(), prog_bar=True)
-            self.log("val_sc/f1_macro", self.val_sc_f1_macro.compute(), prog_bar=False)
-            for m in (self.val_sc_cmap, self.val_sc_auroc, self.val_sc_f1_macro):
-                m.reset()
+            per_class_auroc = self.val_sc_auroc.compute()  # (num_classes,)
+            per_class_cmap = self.val_sc_cmap.compute()  # (num_classes,)
+            has_pos = self._val_sc_pos_counts > 0  # species with ≥1 positive
+
+            n_active = has_pos.sum().item()
+            if n_active > 0:
+                # Average only over species that have positives in soundscape val
+                filtered_auroc = per_class_auroc[has_pos]
+                # Filter NaN (species with all-positive or edge cases)
+                valid_auroc = filtered_auroc[~torch.isnan(filtered_auroc)]
+                sc_auroc = valid_auroc.mean() if len(valid_auroc) > 0 else torch.tensor(0.0)
+
+                filtered_cmap = per_class_cmap[has_pos]
+                valid_cmap = filtered_cmap[~torch.isnan(filtered_cmap)]
+                sc_cmap = valid_cmap.mean() if len(valid_cmap) > 0 else torch.tensor(0.0)
+            else:
+                sc_auroc = torch.tensor(0.0)
+                sc_cmap = torch.tensor(0.0)
+
+            self.log("val_sc/auroc", sc_auroc, prog_bar=True)
+            self.log("val_sc/cmap", sc_cmap, prog_bar=False)
+            self.log("val_sc/n_species", float(n_active), prog_bar=False)
+
+            self.val_sc_auroc.reset()
+            self.val_sc_cmap.reset()
+            self._val_sc_pos_counts.zero_()
 
     def test_step(self, batch, batch_idx):
         mel, labels, primary_idx = batch
