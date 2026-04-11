@@ -11,113 +11,144 @@ Read ALL of these at session start to get full context.
 
 | File | Purpose | How to read |
 |------|---------|-------------|
-| `user/murilo/experiments/025-iter-pseudo-labeling/proposal.md` | **Current experiment** — full methodology (12 sections) with step-by-step walkthrough | Read fully |
-| `user/murilo/experiments/025-iter-pseudo-labeling/tasks.md` | Current task tracking (Phase A ✅, Phase B in progress) | Read fully |
-| `user/murilo/experiments/025-iter-pseudo-labeling/findings/v1-pseudo-labels.md` | v1 pseudo-label generation results and quality validation | Read fully |
-| `user/murilo/experiments/025-iter-pseudo-labeling/README.md` | Experiment overview, directory structure, commands | Read fully |
-| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | 14 sections of model analysis + Perch vs SED comparison | Skim sections 12-14 (Phase C/D/E findings) |
-| `user/murilo/experiments/024-data-centric-exploration/results.md` | Exp 024 findings that motivate exp 025 | Skim synthesis section |
-| `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns (exps 006-024) | Read fully |
-| `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | Skim latest sections (exp 020-023) |
+| `user/murilo/notes/sed-architecture-overview.md` | **Complete pipeline reference** — 13 sections covering data, audio processing, model architecture, training, loss, inference, window experiments, identified gaps | Read fully (primary doc) |
+| `user/murilo/notes/2026-04-11-deep-research-claude.md` | Claude deep research: 0.90→0.93 recipe from past winners | Read fully |
+| `user/murilo/notes/2026-04-11-deep-research-gemini.md` | Gemini deep research: four systemic pipeline failures | Read fully |
+| `user/murilo/experiments/026-domain-shift-training/results.md` | Exp 026 results — dual val + AttHead ablation (all regressed) | Read fully |
+| `user/murilo/experiments/026-domain-shift-training/tasks.md` | Exp 026 task tracking | Read fully |
+| `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns (exps 006–024) | Read fully |
+| `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | Skim exp 026 section |
+| `user/murilo/experiments/025-iter-pseudo-labeling/tasks.md` | Exp 025 pseudo-labeling (paused — round 1 regressed) | Skim |
 
 ## Current state
 
 **Best LB: 0.929** (Perch ONNX + SED v5j-4fold MLP-only ensemble, exp 023)
+**Best single SED: 0.903** (v5j, 5s LSEHead, exp 019)
 **Target: 0.948** (competition #1). Gap: 0.019.
-**Branch**: `mg/025-iter-pseudo-labeling` — PR #27 (exp 024 merged to main via PR #26)
+**Branch**: `mg/026-domain-shift-training` — PR #28
 
 | Model | LB | Notes |
 |-------|-----|-------|
-| **Perch+SED MLP-only (exp 023)** | **0.929** | **Current best — ONNX Perch + SED 4-fold, proto_weight=0.0** |
-| Perch+SED w=0.5 (exp 023) | 0.927 | ProtoSSM+MLP blend |
+| **Perch+SED MLP-only (exp 023)** | **0.929** | **Current best — ONNX Perch + SED 4-fold** |
 | Perch ProtoSSM v18 TF (exp 020) | 0.925 | Best individual model |
-| SED v5j-4fold-pp2 (exp 021) | 0.917 | Best SED |
-| SED v5j single (exp 019) | 0.906 | Best single-fold SED — **baseline for exp 025** |
+| SED v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
+| **SED v5j single (exp 019)** | **0.903** | **Best single SED — our ceiling** |
+| v5j-dualval (exp 026) | 0.897 | Soundscape checkpoint selection (worse) |
+| v5j-pl-v1 (exp 025) | 0.897 | Pseudo-labels (regressed) |
+| v9c 20s+AttHead (exp 026) | 0.878 | Longer window + AttHead (regressed) |
+| v9b 15s+AttHead (exp 026) | 0.877 | Longer window + AttHead (regressed) |
+| v9a 10s+AttHead (exp 026) | 0.868 | Longer window + AttHead (regressed) |
 
 ## What happened in this session (2026-04-11)
 
-### 1. Exp 025 Setup
+### 1. Exp 025: Pseudo-labeling round 1 — REGRESSED (0.897)
 
-- Renamed experiment from `025-pseudo-labeling-v2` to `025-iter-pseudo-labeling`
-- Created branch `mg/025-iter-pseudo-labeling`, opened PR #27
-- Comprehensive proposal (12 sections), README, versioned configs, pyproject.toml
+Trained v5j with 347K pseudo-labels (SED + Perch z-norm), 50/50 batch mixing,
+w=0.5 loss weight. LB: 0.897 (−0.006 from baseline 0.903).
+Created diagnosis pipeline (`diagnose_regression.py`) and v2-sed-only configs.
+**Paused** — pivoted to improving base model first.
 
-### 2. Phase A: v1 Pseudo-Labels Generated ✅
+### 2. Exp 026: Domain-shift training — ALL REGRESSED
 
-Script: `generate_pseudo_labels.py` with `configs/v1.yaml`
-Output: `shared/pseudo-labels/birdclef-2026/v1/`
+**Phase 2: Dual validation** — infrastructure works (separate focal/soundscape
+metrics), but soundscape checkpoint selection picked epoch 17 instead of 19,
+scoring 0.897 LB (−0.006). Soundscape AUC not useful for checkpoint selection
+with only 86 val segments.
 
-| Teacher | Tier | Species | Pseudo-labels >0.5 |
-|---------|------|---------|---------------------|
-| SED max-folds (T=0.6, P^1.5) | A+B | 162/184 | 198K |
-| Perch z-norm (z>2.0, P^1.5) | C | 34/43 | 149K |
-| **Merged** | **All** | **196/234** | **347K** |
+**Phase 3: AttHead + window ablation** — ALL regressed on LB:
+- v9a (10s + AttHead): 0.868 (−0.035)
+- v9b (15s + AttHead): 0.877 (−0.026)
+- v9c (20s + AttHead): 0.878 (−0.025)
 
-Key validation: Perch z-normalization pairwise overlap = 5.1% (species-specific signal, not noise).
-Mean 2.73 species/segment. Training balance: 19.3% PL / 80.7% GT.
+Despite best-ever offline metrics (v9c: 0.861 auroc, 0.681 cmap, 0.862 top1).
+**Root cause identified**: train/inference window mismatch — train on 20s but
+infer on 5s segments. AttHead's learned attention calibrated for 64 temporal
+positions doesn't transfer to 16 positions at inference.
 
-### 3. Phase B: Training Pipeline Implemented ✅
+### 3. Deep Research — CRITICAL FINDINGS
 
-Shared src modifications (backward compatible with exp 021):
-- `src/birdclef/data/sed.py`: `PseudoLabelSoundscapeDataset`, `GTDatasetWrapper`,
-  `StratifiedBatchSampler`, extended `SEDDataModule` with pseudo-label params
-- `src/birdclef/lightning/sed_finetune.py`: per-sample loss weighting (BCE path),
-  4-tuple batch `(x, labels, primary_idx, loss_weight)`, mixup loss_weight blending
+Ran deep research with Claude Opus 4.6 and Gemini Pro. Both converge on the
+same diagnosis: **three fundamental implementation errors** in our pipeline.
 
-Exp 025 files: `train.py`, `configs/v1_train.yaml`, `sbatch/`, `fold_assignments.json`
+#### Error 1: Waveform MixUp was wrong
 
-### 4. Validation & Training
+We used `λ*x1 + (1-λ)*x2` (standard image MixUp). BirdCLEF winners use
+**additive mixing** (`x1 + x2`) with **max labels** (`max(y1, y2)`).
+Completely different operation. Spectrogram MixUp also violates physics of
+additive sound waves. Impact: −0.036 private LB (BirdCLEF 2025 2nd place ablation).
 
-- **Fast-dev-run** ✅ — 5 batches, 32724 GT + 127896 PL = 160620 total,
-  50/50 batch composition confirmed, loss_weight=0.5 for PL
-- **GPU-check** ✅ — 1 epoch, memory and throughput OK on RTX 6000
-- **Full training run** ✅ — 20 epochs, best val/auroc=0.872 (epoch 18),
-  val/cmap=0.620, SLURM job 6401689, RTX 6000, 1h08m walltime
-- **ONNX export + Kaggle submission** ✅ — `hgnet-b0-sed-v5j-pl-v1`, pushed to LB
-- **LB score: 0.897** ❌ — REGRESSED from 0.903 baseline. Delta: **-0.006**.
+#### Error 2: CE loss implementation was wrong
 
-### 5. Diagnosis plan
+We applied CE as multi-class softmax across all 234 species with multi-hot targets.
+The correct approach: standard **multi-class CE on primary label only** (single
+ground-truth class per sample, softmax over classes). Then switch to **sigmoid at
+inference** for multi-label output. BirdCLEF 2024 1st place: +0.044 from this
+single change.
 
-Most likely culprit: Perch Tier C labels (148K from 6%-precision model) + 50/50 batch
-mixing diluting GT signal. Isolating variables with controlled experiments.
+#### Error 3: Inference pipeline never matched training window
+
+We always process 5s segments independently on Kaggle. Winners use:
+- **Sliding window inference**: 20s windows with 1–2.5s stride, average overlapping
+  framewise predictions for each 5s evaluation segment
+- **Henkel reshape trick**: train on 30s but reshape to 6×5s before backbone —
+  backbone always sees 5s, no mismatch at inference
+
+#### Additional findings
+
+- **Crop selection**: first/last 7 seconds of focal recordings (not random, not RMS)
+  because recordings start/stop when the target animal is vocalizing (BirdCLEF 2025
+  2nd place). Gemini advocates RMS-based VAD — this is disputed.
+- **Iterative pseudo-labeling works**: BirdCLEF 2025 1st place went 0.872 → 0.930
+  with 4 rounds. Our attempt failed but with wrong base model + wrong parameters.
+- **PANNs AttBlock is the standard head**: competition-standard attention with
+  `tanh + softmax`, should be length-agnostic (no positional encoding)
 
 ## What needs to happen next
 
-### Phase 1: Diagnose round 1 regression
+### Priority 1: Fix the three implementation errors
 
-1. Run student inference on all data (`hgnet_b0_sed_v5j_pl_v1.yaml`)
-2. Run `diagnose_regression.py` — A/B comparison baseline vs student by tier
-3. Determine: did regression come from Tier A (seen), Tier B (SED unseen), or Tier C (Perch)?
+These are code changes, not new experiments. Each should be testable independently:
 
-### Phase 2: SED-only controlled experiment
+1. **Fix waveform MixUp**: additive mixing (`x1 + x2`) with max labels
+2. **Fix CE loss**: multi-class CE on primary label, sigmoid at inference
+3. **Fix inference pipeline**: sliding window with overlap, or Henkel reshape
 
-4. Generate SED-only pseudo-labels (`v2_sed_only.yaml` — Perch disabled)
-5. Train with conservative mixing (25% PL batch fraction, down from 50%)
-6. Submit to LB → compare vs 0.903 baseline and 0.897 round 1
+### Priority 2: Re-test with corrected pipeline
 
-### Phase 3: Iterate based on diagnosis + round 2 result
+Once the implementation errors are fixed:
+- Train v5j recipe with corrected MixUp + CE loss
+- Submit with corrected inference pipeline
+- This should close a significant portion of the 0.903 → 0.922 gap
 
-7. If SED-only > 0.903 → Perch was the problem, add back carefully
-8. If SED-only still regresses → gradient balance or recipe incompatibility
+### Priority 3: Then pseudo-labeling
 
-## Key patterns (updated)
+With a stronger base model (hopefully 0.910+), return to exp 025 pseudo-labeling
+with a better teacher model. The iterative approach (student becomes teacher)
+is validated by 2025 1st place.
 
-- **Only data and inference changes improve LB** — 15+ training recipe changes, 0 successes
-- **The LB gap is data coverage** — 0.9958 AUC on 75 known species, 159 species unseen
-- **SED is precise but narrow** (94% precision, 109/159), **Perch is broad but noisy** (6%, 149/159)
-- **Perch raw probs NOT directly usable** — 15M FPs, 119 species/segment
-- **Per-species z-normalization works** — 5.1% overlap, extracts species-specific signal from Perch
-- **v5j recipe unchanged** — only data changes. BCE loss, soft labels, w=0.5 for PL
+## Key patterns (updated 2026-04-11)
+
+- **20+ training recipe changes, 0 LB successes** — but deep research revealed
+  our implementations were wrong (MixUp, CE loss, inference)
+- **Offline metrics are anti-correlated with LB** — best offline models (v9c)
+  scored worst on LB (0.878). DO NOT trust offline metrics.
+- **The v5j recipe is an island** — every perturbation regresses, but this may
+  be because we never fixed the three fundamental errors
+- **The inference pipeline is likely our biggest blind spot** — we never changed
+  inference to match training window. This alone could explain -0.025 regression.
+- **Competitors don't use novel architectures** — EfficientNet + PANNs AttBlock
+  is the standard. The gap is in data handling, loss function, and inference.
 
 ## Key files for current work
 
 | File | Purpose |
 |------|---------|
-| `user/murilo/experiments/025-iter-pseudo-labeling/` | Current experiment (proposal, tasks, configs, train.py) |
-| `user/murilo/experiments/025-iter-pseudo-labeling/findings/v1-pseudo-labels.md` | v1 generation results |
-| `user/murilo/src/birdclef/data/sed.py` | Data module with PL support |
-| `user/murilo/src/birdclef/lightning/sed_finetune.py` | Training module with loss weighting |
-| `shared/pseudo-labels/birdclef-2026/v1/` | v1 pseudo-labels (parquets + stats) |
-| `user/murilo/notes/2026-04-09-inference-eda-deep-dive.md` | EDA findings (14 sections) |
-| `user/murilo/experiments/024-data-centric-exploration/results.md` | Exp 024 synthesis |
-| `user/murilo/experiments/023-perch-sed-ensemble/kaggle_kernel/submission_ensemble.py` | Submission pipeline reference |
+| `user/murilo/notes/sed-architecture-overview.md` | Complete pipeline reference (13 sections) |
+| `user/murilo/notes/2026-04-11-deep-research-claude.md` | Claude deep research findings |
+| `user/murilo/notes/2026-04-11-deep-research-gemini.md` | Gemini deep research findings |
+| `user/murilo/notes/deep-research-prompt.md` | The prompt used for deep research |
+| `user/murilo/experiments/026-domain-shift-training/` | Current experiment (dual val + AttHead) |
+| `user/murilo/experiments/025-iter-pseudo-labeling/` | Pseudo-labeling experiment (paused) |
+| `user/murilo/src/birdclef/data/sed.py` | Data module (dual val, pseudo-labels) |
+| `user/murilo/src/birdclef/lightning/sed_finetune.py` | Training module (loss, metrics) |
+| `user/murilo/src/birdclef/heads/sed_head.py` | LSEHead, AttHead implementations |
