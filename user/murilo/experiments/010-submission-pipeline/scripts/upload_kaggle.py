@@ -398,6 +398,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-repro",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-repro.json",
     },
+    # Exp 025: v5j + pseudo-label training (round 1)
+    "hgnet-b0-sed-v5j-pl-v1": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-pl-v1-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-pl-v1",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-pl-v1.json",
+    },
 }
 
 

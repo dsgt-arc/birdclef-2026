@@ -892,6 +892,18 @@ export_hgnet_b0_sed_v5j_repro() {
         --output-dir artifacts/weights/hgnet-b0-sed-v5j-repro/
 }
 
+export_hgnet_b0_sed_v5j_pl_v1() {
+    echo "=== Exporting HGNetV2-B0 SED v5j-pl-v1 (pseudo-label trained, exp 025, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/025-iter-pseudo-labeling/checkpoints/2026-exp025-v1-pl-round1")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-pl-v1/
+}
+
 export_hgnet_b0_sed_v6l() {
     echo "=== Exporting HGNetV2-B0 SED v6l (manifold mixup, 234 classes) ==="
     local CKPT
@@ -954,6 +966,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-fmax|hgnet-b0-sed-v5j-clip|hgnet-b0-atthead-v6k|\
     hgnet-b0-sed-v6b|hgnet-b0-sed-v6l|hgnet-b2-sed-v6h|effnet-b0-ns-sed-v6j|hgnet-b0-mc-lse-sed-v8a|hgnet-b0-mc-lse-sed-v8b|\
     hgnet-b0-sed-v10a|hgnet-b0-sed-v10b|hgnet-b0-sed-v10c|hgnet-b0-sed-v5j-repro|\
+    hgnet-b0-sed-v5j-pl-v1|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1069,6 +1082,7 @@ case "$MODEL" in
     hgnet-b0-sed-v10b)         export_hgnet_b0_sed_v10b ;;
     hgnet-b0-sed-v10c)         export_hgnet_b0_sed_v10c ;;
     hgnet-b0-sed-v5j-repro)    export_hgnet_b0_sed_v5j_repro ;;
+    hgnet-b0-sed-v5j-pl-v1)   export_hgnet_b0_sed_v5j_pl_v1 ;;
     all-019-ablations)
         export_effnet_b0_sed_v5a
         echo ""

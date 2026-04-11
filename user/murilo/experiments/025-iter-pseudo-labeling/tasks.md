@@ -7,7 +7,7 @@ pseudo-labeled soundscapes, using a tiered teacher: SED max-folds for 184 specie
 SED has good predictions, and Perch with per-species z-normalization for 44 species where
 SED is blind.
 
-Status: **Phase A complete. Phase B.1 complete. Full training run submitted (90/10 split).**
+Status: **Phase A complete. Phase B.1 complete. Round 1 training done, submitted to LB — awaiting score.**
 
 **Branch**: `mg/025-iter-pseudo-labeling`
 
@@ -71,8 +71,11 @@ Exp 025 files:
 - [x] Fast-dev-run sanity check ✅ — 5 batches, 32724 GT + 127896 PL = 160620 total,
   50/50 batch composition confirmed, loss_weight=0.5 for PL, train/loss=0.529
 - [x] GPU-check (1 epoch) ✅ — memory and throughput OK on RTX 6000
-- [ ] Full training run submitted (90/10 split, same as v5j baseline) — awaiting completion
-- [ ] Submit to LB → compare against v5j baseline (0.906)
+- [x] Full training run (90/10 split) ✅ — 20 epochs, best val/auroc=0.872 (epoch 18),
+  val/cmap=0.620, train/loss=0.015. Checkpoint: `best-epochepoch=18.ckpt`
+  SLURM job 6401689, RTX 6000, 1h08m walltime.
+- [x] ONNX export + Kaggle submission pushed ✅ — `hgnet-b0-sed-v5j-pl-v1`, 22.4s inference
+- [ ] **Awaiting LB score** → compare against v5j baseline (0.903-0.906)
 - [ ] **Decision gate**: If LB > 0.906 → proceed to 4-fold. If not → diagnose and adjust.
 - [ ] Train 4-fold ensemble (if single model improves)
 - [ ] Submit 4-fold ensemble (compare against v5j 4-fold = 0.913)

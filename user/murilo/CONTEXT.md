@@ -66,20 +66,23 @@ Shared src modifications (backward compatible with exp 021):
 
 Exp 025 files: `train.py`, `configs/v1_train.yaml`, `sbatch/`, `fold_assignments.json`
 
-### 4. Validation
+### 4. Validation & Training
 
 - **Fast-dev-run** ✅ — 5 batches, 32724 GT + 127896 PL = 160620 total,
   50/50 batch composition confirmed, loss_weight=0.5 for PL
 - **GPU-check** ✅ — 1 epoch, memory and throughput OK on RTX 6000
-- **Full training run submitted** — 90/10 split (same as v5j baseline), awaiting completion
+- **Full training run** ✅ — 20 epochs, best val/auroc=0.872 (epoch 18),
+  val/cmap=0.620, SLURM job 6401689, RTX 6000, 1h08m walltime
+- **ONNX export + Kaggle submission** ✅ — `hgnet-b0-sed-v5j-pl-v1`, pushed to LB
+- **Awaiting LB score** — compare vs v5j single-fold baseline (0.903-0.906)
 
 ## What needs to happen next
 
-### Immediate — awaiting training completion
+### Immediate — awaiting LB score
 
-1. Check training logs when job completes (loss curves, val/auroc)
-2. Export checkpoint → ONNX → Kaggle submission
-3. Submit to LB → compare against v5j baseline (0.906)
+1. ~~Check training logs~~ ✅ — 20ep, val/auroc=0.872, val/cmap=0.620
+2. ~~Export → ONNX → Kaggle~~ ✅ — `hgnet-b0-sed-v5j-pl-v1` submitted
+3. **Awaiting LB score** → compare against v5j baseline (0.903-0.906)
 4. **Decision gate**: If LB > 0.906 → proceed to 4-fold + ensemble
 
 ### If round 1 succeeds
