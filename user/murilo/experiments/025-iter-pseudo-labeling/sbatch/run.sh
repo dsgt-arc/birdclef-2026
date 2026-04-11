@@ -17,7 +17,7 @@ GPU_CHECK=0
 NUM_WORKERS=""
 CONFIG=""
 PROJECT_NAME="ps-clef2026_birdclef-0"
-PSEUDO_LABEL_PATH="/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v1/pseudo_labels.parquet"
+PSEUDO_LABEL_PATH=""  # Set via --pl-path or derived from config name
 GPU_TYPE=""
 FOLD=""
 ALL_FOLDS=false
@@ -84,6 +84,10 @@ while [[ $# -gt 0 ]]; do
             PROJECT_NAME="$2"
             shift 2
             ;;
+        --pl-path)
+            PSEUDO_LABEL_PATH="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 CONFIG_PATH [OPTIONS]"
             echo ""
@@ -93,6 +97,7 @@ while [[ $# -gt 0 ]]; do
             echo "                    Default: gpu-rtx6000,gpu-v100"
             echo "  --fold N          Train fold N (0-3) for cross-validation"
             echo "  --all-folds       Submit 4 SLURM jobs (one per fold)"
+            echo "  --pl-path PATH    Path to pseudo_labels.parquet"
             echo "  --fast-dev-run    Run 5 batches only, skip W&B"
             echo "  --gpu-check [N]   Run N epochs for GPU check (default: 1)"
             echo "  --num-workers N   Override num_workers"
@@ -126,6 +131,11 @@ if [[ -z "$CONFIG" ]]; then
     exit 1
 fi
 
+if [[ -z "$PSEUDO_LABEL_PATH" ]]; then
+    echo "Error: --pl-path is required (path to pseudo_labels.parquet)"
+    exit 1
+fi
+
 # --all-folds: recursively submit 4 fold jobs
 if [[ "${ALL_FOLDS}" == "true" ]]; then
     echo "Submitting 4 fold jobs..."
@@ -134,6 +144,7 @@ if [[ "${ALL_FOLDS}" == "true" ]]; then
     [[ "${GPU_CHECK}" -gt 0 ]] && EXTRA_ARGS="$EXTRA_ARGS --gpu-check ${GPU_CHECK}"
     [[ -n "${GPU_TYPE}" ]] && EXTRA_ARGS="$EXTRA_ARGS --gpu ${GPU_TYPE}"
     [[ -n "${NUM_WORKERS}" ]] && EXTRA_ARGS="$EXTRA_ARGS --num-workers ${NUM_WORKERS}"
+    [[ -n "${PSEUDO_LABEL_PATH}" ]] && EXTRA_ARGS="$EXTRA_ARGS --pl-path ${PSEUDO_LABEL_PATH}"
     for f in 0 1 2 3; do
         bash "${BASH_SOURCE[0]}" "${CONFIG}" --fold $f $EXTRA_ARGS
     done
@@ -145,7 +156,7 @@ EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 RUN_NAME="$(basename "$CONFIG" .yaml)"
 
 echo "=============================================="
-echo "Experiment 021: SED Training"
+echo "Experiment 025: Iterative Pseudo-Labeling"
 echo "=============================================="
 echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"

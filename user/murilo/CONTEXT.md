@@ -74,28 +74,31 @@ Exp 025 files: `train.py`, `configs/v1_train.yaml`, `sbatch/`, `fold_assignments
 - **Full training run** ✅ — 20 epochs, best val/auroc=0.872 (epoch 18),
   val/cmap=0.620, SLURM job 6401689, RTX 6000, 1h08m walltime
 - **ONNX export + Kaggle submission** ✅ — `hgnet-b0-sed-v5j-pl-v1`, pushed to LB
-- **Awaiting LB score** — compare vs v5j single-fold baseline (0.903-0.906)
+- **LB score: 0.897** ❌ — REGRESSED from 0.903 baseline. Delta: **-0.006**.
+
+### 5. Diagnosis plan
+
+Most likely culprit: Perch Tier C labels (148K from 6%-precision model) + 50/50 batch
+mixing diluting GT signal. Isolating variables with controlled experiments.
 
 ## What needs to happen next
 
-### Immediate — awaiting LB score
+### Phase 1: Diagnose round 1 regression
 
-1. ~~Check training logs~~ ✅ — 20ep, val/auroc=0.872, val/cmap=0.620
-2. ~~Export → ONNX → Kaggle~~ ✅ — `hgnet-b0-sed-v5j-pl-v1` submitted
-3. **Awaiting LB score** → compare against v5j baseline (0.903-0.906)
-4. **Decision gate**: If LB > 0.906 → proceed to 4-fold + ensemble
+1. Run student inference on all data (`hgnet_b0_sed_v5j_pl_v1.yaml`)
+2. Run `diagnose_regression.py` — A/B comparison baseline vs student by tier
+3. Determine: did regression come from Tier A (seen), Tier B (SED unseen), or Tier C (Perch)?
 
-### If round 1 succeeds
+### Phase 2: SED-only controlled experiment
 
-5. Train 4-fold ensemble → submit (compare vs 0.913)
-6. Student + Perch ensemble → submit (compare vs 0.929)
-7. Student-as-teacher → v2 pseudo-labels → round 2
+4. Generate SED-only pseudo-labels (`v2_sed_only.yaml` — Perch disabled)
+5. Train with conservative mixing (25% PL batch fraction, down from 50%)
+6. Submit to LB → compare vs 0.903 baseline and 0.897 round 1
 
-### If round 1 fails
+### Phase 3: Iterate based on diagnosis + round 2 result
 
-5. Diagnose: check per-species analysis, val curves
-6. Try variants: PL weight 0.3, power P^2.0, Perch z=2.5
-7. Try without Tier C (SED-only pseudo-labels)
+7. If SED-only > 0.903 → Perch was the problem, add back carefully
+8. If SED-only still regresses → gradient balance or recipe incompatibility
 
 ## Key patterns (updated)
 

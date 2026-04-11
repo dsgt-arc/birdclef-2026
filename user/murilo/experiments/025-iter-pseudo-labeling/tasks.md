@@ -7,7 +7,7 @@ pseudo-labeled soundscapes, using a tiered teacher: SED max-folds for 184 specie
 SED has good predictions, and Perch with per-species z-normalization for 44 species where
 SED is blind.
 
-Status: **Phase A complete. Phase B.1 complete. Round 1 training done, submitted to LB — awaiting score.**
+Status: **Round 1 REGRESSED (0.897 vs 0.903 baseline). Diagnosing before round 2.**
 
 **Branch**: `mg/025-iter-pseudo-labeling`
 
@@ -75,40 +75,44 @@ Exp 025 files:
   val/cmap=0.620, train/loss=0.015. Checkpoint: `best-epochepoch=18.ckpt`
   SLURM job 6401689, RTX 6000, 1h08m walltime.
 - [x] ONNX export + Kaggle submission pushed ✅ — `hgnet-b0-sed-v5j-pl-v1`, 22.4s inference
-- [ ] **Awaiting LB score** → compare against v5j baseline (0.903-0.906)
-- [ ] **Decision gate**: If LB > 0.906 → proceed to 4-fold. If not → diagnose and adjust.
+- [x] **LB score: 0.897** ❌ — REGRESSED vs v5j baseline (0.903). Delta: **-0.006**.
+- [ ] **Diagnosis**: run student inference + `diagnose_regression.py` to identify failure tier
 - [ ] Train 4-fold ensemble (if single model improves)
 - [ ] Submit 4-fold ensemble (compare against v5j 4-fold = 0.913)
 - [ ] Submit student + Perch ensemble (compare against 0.929 best)
 
-### B.3: Analyze results
+### B.3: Diagnose round 1 regression (0.897 vs 0.903 baseline)
 
-- [ ] Per-species analysis: which unseen species improved? Any regressions on seen species?
-- [ ] Check labeled soundscape AUC (should remain >0.99)
-- [ ] Compare student predictions on soundscapes vs teacher — is student more calibrated?
+- [ ] Run round 1 student inference on all data (`hgnet_b0_sed_v5j_pl_v1.yaml`)
+- [ ] Run `diagnose_regression.py` — A/B comparison by tier:
+  - Section A: Labeled soundscape AUC delta (75 seen species)
+  - Section B: Focal accuracy delta (234 species)
+  - Section C: Confidence shift by tier (A/B/C/D)
+  - Section D: Per-species prediction shift
+  - Section E: Pseudo-label agreement analysis
+- [ ] Document findings → determine failure cause (Perch noise? gradient balance? both?)
 
-## Phase C: Iterate (conditional on Phase B success)
+### B.4: Round 2 — SED-only controlled experiment
 
-### C.1: Round 2 (if round 1 gains on LB)
+Hypothesis: Perch Tier C labels (148K from 6%-precision model) caused the regression.
+Test by dropping Tier C entirely + reducing PL batch fraction from 50% to 25%.
 
-- [ ] Run round 1 student inference on all soundscapes
-- [ ] Re-generate pseudo-labels using student as teacher
-- [ ] Student should be better calibrated for Tier C species (trained on soundscapes)
-- [ ] Consider relaxing Perch z-threshold (2.0 → 1.5) for more coverage
-- [ ] Train round 2 student, submit to LB
+- [ ] Generate SED-only pseudo-labels (`configs/v2_sed_only.yaml`)
+- [ ] Fast-dev-run sanity check (verify 75/25 batch composition)
+- [ ] Full training run (`configs/v2_sed_only_train.yaml`, 90/10 split)
+- [ ] ONNX export + Kaggle submit → compare vs 0.903 baseline and 0.897 round 1
 
-### C.2: Variants (if round 1 needs adjustment)
+### B.5: Iterate based on round 2 result
 
-- [ ] Try PL loss weight 0.3 (if too noisy) or 0.7 (if too conservative)
-- [ ] Try power transform P^2.0 (more noise suppression)
-- [ ] Try Perch z-threshold 1.5 or 2.5
-- [ ] Try SED temperature 0.5 or 0.9
-- [ ] Try leave-one-fold-out pseudo-labels (if fold leakage is suspected):
-  fold K trains on max(other 3 folds) only — cleaner but slightly less coverage
+- If v2-sed-only > 0.906: SED PLs help → add Perch back carefully (z>3.0, w=0.3)
+- If v2-sed-only ≈ 0.903: SED PLs neutral → try stronger filtering or higher PL fraction
+- If v2-sed-only < 0.901: gradient balance problem → try 10% PL fraction or w=0.2
+- If v2-sed-only < 0.897: v5j recipe can't absorb PL → pivot to inference-time approaches
 
 ## Success Criteria
 
-- [ ] Round 1 single model (90/10): **>0.906** LB (v5j baseline)
+- [x] Round 1 single model (90/10): **>0.906** LB (v5j baseline) — ❌ 0.897 (regressed)
+- [ ] Round 2 SED-only (90/10): **>0.903** LB (at least match baseline)
 - [ ] Round 1 4-fold ensemble: **>0.913** LB (v5j ensemble)
 - [ ] Round 1 + Perch ensemble: **>0.929** LB (current best)
 - [ ] Stretch: **>0.935** LB
