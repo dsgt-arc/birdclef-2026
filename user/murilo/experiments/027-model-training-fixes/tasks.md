@@ -26,8 +26,11 @@ since both have high-confidence evidence.
 - [x] Fast-dev-run sanity check ✅ — job 6439254, V100, 5m08s. CE loss=5.454
   (matches log(234)≈5.46 for random softmax), both val dataloaders fire,
   waveform mixup before mel confirmed. All working correctly.
-- [ ] Full training run (90/10 split, 20 epochs) — SLURM job submitted, awaiting completion
-- [ ] Record offline metrics (val/auroc, val_sc/auroc, cmap, top1)
+- [x] Full training run (90/10 split, 20 epochs) ✅ — job 6439641, RTX 6000, 38m51s.
+  Best checkpoint epoch 11 (by val_sc/auroc=0.863).
+- [x] Record offline metrics ✅ — val/auroc=0.835, val/cmap=0.571, val/top1=0.733,
+  val_sc/auroc=0.863. Focal metrics lower than v5j (0.874 auroc) — expected with
+  CE loss producing different logit calibration. See results.md for analysis.
 - [ ] ONNX export + Kaggle submission
 - [ ] LB score → compare against v5j baseline (0.903)
 

@@ -546,6 +546,19 @@ All Phase 3 jobs ran with old broken val_sc/auroc (~0.093). Compare using val/au
 All AttHead models regressed on LB despite best-ever offline metrics. Train/inference
 window mismatch (train on 10-20s, infer on 5s) likely causes attention calibration issues.
 
+## Experiment 027: Model Training Fixes
+
+Fix two implementation errors identified by deep research: additive waveform MixUp
+(x1+x2 with max labels) and CE loss on primary label (sigmoid at inference).
+
+| Slug | Loss | MixUp | val/auroc | val/cmap | val_sc/auroc | LB | Checkpoint |
+|------|------|-------|-----------|----------|-------------|-----|------------|
+| `v10a-addmix-ce` | CE | additive wfm | 0.835 | 0.571 | 0.863 | — | `027-.../best-epochepoch=11.ckpt` |
+
+Best checkpoint at epoch 11 (by val_sc/auroc). Focal val/auroc lower than v5j
+(0.835 vs 0.874) — expected with CE loss producing different logit calibration.
+LB submission pending.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
