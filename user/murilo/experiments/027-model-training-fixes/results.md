@@ -75,6 +75,97 @@ combination is less calibrated for multi-label soundscape prediction, OR it coul
 be that the v5j-dualval metric was inflated by the small 86-segment val set. Only
 the LB score can tell us whether this is a real regression or a calibration artifact.
 
+### LB Result: 0.494 — CATASTROPHIC FAILURE
+
+**LB = 0.494** (essentially random). The combined additive MixUp + CE loss
+destroys soundscape performance completely.
+
+### Root Cause Analysis
+
+**ONNX output comparison** (random mel input):
+
+| Metric | v5j (BCE) | v10a (CE) |
+|--------|-----------|-----------|
+| Logit range | ~-9 (absent) to +5 (present) | -0.49 to +0.48 |
+| sigmoid(absent) | ~0.0001 | ~0.38 |
+| sigmoid(present) | ~1.0 | ~0.62 |
+| Species > 0.5 | 0 | 113 of 234 |
+
+**Why CE logits are tiny**: `F.cross_entropy` optimizes softmax (relative ranking),
+not absolute logit magnitudes. Weight decay (1e-4) keeps weights small. BCE has
+direct per-species gradient pressure to push absent logits → -∞; CE has no such
+force. The model achieves good softmax probabilities with logits near zero.
+
+**Why val/auroc=0.835 but LB=0.494**: The val set is 97% focal (training domain).
+On focal data, even 0.5-unit logit differences preserve correct rankings → decent
+AUROC. On soundscapes (LB domain), the domain shift perturbation (~0.3 units)
+exceeds the logit spread (~1 unit), scrambling rankings completely. BCE logits
+at -9 ± 2 survive domain shift; CE logits at -0.2 ± 0.3 do not.
+
+**Why competitors succeed with CE**:
+1. BirdCLEF 2024 1st place explicitly notes CE+sigmoid is "noisier" — they
+   compensated with **min-ensemble reduction** (element-wise minimum across
+   models). The +0.044 gain was measured in an **ensemble**, not single model.
+2. Salman (0.922) uses CE with 4-model ensemble + site/hour priors.
+3. Boredom (#1) has 53 rounds of pseudo-labels bridging domain shift.
+4. **No evidence of CE+sigmoid succeeding as a standalone single-model change
+   with extreme focal→soundscape domain shift** — which is our setup.
+
+**Conclusion**: CE loss is fundamentally incompatible with our single-model,
+high-domain-shift pipeline. The small logit magnitudes have zero safety margin
+for the focal→soundscape transition. This is **not an implementation bug** —
+it's a precondition failure (CE needs ensembles, pseudo-labels, or calibration).
+
+CE loss is now confirmed dead for our pipeline: **7 tests, 0 successes**.
+
+### Implication for Phase 2
+
+v10a combined TWO changes. CE was catastrophic and masks the MixUp contribution.
+v10b (additive MixUp + BCE) is essential to isolate whether the corrected MixUp
+formulation helps when paired with the working loss function.
+
+## Phase 2: v10b (Additive MixUp + BCE loss — isolate MixUp fix)
+
+**Config**: `configs/v10b_addmix_bce.yaml`
+**Changes from v5j**: `mixup_mode=additive`, `raw_waveform_mixup=true` (BCE loss, same as v5j)
+**Everything else**: identical to v5j (5s window, LSEHead, batch 64, 20 epochs)
+
+**SLURM**: Job 6465883, V100, 44m32s walltime
+**Checkpoint**: epoch 17 (best by val/auroc = 0.847)
+
+### Metrics (epoch 19 / last)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc (focal) | 0.844 |
+| val/cmap | 0.592 |
+| val/f1_macro | 0.539 |
+| val/top1_acc | 0.747 |
+| val/top5_acc | 0.854 |
+| val/loss | 0.013 |
+| **val_sc/auroc (soundscape)** | **0.966** |
+| val_sc/cmap | 0.885 |
+| LB | — (pending submission) |
+
+### Comparison with baselines
+
+| Model | Loss | MixUp | val/auroc | val/cmap | val/top1 | val_sc/auroc | LB |
+|-------|------|-------|-----------|----------|----------|-------------|-----|
+| v5j (exp 019) | BCE | interp spec | 0.874 | — | — | — | **0.906** |
+| v5j-dualval (exp 026) | BCE | interp spec | 0.849 | 0.596 | 0.752 | 0.956 | 0.897 |
+| v10a (exp 027) | CE | additive wfm | 0.835 | 0.571 | 0.733 | 0.863 | 0.494 |
+| **v10b (exp 027)** | **BCE** | **additive wfm** | **0.844** | **0.592** | **0.747** | **0.966** | **pending** |
+
+### Analysis
+
+**Focal metrics (val/auroc)**: 0.844 vs 0.849 (v5j-dualval) — slightly lower, within
+noise. Both use the same BCE loss, so logit calibration is comparable.
+
+**Soundscape metrics (val_sc/auroc)**: 0.966 vs 0.956 (v5j-dualval) — +0.010 improvement.
+However, the soundscape val set is only 86 segments from 8 files, so this could be noise.
+
+**val/cmap**: 0.592 vs 0.596 (v5j-dualval) — essentially identical.
+
 **Key reminder**: Offline metrics have been anti-correlated with LB across 20+
-experiments. The only reliable signal is the Kaggle LB score. Must submit to LB
-before drawing conclusions.
+experiments. Only the LB score tells us if additive MixUp actually helps.
+Must export and submit before drawing conclusions.

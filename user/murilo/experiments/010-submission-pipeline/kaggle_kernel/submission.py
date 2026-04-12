@@ -91,6 +91,11 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 027: v5j with 10s overlapping window inference
+    "birdclef-2026-hgnet-b0-sed-v5j-10s-weights",
+    # Exp 027: additive MixUp ablations
+    "birdclef-2026-hgnet-b0-sed-v10b-exp027-weights",
+    "birdclef-2026-hgnet-b0-sed-v10a-exp027-weights",
     # Exp 026 Phase 3: AttHead + window length ablation
     "birdclef-2026-hgnet-b0-sed-v9c-20s-att-weights",
     "birdclef-2026-hgnet-b0-sed-v9b-15s-att-weights",
@@ -805,6 +810,12 @@ def predict_soundscape_fullsignal(
     inference_window = mel_cfg.get("inference_window", segment_duration)
     context_pad = (inference_window - segment_duration) / 2
     target_frames = mel_cfg.get("target_frames", 1000)
+    # For wider inference windows, compute the actual frame count to slice
+    inference_frames = (
+        int(inference_window * sr / hop_length)
+        if inference_window > segment_duration
+        else target_frames
+    )
     soundscape_id = Path(audio_path).stem
 
     species_2026 = species_mapping["birdclef2026_species"]
@@ -854,7 +865,7 @@ def predict_soundscape_fullsignal(
 
         for shift_start_s, weight in shifts:
             start_frame = origin_frame + int(shift_start_s * sr / hop_length)
-            mel_slice = _slice_mel_window(full_mel, start_frame, target_frames)
+            mel_slice = _slice_mel_window(full_mel, start_frame, inference_frames)
             all_slices.append((segment_idx, weight, mel_slice))
 
         segment_times.append(int(segment_start_s + segment_duration))

@@ -35,26 +35,48 @@ since both have high-confidence evidence.
   val_sc/auroc picked epoch 11, but per-epoch analysis shows val/auroc peaks at
   epoch 18 (0.839). Using `last.ckpt` (epoch 19, val/auroc=0.835) for export —
   matches v5j protocol and is within noise of the peak.
-- [ ] ONNX export of `last.ckpt` (epoch 19) + Kaggle submission
-- [ ] LB score → compare against v5j baseline (0.903)
+- [x] ONNX export of `last.ckpt` (epoch 19) + Kaggle submission ✅
+- [x] LB score → compare against v5j baseline (0.903) ✅ — **0.494 LB (catastrophic)**
 
-## Phase 2: Ablation (conditional on Phase 1 result)
+**v10a result**: 0.494 LB. CE loss produces logits with ~1 unit spread centered
+at zero. Sigmoid maps everything to ~0.50 → random predictions on soundscapes.
+Root cause: CE optimizes relative ranking (softmax), not absolute magnitudes.
+See results.md for full analysis.
 
-If v10a improves or regresses, isolate which fix contributed:
+## Phase 2: Ablation — isolate MixUp contribution
 
-- [ ] v10b: Additive MixUp only (keep BCE loss) — isolate MixUp contribution
-- [ ] v10c: CE loss only (keep interpolative spectrogram MixUp) — isolate CE contribution
+v10a combined two changes; CE was catastrophic and masks MixUp. CE is now
+confirmed dead (7 tests, 0 successes). Only MixUp ablation is needed.
 
-## Phase 3: Refinements (conditional on Phase 1/2)
+- [x] v10b: Additive waveform MixUp + BCE loss (isolate MixUp fix) ✅
+  - Config: `v10b_addmix_bce.yaml` — same as v5j except `raw_waveform_mixup=true`,
+    `mixup_mode="additive"`, `loss_type="bce"` (v5j loss)
+  - Training: job 6465883, V100, 44m32s. Best val/auroc=0.847 at epoch 17.
+  - Offline metrics: val/auroc=0.844, val/cmap=0.592, val/top1=0.747,
+    val_sc/auroc=0.966 (+0.010 vs v5j-dualval). Similar to v5j-dualval.
+- [ ] ONNX export of v10b `best-epochepoch=17.ckpt` + Kaggle submission
+- [ ] LB score → compare against v5j baseline (0.906)
+- [x] ~~v10c: CE loss only~~ — CANCELLED. CE confirmed dead, no value in isolating.
 
-- [ ] Label smoothing ablation: test label_smoothing=0.05, 0.1 with CE
-- [ ] SUMix variant: RMS-normalized additive mixing instead of raw addition
-- [ ] 4-fold ensemble with best config
-- [ ] Submit ensemble to LB
+## Phase 3: Remaining deep research priorities (post-v10b)
 
-## Success Criteria
+If v10b improves, combine with inference-side fixes for compounding gains.
+If v10b regresses, move directly to inference-side priorities.
 
-- [ ] v10a single model LB > 0.906 (improve on v5j baseline)
-- [ ] v10a single model LB > 0.910 (meaningful improvement)
-- [ ] Identify which fix (MixUp vs CE) contributed more via ablation
-- [ ] Stretch: single model LB > 0.920
+- [x] I-1: Overlapping window inference ✅ — **0.906 LB (flat vs v5j)**
+  - Tested 10s window on v5j (2.5s context each side). No improvement.
+  - Existing TTA (±2.5s shifts) already provides similar overlap — redundant.
+- [ ] Beginning/end crop bias (training change)
+  - Random crops from first or last 7s of focal recordings
+  - BirdCLEF 2025 2nd/2024 3rd place technique
+  - Addresses weak-label noise without energy-based selection
+- [ ] Temporal prediction smoothing refinement (inference-only)
+  - Blend adjacent 5s predictions: kernel [0.1, 0.2, 0.4, 0.2, 0.1]
+  - Already partially implemented; check if current implementation matches
+
+## Success Criteria (revised)
+
+- [ ] v10b single model LB > 0.906 (additive MixUp improves v5j)
+- [ ] Reach 0.920+ single model via compounding MixUp + inference fixes
+- [x] ~~Identify CE contribution~~ — CE = 0.494, confirmed dead
+- [x] ~~I-1 overlapping window~~ — 0.906, flat (TTA already covers this)

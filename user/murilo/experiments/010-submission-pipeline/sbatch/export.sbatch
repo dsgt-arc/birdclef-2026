@@ -766,6 +766,7 @@ export_hgnet_b0_sed_v5j_4fold() {
 EXP021_DIR="$(dirname "$EXPERIMENT_DIR")/021-sed-training"
 EXP026_DIR="$(dirname "$EXPERIMENT_DIR")/026-domain-shift-training"
 EXP022_DIR="$(dirname "$EXPERIMENT_DIR")/022-pcen-normalization"
+EXP027_DIR="$(dirname "$EXPERIMENT_DIR")/027-model-training-fixes"
 
 export_hgnet_b2_sed_v6h() {
     echo "=== Exporting HGNetV2-B2 SED v6h (AttHead + BCE, 234 classes) ==="
@@ -968,6 +969,33 @@ export_hgnet_b0_sed_v6l() {
         --output-dir artifacts/weights/hgnet-b0-sed-v6l/
 }
 
+# ============================================================================
+# Exp 027: Model training fixes (additive MixUp + CE loss)
+# ============================================================================
+
+export_hgnet_b0_sed_v10a_exp027() {
+    echo "=== Exporting HGNetV2-B0 SED v10a (additive MixUp + CE loss, exp 027, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/027-model-training-fixes/checkpoints/2026-exp027-v10a-addmix-ce/last.ckpt"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP027_DIR}/configs/v10a_addmix_ce.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v10a-exp027/
+}
+
+export_hgnet_b0_sed_v10b_exp027() {
+    echo "=== Exporting HGNetV2-B0 SED v10b (additive MixUp + BCE, exp 027, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/027-model-training-fixes/checkpoints/2026-exp027-v10b-addmix-bce")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP027_DIR}/configs/v10b_addmix_bce.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v10b-exp027/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -1020,6 +1048,7 @@ case "$MODEL" in
     hgnet-b0-sed-v10a|hgnet-b0-sed-v10b|hgnet-b0-sed-v10c|hgnet-b0-sed-v5j-repro|\
     hgnet-b0-sed-v5j-pl-v1|hgnet-b0-sed-v5j-dualval|\
     hgnet-b0-sed-v9a-10s-att|hgnet-b0-sed-v9b-15s-att|hgnet-b0-sed-v9c-20s-att|\
+    hgnet-b0-sed-v10a-exp027|hgnet-b0-sed-v10b-exp027|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1140,6 +1169,8 @@ case "$MODEL" in
     hgnet-b0-sed-v9a-10s-att) export_hgnet_b0_sed_v9a_10s_att ;;
     hgnet-b0-sed-v9b-15s-att) export_hgnet_b0_sed_v9b_15s_att ;;
     hgnet-b0-sed-v9c-20s-att) export_hgnet_b0_sed_v9c_20s_att ;;
+    hgnet-b0-sed-v10a-exp027) export_hgnet_b0_sed_v10a_exp027 ;;
+    hgnet-b0-sed-v10b-exp027) export_hgnet_b0_sed_v10b_exp027 ;;
     all-019-ablations)
         export_effnet_b0_sed_v5a
         echo ""

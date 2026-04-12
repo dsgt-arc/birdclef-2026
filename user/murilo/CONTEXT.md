@@ -36,32 +36,31 @@ Read ALL of these at session start to get full context.
 | v5j-dualval (exp 026) | 0.897 | Soundscape checkpoint selection (worse) |
 | v5j-pl-v1 (exp 025) | 0.897 | Pseudo-labels (regressed) |
 | v9c 20s+AttHead (exp 026) | 0.878 | Longer window + AttHead (regressed) |
-| **v10a addmix+CE (exp 027)** | **pending** | **Training — additive MixUp + CE loss fix** |
+| **v10a addmix+CE (exp 027)** | **0.494** | **FAILED — CE logits too small for sigmoid under domain shift** |
 
 ## What happened in this session (2026-04-12)
 
-### Exp 027: Model Training Fixes — TRAINING COMPLETE, AWAITING LB
+### Exp 027: Model Training Fixes — v10a FAILED, v10b NEXT
 
-Implemented two fixes based on deep research (2026-04-11):
+Tested two fixes from deep research (2026-04-11):
 1. **Additive waveform MixUp**: `mixup_mode="additive"` — `x1 + x2` with `max(y1, y2)`
 2. **CE loss on primary label**: `loss_type="ce"` on `primary_idx`, sigmoid at inference
 
-**Training results** (job 6439641, RTX 6000, 38m51s):
+**v10a LB = 0.494** — catastrophic failure. CE loss produces logits with ~1 unit
+spread centered at zero. Sigmoid maps all 234 species to ~0.50 → random on
+soundscapes. Root cause: CE optimizes relative ranking (softmax), not absolute
+magnitudes. Weight decay keeps logits small. BCE pushes absent species to -9
+(robust to domain shift); CE leaves them at -0.2 (destroyed by domain shift).
 
-| Metric | v5j (exp 019) | v5j-dualval (exp 026) | v10a (exp 027) |
-|--------|--------------|----------------------|----------------|
-| val/auroc | 0.874 | 0.849 | 0.835 |
-| val/cmap | — | 0.596 | 0.571 |
-| val_sc/auroc | — | 0.956 | 0.863 |
-| LB | **0.903** | 0.897 | **pending** |
+**Why competitors succeed with CE**: ensembles (min-reduction), pseudo-labels
+(bridge domain shift), or calibration. No evidence of CE+sigmoid working as
+standalone single-model change with high domain shift.
 
-Focal metrics lower than v5j — expected with CE (different logit calibration).
-Only the LB score can tell us if the fixes actually help.
+**CE is now confirmed dead**: 7 tests, 0 successes. See results.md for full
+root cause analysis.
 
-**Checkpoint decision**: Using `last.ckpt` (epoch 19) for ONNX export.
-Per-epoch TensorBoard analysis shows val/auroc peaks at epoch 18 (0.839),
-epoch 19 within noise (0.835). Matches v5j protocol. Config updated to
-monitor val/auroc instead of val_sc/auroc for future runs.
+**Next**: v10b — additive MixUp + BCE (isolate whether corrected MixUp helps
+when paired with the working loss function).
 
 ### Git operations
 
@@ -71,42 +70,49 @@ monitor val/auroc instead of val_sc/auroc for future runs.
 
 ## What needs to happen next
 
-### Priority 1: ONNX export + LB submission (next session)
+### Priority 1: v10b — additive MixUp + BCE (isolate MixUp fix)
 
-v10a training complete. Offline metrics recorded. Checkpoint decision made:
-use `last.ckpt` (epoch 19) — val/auroc peaks at epoch 18 (0.839), epoch 19 is
-within noise (0.835). Matches v5j protocol. Config updated to monitor val/auroc
-instead of val_sc/auroc for future runs.
+v10a combined two changes; CE was catastrophic (0.494) and masks MixUp.
+v10b tests additive waveform MixUp with BCE (v5j loss) to isolate whether
+the corrected MixUp formulation improves the 0.903 baseline.
 
-1. ONNX export `last.ckpt` via exp 010 pipeline
-2. Kaggle submission → LB score vs v5j baseline (0.903)
+Config: identical to v5j except `raw_waveform_mixup=true`, `mixup_mode="additive"`.
+Evidence: BirdCLEF 2025 2nd place lost -0.036 without correct MixUp.
 
-### Priority 2: Ablation (if v10a result is informative)
+1. Create v10b config
+2. Train (20 epochs, same as v5j)
+3. ONNX export + LB submission
 
-If v10a improves or regresses, create ablation configs to isolate contributions:
-- v10b: Additive MixUp only (keep BCE loss)
-- v10c: CE loss only (keep interpolative spectrogram MixUp)
+### Priority 2: Overlapping window inference (inference-only)
 
-### Priority 3: Fix inference pipeline (Error 3)
+Both Claude and Gemini identify this as a consistent LB booster (+0.01-0.015).
+No retraining needed — modify Kaggle submission kernel only.
 
-The third fundamental error (train/inference window mismatch) is not addressed
-in exp 027. If v10a improves the base model, implement sliding window inference
-or Henkel reshape trick to properly evaluate longer training windows.
+Feed 10s context (5s target + 2.5s neighbors from each side), average
+overlapping predictions. Can be tested with existing v5j weights.
 
-### Priority 4: Pseudo-labeling with corrected base model
+### Priority 3: Beginning/end crop bias (training change)
 
-If v10a produces a stronger base model (0.910+), return to exp 025 pseudo-
-labeling with the corrected model as teacher.
+Random crops from first or last 7s of focal recordings instead of fully random.
+BirdCLEF 2025 2nd place / 2024 3rd place technique. Addresses weak-label noise.
+
+### Priority 4: Pseudo-labeling with best base model
+
+Once single-model improvements are exhausted, return to iterative pseudo-labeling
+(exp 025) with the strongest teacher. Pseudo-labels bridge the focal→soundscape
+domain shift that limits all training-time changes.
 
 ## Key patterns (updated 2026-04-12)
 
-- **20+ training recipe changes, 0 LB successes** — but deep research revealed
-  our implementations were wrong (MixUp, CE loss, inference)
+- **20+ training recipe changes, 0 LB successes** — deep research identified
+  three errors; CE is now confirmed dead (0.494), MixUp ablation pending
+- **CE loss is fundamentally incompatible** — 7 tests, 0 successes. Root cause:
+  CE logits lack magnitude spread for sigmoid under domain shift. Competitors
+  succeed with ensembles/pseudo-labels, not standalone single-model CE.
 - **Offline metrics are anti-correlated with LB** — DO NOT trust offline metrics
-- **The v5j recipe is an island** — every perturbation regresses, but this may
-  be because we never fixed the three fundamental errors
-- **Exp 027 is testing corrected implementations** — first time testing additive
-  MixUp + CE on primary label. Both have strong competition evidence.
+- **The v5j recipe is an island** — but additive MixUp (v10b) is untested with BCE
+- **Inference-side changes are the highest-value bet** — overlapping windows
+  (+0.01-0.015) require no retraining and compound with any training improvement
 
 ## Key files for current work
 
