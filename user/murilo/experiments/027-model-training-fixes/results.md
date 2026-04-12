@@ -195,3 +195,30 @@ recipe changes across 27 experiments, the evidence is overwhelming: **local
 modifications to the v5j recipe cannot reach 0.92+**. The gap requires either
 a fundamentally different approach or understanding the specific architectural/
 data differences between our pipeline and Salman's 0.922.
+
+## Phase 4: Salman-Derived Implementation Changes
+
+Analyzed Salman Ahmed's BirdCLEF 2025 training notebook + Mario Lasseck's
+BirdCLEF 2024 paper. Testing specific structural pipeline differences.
+See: `notes/2026-04-12-salman-ahmed-birdclef2025.md`, `notes/2026-04-12-mario-lasseck-birdclef2024.md`
+
+### v5j-control (W&B baseline)
+
+**Config**: `configs/v5j_control.yaml` — identical to v5j (exp 019), logged to exp027 W&B
+**SLURM**: Job 6468944, RTX 6000, 39m24s walltime
+**Checkpoint**: epoch 14 (best by val/auroc = 0.852)
+
+| Metric | Value |
+|--------|-------|
+| val/auroc (focal) | 0.849 |
+| val/cmap | 0.596 |
+| val/f1_macro | 0.504 |
+| val/top1_acc | 0.752 |
+| val/top5_acc | 0.866 |
+| val/loss | 0.011 |
+| val_sc/auroc (soundscape) | 0.955 |
+| val_sc/cmap | 0.853 |
+
+Matches v5j-dualval (exp 026) closely: val/auroc 0.849 vs 0.849, val_sc/auroc
+0.955 vs 0.956. Pipeline verified — this is the correct baseline for Phase 4
+W&B comparisons.

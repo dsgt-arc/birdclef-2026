@@ -573,6 +573,16 @@ Tested 10s inference window on v5j (2.5s context each side). LB = **0.906** — 
 v5j baseline (0.906). Existing TTA (±2.5s shifts) already provides similar overlap.
 Inference-only change, no new model.
 
+### Phase 4: Salman-derived structural changes
+
+| Slug | Change | val/auroc | val/cmap | val_sc/auroc | LB | Checkpoint |
+|------|--------|-----------|----------|-------------|-----|------------|
+| `v5j-control` | v5j baseline (W&B control) | 0.849 | 0.596 | 0.955 | — | `027-.../best-epochepoch=14.ckpt` |
+| `v11a-maxtrick` | max trick + RMS sampling | — | — | — | — | training |
+| `v11b-melnorm` | simple mel norm (X+80)/80 | — | — | — | — | training |
+
+v5j-control matches v5j-dualval (exp 026): val/auroc 0.849 vs 0.849. Pipeline verified.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

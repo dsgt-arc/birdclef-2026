@@ -94,9 +94,11 @@ addresses a structural pipeline difference, not a hyperparameter variation.
 
 ### Control baseline
 
-- [ ] v5j-control: Exact v5j reproduction in exp 027 W&B project
+- [x] v5j-control: Exact v5j reproduction in exp 027 W&B project ✅
   - Config: `configs/v5j_control.yaml` (identical to v5j except W&B project + dual_validation)
-  - Purpose: side-by-side W&B comparison for all Phase 4 runs
+  - Job 6468944, RTX 6000, 39m24s. Best val/auroc=0.852 at epoch 14.
+  - Metrics: val/auroc=0.849, val/cmap=0.596, val_sc/auroc=0.955, val_sc/cmap=0.853.
+  - Matches v5j-dualval (exp 026) closely. W&B baseline verified.
 
 ### Experiment 4a: Max trick + RMS sampling (HIGHEST PRIORITY)
 
