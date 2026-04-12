@@ -23,8 +23,10 @@ since both have high-confidence evidence.
 - [x] Add `mixup_mode` parameter to `SEDFinetuneModule` (shared source)
 - [x] Create exp 027 scaffold (train.py, save_metrics.py, sbatch, pyproject.toml)
 - [x] Create `v10a_addmix_ce.yaml` config (additive MixUp + CE + 5s LSEHead)
-- [ ] Fast-dev-run sanity check (verify additive MixUp + CE loss fires correctly)
-- [ ] Full training run (90/10 split, 20 epochs)
+- [x] Fast-dev-run sanity check ✅ — job 6439254, V100, 5m08s. CE loss=5.454
+  (matches log(234)≈5.46 for random softmax), both val dataloaders fire,
+  waveform mixup before mel confirmed. All working correctly.
+- [ ] Full training run (90/10 split, 20 epochs) — SLURM job submitted, awaiting completion
 - [ ] Record offline metrics (val/auroc, val_sc/auroc, cmap, top1)
 - [ ] ONNX export + Kaggle submission
 - [ ] LB score → compare against v5j baseline (0.903)
