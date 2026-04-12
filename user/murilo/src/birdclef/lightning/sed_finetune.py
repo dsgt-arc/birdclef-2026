@@ -118,7 +118,10 @@ class SEDFinetuneModule(pl.LightningModule):
             when mel_transform is set.
         mixup_per_sample: When True, sample a separate lambda for each sample in
             the batch (ttahara's approach). When False (default), use a single
-            scalar lambda for the entire batch.
+            scalar lambda for the entire batch. Ignored when mixup_mode="additive".
+        mixup_mode: Mixing strategy. "interpolate" (default): standard λ-weighted
+            blend. "additive": waveform superposition (x1+x2) with max labels,
+            matching BirdCLEF winner implementations.
         scheduler_type: LR scheduler type. "cosine" (default) uses CosineAnnealing
             with linear warmup (per-epoch). "one_cycle" uses OneCycleLR with a
             single param group and per-step updates (ttahara's approach).
@@ -146,6 +149,7 @@ class SEDFinetuneModule(pl.LightningModule):
         mixup_warmup_epochs: int = 0,
         mixup_theta: float = 1.0,
         mixup_per_sample: bool = False,
+        mixup_mode: str = "interpolate",
         loss_type: str = "soft_ce",
         label_smoothing: float = 0.05,
         asl_gamma_neg: float = 4.0,
@@ -296,26 +300,29 @@ class SEDFinetuneModule(pl.LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Apply mixup augmentation on input tensor (mel spectrogram or raw waveform).
 
-        Shuffles the batch and mixes inputs with a random lambda from
-        Beta(alpha, alpha). Lambda is enforced >= 0.5 so the dominant
-        sample stays dominant. Labels are weighted-mixed (not OR union).
+        Two modes controlled by mixup_mode:
 
-        If mixup_theta < 1.0, labels >= theta are clipped to 1.0 (ttahara's
-        approach: prevents soft labels from diluting strong positive signal).
+        "interpolate" (default): Standard λ-weighted blend.
+            x_mix = λ*x1 + (1-λ)*x2,  labels_mix = λ*y1 + (1-λ)*y2
+            Lambda from Beta(alpha, alpha), enforced >= 0.5.
 
-        If mixup_per_sample is True, each sample in the batch gets its own
-        lambda (ttahara's approach). Otherwise, a single lambda is used for
-        the entire batch.
+        "additive": Physically correct audio mixing (BirdCLEF 2025 winners).
+            x_mix = x1 + x2,  labels_mix = max(y1, y2)
+            Simulates real multi-species overlap via waveform superposition.
+            No lambda — both samples contribute fully. Labels use union (max).
+            loss_weight keeps the first sample's weight (CE uses primary_idx
+            from the first sample).
 
         Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N).
-
-        When loss_weight is provided (pseudo-label training), it is also
-        blended: mixing GT (w=1.0) with PL (w=0.5) at lam=0.7 gives
-        blended weight 0.7*1.0 + 0.3*0.5 = 0.85.
         """
         indices = torch.randperm(x.size(0), device=x.device)
 
-        if self.hparams.mixup_per_sample:
+        if self.hparams.mixup_mode == "additive":
+            # Additive mixing: x1 + x2 with max labels (BirdCLEF winner approach)
+            x = x + x[indices]
+            labels = torch.maximum(labels, labels[indices])
+            # loss_weight unchanged — CE uses primary_idx from the first sample
+        elif self.hparams.mixup_per_sample:
             beta_dist = torch.distributions.Beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
             lam = beta_dist.sample(sample_shape=(x.size(0),)).to(x.device)
             lam = torch.maximum(lam, 1 - lam).float()

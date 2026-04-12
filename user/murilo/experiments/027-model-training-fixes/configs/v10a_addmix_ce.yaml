@@ -1,0 +1,108 @@
+# Experiment 027, v10a: Additive MixUp + CE loss on primary label
+#
+# Two implementation fixes identified by deep research (Claude + Gemini):
+#
+# 1. MixUp: additive waveform mixing (x1 + x2) with max labels
+#    - Previous: interpolative (lambda*x1 + (1-lambda)*x2) with weighted labels
+#    - Correct: additive mixing simulates natural sound overlay
+#    - Evidence: BirdCLEF 2025 2nd place, -0.036 without correct MixUp
+#
+# 2. Loss: CE on primary label + sigmoid at inference
+#    - Previous: BCE across all 234 species (multi-label)
+#    - Correct: standard CE with softmax on primary species only during training,
+#      sigmoid at inference for multi-label output
+#    - Evidence: BirdCLEF 2024 1st place, +0.044 from this single change
+#
+# Everything else is identical to v5j baseline (5s window, LSEHead, same
+# batch size, same scheduler, same mel config).
+#
+# Baseline: v5j (exp 019) = 0.903 LB
+# Target: > 0.910 LB (meaningful improvement from corrected implementations)
+
+run_name: "2026-exp027-v10a-addmix-ce"
+
+encoder:
+  type: "efficientnet"
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"
+  pretrained: true
+  embed_dim: 1024
+
+sed_head:
+  type: "lse_head"
+  hidden_dim: 1024
+  dropout: 0.5
+  gem_p: 3.0
+  lse_temperature: 1.0
+  freq_pool: "mean"
+
+mel:
+  n_fft: 2048
+  hop_length: 313
+  n_mels: 256
+  fmax: null
+  top_db: 80.0
+  norm_type: "amplitude_to_db"
+  gpu: true
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 5.0
+  batch_size: 64
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 8
+  soundscape_test_files: 0
+  seed: 42
+  dual_validation: true
+
+training:
+  max_epochs: 20
+  lr: 5.0e-4
+  head_lr: 5.0e-4
+  weight_decay: 1.0e-4
+  warmup_epochs: 5
+  threshold: 0.5
+  grad_clip_val: 0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+  clipwise_weight: 1.0
+  framewise_weight: 0.0
+  blend_clip: 1.0
+  blend_frame: 0.0
+  # --- FIX 1: Additive waveform MixUp ---
+  raw_waveform_mixup: true           # Mix on raw waveforms before mel conversion
+  mixup_mode: "additive"             # x1 + x2 with max(y1, y2), NOT lambda-weighted
+  mixup_prob: 1.0
+  mixup_alpha: 1.0                   # Ignored for additive mode (no lambda)
+  mixup_warmup_epochs: 5
+  mixup_theta: 0.8
+  mixup_per_sample: true             # Ignored for additive mode (no lambda)
+  # --- FIX 2: CE loss on primary label ---
+  loss_type: "ce"                    # Standard CE with softmax on primary_idx
+  label_smoothing: 0.0               # No smoothing initially
+  # --- Scheduler (unchanged from v5j) ---
+  scheduler_type: "one_cycle"
+  onecycle_div_factor: 25.0
+  onecycle_final_div_factor: 4.0
+
+callbacks:
+  model_checkpoint:
+    monitor: "val_sc/auroc"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val_sc/auroc"
+    mode: "max"
+    patience: 999
+    min_delta: 0.0
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp027"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50
