@@ -5,8 +5,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=6G
-#SBATCH --time=00:15:00
+#SBATCH --mem=8G
+#SBATCH --time=00:20:00
 #SBATCH -o logs/%x-%j.out
 
 set -euo pipefail
@@ -17,5 +17,5 @@ mkdir -p logs
 
 source sbatch/_setup-venv.sh
 
-echo "=== Running Phase A smoke tests ==="
+echo "=== Running Phase A + Phase B tests ==="
 pytest tests/ -v --tb=short

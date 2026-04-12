@@ -190,14 +190,22 @@ class HopfieldSiteHead(nn.Module):
     def retrieval_energy(
         self, q_r: torch.Tensor, site_idx: torch.Tensor
     ) -> torch.Tensor:
-        """Scalar ``L_site_unsup`` — mean negative retrieval energy.
+        """Bounded ``L_site_unsup`` — log-sigmoid of retrieval aggregate.
 
-        Pulls each window toward *some* prototype in its known site's
-        memory bank via soft-EM clustering. Does not itself detach the
-        projection — that's the caller's responsibility (use
-        ``PerchProjection.query_from_detached``).
+        Equivalent to ``BCE(sigmoid(agg), 1)`` — every window *should*
+        match its site, so the target is all-ones.  This preserves the
+        gradient direction (pulls each window toward some prototype in
+        its site's bank) while bounding the loss to ``[0, ∞)`` with a
+        natural saturation near 0 once the site head is confident.
+        The original ``-mean(agg)`` formulation was unbounded below and
+        diverged to −∞ during training, dominating ``L_labeled``.
+
+        Does not itself detach the projection — that's the caller's
+        responsibility (use ``PerchProjection.query_from_detached``).
         """
-        return -self._aggregate(q_r, site_idx).mean()
+        agg = self._aggregate(q_r, site_idx)  # (B,)
+        # -log(sigmoid(x)) = softplus(-x), numerically stable
+        return torch.nn.functional.softplus(-agg).mean()
 
 
 class PrototypeRetrievalModel(nn.Module):
