@@ -54,29 +54,50 @@ confirmed dead (7 tests, 0 successes). Only MixUp ablation is needed.
   - Training: job 6465883, V100, 44m32s. Best val/auroc=0.847 at epoch 17.
   - Offline metrics: val/auroc=0.844, val/cmap=0.592, val/top1=0.747,
     val_sc/auroc=0.966 (+0.010 vs v5j-dualval). Similar to v5j-dualval.
-- [ ] ONNX export of v10b `best-epochepoch=17.ckpt` + Kaggle submission
-- [ ] LB score → compare against v5j baseline (0.906)
+- [x] ONNX export of v10b `best-epochepoch=17.ckpt` + Kaggle submission ✅
+- [x] LB score → compare against v5j baseline (0.906) ✅ — **0.875 LB (-0.031)**
 - [x] ~~v10c: CE loss only~~ — CANCELLED. CE confirmed dead, no value in isolating.
 
-## Phase 3: Remaining deep research priorities (post-v10b)
+**v10b result**: 0.875 LB (-0.031 from v5j). Additive waveform MixUp regresses
+even with BCE loss. The "corrected" formulation is worse than our interpolative
+spectrogram MixUp (-0.031 vs -0.019 for v6b interpolative waveform).
 
-If v10b improves, combine with inference-side fixes for compounding gains.
-If v10b regresses, move directly to inference-side priorities.
+## Phase 3: Inference-side tests
 
 - [x] I-1: Overlapping window inference ✅ — **0.906 LB (flat vs v5j)**
   - Tested 10s window on v5j (2.5s context each side). No improvement.
   - Existing TTA (±2.5s shifts) already provides similar overlap — redundant.
-- [ ] Beginning/end crop bias (training change)
-  - Random crops from first or last 7s of focal recordings
-  - BirdCLEF 2025 2nd/2024 3rd place technique
-  - Addresses weak-label noise without energy-based selection
-- [ ] Temporal prediction smoothing refinement (inference-only)
-  - Blend adjacent 5s predictions: kernel [0.1, 0.2, 0.4, 0.2, 0.1]
-  - Already partially implemented; check if current implementation matches
 
-## Success Criteria (revised)
+## Experiment Outcome: CLOSED — ALL HYPOTHESES REJECTED
 
-- [ ] v10b single model LB > 0.906 (additive MixUp improves v5j)
-- [ ] Reach 0.920+ single model via compounding MixUp + inference fixes
-- [x] ~~Identify CE contribution~~ — CE = 0.494, confirmed dead
-- [x] ~~I-1 overlapping window~~ — 0.906, flat (TTA already covers this)
+**Every deep research recommendation tested and failed:**
+
+| Change | LB | Delta |
+|--------|-----|-------|
+| v10a: additive MixUp + CE loss | 0.494 | -0.412 |
+| v10b: additive MixUp + BCE loss | 0.875 | -0.031 |
+| I-1: overlapping window inference | 0.906 | +0.000 |
+
+**Additive MixUp comparison** (all waveform MixUp variants regress):
+
+| MixUp variant | LB | Delta |
+|--------------|-----|-------|
+| v5j (interpolative spectrogram) | 0.906 | baseline |
+| v6b (interpolative waveform, exp 021) | 0.887 | -0.019 |
+| v10b (additive waveform, exp 027) | 0.875 | -0.031 |
+
+The deep research diagnosis was wrong: our MixUp and CE implementations were
+not "errors" — they were correct choices for our pipeline. The competition
+techniques that work for other teams do not transfer to our specific setup
+(HGNetV2-B0 + LSEHead + focal→soundscape domain shift).
+
+**Training recipe changes: 16+ tests, 0 successes.** The evidence is now
+overwhelming. The path to 0.92+ requires either (a) fundamentally different
+approach (not recipe tweaks), or (b) understanding exactly what makes our
+pipeline different from Salman's 0.922 single model.
+
+## Next: Deep research with full experimental context
+
+Stop guessing. Conduct targeted research to identify the specific pipeline
+differences between our v5j (0.906) and Salman's 0.922 single model. Focus
+on data-centric and architectural differences, not training recipe variations.

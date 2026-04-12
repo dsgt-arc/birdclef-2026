@@ -554,7 +554,7 @@ Fix two implementation errors identified by deep research: additive waveform Mix
 | Slug | Loss | MixUp | val/auroc | val/cmap | val_sc/auroc | LB | Checkpoint |
 |------|------|-------|-----------|----------|-------------|-----|------------|
 | `v10a-addmix-ce` | CE | additive wfm | 0.835 | 0.571 | 0.863 | **0.494** | `027-.../last.ckpt` (ep19) |
-| `v10b-addmix-bce` | BCE | additive wfm | 0.844 | 0.592 | 0.966 | pending | `027-.../best-epochepoch=17.ckpt` |
+| `v10b-addmix-bce` | BCE | additive wfm | 0.844 | 0.592 | 0.966 | **0.875** | `027-.../best-epochepoch=17.ckpt` |
 
 **v10a = 0.494 LB (catastrophic).** CE logits have ~1 unit spread centered at zero;
 sigmoid maps all 234 species to ~0.50 → random on soundscapes. CE is now confirmed
@@ -562,9 +562,10 @@ dead (7 tests, 0 successes). Root cause: CE optimizes relative ranking (softmax)
 not absolute magnitudes; logits lack safety margin for focal→soundscape domain shift.
 See `027-model-training-fixes/results.md` for full analysis.
 
-**v10b** isolates additive MixUp with BCE loss (v5j loss). Offline metrics similar to
-v5j-dualval (val/auroc 0.844 vs 0.849). val_sc/auroc improved +0.010 (0.966 vs 0.956)
-but soundscape val is only 86 segments. LB pending — the only reliable signal.
+**v10b = 0.875 LB (-0.031).** Additive waveform MixUp regresses even with BCE.
+Worse than interpolative waveform MixUp (v6b = 0.887). All waveform MixUp variants
+regress vs spectrogram MixUp. Offline val_sc/auroc improved +0.010 but LB regressed
+-0.031 — offline metrics anti-correlated with LB again.
 
 ### I-1: v5j-10s (overlapping window inference, no retraining)
 

@@ -73,7 +73,7 @@ on LB, even when it improved offline val/auroc.
 | Pseudo-labels (student) | -0.005 to -0.024 | 2x | 015 |
 | 3-channel input | -0.020 | 1x | 019 |
 | StochasticDepth | -0.019 | 1x | 017 |
-| Waveform MixUp | -0.006 to -0.019 | 2x | 017, 021 |
+| Waveform MixUp (any variant) | -0.019 to **-0.031** | 3x | 017, 021, **027** |
 | AttHead (any variant) | -0.007 to -0.018 | 7x | 021 |
 | Backbone scaling (HGNet-B2) | -0.017 | 1x | 021 |
 | Waveform augs (noise, stretch) | -0.013 | 1x | 021 |

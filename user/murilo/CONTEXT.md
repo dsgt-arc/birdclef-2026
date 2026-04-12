@@ -36,7 +36,9 @@ Read ALL of these at session start to get full context.
 | v5j-dualval (exp 026) | 0.897 | Soundscape checkpoint selection (worse) |
 | v5j-pl-v1 (exp 025) | 0.897 | Pseudo-labels (regressed) |
 | v9c 20s+AttHead (exp 026) | 0.878 | Longer window + AttHead (regressed) |
-| **v10a addmix+CE (exp 027)** | **0.494** | **FAILED — CE logits too small for sigmoid under domain shift** |
+| v10a addmix+CE (exp 027) | 0.494 | FAILED — CE logits too small for sigmoid |
+| v10b addmix+BCE (exp 027) | 0.875 | FAILED — additive MixUp regresses -0.031 |
+| v5j-10s (10s window, exp 027) | 0.906 | Flat — TTA already covers overlap |
 
 ## What happened in this session (2026-04-12)
 

@@ -154,18 +154,44 @@ formulation helps when paired with the working loss function.
 | v5j (exp 019) | BCE | interp spec | 0.874 | — | — | — | **0.906** |
 | v5j-dualval (exp 026) | BCE | interp spec | 0.849 | 0.596 | 0.752 | 0.956 | 0.897 |
 | v10a (exp 027) | CE | additive wfm | 0.835 | 0.571 | 0.733 | 0.863 | 0.494 |
-| **v10b (exp 027)** | **BCE** | **additive wfm** | **0.844** | **0.592** | **0.747** | **0.966** | **pending** |
+| **v10b (exp 027)** | **BCE** | **additive wfm** | **0.844** | **0.592** | **0.747** | **0.966** | **0.875** |
 
-### Analysis
+### LB Result: 0.875 — REGRESSED
 
-**Focal metrics (val/auroc)**: 0.844 vs 0.849 (v5j-dualval) — slightly lower, within
-noise. Both use the same BCE loss, so logit calibration is comparable.
+**LB = 0.875** (-0.031 from v5j baseline). Additive waveform MixUp hurts even
+with BCE loss. The "corrected" formulation from deep research is actually worse
+than our previous interpolative waveform MixUp test (v6b = 0.887, -0.019).
 
-**Soundscape metrics (val_sc/auroc)**: 0.966 vs 0.956 (v5j-dualval) — +0.010 improvement.
-However, the soundscape val set is only 86 segments from 8 files, so this could be noise.
+All waveform MixUp variants regress vs spectrogram MixUp:
 
-**val/cmap**: 0.592 vs 0.596 (v5j-dualval) — essentially identical.
+| MixUp variant | LB | Delta vs v5j |
+|--------------|-----|-------------|
+| v5j (interpolative spectrogram) | **0.906** | baseline |
+| v6b (interpolative waveform, exp 021) | 0.887 | -0.019 |
+| **v10b (additive waveform)** | **0.875** | **-0.031** |
 
-**Key reminder**: Offline metrics have been anti-correlated with LB across 20+
-experiments. Only the LB score tells us if additive MixUp actually helps.
-Must export and submit before drawing conclusions.
+**Why waveform MixUp hurts**: Additive waveform mixing (x1+x2) doubles the
+amplitude, shifting the entire spectrogram energy distribution. The model trained
+on amplitude-doubled spectrograms sees different energy patterns at inference
+(single-recording spectrograms). This creates a train/inference distribution
+mismatch — the same kind of domain shift that plagues all our training changes.
+Spectrogram MixUp avoids this because the lambda-weighted blend preserves the
+energy scale.
+
+**Offline metrics were again misleading**: val_sc/auroc improved +0.010 (0.966
+vs 0.956), but LB regressed -0.031. The offline/LB anti-correlation continues.
+
+### Experiment 027 Conclusion
+
+All three hypotheses from deep research (Claude + Gemini, 2026-04-11) failed:
+
+1. **CE loss + sigmoid inference**: 0.494 LB (catastrophic)
+2. **Additive waveform MixUp**: 0.875 LB (-0.031 regression)
+3. **Overlapping window inference**: 0.906 LB (flat, TTA already covers it)
+
+The deep research correctly identified techniques used by winners, but the
+techniques do not transfer to our specific pipeline. After 16+ failed training
+recipe changes across 27 experiments, the evidence is overwhelming: **local
+modifications to the v5j recipe cannot reach 0.92+**. The gap requires either
+a fundamentally different approach or understanding the specific architectural/
+data differences between our pipeline and Salman's 0.922.
