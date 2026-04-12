@@ -73,12 +73,15 @@ ONNX export, Kaggle submission.
 
 ## What needs to happen next
 
-### Priority 1: Check v10a training results (next session)
+### Priority 1: ONNX export + LB submission (next session)
 
-1. Check SLURM logs for v10a training completion
-2. Record offline metrics (val/auroc, val_sc/auroc, cmap, top1)
-3. ONNX export the best checkpoint
-4. Kaggle submission → LB score vs v5j baseline (0.903)
+v10a training complete. Offline metrics recorded. Checkpoint decision made:
+use `last.ckpt` (epoch 19) — val/auroc peaks at epoch 18 (0.839), epoch 19 is
+within noise (0.835). Matches v5j protocol. Config updated to monitor val/auroc
+instead of val_sc/auroc for future runs.
+
+1. ONNX export `last.ckpt` via exp 010 pipeline
+2. Kaggle submission → LB score vs v5j baseline (0.903)
 
 ### Priority 2: Ablation (if v10a result is informative)
 

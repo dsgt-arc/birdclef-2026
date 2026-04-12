@@ -27,11 +27,15 @@ since both have high-confidence evidence.
   (matches log(234)≈5.46 for random softmax), both val dataloaders fire,
   waveform mixup before mel confirmed. All working correctly.
 - [x] Full training run (90/10 split, 20 epochs) ✅ — job 6439641, RTX 6000, 38m51s.
-  Best checkpoint epoch 11 (by val_sc/auroc=0.863).
+  Best val_sc/auroc at epoch 11 (0.863), best val/auroc at epoch 18 (0.839).
 - [x] Record offline metrics ✅ — val/auroc=0.835, val/cmap=0.571, val/top1=0.733,
   val_sc/auroc=0.863. Focal metrics lower than v5j (0.874 auroc) — expected with
   CE loss producing different logit calibration. See results.md for analysis.
-- [ ] ONNX export + Kaggle submission
+- [x] Fixed checkpoint monitor: switched from val_sc/auroc → val/auroc in config.
+  val_sc/auroc picked epoch 11, but per-epoch analysis shows val/auroc peaks at
+  epoch 18 (0.839). Using `last.ckpt` (epoch 19, val/auroc=0.835) for export —
+  matches v5j protocol and is within noise of the peak.
+- [ ] ONNX export of `last.ckpt` (epoch 19) + Kaggle submission
 - [ ] LB score → compare against v5j baseline (0.903)
 
 ## Phase 2: Ablation (conditional on Phase 1 result)
