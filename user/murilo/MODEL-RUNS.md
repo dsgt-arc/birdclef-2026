@@ -519,6 +519,33 @@ Key findings:
 - Weight curve flat (0.926-0.927) — both models contribute equally.
 - Next: TF Perch + single SED (recover 0.005 ONNX penalty, could reach 0.932+).
 
+## Experiment 026: Domain-Shift Training
+
+Dual validation (separate focal/soundscape metrics) + window length + AttHead ablations.
+Goal: close the single-model gap (0.903 → 0.922+).
+
+### Phase 2: v5j-dualval baseline
+
+| Slug | Window | Head | val/auroc | val_sc/auroc | LB | Checkpoint |
+|------|--------|------|-----------|-------------|-----|------------|
+| `v5j-dualval` | 5s | LSEHead | 0.849 | 0.956 | 0.897 | `026-.../2026-exp026-v5j-dualval/best-epochepoch=17.ckpt` |
+
+*val_sc/auroc is broken — macro AUROC over 234 species when only ~35 appear in
+86 soundscape val segments. See `026-domain-shift-training/results.md`.
+
+### Phase 3: AttHead + window ablation
+
+All Phase 3 jobs ran with old broken val_sc/auroc (~0.093). Compare using val/auroc.
+
+| Slug | Window | Head | val/auroc | val/cmap | val/top1 | LB | Checkpoint |
+|------|--------|------|-----------|----------|----------|-----|------------|
+| `v9a-10s-att` | 10s | AttHead | 0.859 | 0.645 | 0.827 | **0.868** | `026-.../last.ckpt` (ep19) |
+| `v9b-15s-att` | 15s | AttHead | 0.858 | 0.664 | 0.847 | **0.877** | `026-.../last.ckpt` (ep19) |
+| `v9c-20s-att` | 20s | AttHead | 0.861 | 0.681 | 0.862 | **0.878** | `026-.../last.ckpt` (ep19) |
+
+All AttHead models regressed on LB despite best-ever offline metrics. Train/inference
+window mismatch (train on 10-20s, infer on 5s) likely causes attention calibration issues.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

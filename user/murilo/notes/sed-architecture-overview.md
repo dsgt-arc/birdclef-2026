@@ -1,16 +1,15 @@
 # SED Training: End-to-End Architecture Overview
 
-*Last updated: 2026-04-04*
+*Last updated: 2026-04-11*
 
-Full picture of our Sound Event Detection pipeline — what we build, how it
-trains, how it infers, and what we've learned about each component. Written
-as a reference for future experiment planning.
+Full picture of our Sound Event Detection pipeline — from raw `.ogg` files on
+disk to Kaggle leaderboard score. Written so someone unfamiliar with BirdCLEF
+or audio ML can follow every step.
 
 For competition/data context see:
 - [BirdCLEF 2026 competition analysis](../../../docs/references/birdclef-2026-competition.md)
 - [BirdCLEF 2026 EDA](../../../docs/references/birdclef-2026-eda-analysis.md)
 - [AttHead comparison (exp 021)](../experiments/021-sed-training/atthead-comparison.md)
-- [Mix2 augmentation reference](../../../docs/vendor/mix2-mixture-of-mixups.md)
 
 ---
 
@@ -24,437 +23,1228 @@ segment, predict the probability of presence for each species. Scored by
 
 Key challenge: the model must perform well on 5s segments of soundscapes
 (multi-species, noisy, variable SNR) despite training mostly on focal recordings
-(single-species, clean, targeted).
+(single-species, clean, targeted). This is called **domain shift** — the training
+data and test data come from very different acoustic environments.
 
 ---
 
 ## 2. Training Data
 
-### Focal recordings (35,549 files, 206 species)
+All audio files are `.ogg` format (Ogg Vorbis compressed audio). Everything is
+stored under `shared/data/birdclef-2026/`.
 
-Targeted recordings from iNaturalist and Xeno-Canto where someone recorded a
-specific animal. Each file has **one label for the entire recording**
-(`primary_label`) plus optional `secondary_labels` (background species, XC only).
+### Focal recordings (`train_audio/`) — 35,549 files, 206 species
 
-- Variable length: median 23s, range 0-600s
-- 97.9% are Aves; Amphibia 1.3%, Insecta 0.6%, Mammalia 0.3%, Reptilia <0.01%
+```
+train_audio/
+├── 1161364/          # species folder (by taxon ID)
+│   ├── iNat1216197.ogg
+│   └── ...
+├── 209233/
+│   ├── iNat1545859.ogg
+│   └── ...
+└── ... (206 species folders)
+```
+
+Targeted recordings from iNaturalist and Xeno-Canto where someone deliberately
+recorded a specific animal. Think: a birdwatcher holding a microphone toward a
+bird in a tree. Each file has **one label for the entire recording**
+(`primary_label`) plus optional `secondary_labels` (background species picked up
+by the microphone).
+
+- Variable length: median 23s, range 0–600s
+- 97.9% are Aves; Amphibia 1.3%, Insecta 0.6%, Mammalia 0.3%
 - Heavy long-tail: 82/206 species have <100 recordings
-- 12.3% have secondary labels (XC only; 0% of iNat recordings)
+- Clean, high SNR — one dominant species per recording
 
-**How we use them**: random-crop a `window_duration` segment each training step.
-The file-level label applies to the crop. Over many epochs, different crops from
-the same file cover different parts of the recording. If a crop contains no
-actual call (just silence/background), the label is still applied — this is noisy
-but the LSE pooling head handles it by learning to output low scores when no call
-is present.
+**Metadata** in `train.csv`:
+```csv
+primary_label,secondary_labels,type,latitude,longitude,scientific_name,common_name,class_name,inat_taxon_id,author,license,rating,url,filename,collection
+1161364,[],[],-22.7562,-46.8666,Guyalna cuta,Guyalna cuta,Insecta,1161364,Lucas Barbosa,cc-by-nc,0.0,...,1161364/iNat1216197.ogg,iNat
+```
 
-### Labeled soundscapes (66 files, 1,478 segments, 75 species)
+**How we use them**: each training step, we random-crop a `window_duration`
+segment from the full recording. With 5s windows, a 60s recording yields many
+different 5s views across epochs. The file-level label applies to every crop —
+if a crop happens to contain silence (no bird calling), the label is still
+positive. This is noisy, but the LSE pooling head (section 5) handles it by
+learning to output low scores when no call is present in the audio.
 
-Expert-annotated 5s segments from Pantanal soundscape recordings. **This is the
-target domain** — same recording conditions as the hidden test set.
+### Labeled soundscapes (`train_soundscapes/`) — 66 of 10,658 files
 
-- Per-5s multi-species labels (semicolon-separated): avg 4.2 species per segment
-- Include all 28 soundscape-only species (25 insect sonotypes + 3 amphibians)
-- Dense co-occurrence: top 15 co-occurring pairs are all frog-frog (nocturnal choruses)
-- Only 4% of training samples but critical for domain alignment
+```
+train_soundscapes/
+├── BC2026_Train_0001_S08_20250606_030007.ogg   # 1-minute recording
+├── BC2026_Train_0002_S08_20250607_030007.ogg
+└── ... (10,658 files total)
+```
 
-**How we use them**: load a context window centered on each labeled 5s segment.
-With `window_duration=5.0` (v5j), we load exactly 5s — the labeled segment itself.
+Filename encodes: `BC2026_Train_{fileID}_{site}_{date}_{time}.ogg`
+Example: `S08` = Site 08, `20250606` = June 6 2025, `030007` = 3:00 AM.
 
-### Unlabeled soundscapes (10,592 files)
+These are autonomous recorder deployments in the Pantanal — a microphone left
+in the field recording continuously. **This is the same domain as the test set.**
+Multi-species, noisy, low SNR — multiple birds, insects, and frogs calling
+simultaneously, with wind, rain, and other background noise.
 
-Same recording sites as labeled soundscapes but no annotations. Not used in
-current SED training. Could be used with pseudo-labeling (explored in exp 014-015,
-regressed on LB).
+Only **66 files have expert labels** (in `train_soundscapes_labels.csv`):
+```csv
+filename,start,end,primary_label
+BC2026_Train_0039_S22_20211231_201500.ogg,00:00:00,00:00:05,22961;23158;24321;517063;65380
+BC2026_Train_0039_S22_20211231_201500.ogg,00:00:05,00:00:10,22961;23158;24321;517063;65380
+```
+
+Labels are per 5-second segment, with semicolon-separated species IDs (multi-label:
+avg 4.2 species per segment). 75 species appear in labeled soundscapes — including
+28 species that have **zero focal recordings** (soundscape-only species, mostly
+insect sonotypes).
+
+The remaining **10,592 files are unlabeled** — same domain, no annotations. These
+are what we tried to pseudo-label in exp 025.
+
+### Species breakdown: 234 total
+
+| Category | N | Description |
+|----------|---|-------------|
+| Focal + soundscape | 47 | Have both focal recordings and soundscape labels |
+| Focal only | 159 | Only focal recordings, zero soundscape data |
+| Soundscape only | 28 | Only in labeled soundscapes (25 insect sonotypes + 3 amphibians) |
+| **Total** | **234** | |
+
+The 159 focal-only species are the core problem — the model trains on clean
+single-species recordings but must predict in noisy multi-species soundscapes
+for these species. This domain shift is what limits our LB score.
 
 ---
 
-## 3. Audio Preprocessing: Mel Spectrogram Pipeline
+## 3. Audio Processing: From .ogg to Model Input
 
-### AmplitudeToDB + standardize + min-max (v5j recipe)
+### Why 32kHz sample rate?
 
-This normalization was one of our biggest single improvements: **+0.014 LB** over
-ttahara's min-max normalization (0.892 → 0.906).
+All audio is resampled to 32kHz regardless of the source file's native sample rate
+(many `.ogg` files are 48kHz on disk). The Nyquist theorem says you can capture
+frequencies up to half the sample rate: 32kHz → max 16kHz. Bird vocalizations
+mostly fall below 12kHz, so 16kHz captures everything we need.
+
+- **16kHz** (used by some pipelines): captures up to 8kHz — misses high-pitched
+  insect calls and some bird harmonics
+- **32kHz** (our choice): captures up to 16kHz — covers all species in this
+  competition. Also matches the Perch model's sample rate.
+- **48kHz**: captures up to 24kHz — wastes compute on ultrasonic frequencies
+
+We use 32kHz for both training and inference so the mel spectrograms are identical.
+If we trained at 32kHz but inferred at 16kHz, the spectrograms would have different
+frequency resolution and the model would produce wrong predictions.
+
+### Why spectrograms, not raw waveforms?
+
+A raw audio waveform is just a sequence of air pressure measurements over time.
+A 5-second clip at 32kHz is 160,000 numbers — the amplitude of the sound wave at
+each sample point. It contains all the information, but frequency patterns (what
+makes a bird call distinct) are hidden inside the oscillation rates. A neural
+network would need to learn to extract frequency information from scratch.
+
+A **mel spectrogram** converts this 1D waveform into a 2D image where:
+- The Y-axis is **frequency** (256 mel-scaled bands from low to high pitch)
+- The X-axis is **time** (511 frames spanning 5 seconds)
+- The pixel intensity is **loudness** at that frequency and time
+
+Bird calls appear as visible patterns — horizontal lines (pure tones), ascending
+curves (song phrases), harmonic stacks (multiple frequencies at once). This
+converts "what species is calling?" into a visual pattern recognition problem.
+
+This is why we can use **ImageNet-pretrained backbones** — a CNN trained to
+recognize shapes in photographs can recognize shapes in spectrograms. The
+frequency-time patterns of a bird call are analogous to edges and textures in
+images.
+
+**The tradeoff**: spectrograms throw away phase information (the exact timing of
+wave oscillation cycles), but keep the frequency content that distinguishes
+species. For bird identification, frequency content matters far more than phase.
+
+### The mel spectrogram pipeline (v5j recipe)
 
 ```
-Raw audio (5s waveform at 32kHz = 160,000 samples)
-  → STFT (n_fft=2048, hop_length=313, win_length=2048)
-  → Mel filterbank (256 bands, fmax=None → 16kHz Nyquist)
-  → Power spectrogram → AmplitudeToDB (10 * log10, top_db=80dB)
+.ogg file on disk
+  → Load audio (soundfile/torchaudio)
+  → Raw waveform: 160,000 samples (5s × 32kHz)
+  → STFT (Short-Time Fourier Transform)
+      n_fft=2048 (frequency resolution: ~15 Hz per bin)
+      hop_length=313 (time resolution: ~10ms per frame)
+      → Complex spectrogram: (1025 freq bins × 511 time frames)
+  → Mel filterbank (256 bands)
+      Maps linear frequency to mel scale (perceptual pitch scale)
+      → Power mel spectrogram: (256 × 511)
+  → AmplitudeToDB
+      10 × log10(power), clamped to 80dB dynamic range
+      Compresses enormous loudness range — faint calls become visible
   → Standardize (subtract dataset mean, divide dataset std)
   → Min-max scale to [0, 1]
-  → Output: (1, 256, 511) — 1 channel, 256 mel bins, 511 time frames
+  → Output: (1, 256, 511) tensor — 1 channel, 256 mel bins, 511 time frames
 ```
 
 Why each step matters:
 
-1. **AmplitudeToDB**: Compresses the enormous dynamic range of power spectrograms
-   (quiet sounds can be 1000× weaker than loud ones). Log-scale makes faint calls
-   visible to the CNN. Without this, the model mostly sees loud events.
+1. **STFT**: Decomposes the waveform into frequency content at each time step.
+   Like a prism splitting white light into colors, but for sound into pitches.
 
-2. **Global standardization**: Centers data around zero with unit variance using
+2. **Mel filterbank**: Human hearing is logarithmic — we perceive the difference
+   between 100Hz and 200Hz (one octave) the same as 1000Hz and 2000Hz (one octave).
+   Mel scale mirrors this, giving more resolution to lower frequencies where bird
+   calls are most diverse.
+
+3. **AmplitudeToDB**: A quiet bird 50 meters away might produce 1000× less power
+   than a loud bird 2 meters away. Without log-scaling, the CNN only sees the loud
+   bird. Log-scale compresses this range so both are visible. This normalization
+   was one of our biggest single improvements: **+0.014 LB** over the previous
+   min-max normalization.
+
+4. **Global standardization**: Centers data around zero with unit variance using
    precomputed dataset statistics. Helps ImageNet-pretrained backbones (which
-   expect standardized input) work effectively on mel spectrograms.
+   expect standardized input) work effectively on spectrograms.
 
-3. **No resize**: ttahara's recipe resized spectrograms to 256×256, distorting
-   temporal resolution. We keep the natural 256×511 shape — the backbone sees
-   actual temporal structure without warping.
+5. **No resize**: Some pipelines resize spectrograms to a fixed size (e.g., 256×256),
+   distorting temporal resolution. We keep the natural 256×511 shape so the backbone
+   sees actual temporal structure without warping.
 
-4. **NNAudio on GPU**: Mel computation runs on GPU (NNAudio library) instead of
-   CPU DataLoader workers. This was necessary for n_fft=4096 (too slow on CPU)
-   and is also faster for n_fft=2048.
+### Where does mel computation happen? The full training_step flow
 
-### Spectrogram MixUp (current augmentation)
+The datasets return **raw waveforms** — the mel conversion does NOT happen in
+the DataLoader. Instead, it runs **on GPU** inside the Lightning module's
+`training_step()`. This is faster (GPU STFT outperforms CPU, especially for
+large FFT sizes) and allows waveform augmentations before mel conversion.
 
-Applied after mel computation, before backbone:
+Here's the complete sequence for one training step:
+
 ```
-mel_mix = lambda * mel_i + (1 - lambda) * mel_j
-label_mix = lambda * label_i + (1 - lambda) * label_j
+1. DataLoader loads batch from disk:
+   (x, labels, primary_idx) where x = raw waveforms (64, 160000)
+   → 64 samples × 5s × 32kHz, loaded by SEDFocalDataset/SEDSoundscapeDataset
+   → Transferred to GPU automatically by PyTorch Lightning
+
+2. [Optional] Waveform augmentations (on raw audio, before mel):
+   → Pink noise injection (adds realistic background noise)
+   → Time stretch (speeds up or slows down the audio)
+   (v5j doesn't use these — Salman does)
+
+3. Mel spectrogram conversion ON GPU:
+   mel = self.mel_transform(x.float())
+   → x: (64, 160000) raw waveforms
+   → mel: (64, 1, 256, 511) spectrograms
+   This is NNAudioMelSpectrogram: STFT + mel filterbank + AmplitudeToDB +
+   standardization, all computed on GPU in one call. Runs under torch.no_grad()
+   since the mel transform has no learnable parameters.
+
+4. [Default] Spectrogram MixUp (on mel spectrograms):
+   mel, labels = self._apply_mixup(mel, labels)
+   → Blends pairs of spectrograms and their labels
+
+   [Alternative] Waveform MixUp (between steps 2 and 3):
+   x, labels = self._apply_mixup(x, labels)  → then compute mel
+   → Mixes raw audio before mel conversion (Salman's approach)
+
+5. Forward pass through the model:
+   clipwise_logits, framewise_logits = self(mel)
+   → self.encoder(mel) → backbone features (64, 1024, 8, 16)
+   → self.sed_head(features) → predictions
+
+6. Loss computation:
+   loss = self._compute_chunked_loss(clipwise, framewise, labels)
+   → BCEWithLogitsLoss on clipwise logits vs label vectors
+
+7. Backward pass → optimizer step → scheduler step
 ```
 
-Parameters: `alpha=1.0` (uniform lambda), `theta=0.8` (probability of mixing),
-per-sample (each sample in batch independently decides whether to mix),
-5-epoch warmup (no mixing first 5 epochs).
+**Why GPU mel matters for waveform MixUp**: If mel runs on CPU (in the DataLoader),
+we can only mix spectrograms (step 4). With GPU mel, we can mix raw waveforms
+(step 2) then compute mel — this creates acoustic interference patterns between
+overlapping species that don't occur with spectrogram mixing, potentially better
+simulating real multi-species soundscapes.
 
-We tested waveform MixUp (v6b: −0.003 offline) and waveform MixUp + pink noise +
-time stretch (v6c: −0.013 offline). Both regressed vs spectrogram MixUp in offline
-metrics, but **we never submitted v6b to LB** — and offline metrics have been
-unreliable predictors of LB performance.
+### Spectrogram MixUp (data augmentation)
 
-Competitors (Salman, yukiZ) report waveform MixUp and waveform augmentations
-(pink noise, time stretch) as effective. The discrepancy may be due to our
-AmplitudeToDB normalization already providing some of the robustness benefits.
+After mel computation, before feeding to the backbone, we blend pairs of
+spectrograms to create synthetic training examples:
+
+```
+mel_mix   = λ × mel_A   + (1 − λ) × mel_B
+label_mix = λ × label_A + (1 − λ) × label_B
+```
+
+This teaches the model to handle overlapping species (common in soundscapes where
+multiple animals call simultaneously). Parameters: `alpha=1.0` (uniform λ),
+`theta=0.8` (80% of samples get mixed), per-sample mixing, 5-epoch warmup.
+
+**Waveform MixUp** (mixing raw audio before mel computation) is an alternative.
+Salman (0.922 LB) uses this. We tested it and it regressed offline, but offline
+metrics have been unreliable — the waveform version was never submitted to LB.
+The key difference: waveform mixing creates acoustic interference patterns that
+don't occur with spectrogram mixing, potentially better simulating real
+multi-species soundscapes.
 
 ---
 
-## 4. Model Architecture
+## 4. Data Loading: How Training Samples Are Constructed
 
-### Backbone: HGNetV2-B0 (6M params)
+### Focal recordings: random crops
 
-From `timm` library (`hgnetv2_b0.ssld_stage2_ft_in1k`). ImageNet-pretrained,
-adapted to 1-channel input by averaging the 3-channel stem weights.
+The `SEDFocalDataset` handles focal recordings. For each training step:
 
-The backbone operates as a standard CNN feature extractor:
+1. Pick a recording (e.g., a 45-second bird song)
+2. Random-crop a `window_duration` segment (e.g., 5s → samples 32000–192000)
+3. If the recording is shorter than `window_duration`, pad with zeros
+4. Return `(waveform, label_vector, primary_species_index)`
+
+The label vector is 234-dimensional: 1.0 for the primary species, 0.0 for
+everything else (one-hot encoded, expanded to 234 classes). The same recording
+yields different crops each epoch, providing data augmentation for free.
+
+**The noisy label problem**: A random 5s crop from a 60s recording might contain
+only silence — the bird might call for just 10 seconds of the recording. But the
+label still says "this species is present." How often does the crop actually
+contain the call?
+
+| Window | Recording | Call duration | P(call in crop) |
+|--------|-----------|---------------|-----------------|
+| 5s | 45s | 5s | ~11% |
+| 5s | 45s | 15s | ~33% |
+| 20s | 45s | 5s | ~57% |
+| 20s | 45s | 15s | ~100% |
+
+With 5s windows, most crops of short-calling species are **pure noise with a
+positive label**. The model survives this because:
+- Over 20 epochs, each recording is sampled ~20 times with different random crops.
+  Some crops catch the call (strong gradient) while silent crops produce weak
+  confused gradients that average out.
+- LSE pooling (section 5) learns to output low scores when no call is present,
+  so the "silent crop" case produces a small loss.
+
+Longer windows dramatically improve the call-capture probability. **Energy-based
+crop selection** (picking the loudest region instead of random) could push this
+further — e.g., 95%+ for 20s windows — but we haven't implemented this yet.
+Competitors may be doing this (Gemini suggested "RMS energy sampling").
+
+### Soundscape recordings: context windows
+
+The `SEDSoundscapeDataset` handles labeled soundscape segments. Unlike focal
+recordings (random crop, no ground truth for which seconds contain the call),
+soundscapes have **exact per-5s labels**.
+
+1. Each segment is a labeled 5s chunk (from `train_soundscapes_labels.csv`)
+2. Load a `context_duration` window **centered** on the 5s target
+   - With `window_duration=5.0` (v5j): load exactly the 5s segment
+   - With `window_duration=20.0`: load 20s centered on the 5s segment
+     (7.5s before + 5s target + 7.5s after)
+3. The label comes from the CSV: multi-hot vector with all species present
+4. Return `(waveform, label_vector, primary_species_index)`
+
+There is **no randomness** here — the same segment always loads the same context
+window. The label is the ground truth for the center 5s.
+
+**Label mismatch with longer windows**: When loading 20s context around a labeled
+5s segment, the flanking 15s may contain **different species** than the center 5s.
+A frog calling in seconds 0–5 might not be calling in seconds 10–15. But the
+label only covers the center 5s — the model receives 20s of audio with a label
+that describes only the middle portion. With AttHead producing a single prediction
+over the full 20s, this creates a training conflict if the attention focuses on
+flanking species. In practice, this is mitigated by soundscapes being only 2% of
+training data, and dense species co-occurrence (many species persist across
+adjacent segments).
+
+### Batch shape alignment
+
+Every sample in a batch must have the **same tensor shape** — PyTorch's DataLoader
+stacks them into a single tensor. This means focal and soundscape samples must
+return the same waveform length.
+
+The `SEDDataModule` ensures this by passing `window_duration` to both datasets:
+- `SEDFocalDataset` gets `window_duration` directly → random crop of that length
+- `SEDSoundscapeDataset` gets `context_duration=window_duration` → centered window
+  of that length
+
+With `window_duration=20.0`: focal samples are 640,000 samples (20s random crop),
+soundscape samples are also 640,000 samples (20s centered on 5s target). Both fit
+in the same batch.
+
+### Batch composition
+
+A training batch combines both datasets:
+- Focal recordings: ~32,000 train samples (96% of data)
+- Soundscape segments: ~650 train segments (4% of data)
+
+They're concatenated into one `ConcatDataset` and shuffled together. Each batch
+of 64 samples is mostly focal recordings with a few soundscape segments mixed in.
+
+### The 90/10 split
+
+We hold out 10% of focal recordings and 8 soundscape files for validation:
+- Train: ~32,000 focal + ~650 soundscape segments
+- Val: ~3,500 focal + ~86 soundscape segments
+
+The validation set is used for monitoring training progress (loss, AUC), but
+**offline val metrics have been unreliable predictors of the Kaggle LB score**.
+This is why we added **dual validation** in exp 026 — tracking focal and
+soundscape metrics separately to see which better predicts LB performance.
+
+---
+
+## 5. Model Architecture & Forward Pass
+
+The `forward()` method of our Lightning module is just two lines:
+
+```python
+def forward(self, mel):
+    features = self.encoder.forward_features(mel)   # backbone
+    return self.sed_head(features)                   # head
 ```
-Input: (B, 1, 256, 511) — mel spectrogram
-  → 4 stages of convolution + downsampling
-  → Output: (B, 1024, 8, 16) — feature map
-       C=1024 channels, F'=8 frequency bins, T'=16 temporal positions
+
+But a lot happens inside each. Here's the complete forward pass with concrete
+tensor shapes for v5j (batch_size=64, 5s window):
+
+### Step 1: Backbone — compress the spectrogram into features
+
+The backbone is HGNetV2-B0 from the `timm` library
+(`hgnetv2_b0.ssld_stage2_ft_in1k`). Originally trained on ImageNet photographs,
+adapted to 1-channel input by averaging the 3-channel RGB stem weights.
+
+It's a standard CNN with 4 stages of convolution + downsampling. Each stage
+roughly halves the spatial dimensions:
+
+```
+Input (mel):     (64, 1,    256, 511)    # mel spectrogram
+After stage 1:   (64, 32,   128, 256)    # 2× downsample
+After stage 2:   (64, 64,    64, 128)    # 4×
+After stage 3:   (64, 512,   16,  32)    # 16×
+After stage 4:   (64, 1024,   8,  16)    # 32× ← we use this
 ```
 
-The temporal reduction is ~32× (511 frames → 16 positions), so each temporal
-position in the feature map corresponds to ~0.3s of audio.
+We take only the last stage output: `features = (64, 1024, 8, 16)`.
 
-**Why HGNetV2-B0**: Outperformed EfficientNet-B0 significantly on LB in exp 019
-(v5g 0.892 vs v5f 0.855, same recipe). Also outperformed EfficientNet-B0 with
-matched embed_dim (v5j 0.906 vs v5m 0.898). The HGNet architecture uses a
-different convolution design than EfficientNet's MBConv blocks — Salman (0.921 LB)
+What each dimension means:
+- **1024 channels**: each channel is a learned "detector" — one might fire on
+  rising frequency sweeps, another on harmonic stacks, another on broadband noise.
+  These are abstract learned features, not interpretable individually.
+- **8 frequency positions**: the 256 mel bins compressed to 8 (each covers ~32
+  mel bins ≈ a wide frequency band)
+- **16 time positions**: the 511 frames compressed to 16 (each covers ~32 frames
+  ≈ 0.31 seconds of audio)
+
+Each "pixel" in this 8×16 feature map represents about a 0.3-second ×
+wide-frequency-band patch of the spectrogram, described by 1024 features. The
+backbone's convolutional receptive field means each pixel is influenced by a
+wider area — nearby pixels share information through overlapping convolutions.
+
+**Why HGNetV2-B0 over EfficientNet-B0**: In exp 019, HGNetV2-B0 outperformed
+EfficientNet-B0 by +0.037 LB (0.892 vs 0.855) with the exact same recipe. The
+HGNet architecture uses a different convolution block design. Salman (0.921 LB)
 also noted "MBConvs from EfficientNets are not learning that well" for mel
-spectrograms. One exception: Boredom (9th place) claims EffNet can "easily reach
-925+" — the recipe may matter more than the backbone.
+spectrograms. Exception: Boredom (#1) claims EfficientNet can "easily reach
+925+" — the full recipe may matter more than the backbone alone.
 
-### SED Head: LSEHead (our best)
+### Step 2: Frequency pooling — collapse the frequency axis
 
-The head converts the 4D backbone feature map into species predictions:
+The head first eliminates the frequency dimension. We only need to know **when**
+a species is calling, not at which exact frequency — that information is already
+encoded in the 1024 feature channels by the backbone:
 
-```
-Backbone features: (B, 1024, 8, 16)
-  → Mean freq pool: average over F'=8 → (B, 1024, 16)
-  → Permute → (B, 16, 1024)
-  → Linear(1024, 1024) + ReLU + Dropout(0.5) + Linear(1024, 234)
-      → framewise_logits: (B, 16, 234) — per-frame species scores
-  → LSE temporal pool: smooth-max over T'=16 → (B, 234)
-      → clipwise_logits: one score per species
+```python
+h = features.mean(dim=2)   # (64, 1024, 8, 16) → (64, 1024, 16)
+                            #  average over F=8 frequency positions
 ```
 
-**LSE (Log-Sum-Exp) pooling** is a smooth approximation to max:
+Now we have a **temporal sequence**: 16 time positions, each described by 1024
+features.
+
+### Step 3: Per-frame classification — what species are at each time position?
+
+Two linear layers map each time position independently from 1024 features to
+234 species scores:
+
+```python
+h = h.permute(0, 2, 1)             # (64, 1024, 16) → (64, 16, 1024)
+framewise_logits = self.cls_fc(h)   # (64, 16, 1024) → (64, 16, 234)
 ```
-LSE(x) = T * (logsumexp(x / T) - log(N))
+
+`cls_fc` is: `Linear(1024→1024) → ReLU → Dropout(0.5) → Linear(1024→234)`
+
+Now `framewise_logits[b, t, s]` is: "in batch sample b, at time position t
+(~0.3s window), the raw score (logit) for species s."
+
+These are **logits**, not probabilities — they're raw unnormalized scores ranging
+from -∞ to +∞. A logit of +5.0 means "very likely present", -5.0 means "very
+likely absent", and 0.0 means "50/50". Converting to probability requires the
+sigmoid function: `prob = 1 / (1 + exp(-logit))`.
+
+The linear layers are applied **independently to each time position** (same
+weights shared across all 16 positions). This means the classifier doesn't know
+about temporal order — it just asks "what species evidence is at this position?"
+
+### Step 4: LSE pooling — find the peak evidence across time
+
+```python
+clipwise_logits = self.lse_pool(framewise_logits)  # (64, 16, 234) → (64, 234)
 ```
-At temperature T→0 it's hard max; at T→∞ it's mean. T=1.0 is our default.
 
-This is the key design for SED: the model doesn't need the species to be active
-in every frame. If a bird calls for 0.5s out of 5s, that creates one high-scoring
-frame — LSE pool captures that peak while ignoring the 15 silent frames. It
-answers: "what's the strongest evidence for species X anywhere in this window?"
+For each of the 234 species independently, LSE reads the 16 frame-level scores
+and produces one summary score. The formula:
 
-**Why LSEHead beats AttHead**: LSE has no learned temporal aggregation parameters —
-just a deterministic smooth-max. It can't learn bad attention patterns, can't
-collapse, can't focus on wrong frames. For BirdCLEF where the question is "find
-the peak call in this window," the simplest approach works best. AttHead adds
-learned per-species attention weights that can overfit with limited data.
+```
+LSE(x₁...x₁₆) = T × (log(exp(x₁/T) + ... + exp(x₁₆/T)) − log(16))
+```
 
-### AttHead comparison
+With T=1.0, this behaves like a **soft max** — dominated by the highest-scoring
+frame but slightly influenced by others.
 
-We tested several attention-based heads (see `atthead-comparison.md`):
+**Concrete example**: A bird calls at frame 7 (logit = 5.0), all other frames are
+silent (logits ≈ -2.0). The LSE output is approximately 5.0 — the peak is
+preserved. With mean pooling it would be: `(5.0 + 15×(-2.0)) / 16 = -1.56` —
+the call is completely lost.
 
-| Head | Mechanism | val/auroc | LB | Delta vs v5j |
-|------|-----------|-----------|-----|-------------|
-| **LSEHead** | smooth-max (no learned temporal params) | **0.874** | **0.906** | — |
-| AttHead | softmax(att) × raw_logits | 0.870-0.876 | 0.889-0.893 | −0.013 to −0.017 |
-| AttBlockV2 | tanh×softmax × sigmoid(logits), PANNs-style | 0.815-0.868 | 0.800-0.819 | worse |
-| AttHeadMultiContext | softmax(tanh(att)) × sigmoid(logits), Tattaka-style | 0.799-0.851 | — | much worse |
+**Why LSE works for bird audio**: A bird might call for just 0.5 seconds out of
+a 5-second clip. That creates one high-scoring frame out of 16 — LSE captures
+that peak while mostly ignoring the 15 silent frames. It answers: "what's the
+strongest evidence for species X anywhere in this window?"
 
-Our AttHead implementation also differs from the competition-standard (Tattaka/
-BirdCLEF 2023 5th): we use `softmax(att)` instead of `softmax(tanh(att))`, and
-average raw logits instead of sigmoid probabilities. See `atthead-comparison.md`
-for the full analysis. These differences may explain part of the underperformance,
-but LSEHead's simplicity is likely the main advantage for our data regime.
+### Step 5: Return both outputs
+
+```python
+return clipwise_logits, framewise_logits.permute(0, 2, 1)
+# clipwise:  (64, 234)        — one prediction per species per clip
+# framewise: (64, 234, 16)    — per-frame predictions (kept for inference blend)
+```
+
+Both are returned because at inference we blend them (section 6). During training,
+only `clipwise_logits` is used for the loss.
+
+### Complete forward pass diagram
+
+```
+mel spectrogram (64, 1, 256, 511)
+         │
+         ▼
+┌─── HGNetV2-B0 backbone (4 conv stages) ───┐
+│  Input:  (64, 1, 256, 511)                │
+│  Output: (64, 1024, 8, 16)                │
+│  32× spatial reduction in each dim        │
+└───────────────────────────────────────────┘
+         │
+         ▼  mean over frequency dim
+temporal sequence (64, 1024, 16)
+    "16 time positions × 1024 features each"
+         │
+         ▼  Linear(1024→1024) → ReLU → Dropout → Linear(1024→234)
+framewise_logits (64, 16, 234)
+    "at each of 16 time positions, how likely is each species?"
+         │
+         ├──────────────────────── kept for inference blend
+         │
+         ▼  LSE pool over 16 time positions
+clipwise_logits (64, 234)
+    "what's the strongest evidence for each species in this clip?"
+         │
+         ▼  used for training loss (BCE)
+```
+
+The entire forward pass is differentiable — gradients flow backward from the loss
+through LSE pooling, through the linear layers, through the backbone convolutions,
+all the way back to the spectrogram input. The backbone learns what frequency-time
+patterns to detect, and the head learns how to map those patterns to species.
+
+### LSEHead vs AttHead — why it matters
+
+**LSEHead** has **no learned temporal aggregation parameters** — LSE pooling is a
+fixed mathematical operation (smooth max). It can't learn bad attention patterns,
+can't collapse, can't focus on wrong frames. For BirdCLEF where the question is
+"find the peak call," the simplest approach works best. We tested AttHead 7 times
+across exp 021 and LSEHead won every time on LB, even when AttHead had better
+offline metrics.
+
+**AttHead** replaces LSE pooling with learned attention:
+
+```python
+# AttHead forward (simplified):
+attention_weights = softmax(attention_network(framewise), dim=time)   # (B, 234, 16)
+clipwise = sum(attention_weights × sigmoid(framewise), dim=time)      # (B, 234)
+```
+
+The attention mechanism learns "which frames to focus on" for each species. In
+theory, this is more flexible than LSE's fixed smooth-max. In practice, it
+underperformed on LB (0.889–0.893 vs 0.906 for LSEHead).
+
+**However**: AttHead may work better with **longer windows** (10–20s). With 5s
+windows, the entire clip likely contains the bird call, so attention doesn't add
+value over smooth-max — both produce similar results, but LSE is more stable.
+With 20s windows, most of the audio is background noise, and attention's ability
+to **select the 3–5 seconds where the bird actually calls** becomes critical.
+LSE pools uniformly over all time positions, diluting a 3-second call across 20
+seconds of silence. This is the key hypothesis for exp 026.
 
 ---
 
-## 5. Training Recipe (v5j)
+## 6. Training Recipe (v5j)
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Backbone | HGNetV2-B0 (ImageNet init) | 6M params, 1024 embed_dim |
+| Backbone | HGNetV2-B0 (ImageNet init) | 3.1M trainable params |
 | Head | LSEHead (mean freq, T=1.0) | Clipwise-only loss |
-| Loss | BCEWithLogitsLoss | Multi-label binary CE |
+| Loss | BCEWithLogitsLoss | Multi-label binary cross-entropy |
 | Optimizer | AdamW | Single param group, uniform LR |
-| LR | 5e-4 | OneCycleLR schedule |
+| LR | 5e-4 | Same for backbone and head |
 | Weight decay | 1e-4 | |
 | Scheduler | OneCycleLR | div_factor=25, final_div=4 |
 | Warmup | 5 epochs | pct_start = 5/20 = 0.25 |
-| Epochs | 20 | Best at epoch 19 typically |
+| Epochs | 20 | Best checkpoint typically at epoch 17–19 |
 | Batch size | 64 | |
 | Window | 5s | Random crop per step |
 | MixUp | Spectrogram, alpha=1.0, theta=0.8 | Per-sample, 5-epoch warmup |
-| Precision | 16-mixed | AMP for memory efficiency |
-| Split | 90/10 train/val | No test holdout, validate on LB |
-| Data | Focal (35.5K) + labeled soundscapes (653 train segments) | |
-| clipwise_weight | 1.0 | |
-| framewise_weight | 0.0 | Only clipwise loss (no framewise) |
-| blend_clip | 1.0 (config) / 0.75 (ONNX export) | Config says clipwise-only, but export used script defaults |
-| blend_frame | 0.0 (config) / 0.25 (ONNX export) | v5j LB 0.906 actually uses 75% clip + 25% frame max |
+| Precision | 16-mixed | AMP for memory/speed |
+| Split | 90/10 train/val | No test holdout |
+| Data | 35.5K focal + 653 soundscape segments | |
+| clipwise_weight | 1.0 | Only clipwise loss |
+| framewise_weight | 0.0 | No framewise supervision |
 
-Key design choices:
-- **Clipwise-only loss** (no framewise supervision): simpler, works better on LB
-- **OneCycleLR**: ttahara's recipe, better than CosineAnnealing for this setup
-- **Per-sample MixUp**: each sample independently decides whether to mix (theta=0.8
-  means 80% get mixed). More diversity than batch-level MixUp.
-- **90/10 split, no test holdout**: maximize training data, validate on LB directly.
-  Offline val/auroc has been unreliable — improvements often don't translate to LB.
+### How loss is computed: the full path
+
+After the forward pass produces `clipwise_logits (64, 234)` and
+`framewise_logits (64, 234, 16)`, the loss computation answers: "how wrong
+were the predictions, and in which direction should the weights be adjusted?"
+
+The training step calls `_compute_chunked_loss`, which computes a weighted sum:
+
+```
+total_loss = clipwise_weight × clipwise_loss + framewise_weight × framewise_loss
+```
+
+With v5j settings (`clipwise_weight=1.0, framewise_weight=0.0`), only the
+clipwise loss contributes. The framewise term is computed but multiplied by zero.
+
+### Loss function: BCE (Binary Cross-Entropy with Logits)
+
+BCE treats each of the 234 species as an **independent binary classification**:
+"is species k present?" The formula for one species:
+
+```
+BCE(logit, label) = −[label × log(σ(logit)) + (1 − label) × log(1 − σ(logit))]
+```
+
+Where σ is the sigmoid function: `σ(x) = 1/(1+exp(-x))`.
+
+**Concrete example** — a batch sample where species 42 is the target bird:
+
+| Species | Logit | σ(logit) | Label | BCE | Meaning |
+|---------|-------|----------|-------|-----|---------|
+| 41 | -3.5 | 0.03 | 0.0 | 0.03 | Correctly absent — low loss |
+| **42** | **0.8** | **0.69** | **1.0** | **0.37** | Present but only 69% confident — moderate loss |
+| 43 | 1.2 | 0.77 | 0.0 | 1.47 | False positive! Model says 77% but absent — high loss |
+| 44 | -5.0 | 0.01 | 0.0 | 0.01 | Correctly absent — very low loss |
+
+The per-sample loss averages across all 234 species, then averages across the
+batch of 64 → one scalar loss value. The gradients from high-loss species
+(false positives and missed detections) dominate the weight updates.
+
+### After MixUp: soft labels
+
+After spectrogram MixUp, labels become soft (not binary). If we mix two samples
+with λ=0.7:
+
+```
+label_A: [0, 0, 1, 0, ...]    species 2 present
+label_B: [0, 1, 0, 0, ...]    species 1 present
+mixed:   [0, 0.3, 0.7, 0, ...]  70% species 2, 30% species 1
+```
+
+BCE handles soft labels naturally — a label of 0.7 means "70% confident this
+species is present." The model learns proportional confidence, which is useful
+for soundscape generalization where species overlap and certainty varies.
+
+### Why not Cross-Entropy (CE)?
+
+**BCE** treats each species independently — "is bird A present?" and "is bird B
+present?" are separate yes/no questions. Multiple species can be present.
+
+**CE** treats it as a single-choice problem — "which ONE species is this?" It
+uses softmax (probabilities sum to 1 across species), so predicting "bird A = 80%"
+forces all others to share 20%. This is wrong for multi-species soundscapes.
+
+We tested CE loss 6 times and it always regressed (−0.015 to −0.030). However,
+Salman (0.922) and Boredom (#1) both use CE during training with sigmoid at
+inference. They may apply CE only to the primary label, getting stronger gradients
+for the dominant species while relying on the sigmoid output space at test time
+for multi-label predictions. CE + AttHead + 20s is an untested combination.
+
+### Clipwise vs framewise loss
+
+The forward pass produces two outputs (section 5):
+
+- **framewise_logits** `(64, 234, 16)`: a prediction at each of 16 time
+  positions. "At frame 7 (~second 2.1), how likely is each species?"
+- **clipwise_logits** `(64, 234)`: one prediction per species for the whole
+  clip, from LSE-pooling the framewise logits. "What's the strongest evidence
+  for each species anywhere in this clip?"
+
+The clipwise prediction is derived FROM framewise — LSE pooling reads all 16
+frames and extracts the peak. They share the same linear layer weights.
+
+**Clipwise loss** (`clipwise_weight=1.0`): BCE on the LSE-pooled prediction.
+This is the only loss we optimize. The model learns to make the overall clip
+prediction correct.
+
+**Framewise loss** (`framewise_weight=0.0`): BCE on `max(framewise)` — the
+single most confident frame per species. Currently disabled (weight=0.0). Even
+though it could teach the model which frames contain the call, we don't know
+WHEN the bird calls in focal recordings (only file-level labels). Enabling
+framewise loss would push the model to predict "present" at every frame, even
+silent ones.
+
+### Train/inference blend mismatch
+
+At inference, we blend both signals:
+```
+probs = 0.75 × sigmoid(clipwise) + 0.25 × sigmoid(max(framewise))
+```
+
+The v5j config specifies `clipwise_weight=1.0, framewise_weight=0.0`
+(clipwise-only training), but the ONNX export used `blend_clip=0.75,
+blend_frame=0.25`. So v5j's 0.906 LB includes framewise signal the model was
+**never trained to optimize**. It works because the framewise head shares weights
+with the clipwise path — the per-frame logits are a byproduct of the same
+computation that produces the clip-level prediction. But it's an accidental win.
+
+### Multi-chunk loss (v8a/v8b)
+
+When using multi-chunk LSEHead (e.g., 4 chunks for 20s), `clipwise_logits` has
+shape `(64, 4, 234)` — 4 predictions per sample. The loss averages across chunks:
+
+```
+clip_loss = (BCE(chunk0, label) + BCE(chunk1, label) + ... + BCE(chunk3, label)) / 4
+```
+
+All 4 chunks get the **same label** (the file-level species label). For focal
+recordings this is correct — the species is labeled for the entire file. But for
+a 45s recording with a 5s call and a 20s crop, typically only 1 of 4 chunks
+actually contains the call. The other 3 chunks are silence being trained as
+positive — adding label noise. This "same label for all chunks" issue may explain
+why multi-chunk LSEHead (v8b: 0.896) underperformed single-chunk (v5j: 0.906).
 
 ---
 
-## 6. Inference Pipeline
+## 7. Backward Pass, Optimizer, and Training Loop
+
+### Backward pass: computing gradients
+
+After the loss is computed as a single scalar, PyTorch's autograd traces backward
+through every operation — from the loss, through BCE, through LSE pooling, through
+the linear layers, through every convolution in the backbone.
+
+For each of the 3.1M parameters, it computes: "if I nudge this weight up by a
+tiny amount, how much does the loss change?" That derivative is the **gradient** —
+the direction to adjust each weight to reduce the loss.
+
+The gradient flows through the same path as the forward pass, but in reverse:
+
+```
+loss (scalar)
+  ← BCE: which species predictions were most wrong?
+  ← LSE pooling: which frames contributed to the clip prediction?
+  ← Linear layers: which feature→species mappings need adjusting?
+  ← Backbone convolutions: which filters need adjusting?
+```
+
+**LSE pooling focuses the gradient.** Because LSE is dominated by the
+highest-scoring frame, gradients flow mainly through that peak frame. Silent
+frames (low logits) get almost no gradient. This means the backbone learns to
+sharpen detections at the frames where a call is present, rather than being
+pulled in 16 different directions equally.
+
+### Optimizer: AdamW
+
+v5j uses **AdamW** (Adam with decoupled weight decay). For each parameter, AdamW
+maintains running averages of the gradient (momentum) and squared gradient
+(variance), and adapts the step size per-parameter:
+
+- Parameters with consistently large gradients → smaller steps (more cautious)
+- Parameters with small, noisy gradients → larger steps (more exploratory)
+
+With `scheduler_type="one_cycle"` (v5j), all parameters — backbone AND head —
+share a single learning rate (5e-4). No separate head_lr. Weight decay is 1e-4
+(gently shrinks weights toward zero each step to prevent overfitting).
+
+### Learning rate schedule: OneCycleLR
+
+The learning rate follows a warmup → peak → decay curve across 20 epochs:
+
+```
+LR
+5e-4 ┤             ╱ peak at epoch 5
+     │           ╱
+     │         ╱
+     │       ╱        ╲
+     │     ╱            ╲
+     │   ╱                ╲
+2e-5 ┤ ╱ start               ╲
+     │                         ╲───── ~1.25e-4 final
+     └──┬─────┬─────┬─────┬────┬──
+        0     5    10    15   20  epoch
+       warmup       decay
+```
+
+Three phases:
+1. **Warmup (epochs 0–5)**: LR ramps from 2e-5 to 5e-4. Small initial steps
+   prevent the randomly-initialized head from producing wild gradients that
+   destabilize the pretrained backbone features.
+2. **Peak and decay (epochs 5–20)**: LR decreases from 5e-4 following a cosine
+   curve. Large steps in the middle (exploration), smaller toward the end
+   (refinement).
+3. **Final**: LR settles at ~1.25e-4 for fine-grained adjustments.
+
+**Per-step updates**: Unlike CosineAnnealing (per-epoch), OneCycleLR adjusts LR
+every batch (~500 batches/epoch × 20 epochs = ~10,000 steps). Smoother curve.
+
+### Mixed precision (16-mixed)
+
+Forward pass and loss use float16 (half precision) for speed and memory savings.
+Gradients and optimizer state remain in float32 for numerical stability. PyTorch's
+GradScaler handles the conversion. This lets us fit batch_size=64 with 5s windows
+on a 24GB RTX 6000.
+
+### The full training loop
+
+```
+For each epoch (0 to 19):
+
+  Training (~500 batches of 64 samples):
+    1. DataLoader loads batch: raw waveforms (64, 160000)
+    2. [Optional] Waveform augmentations (noise, stretch)
+    3. Mel conversion on GPU → (64, 1, 256, 511)
+    4. [Default] Spectrogram MixUp → blend pairs
+    5. Forward pass → clipwise_logits (64, 234)
+    6. Loss: BCE(clipwise_logits, labels) → scalar
+    7. Backward pass → gradients for 3.1M parameters
+    8. AdamW step → update all parameters
+    9. OneCycleLR step → adjust learning rate
+    10. Log train/loss every 50 steps
+
+  Validation (after all training batches, no gradient):
+    For each val batch:
+      Forward pass → compute AUROC, cmap, F1, loss
+    Log: val/auroc, val_sc/auroc (dual validation), etc.
+
+  Checkpoint: save model if val_sc/auroc is best so far
+```
+
+After 20 epochs, the best checkpoint (by `val_sc/auroc`) is selected for export.
+Typically the best epoch is 17–19 (late training, after the LR has decayed for
+fine-grained refinement).
+
+---
+
+## 8. Inference Pipeline
+
+After training, the model goes through three stages to produce a Kaggle
+submission: ONNX export (on PACE GPU), weight upload, and kernel execution
+(on Kaggle CPU). The full pipeline is managed by exp 010.
 
 ### ONNX export
 
-The trained model (encoder + head) is wrapped and exported to ONNX:
-```
-SEDWrapper.forward(mel):
-    features = encoder.forward_features(mel)       # backbone
-    clipwise_logits, framewise_logits = sed_head(features)  # head
-    framewise_max = framewise_logits.max(dim=-1).values
-    probs = blend_clip * sigmoid(clipwise_logits)
-          + blend_frame * sigmoid(framewise_max)
-    return probs  # (B, 234) probabilities
+The trained PyTorch model (encoder + head) is wrapped in a thin module that
+combines clipwise and framewise predictions into a single probability output:
+
+```python
+class SEDWrapper(nn.Module):
+    def forward(self, mel):
+        features = encoder.forward_features(mel)          # backbone
+        clipwise_logits, framewise_logits = sed_head(features)  # head
+        framewise_max = framewise_logits.max(dim=-1).values     # best frame
+        probs = 0.75 * sigmoid(clipwise_logits) \
+              + 0.25 * sigmoid(framewise_max)
+        return probs  # (B, 234) probabilities in [0, 1]
 ```
 
-The v5j training config specifies blend_clip=1.0, blend_frame=0.0 (clipwise only),
-but the ONNX export used the script defaults of blend_clip=0.75, blend_frame=0.25.
-So the v5j 0.906 LB result actually uses 75% clipwise + 25% framewise max.
+This wrapper is traced with a dummy input and exported to ONNX format (opset 17).
+The ONNX file contains the full computation graph — backbone + head + blending —
+as a single portable model that runs without PyTorch.
+
+The export also saves:
+- `species_list.json`: ordered list of 234 species IDs matching model output indices
+- `mel_config.json`: mel spectrogram parameters (n_fft, hop_length, n_mels, etc.)
+  so the inference kernel knows how to preprocess audio identically to training
+- `species_mapping.json`: maps model output indices to submission column names
 
 ### Kaggle kernel inference
 
-Runs on Kaggle CPU (no GPU). For each test soundscape file (60s):
+The submission kernel runs on Kaggle CPU (no GPU, 90-minute time limit). For each
+test soundscape file (60 seconds of audio):
 
-1. Load full 60s audio at 32kHz
-2. Compute mel spectrogram for the entire file at once (full-signal mel)
-3. Slice the mel into twelve 5s segments (511 frames each)
-4. Run ONNX inference on each segment → (234,) probability vector
-5. Map model output indices to competition species columns via `species_mapping.json`
-6. Write to `submission.csv`
+```
+1. Load full 60s audio at 32kHz → 1,920,000 samples
 
-Runtime: ~20 minutes for single model on ~600 test files (well within 90-min limit).
+2. Compute mel spectrogram for the ENTIRE 60s file at once
+   → (1, 1, 256, 6132) — one giant spectrogram
+   This is more efficient than computing 12 separate 5s spectrograms
+   because the STFT window overlaps at segment boundaries are handled once.
+
+3. Slice the mel into twelve 5s segments
+   → 12 × (1, 1, 256, 511) — one spectrogram per 5s segment
+   Each segment is exactly 511 frames (5s × 32kHz / hop_length=313)
+
+4. Run ONNX inference on each segment
+   → 12 × (234,) probability vectors
+   Each vector: P(species_k present in this 5s segment) for k=0..233
+
+5. Map model output indices to competition species columns
+   via species_mapping.json (identity for 234-class models)
+
+6. Write 12 rows to submission.csv
+   Each row: row_id, species_0_prob, species_1_prob, ..., species_233_prob
+```
+
+**Runtime**: ~20 minutes for a single model on ~600 test files. Well within the
+90-minute Kaggle limit, leaving room for ensembles or post-processing.
+
+**Key detail**: the inference processes 5s segments independently — each segment
+gets its own prediction with no information from neighboring segments. This is
+different from training, where longer windows (v8b: 20s) give the backbone
+context from neighboring segments. At inference with a 5s-trained model (v5j),
+each segment is isolated.
 
 ### Post-processing (optional)
 
-Site/hour priors (Phase A): multiply predictions by prior probabilities based on
-recording site and time of day. Gives +0.003 single / +0.004 4-fold on LB.
+**Site/hour priors**: Multiply predictions by prior probabilities derived from
+labeled soundscape statistics (which species tend to appear at which site and
+time of day). For example, a nocturnal frog species gets suppressed during
+daytime segments.
 
----
+Effect: +0.003 single model / +0.004 with 4-fold ensemble on LB.
 
-## 7. What We've Tried (Exp 021 Phases A-D)
+### 4-fold ensemble
 
-### Phase A: Site/hour priors — small win (+0.003)
+Train the same model 4 times with different train/val splits (4-fold CV). At
+inference, average the 4 models' probabilities per segment:
 
-Multiplicative priors from labeled soundscapes (9 sites, 13 hours):
-- v5j → v5j-pp2: 0.906 → **0.909** (+0.003)
-- v5j-4fold → v5j-4fold-pp2: 0.913 → **0.917** (+0.004)
-
-### Phase B: Recipe ablations on LSEHead — all regressed
-
-| Change | val/auroc | Delta |
-|--------|-----------|-------|
-| CE loss (primary_label) | 0.854 | −0.020 |
-| Waveform MixUp | 0.871 | −0.003 |
-| Waveform + noise + stretch | 0.861 | −0.013 |
-| 25 epochs (vs 20) | 0.873 | −0.001 |
-
-CE loss is incompatible with our multi-label setup. Waveform augmentations
-regressed offline (but v6b was never submitted to LB). Recipe changes on
-LSEHead don't help.
-
-### Phase C: AttHead + backbone scaling — regressed on LB
-
-| Model | val/auroc | LB | Delta vs v5j LB |
-|-------|-----------|-----|----------------|
-| v6h (HGNetV2-B2 + AttHead) | **0.876** | 0.889 | **−0.017** |
-| v6j (EffNet-B0 NS + AttHead) | 0.874 | 0.893 | **−0.013** |
-
-AttHead with 75/25 clip/frame blend and dual supervision hurts LB despite
-matching or beating v5j offline. Offline metrics are anti-correlated with LB
-for this experiment. Our AttHead implementation also differs from competition
-standard (see `atthead-comparison.md`).
-
-### Phase D: AttHeadMultiContext (Tattaka approach) — massive regression
-
-| Model | Context | val/auroc | Delta |
-|-------|---------|-----------|-------|
-| v7a (HGNet-B0) | 3×5s (15s) | 0.820 | −0.054 |
-| v7b (HGNet-B0) | 4×5s (20s) | 0.799 | −0.075 |
-| v7c (EffNet-B0 NS) | 3×5s (15s) | 0.851 | −0.023 |
-
-Changed too many variables at once (head + window + batch size). Implemented
-Tattaka's approach (aggregate attention over all 15s → 1 prediction) when
-hengck23's actual approach is different (keep LSEHead, split features into
-chunks). See next section.
-
----
-
-## 8. Multi-Context: The Correct Approach (Phase E)
-
-### The insight from hengck23 (0.896 LB, CNN-only)
-
-Source: Kaggle discussion #683791, image at `notes/figures/hengck23-cnn-birdclef.png`
-
-hengck23 uses our exact architecture (HGNetV2-B0 + LSEHead, 4-fold) with one
-key change: **15s input windows (3×5s) instead of 5s**. His results:
-- 5s baseline: LB 0.876 (4-fold, no PP)
-- 3×5s: **LB 0.896** (4-fold, no PP) → **+0.020 gain**
-
-The architecture:
 ```
-15s audio → mel (256 × 1533 frames)
-  → HGNetV2-B0 backbone → features (B, 1024, 8, 48)
-       ↑ backbone sees full 15s context via convolutional receptive field
-  → Mean freq pool → (B, 1024, 48)
-  → Linear → framewise_logits (B, 48, 234)
-  → SPLIT into 3 chunks: (B, 16, 234) × 3
-  → LSEPool each chunk independently → 3 × (B, 234)
-  → All 3 supervised during training
+final_prob = (prob_fold0 + prob_fold1 + prob_fold2 + prob_fold3) / 4
 ```
 
-**Why this works**: The backbone's convolutional receptive field spans across
-chunk boundaries. Features for frame 20 (center chunk) are influenced by
-frames 10-30 (reaching into flanking chunks). So each 5s prediction benefits
-from backbone-level context, but the LSE pooling still operates at 5s resolution
-(16 frames per chunk — same as v5j).
-
-**Why Phase D failed**: We replaced LSEHead with AttHeadMultiContext, which
-aggregated attention over ALL 48 frames into one prediction. This diluted the
-signal and changed the loss gradient path. hengck23 keeps LSEHead and just
-splits the features — the multi-context comes from the backbone, not the head.
-
-### Comparison: v5j vs v5i (10s) vs hengck23 (3×5s)
-
-| Approach | Backbone sees | LSEPool operates on | Effect |
-|----------|--------------|---------------------|--------|
-| v5j (5s) | 5s (T=16) | 16 frames | 0.906 LB |
-| v5i (10s single) | 10s (T=32) | **32 frames** | 0.880 LB (−0.026, diluted) |
-| hengck23 (3×5s) | 15s (T=48) | **16 frames/chunk** | 0.896 LB (+0.020 over his baseline) |
-
-v5i pools over the full long window (diluting peak signal). hengck23 splits
-first, then pools per-chunk (preserving 5s resolution). The backbone gets more
-context in both cases, but only hengck23's approach keeps LSE pooling tight.
-
-### Phase E implementation plan
-
-Only TWO things change from v5j:
-
-1. **window_duration**: 5s → 15s (dataset already supports this)
-2. **LSEHead**: add `n_chunks` param — split framewise logits into N chunks before
-   LSE pooling, return N predictions
-
-Everything else stays identical: same head architecture, same loss, same recipe,
-same hyperparameters.
-
-**Labels for multi-chunk training:**
-- Focal recordings (96% of data): same file-level label for all 3 chunks.
-  Correct — the whole file is labeled with one species.
-- Soundscapes (4% of data): each 5s chunk has its own per-5s label from the CSV.
-  This is actually better supervision than focal because we have true per-chunk
-  ground truth. Requires loading flanking segment labels from the CSV.
-
-**Inference with multi-context:**
-- Process 60s test soundscape as four non-overlapping 15s windows
-- Each 15s window → backbone → split into 3 chunks → 3 predictions
-- 4 windows × 3 chunks = 12 predictions covering all twelve 5s segments
-- Each segment gets a prediction that had backbone context from its neighbors
+Each fold sees slightly different training data, so their errors are partially
+uncorrelated. Averaging reduces variance. Effect: +0.007 LB (0.906 → 0.913).
 
 ---
 
-## 9. Augmentation: Current and Future
+## 9. The Window Length Question
 
-### Current: spectrogram MixUp (v5j)
+### Why 5s may not be optimal
 
-Standard linear interpolation of mel spectrograms and labels. Works well —
-our best LB results all use this.
+Our v5j trains on 5s random crops. But the test set evaluates 5s segments that
+are part of continuous 60-second recordings. A bird call might span a segment
+boundary (start at 4.5s, end at 5.5s — split across two segments). With 5s
+training, each crop is isolated — the model never learns that context from
+neighboring seconds can help identify a partial call.
 
-### Tested and regressed offline (not submitted to LB)
+Competitors are training with longer windows:
+- **Salman (0.922 LB)**: trains on 10–20s windows
+- **hengck23 (0.896 LB)**: trains on 15s (3×5s chunks)
+- **Tom (6th place)**: trains on 20s (4×5s)
 
-- **Waveform MixUp** (v6b): −0.003 offline. Mixes raw audio before mel computation.
-  Never submitted to LB — offline metrics have been unreliable.
-- **Waveform + pink noise + time stretch** (v6c): −0.013 offline.
+### Two approaches to longer windows
 
-### Future: Mix2 (Mixture of Mixups)
+**Approach 1: Single prediction from longer window**
 
-Reference: `docs/vendor/mix2-mixture-of-mixups.md`
+Train on 20s, have the head produce one prediction for the whole 20s window.
+Requires an attention-based head (AttHead) that can learn to focus on the frames
+where the bird is calling and ignore the rest.
 
-Paper (arxiv 2403.09598) shows that randomly alternating between Mixup (input
-space), Manifold Mixup (embedding space), and MultiMix (batch-level Dirichlet)
-gives +4.2% macro F-score overall and **+6.2% on rare classes** for anuran
-classification.
+```
+20s audio → backbone features (B, 1024, 8, 64 frames)
+  → AttHead: learned attention selects relevant frames
+  → Single prediction: (B, 234)
+```
 
-Key insight: individual methods underperform, but combination is robust. Manifold
-Mixup (mixing backbone features before the head) is the highest-value addition
-for us. Could stack with multi-context — mix 15s feature maps before splitting
-into chunks.
+This is likely what Salman does. The attention mechanism acts as an implicit
+"bird call finder" — it learns which frames contain the actual call and weights
+them heavily, ignoring the background noise frames.
 
-### Future: hengck23's "wave mix for 3×5sec"
+**Approach 2: Multi-chunk with per-chunk pooling (hengck23)**
 
-hengck23 mentions "wave mix augmentation specially designed for 3×5sec input."
-This may mean mixing different species into different 5s chunks within the 15s
-window — teaching the model to discriminate per-chunk content even with shared
-backbone context. Details unknown; worth experimenting if Phase E succeeds.
+Train on 15–20s, but split the features into N×5s chunks at the head level,
+applying LSEHead to each chunk independently:
+
+```
+15s audio → backbone features (B, 1024, 8, 48 frames)
+  → Split into 3 chunks of 16 frames each
+  → LSEHead on each chunk → 3 × (B, 234) predictions
+  → All 3 supervised with the same label during training
+```
+
+The backbone sees 15s of context (convolutions reach across chunk boundaries),
+but pooling stays at 5s resolution. Each 5s prediction benefits from the
+backbone knowing what's happening in neighboring chunks.
+
+### What we've tested
+
+| Model | Window | Head | Approach | LB |
+|-------|--------|------|----------|-----|
+| v5j | 5s | LSEHead | Baseline | **0.906** |
+| v5i | 10s | LSEHead (single pool) | Naive: pool over full 10s | 0.880 |
+| v8a | 15s | LSEHead (3 chunks) | hengck23's approach | 0.882 |
+| v8b | 20s | LSEHead (4 chunks) | hengck23's extended | 0.896 |
+| v7a | 15s | AttHeadMultiContext | Tattaka approach | — (offline −0.054) |
+| **v9a** | **10s** | **AttHead** | **Single pred (exp 026)** | **0.868** |
+| **v9b** | **15s** | **AttHead** | **Single pred (exp 026)** | **0.877** |
+| **v9c** | **20s** | **AttHead** | **Single pred (exp 026)** | **0.878** |
+| Salman | 20s | AttHead? | Unknown inference | **0.922** |
+
+**Every longer-window experiment regresses on LB.** The pattern:
+- LSEHead single pool (v5i): -0.026 → dilutes signal over more frames
+- LSEHead multi-chunk (v8a/v8b): -0.010 to -0.024 → chunk label noise
+- AttHead single pred (v9a-v9c): -0.025 to -0.035 → worst of all despite best
+  offline metrics
+
+### The train/inference window mismatch problem
+
+**This is likely our biggest blind spot.** Our Kaggle inference kernel processes
+5-second segments independently — regardless of what window the model was trained
+on. When a model trained on 20s receives 5s input at inference:
+
+```
+Training:  20s audio → backbone → 64 temporal positions → AttHead attention
+Inference:  5s audio → backbone → 16 temporal positions → AttHead attention
+```
+
+**For LSEHead**: LSE pooling is a fixed mathematical operation (smooth-max) that
+works identically on 16 or 64 positions. The regression is mild (-0.010 for v8b)
+because the operation itself doesn't change — only the backbone features differ
+(trained to expect 20s context, receives 5s).
+
+**For AttHead**: The learned attention weights were calibrated for 64 temporal
+positions. Softmax over 64 positions distributes attention differently than
+softmax over 16 positions. The attention mechanism trained on 20s spectrograms
+doesn't transfer to 5s spectrograms — the temporal distribution it learned to
+attend to simply doesn't exist in the shorter input. This explains the severe
+regression (-0.025 for v9c).
+
+**What competitors likely do differently**: Competitors training on 20s probably
+also **infer on 20s** — loading wider context around each 5s test segment and
+using sliding-window inference with overlap. We never changed our inference
+pipeline to match the training window. This is a fundamental mismatch that
+makes all longer-window experiments unfairly penalized.
+
+**The implication**: We cannot fairly evaluate longer windows or AttHead until
+we fix the inference pipeline to use matching window sizes. Every experiment
+with window > 5s has been evaluated with a handicapped inference setup.
+
+### What we don't know
+
+The gap between our best (0.903) and competitors (0.922+) remains unexplained.
+We've tested:
+- ✗ Longer windows (regressed — but inference mismatch)
+- ✗ AttHead (regressed — but inference mismatch)
+- ✗ Pseudo-labels (regressed)
+- ✗ Soundscape checkpoint selection (regressed)
+- ✗ Multi-chunk LSEHead (regressed)
+- ✗ CE loss (regressed 6 times)
+- ✗ Waveform MixUp (regressed offline, never submitted)
+- ✗ Various other recipe changes (15+ attempts, 0 successes)
+
+**What we haven't tested properly**:
+1. Longer windows with **matching inference** (sliding-window 20s inference)
+2. Waveform MixUp submitted to LB (only tested offline where metrics are unreliable)
+3. CE loss + sigmoid inference combination
+4. Variable-length training (mix of 5s/10s/20s crops)
+5. Energy-based crop selection (select loudest region instead of random)
+6. The exact inference strategy that competitors use on Kaggle
 
 ---
 
-## 10. Key Lessons from Exp 021
+## 10. Dual Validation (exp 026)
 
-1. **Offline val/auroc does not predict LB**. v6h had the best offline (+0.002)
-   but the worst LB (−0.017). We should submit more models to LB even when
-   offline metrics look flat or slightly worse (e.g., v6b waveform MixUp).
+### The problem with our current validation
 
-2. **LSEHead > AttHead for our setup**. The simpler smooth-max beats learned
-   attention on LB, likely because it can't overfit and our data is limited.
+Our 90/10 split creates a validation set that's 97% focal recordings and 3%
+soundscape segments. The `val/auroc` metric is dominated by focal performance —
+how well the model recognizes clean single-species recordings. But the LB tests
+soundscape performance — noisy multi-species recordings.
 
-3. **Don't change multiple variables at once**. Phase D changed head + window +
-   batch size simultaneously, making it impossible to isolate the multi-context
-   effect. Phase E changes only window_duration.
+This means: improvements in `val/auroc` often don't translate to LB improvements.
+We've seen this across 15+ experiments — the offline/LB disconnect is systematic.
 
-4. **The competition standard isn't always right for us**. AttHead with dual
-   supervision is used by winning solutions, but our implementation underperforms
-   LSEHead. The specific implementation details matter (tanh, sigmoid, loss path).
+### The fix: separate metrics
 
-5. **Context comes from the backbone, not the head**. hengck23's approach feeds
-   longer audio to the backbone (so convolutions see more context) but keeps the
-   head operating at 5s resolution. This is fundamentally different from making
-   the head aggregate over longer periods.
+Dual validation tracks two separate AUC metrics during training:
+
+- **`val/auroc`**: AUC on focal validation recordings (training stability signal)
+- **`val_sc/auroc`**: AUC on soundscape validation segments (LB proxy)
+
+The checkpoint is selected based on `val_sc/auroc` — the model version that
+performs best on soundscapes (our target domain) gets submitted to Kaggle.
+
+Implementation: the data module returns two separate val dataloaders (focal and
+soundscape), and the Lightning module dispatches to separate metric sets based
+on `dataloader_idx`.
+
+**Result**: The corrected val_sc/auroc reaches 0.956 (vs broken 0.094 before the
+fix). However, the soundscape-selected checkpoint (epoch 17) scored **0.897 LB** —
+worse than the original v5j (0.903, epoch 19). Soundscape AUC does not improve
+checkpoint selection for LB, at least with only 86 val segments from 8 files.
+The val set is too small and too site-biased (Site 22 dominates) to reliably
+predict LB performance.
+
+---
+
+## 11. Key Lessons (exps 016–026)
+
+1. **Only input representation and inference-time changes improve LB.** 20+
+   training recipe changes (loss, augmentation, head, regularization, window
+   length, pseudo-labels) have zero successes. Every positive LB delta came from
+   mel processing, backbone choice, post-processing, or ensembling.
+
+2. **Offline metrics are actively misleading.** Models with the best offline
+   numbers consistently score worst on LB. v9c (20s AttHead) had the best-ever
+   cmap (0.681) and top1 (0.862) but scored 0.878 LB — the worst single-model
+   result in exp 026. The offline/LB anti-correlation is not noise; it's
+   systematic. DO NOT use offline metrics to decide what to submit.
+
+3. **LSEHead > AttHead at ALL window sizes tested.** AttHead regressed on LB in
+   every experiment: 7 times at 5s (exp 021), 3 more times at 10/15/20s (exp 026).
+   The hypothesis that AttHead would shine at longer windows was wrong — or at
+   least, it can't be tested fairly without fixing the inference pipeline.
+
+4. **Train/inference window mismatch invalidates longer-window experiments.**
+   We train on 10-20s but always infer on 5s segments. LSEHead tolerates this
+   (fixed smooth-max, mild -0.010 regression). AttHead does not tolerate it
+   (learned attention calibrated for wrong sequence length, severe -0.025 to
+   -0.035 regression). Until we implement matching-window inference, all
+   longer-window experiments are handicapped.
+
+5. **The v5j recipe is an island.** Every perturbation in any direction regresses.
+   5s → longer: regresses. LSEHead → AttHead: regresses. BCE → CE: regresses.
+   Spectrogram MixUp → waveform: regresses offline (untested on LB). Pseudo-labels:
+   regresses. Soundscape checkpoint selection: regresses. The recipe found an
+   accidental optimum that we can't improve by local search.
 
 6. **AmplitudeToDB normalization is a major lever** (+0.014 LB). Don't touch it.
 
-7. **The v5j recipe is very strong**. OneCycleLR, per-sample MixUp, BCE, HGNetV2-B0,
-   clipwise-only loss — every ablation from this recipe has regressed.
+7. **The 0.903 → 0.922 gap remains completely unexplained.** Salman achieves
+   0.922 with 20s windows on the same data. We achieve 0.878 with 20s windows.
+   That's a 0.044 gap that can't be attributed to any single factor we've tested.
+   The gap likely comes from multiple interacting differences (inference strategy,
+   loss function, augmentation, crop selection) that we haven't correctly identified.
+
+8. **We need to understand the full competitor pipeline before more experiments.**
+   After 20+ failed ablations, continuing to guess is not productive. The next
+   step should be deep research into what winning BirdCLEF pipelines actually do
+   end-to-end, including the inference kernel — which may be where our real
+   problem lies.
+
+---
+
+## 12. Identified Gaps and Open Questions
+
+Potential improvements we haven't explored yet, ordered by expected impact:
+
+### 1. Random cropping is wasteful (high priority)
+
+With 5s random crops from focal recordings, we catch the bird call only ~11% of
+the time for a species that calls for 5s in a 45s recording. The model wastes most
+training steps on silence-with-positive-labels. Longer windows help (57% at 20s)
+but still miss calls in long recordings.
+
+**Energy-based crop selection**: Instead of random start position, compute the RMS
+energy across the recording and select the window with the highest energy. This
+virtually guarantees the vocalization is in the crop. Competitors may be doing this
+(Salman trains on 20s with "original labels" — may imply smart cropping).
+
+Implementation: compute RMS in `__getitem__` before loading (or precompute and
+cache). Adds CPU cost but dramatically improves label quality.
+
+### 2. Train/inference blend mismatch (medium priority)
+
+v5j trains with `clipwise_weight=1.0, framewise_weight=0.0` but infers with
+`blend_clip=0.75, blend_frame=0.25`. The model was never trained to optimize the
+framewise predictions that contribute 25% of the inference score.
+
+**Fix**: either train with framewise supervision (add `framewise_weight=0.25`) or
+export with `blend_frame=0.0` (clipwise-only inference). The current setup is an
+accidental mismatch that happens to work.
+
+### 3. Soundscape label mismatch with longer windows (low priority, but worth noting)
+
+When loading 20s context around a labeled 5s soundscape segment, the flanking
+15s may contain different species. The label covers only the center 5s, but the
+model sees 20s. With AttHead producing a single prediction over 20s, the
+attention might focus on a flanking species not in the label.
+
+Mitigation: soundscapes are only 2% of training. For multi-chunk approaches
+(hengck23), we COULD load per-chunk labels from the CSV for soundscape segments
+(neighboring 5s segments have their own labels). Not implemented.
+
+### 4. No curriculum or difficulty-aware sampling (speculative)
+
+All focal recordings are sampled uniformly. Species with 5 recordings get the same
+sampling rate as species with 500. A curriculum that oversamples rare species or
+undersamples easy species might help the long-tail problem.
+
+### 5. Negative-class gradient dominance (medium priority)
+
+For a focal recording with 1 positive species, the BCE loss sums over 234 species:
+1 positive + 233 negatives. The negative-class gradients collectively overwhelm
+the positive gradient by ~233:1. The model gets 233 signals saying "push down"
+for every 1 saying "push up."
+
+This has two consequences:
+- **The model is conservative on rare species.** With few positive examples and
+  overwhelming negative pressure, the model learns to predict low probabilities
+  for rare species — contributing to the LB gap on 159 unseen species.
+- **Noisy positive labels are especially damaging.** A false positive (from a bad
+  crop or noisy pseudo-label) adds a strong "push up" signal that fights against
+  233× more "push down" signals from all other samples where that species is
+  absent. The model may learn to just stay low on that species entirely.
+
+Potential fixes: per-species loss weighting (upweight rare species), focal loss
+(downweight easy negatives), or oversampling rare species in the dataloader.
+
+### 6. No per-species loss weighting (medium priority)
+
+All 234 species contribute equally to the loss. A species with 500 focal
+recordings generates ~500× more gradient than one with 1 recording. The 82 species
+with <100 recordings are systematically undertrained relative to common species.
+Competitors may address this with weighted sampling, class-balanced losses, or
+species-specific thresholds.
+
+### 7. Multi-chunk label noise amplification (explains v8b regression)
+
+With multi-chunk training (v8b: 4 chunks for 20s), each chunk gets the file-level
+label. For a focal recording where the bird calls for 5s out of 45s: even when the
+20s crop contains the call, typically only 1 of 4 chunks has it — the other 3
+are silence with a positive label. This means ~75% of chunk-level training signals
+are wrong, which is **worse** than single-chunk v5j where the whole 5s crop either
+has the call or doesn't.
+
+This label noise amplification — not the longer window itself — may be the real
+reason v8b (0.896) underperformed v5j (0.906). **Note**: this problem does NOT
+apply to the AttHead + 20s approach (exp 026 Phase 3), where a single prediction
+covers the full window and attention can learn to ignore silent regions.
+
+### 8. CE loss mystery (open question)
+
+We tested CE loss 6 times and it always regressed. But Salman (0.922) and Boredom
+(#1) both use CE during training with sigmoid at inference. Either our CE
+implementation is wrong (forcing single-label prediction on multi-label data), or
+CE interacts with other choices (window length, augmentation, head type) in ways
+we haven't tested. CE + AttHead + 20s is an untested combination that might work.
+
+---
+
+## 13. Score Progression
+
+| LB | Model | Key Change | Exp |
+|-----|-------|-----------|-----|
+| 0.795 | SED v1 | SED architecture | 016 |
+| 0.859 | SED v4b | + AmplitudeToDB normalization | 017 |
+| 0.892 | v5g | + HGNetV2-B0 backbone | 019 |
+| 0.906 | **v5j** | + NNAudio AmplitudeToDB | 019 |
+| 0.913 | v5j-4fold | + 4-fold ensemble | 019 |
+| 0.917 | v5j-4fold-pp2 | + site/hour priors | 021 |
+| 0.925 | Perch V18 TF | Frozen Perch + MLP probes | 020 |
+| 0.929 | **Perch+SED** | Score-level ensemble (best) | 023 |
+
+Target: 0.948 (#1 position). Gap: 0.019.

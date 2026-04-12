@@ -404,6 +404,28 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-pl-v1",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-pl-v1.json",
     },
+    # Exp 026: v5j + dual validation (soundscape checkpoint selection)
+    "hgnet-b0-sed-v5j-dualval": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-dualval-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-dualval",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-dualval.json",
+    },
+    # Exp 026 Phase 3: AttHead + window length ablation
+    "hgnet-b0-sed-v9a-10s-att": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v9a-10s-att-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v9a-10s-att",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v9a-10s-att.json",
+    },
+    "hgnet-b0-sed-v9b-15s-att": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v9b-15s-att-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v9b-15s-att",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v9b-15s-att.json",
+    },
+    "hgnet-b0-sed-v9c-20s-att": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v9c-20s-att-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v9c-20s-att",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v9c-20s-att.json",
+    },
 }
 
 
