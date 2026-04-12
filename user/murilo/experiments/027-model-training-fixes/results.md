@@ -222,3 +222,25 @@ See: `notes/2026-04-12-salman-ahmed-birdclef2025.md`, `notes/2026-04-12-mario-la
 Matches v5j-dualval (exp 026) closely: val/auroc 0.849 vs 0.849, val_sc/auroc
 0.955 vs 0.956. Pipeline verified — this is the correct baseline for Phase 4
 W&B comparisons.
+
+### v11b (Simple mel normalization)
+
+**Config**: `configs/v11b_melnorm.yaml` — `norm_type="simple_range"`: `(X+80)/80`
+**Changes from v5j**: mel normalization only. Everything else identical.
+**SLURM**: Job 6469719, RTX 6000, ~40min walltime
+**Checkpoint**: epoch 18 (best by val/auroc = 0.852)
+
+| Metric | v5j-control | v11b | Delta |
+|--------|------------|------|-------|
+| val/auroc | 0.849 | 0.847 | -0.002 |
+| val/cmap | 0.596 | 0.599 | +0.003 |
+| val/top1_acc | 0.752 | 0.750 | -0.002 |
+| val/top5_acc | 0.866 | 0.863 | -0.003 |
+| val_sc/auroc | 0.955 | 0.960 | +0.005 |
+| val_sc/cmap | 0.853 | 0.873 | +0.020 |
+| LB | — | pending | — |
+
+**Analysis**: Focal metrics essentially flat (-0.002 auroc). Soundscape metrics
+slightly improved (+0.005 auroc, +0.020 cmap) — but offline soundscape metrics
+have been unreliable. The simple `(X+80)/80` normalization performs comparably to
+our global mean/std pipeline offline. Only LB can tell if it generalizes better.
