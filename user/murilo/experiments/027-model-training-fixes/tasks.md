@@ -68,9 +68,7 @@ spectrogram MixUp (-0.031 vs -0.019 for v6b interpolative waveform).
   - Tested 10s window on v5j (2.5s context each side). No improvement.
   - Existing TTA (±2.5s shifts) already provides similar overlap — redundant.
 
-## Experiment Outcome: CLOSED — ALL HYPOTHESES REJECTED
-
-**Every deep research recommendation tested and failed:**
+## Phases 1-3 Outcome: All deep research hypotheses rejected
 
 | Change | LB | Delta |
 |--------|-----|-------|
@@ -78,26 +76,129 @@ spectrogram MixUp (-0.031 vs -0.019 for v6b interpolative waveform).
 | v10b: additive MixUp + BCE loss | 0.875 | -0.031 |
 | I-1: overlapping window inference | 0.906 | +0.000 |
 
-**Additive MixUp comparison** (all waveform MixUp variants regress):
+Generic "winner technique" recommendations all failed. The path forward requires
+understanding the **specific implementation differences** between our pipeline
+and Salman's 0.922 single model.
 
-| MixUp variant | LB | Delta |
-|--------------|-----|-------|
-| v5j (interpolative spectrogram) | 0.906 | baseline |
-| v6b (interpolative waveform, exp 021) | 0.887 | -0.019 |
-| v10b (additive waveform, exp 027) | 0.875 | -0.031 |
+---
 
-The deep research diagnosis was wrong: our MixUp and CE implementations were
-not "errors" — they were correct choices for our pipeline. The competition
-techniques that work for other teams do not transfer to our specific setup
-(HGNetV2-B0 + LSEHead + focal→soundscape domain shift).
+## Phase 4: Salman-Derived Implementation Changes
 
-**Training recipe changes: 16+ tests, 0 successes.** The evidence is now
-overwhelming. The path to 0.92+ requires either (a) fundamentally different
-approach (not recipe tweaks), or (b) understanding exactly what makes our
-pipeline different from Salman's 0.922 single model.
+Source: Salman Ahmed's BirdCLEF 2025 training notebook + writeup (26th place,
+0.908 LB) + his BirdCLEF 2026 claim of 0.922 single / 0.932 ensemble.
+Reference: `notes/2026-04-12-salman-ahmed-birdclef2025.md`
 
-## Next: Deep research with full experimental context
+These are NOT generic recipe tweaks — they are specific, concrete implementation
+differences from a competitor who achieves 0.922 on this competition. Each change
+addresses a structural pipeline difference, not a hyperparameter variation.
 
-Stop guessing. Conduct targeted research to identify the specific pipeline
-differences between our v5j (0.906) and Salman's 0.922 single model. Focus
-on data-centric and architectural differences, not training recipe variations.
+### Control baseline
+
+- [ ] v5j-control: Exact v5j reproduction in exp 027 W&B project
+  - Config: `configs/v5j_control.yaml` (identical to v5j except W&B project + dual_validation)
+  - Purpose: side-by-side W&B comparison for all Phase 4 runs
+
+### Experiment 4a: Max trick + RMS sampling (HIGHEST PRIORITY)
+
+Salman's most distinctive technique. Fundamentally changes how the model handles
+weak labels — this is NOT a recipe tweak.
+
+**What**: Pick loudest 15s via RMS sampling → split into 3×5s segments →
+model predicts all 3 → take max logits → backpropagate only on the max.
+At inference: standard 5s segments (no change).
+
+```python
+BS, K, C, H, W = spec.size()     # K=3 segments
+spec = spec.view(BS * K, C, H, W)
+logits = model(spec)
+logits = logits.view(BS, K, num_classes)
+logits, _ = torch.max(logits, dim=1)  # max across segments
+```
+
+**Why this is different from all 16+ failed changes**: Every previous change
+modified the loss, augmentation, or head architecture. This changes HOW the
+model selects and learns from training data. The gradient flows only through
+the segment with strongest evidence — silent segments get zero gradient.
+
+Implementation needed:
+- [ ] Add RMS-based crop selection to `SEDFocalDataset.__getitem__()`
+- [ ] Add `max_trick` and `max_trick_factor` params to training config
+- [ ] Modify `training_step()` to reshape (B, K, C, H, W) → (B*K, C, H, W),
+      run forward, reshape back, take max before loss computation
+- [ ] Create `v11a_maxtrick.yaml` config (15s window, max_trick_factor=3)
+- [ ] Train + ONNX export + LB submission
+
+### Experiment 4b: Mel normalization change
+
+**What**: Replace our global mean/std standardization with Salman's simple
+`(X + 80) / 80` normalization that maps [-80, 0] dB range to [0, 1].
+
+**Why test**: Completely different normalization chain. Our pipeline:
+`AmplitudeToDB → subtract mean (-4.268) → divide std (4.569) → min-max [0,1]`.
+Salman's: `AmplitudeToDB → add 80 → divide 80`. Simpler, no dataset statistics.
+
+Implementation needed:
+- [ ] Add `norm_type: "simple_range"` option to NNAudioMelSpectrogram
+- [ ] Create `v11b_melnorm.yaml` config (same as v5j except normalization)
+- [ ] Train + ONNX export + LB submission
+
+### Experiment 4c: Model soup (checkpoint averaging)
+
+**What**: Instead of picking the single best checkpoint, average weights from
+all checkpoints that improve any validation metric (epochs ~12-19).
+
+**Why test**: Both Salman AND Mario (BirdCLEF 2024 2nd place) use this. Zero
+extra training cost — just a post-processing step on existing checkpoints.
+We need `save_top_k=-1` (save all checkpoints) to enable this.
+
+Implementation needed:
+- [ ] Add `save_top_k: -1` option to checkpoint callback in config
+- [ ] Write model soup script (average checkpoints that improve val metrics)
+- [ ] Test on v5j-control checkpoints first (zero training cost)
+- [ ] If effective, apply to best Phase 4 variant
+
+### Experiment 4d: BCE + Focal combined loss
+
+**What**: `loss = BCE(logits, targets) + sigmoid_focal_loss(logits, targets, alpha=0.25, gamma=2)`.
+NOT standalone focal (which failed as ASL), but BCE + Focal combined.
+
+**Why test**: Both Salman and Mario use this exact combination. Different from
+our ASL test (ASL uses asymmetric gamma, probability clipping — different mechanism).
+
+Implementation needed:
+- [ ] Add `loss_type: "bce_focal"` to `_compute_loss()` in sed_finetune.py
+- [ ] Create `v11d_bcefocal.yaml` config
+- [ ] Train + ONNX export + LB submission
+
+### Experiment 4e: Upsampling rare species
+
+**What**: Upsample species with fewer than 15-20 recordings to that threshold
+(with replacement). Salman uses `upsample_data(df, thr=15)`.
+
+**Why test**: Our 82 species with <100 recordings are systematically undertrained.
+Upsampling ensures every species gets minimum representation per epoch.
+
+Implementation needed:
+- [ ] Add upsampling logic to `SEDDataModule.setup()`
+- [ ] Create `v11e_upsample.yaml` config
+- [ ] Train + ONNX export + LB submission
+
+### Execution order
+
+```
+1. v5j-control (baseline for W&B comparison)
+2. v11a: Max trick + RMS sampling (highest structural difference)
+3. v11b: Mel normalization (easy to implement, independent variable)
+4. v11c: Model soup on v5j-control checkpoints (zero training cost)
+5. v11d: BCE + Focal loss (if 4a or 4b show training changes CAN work)
+6. v11e: Upsampling rare species (if 4a or 4b show training changes CAN work)
+```
+
+Test one at a time. If 4a (max trick) succeeds, compound with other changes.
+
+## Success Criteria (Phase 4)
+
+- [ ] v5j-control reproduces ~0.903-0.906 LB (pipeline verification)
+- [ ] Any single Phase 4 variant LB > 0.906 (first training change to improve LB)
+- [ ] Compound best changes → LB > 0.920 (match Salman's single-model level)
+- [ ] Stretch: single model LB > 0.930 (exceed Salman's ensemble)
