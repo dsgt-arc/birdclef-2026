@@ -157,6 +157,23 @@ class NNAudioMelSpectrogram(nn.Module):
 
         return mel
 
+    def _normalize_simple_range(self, mel: torch.Tensor) -> torch.Tensor:
+        """Simple range normalization: (X + 80) / 80.
+
+        Maps AmplitudeToDB output from [-80, 0] to [0, 1].
+        Used by Salman Ahmed (BirdCLEF 2025, 0.908 LB). Simpler than
+        global mean/std — no dataset statistics needed.
+        """
+        # Power-to-dB: 10 * log10(mel + eps), clipped to top_db range
+        mel = 10.0 * torch.log10(mel + 1e-10)
+        mel_max = mel.amax(dim=(-2, -1), keepdim=True)
+        mel = torch.clamp(mel, min=mel_max - self.top_db)
+
+        # Simple range mapping: [-80, 0] → [0, 1]
+        mel = (mel + self.top_db) / self.top_db
+
+        return mel
+
     def _normalize_pcen_amp2db(self, mel: torch.Tensor) -> torch.Tensor:
         """PCEN → AmplitudeToDB → standardize → min-max [0,1].
 
@@ -210,6 +227,8 @@ class NNAudioMelSpectrogram(nn.Module):
         # Normalize
         if self.norm_type == "amplitude_to_db":
             mel = self._normalize_amplitude_to_db(mel)
+        elif self.norm_type == "simple_range":
+            mel = self._normalize_simple_range(mel)
         elif self.norm_type == "pcen":
             mel = self._normalize_pcen(mel)
         elif self.norm_type == "pcen_amp2db":

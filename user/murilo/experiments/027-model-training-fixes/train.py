@@ -197,7 +197,16 @@ def main():
         if hop_length is None:
             frame_shift_ms = mel_cfg.get("frame_shift_ms", 10)
             hop_length = int(frame_shift_ms / 1000.0 * sample_rate)
-        target_frames = int(window_duration * sample_rate / hop_length)
+        # With max trick, mel is computed per 5s segment, not the full window
+        max_trick_factor = config["training"].get("max_trick_factor", 1)
+        if config["training"].get("max_trick", False) and max_trick_factor > 1:
+            segment_duration = window_duration / max_trick_factor
+            target_frames = int(segment_duration * sample_rate / hop_length)
+            logger.info(
+                f"Max trick: mel target_frames={target_frames} ({segment_duration}s segments)"
+            )
+        else:
+            target_frames = int(window_duration * sample_rate / hop_length)
 
         norm_type = mel_cfg.get("norm_type", "audioset")
         audio_transform = NNAudioMelSpectrogram(
@@ -292,6 +301,8 @@ def main():
         onecycle_div_factor=training_cfg.get("onecycle_div_factor", 25.0),
         onecycle_final_div_factor=training_cfg.get("onecycle_final_div_factor", 4.0),
         dual_validation=config["data"].get("dual_validation", False),
+        max_trick=training_cfg.get("max_trick", False),
+        max_trick_factor=training_cfg.get("max_trick_factor", 3),
     )
 
     # ========================================================================
@@ -333,6 +344,7 @@ def main():
         fold_id=fold_id,
         fold_assignments_path=str(fold_assignments_path) if fold_assignments_path else None,
         dual_validation=config["data"].get("dual_validation", False),
+        rms_sampling=training_cfg.get("rms_sampling", False),
     )
 
     # ========================================================================
