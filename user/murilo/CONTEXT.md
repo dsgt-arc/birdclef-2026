@@ -40,36 +40,34 @@ Read ALL of these at session start to get full context.
 
 ## What happened in this session (2026-04-12)
 
-### Exp 027: Model Training Fixes — IN PROGRESS
+### Exp 027: Model Training Fixes — TRAINING COMPLETE, AWAITING LB
 
-Based on deep research findings (2026-04-11), implemented two fixes to the
-training recipe that both Claude and Gemini identified as fundamental errors:
+Implemented two fixes based on deep research (2026-04-11):
+1. **Additive waveform MixUp**: `mixup_mode="additive"` — `x1 + x2` with `max(y1, y2)`
+2. **CE loss on primary label**: `loss_type="ce"` on `primary_idx`, sigmoid at inference
 
-**Fix 1: Additive waveform MixUp**
-- Added `mixup_mode="additive"` parameter to `SEDFinetuneModule` (backward
-  compatible, default `"interpolate"` preserves all existing experiments)
-- Changed from `λ*x1 + (1-λ)*x2` with weighted labels to `x1 + x2` with
-  `max(y1, y2)` — physically correct audio superposition
-- Applied on raw waveforms before mel conversion (`raw_waveform_mixup=true`)
+**Training results** (job 6439641, RTX 6000, 38m51s):
 
-**Fix 2: CE loss on primary label**
-- Config uses existing `loss_type="ce"` which applies `F.cross_entropy` on
-  `primary_idx` (single ground-truth class per sample, softmax over 234 species)
-- Inference already uses sigmoid via `_blended_probs` — this is the CE-train /
-  sigmoid-infer paradigm from BirdCLEF 2024 1st place (+0.044 LB)
+| Metric | v5j (exp 019) | v5j-dualval (exp 026) | v10a (exp 027) |
+|--------|--------------|----------------------|----------------|
+| val/auroc | 0.874 | 0.849 | 0.835 |
+| val/cmap | — | 0.596 | 0.571 |
+| val_sc/auroc | — | 0.956 | 0.863 |
+| LB | **0.903** | 0.897 | **pending** |
 
-**Fast-dev-run verified** (job 6439254): CE loss=5.454 (matches log(234)≈5.46
-for random softmax init), both val dataloaders fire, waveform mixup before mel
-confirmed. Everything working correctly.
+Focal metrics lower than v5j — expected with CE (different logit calibration).
+Only the LB score can tell us if the fixes actually help.
 
-**Full training run submitted** — awaiting completion. Next: check metrics,
-ONNX export, Kaggle submission.
+**Checkpoint decision**: Using `last.ckpt` (epoch 19) for ONNX export.
+Per-epoch TensorBoard analysis shows val/auroc peaks at epoch 18 (0.839),
+epoch 19 within noise (0.835). Matches v5j protocol. Config updated to
+monitor val/auroc instead of val_sc/auroc for future runs.
 
 ### Git operations
 
-- Committed + pushed exp 026 artifacts, squash-merged PR #28 into main
-- Created branch `mg/027-model-training-fixes` from main
-- Committed exp 027 scaffold + src change, pushed, opened PR #30
+- Squash-merged PR #28 (exp 026) into main
+- Created branch `mg/027-model-training-fixes`, opened PR #30
+- Recorded v10a metrics, fixed checkpoint monitor, all pushed
 
 ## What needs to happen next
 
