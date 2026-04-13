@@ -579,6 +579,109 @@ class StratifiedBatchSampler(torch.utils.data.Sampler):
         )
 
 
+class PseudoLabelMixingDataset(Dataset):
+    """Wraps a GT dataset to mix pseudo-labeled soundscape audio into waveforms.
+
+    Mario Lasseck's approach (BirdCLEF 2024 2nd place): each training sample
+    has a probability of being overlaid with a random pseudo-labeled soundscape
+    segment at the waveform level. Both waveforms are independently amplitude-
+    scaled before addition. Labels are combined via element-wise maximum.
+
+    This simultaneously provides:
+    1. Noise augmentation — focal recordings acquire target-domain background
+    2. Data extension — model sees soundscape species absent from focal data
+    3. Knowledge distillation — ensemble predictions transfer to student
+
+    Returns standard 3-tuple (waveform, labels, primary_idx) — no changes
+    to the downstream training pipeline.
+    """
+
+    def __init__(
+        self,
+        dataset: Dataset,
+        soundscape_dir: str | Path,
+        pseudo_labels_df: pd.DataFrame,
+        species_list: list[str],
+        sample_rate: int = 32000,
+        target_duration: float = 5.0,
+        mix_chance: float = 0.30,
+        amp_exp_min: float = -0.5,
+        amp_exp_max: float = 0.1,
+    ):
+        super().__init__()
+        self.dataset = dataset
+        self.soundscape_dir = Path(soundscape_dir)
+        self.species_list = species_list
+        self.num_classes = len(species_list)
+        self.sample_rate = sample_rate
+        self.target_samples = int(target_duration * sample_rate)
+        self.mix_chance = mix_chance
+        self.amp_exp_min = amp_exp_min
+        self.amp_exp_max = amp_exp_max
+
+        # Pre-extract labels matrix for fast __getitem__ (same as PseudoLabelSoundscapeDataset)
+        self.labels_matrix = pseudo_labels_df[species_list].values.astype(np.float32)
+
+        # Build segment index: (audio_path, start_sample) per row
+        self.segments = []
+        for _, row in pseudo_labels_df.iterrows():
+            audio_path = str(self.soundscape_dir / row["filename"])
+            start_sample = int(int(row["chunk_idx"]) * target_duration * sample_rate)
+            self.segments.append((audio_path, start_sample))
+
+        self.n_pl = len(self.segments)
+        logger.info(
+            f"PseudoLabelMixingDataset: wrapping {len(dataset)} GT samples "
+            f"with {self.n_pl} PL segments, mix_chance={mix_chance}"
+        )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        waveform, label_vec, primary_idx = self.dataset[idx]
+
+        if py_random.random() < self.mix_chance and self.n_pl > 0:
+            # Pick a random PL segment
+            pl_idx = py_random.randint(0, self.n_pl - 1)
+            audio_path, start_sample = self.segments[pl_idx]
+
+            # Load 5s PL audio from soundscape file
+            pl_waveform = _load_audio_chunk(
+                audio_path,
+                self.sample_rate,
+                start_sample=start_sample,
+                num_samples=self.target_samples,
+            )
+
+            # Pad PL if at file boundary
+            if pl_waveform.shape[0] < self.target_samples:
+                pl_waveform = torch.nn.functional.pad(
+                    pl_waveform, (0, self.target_samples - pl_waveform.shape[0])
+                )
+
+            # Match lengths (no-op when both are 5s/160000 samples)
+            gt_len = waveform.shape[0]
+            pl_len = pl_waveform.shape[0]
+            if pl_len < gt_len:
+                pl_waveform = torch.nn.functional.pad(pl_waveform, (0, gt_len - pl_len))
+            elif pl_len > gt_len:
+                pl_waveform = pl_waveform[:gt_len]
+
+            # Random amplitude factors (log10 scale)
+            amp_focal = 10 ** py_random.uniform(self.amp_exp_min, self.amp_exp_max)
+            amp_pl = 10 ** py_random.uniform(self.amp_exp_min, self.amp_exp_max)
+
+            # Additive waveform mixing
+            waveform = amp_focal * waveform + amp_pl * pl_waveform
+
+            # Label fusion: element-wise maximum
+            pl_labels = torch.from_numpy(self.labels_matrix[pl_idx].copy())
+            label_vec = torch.maximum(label_vec, pl_labels)
+
+        return waveform, label_vec, primary_idx
+
+
 # ============================================================================
 # DataModule
 # ============================================================================
@@ -619,6 +722,11 @@ class SEDDataModule(pl.LightningDataModule):
         dual_validation: bool = False,
         # RMS sampling (exp 027 Phase 4): select loudest window instead of random
         rms_sampling: bool = False,
+        # Phase C: Waveform mixing of pseudo-labels into GT samples (exp 025)
+        pseudo_label_mix_path: str | Path | None = None,
+        pseudo_label_mix_chance: float = 0.30,
+        pseudo_label_mix_amp_exp_min: float = -0.5,
+        pseudo_label_mix_amp_exp_max: float = 0.1,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["transform", "eval_transform"])
@@ -646,6 +754,11 @@ class SEDDataModule(pl.LightningDataModule):
         self.pseudo_label_batch_fraction = pseudo_label_batch_fraction
         self.dual_validation = dual_validation
         self.rms_sampling = rms_sampling
+        # Phase C: Waveform mixing (exp 025)
+        self.pseudo_label_mix_path = Path(pseudo_label_mix_path) if pseudo_label_mix_path else None
+        self.pseudo_label_mix_chance = pseudo_label_mix_chance
+        self.pseudo_label_mix_amp_exp_min = pseudo_label_mix_amp_exp_min
+        self.pseudo_label_mix_amp_exp_max = pseudo_label_mix_amp_exp_max
 
         # Build species lists
         self.species_list = build_full_species_list(taxonomy_csv)
@@ -840,6 +953,42 @@ class SEDDataModule(pl.LightningDataModule):
             logger.info(
                 f"  Batch composition: {self.pseudo_label_batch_fraction:.0%} PL, "
                 f"loss_weight={self.pseudo_label_weight}"
+            )
+        # --- Phase C: Pseudo-label waveform mixing (exp 025 Phase C) ---
+        elif self.pseudo_label_mix_path is not None:
+            pl_mix_df = pd.read_parquet(self.pseudo_label_mix_path)
+            logger.info(
+                f"Loaded pseudo-labels for mixing: {len(pl_mix_df)} segments "
+                f"from {self.pseudo_label_mix_path}"
+            )
+
+            # Fold leakage prevention: exclude validation soundscape files
+            if use_fold and has_val:
+                val_files = set(sc_val_df["filename"].unique())
+                before = len(pl_mix_df)
+                pl_mix_df = pl_mix_df[~pl_mix_df["filename"].isin(val_files)].reset_index(drop=True)
+                logger.info(
+                    f"  Excluded {before - len(pl_mix_df)} val segments "
+                    f"(fold {self.fold_id}), {len(pl_mix_df)} remain"
+                )
+
+            self.train_dataset = PseudoLabelMixingDataset(
+                dataset=gt_train,
+                soundscape_dir=str(soundscape_dir),
+                pseudo_labels_df=pl_mix_df,
+                species_list=self.species_list,
+                sample_rate=self.sample_rate,
+                target_duration=5.0,
+                mix_chance=self.pseudo_label_mix_chance,
+                amp_exp_min=self.pseudo_label_mix_amp_exp_min,
+                amp_exp_max=self.pseudo_label_mix_amp_exp_max,
+            )
+
+            logger.info(
+                f"  Waveform mixing: {len(gt_train)} GT samples + {len(pl_mix_df)} PL pool, "
+                f"mix_chance={self.pseudo_label_mix_chance}, "
+                f"amp_range=[{self.pseudo_label_mix_amp_exp_min}, "
+                f"{self.pseudo_label_mix_amp_exp_max}]"
             )
         else:
             self.train_dataset = gt_train

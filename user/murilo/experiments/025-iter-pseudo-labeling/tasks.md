@@ -128,20 +128,20 @@ Wrapper around the existing GT training dataset. On each `__getitem__`:
 - With probability `pl_mix_chance`, load random PL segment + amplitude mix
 - Return mixed (or unmixed) sample as standard 3-tuple
 
-- [ ] Create `PseudoLabelMixingDataset` class in `src/birdclef/data/sed.py`
-- [ ] Pre-load PL segment index from parquet (file paths + start times + soft labels)
-- [ ] Implement amplitude-controlled waveform mixing:
+- [x] Create `PseudoLabelMixingDataset` class in `src/birdclef/data/sed.py`
+- [x] Pre-load PL segment index from parquet (file paths + start times + soft labels)
+- [x] Implement amplitude-controlled waveform mixing:
   ```python
   amp_focal = 10 ** random.uniform(amp_exp_min, amp_exp_max)
   amp_pl = 10 ** random.uniform(amp_exp_min, amp_exp_max)
   mixed = amp_focal * focal_waveform + amp_pl * pl_waveform
   mixed_label = torch.maximum(focal_label, pl_soft_labels)
   ```
-- [ ] Wire into SEDDataModule when `pseudo_label_mix` config is present
+- [x] Wire into SEDDataModule when `pseudo_label_mix` config is present
 
 ### C.2: Create config and train
 
-- [ ] Create `configs/v3_waveform_mix.yaml`:
+- [x] Create `configs/v3_waveform_mix.yaml`:
   - v5j recipe (BCE, LSEHead, spectrogram MixUp, 20 epochs)
   - PL waveform mixing at 30% probability
   - Amplitude range: [-0.5, 0.1] (log10 scale)

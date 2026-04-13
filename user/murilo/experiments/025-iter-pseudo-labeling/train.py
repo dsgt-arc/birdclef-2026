@@ -319,6 +319,10 @@ def main():
         config["data"]["soundscape_test_files"] = 0
         logger.info(f"Fold mode: fold_id={fold_id}, assignments={fold_assignments_path}")
 
+    # Phase C: Waveform mixing config (reads from data.pseudo_label_mix section)
+    pl_mix_cfg = config["data"].get("pseudo_label_mix", {})
+    pl_mix_path = pl_mix_cfg.get("path")
+
     data_module = SEDDataModule(
         data_dir=str(data_dir),
         taxonomy_csv=str(taxonomy_csv),
@@ -335,10 +339,15 @@ def main():
         eval_transform=eval_transform,
         fold_id=fold_id,
         fold_assignments_path=str(fold_assignments_path) if fold_assignments_path else None,
-        # Pseudo-label support (exp 025)
+        # Phase B: Pseudo-label row addition (exp 025 Phase B)
         pseudo_label_path=args.pseudo_label_path,
         pseudo_label_weight=config["data"].get("pseudo_label_weight", 0.5),
         pseudo_label_batch_fraction=config["data"].get("pseudo_label_batch_fraction", 0.5),
+        # Phase C: Pseudo-label waveform mixing (exp 025 Phase C)
+        pseudo_label_mix_path=pl_mix_path,
+        pseudo_label_mix_chance=pl_mix_cfg.get("mix_chance", 0.30),
+        pseudo_label_mix_amp_exp_min=pl_mix_cfg.get("amp_exp_min", -0.5),
+        pseudo_label_mix_amp_exp_max=pl_mix_cfg.get("amp_exp_max", 0.1),
     )
 
     # ========================================================================
