@@ -546,6 +546,43 @@ All Phase 3 jobs ran with old broken val_sc/auroc (~0.093). Compare using val/au
 All AttHead models regressed on LB despite best-ever offline metrics. Train/inference
 window mismatch (train on 10-20s, infer on 5s) likely causes attention calibration issues.
 
+## Experiment 027: Model Training Fixes
+
+Fix two implementation errors identified by deep research: additive waveform MixUp
+(x1+x2 with max labels) and CE loss on primary label (sigmoid at inference).
+
+| Slug | Loss | MixUp | val/auroc | val/cmap | val_sc/auroc | LB | Checkpoint |
+|------|------|-------|-----------|----------|-------------|-----|------------|
+| `v10a-addmix-ce` | CE | additive wfm | 0.835 | 0.571 | 0.863 | **0.494** | `027-.../last.ckpt` (ep19) |
+| `v10b-addmix-bce` | BCE | additive wfm | 0.844 | 0.592 | 0.966 | **0.875** | `027-.../best-epochepoch=17.ckpt` |
+
+**v10a = 0.494 LB (catastrophic).** CE logits have ~1 unit spread centered at zero;
+sigmoid maps all 234 species to ~0.50 → random on soundscapes. CE is now confirmed
+dead (7 tests, 0 successes). Root cause: CE optimizes relative ranking (softmax),
+not absolute magnitudes; logits lack safety margin for focal→soundscape domain shift.
+See `027-model-training-fixes/results.md` for full analysis.
+
+**v10b = 0.875 LB (-0.031).** Additive waveform MixUp regresses even with BCE.
+Worse than interpolative waveform MixUp (v6b = 0.887). All waveform MixUp variants
+regress vs spectrogram MixUp. Offline val_sc/auroc improved +0.010 but LB regressed
+-0.031 — offline metrics anti-correlated with LB again.
+
+### I-1: v5j-10s (overlapping window inference, no retraining)
+
+Tested 10s inference window on v5j (2.5s context each side). LB = **0.906** — flat vs
+v5j baseline (0.906). Existing TTA (±2.5s shifts) already provides similar overlap.
+Inference-only change, no new model.
+
+### Phase 4: Salman-derived structural changes
+
+| Slug | Change | val/auroc | val/cmap | val_sc/auroc | LB | Checkpoint |
+|------|--------|-----------|----------|-------------|-----|------------|
+| `v5j-control` | v5j baseline (W&B control) | 0.849 | 0.596 | 0.955 | — | `027-.../best-epochepoch=14.ckpt` |
+| `v11a-maxtrick` | max trick + RMS sampling | 0.804 | 0.516 | 0.953 | — | `027-.../best-epochepoch=18.ckpt` |
+| `v11b-melnorm` | simple mel norm (X+80)/80 | 0.847 | 0.599 | 0.960 | **0.895** | `027-.../best-epochepoch=18.ckpt` |
+
+v5j-control matches v5j-dualval (exp 026): val/auroc 0.849 vs 0.849. Pipeline verified.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

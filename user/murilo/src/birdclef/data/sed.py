@@ -224,6 +224,7 @@ class SEDFocalDataset(Dataset):
         sample_rate: int = 32000,
         window_duration: float = 10.0,
         transform=None,
+        rms_sampling: bool = False,
     ):
         self.audio_dir = Path(audio_dir).expanduser()
         self.species_list = species_list
@@ -233,6 +234,7 @@ class SEDFocalDataset(Dataset):
         self.window_duration = window_duration
         self.window_samples = int(window_duration * sample_rate)
         self.transform = transform
+        self.rms_sampling = rms_sampling
 
         # Store per-recording metadata (not pre-chunked)
         self.recordings = []
@@ -284,11 +286,40 @@ class SEDFocalDataset(Dataset):
     def __len__(self):
         return len(self.recordings)
 
+    def _rms_start(self, audio_path: str, total_samples: int) -> int:
+        """Find the start position of the loudest window via RMS energy.
+
+        Scans with 1-second stride (matching Salman's implementation).
+        Falls back to random start if the file is shorter than the window.
+        """
+        if total_samples <= self.window_samples:
+            return 0
+
+        # Load the full recording for RMS scanning
+        full_audio = _load_audio_chunk(audio_path, self.sample_rate)
+        if full_audio.shape[0] <= self.window_samples:
+            return 0
+
+        stride = self.sample_rate  # 1-second stride
+        best_rms = 0.0
+        best_start = 0
+        audio_np = full_audio.numpy()
+
+        for start in range(0, len(audio_np) - self.window_samples + 1, stride):
+            window = audio_np[start : start + self.window_samples]
+            rms = float(np.sqrt(np.mean(window**2)))
+            if rms > best_rms:
+                best_rms = rms
+                best_start = start
+
+        return best_start
+
     def __getitem__(self, idx):
         audio_path, total_samples, label_vec, primary_idx = self.recordings[idx]
 
-        # Random start position for the window
-        if total_samples > self.window_samples:
+        if self.rms_sampling:
+            start_sample = self._rms_start(audio_path, total_samples)
+        elif total_samples > self.window_samples:
             start_sample = py_random.randint(0, total_samples - self.window_samples)
         else:
             start_sample = 0
@@ -586,6 +617,8 @@ class SEDDataModule(pl.LightningDataModule):
         pseudo_label_batch_fraction: float = 0.5,
         # Dual validation (exp 026): separate focal and soundscape val dataloaders
         dual_validation: bool = False,
+        # RMS sampling (exp 027 Phase 4): select loudest window instead of random
+        rms_sampling: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["transform", "eval_transform"])
@@ -612,6 +645,7 @@ class SEDDataModule(pl.LightningDataModule):
         self.pseudo_label_weight = pseudo_label_weight
         self.pseudo_label_batch_fraction = pseudo_label_batch_fraction
         self.dual_validation = dual_validation
+        self.rms_sampling = rms_sampling
 
         # Build species lists
         self.species_list = build_full_species_list(taxonomy_csv)
@@ -686,6 +720,7 @@ class SEDDataModule(pl.LightningDataModule):
             sample_rate=self.sample_rate,
             window_duration=self.window_duration,
             transform=self.transform,
+            rms_sampling=self.rms_sampling,
         )
         # Remap 206→234
         focal_train = FocalDataset234(focal_train_206, self.species_206, self.species_list)

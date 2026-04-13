@@ -378,6 +378,9 @@ def main():
         elif norm_type == "amplitude_to_db":
             mel_config["top_db"] = mel_cfg.get("top_db", 80.0)
             logger.info(f"Mel normalization: amplitude_to_db (top_db={mel_config['top_db']})")
+        elif norm_type == "simple_range":
+            mel_config["top_db"] = mel_cfg.get("top_db", 80.0)
+            logger.info(f"Mel normalization: simple_range (top_db={mel_config['top_db']})")
     mel_config_path = output_dir / "mel_config.json"
     with open(mel_config_path, "w") as f:
         json.dump(mel_config, f, indent=2)

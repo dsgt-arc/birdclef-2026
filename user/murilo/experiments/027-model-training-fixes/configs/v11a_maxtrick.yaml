@@ -1,0 +1,104 @@
+# Experiment 027, v11a: Max trick + RMS sampling (Salman 2025 technique)
+#
+# Fundamentally different training paradigm from v5j:
+# - RMS sampling: pick the loudest 15s window instead of random crop
+# - Max trick: split 15s into 3×5s, forward all 3, backprop on max logits
+# - Gradient flows only through the segment with strongest bird evidence
+#
+# This is NOT a recipe tweak — it changes HOW the model handles weak labels.
+# Salman used this to achieve 0.865-0.872 single model (BirdCLEF 2025).
+#
+# Everything else matches v5j: HGNetV2-B0, LSEHead, BCE, spectrogram MixUp.
+# Batch size reduced to 32 (from 64) because max trick 3× the effective
+# batch through the backbone (32 × 3 = 96 effective forward passes).
+#
+# Baseline: v5j (exp 019) = 0.906 LB
+# Target: > 0.906 LB (first training change to improve LB)
+
+run_name: "2026-exp027-v11a-maxtrick"
+
+encoder:
+  type: "efficientnet"
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"
+  pretrained: true
+  embed_dim: 1024
+
+sed_head:
+  type: "lse_head"
+  hidden_dim: 1024
+  dropout: 0.5
+  gem_p: 3.0
+  lse_temperature: 1.0
+  freq_pool: "mean"
+
+mel:
+  n_fft: 2048
+  hop_length: 313
+  n_mels: 256
+  fmax: null
+  top_db: 80.0
+  norm_type: "amplitude_to_db"
+  gpu: true
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 15.0              # 15s = 3 × 5s segments for max trick
+  batch_size: 32                     # reduced: 32 × 3 = 96 effective passes
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 8
+  soundscape_test_files: 0
+  seed: 42
+  dual_validation: true
+
+training:
+  max_epochs: 20
+  lr: 5.0e-4
+  head_lr: 5.0e-4
+  weight_decay: 1.0e-4
+  warmup_epochs: 5
+  threshold: 0.5
+  grad_clip_val: 0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+  clipwise_weight: 1.0
+  framewise_weight: 0.0
+  blend_clip: 1.0
+  blend_frame: 0.0
+  loss_type: "bce"
+  # --- Max trick (Salman 2025) ---
+  max_trick: true
+  max_trick_factor: 3                # 3 segments of 5s = 15s total
+  rms_sampling: true                 # pick loudest window via RMS energy
+  # --- Standard spectrogram MixUp (same as v5j) ---
+  mixup_prob: 1.0
+  mixup_alpha: 1.0
+  mixup_warmup_epochs: 5
+  mixup_theta: 0.8
+  mixup_per_sample: true
+  # --- Scheduler (unchanged from v5j) ---
+  scheduler_type: "one_cycle"
+  onecycle_div_factor: 25.0
+  onecycle_final_div_factor: 4.0
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/auroc"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/auroc"
+    mode: "max"
+    patience: 999
+    min_delta: 0.0
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp027"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

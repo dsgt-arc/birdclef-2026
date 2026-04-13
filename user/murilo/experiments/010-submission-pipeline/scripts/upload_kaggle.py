@@ -426,6 +426,30 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v9c-20s-att",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v9c-20s-att.json",
     },
+    # Exp 027: v5j with 10s overlapping window inference (inference-only change)
+    "hgnet-b0-sed-v5j-10s": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-10s-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-10s",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-10s.json",
+    },
+    # Exp 027: v11b simple mel normalization
+    "hgnet-b0-sed-v11b-exp027": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v11b-exp027-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v11b-exp027",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v11b-exp027.json",
+    },
+    # Exp 027: v10a additive MixUp + CE loss
+    "hgnet-b0-sed-v10a-exp027": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v10a-exp027-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v10a-exp027",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v10a-exp027.json",
+    },
+    # Exp 027: v10b additive MixUp + BCE (isolate MixUp fix)
+    "hgnet-b0-sed-v10b-exp027": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v10b-exp027-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v10b-exp027",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v10b-exp027.json",
+    },
 }
 
 
@@ -463,6 +487,10 @@ def run_cmd(cmd: list[str], dry_run: bool = False) -> bool:
         combined = e.stdout + e.stderr
         if "already exists" in combined or "already in use" in combined or "403" in combined:
             return False
+        # 400 on datasets version = duplicate/unchanged files — treat as success
+        if "400" in combined and "datasets" in " ".join(cmd) and "version" in " ".join(cmd):
+            print("  Dataset unchanged (400) — already up to date.")
+            return True
         if e.stdout:
             print(f"  stdout: {e.stdout.strip()}")
         if e.stderr:
@@ -620,8 +648,12 @@ def main():
         models = [args.model]
 
     # Upload deps dataset (shared across all models)
+    # Non-fatal: deps rarely change, and duplicate version uploads get 400 errors
     deps_path = experiment_dir / DEPS_DIR
-    upload_dataset(DEPS_SLUG, deps_path, args.kaggle_user, args.dry_run)
+    try:
+        upload_dataset(DEPS_SLUG, deps_path, args.kaggle_user, args.dry_run)
+    except subprocess.CalledProcessError:
+        print("  Deps upload failed (likely unchanged). Continuing...")
 
     # Upload model weights + push kernels
     for model_name in models:

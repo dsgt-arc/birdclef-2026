@@ -91,6 +91,13 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 027 Phase 4: Salman-derived changes
+    "birdclef-2026-hgnet-b0-sed-v11b-exp027-weights",
+    # Exp 027: v5j with 10s overlapping window inference
+    "birdclef-2026-hgnet-b0-sed-v5j-10s-weights",
+    # Exp 027: additive MixUp ablations
+    "birdclef-2026-hgnet-b0-sed-v10b-exp027-weights",
+    "birdclef-2026-hgnet-b0-sed-v10a-exp027-weights",
     # Exp 026 Phase 3: AttHead + window length ablation
     "birdclef-2026-hgnet-b0-sed-v9c-20s-att-weights",
     "birdclef-2026-hgnet-b0-sed-v9b-15s-att-weights",
@@ -327,6 +334,46 @@ def compute_mel_amplitude_to_db(audio, mel_cfg):
     mel_min = mel_norm.min()
     mel_max = mel_norm.max()
     mel_norm = (mel_norm - mel_min) / (mel_max - mel_min + 1e-6)
+
+    # Pad/trim to target frames
+    target_frames = mel_cfg.get("target_frames", 1000)
+    T = mel_norm.shape[1]
+    if T > target_frames:
+        start = (T - target_frames) // 2
+        mel_norm = mel_norm[:, start : start + target_frames]
+    elif T < target_frames:
+        mel_norm = np.pad(mel_norm, ((0, 0), (0, target_frames - T)), mode="constant")
+
+    return mel_norm[np.newaxis, np.newaxis, :, :].astype(np.float32)
+
+
+def compute_mel_simple_range(audio, mel_cfg):
+    """Compute mel spectrogram with simple range normalization: (X + 80) / 80.
+
+    Maps AmplitudeToDB output from [-80, 0] to [0, 1]. Used by Salman Ahmed
+    (BirdCLEF 2025). Simpler than global mean/std — no dataset statistics needed.
+    """
+    mel = librosa.feature.melspectrogram(
+        y=audio,
+        sr=mel_cfg["sr"],
+        n_fft=mel_cfg["n_fft"],
+        hop_length=mel_cfg["hop_length"],
+        n_mels=mel_cfg["n_mels"],
+        fmin=mel_cfg.get("fmin", 0),
+        fmax=mel_cfg.get("fmax"),
+        htk=mel_cfg.get("htk", True),
+        power=2.0,
+    )
+    # Power-to-dB: 10 * log10(mel + eps)
+    mel_db = 10.0 * np.log10(np.maximum(mel, 1e-10))
+
+    # top_db clipping
+    top_db = mel_cfg.get("top_db", 80.0)
+    mel_max = mel_db.max()
+    mel_db = np.maximum(mel_db, mel_max - top_db)
+
+    # Simple range normalization: [-top_db, 0] → [0, 1]
+    mel_norm = (mel_db + top_db) / top_db
 
     # Pad/trim to target frames
     target_frames = mel_cfg.get("target_frames", 1000)
@@ -591,6 +638,8 @@ def compute_mel(audio, mel_cfg):
         return compute_mel_pcen_amp2db(audio, mel_cfg)
     elif norm_type == "amplitude_to_db":
         return compute_mel_amplitude_to_db(audio, mel_cfg)
+    elif norm_type == "simple_range":
+        return compute_mel_simple_range(audio, mel_cfg)
     else:
         return compute_mel_standard(audio, mel_cfg)
 
@@ -642,6 +691,12 @@ def compute_full_signal_mel(audio, mel_cfg):
         mel = (mel - mean) / std
         mel_min, mel_max = mel.min(), mel.max()
         mel = (mel - mel_min) / (mel_max - mel_min + 1e-6)
+    elif norm_type == "simple_range":
+        # Simple range: (X + top_db) / top_db → [0, 1]. No dataset stats needed.
+        top_db = mel_cfg.get("top_db", 80.0)
+        mel = 10.0 * np.log10(np.maximum(mel, 1e-10))
+        mel = np.maximum(mel, mel.max() - top_db)
+        mel = (mel + top_db) / top_db
     else:
         mel = np.log(mel + 1e-6)
         mel = (mel - mel_cfg["norm_mean"]) / (mel_cfg["norm_std"] * 2)
@@ -805,6 +860,12 @@ def predict_soundscape_fullsignal(
     inference_window = mel_cfg.get("inference_window", segment_duration)
     context_pad = (inference_window - segment_duration) / 2
     target_frames = mel_cfg.get("target_frames", 1000)
+    # For wider inference windows, compute the actual frame count to slice
+    inference_frames = (
+        int(inference_window * sr / hop_length)
+        if inference_window > segment_duration
+        else target_frames
+    )
     soundscape_id = Path(audio_path).stem
 
     species_2026 = species_mapping["birdclef2026_species"]
@@ -854,7 +915,7 @@ def predict_soundscape_fullsignal(
 
         for shift_start_s, weight in shifts:
             start_frame = origin_frame + int(shift_start_s * sr / hop_length)
-            mel_slice = _slice_mel_window(full_mel, start_frame, target_frames)
+            mel_slice = _slice_mel_window(full_mel, start_frame, inference_frames)
             all_slices.append((segment_idx, weight, mel_slice))
 
         segment_times.append(int(segment_start_s + segment_duration))

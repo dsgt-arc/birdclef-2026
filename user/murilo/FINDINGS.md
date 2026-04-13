@@ -67,13 +67,13 @@ on LB, even when it improved offline val/auroc.
 
 | Change | LB Delta | Times Tested | Exps |
 |--------|----------|-------------|------|
-| CE loss (any variant) | -0.015 to -0.030 | 6x | 016, 017, 021 |
+| CE loss (any variant) | -0.015 to **-0.409** | 7x | 016, 017, 021, **027** |
 | PCEN normalization | **-0.026** | 1x | 022 |
 | Longer window (10s single) | -0.026 | 1x | 019 |
 | Pseudo-labels (student) | -0.005 to -0.024 | 2x | 015 |
 | 3-channel input | -0.020 | 1x | 019 |
 | StochasticDepth | -0.019 | 1x | 017 |
-| Waveform MixUp | -0.006 to -0.019 | 2x | 017, 021 |
+| Waveform MixUp (any variant) | -0.019 to **-0.031** | 3x | 017, 021, **027** |
 | AttHead (any variant) | -0.007 to -0.018 | 7x | 021 |
 | Backbone scaling (HGNet-B2) | -0.017 | 1x | 021 |
 | Waveform augs (noise, stretch) | -0.013 | 1x | 021 |
@@ -254,8 +254,11 @@ Confirmed dead ends -- do not revisit without strong new evidence:
   15+ attempts, 0 successes. The evidence is overwhelming.
 - **PCEN normalization**: -0.026 LB, theoretically motivated but empirically
   rejected. Transforms representation rather than adding information.
-- **CE loss**: tested 6 times, always regresses. BCE is correct for
-  multi-label soundscape prediction.
+- **CE loss**: tested 7 times (incl. exp 027 v10a=0.494), always regresses.
+  Root cause (exp 027): CE optimizes relative ranking (softmax), producing
+  logits ~0 magnitude. Sigmoid maps all species to ~0.50 → random on soundscapes.
+  BCE pushes absent species to logit=-9, robust to domain shift. Competitors
+  succeed with CE via ensembles (min-reduction) or pseudo-labels, not standalone.
 - **AttHead**: tested 7 times across multiple backbones, always regresses.
   LSEHead is the right choice for this pipeline.
 - **Multi-context / longer windows**: tested 5 times, always regresses.

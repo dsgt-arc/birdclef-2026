@@ -109,10 +109,64 @@ Test by dropping Tier C entirely + reducing PL batch fraction from 50% to 25%.
 - If v2-sed-only < 0.901: gradient balance problem → try 10% PL fraction or w=0.2
 - If v2-sed-only < 0.897: v5j recipe can't absorb PL → pivot to inference-time approaches
 
-## Success Criteria
+---
 
-- [x] Round 1 single model (90/10): **>0.906** LB (v5j baseline) — ❌ 0.897 (regressed)
-- [ ] Round 2 SED-only (90/10): **>0.903** LB (at least match baseline)
-- [ ] Round 1 4-fold ensemble: **>0.913** LB (v5j ensemble)
-- [ ] Round 1 + Perch ensemble: **>0.929** LB (current best)
-- [ ] Stretch: **>0.935** LB
+## Phase C: Mario-Style Waveform Mixing (NEW APPROACH)
+
+Blueprint: `waveform-mixing-blueprint.md`
+Reference: `notes/2026-04-12-mario-lasseck-birdclef2024.md`
+
+Phase B failed because PLs were added as **separate dataset rows**. Phase C uses
+Mario's approach: **mix PL audio INTO focal samples at the waveform level**.
+Each training step, 30% of focal samples get overlaid with a random PL soundscape
+segment (amplitude-controlled). Labels: max(focal, PL_probs).
+
+### C.1: Implement PseudoLabelMixingDataset
+
+Wrapper around the existing GT training dataset. On each `__getitem__`:
+- Get normal focal sample (waveform, label, primary_idx)
+- With probability `pl_mix_chance`, load random PL segment + amplitude mix
+- Return mixed (or unmixed) sample as standard 3-tuple
+
+- [ ] Create `PseudoLabelMixingDataset` class in `src/birdclef/data/sed.py`
+- [ ] Pre-load PL segment index from parquet (file paths + start times + soft labels)
+- [ ] Implement amplitude-controlled waveform mixing:
+  ```python
+  amp_focal = 10 ** random.uniform(amp_exp_min, amp_exp_max)
+  amp_pl = 10 ** random.uniform(amp_exp_min, amp_exp_max)
+  mixed = amp_focal * focal_waveform + amp_pl * pl_waveform
+  mixed_label = torch.maximum(focal_label, pl_soft_labels)
+  ```
+- [ ] Wire into SEDDataModule when `pseudo_label_mix` config is present
+
+### C.2: Create config and train
+
+- [ ] Create `configs/v3_waveform_mix.yaml`:
+  - v5j recipe (BCE, LSEHead, spectrogram MixUp, 20 epochs)
+  - PL waveform mixing at 30% probability
+  - Amplitude range: [-0.5, 0.1] (log10 scale)
+  - Use existing v1 PLs (347K segments, 196/234 species)
+- [ ] Fast-dev-run sanity check
+- [ ] Full training (20 epochs)
+- [ ] ONNX export + LB submission
+- [ ] Compare vs v5j baseline (0.906)
+
+### C.3: Iterate (if C.2 improves)
+
+- [ ] Round 2: Use C.2 student as new teacher → regenerate PLs → retrain
+- [ ] Round 3: Repeat if still improving
+- [ ] 4-fold ensemble of best round
+- [ ] Submit ensemble + Perch combination
+
+### C.4: Ablation (if C.2 improves)
+
+- [ ] Vary `pl_mix_chance`: 15%, 30%, 45%
+- [ ] Vary amplitude range: [-1.0, 0.2] (wider), [-0.3, 0.0] (narrower)
+- [ ] SED-only PLs vs SED+Perch PLs (test Perch noise hypothesis from B.3)
+
+## Success Criteria (revised)
+
+- [x] Round 1 row-addition (Phase B): **>0.906** LB — ❌ 0.897 (regressed)
+- [ ] Waveform mixing (Phase C): **>0.906** LB (first PL approach to improve)
+- [ ] After 2-3 iterations: **>0.920** LB
+- [ ] In ensemble: **>0.935** LB

@@ -118,7 +118,10 @@ class SEDFinetuneModule(pl.LightningModule):
             when mel_transform is set.
         mixup_per_sample: When True, sample a separate lambda for each sample in
             the batch (ttahara's approach). When False (default), use a single
-            scalar lambda for the entire batch.
+            scalar lambda for the entire batch. Ignored when mixup_mode="additive".
+        mixup_mode: Mixing strategy. "interpolate" (default): standard λ-weighted
+            blend. "additive": waveform superposition (x1+x2) with max labels,
+            matching BirdCLEF winner implementations.
         scheduler_type: LR scheduler type. "cosine" (default) uses CosineAnnealing
             with linear warmup (per-epoch). "one_cycle" uses OneCycleLR with a
             single param group and per-step updates (ttahara's approach).
@@ -146,6 +149,7 @@ class SEDFinetuneModule(pl.LightningModule):
         mixup_warmup_epochs: int = 0,
         mixup_theta: float = 1.0,
         mixup_per_sample: bool = False,
+        mixup_mode: str = "interpolate",
         loss_type: str = "soft_ce",
         label_smoothing: float = 0.05,
         asl_gamma_neg: float = 4.0,
@@ -161,6 +165,8 @@ class SEDFinetuneModule(pl.LightningModule):
         onecycle_div_factor: float = 25.0,
         onecycle_final_div_factor: float = 4.0,
         dual_validation: bool = False,
+        max_trick: bool = False,
+        max_trick_factor: int = 3,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform"])
@@ -296,26 +302,29 @@ class SEDFinetuneModule(pl.LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Apply mixup augmentation on input tensor (mel spectrogram or raw waveform).
 
-        Shuffles the batch and mixes inputs with a random lambda from
-        Beta(alpha, alpha). Lambda is enforced >= 0.5 so the dominant
-        sample stays dominant. Labels are weighted-mixed (not OR union).
+        Two modes controlled by mixup_mode:
 
-        If mixup_theta < 1.0, labels >= theta are clipped to 1.0 (ttahara's
-        approach: prevents soft labels from diluting strong positive signal).
+        "interpolate" (default): Standard λ-weighted blend.
+            x_mix = λ*x1 + (1-λ)*x2,  labels_mix = λ*y1 + (1-λ)*y2
+            Lambda from Beta(alpha, alpha), enforced >= 0.5.
 
-        If mixup_per_sample is True, each sample in the batch gets its own
-        lambda (ttahara's approach). Otherwise, a single lambda is used for
-        the entire batch.
+        "additive": Physically correct audio mixing (BirdCLEF 2025 winners).
+            x_mix = x1 + x2,  labels_mix = max(y1, y2)
+            Simulates real multi-species overlap via waveform superposition.
+            No lambda — both samples contribute fully. Labels use union (max).
+            loss_weight keeps the first sample's weight (CE uses primary_idx
+            from the first sample).
 
         Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N).
-
-        When loss_weight is provided (pseudo-label training), it is also
-        blended: mixing GT (w=1.0) with PL (w=0.5) at lam=0.7 gives
-        blended weight 0.7*1.0 + 0.3*0.5 = 0.85.
         """
         indices = torch.randperm(x.size(0), device=x.device)
 
-        if self.hparams.mixup_per_sample:
+        if self.hparams.mixup_mode == "additive":
+            # Additive mixing: x1 + x2 with max labels (BirdCLEF winner approach)
+            x = x + x[indices]
+            labels = torch.maximum(labels, labels[indices])
+            # loss_weight unchanged — CE uses primary_idx from the first sample
+        elif self.hparams.mixup_per_sample:
             beta_dist = torch.distributions.Beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
             lam = beta_dist.sample(sample_shape=(x.size(0),)).to(x.device)
             lam = torch.maximum(lam, 1 - lam).float()
@@ -516,50 +525,93 @@ class SEDFinetuneModule(pl.LightningModule):
             ):
                 x = self._apply_time_stretch(x)
 
-        # Decide mixup strategy for this batch. Sample _mixup_active() once to
-        # avoid double-sampling the random probability check.
-        do_mixup = self._mixup_active()
-        use_manifold = (
-            do_mixup
-            and self.hparams.manifold_mixup
-            and random.random() < self.hparams.manifold_mixup_prob
-        )
+        # --- Max trick (Salman 2025): split long window into K segments ---
+        # Dataset returns (B, K*segment_samples) waveform for K segments.
+        # Split, compute mel per segment, forward each, take max logits.
+        # Gradient flows only through the segment with strongest prediction.
+        K = self.hparams.max_trick_factor if self.hparams.max_trick else 1
+        if self.hparams.max_trick and self.mel_transform is not None:
+            B = x.size(0)
+            segment_samples = x.size(1) // K  # e.g., 480000/3 = 160000 (5s)
 
-        if not use_manifold:
-            # Original input-space mixup paths (unchanged when manifold_mixup=False)
-            if self.mel_transform is not None and self.hparams.waveform_mixup:
-                # Waveform mixup mode (v3b): mixup on raw waveforms, then mel on GPU.
-                if do_mixup:
-                    x, labels, loss_weight = self._apply_mixup(x, labels, loss_weight)
-                with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
-                    mel = self.mel_transform(x.float())
-            elif self.mel_transform is not None:
-                # GPU mel mode: compute mel on GPU first, then spectrogram mixup.
-                with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
-                    mel = self.mel_transform(x.float())
-                if do_mixup:
-                    mel, labels, loss_weight = self._apply_mixup(mel, labels, loss_weight)
-            else:
-                # CPU mel mode (default): input is pre-computed mel, spectrogram mixup
-                mel = x
-                if do_mixup:
-                    mel, labels, loss_weight = self._apply_mixup(mel, labels, loss_weight)
+            # Split waveform into K segments: (B, K*S) → (B*K, S)
+            x_segments = x.view(B, K, segment_samples).reshape(B * K, segment_samples)
 
-            clipwise_logits, framewise_logits = self(mel)
+            # Compute mel for all segments at once
+            with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
+                mel_segments = self.mel_transform(x_segments.float())
+            # mel_segments: (B*K, 1, F, T)
+
+            # MixUp on stacked spectrograms (mixes across samples AND segments)
+            if self._mixup_active():
+                # Expand labels/loss_weight to match B*K batch
+                labels_expanded = labels.unsqueeze(1).expand(-1, K, -1).reshape(B * K, -1)
+                lw_expanded = None
+                if loss_weight is not None:
+                    lw_expanded = loss_weight.unsqueeze(1).expand(-1, K).reshape(B * K)
+                mel_segments, labels_expanded, lw_expanded = self._apply_mixup(
+                    mel_segments, labels_expanded, lw_expanded
+                )
+                # Collapse labels/loss_weight back after mixup (take first segment's)
+                labels = labels_expanded.view(B, K, -1)[:, 0, :]
+                if lw_expanded is not None:
+                    loss_weight = lw_expanded.view(B, K)[:, 0]
+
+            # Forward pass on all segments
+            clipwise_logits, framewise_logits = self(mel_segments)
+            # clipwise: (B*K, C), framewise: (B*K, C, T)
+
+            # Reshape and take max across K segments
+            clipwise_logits = clipwise_logits.view(B, K, -1)
+            clipwise_logits, _ = torch.max(clipwise_logits, dim=1)  # (B, C)
+
+            framewise_logits = framewise_logits.view(B, K, framewise_logits.size(1), -1)
+            framewise_logits, _ = torch.max(framewise_logits, dim=1)  # (B, C, T)
+
         else:
-            # Manifold mixup: compute mel (no input-space mixup), run backbone,
-            # mix in embedding space, then run head.
-            if self.mel_transform is not None:
-                with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
-                    mel = self.mel_transform(x.float())
-            else:
-                mel = x
+            # --- Standard path (no max trick) ---
 
-            features = self.encoder.forward_features(mel)
-            features, labels, loss_weight = self._apply_manifold_mixup(
-                features, labels, loss_weight
+            # Decide mixup strategy for this batch
+            do_mixup = self._mixup_active()
+            use_manifold = (
+                do_mixup
+                and self.hparams.manifold_mixup
+                and random.random() < self.hparams.manifold_mixup_prob
             )
-            clipwise_logits, framewise_logits = self.sed_head(features)
+
+            if not use_manifold:
+                if self.mel_transform is not None and self.hparams.waveform_mixup:
+                    # Waveform mixup mode: mixup on raw waveforms, then mel on GPU
+                    if do_mixup:
+                        x, labels, loss_weight = self._apply_mixup(x, labels, loss_weight)
+                    with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
+                        mel = self.mel_transform(x.float())
+                elif self.mel_transform is not None:
+                    # GPU mel mode: compute mel on GPU first, then spectrogram mixup
+                    with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
+                        mel = self.mel_transform(x.float())
+                    if do_mixup:
+                        mel, labels, loss_weight = self._apply_mixup(mel, labels, loss_weight)
+                else:
+                    # CPU mel mode: input is pre-computed mel, spectrogram mixup
+                    mel = x
+                    if do_mixup:
+                        mel, labels, loss_weight = self._apply_mixup(mel, labels, loss_weight)
+
+                clipwise_logits, framewise_logits = self(mel)
+            else:
+                # Manifold mixup: compute mel, run backbone, mix embeddings, run head
+                if self.mel_transform is not None:
+                    with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
+                        mel = self.mel_transform(x.float())
+                else:
+                    mel = x
+
+                features = self.encoder.forward_features(mel)
+                features, labels, loss_weight = self._apply_manifold_mixup(
+                    features, labels, loss_weight
+                )
+                clipwise_logits, framewise_logits = self.sed_head(features)
 
         loss = self._compute_chunked_loss(
             clipwise_logits, framewise_logits, labels, primary_idx, loss_weight
