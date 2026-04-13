@@ -10,11 +10,14 @@ Also provides LOSO fold splitting for cross-validation on labeled soundscapes.
 
 from __future__ import annotations
 
+import random
+from collections import defaultdict
 from dataclasses import dataclass
+from typing import Iterator
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, WeightedRandomSampler
+from torch.utils.data import Dataset, Sampler, WeightedRandomSampler
 
 from birdclef_106.data_loading import (
     build_binary_label_matrix,
@@ -112,18 +115,27 @@ def load_all_focal(features_dir: str = FEATURES_DIR) -> FocalData:
 
 @dataclass
 class UnlabeledSoundscapeData:
-    """All unlabeled soundscape windows with site metadata."""
+    """All unlabeled soundscape windows with site + recording metadata.
+
+    ``recording_indices`` is a contiguous int64 mapping derived from the
+    parquet ``filename`` column (filename IS the recording identifier in
+    exp 106's schema — windows of the same recording share a filename).
+    Used by ``RecordingGroupedBatchSampler`` to construct contrastive
+    batches with multiple windows per recording per batch.
+    """
 
     embeddings: np.ndarray  # (N, 1536) float32
     site_indices: np.ndarray  # (N,) int64 — contiguous site index
+    recording_indices: np.ndarray  # (N,) int64 — contiguous recording index
     site_to_idx: dict[str, int]
+    recording_to_idx: dict[str, int]
 
 
 def load_all_unlabeled(
     features_dir: str = FEATURES_DIR,
     site_to_idx: dict[str, int] | None = None,
 ) -> UnlabeledSoundscapeData:
-    """Load all unlabeled soundscape shards with site indices.
+    """Load all unlabeled soundscape shards with site + recording indices.
 
     ~127K windows × 1536 dims × 4 bytes ≈ 0.75 GB.
     """
@@ -131,8 +143,9 @@ def load_all_unlabeled(
         all_sites = sorted(list_sites(features_dir))
         site_to_idx = {s: i for i, s in enumerate(all_sites)}
 
-    all_emb = []
-    all_site_idx = []
+    all_emb: list[np.ndarray] = []
+    all_site_idx: list[np.ndarray] = []
+    all_rec_names: list[str] = []
     for shard_df in load_unlabeled_shards(features_dir):
         all_emb.append(embeddings_to_numpy(shard_df))
         fnames = shard_df["filename"].to_list()
@@ -140,10 +153,23 @@ def load_all_unlabeled(
         all_site_idx.append(
             np.array([site_to_idx.get(s, 0) for s in sites], dtype=np.int64)
         )
+        all_rec_names.extend(fnames)
+
+    # Build contiguous recording index. filename IS the recording id —
+    # multiple parquet rows share a filename when they're windows of the
+    # same source recording.
+    unique_recs = sorted(set(all_rec_names))
+    recording_to_idx = {r: i for i, r in enumerate(unique_recs)}
+    recording_indices = np.array(
+        [recording_to_idx[r] for r in all_rec_names], dtype=np.int64
+    )
+
     return UnlabeledSoundscapeData(
         embeddings=np.concatenate(all_emb, axis=0),
         site_indices=np.concatenate(all_site_idx, axis=0),
+        recording_indices=recording_indices,
         site_to_idx=site_to_idx,
+        recording_to_idx=recording_to_idx,
     )
 
 
@@ -212,24 +238,111 @@ class EmbeddingDataset(Dataset):
 
 
 class UnsupervisedDataset(Dataset):
-    """Dataset for unlabeled soundscape windows (embeddings + site index only)."""
+    """Dataset for unlabeled soundscape windows.
+
+    Carries embeddings + site_idx + recording_idx. The recording index
+    is needed by ``RecordingGroupedBatchSampler`` (recording grouping
+    yields multiple positives per anchor per site for the contrastive
+    losses, even though the loss positive label itself is site-level).
+    """
 
     def __init__(
         self,
         embeddings: np.ndarray,
         site_indices: np.ndarray,
+        recording_indices: np.ndarray | None = None,
     ) -> None:
         self.embeddings = embeddings
         self.site_indices = site_indices
+        self.recording_indices = recording_indices
 
     def __len__(self) -> int:
         return len(self.embeddings)
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        return {
+        item = {
             "emb": torch.from_numpy(self.embeddings[idx].copy()).float(),
             "site_idx": torch.tensor(self.site_indices[idx], dtype=torch.long),
         }
+        if self.recording_indices is not None:
+            item["recording_idx"] = torch.tensor(
+                self.recording_indices[idx], dtype=torch.long
+            )
+        return item
+
+
+class RecordingGroupedBatchSampler(Sampler[list[int]]):
+    """Yield batches of ``R`` recordings × ``N`` windows each from the
+    unsupervised SC stream.
+
+    For v3 contrastive losses, batch composition matters: with R=16
+    recordings × N=8 windows = 128 windows and ~14–16 unique sites per
+    batch, each anchor sees ~7 same-site positives and ~112 cross-site
+    negatives in the InfoNCE losses. This is variance reduction on the
+    contrastive estimator — the loss positive label is still site_idx
+    (not recording_idx), but recording grouping reliably populates
+    multiple positives per site within each batch.
+
+    Args:
+        recording_indices: ``(N,)`` int array mapping each window to its
+            contiguous recording id (from ``UnlabeledSoundscapeData``).
+        recordings_per_batch: ``R`` — number of distinct recordings per
+            batch. Default 16.
+        windows_per_recording: ``N`` — windows sampled per recording.
+            Default 8. Sampling is with-replacement if a recording has
+            fewer than ``N`` windows (rare for unsup SC where recordings
+            average ~500 windows).
+        seed: optional RNG seed for reproducibility.
+        drop_last: not used — sampler always emits fixed-size batches;
+            kept for DataLoader API compatibility.
+    """
+
+    def __init__(
+        self,
+        recording_indices: np.ndarray,
+        recordings_per_batch: int = 16,
+        windows_per_recording: int = 8,
+        seed: int | None = None,
+        drop_last: bool = True,
+    ) -> None:
+        self.R = int(recordings_per_batch)
+        self.N = int(windows_per_recording)
+        self._seed = seed
+        self._epoch = 0
+
+        # Group window indices by recording id.
+        self._rec_to_wins: dict[int, list[int]] = defaultdict(list)
+        for i, r in enumerate(recording_indices.tolist()):
+            self._rec_to_wins[int(r)].append(i)
+        self._rec_ids: list[int] = sorted(self._rec_to_wins.keys())
+        if len(self._rec_ids) < self.R:
+            raise ValueError(
+                f"RecordingGroupedBatchSampler: only "
+                f"{len(self._rec_ids)} recordings available, need ≥{self.R}"
+            )
+
+    def __iter__(self) -> Iterator[list[int]]:
+        rng = random.Random(
+            None if self._seed is None else self._seed + self._epoch
+        )
+        self._epoch += 1
+        rec_order = list(self._rec_ids)
+        rng.shuffle(rec_order)
+        # Yield as many full batches as the recording supply allows.
+        for start in range(0, len(rec_order) - self.R + 1, self.R):
+            group = rec_order[start : start + self.R]
+            batch: list[int] = []
+            for rid in group:
+                pool = self._rec_to_wins[rid]
+                if len(pool) >= self.N:
+                    batch.extend(rng.sample(pool, self.N))
+                else:
+                    # With-replacement fallback for thin recordings.
+                    batch.extend(rng.choices(pool, k=self.N))
+            yield batch
+
+    def __len__(self) -> int:
+        return len(self._rec_ids) // self.R
 
 
 def build_focal_sampler(labels: np.ndarray) -> WeightedRandomSampler:
@@ -266,6 +379,12 @@ def collate_triple_batch(
     unsup_batch: dict[str, torch.Tensor],
 ) -> dict[str, dict[str, torch.Tensor] | None]:
     """Assemble the three-stream batch dict expected by compute_loss()."""
+    unsup = {
+        "emb": unsup_batch["emb"],
+        "site_idx": unsup_batch["site_idx"],
+    }
+    if "recording_idx" in unsup_batch:
+        unsup["recording_idx"] = unsup_batch["recording_idx"]
     return {
         "strong": {
             "emb": strong_batch["emb"],
@@ -276,8 +395,5 @@ def collate_triple_batch(
             "emb": focal_batch["emb"],
             "labels": focal_batch["labels"],
         },
-        "unsup": {
-            "emb": unsup_batch["emb"],
-            "site_idx": unsup_batch["site_idx"],
-        },
+        "unsup": unsup,
     }

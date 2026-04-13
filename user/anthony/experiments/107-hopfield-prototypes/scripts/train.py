@@ -27,6 +27,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from birdclef_107.data import (
     EmbeddingDataset,
+    RecordingGroupedBatchSampler,
     UnsupervisedDataset,
     build_focal_sampler,
     collate_triple_batch,
@@ -54,13 +55,26 @@ def parse_args() -> argparse.Namespace:
         default="S22",
         help="Site ID to hold out (e.g. S22), or 'all' for full LOSO CV",
     )
-    p.add_argument("--lambda-site", type=float, default=0.1)
+    p.add_argument("--lambda-site", type=float, default=0.01,
+                   help="Weight on L_site_contrastive (InfoNCE on M_site)")
+    p.add_argument("--lambda-xattn", type=float, default=0.01,
+                   help="Weight on L_xattn_contrastive (site-InfoNCE on cross-attn profiles)")
     p.add_argument("--lambda-fam", type=float, default=1e-2)
     p.add_argument("--epochs", type=int, default=3)
-    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--lr", type=float, default=5e-4,
+                   help="AdamW LR. Default 5e-4 (v3); v2 used 1e-3 but contrastive losses need slower LR.")
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--batch-size", type=int, default=256)
-    p.add_argument("--patience", type=int, default=5)
+    p.add_argument("--patience", type=int, default=10,
+                   help="Val-AUROC patience checks. Default 10 (v3); contrastive objectives take longer to find non-trivial optima than v2's softplus.")
+    p.add_argument("--unsup-warmup-start", type=int, default=200,
+                   help="Step to begin ramping unsup lambdas from 0.")
+    p.add_argument("--unsup-warmup-end", type=int, default=500,
+                   help="Step at which unsup lambdas reach their target values.")
+    p.add_argument("--unsup-batch-recordings", type=int, default=16,
+                   help="R in RecordingGroupedBatchSampler — recordings per unsup batch.")
+    p.add_argument("--unsup-batch-windows-per-recording", type=int, default=8,
+                   help="N in RecordingGroupedBatchSampler — windows per recording per batch.")
     p.add_argument(
         "--val-every-steps",
         type=int,
@@ -93,6 +107,21 @@ def set_seed(seed: int) -> None:
     np.random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def unsup_warmup_factor(step: int, start: int, end: int) -> float:
+    """Linear ramp from 0 → 1 over [start, end].
+
+    Used to schedule unsupervised lambdas: zero for steps < start (let
+    labeled BCE place the projection alone), then linear ramp to target
+    by step `end`. Without warmup, the v2 contrastive losses can dominate
+    early gradient and prevent labeled BCE from finding useful structure.
+    """
+    if step < start:
+        return 0.0
+    if step >= end:
+        return 1.0
+    return (step - start) / max(1, end - start)
 
 
 def train_one_fold(
@@ -142,7 +171,11 @@ def train_one_fold(
     # Datasets
     strong_ds = EmbeddingDataset(train_sc_emb, train_sc_labels, train_sc_site_idx)
     focal_ds = EmbeddingDataset(focal_data.embeddings, focal_data.labels)
-    unsup_ds = UnsupervisedDataset(unsup_data.embeddings, unsup_data.site_indices)
+    unsup_ds = UnsupervisedDataset(
+        unsup_data.embeddings,
+        unsup_data.site_indices,
+        recording_indices=unsup_data.recording_indices,
+    )
 
     # Dataloaders
     strong_loader = DataLoader(
@@ -158,11 +191,18 @@ def train_one_fold(
         sampler=focal_sampler,
         drop_last=True,
     )
+    # v3: recording-grouped batches for the unsup stream — gives the
+    # contrastive losses ~7 same-site positives + ~112 cross-site
+    # negatives per anchor at default R=16, N=8.
+    unsup_batch_sampler = RecordingGroupedBatchSampler(
+        unsup_data.recording_indices,
+        recordings_per_batch=args.unsup_batch_recordings,
+        windows_per_recording=args.unsup_batch_windows_per_recording,
+        seed=args.seed,
+    )
     unsup_loader = DataLoader(
         unsup_ds,
-        batch_size=args.batch_size,
-        shuffle=True,
-        drop_last=True,
+        batch_sampler=unsup_batch_sampler,
     )
 
     # Model
@@ -215,7 +255,13 @@ def train_one_fold(
         if early_stop:
             break
         model.train()
-        epoch_losses = {"labeled": 0.0, "site": 0.0, "family": 0.0, "total": 0.0}
+        epoch_losses = {
+            "labeled": 0.0,
+            "site": 0.0,
+            "site_xattn": 0.0,
+            "family": 0.0,
+            "total": 0.0,
+        }
         n_steps = 0
 
         strong_iter = iter(strong_loader)
@@ -244,12 +290,16 @@ def train_one_fold(
 
             triple = collate_triple_batch(strong_batch, focal_batch, unsup_batch)
 
+            warmup = unsup_warmup_factor(
+                global_step, args.unsup_warmup_start, args.unsup_warmup_end
+            )
             optimizer.zero_grad()
             total_loss, components = compute_loss(
                 model,
                 triple,
                 family_idx_dev,
-                lambda_site=args.lambda_site,
+                lambda_site=args.lambda_site * warmup,
+                lambda_xattn=args.lambda_xattn * warmup,
                 lambda_fam=args.lambda_fam,
             )
             total_loss.backward()
@@ -257,7 +307,7 @@ def train_one_fold(
             scheduler.step()
 
             epoch_losses["total"] += total_loss.item()
-            for k in ["labeled", "site", "family"]:
+            for k in ["labeled", "site", "site_xattn", "family"]:
                 epoch_losses[k] += components[k]
             n_steps += 1
             global_step += 1
@@ -265,12 +315,22 @@ def train_one_fold(
             # Intra-epoch validation
             if global_step % args.val_every_steps == 0:
                 val_auroc = run_validation()
+                # Ratio of weighted unsup loss to labeled loss — flag if
+                # unsup dominates >3× during the peak labeled phase.
+                weighted_unsup = (
+                    args.lambda_site * warmup * components["site"]
+                    + args.lambda_xattn * warmup * components["site_xattn"]
+                )
+                ratio = weighted_unsup / max(components["labeled"], 1e-8)
                 if writer is not None:
                     prefix = f"{global_prefix}/" if global_prefix else ""
                     writer.add_scalar(f"{prefix}val/auroc", val_auroc, global_step)
                     writer.add_scalar(f"{prefix}loss/total_step", total_loss.item(), global_step)
                     writer.add_scalar(f"{prefix}loss/labeled_step", components["labeled"], global_step)
                     writer.add_scalar(f"{prefix}loss/site_step", components["site"], global_step)
+                    writer.add_scalar(f"{prefix}loss/site_xattn_step", components["site_xattn"], global_step)
+                    writer.add_scalar(f"{prefix}loss/unsup_to_labeled_ratio", ratio, global_step)
+                    writer.add_scalar(f"{prefix}sched/unsup_warmup", warmup, global_step)
                     writer.add_scalar(f"{prefix}lr", scheduler.get_last_lr()[0], global_step)
 
                 print(
@@ -278,7 +338,9 @@ def train_one_fold(
                     f"loss={total_loss.item():.4f} "
                     f"(lab={components['labeled']:.4f} "
                     f"site={components['site']:.4f} "
+                    f"xattn={components['site_xattn']:.4f} "
                     f"fam={components['family']:.4f}) | "
+                    f"unsup/lab={ratio:.2f} warmup={warmup:.2f} | "
                     f"val_auroc={val_auroc:.4f} | "
                     f"lr={scheduler.get_last_lr()[0]:.2e}"
                 )
@@ -318,7 +380,8 @@ def train_one_fold(
             f"  === Epoch {epoch} done | "
             f"avg_loss={epoch_losses['total']:.4f} "
             f"(lab={epoch_losses['labeled']:.4f} "
-            f"site={epoch_losses['site']:.4f}) ==="
+            f"site={epoch_losses['site']:.4f} "
+            f"xattn={epoch_losses['site_xattn']:.4f}) ==="
         )
 
     # Save predictions from best model for pooled evaluation
@@ -437,9 +500,54 @@ def main() -> None:
             json.dump(loso_results, f, indent=2)
         print(f"\nResults saved to {results_path}")
     else:
-        # Single fold — just report
+        # Single fold — overall + per-subset AUROC.
+        # Subset breakdown is the diagnostic we need to decide whether
+        # bird-only signals (e.g. Perch pseudo-labels) would target the
+        # right bottleneck or whether the gap is on amphibians/insects
+        # (in which case bird-only SSL won't help).
         r = all_results[0]
-        print(f"\nSingle fold {r['fold_site']}: val_auroc={r['best_auroc']:.4f}")
+        from birdclef_107.eval import build_subset_masks, compute_auroc
+
+        y_true = fold_y_true[0]
+        y_pred = fold_y_pred[0]
+        masks = build_subset_masks(species_list, focal_species=focal_species_set)
+        subset_aurocs = {
+            name: compute_auroc(y_true, y_pred, mask)
+            for name, mask in masks.items()
+            if mask.sum() > 0
+        }
+
+        print(f"\n{'='*60}")
+        print(f"Single fold {r['fold_site']} | best step {r['best_step']}")
+        print(f"{'='*60}")
+        print(f"  Overall AUROC : {r['best_auroc']:.4f}")
+        print(f"  Ridge baseline: 0.7490  (Δ = {r['best_auroc'] - 0.749:+.4f})")
+        print(f"  v1-no-gate    : 0.7160  (Δ = {r['best_auroc'] - 0.716:+.4f})")
+        print()
+        print("Per-subset AUROC:")
+        for name in ["bird", "amphibian", "insect", "with_focal", "without_focal"]:
+            if name in subset_aurocs:
+                n = int(masks[name].sum())
+                print(f"  {name:>15s} ({n:3d} sp): {subset_aurocs[name]:.4f}")
+
+        # Save subset breakdown JSON for downstream analysis.
+        subset_path = Path(args.checkpoint_dir).expanduser() / r['fold_site'] / "subset_aurocs.json"
+        with open(subset_path, "w") as f:
+            json.dump(
+                {
+                    "fold_site": r["fold_site"],
+                    "best_step": r["best_step"],
+                    "overall_auroc": r["best_auroc"],
+                    "subset_auroc": subset_aurocs,
+                    "subset_n_species": {
+                        name: int(masks[name].sum()) for name in subset_aurocs
+                    },
+                    "args": vars(args),
+                },
+                f,
+                indent=2,
+            )
+        print(f"\nSubset breakdown saved to {subset_path}")
 
     writer.close()
 

@@ -1,9 +1,24 @@
-"""Three-term training loss for experiment 107.
+"""Four-component training loss for experiment 107 (v3).
 
-`L_total = L_labeled + lambda_site * L_site_unsup + lambda_fam * L_family`
+``L_total = L_labeled + λ_site · L_site + λ_xattn · L_xattn + λ_fam · L_family``
 
-See `design.md` §Loss for the derivation and `design.md` §Training for the
-locked defaults of ``lambda_site`` and ``lambda_fam``.
+Four terms, each with a clear trainable target:
+
+- **``L_labeled``**: strong SC + weak focal BCE. Shapes projection,
+  species bank, Platt, cross-attention (via strong SC cross-attn path).
+- **``L_site``** (``unsupervised_site_contrastive``): InfoNCE over 23
+  sites on direct M_site retrieval. Replaces v2's saturating
+  ``softplus(-agg)``. Exclusively shapes ``site_head.{M, W_K, log_β}``.
+- **``L_xattn``** (``unsupervised_cross_attn_contrastive``): site-level
+  InfoNCE on cross-attention-refined species retrieval profiles.
+  Replaces v2's collapsing ``softplus(-logsumexp_s)``. With ``M_site``
+  detached inside, exclusively shapes ``cross_attn.*``.
+- **``L_family``**: hierarchical-Bayes partial pooling on ``M_species``.
+
+See ``design.md`` §Loss for the derivation and gradient-routing
+invariants, and the v3 concept note for why recording-level positives
+are mechanistically unsatisfiable under the detach policy (hence
+site-level positives for the contrastive terms).
 """
 
 from __future__ import annotations
@@ -20,10 +35,11 @@ def compute_loss(
     model: PrototypeRetrievalModel,
     batch: Mapping[str, Mapping[str, Any]],
     family_idx: torch.Tensor,
-    lambda_site: float = 0.1,
+    lambda_site: float = 0.01,
+    lambda_xattn: float = 0.01,
     lambda_fam: float = 1e-2,
 ) -> tuple[torch.Tensor, dict[str, float]]:
-    """Compute the three-term total loss and return per-component diagnostics.
+    """Compute the four-term total loss and return per-component diagnostics.
 
     Args:
         model: a ``PrototypeRetrievalModel`` in train mode.
@@ -33,21 +49,28 @@ def compute_loss(
                 ``labels`` (B, n_species).
               * ``"weak_focal"``: ``emb``, ``labels``.
               * ``"unsup"``: ``emb``, ``site_idx``.
-            Any sub-dict may be ``None`` to disable that stream in a given
-            step (useful for smoke tests that exercise only the labeled path).
+            Any sub-dict may be ``None`` to disable that stream.
         family_idx: (n_species,) long tensor mapping species → contiguous
             family index.
-        lambda_site: weight on the unsupervised Hopfield energy term.
+        lambda_site: weight on the direct-M_site InfoNCE term.
+        lambda_xattn: weight on the cross-attention-refined InfoNCE term.
         lambda_fam: weight on the family shrinkage term.
 
     Returns:
-        (total_loss, components) where ``components`` is a dict with keys
-        ``labeled``, ``site``, ``family`` (each a Python float for logging).
+        ``(total_loss, components)`` where ``components`` logs each
+        sub-term as a Python float: ``labeled``, ``site``, ``site_xattn``
+        (cross-attention contrastive), ``family``. Component dict keys
+        preserved from v2 for TensorBoard continuity.
     """
     device = next(model.parameters()).device
     zero = torch.zeros((), device=device)
 
-    components: dict[str, float] = {"labeled": 0.0, "site": 0.0, "family": 0.0}
+    components: dict[str, float] = {
+        "labeled": 0.0,
+        "site": 0.0,
+        "site_xattn": 0.0,
+        "family": 0.0,
+    }
     total = zero
 
     strong = batch.get("strong")
@@ -65,10 +88,19 @@ def compute_loss(
         components["labeled"] = float(L_labeled.detach().item())
 
     unsup = batch.get("unsup")
-    if unsup is not None and lambda_site != 0.0:
-        L_site = model.unsupervised_site_energy(unsup["emb"], unsup["site_idx"])
-        total = total + lambda_site * L_site
-        components["site"] = float(L_site.detach().item())
+    if unsup is not None:
+        if lambda_site != 0.0:
+            L_site = model.unsupervised_site_contrastive(
+                unsup["emb"], unsup["site_idx"]
+            )
+            total = total + lambda_site * L_site
+            components["site"] = float(L_site.detach().item())
+        if lambda_xattn != 0.0:
+            L_xattn = model.unsupervised_cross_attn_contrastive(
+                unsup["emb"], unsup["site_idx"]
+            )
+            total = total + lambda_xattn * L_xattn
+            components["site_xattn"] = float(L_xattn.detach().item())
 
     if lambda_fam != 0.0:
         L_family = model.family_shrinkage_loss(family_idx)

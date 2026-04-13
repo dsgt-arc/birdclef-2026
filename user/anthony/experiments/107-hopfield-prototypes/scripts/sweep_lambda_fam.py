@@ -41,12 +41,17 @@ LAMBDA_FAM_VALUES = [0.0, 1e-3, 1e-2, 1e-1, 1.0]
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--fold", type=str, default="S22")
-    p.add_argument("--lambda-site", type=float, default=0.1)
+    p.add_argument("--lambda-site", type=float, default=0.01)
+    p.add_argument("--lambda-xattn", type=float, default=0.01)
     p.add_argument("--epochs", type=int, default=50)
-    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--lr", type=float, default=5e-4)
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--patience", type=int, default=10)
+    p.add_argument("--unsup-warmup-start", type=int, default=200)
+    p.add_argument("--unsup-warmup-end", type=int, default=500)
+    p.add_argument("--unsup-batch-recordings", type=int, default=16)
+    p.add_argument("--unsup-batch-windows-per-recording", type=int, default=8)
     p.add_argument(
         "--checkpoint-root",
         type=str,
@@ -98,12 +103,18 @@ def main() -> None:
         run_args = SimpleNamespace(
             fold=args.fold,
             lambda_site=args.lambda_site,
+            lambda_xattn=args.lambda_xattn,
             lambda_fam=lambda_fam,
             epochs=args.epochs,
             lr=args.lr,
             weight_decay=args.weight_decay,
             batch_size=args.batch_size,
             patience=args.patience,
+            unsup_warmup_start=args.unsup_warmup_start,
+            unsup_warmup_end=args.unsup_warmup_end,
+            unsup_batch_recordings=args.unsup_batch_recordings,
+            unsup_batch_windows_per_recording=args.unsup_batch_windows_per_recording,
+            val_every_steps=100,
             checkpoint_dir=str(ckpt_dir),
             features_dir=args.features_dir,
             seed=args.seed,

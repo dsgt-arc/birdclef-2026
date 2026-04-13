@@ -2,12 +2,15 @@
 
 ## Overview
 
-A PyTorch memory-bank classifier over frozen Perch v2 embeddings. Species
-and site prototypes live in a learned 512-d projection space; species
-retrieval is trained via BCE on strong + weak focal labels; site
-retrieval is trained via **Hopfield energy minimization** on 127K
-unlabeled soundscape windows. Both banks compose at inference via gated
-fusion on per-species Platt-calibrated probabilities.
+A PyTorch memory-bank classifier over frozen Perch v2 embeddings.
+Species and site prototypes live in a learned 512-d projection space;
+species retrieval is trained via BCE on strong + weak focal labels;
+`M_site` and the cross-attention composition operator are trained via
+**Hopfield energy minimization** on 127K unlabeled soundscape windows
+(two unsupervised terms — direct site energy and site-conditioned
+species retrieval energy). At inference the species bank is
+cross-attention-refined per window from the site bank, then scored with
+the same Hopfield logsumexp used at training.
 
 This document is the **interface contract and mathematical specification**
 for the exp 107 implementation. It deliberately does not embed Python
@@ -36,16 +39,19 @@ document should be updated.
 | Retrieval projections | Explicit `W_Q`, `W_K_species`, `W_K_site` (all `(512, 512)`) | Ramsauer formulation of modern Hopfield networks |
 | Prototype slots | K_s = K_l = 8 | Enough for intra-species acoustic modes (song/call, dawn/night, chorus) without overparameterizing |
 | Retrieval aggregation | `(1/β)·logsumexp_k(β · q_r · W_K · M_{*,k})`, learnable `log_β` per head | Modern Hopfield energy — all prototypes receive softmax-weighted gradient |
-| Per-species calibration | Built-in Platt `sigmoid(a_s · score + b_s)` | Load-bearing for Bayesian gated fusion (`species · site_score` needs calibrated probabilities); also the only per-species differentiator for zero-data orphans |
-| Gated fusion | `g · species + (1 − g) · species · site_score`, `g = σ(Linear(q))` | Per-window mixing between species-only and species × site |
-| Loss composition | `L_labeled + λ_site · L_site_unsup + λ_fam · L_family` | Three terms; `L_family` is hierarchical-Bayes partial pooling on `M_species` |
+| Per-species calibration | Built-in Platt `sigmoid(a_s · score + b_s)` | Cleaner BCE gradients; the only per-species differentiator for zero-data orphans that otherwise collide with their data-rich family siblings |
+| Species × site composition | **Multi-head cross-attention.** `Q = M_species`, `K, V = M_site`; produces per-window site-conditioned prototypes `M_cond[b, s, k]` consumed by the unchanged Hopfield retrieval | True factored star schema per-(species, site), replacing the v1 scalar fusion gate (`g · sp + (1−g) · sp · site_score`) that collapsed the site bank to one scalar per window. Gate ablation cost −0.045 AUROC on S22. |
+| Cross-attention init | Zero-init ``out_proj`` weight + bias. At step 0 ``attended = 0`` → ``refined = Q``, so cross-attention is numerically identity; gradient still flows into ``out_proj`` because ``dloss/d(out_proj) = dloss/d(attended) · (softmax · V · W_V) ≠ 0``. | Safer cold start than ReZero. ReZero deadlocked with α stuck at ≈0 — ``dloss/d(attended) = α = 0`` is the ReZero failure mode. |
+| Loss composition | `L_labeled + λ_site · (L_site + L_site_xattn) + λ_fam · L_family` | `L_site` is the v1 direct Hopfield energy on `M_site`; `L_site_xattn` is the v2 species-retrieval energy *through* cross-attention — the path by which the 127K unlabeled SC windows shape the composition operator itself. |
 | Projection gradient on unsupervised loss | **Frozen** (`torch.no_grad()` through both MLP and `W_Q`) | Prevents the shared backbone from encoding site-identifying artifacts — stronger than the "detach only proj output" sketch, which would still train `W_Q.weight` via its forward matmul |
+| Species-side retrieval operator under the unsupervised cross-attn term | **Detached** — `M_species`, `species_head.W_K.weight`, `species_head.log_β` all explicitly `.detach()`-ed inside `unsupervised_cross_attn_energy` | v2 analog of the v1 projection-detach invariant: site-clustering signal must not reach the species retrieval operator, or domain shift entangles with site structure (the exp 106 failure mode). Only cross-attention weights and `M_site` are shaped by this term. |
 | Initialization | Random (no k-means) | Soft-EM gradient identity justifies BCE+Hopfield convergence without warm start |
 | Tensor operations | einops `einsum`, `reduce`, `rearrange` | Project convention; self-documenting contractions |
 
-**Total parameters: ≈ 3.94M** at default shapes
+**Total parameters: ≈ 4.99M** at default shapes
 (projection 2.10M + `W_Q`/`W_K_species`/`W_K_site` 0.79M + `M_species` 0.96M +
-`site_memory` 0.09M + per-species Platt 468 + two scalar `log_β` + gate 513).
+`M_site` 0.09M + per-species Platt 468 + two scalar `log_β` + cross-attention 1.05M).
+The v1 scalar gate (513 params) has been removed.
 
 ## Built-in Platt scaling
 
@@ -59,26 +65,22 @@ $$
 where `a_s` (scale) and `b_s` (bias) are learnable per-species parameters
 initialized to identity.
 
-Two reasons calibration belongs in the model:
+Why calibration belongs in the model:
 
-1. **Multi-label composition needs calibrated probabilities.** The gated
-   fusion multiplies `species · site_score`. This is only a valid
-   Bayesian composition ("probability species s is present and
-   compatible with the site") when both factors are proper
-   probabilities. Without per-species Platt, `species · site_score` is a
-   product of arbitrary-scale sigmoid outputs; systematic per-species
-   offsets break the composition.
-2. **Cleaner BCE gradients.** Uncalibrated scores produce biased BCE
-   gradients; per-class scale + bias absorbs systematic offsets that
-   would otherwise be learned into the projection.
+1. **Cleaner BCE gradients.** Uncalibrated scores produce biased BCE
+   gradients; per-class scale + bias absorbs systematic per-species
+   offsets that would otherwise be learned into the projection.
+2. **Orphan differentiation.** `b_s` is the **only** mechanism that
+   differentiates zero-data orphans from their data-rich family
+   siblings once partial pooling has pulled them onto the same family
+   centroid (see `star-schema-dimensional-analysis.md` "Orphan
+   collision limit"). Without it, orphans emit identical retrieval
+   scores.
 
-The site head does not need per-site Platt — it emits a single scalar
-per window, and the fusion gate handles systematic bias.
-
-Beyond fusion hygiene, `b_s` is the **only** mechanism that
-differentiates zero-data orphans from their data-rich family siblings
-once partial pooling has pulled them onto the same family centroid (see
-`star-schema-dimensional-analysis.md` "Orphan collision limit").
+The site bank does not need its own Platt. In v2 it is no longer queried
+directly at inference — it feeds cross-attention as K/V, and the
+site-conditioned species prototypes are scored through the existing
+per-species Platt.
 
 ## Model interface
 
@@ -87,16 +89,16 @@ The implementation lives in `src/birdclef_107/model.py`. Four
 
 ### `PerchProjection(d_input, d_hidden, d_proj)`
 
-Shared frozen-input → projected-query backbone plus the shared query
-rotation `W_Q`. Every retrieval path routes through this module.
-Supervised losses shape it; unsupervised losses call a dedicated
-"frozen-pass" entry point that wraps the entire backbone in
-`torch.no_grad()` so neither the MLP nor `W_Q.weight` receives gradient.
+Shared frozen-input → projected-query backbone plus the query rotation
+`W_Q`. Every retrieval path routes through this module. Supervised
+losses shape it; unsupervised losses call a dedicated "frozen-pass"
+entry point that wraps the entire backbone in `torch.no_grad()` so
+neither the MLP nor `W_Q.weight` receives gradient.
 
 | Method | Signature | Contract |
 |---|---|---|
-| `forward(emb)` | `(B, d_input) → ((B, d_proj), (B, d_proj))` | Returns `(q_base, q_query)`. `q_base` feeds the fusion gate (pre-`W_Q`); `q_query` feeds both retrieval heads (post-`W_Q`). |
-| `query_from_detached(emb)` | `(B, d_input) → (B, d_proj)` | Runs the full backbone inside `torch.no_grad()` and returns `q_query` with `requires_grad=False`. Used by `L_site_unsup`. |
+| `forward(emb)` | `(B, d_input) → (B, d_proj)` | Returns the retrieval query `q_r = W_Q(LayerNorm(·))`. Previously returned a `(q_base, q_query)` tuple where `q_base` fed the v1 fusion gate; the gate has been removed. |
+| `query_from_detached(emb)` | `(B, d_input) → (B, d_proj)` | Runs the full backbone inside `torch.no_grad()` and returns `q_r` with `requires_grad=False`. Used by both unsupervised losses. |
 
 **Design invariant.** `model.projection.parameters()` receives **zero
 gradient** from any loss that only flows through `query_from_detached`.
@@ -120,50 +122,68 @@ bank avoids reaching across module boundaries from the top-level model.
 
 | Method | Signature | Contract |
 |---|---|---|
-| `forward(q_r)` | `(B, d_proj) → (B, n_species)` | Returns calibrated probabilities in `[0, 1]`. Computes `lse_k(β · q_r · W_K · M_{s,k}) / β`, then `σ(a_s · · + b_s)`. |
-| `family_shrinkage_loss(family_idx)` | `(n_species,) long → scalar` | `L_family` per star-schema §"Family partial pooling" — squared Euclidean to the stop-grad uniform family mean. See math below. |
+| `forward(q_r)` | `(B, d_proj) → (B, n_species)` | Returns calibrated probabilities in `[0, 1]`. Thin wrapper over `forward_with_prototypes(q_r, self.M)` — used only on focal recordings (no `site_idx`). |
+| `forward_with_prototypes(q_r, M_species)` | `(B, D), (S,K,D) \| (B,S,K,D) → (B, n_species)` | Same retrieval with caller-supplied prototypes. The `(B, S, K, D)` shape is the v2 cross-attention-refined bank used on soundscape windows. |
+| `family_shrinkage_loss(family_idx)` | `(n_species,) long → scalar` | `L_family` — squared Euclidean to the stop-grad uniform family mean. |
 
 ### `HopfieldSiteHead(n_sites, K, d_proj)`
 
-Flat site memory bank with two retrieval paths that share the same
-prototype store, key projection, and inverse temperature:
+Flat site memory bank. In v2 it is no longer queried directly at
+inference — it feeds `SpeciesSiteCrossAttention` as K/V and its
+`retrieval_energy` is the direct unsupervised training term on
+`M_site`.
 
 | Method | Signature | Contract |
 |---|---|---|
-| `forward(q_r, site_idx)` | `(B, d_proj), (B,) long → (B,)` | Per-window sigmoid typicality. Gathers `M[site_idx]` and returns `σ(lse_k(β · q_r · W_K · M_{l_w,k}) / β)`. |
-| `retrieval_energy(q_r, site_idx)` | `(B, d_proj), (B,) long → scalar` | `L_site_unsup` path: `mean(-lse_k(β · q_r · W_K · M_{l_w,k}) / β)`. Does **not** itself detach — the caller must pass a detached `q_r`. |
+| `retrieval_energy(q_r, site_idx)` | `(B, d_proj), (B,) long → scalar` | Bounded Hopfield energy `softplus(-agg).mean()` where `agg = lse_k(β · q_r · W_K · M_{l_w,k}) / β`. Equivalent to BCE against all-ones — every unlabeled window should match some prototype in its site's bank. Bounded in `[0, ∞)` (the unbounded `-mean(agg)` diverged in training). Does **not** itself detach — the caller must pass a detached `q_r`. |
 
-The two methods share a private `_aggregate(q_r, site_idx)` helper that
-computes the `(B,)` logsumexp aggregate. The inference-time sigmoid
-produces a typicality scalar in `[0, 1]`; the training-time
-energy minimization uses the raw aggregate directly.
+The v1 `forward` method (per-window sigmoid typicality) has been
+removed along with the scalar fusion gate that consumed it.
 
-### `PrototypeRetrievalModel(n_species=234, n_sites=23, K_species=8, K_site=8, d_input=1536, d_hidden=1024, d_proj=512)`
+### `SpeciesSiteCrossAttention(d_proj, n_heads=4)`
 
-Top-level composition of the three sub-modules with a per-window fusion
-gate. Delegates everything that isn't fusion to the sub-modules.
+Per-window site-conditioning of species prototypes via multi-head
+cross-attention.
 
 | Method | Signature | Contract |
 |---|---|---|
-| `forward(emb, site_idx=None)` | `(B, 1536), (B,) long\|None → (B, 234)` | Calibrated multi-label probs. With `site_idx=None` (focal path) returns species-only scores; otherwise gated fusion `g · sp + (1 − g) · sp · site`. |
-| `unsupervised_site_energy(emb, site_idx)` | `(B, 1536), (B,) long → scalar` | Calls `self.projection.query_from_detached(emb)` then `self.site_head.retrieval_energy(...)`. |
-| `family_shrinkage_loss(family_idx)` | `(n_species,) long → scalar` | Delegates to `self.species_head.family_shrinkage_loss`. |
+| `forward(M_species, M_site, site_idx)` | `(S,K_sp,D), (L,K_site,D), (B,) long → (B,S,K_sp,D)` | `Q = M_species` (shared across batch, broadcast over `L` sites); `K, V = M_site`. Attention is computed once across all `L` sites producing `(L, S·K_sp, D)` refined prototypes, then `site_idx` gathers per-window rows. Memory is `L × S × K_sp × D ≈ 88 MB` at default shapes, not `B × S × K_sp × D`. |
 
-The shipped Kaggle checkpoint needs `projection + species_head + gate`
-only. The site head can be omitted entirely for the OOD-site fallback
-by declining to load it, and the forward pass with `site_idx=None`
-works unchanged.
+**Zero-init `out_proj`.** `attended = softmax(·) · V · W_V · 0 = 0` at
+init, so `refined = Q` (numerically identity). Gradient into `out_proj`
+is non-zero from step 1 — `dloss/d(out_proj) = dloss/d(attended) ·
+(softmax · V · W_V)` doesn't involve `out_proj` itself. ReZero
+(`α · attended` with `α = 0`) was tried first and deadlocked because
+there `dloss/d(attended) = α = 0`.
+
+### `PrototypeRetrievalModel(n_species=234, n_sites=23, K_species=8, K_site=8, d_input=1536, d_hidden=1024, d_proj=512, cross_attention_heads=4)`
+
+Top-level composition of the four sub-modules.
+
+| Method | Signature | Contract |
+|---|---|---|
+| `forward(emb, site_idx=None)` | `(B, 1536), (B,) long\|None → (B, 234)` | With `site_idx` (strong SC / unsup SC / test windows): `cross_attn` produces per-window `M_cond`, then `species_head.forward_with_prototypes(q_r, M_cond)`. With `site_idx=None` (focal / OOD-site fallback): uses the shared `M_species` directly. |
+| `unsupervised_site_energy(emb, site_idx)` | `(B, 1536), (B,) long → scalar` | Direct Hopfield energy on `M_site`. Trains `site_head.{M, W_K, log_β}`. Projection frozen via `query_from_detached`. |
+| `unsupervised_cross_attn_energy(emb, site_idx)` | `(B, 1536), (B,) long → scalar` | **v2 auxiliary.** Site-conditioned species retrieval energy: cross-attention produces `M_cond`, Hopfield logsumexp over K then over species gives a per-window scalar; loss is `softplus(-agg).mean()`. Explicitly detaches `M_species`, `species.W_K.weight`, `species.log_β` so the species retrieval operator is never shaped by site-clustering signal. Trains `cross_attn.*` and `site_head.M` (via K/V in attention). |
+| `family_shrinkage_loss(family_idx)` | `(n_species,) long → scalar` | Delegates to `species_head.family_shrinkage_loss`. |
+
+**Kaggle checkpoint surface.** v2 requires `projection + species_head +
+site_head + cross_attn` to reproduce the training-time inference path.
+The OOD-site fallback (`site_idx=None`) bypasses both `site_head` and
+`cross_attn`, so for sites outside `S01..S23` one passes `site_idx=None`
+and the forward pass uses the shared `M_species` — no per-site
+prototype needed at inference.
 
 ### `affinity_matrix(model)` (module-level helper)
 
-Computes the eval-time species × site affinity as a
+Computes the *pre-attention* species × site affinity as a
 `(n_species, n_sites)` tensor by folding every `(k_s, k_l)` prototype
 pair into a single logsumexp per `(s, l)` cell. Used for interpretation
-and ecological reporting — not part of any training forward pass. See
-`star-schema-dimensional-analysis.md` §"Species × Site affinity" for
-the derivation. The implementation must agree on a tiny synthetic
-fixture with a brute-force quadruple-loop reference — enforced by
-`tests/test_affinity.py`.
+and ecological reporting; the v2 inference-time score additionally
+applies the learned cross-attention offset per window, so this affinity
+is a static view of the banks, not the full inference computation.
+Enforced by `tests/test_affinity.py` to match a brute-force
+quadruple-loop reference.
 
 ## Mathematical specification
 
@@ -177,52 +197,74 @@ $$
 q = \text{LayerNorm}\big(W_2\,\text{GELU}(W_1\,\text{emb} + b_1) + b_2\big), \qquad q_r = W_Q\,q
 $$
 
-`q` is the base projection (pre-`W_Q`), used only by the fusion gate.
-`q_r` is the query-space projection, used by both retrieval heads.
+`q_r` is the query-space projection, used by species retrieval (both
+the focal direct path and the cross-attention-refined soundscape path).
+The v1 gate that consumed `q` has been removed.
 
-**Species retrieval + Platt calibration.**
+**Species retrieval + Platt calibration (focal path).** For windows
+without a `site_idx` (focal recordings, OOD-site Kaggle fallback):
 
 $$
 \text{score}_s(q_r) = \sigma\!\left( a_s \cdot \frac{1}{\beta_s}\,\text{lse}_{k=1..K_s}\!\big(\beta_s \cdot q_r^\top W_{K,s}\,M^{(s)}_k\big) + b_s \right)
 $$
 
-where `a_s, b_s` are the per-species Platt parameters, `β_s = exp(log_β_species)`,
-and `M^{(s)}_k ∈ ℝ^D` is the k-th prototype of species `s`. The
-logsumexp is the modern-Hopfield retrieval energy — see
-star-schema §"Logsumexp over K as soft EM".
+where `a_s, b_s` are the per-species Platt parameters, `β_s =
+exp(log_β_species)`, and `M^{(s)}_k ∈ ℝ^D` is the k-th prototype of
+species `s`.
 
-**Site retrieval (two paths with a shared aggregate).** For a window
-with known site `l_w`:
-
-$$
-\text{agg}_{\text{site}}(q_r, l_w) = \frac{1}{\beta_l}\,\text{lse}_{k=1..K_l}\!\big(\beta_l \cdot q_r^\top W_{K,l}\,M^{(l_w)}_k\big)
-$$
+**Cross-attention refinement (soundscape path).** For a window with
+known site `l_w`, species prototypes are updated by a site-dependent
+residual:
 
 $$
-\text{score}_{\text{site}}(q_r, l_w) = \sigma(\text{agg}_{\text{site}}), \qquad
-\mathcal{L}_{\text{site\_unsup}} = -\,\mathbb{E}_{(q_r, l_w) \sim \text{unsup}}\,\text{agg}_{\text{site}}(q_r, l_w)
+\Delta^{(l)} = \text{MultiHeadAttention}\big(Q = M_{\text{species}},\ K = V = M^{(l)}_{\text{site}}\big), \qquad
+M^{(l, s)}_{\text{cond}, k} = M^{(s)}_k + \Delta^{(l)}_{s, k}
 $$
 
-The inference-time sigmoid produces a typicality score in `[0, 1]`
-consumed by the fusion gate; the training-time loss is a direct
-Hopfield energy minimization (mean negative aggregate). Both use the
-same underlying `_aggregate` function — that's a correctness invariant,
-not an optimization.
-
-**Gated fusion.**
+Retrieval runs against the conditioned prototypes:
 
 $$
-g(q) = \sigma(w_g^\top q + b_g) \in [0, 1], \qquad
-\text{score}(w, s) = g(q) \cdot \text{score}_s + (1 - g(q)) \cdot \text{score}_s \cdot \text{score}_{\text{site}}
+\text{score}_s(q_r, l_w) = \sigma\!\left( a_s \cdot \frac{1}{\beta_s}\,\text{lse}_{k=1..K_s}\!\big(\beta_s \cdot q_r^\top W_{K,s}\,M^{(l_w, s)}_{\text{cond}, k}\big) + b_s \right)
 $$
 
-Broadcasting: `g` is `(B, 1)` so it broadcasts against the species
-scores `(B, S)` cleanly. The `rearrange(site_score, "b -> b 1")`
-reshape puts the site typicality on the same footing. A past iteration
-collapsed `g` to `(B,)` with a `.squeeze(-1)` and the broadcast
-silently broke — `(B,) × (B, S)` is ill-defined for `B ≠ S`, caught by
-`tests/test_model_shapes.py::test_forward_with_site_returns_batch_species_shape`.
-Keep `g` two-dimensional.
+The retrieval equation is unchanged — only the prototypes carrying the
+site-specific residual differ between paths. This is the sense in
+which "one retrieval mechanism" is preserved despite the cross-bank
+composition.
+
+**Zero-init** of the attention `out_proj` makes `Δ = 0` at step 0, so
+the model starts *behaviorally* as the focal path would on the same
+`(q_r, M_species)` — no architectural shock. Gradient still flows into
+`out_proj` via `dloss/d(attended) · (softmax · V · W_V)`.
+
+**Unsupervised terms on unlabeled SC.**
+
+Two retrieval-energy terms on windows with known `site_idx` but no
+species label. Both detach `q_r` via `query_from_detached` so the
+projection receives zero gradient:
+
+$$
+\mathcal{L}_{\text{site}} = \mathbb{E}_{(q_r, l_w) \sim \text{unsup}}\,\text{softplus}\!\big(-\,\tfrac{1}{\beta_l}\,\text{lse}_k(\beta_l \cdot q_r^\top W_{K,l} M^{(l_w)}_k)\big)
+$$
+
+$$
+\mathcal{L}_{\text{site\_xattn}} = \mathbb{E}_{(q_r, l_w)}\,\text{softplus}\!\big(-\,\text{lse}_{s=1..S}\!\big[\tfrac{1}{\beta_s}\,\text{lse}_{k}(\beta_s \cdot q_r^\top \overline{W_{K,s}}\, M^{(l_w, s)}_{\text{cond}, k})\big]\big)
+$$
+
+`L_site` is the same bounded site Hopfield energy from v1 — "every
+unlabeled window should match some prototype in its site's bank".
+`L_site_xattn` is the v2 aux — "at least one site-conditioned species
+prototype should retrieve this window"; the outer `lse_s` over species
+keeps the gradient softer than a hard `max_s`. The overlines on
+`W_{K,s}` and (implicitly) `β_s`, `M_{\text{species}}` mark explicit
+`.detach()` — the species retrieval operator is never shaped by this
+loss. Only `cross_attn.*` and `M_{\text{site}}` (via attention K/V)
+move.
+
+Both terms use `softplus(-·) = BCE(σ(·), 1)` to bound the loss to
+`[0, ∞)` with natural saturation near zero. The unbounded
+`-mean(agg)` formulation diverged in training and dominated
+`L_labeled`.
 
 **Family partial pooling (training-time only).** Let `f(s) ∈ {0, ..., F-1}`
 be the family-of-species lookup. The family centroid at the current
@@ -244,44 +286,65 @@ partial pooling" for the hierarchical-Bayes framing.
 **Total training loss.**
 
 $$
-\mathcal{L} = \underbrace{\text{BCE}(\text{sp}_{\text{strong}}, y_{\text{strong}}) + \text{BCE}(\text{sp}_{\text{weak}}, y_{\text{weak}})}_{\mathcal{L}_{\text{labeled}}} + \lambda_{\text{site}}\,\mathcal{L}_{\text{site\_unsup}} + \lambda_{\text{fam}}\,\mathcal{L}_{\text{family}}
+\mathcal{L} = \underbrace{\text{BCE}(\text{sp}_{\text{strong}}, y_{\text{strong}}) + \text{BCE}(\text{sp}_{\text{weak}}, y_{\text{weak}})}_{\mathcal{L}_{\text{labeled}}} + \lambda_{\text{site}}\,(\mathcal{L}_{\text{site}} + \mathcal{L}_{\text{site\_xattn}}) + \lambda_{\text{fam}}\,\mathcal{L}_{\text{family}}
 $$
 
-Defaults: `λ_site = 0.1`, `λ_fam = 1e-2`. Locked after the S22
-pre-registered sweep (below). No per-term ramps, no warmup, no
-asymmetric weight decay.
+Defaults: `λ_site = 0.1` (shared weight on both unsupervised terms),
+`λ_fam = 1e-2`. Locked after the S22 pre-registered sweep. No per-term
+ramps, no warmup, no asymmetric weight decay.
 
 **Gradient routing.** Which parameters does each loss touch?
 
-| Parameter | `L_labeled` | `L_site_unsup` | `L_family` |
-|---|:-:|:-:|:-:|
-| `projection.proj` (MLP) | ✓ | ✗ (frozen via `no_grad`) | ✗ |
-| `projection.W_Q` | ✓ | ✗ (frozen via `no_grad`) | ✗ |
-| `species_head.W_K, log_β, cal_scale, cal_bias` | ✓ | ✗ | ✗ |
-| `species_head.M` (= `M_species`) | ✓ | ✗ | ✓ (LHS only; target is stop-grad) |
-| `site_head.W_K, M, log_β` | ✓ (via gated fusion on strong SC) | ✓ | ✗ |
-| `gate` | ✓ | ✗ | ✗ |
+| Parameter | `L_labeled` | `L_site` | `L_site_xattn` | `L_family` |
+|---|:-:|:-:|:-:|:-:|
+| `projection.{proj, W_Q}` | ✓ | ✗ (frozen via `no_grad`) | ✗ (frozen via `no_grad`) | ✗ |
+| `species_head.M` (= `M_species`) | ✓ | ✗ | ✗ (`.detach()`) | ✓ (LHS only; target is stop-grad) |
+| `species_head.W_K, log_β` | ✓ | ✗ | ✗ (`.detach()`) | ✗ |
+| `species_head.cal_scale, cal_bias` | ✓ | ✗ | ✗ | ✗ |
+| `site_head.M` (= `M_site`) | ✓ (via cross-attn K/V on strong SC) | ✓ | ✓ (via cross-attn K/V on unsup SC) | ✗ |
+| `site_head.W_K, log_β` | ✗ | ✓ | ✗ | ✗ |
+| `cross_attn.*` (MHA weights) | ✓ (via strong SC, ~262 wins/epoch) | ✗ | ✓ (via unsup SC, 127K wins/epoch) | ✗ |
 
-Two things worth flagging against the star-schema routing table:
+Four invariants worth stating explicitly:
 
-1. **`W_Q` under `L_site_unsup`.** We freeze `W_Q` (no_grad), whereas
-   the star-schema table currently lists it as trained. Rationale:
-   `W_Q` is a shared query transformation across species and site
-   retrieval, and the exp 106 lesson ("site entangled with domain
-   shift") argues for conservative treatment of shared parameters
-   under the site-clustering loss. If site-driven rotation of `W_Q`
-   turns out to be load-bearing, we can revisit by loosening the
-   `query_from_detached` implementation. Until then, the stronger
-   invariant holds.
-2. **`species_head.W_K` under `L_site_unsup`.** The routing table
-   correctly has this as ✗: `L_site_unsup` only flows through
-   `site_head`, so species-side retrieval parameters are untouched.
+1. **Projection is frozen under every unsupervised loss.** Both
+   `unsupervised_site_energy` and `unsupervised_cross_attn_energy` call
+   `query_from_detached`, which wraps the full backbone in
+   `torch.no_grad()`. The submodule boundary is the detach boundary.
+2. **Species retrieval operator is frozen under `L_site_xattn`.**
+   `M_species`, `species_head.W_K.weight`, and `species_head.log_β` are
+   explicitly `.detach()`-ed inside `unsupervised_cross_attn_energy`.
+   This is the v2 analog of invariant 1 for the species side: the
+   species bank must not be shaped by site-clustering signal, or domain
+   shift entangles with site structure (exp 106 failure mode).
+3. **Site-side params are the *only* trainable targets of the unsup
+   terms.** `M_site`, `site_head.W_K`, `site_head.log_β` are shaped by
+   `L_site`; `M_site` and `cross_attn.*` are shaped by `L_site_xattn`.
+4. **`cross_attn.*` is trained by *both* labeled and unsupervised
+   signals.** Under v1 the composition operator (the gate) was trained
+   by labeled strong SC alone — ~262 windows/epoch, too thin. The v2
+   `L_site_xattn` term extends this to the 127K unlabeled windows;
+   this is the mechanism that closes the v1 "cross-attn signal is
+   starved" gap.
 
-The `projection` detach invariant is verified by
-`tests/test_gradient_routing.py::test_unsup_site_energy_does_not_update_projection`,
-which asserts zero gradient across `model.projection.parameters()`
-after a pure `L_site_unsup` backward pass, and non-zero gradient on the
-site head's three trainable parameter groups.
+**Zero-init timing.** At step 0, `out_proj.weight = 0` so
+`d_loss / d_out_proj.weight = d_loss / d_attended · (softmax · V)` is
+non-zero (out_proj trains from step 1), but
+`d_loss / d_V = softmax^T · out_proj.weight^T · d_loss / d_attended` is
+zero (V/K projections and hence `in_proj_weight` and `M_site` don't
+train via the cross-attn path at step 0). From step 2 onward, out_proj
+has non-zero weight and the full gradient chain unlocks. `M_site` still
+trains from step 1 via the direct `L_site` term — only its
+cross-attention path is gated on the out_proj unlock.
+
+These invariants are enforced by `tests/test_gradient_routing.py`:
+
+- `test_unsup_site_energy_does_not_update_projection`
+- `test_unsup_cross_attn_energy_does_not_update_projection`
+- `test_unsup_cross_attn_energy_does_not_update_species_retrieval_ops`
+- `test_unsup_cross_attn_energy_trains_out_proj_at_init`
+- `test_unsup_cross_attn_energy_trains_M_site_and_in_proj_after_unlock`
+- `test_labeled_bce_does_update_projection` (negative control)
 
 ## Label preparation
 
@@ -297,7 +360,8 @@ the same `(window_id, embedding)` schema used throughout exp 106.
 No Perch filtering, no silence detection, no tri-state, no RMS
 thresholds. Focal bag labels and the 739 strong SC labels are the
 complete labeled supervision. The 127K unsupervised windows carry only
-site metadata and flow exclusively through `L_site_unsup`.
+site metadata and flow through the two unsupervised terms (direct site
+Hopfield energy + cross-attention species retrieval energy).
 
 **Preflight statistics computed in the same pass:**
 
@@ -417,7 +481,7 @@ Lock the chosen `λ_fam` and run the full 9-fold LOSO without re-tuning.
 3. **Final training on all data** (focal + 739 labeled SC + 127K
    unlabeled SC, no fold hold-out), locked hyperparameters, single-GPU
    run ~1 h.
-4. **Package**: exp 107 checkpoint (~3.94M params) + Perch v2 ONNX
+4. **Package**: exp 107 checkpoint (~5.0M params) + Perch v2 ONNX
    (reused from exp 102/105 Kaggle package) + preprocessing. `L_family`
    is training-time only — the shipped checkpoint contains no
    family-level parameters.
@@ -539,11 +603,13 @@ under a minute on a warm venv.
 
 | Test file | Invariant |
 |---|---|
-| `tests/test_model_shapes.py` | Default-shape construction succeeds with ~3.94M trainable params; both forward signatures produce `(B, 234)` probabilities in `[0, 1]`; `unsupervised_site_energy` returns a finite scalar. |
-| `tests/test_gradient_routing.py` | Under a pure `L_site_unsup` backward, every parameter under `model.projection` has zero gradient, while `site_head.M`, `site_head.W_K.weight`, and `site_head.log_beta` all have non-zero gradient. Negative control: labeled BCE gives the backbone non-zero gradient. |
+| `tests/test_model_shapes.py` | Default-shape construction succeeds with ~5.0M trainable params (v1 3.94M core + 1.05M cross-attention); both forward signatures produce `(B, 234)` probabilities in `[0, 1]`; both unsupervised energies return finite scalars. |
+| `tests/test_gradient_routing.py` | Enforces the four gradient-routing invariants: (1) projection frozen under `L_site` and `L_site_xattn`; (2) species retrieval operator (`M_species`, `species.W_K`, `species.log_β`) frozen under `L_site_xattn` via explicit `.detach()`; (3) `cross_attn.*` and `M_site` both receive unsupervised gradient under `L_site_xattn`; (4) negative control — labeled BCE shapes the projection. |
+| `tests/test_cross_attention.py` | Cross-attention module: output shape `(B, S, K_sp, D)`; zero-init identity at step 0; site-dependence emerges as `out_proj` trains; labeled BCE gradient reaches `out_proj` at init and `M_site` once attention is active; default-size outputs are not saturated (regression against the LayerNorm-std-blowup bug). |
 | `tests/test_affinity.py` | `affinity_matrix` einsum matches a brute-force quadruple-loop reference on a tiny synthetic model (max abs err < 1e-5); default-shape output is `(234, 23)` and finite. |
 | `tests/test_overfit_one_batch.py` | Tiny model (n_species=5, n_sites=2, d_proj=8) drives BCE on a single 16-window fake batch below 1e-2 in 200 AdamW steps. Catches wiring errors in Platt head, logsumexp aggregation, or einsum contractions. |
 | `tests/test_family_index.py` | `build_family_index` on the package-bundled CSV returns a `(234,)` long tensor with 60–80 contiguous family ids; raises cleanly on missing species; is accepted by `model.family_shrinkage_loss` without shape errors. |
+| `tests/test_data.py` | Data pipeline: LOSO folds are non-overlapping and complete; datasets emit correct tensor shapes; focal balancer upsamples rare species; end-to-end training step runs and emits all four loss components (`labeled`, `site`, `site_xattn`, `family`). |
 
 ## SLURM setup
 
@@ -576,9 +642,10 @@ aren't dimensionally compatible.
 
 Exp 107 adds:
 - Label preparation pass (bag-label focal + unsupervised SC preparation)
-- PyTorch memory-bank model with flat species bank, unsupervised site
-  Hopfield energy loss, and `L_family` partial pooling (~300 LOC in
-  `src/birdclef_107/model.py`, factored into 4 `nn.Module` classes)
+- PyTorch memory-bank model with flat species bank, cross-attention
+  site conditioning, two unsupervised Hopfield energy terms, and
+  `L_family` partial pooling (~400 LOC in `src/birdclef_107/model.py`,
+  factored into 5 `nn.Module` classes)
 - One-phase training loop with per-species-balanced focal sampling
 - LOSO cross-validation wrapper with pooled AUROC + subset metrics
 - Kaggle packaging + ensemble blend
@@ -594,11 +661,25 @@ Exp 107 adds:
    ~a handful of virtual samples, matching the amphibian median of 6
    recordings). The pre-registered S22 sweep
    `{0, 1e-3, 1e-2, 1e-1, 1}` locks the actual value used in LOSO.
-3. **`W_Q` under `L_site_unsup`.** Currently frozen via `no_grad` in
-   `query_from_detached`. Star-schema §"Training signal routing"
-   currently lists `W_Q` as trained — the prose, formula, and routing
-   table disagree there. The code enforces the stronger invariant (see
+3. **`W_Q` under unsupervised losses.** Currently frozen via `no_grad`
+   in `query_from_detached`, applied by both `unsupervised_site_energy`
+   and `unsupervised_cross_attn_energy`. Star-schema §"Training signal
+   routing" lists `W_Q` as trained — the prose, formula, and routing
+   table there disagree; the code enforces the stronger invariant (see
    "Gradient routing" table above). If the S22 sweep shows site
-   retrieval undertrained, revisit by swapping the no_grad for a
-   plain `.detach()` on the backbone output and letting `W_Q.weight`
-   receive gradient again.
+   retrieval undertrained, revisit by swapping the no_grad for a plain
+   `.detach()` on the backbone output and letting `W_Q.weight` receive
+   gradient again.
+4. **Shared vs split `λ` on the two unsup terms.** Currently
+   `compute_loss` multiplies `λ_site · (L_site + L_site_xattn)` — one
+   shared weight. If empirical scale of the two terms diverges (the
+   `L_site_xattn` aggregate logsumexp's over `S = 234` species, so its
+   pre-softplus signal is larger than `L_site`'s lse-over-K=8), split
+   into `λ_site` and `λ_site_xattn` and tune independently.
+5. **Softness of the cross-attn aux.** The aux loss assumes *some
+   species* is present in every unlabeled window. Silent/background
+   windows violate this. If prototype-noise collapse emerges (cross-
+   attn producing generic "any-species-sticks" offsets), replace the
+   `softplus(-logsumexp_s)` with an entropy-minimization term
+   (peakedness without magnitude assumption) or condition the aux on a
+   Perch "any-bioacoustic-signal" prefilter.

@@ -14,6 +14,7 @@ import torch
 from birdclef_107.data import (
     EmbeddingDataset,
     LOSOFold,
+    RecordingGroupedBatchSampler,
     UnsupervisedDataset,
     build_focal_sampler,
     collate_triple_batch,
@@ -109,12 +110,110 @@ def test_unsupervised_dataset_shapes():
     n, d = 20, 1536
     emb = np.random.randn(n, d).astype(np.float32)
     site_idx = np.arange(n, dtype=np.int64) % 3
+    rec_idx = np.arange(n, dtype=np.int64) // 4  # 4 windows per recording
 
-    ds = UnsupervisedDataset(emb, site_idx)
+    ds = UnsupervisedDataset(emb, site_idx, recording_indices=rec_idx)
     assert len(ds) == n
     item = ds[0]
     assert item["emb"].shape == (d,)
     assert item["site_idx"].shape == ()
+    assert item["recording_idx"].shape == ()
+
+
+def test_unsupervised_dataset_without_recording_idx():
+    """UnsupervisedDataset still works without recording_indices (back-compat)."""
+    n, d = 10, 1536
+    emb = np.random.randn(n, d).astype(np.float32)
+    site_idx = np.arange(n, dtype=np.int64) % 3
+
+    ds = UnsupervisedDataset(emb, site_idx)  # no recording_indices
+    item = ds[0]
+    assert "recording_idx" not in item
+
+
+def test_recording_grouped_batch_sampler_structure():
+    """Sampler emits batches of R×N indices, each batch covers R unique
+    recordings, each recording contributes exactly N windows.
+    """
+    np.random.seed(0)
+    # 20 recordings × 10 windows each = 200 total
+    rec_idx = np.repeat(np.arange(20), 10).astype(np.int64)
+    sampler = RecordingGroupedBatchSampler(
+        rec_idx,
+        recordings_per_batch=4,
+        windows_per_recording=3,
+        seed=0,
+    )
+
+    batches = list(sampler)
+    assert len(batches) == len(sampler) == 5  # 20 recordings // 4 per batch
+
+    for batch in batches:
+        assert len(batch) == 4 * 3  # R × N = 12
+        # Each batch should cover exactly 4 distinct recordings
+        recs_in_batch = {int(rec_idx[i]) for i in batch}
+        assert len(recs_in_batch) == 4
+        # Each recording contributes exactly N windows
+        from collections import Counter
+        per_rec = Counter(int(rec_idx[i]) for i in batch)
+        for r, count in per_rec.items():
+            assert count == 3, (
+                f"recording {r} appeared {count} times, expected 3"
+            )
+
+
+def test_recording_grouped_batch_sampler_with_replacement_for_thin_recordings():
+    """If a recording has fewer than N windows, sampler falls back to
+    with-replacement sampling. Ensures the batch size invariant holds.
+    """
+    np.random.seed(0)
+    # 4 recordings × 2 windows = 8 windows; ask for N=5 per recording.
+    rec_idx = np.repeat(np.arange(4), 2).astype(np.int64)
+    sampler = RecordingGroupedBatchSampler(
+        rec_idx,
+        recordings_per_batch=2,
+        windows_per_recording=5,
+        seed=0,
+    )
+
+    batches = list(sampler)
+    assert len(batches) >= 1
+    for batch in batches:
+        assert len(batch) == 2 * 5  # batch size invariant
+        # Recordings can repeat windows under with-replacement
+        recs = {int(rec_idx[i]) for i in batch}
+        assert len(recs) == 2  # still 2 distinct recordings
+
+
+def test_recording_grouped_batch_sampler_reshuffles_per_epoch():
+    """Two iterations should yield different batch orderings (the
+    sampler increments its internal epoch counter)."""
+    rec_idx = np.repeat(np.arange(20), 5).astype(np.int64)
+    sampler = RecordingGroupedBatchSampler(
+        rec_idx,
+        recordings_per_batch=4,
+        windows_per_recording=3,
+        seed=0,
+    )
+    ep1 = list(sampler)
+    ep2 = list(sampler)
+    # Same number of batches but different ordering
+    assert len(ep1) == len(ep2)
+    # Convert to comparable signatures
+    sig1 = tuple(tuple(b) for b in ep1)
+    sig2 = tuple(tuple(b) for b in ep2)
+    assert sig1 != sig2
+
+
+def test_recording_grouped_batch_sampler_raises_for_too_few_recordings():
+    """If fewer recordings exist than R, sampler raises clearly."""
+    rec_idx = np.repeat(np.arange(2), 5).astype(np.int64)
+    try:
+        RecordingGroupedBatchSampler(rec_idx, recordings_per_batch=4)
+    except ValueError as e:
+        assert "recordings available" in str(e)
+    else:
+        raise AssertionError("expected ValueError for insufficient recordings")
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +316,9 @@ def test_training_step_runs():
     optimizer.step()
 
     assert loss.item() > 0
-    assert all(k in components for k in ["labeled", "site", "family"])
+    assert all(
+        k in components for k in ["labeled", "site", "site_xattn", "family"]
+    )
 
 
 # ---------------------------------------------------------------------------

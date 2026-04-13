@@ -16,18 +16,49 @@ cost). See `proposal.md` and `design.md`.
 
 ## Status (2026-04-12)
 
-**Phase A complete**: architecture + 13 smoke tests passing.
+**Phase A complete**: architecture + smoke tests passing.
 **Phase B complete**: data pipeline + training loop + evaluation + sweep
-driver. 26/26 combined tests passing.
+driver.
+**v2 cross-attention**: always-on. Species prototypes are
+site-conditioned per window via multi-head cross-attention; `M_site`
+feeds as K/V. The v1 scalar gate (proven hurtful at −0.045 AUROC) has
+been removed.
+**v2 auxiliary unsup loss**: the 127K unlabeled SC windows now shape
+cross-attention via `unsupervised_cross_attn_energy`, in addition to
+the direct `unsupervised_site_energy` on `M_site`. This closes the
+v1-to-v2 transition gap (cross-attn was trained by only 262 labeled
+windows per epoch).
 
-**First real result (smoke test on S22, job 6463628)**: **0.658 AUROC**
-— below the 0.749 ridge baseline from exp 106. Several debugging issues
-resolved during smoke testing; see `../../..//.claude/projects/.../memory/exp-107-hopfield-prototypes.md`
-for the debugging log.
+**Results history on S22 decision fold:**
 
-**Current test (job 6467550)**: restructured training regime (outer loop
-on focal, not strong). Tests whether the underperformance was a training
-budget issue or a deeper architectural limit.
+| Config | S22 AUROC | Δ vs ridge (0.749) |
+|---|---|---|
+| Ridge baseline (exp 106) | 0.749 | — |
+| v1 no-gate (ReZero α=0) | **0.716** | −0.033 |
+| v1 GPU (with gate) | 0.671 | −0.078 |
+| v2 zero-init out_proj, labeled-only | 0.618 | −0.131 |
+| v2 + softplus unsup aux | 0.5921 | −0.157 |
+| **v3 contrastive (3ep, job 6487469)** | **0.6958** | **−0.053** |
+
+**v3 status (2026-04-13)**: contrastive losses fix both v2 failure modes —
+`L_site` is non-zero throughout (saturation bug gone), `L_xattn` decreases
+without collapsing. **Val AUROC rose monotonically** through all 3 epochs
+(0.617 → 0.685 → 0.696), opposite of v2's "peak early, regress" pattern.
+
+But peak (0.6958) is still below v1-no-gate (0.716) — the model ran out
+of LR (cosine decayed to 2.49e-08 by step 3100). Per-epoch gains were
+0.069 → 0.011 → ? — diminishing but not flat. Most likely interpretation:
+**3 epochs insufficient given the new contrastive losses; need 6+ epochs
+with the cosine extended** to actually saturate.
+
+Tier 2 dynamics check (all passed):
+- `L_site` non-zero throughout (saturation bug fixed)
+- `L_xattn` decreases without collapsing (no >10× drop)
+- `unsup/lab` ratio stays in target [0.5, 2.0]
+- Val AUROC rises with unsup loss decreasing (success signature)
+
+Next likely move: 6-epoch run with extended cosine, OR try doubling
+`lambda_xattn` since the xattn ratio is on the lower end.
 
 ## Data dependency
 
@@ -89,7 +120,8 @@ sbatch sbatch/sweep_lambda_fam.sbatch
 sbatch sbatch/test.sbatch
 ```
 
-Venv: `~/scratch/birdclef-2026/.venv-106` (shared with exp 106).
+Venv: `~/scratch/birdclef-2026/.venv-107` (dedicated, CUDA torch). Created
+fresh by `sbatch/_setup-venv.sh` on first use.
 
 ## Directory structure
 
@@ -102,8 +134,8 @@ Venv: `~/scratch/birdclef-2026/.venv-106` (shared with exp 106).
 │   ├── star-schema-dimensional-analysis.md
 │   └── families.csv                  # species → family (iNat API)
 ├── src/birdclef_107/
-│   ├── model.py                      # PerchProjection + 2 heads + composition
-│   ├── losses.py                     # 3-term compute_loss
+│   ├── model.py                      # 5 nn.Modules: PerchProjection, 2 heads, cross-attn, top-level
+│   ├── losses.py                     # 4-component compute_loss
 │   ├── family_utils.py               # build_family_index
 │   ├── data.py                       # 3-stream loaders + LOSO splits
 │   ├── eval.py                       # pooled AUROC + subsets
@@ -115,23 +147,31 @@ Venv: `~/scratch/birdclef-2026/.venv-106` (shared with exp 106).
 │   └── fetch_families.py
 ├── sbatch/
 │   ├── _setup-venv.sh
-│   ├── test.sbatch                   # 26 Phase A+B tests
+│   ├── test.sbatch                   # All tests (model/data/gradient/cross-attn)
 │   ├── train_loso.sbatch             # single-job LOSO
 │   └── sweep_lambda_fam.sbatch       # single-job sweep
-├── tests/                            # 26 tests (13 Phase A + 13 Phase B)
+├── tests/                            # 7 files covering model + data + gradient invariants
 └── logs/                             # SLURM output
 ```
 
-## Open architectural question
+## Architectural notes (v2 committed)
 
-Proposal v1's scalar site gate (`g * species + (1-g) * species * site_score`)
-explicitly under-shares information between banks. The proposal itself
-flags this as a v2 candidate: "low-rank site→species projection." If
-the current training regime fix doesn't close the gap to ridge 0.749,
-the natural next step is cross-bank attention (species prototypes attend
-to site prototypes per window). The `affinity_matrix` function already
-computes this for interpretation — promoting it to the forward pass is
-the concrete v2 change.
+- **Scalar gate removed.** Replaced with species-site cross-attention.
+  The v1 `g · sp + (1 − g) · sp · site_score` construction is gone.
+- **Cross-attention is always on.** No feature flag. Focal recordings
+  (`site_idx=None`) still use the shared species bank directly — this
+  doubles as the OOD-site Kaggle fallback.
+- **Zero-init `out_proj`.** Cross-attention is numerically identity at
+  step 0. Gradient flows into `out_proj` from step 1 (unlocked at step
+  2+ for the rest of the attention weights and `M_site` via the
+  cross-attn path).
+- **Two unsupervised terms.** `L_site` on `M_site` directly (v1, kept
+  bounded via softplus); `L_site_xattn` on cross-attention-refined
+  species retrieval (v2 new). The v2 term routes unlabeled SC gradient
+  to `cross_attn.*` and `M_site`.
+- **Detach policy on `L_site_xattn`.** Explicitly detaches `M_species`,
+  `species.W_K.weight`, `species.log_β` — preserves v1's invariant that
+  the species retrieval operator stays BCE-shaped.
 
 ## Known issues / gotchas
 
