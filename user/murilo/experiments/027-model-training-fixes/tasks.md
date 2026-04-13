@@ -148,7 +148,7 @@ Implementation needed:
 - [x] Training complete ✅ — job 6469719, RTX 6000. Best val/auroc=0.852 at epoch 18.
   Offline: val/auroc=0.847, val/cmap=0.599, val_sc/auroc=0.960, val_sc/cmap=0.873.
   Flat vs v5j-control on focal (-0.002), slight soundscape improvement (+0.005/+0.020).
-- [x] ONNX export + LB submission ✅ — submitted, awaiting LB score
+- [x] ONNX export + LB submission ✅ — **LB = 0.895 (-0.011 vs v5j)**. Regressed.
 
 ### Experiment 4c: Model soup (checkpoint averaging)
 

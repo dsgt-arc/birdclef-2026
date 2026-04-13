@@ -238,12 +238,25 @@ W&B comparisons.
 | val/top5_acc | 0.866 | 0.863 | -0.003 |
 | val_sc/auroc | 0.955 | 0.960 | +0.005 |
 | val_sc/cmap | 0.853 | 0.873 | +0.020 |
-| LB | — | pending | — |
+| LB | — | **0.895** | **-0.011** vs v5j (0.906) |
 
-**Analysis**: Focal metrics essentially flat (-0.002 auroc). Soundscape metrics
-slightly improved (+0.005 auroc, +0.020 cmap) — but offline soundscape metrics
-have been unreliable. The simple `(X+80)/80` normalization performs comparably to
-our global mean/std pipeline offline. Only LB can tell if it generalizes better.
+**LB Result: 0.895 — REGRESSED**
+
+**LB = 0.895** (-0.011 from v5j baseline 0.906). Simple mel normalization regresses
+on LB despite being essentially flat offline (-0.002 auroc). Another training-time
+change that fails to improve on v5j.
+
+Offline soundscape metrics were again misleading: val_sc/auroc improved +0.005 and
+val_sc/cmap improved +0.020, but LB regressed -0.011. The offline/LB anti-correlation
+continues. The `(X+80)/80` normalization maps to [0,1] without dataset statistics,
+but this simplicity does not translate to better soundscape generalization.
+
+**Phase 4 summary**: Both tested Salman-derived changes failed.
+
+| Change | LB | Delta vs v5j |
+|--------|-----|-------------|
+| v11a: max trick + RMS | — (not submitted, -0.045 offline) | likely worse |
+| v11b: simple mel norm | **0.895** | **-0.011** |
 
 ### v11a (Max trick + RMS sampling)
 

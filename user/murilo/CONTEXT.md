@@ -38,6 +38,7 @@ Read ALL of these at session start to get full context.
 | v5j-pl-v1 (exp 025) | 0.897 | Pseudo-labels (regressed) |
 | v10a addmix+CE (exp 027) | 0.494 | FAILED — CE logits too small for sigmoid |
 | v10b addmix+BCE (exp 027) | 0.875 | FAILED — additive MixUp regresses -0.031 |
+| v11b simple mel norm (exp 027) | 0.895 | FAILED — mel norm regresses -0.011 |
 | v5j-10s (10s window, exp 027) | 0.906 | Flat — TTA already covers overlap |
 
 ## What happened in this session (2026-04-12)
@@ -64,7 +65,7 @@ Created comprehensive reference notes for both.
 |--------|-----------|-----------------|-------|
 | v5j-control (baseline) | 0.849 | — | Matches v5j-dualval, pipeline verified |
 | v11a: max trick + RMS | 0.804 | **-0.045** | Focal regression, val_sc flat |
-| v11b: simple mel norm | 0.847 | -0.002 | Essentially flat, LB pending |
+| v11b: simple mel norm | 0.847 | -0.002 | **LB 0.895 (-0.011)** |
 
 v11a (max trick) regressed substantially on focal metrics despite being Salman's
 most distinctive technique. Likely cause: train/val mismatch (RMS-selected training
@@ -109,9 +110,10 @@ Implementation needed:
 2. `v3_waveform_mix.yaml` config
 3. Train + ONNX export + LB submission
 
-### Priority 2: v11b LB score (submitted, awaiting result)
+### Priority 2: v11b LB score — DONE (0.895, regressed -0.011)
 
-v11b (simple mel norm) submitted to Kaggle. Flat offline (-0.002). Quick data point.
+v11b (simple mel norm) scored **0.895 LB** (-0.011 vs v5j 0.906). Another training
+recipe change that regresses. Mel normalization change is now a confirmed dead end.
 
 ### Priority 3: Ensemble improvements
 

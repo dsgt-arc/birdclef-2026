@@ -579,7 +579,7 @@ Inference-only change, no new model.
 |------|--------|-----------|----------|-------------|-----|------------|
 | `v5j-control` | v5j baseline (W&B control) | 0.849 | 0.596 | 0.955 | — | `027-.../best-epochepoch=14.ckpt` |
 | `v11a-maxtrick` | max trick + RMS sampling | 0.804 | 0.516 | 0.953 | — | `027-.../best-epochepoch=18.ckpt` |
-| `v11b-melnorm` | simple mel norm (X+80)/80 | 0.847 | 0.599 | 0.960 | pending | `027-.../best-epochepoch=18.ckpt` |
+| `v11b-melnorm` | simple mel norm (X+80)/80 | 0.847 | 0.599 | 0.960 | **0.895** | `027-.../best-epochepoch=18.ckpt` |
 
 v5j-control matches v5j-dualval (exp 026): val/auroc 0.849 vs 0.849. Pipeline verified.
 
