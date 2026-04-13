@@ -123,12 +123,15 @@ model selects and learns from training data. The gradient flows only through
 the segment with strongest evidence — silent segments get zero gradient.
 
 Implementation needed:
-- [ ] Add RMS-based crop selection to `SEDFocalDataset.__getitem__()`
-- [ ] Add `max_trick` and `max_trick_factor` params to training config
-- [ ] Modify `training_step()` to reshape (B, K, C, H, W) → (B*K, C, H, W),
-      run forward, reshape back, take max before loss computation
-- [ ] Create `v11a_maxtrick.yaml` config (15s window, max_trick_factor=3)
-- [ ] Train + ONNX export + LB submission
+- [x] Add RMS-based crop selection to `SEDFocalDataset.__getitem__()` ✅
+- [x] Add `max_trick` and `max_trick_factor` params to training config ✅
+- [x] Modify `training_step()` to reshape, forward, max before loss ✅
+- [x] Create `v11a_maxtrick.yaml` config (15s window, max_trick_factor=3) ✅
+- [x] Training complete ✅ — job 6469711, V100. Best val/auroc=0.805 at epoch 18.
+  **Substantial focal regression**: val/auroc 0.804 (-0.045 vs control), val/cmap 0.516 (-0.080).
+  val_sc/auroc flat (0.953 vs 0.955). Train/val mismatch likely: model trains on
+  RMS-selected high-energy segments but validates on random crops including silence.
+- [ ] LB submission (unlikely to improve given -0.045 offline regression)
 
 ### Experiment 4b: Mel normalization change
 

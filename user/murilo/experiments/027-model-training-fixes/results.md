@@ -244,3 +244,36 @@ W&B comparisons.
 slightly improved (+0.005 auroc, +0.020 cmap) — but offline soundscape metrics
 have been unreliable. The simple `(X+80)/80` normalization performs comparably to
 our global mean/std pipeline offline. Only LB can tell if it generalizes better.
+
+### v11a (Max trick + RMS sampling)
+
+**Config**: `configs/v11a_maxtrick.yaml` — 15s RMS window, 3×5s max trick
+**Changes from v5j**: `max_trick=true`, `max_trick_factor=3`, `rms_sampling=true`,
+  `window_duration=15.0`, `batch_size=32`
+**SLURM**: Job 6469711, V100, ~45min walltime
+**Checkpoint**: epoch 18 (best by val/auroc = 0.805)
+
+| Metric | v5j-control | v11a | Delta |
+|--------|------------|------|-------|
+| val/auroc | 0.849 | 0.804 | **-0.045** |
+| val/cmap | 0.596 | 0.516 | **-0.080** |
+| val/top1_acc | 0.752 | 0.641 | **-0.111** |
+| val/top5_acc | 0.866 | 0.744 | **-0.122** |
+| val_sc/auroc | 0.955 | 0.953 | -0.002 |
+| val_sc/cmap | 0.853 | 0.863 | +0.010 |
+| LB | — | — | — |
+
+**Analysis**: Substantial regression on all focal metrics. val_sc essentially flat.
+
+Likely causes:
+1. **Train/val mismatch**: model trains on RMS-selected high-energy segments but
+   validates on random crops (many containing silence). The model may have learned
+   to rely on high-energy features that are absent in random val crops.
+2. **Reduced batch diversity**: batch_size=32 with 3 segments each = only 32 unique
+   recordings per batch (vs 64 for v5j). Fewer unique examples per epoch.
+3. **Val mel cropping**: mel target_frames=511 (5s) but val receives 15s waveforms.
+   The mel transform center-crops to 511 frames — only the center 5s is evaluated.
+
+The val_sc being flat while focal regresses -0.045 is interesting — suggests the
+model may still generalize to soundscapes despite worse focal metrics. But given
+the magnitude of offline regression, LB improvement is unlikely.
