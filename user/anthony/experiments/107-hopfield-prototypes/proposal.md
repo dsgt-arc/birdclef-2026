@@ -1,8 +1,22 @@
 # Proposal: Prototype Retrieval for Amphibian-Dominated Soundscapes
 
-**Status**: proposed (v1.2)
-**Created**: 2026-04-10 (axiomatic simplification 2026-04-11, preflight integration 2026-04-11, partial-pooling refactor 2026-04-11)
+**Status**: as-built (v4 regularized).
+**Created**: 2026-04-10 (axiomatic simplification 2026-04-11, preflight 2026-04-11, partial-pooling 2026-04-11, v2 cross-attention 2026-04-13, v3 contrastive losses 2026-04-13, v4 regularization 2026-04-13).
 **Author**: Anthony
+
+> **As-built note.** This document was originally a *proposal*. It has
+> been edited into a record of what was actually built. The thesis
+> (factored Hopfield retrieval × three data streams × learned projection
+> over frozen Perch) is unchanged. Several v1 design details have been
+> overridden in v2/v3/v4 — notably the **scalar-gate fusion** (v1) was
+> replaced by **species-site cross-attention** (v2), the **softplus-
+> bounded unsupervised term** was replaced by **InfoNCE** (v3), and the
+> **training schedule + regularization** was rebuilt in v4. Where v1
+> prose still appears below, it is annotated with a pointer to the
+> as-built override. The source of truth for current training config is
+> `scripts/train.py`, `src/birdclef_107/losses.py`, and
+> `sbatch/train_loso.sbatch`. Current shipping results, caveats, and
+> the LB gap are in §Results log and §Limitations.
 
 ## Thesis
 
@@ -172,16 +186,24 @@ Perch emb (1536)
   differentiates orphans from their data-rich siblings (see
   Limitations).
 
-- **Gated fusion**: `score = g·species + (1-g)·species·site_score`,
-  with `g = sigmoid(Linear(q))` a learned per-window gate. Note:
-  `site_score` is scalar per window (one gate for all 234 species),
-  not a per-species site prior — see Limitations.
+- ~~**Gated fusion**: `score = g·species + (1-g)·species·site_score`~~
+  **OVERRIDDEN in v2.** The scalar gate was deleted — it hurt by
+  −0.045 AUROC on S22 and was inconsistent with the factored-star-
+  schema thesis (site contributed only a scalar, not per-species
+  information). Shipping architecture uses **species-site cross-
+  attention** (`SpeciesSiteCrossAttention` in `model.py`): species
+  prototypes are refined per window by attending over the site bank,
+  with zero-init `out_proj` so the module starts at identity. See
+  `docs/concepts/cross-attention-factored-hopfield.md` for the
+  evolution note.
 
 - **Output dim**: 234 competition species (no silence class).
 
-- **Total params**: ~3.4M (projection ~2.1M, W_Q/W_K_* ~786K, species
-  bank 959K, site bank 94K, gate+Platt ~1K). No family-bank parameters
-  at all; `M_family_mean` is derived at each training step.
+- **Total params**: ~5.0M (v4 as-built — projection ~2.1M including
+  dropout modules (zero-param), `W_Q`/`W_K_*` ~786K, species bank
+  959K, site bank ~95K, cross-attention MHA ~1.05M, family-bank
+  derived not stored). Trainable-parameter count is covered by
+  `tests/test_model_shapes.py::test_default_model_param_count_is_about_5m`.
 
 ### Data streams
 
@@ -337,14 +359,30 @@ automatically. K-means warm-start is a convenience, not a necessity,
 and doing k-means in raw Perch space then projecting through a random
 MLP partially destroys the cluster structure anyway.
 
-### Training schedule
+### Training schedule (v4 as-built)
 
-- **Optimizer**: AdamW, `lr = 3e-4`, cosine decay, 30–40 epochs
-- **Weight decay**: `1e-5` on all parameter groups. No asymmetric
-  shrinkage — the `L_family` term handles low-resource regularization
-  directly.
-- **Early stopping**: LOSO AUROC evaluated every 5 epochs
-- **Compute**: GPU (`gpu-rtx6000`, RTX 6000 × 1, 12h walltime)
+The v1 schedule (`lr=3e-4`, `weight_decay=1e-5`, 30–40 epochs, no warmup,
+no dropout) was replaced across v2/v3/v4 as failure modes were
+diagnosed. Current shipping config:
+
+| Knob | Value | Why |
+|---|---|---|
+| Optimizer | AdamW | unchanged |
+| LR | `5e-4`, cosine decay over all training steps | v3: halved from v1's `3e-4` because contrastive losses need slower convergence. |
+| Weight decay | **`1e-2`** | v4: 100× increase from v1's `1e-5`. Direct response to v3's 10× L_lab collapse in 3 epochs. Hits attention weights and prototype matrices. |
+| Epochs | 20 | v3/v4: gives cosine enough LR range; v4 peak actually at step 600 but patience=10 absorbs the rest. |
+| Early stopping | AUROC every 100 steps, patience=10 | v3: intra-epoch val; v1's "every 5 epochs" missed the peak. |
+| Strong-stride | **4** | v4: compute strong BCE only every 4 focal steps. Reduces strong-SC memorization (was ~519×/epoch → ~130×). Implemented via `include_strong` kwarg to `compute_loss`. |
+| Proj dropout | `0.1` | v4: `nn.Dropout` inside `PerchProjection` MLP (post-GELU). |
+| Cross-attn dropout | `0.1` | v4: passed to `nn.MultiheadAttention(dropout=…)`. |
+| Label smoothing | `0.01` | v4: small because multi-hot binary labels. Applied to strong + focal BCE. |
+| Unsup λ warmup | 0 for steps 0–200, linear 200→500 | v3: lets labeled BCE place the projection before contrastive terms engage. |
+| `λ_site`, `λ_xattn` | `0.01` each (split) | v3: decoupled from v2's shared `λ_site=0.1`; scales match labeled BCE at convergence (~0.02). |
+| `λ_fam` | `0.01` | pre-registered sweep `{0, 1e-3, 1e-2, 1e-1, 1}` on S22 still pending. |
+| Compute | `gpu-rtx6000` RTX 6000 × 1 | unchanged |
+
+Source of truth: `scripts/train.py`, `sbatch/train_loso.sbatch`
+env var defaults, `src/birdclef_107/losses.py::compute_loss` signature.
 
 ### Taxonomy hierarchy: what it actually buys
 
@@ -568,6 +606,89 @@ across models meaningful.
 
 ## Limitations
 
+> **As-built critical assessment (post v4 smoke, 2026-04-13).** The v1
+> limitations below are still mostly valid. What follows are new
+> limitations surfaced by actually running the thing. Read these first
+> before the v1 list — they are what gate shipping.
+
+### Leaderboard gap (honesty check)
+
+Top BC2026 LB scores are around **0.94**. v4 S22 smoke is **0.7613** —
+an 18-point gap. "Beats internal ridge by +0.012" and "LB competitive"
+are different claims. Things LB-winning entries typically include that
+this architecture does **not**:
+
+- **Pseudo-labeling** on unlabeled soundscapes using a strong teacher
+  (BirdNET, Perch, or ensemble). Most BirdCLEF winners use some
+  variant. exp 107 has 127K unlabeled SC but only runs InfoNCE on
+  them — no classification signal.
+- **Full Perch fine-tuning.** We freeze Perch and train a 5M
+  projection/head; winners typically fine-tune the backbone
+  end-to-end with LoRA or similar.
+- **SED / attention temporal head.** 5-sec windows are pooled by
+  Perch into a single vector; we do no per-frame modeling. Winners
+  tend to use frame-level attention to localize calls within windows.
+- **Ensembling.** Single-model, single-seed. Winners typically
+  average 3–10 models.
+- **Audio-level augmentation.** SpecAugment, mixup in the spectrogram
+  domain, noise injection. We operate on frozen 1536-d embeddings,
+  so these are unavailable without re-running the Perch extractor,
+  which dominates compute.
+- **Test-time augmentation.** Multi-window averaging, flip/shift
+  aggregation. None implemented.
+
+Bin B (Perch pseudo-labels) is the lowest-cost of the missing pieces:
+it touches the three-stream loss and stays inside our frozen-Perch
+regime. Bin B is a deferred decision, not a planned feature.
+
+### Single-fold, single-seed variance
+
+The +0.012 over ridge is measured on **one** seed, **one** fold
+(S22, 477 test windows). A 0.012 delta on 477×234 per-species pooled
+AUROC is well inside typical run-to-run variance for this regime.
+Before claiming a real gain:
+
+1. **Full 9-fold LOSO** — still pending. Deferred decision.
+2. **Seed replicates** (≥3 seeds on S22) — not done.
+
+The pre-registered primary metric is pooled-AUROC across all 9 LOSO
+folds, not the S22 number alone. S22 is a screening gate, not the
+shipping criterion.
+
+### `without_focal` regression (v3 → v4)
+
+v3 showed `without_focal` (0.7874, n=28) > `with_focal` (0.7015, n=206).
+v4 inverted it: `without_focal` (0.6607, n=28) < `with_focal` (0.7688,
+n=206). Net positive because birds dominate 69% of the label space and
+v4 improved bird AUROC by +0.142 — but the 28 focal-less species (mostly
+amphibians and insects that rely on the cross-attention path alone)
+lost 0.127 AUROC. Interpretation:
+
+- The v4 regularization budget (attn dropout 0.1, wd 1e-2) is probably
+  calibrated for the focal path, not the cross-attn-only path.
+- If the hidden LB test set is less bird-heavy than focal suggests, the
+  v4 "win" over v3 may invert.
+- A follow-up v4.1 with lighter attention dropout (0.05) should be
+  considered before declaring v4 as the final shipping config.
+
+### Peak at 2.9% of planned training
+
+v4 best val AUROC was at step 600 out of 20760 planned. Interpretations
+we have not distinguished:
+
+1. The model converges very quickly under the current regularization
+   and remaining steps are pure noise. (Innocuous.)
+2. The regularization is too aggressive and blocks further improvement.
+   (Would motivate v4.1 with lighter knobs.)
+3. The LR schedule wastes most of its range; a much shorter cosine
+   would give the same result in 3 epochs.
+
+Until a seed replicate or a lighter-reg ablation is run, any of these
+could be true. The 0.7613 number is an upper bound on what v4 achieves
+under the current knobs, not a claim about the architecture's ceiling.
+
+### Original v1 limitations (still applicable)
+
 - **Teacher ceiling on labeled data.** The species bank's upper bound
   is set by how much species-discriminative signal the weak focal
   labels + 739 strong labels actually contain. If focal recording
@@ -586,13 +707,13 @@ across models meaningful.
   mitigates this (each window contributes once regardless of fold
   size), but the per-fold macro table remains a noisy estimate of
   unseen-site generalization rather than a precise number.
-- **Site bank is a scalar gate, not a per-species site prior.**
-  `site_memory` has no species index. At inference `site_score` is
-  scalar per window, broadcast across all 234 species. This is a
-  confidence gate, not a factored star schema in the strict sense.
-  Proposal v1 keeps this construction to avoid a parameter explosion;
-  if it underperforms, a low-rank site→species projection becomes the
-  first thing to try in v2.
+- ~~**Site bank is a scalar gate, not a per-species site prior.**~~
+  **RESOLVED in v2.** The scalar gate was replaced by species-site
+  cross-attention (per-window refined species prototypes). Site bank
+  is read as K/V by a 4-head MHA with zero-init `out_proj`. See
+  §Architecture above and the `without_focal` regression caveat —
+  cross-attention helps with-focal species more than without-focal
+  under current regularization.
 - **Family partial pooling is a regularizer for a narrow regime.**
   `L_family` helps medium-resource amphibians where per-species focal
   data is too thin (~40–60 species). It provides zero benefit on 33
@@ -639,3 +760,32 @@ across models meaningful.
 - **Exp 102** (EfficientNet): current best Kaggle LB 0.794, bird-biased.
   Exp 107 ensembles with it in the submission path — the long-tail
   contribution on amphibians is the expected value add.
+
+## Results log
+
+Single-fold (S22) smoke results across architecture iterations. Full
+9-fold LOSO and LB numbers not yet obtained; see §Limitations for the
+caveats that gate interpreting these.
+
+| Date | Iter | Config | S22 AUROC | Δ vs ridge (0.749) | Notes |
+|---|---|---|---|---|---|
+| 2026-04-12 | v1 no-gate | ReZero α=0 (species only) | 0.716 | −0.033 | v1 architecture ceiling without the scalar gate |
+| 2026-04-13 | v2 | labeled-only cross-attn | 0.618 | −0.131 | cross-attn with 262 SC windows/epoch — overfits hard |
+| 2026-04-13 | v2 | + softplus unsup aux | 0.5921 | −0.157 | softplus-bounded `L_site` + `L_xattn_softplus` both fail: saturate/collapse |
+| 2026-04-13 | v3 | InfoNCE, 3 ep | 0.6958 | −0.053 | contrastive losses fix saturation; LR-bounded |
+| 2026-04-13 | v3 | InfoNCE, 20 ep | 0.7074 | −0.042 | peak ep 2, regressed — labeled overfit diagnosed |
+| 2026-04-13 | **v4** | **+ reg (drop+wd+stride+smoothing)** | **0.7613** | **+0.012** | peak step 600 of 20760; `bird` +0.142, `without_focal` **−0.127** |
+
+**Key per-subset breakdown at v4** (S22, 477 test windows):
+
+| Subset | n species | AUROC |
+|---|---|---|
+| bird | 162 | **0.8683** |
+| amphibian | 35 | 0.6529 |
+| insect | 28 | 0.0 (no positives in fold) |
+| with_focal | 206 | 0.7688 |
+| without_focal | 28 | 0.6607 |
+
+The bird subset carries the +0.012 overall gain. Non-bird subsets are
+at or below the v3 baseline. See §Limitations "`without_focal` regression"
+for interpretation.

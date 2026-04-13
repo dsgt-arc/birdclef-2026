@@ -283,8 +283,11 @@ class PrototypeRetrievalModel(nn.Module):
     AUROC on S22.
 
     The site head no longer enters the forward pass directly; it exists
-    only to hold ``M_site`` (read by cross-attention as K/V) and to
-    expose ``retrieval_energy`` for the unsupervised training term.
+    only to hold ``M_site`` (read by cross-attention as K/V). Its
+    parameters are shaped exclusively by ``unsupervised_site_contrastive``
+    (InfoNCE over 23 sites) — the v1 ``retrieval_energy`` method was
+    removed in v3 because its ``softplus(-agg)`` formulation saturated
+    at random init.
     """
 
     def __init__(

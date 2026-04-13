@@ -44,7 +44,7 @@ document should be updated.
 | Cross-attention init | Zero-init ``out_proj`` weight + bias. At step 0 ``attended = 0`` → ``refined = Q``, so cross-attention is numerically identity; gradient still flows into ``out_proj`` because ``dloss/d(out_proj) = dloss/d(attended) · (softmax · V · W_V) ≠ 0``. | Safer cold start than ReZero. ReZero deadlocked with α stuck at ≈0 — ``dloss/d(attended) = α = 0`` is the ReZero failure mode. |
 | Loss composition | `L_labeled + λ_site · (L_site + L_site_xattn) + λ_fam · L_family` | `L_site` is the v1 direct Hopfield energy on `M_site`; `L_site_xattn` is the v2 species-retrieval energy *through* cross-attention — the path by which the 127K unlabeled SC windows shape the composition operator itself. |
 | Projection gradient on unsupervised loss | **Frozen** (`torch.no_grad()` through both MLP and `W_Q`) | Prevents the shared backbone from encoding site-identifying artifacts — stronger than the "detach only proj output" sketch, which would still train `W_Q.weight` via its forward matmul |
-| Species-side retrieval operator under the unsupervised cross-attn term | **Detached** — `M_species`, `species_head.W_K.weight`, `species_head.log_β` all explicitly `.detach()`-ed inside `unsupervised_cross_attn_energy` | v2 analog of the v1 projection-detach invariant: site-clustering signal must not reach the species retrieval operator, or domain shift entangles with site structure (the exp 106 failure mode). Only cross-attention weights and `M_site` are shaped by this term. |
+| Species-side retrieval operator under the unsupervised cross-attn term | **Detached** — `M_species`, `species_head.W_K.weight`, `species_head.log_β` all explicitly `.detach()`-ed inside `unsupervised_cross_attn_contrastive` | v2/v3 analog of the v1 projection-detach invariant: site-clustering signal must not reach the species retrieval operator, or domain shift entangles with site structure (the exp 106 failure mode). Only cross-attention weights are shaped by this term (v3: `M_site` is also detached inside this loss — see invariant 3 below). |
 | Initialization | Random (no k-means) | Soft-EM gradient identity justifies BCE+Hopfield convergence without warm start |
 | Tensor operations | einops `einsum`, `reduce`, `rearrange` | Project convention; self-documenting contractions |
 
@@ -129,16 +129,16 @@ bank avoids reaching across module boundaries from the top-level model.
 ### `HopfieldSiteHead(n_sites, K, d_proj)`
 
 Flat site memory bank. In v2 it is no longer queried directly at
-inference — it feeds `SpeciesSiteCrossAttention` as K/V and its
-`retrieval_energy` is the direct unsupervised training term on
-`M_site`.
+inference — it feeds `SpeciesSiteCrossAttention` as K/V. Its parameters
+(`M`, `W_K`, `log_beta`) are shaped exclusively by
+`PrototypeRetrievalModel.unsupervised_site_contrastive` (InfoNCE over
+23 sites).
 
-| Method | Signature | Contract |
-|---|---|---|
-| `retrieval_energy(q_r, site_idx)` | `(B, d_proj), (B,) long → scalar` | Bounded Hopfield energy `softplus(-agg).mean()` where `agg = lse_k(β · q_r · W_K · M_{l_w,k}) / β`. Equivalent to BCE against all-ones — every unlabeled window should match some prototype in its site's bank. Bounded in `[0, ∞)` (the unbounded `-mean(agg)` diverged in training). Does **not** itself detach — the caller must pass a detached `q_r`. |
-
-The v1 `forward` method (per-window sigmoid typicality) has been
-removed along with the scalar fusion gate that consumed it.
+No methods. `HopfieldSiteHead` is a parameter container only — the v1
+`forward` (per-window sigmoid typicality) and the v2 `retrieval_energy`
+(softplus-bounded Hopfield energy) were both removed. Shaping logic
+lives at the `PrototypeRetrievalModel` level so the contrastive loss
+can access `q_r`, `site_idx`, and `M_site` together.
 
 ### `SpeciesSiteCrossAttention(d_proj, n_heads=4)`
 
@@ -147,7 +147,8 @@ cross-attention.
 
 | Method | Signature | Contract |
 |---|---|---|
-| `forward(M_species, M_site, site_idx)` | `(S,K_sp,D), (L,K_site,D), (B,) long → (B,S,K_sp,D)` | `Q = M_species` (shared across batch, broadcast over `L` sites); `K, V = M_site`. Attention is computed once across all `L` sites producing `(L, S·K_sp, D)` refined prototypes, then `site_idx` gathers per-window rows. Memory is `L × S × K_sp × D ≈ 88 MB` at default shapes, not `B × S × K_sp × D`. |
+| `refine(M_species, M_site)` | `(S,K_sp,D), (L,K_site,D) → (L,S,K_sp,D)` | Attention across all `L=23` sites at once: `Q = M_species` (flattened to `(L, S·K_sp, D)` via broadcast); `K, V = M_site`. Used by `unsupervised_cross_attn_contrastive` to score retrieval at every site for InfoNCE. |
+| `forward(M_species, M_site, site_idx)` | `(S,K_sp,D), (L,K_site,D), (B,) long → (B,S,K_sp,D)` | Thin wrapper: `return self.refine(M_species, M_site)[site_idx]`. Gathers per-window refined prototypes. Memory is `L × S × K_sp × D ≈ 88 MB` at default shapes, not `B × S × K_sp × D`. |
 
 **Zero-init `out_proj`.** `attended = softmax(·) · V · W_V · 0 = 0` at
 init, so `refined = Q` (numerically identity). Gradient into `out_proj`
@@ -163,8 +164,8 @@ Top-level composition of the four sub-modules.
 | Method | Signature | Contract |
 |---|---|---|
 | `forward(emb, site_idx=None)` | `(B, 1536), (B,) long\|None → (B, 234)` | With `site_idx` (strong SC / unsup SC / test windows): `cross_attn` produces per-window `M_cond`, then `species_head.forward_with_prototypes(q_r, M_cond)`. With `site_idx=None` (focal / OOD-site fallback): uses the shared `M_species` directly. |
-| `unsupervised_site_energy(emb, site_idx)` | `(B, 1536), (B,) long → scalar` | Direct Hopfield energy on `M_site`. Trains `site_head.{M, W_K, log_β}`. Projection frozen via `query_from_detached`. |
-| `unsupervised_cross_attn_energy(emb, site_idx)` | `(B, 1536), (B,) long → scalar` | **v2 auxiliary.** Site-conditioned species retrieval energy: cross-attention produces `M_cond`, Hopfield logsumexp over K then over species gives a per-window scalar; loss is `softplus(-agg).mean()`. Explicitly detaches `M_species`, `species.W_K.weight`, `species.log_β` so the species retrieval operator is never shaped by site-clustering signal. Trains `cross_attn.*` and `site_head.M` (via K/V in attention). |
+| `unsupervised_site_contrastive(emb, site_idx)` | `(B, 1536), (B,) long → scalar` | **v3 InfoNCE over 23 sites on direct `M_site` retrieval.** Trains `site_head.{M, W_K, log_β}`. At random init ≈ `log(23) ≈ 3.14` — never saturates. Projection frozen via `query_from_detached`. Replaces v2's `softplus(-agg)` which saturated at init and gave zero gradient to `M_site`. |
+| `unsupervised_cross_attn_contrastive(emb, site_idx)` | `(B, 1536), (B,) long → scalar` | **v3 site-InfoNCE on cross-attn-refined species retrieval profiles.** `cross_attn.refine()` produces refined species prototypes at every site; per-site scores are computed via logsumexp over K then over species; InfoNCE forces the correct site's score to exceed wrong sites'. Trains `cross_attn.*` only — `M_species`, `species.W_K`, `species.log_β`, and (v3 new) `M_site` are all explicitly `.detach()`-ed. Replaces v2's `softplus(-logsumexp_s)` which collapsed to "match anything". |
 | `family_shrinkage_loss(family_idx)` | `(n_species,) long → scalar` | Delegates to `species_head.family_shrinkage_loss`. |
 
 **Kaggle checkpoint surface.** v2 requires `projection + species_head +
@@ -289,9 +290,14 @@ $$
 \mathcal{L} = \underbrace{\text{BCE}(\text{sp}_{\text{strong}}, y_{\text{strong}}) + \text{BCE}(\text{sp}_{\text{weak}}, y_{\text{weak}})}_{\mathcal{L}_{\text{labeled}}} + \lambda_{\text{site}}\,(\mathcal{L}_{\text{site}} + \mathcal{L}_{\text{site\_xattn}}) + \lambda_{\text{fam}}\,\mathcal{L}_{\text{family}}
 $$
 
-Defaults: `λ_site = 0.1` (shared weight on both unsupervised terms),
-`λ_fam = 1e-2`. Locked after the S22 pre-registered sweep. No per-term
-ramps, no warmup, no asymmetric weight decay.
+Defaults (v3/v4 as-built): `λ_site = λ_xattn = 0.01` (split into two
+scales after v3 — the shared-weight v1 design was superseded when the
+two contrastive terms diverged in magnitude), `λ_fam = 1e-2`. **Unsup
+λ warmup**: `λ_site = λ_xattn = 0` for steps 0–200, linear ramp to
+target by step 500, so labeled BCE shapes the projection alone before
+the contrastive losses engage. `λ_fam` is a pre-registered S22 sweep
+`{0, 1e-3, 1e-2, 1e-1, 1}` — default is the middle value until the
+sweep locks the optimum.
 
 **Gradient routing.** Which parameters does each loss touch?
 
@@ -301,30 +307,32 @@ ramps, no warmup, no asymmetric weight decay.
 | `species_head.M` (= `M_species`) | ✓ | ✗ | ✗ (`.detach()`) | ✓ (LHS only; target is stop-grad) |
 | `species_head.W_K, log_β` | ✓ | ✗ | ✗ (`.detach()`) | ✗ |
 | `species_head.cal_scale, cal_bias` | ✓ | ✗ | ✗ | ✗ |
-| `site_head.M` (= `M_site`) | ✓ (via cross-attn K/V on strong SC) | ✓ | ✓ (via cross-attn K/V on unsup SC) | ✗ |
+| `site_head.M` (= `M_site`) | ✓ (via cross-attn K/V on strong SC) | ✓ | ✗ (v3: `.detach()` inside xattn path) | ✗ |
 | `site_head.W_K, log_β` | ✗ | ✓ | ✗ | ✗ |
 | `cross_attn.*` (MHA weights) | ✓ (via strong SC, ~262 wins/epoch) | ✗ | ✓ (via unsup SC, 127K wins/epoch) | ✗ |
 
 Four invariants worth stating explicitly:
 
 1. **Projection is frozen under every unsupervised loss.** Both
-   `unsupervised_site_energy` and `unsupervised_cross_attn_energy` call
-   `query_from_detached`, which wraps the full backbone in
+   `unsupervised_site_contrastive` and `unsupervised_cross_attn_contrastive`
+   call `query_from_detached`, which wraps the full backbone in
    `torch.no_grad()`. The submodule boundary is the detach boundary.
-2. **Species retrieval operator is frozen under `L_site_xattn`.**
+2. **Species retrieval operator is frozen under `L_xattn`.**
    `M_species`, `species_head.W_K.weight`, and `species_head.log_β` are
-   explicitly `.detach()`-ed inside `unsupervised_cross_attn_energy`.
+   explicitly `.detach()`-ed inside `unsupervised_cross_attn_contrastive`.
    This is the v2 analog of invariant 1 for the species side: the
    species bank must not be shaped by site-clustering signal, or domain
    shift entangles with site structure (exp 106 failure mode).
-3. **Site-side params are the *only* trainable targets of the unsup
-   terms.** `M_site`, `site_head.W_K`, `site_head.log_β` are shaped by
-   `L_site`; `M_site` and `cross_attn.*` are shaped by `L_site_xattn`.
+3. **`M_site` is exclusively shaped by `L_site`** (v3 invariant). The
+   v2 routing path `L_xattn → M_site` (via cross-attn K/V) was closed
+   by `.detach()`-ing `M_site` inside `unsupervised_cross_attn_contrastive`.
+   Clean one-objective-per-parameter: `L_site` shapes `M_site`,
+   `L_xattn` shapes `cross_attn.*`.
 4. **`cross_attn.*` is trained by *both* labeled and unsupervised
    signals.** Under v1 the composition operator (the gate) was trained
-   by labeled strong SC alone — ~262 windows/epoch, too thin. The v2
-   `L_site_xattn` term extends this to the 127K unlabeled windows;
-   this is the mechanism that closes the v1 "cross-attn signal is
+   by labeled strong SC alone — ~262 windows/epoch, too thin. The v3
+   `L_xattn_contrastive` term extends this to 127K unlabeled windows;
+   this is the mechanism that closes the "cross-attn signal is
    starved" gap.
 
 **Zero-init timing.** At step 0, `out_proj.weight = 0` so
@@ -339,11 +347,14 @@ cross-attention path is gated on the out_proj unlock.
 
 These invariants are enforced by `tests/test_gradient_routing.py`:
 
-- `test_unsup_site_energy_does_not_update_projection`
-- `test_unsup_cross_attn_energy_does_not_update_projection`
-- `test_unsup_cross_attn_energy_does_not_update_species_retrieval_ops`
-- `test_unsup_cross_attn_energy_trains_out_proj_at_init`
-- `test_unsup_cross_attn_energy_trains_M_site_and_in_proj_after_unlock`
+- `test_unsup_site_contrastive_does_not_update_projection`
+- `test_unsup_cross_attn_contrastive_does_not_update_projection`
+- `test_unsup_cross_attn_contrastive_does_not_update_species_retrieval_ops`
+- `test_unsup_cross_attn_contrastive_does_not_update_M_site` (v3 invariant 3)
+- `test_unsup_cross_attn_contrastive_trains_out_proj_at_init`
+- `test_unsup_cross_attn_contrastive_trains_in_proj_after_unlock`
+- `test_site_contrastive_nonzero_at_init`
+- `test_xattn_contrastive_nonzero_at_init`
 - `test_labeled_bce_does_update_projection` (negative control)
 
 ## Label preparation
@@ -403,19 +414,57 @@ family shrinkage has to rescue them alone. With balancing, every
 species's weak path contributes on the order of its K_s prototype slots
 per epoch.
 
-### Schedule
+### Schedule (v4 as-built)
 
-- **Optimizer**: AdamW, uniform weight decay `1e-5`.
-- **LR**: `3e-4` cosine-decayed across 30–40 epochs.
-- **Early stopping**: LOSO AUROC checked every 5 epochs on the held-out
-  fold; stop on no-improvement patience of 2 checks.
-- **No ramps or warmup**, no per-term loss schedule, no asymmetric
-  weight decay. `L_family` replaces the earlier design's weight-decay
-  asymmetry on a "species delta" tensor.
+The v1 schedule (`lr=3e-4`, `weight_decay=1e-5`, 30–40 epochs, no warmup
+or asymmetry, early-stopping every 5 epochs with patience 2) was
+replaced iteratively. Current shipping config:
+
+| Knob | Value | v1 → v4 delta & rationale |
+|---|---|---|
+| Optimizer | AdamW | unchanged |
+| LR | `5e-4`, cosine decay over all 20 epochs, `eta_min=0` | v3: `3e-4 → 5e-4` for stronger initial signal; but 3-epoch v3 run decayed to `2.5e-8` by end (LR-bounded). 20-epoch extension gives meaningful LR throughout. |
+| Weight decay | `1e-2` | v4: `1e-5 → 1e-2` (1000× increase). Attacks labeled overfitting; hits attention weights and prototype matrices. |
+| Epochs | 20 | v3/v4: cosine needs headroom; v4 peak typically within the first epoch regardless. |
+| Early stopping | every 100 steps, patience 10 val checks | v3: intra-epoch — v1's "every 5 epochs" missed the peak. |
+| Proj dropout | `0.1` | v4: `nn.Dropout` inside `PerchProjection` MLP (post-GELU). |
+| Attn dropout | `0.1` | v4: passed to `nn.MultiheadAttention(dropout=…)` inside `SpeciesSiteCrossAttention`. |
+| Label smoothing | `0.01` | v4: small ε for multi-hot BCE, applied to strong + focal targets before `binary_cross_entropy`. |
+| Strong stride | `4` | v4: strong BCE only every 4th focal step (strong loader has ~2 batches cycled every step → each strong window seen ~519×/epoch without stride; ~130× with stride 4). Implemented via `include_strong` kwarg on `compute_loss`. |
+| Unsup λ warmup | 0 for 0–200 steps, linear 200→500 | v3: labeled BCE places projection alone before contrastive losses engage. |
 
 Three streams compose into a single per-step loss via `compute_loss` in
-`src/birdclef_107/losses.py`; the training loop (Phase B) owns the
-sampler plumbing.
+`src/birdclef_107/losses.py::compute_loss(label_smoothing, include_strong, ...)`.
+The training loop in `scripts/train.py` owns the stride gate and unsup
+warmup logic.
+
+### Regularization budget rationale
+
+Per-knob allocation of regularization pressure:
+
+- **strong_stride=4** targets the *data regime* (oversampling of 262
+  strong windows), not the model capacity. It is a training-loop
+  adjustment, not a model change.
+- **attn_dropout=0.1** targets the cross-attention path that only
+  strong SC traverses (focal uses `site_idx=None` and skips
+  cross-attn entirely). It does NOT hit the focal path.
+- **proj_dropout=0.1** targets the shared trunk — affects all three
+  streams (strong + focal + unsup). This is the only knob that
+  regularizes the unsupervised contrastive paths (through
+  `query_from_detached` → `self.proj(emb)`).
+- **weight_decay=1e-2** targets attention weights and prototype
+  matrices via AdamW's decoupled formulation. Affects all parameter
+  groups uniformly.
+- **label_smoothing=0.01** targets the BCE logits. Deliberately small
+  (not the 0.1 typical for cross-entropy) because multi-hot binary
+  labels are already sparse — aggressive smoothing would distort the
+  positive-class probability.
+
+Empirically (v4 S22 smoke), this budget peaks at step 600 of 20760
+planned. Two interpretations remain open: (a) 5M-param model with
+frozen features genuinely converges in one epoch of focal coverage;
+(b) budget is too aggressive and blocks further gains. Seed replicate
+or a v4.1 ablation with dropout 0.05 is the diagnostic.
 
 ## LOSO evaluation
 
@@ -652,34 +701,48 @@ Exp 107 adds:
 
 ## Open decisions
 
-1. **`λ_site` default.** `0.1` is a guess. Tune on LOSO if the
-   unsupervised site loss either dominates training (too high) or
-   produces no visible effect on the site bank's prototype diversity
-   (too low).
+1. ~~**`λ_site` default.** `0.1` is a guess.~~ **RESOLVED in v3.**
+   `λ_site = λ_xattn = 0.01` (split from v2's shared `λ_site=0.1`
+   because the two contrastive terms have different magnitudes).
+   Locked empirically by v3 smoke showing the `unsup/labeled` ratio
+   stays in [0.5, 2.0] at this scale.
 2. **`λ_fam` default.** `1e-2` is an order-of-magnitude guess based on
    the effective-sample-size interpretation (shrinkage equivalent to
    ~a handful of virtual samples, matching the amphibian median of 6
    recordings). The pre-registered S22 sweep
    `{0, 1e-3, 1e-2, 1e-1, 1}` locks the actual value used in LOSO.
+   **Status: sweep still pending (deferred until v4 LOSO).**
 3. **`W_Q` under unsupervised losses.** Currently frozen via `no_grad`
-   in `query_from_detached`, applied by both `unsupervised_site_energy`
-   and `unsupervised_cross_attn_energy`. Star-schema §"Training signal
-   routing" lists `W_Q` as trained — the prose, formula, and routing
-   table there disagree; the code enforces the stronger invariant (see
-   "Gradient routing" table above). If the S22 sweep shows site
-   retrieval undertrained, revisit by swapping the no_grad for a plain
-   `.detach()` on the backbone output and letting `W_Q.weight` receive
-   gradient again.
-4. **Shared vs split `λ` on the two unsup terms.** Currently
-   `compute_loss` multiplies `λ_site · (L_site + L_site_xattn)` — one
-   shared weight. If empirical scale of the two terms diverges (the
-   `L_site_xattn` aggregate logsumexp's over `S = 234` species, so its
-   pre-softplus signal is larger than `L_site`'s lse-over-K=8), split
-   into `λ_site` and `λ_site_xattn` and tune independently.
-5. **Softness of the cross-attn aux.** The aux loss assumes *some
-   species* is present in every unlabeled window. Silent/background
-   windows violate this. If prototype-noise collapse emerges (cross-
-   attn producing generic "any-species-sticks" offsets), replace the
-   `softplus(-logsumexp_s)` with an entropy-minimization term
-   (peakedness without magnitude assumption) or condition the aux on a
-   Perch "any-bioacoustic-signal" prefilter.
+   in `query_from_detached`, applied by both
+   `unsupervised_site_contrastive` and
+   `unsupervised_cross_attn_contrastive`. If S22 LOSO shows site
+   retrieval undertrained, revisit by swapping the `no_grad` for a
+   plain `.detach()` on the backbone output and letting `W_Q.weight`
+   receive gradient again. **Status: still open — have not tested the
+   alternative.**
+4. ~~**Shared vs split `λ`.**~~ **RESOLVED in v3.** Split into
+   `λ_site` and `λ_xattn`. The v2 shared-weight design was discarded
+   when contrastive reformulation changed the relative magnitudes.
+5. ~~**Softness of the cross-attn aux.**~~ **RESOLVED in v3.** The
+   `softplus(-logsumexp_s)` formulation collapsed to "match anything"
+   in v2 — `L_xattn` dropped 17× in 300 steps and corrupted labeled
+   retrieval. Replaced with site-InfoNCE (`L_xattn_contrastive`)
+   which forces *peakier retrieval at the correct site than at wrong
+   sites*; constant-across-sites profiles give zero gradient in that
+   direction. Saturation/collapse diagnostic tests cover this.
+6. **v4 regularization calibration (NEW).** v4 S22 smoke showed
+   `without_focal` subset regressed from v3's 0.787 to v4's 0.661
+   (n=28) while `with_focal` improved from 0.702 to 0.769 (n=206).
+   The current regularization budget (attn_dropout=0.1, wd=1e-2,
+   label_smoothing=0.01, strong_stride=4) may be miscalibrated for
+   species that rely on cross-attention alone. A v4.1 ablation with
+   `attn_dropout=0.05` (halved) is the natural next diagnostic.
+   **Status: open.**
+7. **Bin B — Perch pseudo-labels on unlabeled SC (NEW).** Under
+   consideration as the next lift if v4 LOSO lands near but below
+   v4 S22 smoke. Exp 106 has a species mapping
+   (`perch_species_mapping.json`, 209/234 species) and cached Perch
+   logits (14,795-d). Pseudo-label loss would trains projection +
+   species head via soft targets, orthogonal to the contrastive
+   parameter-path for `M_site` + `cross_attn`. **Status: designed,
+   not implemented.**
