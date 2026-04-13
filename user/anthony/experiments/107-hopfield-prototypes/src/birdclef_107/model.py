@@ -54,11 +54,14 @@ class PerchProjection(nn.Module):
     declarative.
     """
 
-    def __init__(self, d_input: int, d_hidden: int, d_proj: int) -> None:
+    def __init__(
+        self, d_input: int, d_hidden: int, d_proj: int, dropout: float = 0.0
+    ) -> None:
         super().__init__()
         self.proj = nn.Sequential(
             nn.Linear(d_input, d_hidden),
             nn.GELU(),
+            nn.Dropout(dropout),
             nn.Linear(d_hidden, d_proj),
             nn.LayerNorm(d_proj),
         )
@@ -227,13 +230,17 @@ class SpeciesSiteCrossAttention(nn.Module):
     attended. Zero-init out_proj breaks the deadlock.
     """
 
-    def __init__(self, d_proj: int, n_heads: int = 4) -> None:
+    def __init__(
+        self, d_proj: int, n_heads: int = 4, dropout: float = 0.0
+    ) -> None:
         super().__init__()
         if d_proj % n_heads != 0:
             raise ValueError(
                 f"d_proj={d_proj} must be divisible by n_heads={n_heads}"
             )
-        self.attn = nn.MultiheadAttention(d_proj, n_heads, batch_first=True)
+        self.attn = nn.MultiheadAttention(
+            d_proj, n_heads, batch_first=True, dropout=dropout
+        )
         nn.init.zeros_(self.attn.out_proj.weight)
         nn.init.zeros_(self.attn.out_proj.bias)
 
@@ -290,6 +297,8 @@ class PrototypeRetrievalModel(nn.Module):
         d_hidden: int = 1024,
         d_proj: int = 512,
         cross_attention_heads: int = 4,
+        proj_dropout: float = 0.0,
+        attn_dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.n_species = n_species
@@ -298,11 +307,15 @@ class PrototypeRetrievalModel(nn.Module):
         self.K_site = K_site
         self.d_proj = d_proj
 
-        self.projection = PerchProjection(d_input, d_hidden, d_proj)
+        self.projection = PerchProjection(
+            d_input, d_hidden, d_proj, dropout=proj_dropout
+        )
         self.species_head = HopfieldSpeciesHead(n_species, K_species, d_proj)
         self.site_head = HopfieldSiteHead(n_sites, K_site, d_proj)
         self.cross_attn = SpeciesSiteCrossAttention(
-            d_proj=d_proj, n_heads=cross_attention_heads
+            d_proj=d_proj,
+            n_heads=cross_attention_heads,
+            dropout=attn_dropout,
         )
 
     def forward(

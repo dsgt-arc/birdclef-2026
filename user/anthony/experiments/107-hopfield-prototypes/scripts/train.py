@@ -60,13 +60,23 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lambda-xattn", type=float, default=0.01,
                    help="Weight on L_xattn_contrastive (site-InfoNCE on cross-attn profiles)")
     p.add_argument("--lambda-fam", type=float, default=1e-2)
-    p.add_argument("--epochs", type=int, default=3)
+    p.add_argument("--epochs", type=int, default=20,
+                   help="v4 default 20 (scheduler gets full LR range; regularization lets peak appear later than epoch 2).")
     p.add_argument("--lr", type=float, default=5e-4,
                    help="AdamW LR. Default 5e-4 (v3); v2 used 1e-3 but contrastive losses need slower LR.")
-    p.add_argument("--weight-decay", type=float, default=1e-4)
+    p.add_argument("--weight-decay", type=float, default=1e-2,
+                   help="AdamW weight decay. v4 default 1e-2 (was 1e-4); attacks labeled overfitting.")
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--patience", type=int, default=10,
                    help="Val-AUROC patience checks. Default 10 (v3); contrastive objectives take longer to find non-trivial optima than v2's softplus.")
+    p.add_argument("--strong-stride", type=int, default=4,
+                   help="v4: compute strong-SC BCE only every N steps (default 4). Strong loader has ~2 batches, so steps_per_epoch/strong_stride ~= 260 strong passes/epoch instead of 1038. Attacks strong-SC memorization.")
+    p.add_argument("--attn-dropout", type=float, default=0.1,
+                   help="v4: dropout on cross-attention. Directly regularizes the strong-SC path.")
+    p.add_argument("--proj-dropout", type=float, default=0.1,
+                   help="v4: dropout inside PerchProjection MLP. Regularizes the shared trunk.")
+    p.add_argument("--label-smoothing", type=float, default=0.01,
+                   help="v4: BCE label smoothing ε. Small (0.01) because multi-hot binary labels.")
     p.add_argument("--unsup-warmup-start", type=int, default=200,
                    help="Step to begin ramping unsup lambdas from 0.")
     p.add_argument("--unsup-warmup-end", type=int, default=500,
@@ -210,6 +220,8 @@ def train_one_fold(
     model = PrototypeRetrievalModel(
         n_species=len(species_list),
         n_sites=n_sites,
+        proj_dropout=args.proj_dropout,
+        attn_dropout=args.attn_dropout,
     ).to(device)
 
     family_idx_dev = family_idx.to(device)
@@ -293,6 +305,11 @@ def train_one_fold(
             warmup = unsup_warmup_factor(
                 global_step, args.unsup_warmup_start, args.unsup_warmup_end
             )
+            # v4: cap strong-SC oversampling. strong_loader has ~2 batches
+            # cycled every focal step → each window seen ~519×/epoch. Only
+            # compute the strong BCE every Nth step so total passes per
+            # window drop by N.
+            include_strong = (global_step % args.strong_stride == 0)
             optimizer.zero_grad()
             total_loss, components = compute_loss(
                 model,
@@ -301,6 +318,8 @@ def train_one_fold(
                 lambda_site=args.lambda_site * warmup,
                 lambda_xattn=args.lambda_xattn * warmup,
                 lambda_fam=args.lambda_fam,
+                label_smoothing=args.label_smoothing,
+                include_strong=include_strong,
             )
             total_loss.backward()
             optimizer.step()

@@ -63,3 +63,29 @@ def test_unsupervised_cross_attn_contrastive_returns_scalar() -> None:
     loss = model.unsupervised_cross_attn_contrastive(emb, site_idx)
     assert loss.shape == ()
     assert torch.isfinite(loss).all()
+
+
+def test_dropout_is_deterministic_in_eval_and_stochastic_in_train() -> None:
+    """v4 regularization: proj_dropout + attn_dropout must be disabled by
+    .eval() and active in .train(). Catches a common bug where dropout is
+    accidentally always-on or always-off after a model refactor."""
+    torch.manual_seed(0)
+    model = PrototypeRetrievalModel(proj_dropout=0.5, attn_dropout=0.5)
+    emb = torch.randn(8, 1536)
+    site_idx = torch.randint(0, 23, (8,))
+
+    model.eval()
+    with torch.no_grad():
+        out1 = model(emb, site_idx)
+        out2 = model(emb, site_idx)
+    assert torch.allclose(out1, out2), "eval mode should be deterministic"
+
+    model.train()
+    # Stochastic path — attn + proj dropout at 0.5 guarantees divergence
+    # between two forward calls on the same input (probability of identity
+    # at this width is vanishing).
+    torch.manual_seed(1)
+    out3 = model(emb, site_idx)
+    torch.manual_seed(2)
+    out4 = model(emb, site_idx)
+    assert not torch.allclose(out3, out4), "train mode should be stochastic"

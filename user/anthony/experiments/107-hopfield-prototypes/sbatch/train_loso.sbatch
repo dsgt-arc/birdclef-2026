@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G
-#SBATCH --time=01:00:00
+#SBATCH --time=01:30:00
 #SBATCH -o logs/%x-%j.out
 
 # LOSO training: single job that loads data once and iterates over folds
@@ -32,14 +32,21 @@ FOLD=${FOLD:-S22}
 LAMBDA_SITE=${LAMBDA_SITE:-0.01}
 LAMBDA_XATTN=${LAMBDA_XATTN:-0.01}
 LAMBDA_FAM=${LAMBDA_FAM:-0.01}
-EPOCHS=${EPOCHS:-3}
+EPOCHS=${EPOCHS:-20}
 LR=${LR:-5e-4}
 BATCH_SIZE=${BATCH_SIZE:-256}
-CKPT_SUBDIR=${CKPT_SUBDIR:-exp107}
+CKPT_SUBDIR=${CKPT_SUBDIR:-exp107-v4}
+# v4 regularization knobs.
+STRONG_STRIDE=${STRONG_STRIDE:-4}
+ATTN_DROPOUT=${ATTN_DROPOUT:-0.1}
+PROJ_DROPOUT=${PROJ_DROPOUT:-0.1}
+LABEL_SMOOTHING=${LABEL_SMOOTHING:-0.01}
+WEIGHT_DECAY=${WEIGHT_DECAY:-1e-2}
 
 echo "=== Training fold: $FOLD ==="
 echo "=== Job $SLURM_JOB_ID on $(hostname), GPU: $CUDA_VISIBLE_DEVICES ==="
 echo "=== lambda_site=$LAMBDA_SITE lambda_xattn=$LAMBDA_XATTN lambda_fam=$LAMBDA_FAM epochs=$EPOCHS lr=$LR ==="
+echo "=== v4 reg: strong_stride=$STRONG_STRIDE attn_drop=$ATTN_DROPOUT proj_drop=$PROJ_DROPOUT label_smooth=$LABEL_SMOOTHING wd=$WEIGHT_DECAY ==="
 echo "=== ckpt_subdir=$CKPT_SUBDIR ==="
 
 # Unbuffered stdout so progress prints stream to the log file
@@ -65,5 +72,10 @@ python -u scripts/train.py \
     --epochs "$EPOCHS" \
     --lr "$LR" \
     --batch-size "$BATCH_SIZE" \
+    --weight-decay "$WEIGHT_DECAY" \
+    --strong-stride "$STRONG_STRIDE" \
+    --attn-dropout "$ATTN_DROPOUT" \
+    --proj-dropout "$PROJ_DROPOUT" \
+    --label-smoothing "$LABEL_SMOOTHING" \
     --checkpoint-dir "$HOME/scratch/birdclef-2026/checkpoints/$CKPT_SUBDIR" \
     --features-dir "$HOME/scratch/birdclef-2026/features/exp106"

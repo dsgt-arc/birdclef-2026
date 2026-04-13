@@ -38,6 +38,8 @@ def compute_loss(
     lambda_site: float = 0.01,
     lambda_xattn: float = 0.01,
     lambda_fam: float = 1e-2,
+    label_smoothing: float = 0.0,
+    include_strong: bool = True,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Compute the four-term total loss and return per-component diagnostics.
 
@@ -55,6 +57,11 @@ def compute_loss(
         lambda_site: weight on the direct-M_site InfoNCE term.
         lambda_xattn: weight on the cross-attention-refined InfoNCE term.
         lambda_fam: weight on the family shrinkage term.
+        label_smoothing: BCE label smoothing ε applied to strong + focal
+            targets as ``y * (1-ε) + 0.5 * ε``. Default 0.0 (disabled).
+        include_strong: if False, the strong SC BCE term is skipped
+            regardless of whether ``batch["strong"]`` is present. Used by
+            the training loop to rate-limit strong SC (v4 strong_stride).
 
     Returns:
         ``(total_loss, components)`` where ``components`` logs each
@@ -73,16 +80,26 @@ def compute_loss(
     }
     total = zero
 
-    strong = batch.get("strong")
+    strong = batch.get("strong") if include_strong else None
     weak_focal = batch.get("weak_focal")
+
+    def _smooth(y: torch.Tensor) -> torch.Tensor:
+        if label_smoothing == 0.0:
+            return y
+        return y * (1.0 - label_smoothing) + 0.5 * label_smoothing
+
     if strong is not None or weak_focal is not None:
         losses = []
         if strong is not None:
             sp_strong = model(strong["emb"], strong["site_idx"])
-            losses.append(F.binary_cross_entropy(sp_strong, strong["labels"]))
+            losses.append(
+                F.binary_cross_entropy(sp_strong, _smooth(strong["labels"]))
+            )
         if weak_focal is not None:
             sp_weak = model(weak_focal["emb"], site_idx=None)
-            losses.append(F.binary_cross_entropy(sp_weak, weak_focal["labels"]))
+            losses.append(
+                F.binary_cross_entropy(sp_weak, _smooth(weak_focal["labels"]))
+            )
         L_labeled = sum(losses)
         total = total + L_labeled
         components["labeled"] = float(L_labeled.detach().item())
