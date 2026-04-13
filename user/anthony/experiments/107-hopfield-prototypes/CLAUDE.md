@@ -38,27 +38,45 @@ windows per epoch).
 | v1 GPU (with gate) | 0.671 | −0.078 |
 | v2 zero-init out_proj, labeled-only | 0.618 | −0.131 |
 | v2 + softplus unsup aux | 0.5921 | −0.157 |
-| **v3 contrastive (3ep, job 6487469)** | **0.6958** | **−0.053** |
+| v3 contrastive 3-ep (job 6487469) | 0.6958 | −0.053 |
+| **v3 contrastive 20-ep (job 6488089)** | **0.7074** | **−0.042** |
 
-**v3 status (2026-04-13)**: contrastive losses fix both v2 failure modes —
-`L_site` is non-zero throughout (saturation bug gone), `L_xattn` decreases
-without collapsing. **Val AUROC rose monotonically** through all 3 epochs
-(0.617 → 0.685 → 0.696), opposite of v2's "peak early, regress" pattern.
+**v3 20-epoch status (2026-04-13)**: peak at step 2300 (epoch 2),
+early-stopped at step 3300 (epoch 3). Only +0.012 over the 3-epoch run
+— gains saturated by epoch 2 and val regressed while `L_lab` kept
+falling. **Labeled overfitting** (262 windows), NOT LR starvation (LR
+was 4.71e-4 at stop vs 2.49e-8 in 3-ep run).
 
-But peak (0.6958) is still below v1-no-gate (0.716) — the model ran out
-of LR (cosine decayed to 2.49e-08 by step 3100). Per-epoch gains were
-0.069 → 0.011 → ? — diminishing but not flat. Most likely interpretation:
-**3 epochs insufficient given the new contrastive losses; need 6+ epochs
-with the cosine extended** to actually saturate.
+Per-subset S22 AUROC (481 test windows):
+
+| Subset | n species | AUROC |
+|---|---|---|
+| bird | 162 | 0.7264 |
+| amphibian | 35 | 0.6986 |
+| insect | 28 | 0.0 (no positives in fold) |
+| with_focal | 206 | 0.7015 |
+| **without_focal** | 28 | **0.7874** |
+
+**Interesting signal**: species *without* focal data score BETTER than
+species *with* focal. This says the v2 cross-attention IS adding real
+site-conditioning value — the 28 focal-less species rely entirely on
+site+SC info and they benefit. The `with_focal` bottleneck suggests
+weak focal labels are adding noise.
 
 Tier 2 dynamics check (all passed):
 - `L_site` non-zero throughout (saturation bug fixed)
-- `L_xattn` decreases without collapsing (no >10× drop)
-- `unsup/lab` ratio stays in target [0.5, 2.0]
-- Val AUROC rises with unsup loss decreasing (success signature)
+- `L_xattn` decreases without collapsing (1.45 → 1.05 across 3 epochs)
+- `unsup/lab` ratio in target [0.5, 2.0] (climbs to ~2.0 by epoch 2)
+- No collapse of labeled — labeled just memorizes too fast
 
-Next likely move: 6-epoch run with extended cosine, OR try doubling
-`lambda_xattn` since the xattn ratio is on the lower end.
+**Next candidates** (in order of likely payoff):
+1. Cross-attention dropout + mixup on projected embeddings — attack
+   labeled overfitting directly. Peak was ep 2 not ep 20; regularize
+   the head, don't train longer.
+2. Perch pseudo-label SSL on unlabeled SC (targets the bird subset at
+   0.7264 via orthogonal parameter path: projection + species head).
+3. **Documented fallback** if 1+2 still below 0.72: ship v1-no-gate as
+   exp 107, ensemble with exp 106 ridge at Kaggle time.
 
 ## Data dependency
 
