@@ -593,17 +593,18 @@ Added PLs as separate dataset rows with stratified batch sampling (50/50 GT:PL).
 |------|--------|-----------|----------|-----|------------|
 | `v5j-pl-v1` | Row-addition (w=0.5, fold 0) | 0.872 | 0.620 | **0.897** | `025-.../best-epochepoch=18.ckpt` |
 
-### Phase C: Waveform mixing (IN PROGRESS)
+### Phase C: Waveform mixing (FAILED)
 
 Mario-style PL waveform mixing: 30% of focal samples overlaid with random PL soundscape
 segment (amplitude-controlled). Labels: max(focal, PL). Standard 3-tuple, v5j recipe unchanged.
 
-| Slug | Method | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
-|------|--------|-----------|----------|------------|-----|------------|
-| `v3-waveform-mix` | Waveform mixing (30%, 90/10 split) | **0.866** | **0.603** | 16 | pending | `025-.../2026-exp025-v3-waveform-mix/best-epochepoch=16.ckpt` |
+| Slug | Method | Epochs | val/auroc | val/cmap | val_sc/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|--------|-----------|----------|-------------|------------|-----|------------|
+| `v3-waveform-mix-20ep` | Waveform mixing (30%, 90/10) | 20 | 0.866 | 0.603 | — | 16 | — | `025-.../best-epochepoch=16.ckpt` |
+| `v3-waveform-mix-40ep` | Waveform mixing (30%, 90/10) | 40 | 0.851 | 0.612 | 0.991 | 38 | **0.894** | `025-.../best-epochepoch=38.ckpt` |
 
-Model was still improving at epoch 20 (new bests at epochs 14, 15, 16). Next run should
-use more epochs. val_sc metrics not available (dual_validation not enabled).
+**Result: 0.894 LB — regressed -0.012 vs v5j baseline (0.906).** Worse than Phase B
+row-addition (0.897). Both pseudo-label approaches failed.
 
 ## Checkpoint Base Path
 

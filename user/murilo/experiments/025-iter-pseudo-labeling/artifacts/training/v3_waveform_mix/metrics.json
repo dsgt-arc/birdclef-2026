@@ -1,0 +1,62 @@
+{
+  "auroc": 0.8454731106758118,
+  "cmap": 0.6119967103004456,
+  "f1_macro": 0.5605673789978027,
+  "f1_micro": 0.710171639919281,
+  "top1_accuracy": 0.7754164338111877,
+  "top5_accuracy": 0.8704767227172852,
+  "loss": 0.010941416025161743,
+  "metrics_source": "val",
+  "architecture": "sed",
+  "encoder_type": "efficientnet",
+  "encoder_model": "hgnetv2_b0.ssld_stage2_ft_in1k",
+  "embed_dim": 1024,
+  "sed_head": {
+    "hidden_dim": 1024,
+    "dropout": 0.5,
+    "gem_p": 3.0
+  },
+  "mel": {
+    "n_fft": 2048,
+    "n_mels": 256,
+    "hop_length": 313,
+    "fmax": null,
+    "sample_rate": 32000
+  },
+  "dataset": "birdclef-2026",
+  "num_classes": 234,
+  "best_val_score": 0.8507888913154602,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/025-iter-pseudo-labeling/checkpoints/2026-exp025-v3-waveform-mix/best-epochepoch=38.ckpt",
+  "stopped_epoch": 40,
+  "training": {
+    "max_epochs": 40,
+    "lr": 0.0005,
+    "head_lr": 0.0005,
+    "weight_decay": 0.0001,
+    "warmup_epochs": 5,
+    "batch_size": 64,
+    "num_workers": 8,
+    "precision": "16-mixed",
+    "early_stopping_patience": 999,
+    "grad_clip_val": 0,
+    "accumulate_grad_batches": 1,
+    "clipwise_weight": 1.0,
+    "framewise_weight": 0.0,
+    "blend_clip": 1.0,
+    "blend_frame": 0.0,
+    "mixup_prob": 1.0,
+    "mixup_alpha": 1.0,
+    "window_duration": 5.0,
+    "sample_rate": 32000
+  },
+  "pseudo_labels": {
+    "pseudo_label_weight": null,
+    "pseudo_label_batch_fraction": null
+  },
+  "compute": {
+    "gpu": "2",
+    "slurm_job_id": 6494042,
+    "node": "atl1-1-03-007-3-0",
+    "cpus_per_task": "8"
+  }
+}

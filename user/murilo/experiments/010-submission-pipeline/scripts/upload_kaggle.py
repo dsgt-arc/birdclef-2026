@@ -404,6 +404,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-pl-v1",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-pl-v1.json",
     },
+    # Exp 025 Phase C: v3-waveform-mix (Mario-style PL waveform mixing, 40ep)
+    "hgnet-b0-sed-v3-waveform-mix": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v3-waveform-mix-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v3-waveform-mix",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v3-waveform-mix.json",
+    },
     # Exp 026: v5j + dual validation (soundscape checkpoint selection)
     "hgnet-b0-sed-v5j-dualval": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-dualval-weights",

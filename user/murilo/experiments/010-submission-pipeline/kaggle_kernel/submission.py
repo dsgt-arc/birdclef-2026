@@ -104,6 +104,8 @@ MODEL_SLUGS = [
     "birdclef-2026-hgnet-b0-sed-v9a-10s-att-weights",
     # Exp 026: v5j + dual validation (soundscape checkpoint selection)
     "birdclef-2026-hgnet-b0-sed-v5j-dualval-weights",
+    # Exp 025 Phase C: v3-waveform-mix (Mario-style PL waveform mixing)
+    "birdclef-2026-hgnet-b0-sed-v3-waveform-mix-weights",
     # Exp 025: v5j + pseudo-label training (round 1)
     "birdclef-2026-hgnet-b0-sed-v5j-pl-v1-weights",
     # Exp 022: PCEN normalization + pipeline verification
