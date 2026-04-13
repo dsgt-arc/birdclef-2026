@@ -26,7 +26,7 @@ Read ALL of these at session start to get full context.
 **Best LB: 0.929** (Perch ONNX + SED v5j-4fold MLP-only ensemble, exp 023)
 **Best single SED: 0.906** (v5j, 5s LSEHead, exp 019)
 **Target: 0.948** (competition #1). Gap: 0.019.
-**Branch**: `mg/025-waveform-mixing-pl` — PR pending
+**Branch**: `mg/025-waveform-mixing-pl` — PR #31
 
 | Model | LB | Notes |
 |-------|-----|-------|
