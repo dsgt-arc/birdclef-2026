@@ -583,6 +583,28 @@ Inference-only change, no new model.
 
 v5j-control matches v5j-dualval (exp 026): val/auroc 0.849 vs 0.849. Pipeline verified.
 
+## Experiment 025: Iterative Pseudo-Labeling
+
+### Phase B: Row-addition (FAILED)
+
+Added PLs as separate dataset rows with stratified batch sampling (50/50 GT:PL).
+
+| Slug | Method | val/auroc | val/cmap | LB | Checkpoint |
+|------|--------|-----------|----------|-----|------------|
+| `v5j-pl-v1` | Row-addition (w=0.5, fold 0) | 0.872 | 0.620 | **0.897** | `025-.../best-epochepoch=18.ckpt` |
+
+### Phase C: Waveform mixing (IN PROGRESS)
+
+Mario-style PL waveform mixing: 30% of focal samples overlaid with random PL soundscape
+segment (amplitude-controlled). Labels: max(focal, PL). Standard 3-tuple, v5j recipe unchanged.
+
+| Slug | Method | val/auroc | val/cmap | Best Epoch | LB | Checkpoint |
+|------|--------|-----------|----------|------------|-----|------------|
+| `v3-waveform-mix` | Waveform mixing (30%, 90/10 split) | **0.866** | **0.603** | 16 | pending | `025-.../2026-exp025-v3-waveform-mix/best-epochepoch=16.ckpt` |
+
+Model was still improving at epoch 20 (new bests at epochs 14, 15, 16). Next run should
+use more epochs. val_sc metrics not available (dual_validation not enabled).
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

@@ -146,8 +146,13 @@ Wrapper around the existing GT training dataset. On each `__getitem__`:
   - PL waveform mixing at 30% probability
   - Amplitude range: [-0.5, 0.1] (log10 scale)
   - Use existing v1 PLs (347K segments, 196/234 species)
-- [ ] Fast-dev-run sanity check
-- [ ] Full training (20 epochs)
+- [x] Fast-dev-run sanity check ✅ — Job 6491524, 5 batches, PL mixing verified,
+  127236 PL segments (660 val excluded), loss OK
+- [x] Full training (20 epochs, 90/10 split) ✅ — Job 6492104, RTX 6000, 39m09s.
+  Best val/auroc=0.866 (epoch 16), val/cmap=0.603. Model still improving at epoch 20
+  (new bests at epochs 14→15→16). Checkpoint: `best-epochepoch=16.ckpt`
+  **Note**: dual_validation not enabled — no val_sc metrics. Add for next run.
+  **Note**: 20 epochs may be too few — consider 30-40 epochs for next run.
 - [ ] ONNX export + LB submission
 - [ ] Compare vs v5j baseline (0.906)
 
