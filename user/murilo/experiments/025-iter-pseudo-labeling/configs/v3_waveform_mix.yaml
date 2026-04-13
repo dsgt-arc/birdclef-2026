@@ -4,7 +4,7 @@
 # Only changes from v5j baseline:
 #   1. Added pseudo_label_mix section under data (PL audio mixed into focal waveforms)
 #   2. run_name updated for Phase C
-# Everything else identical: HGNetV2-B0, LSEHead, BCE, 5s, 20ep, OneCycleLR
+# Everything else identical: HGNetV2-B0, LSEHead, BCE, 5s, 40ep, OneCycleLR
 #
 # Reference: Mario Lasseck, BirdCLEF 2024 2nd place (+8% from iterative PL mixing)
 #
@@ -49,6 +49,7 @@ data:
   soundscape_val_files: 8
   soundscape_test_files: 0
   seed: 42
+  dual_validation: true
   # Phase C: Waveform mixing (Mario Lasseck style)
   # 30% of focal samples get overlaid with a random PL soundscape segment
   # Amplitude factors: 10^uniform(-0.5, 0.1) = [0.32x, 1.26x] per waveform
@@ -60,7 +61,7 @@ data:
     amp_exp_max: 0.1
 
 training:
-  max_epochs: 20
+  max_epochs: 40
   lr: 5.0e-4
   head_lr: 5.0e-4
   weight_decay: 1.0e-4

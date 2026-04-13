@@ -294,6 +294,7 @@ def main():
         scheduler_type=training_cfg.get("scheduler_type", "cosine"),
         onecycle_div_factor=training_cfg.get("onecycle_div_factor", 25.0),
         onecycle_final_div_factor=training_cfg.get("onecycle_final_div_factor", 4.0),
+        dual_validation=config["data"].get("dual_validation", False),
     )
 
     # ========================================================================
@@ -339,6 +340,7 @@ def main():
         eval_transform=eval_transform,
         fold_id=fold_id,
         fold_assignments_path=str(fold_assignments_path) if fold_assignments_path else None,
+        dual_validation=config["data"].get("dual_validation", False),
         # Phase B: Pseudo-label row addition (exp 025 Phase B)
         pseudo_label_path=args.pseudo_label_path,
         pseudo_label_weight=config["data"].get("pseudo_label_weight", 0.5),
