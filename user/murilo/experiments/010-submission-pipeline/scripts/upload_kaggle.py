@@ -432,6 +432,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-10s",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-10s.json",
     },
+    # Exp 027: v11b simple mel normalization
+    "hgnet-b0-sed-v11b-exp027": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v11b-exp027-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v11b-exp027",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v11b-exp027.json",
+    },
     # Exp 027: v10a additive MixUp + CE loss
     "hgnet-b0-sed-v10a-exp027": {
         "slug": "birdclef-2026-hgnet-b0-sed-v10a-exp027-weights",

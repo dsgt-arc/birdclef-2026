@@ -984,6 +984,18 @@ export_hgnet_b0_sed_v10a_exp027() {
         --output-dir artifacts/weights/hgnet-b0-sed-v10a-exp027/
 }
 
+export_hgnet_b0_sed_v11b_exp027() {
+    echo "=== Exporting HGNetV2-B0 SED v11b (simple mel norm, exp 027, 234 classes) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/027-model-training-fixes/checkpoints/2026-exp027-v11b-melnorm")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP027_DIR}/configs/v11b_melnorm.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v11b-exp027/
+}
+
 export_hgnet_b0_sed_v10b_exp027() {
     echo "=== Exporting HGNetV2-B0 SED v10b (additive MixUp + BCE, exp 027, 234 classes) ==="
     local CKPT
@@ -1048,7 +1060,7 @@ case "$MODEL" in
     hgnet-b0-sed-v10a|hgnet-b0-sed-v10b|hgnet-b0-sed-v10c|hgnet-b0-sed-v5j-repro|\
     hgnet-b0-sed-v5j-pl-v1|hgnet-b0-sed-v5j-dualval|\
     hgnet-b0-sed-v9a-10s-att|hgnet-b0-sed-v9b-15s-att|hgnet-b0-sed-v9c-20s-att|\
-    hgnet-b0-sed-v10a-exp027|hgnet-b0-sed-v10b-exp027|\
+    hgnet-b0-sed-v10a-exp027|hgnet-b0-sed-v10b-exp027|hgnet-b0-sed-v11b-exp027|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1171,6 +1183,7 @@ case "$MODEL" in
     hgnet-b0-sed-v9c-20s-att) export_hgnet_b0_sed_v9c_20s_att ;;
     hgnet-b0-sed-v10a-exp027) export_hgnet_b0_sed_v10a_exp027 ;;
     hgnet-b0-sed-v10b-exp027) export_hgnet_b0_sed_v10b_exp027 ;;
+    hgnet-b0-sed-v11b-exp027) export_hgnet_b0_sed_v11b_exp027 ;;
     all-019-ablations)
         export_effnet_b0_sed_v5a
         echo ""

@@ -14,7 +14,9 @@ Read ALL of these at session start to get full context.
 | `user/murilo/notes/sed-architecture-overview.md` | **Complete pipeline reference** — 13 sections covering data, audio processing, model architecture, training, loss, inference, window experiments, identified gaps | Read fully (primary doc) |
 | `user/murilo/notes/2026-04-12-salman-ahmed-birdclef2025.md` | **Salman's BirdCLEF 2025 code analysis** — max trick, RMS sampling, mel norm, full pipeline comparison vs v5j | Read fully |
 | `user/murilo/notes/2026-04-12-mario-lasseck-birdclef2024.md` | **Mario's BirdCLEF 2024 paper** — iterative pseudo-labeling (+8%), waveform mixing, model soup | Read fully |
-| `user/murilo/experiments/027-model-training-fixes/tasks.md` | **Exp 027 task tracking (ACTIVE)** — Phases 1-4 | Read fully |
+| `user/murilo/experiments/025-iter-pseudo-labeling/tasks.md` | **Exp 025 task tracking — Phase C next (waveform mixing)** | Read fully |
+| `user/murilo/experiments/025-iter-pseudo-labeling/waveform-mixing-blueprint.md` | **Mario-style PL waveform mixing recipe** | Read fully |
+| `user/murilo/experiments/027-model-training-fixes/tasks.md` | Exp 027 task tracking — Phases 1-4 (winding down) | Read fully |
 | `user/murilo/experiments/027-model-training-fixes/results.md` | Exp 027 results — all variants | Read fully |
 | `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns (exps 006–027) | Read fully |
 | `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | Skim |
@@ -86,10 +88,11 @@ After 27 experiments and 18+ training changes with 0 LB improvements:
 
 ## What needs to happen next
 
-### Priority 1: Mario-style pseudo-labeling (exp 028)
+### Priority 1: Mario-style pseudo-labeling (exp 025 Phase C)
 
 The ONLY direction with evidence of large gains (+8% from Mario, used by every
-top BirdCLEF solution). Different from our failed exp 025:
+top BirdCLEF solution). Extending exp 025 (not new experiment) since PL infra
+already exists. Blueprint: `025-iter-pseudo-labeling/waveform-mixing-blueprint.md`
 
 **Mario's approach** (BirdCLEF 2024 2nd place):
 1. Mix pseudo-labeled soundscape AUDIO with focal audio at waveform level
@@ -98,13 +101,17 @@ top BirdCLEF solution). Different from our failed exp 025:
 4. 25-45% of training samples get mixed with PL segments
 5. Iterate 2-3 times (retrain → regenerate PLs → retrain)
 
-We already have: 347K pseudo-labels from exp 025, 0.929 ensemble as teacher.
-What failed in exp 025: adding PL as separate dataset rows (wrong approach).
+We already have: 347K pseudo-labels from Phase A, 0.929 ensemble as teacher.
+What failed in Phase B: adding PL as separate dataset rows (wrong approach).
 
-### Priority 2: Submit v11b to LB (quick check)
+Implementation needed:
+1. `PseudoLabelMixingDataset` wrapper class in `src/birdclef/data/sed.py`
+2. `v3_waveform_mix.yaml` config
+3. Train + ONNX export + LB submission
 
-v11b (simple mel norm) is flat offline. Worth one LB submission to check if
-the simpler normalization helps domain transfer. Low priority.
+### Priority 2: v11b LB score (submitted, awaiting result)
+
+v11b (simple mel norm) submitted to Kaggle. Flat offline (-0.002). Quick data point.
 
 ### Priority 3: Ensemble improvements
 
