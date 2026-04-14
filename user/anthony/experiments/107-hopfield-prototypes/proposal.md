@@ -1,7 +1,7 @@
 # Proposal: Prototype Retrieval for Amphibian-Dominated Soundscapes
 
-**Status**: proposed
-**Created**: 2026-04-10 (axiomatic simplification 2026-04-11)
+**Status**: proposed (v1.2)
+**Created**: 2026-04-10 (axiomatic simplification 2026-04-11, preflight integration 2026-04-11, partial-pooling refactor 2026-04-11)
 **Author**: Anthony
 
 ## Thesis
@@ -28,9 +28,10 @@ one unified retrieval mechanism**:
    energy minimization**, the same retrieval equation used at inference.
 4. **Structural star schema + prototypes** — species and site prototypes
    compose via a Bayesian gated fusion (per-species Platt → multiplicative
-   fusion) to produce the per-window 234-class multi-label score. The
-   hierarchical species bank (family + species delta) handles the
-   long-tailed data distribution.
+   fusion) to produce the per-window 234-class multi-label score.
+   Low-resource species are regularized toward a family-level shrinkage
+   target (hierarchical-Bayes partial pooling) at training time; the
+   inference-time retrieval is species-only.
 
 The anchoring signal is 739 labeled SC windows (strong stream) that
 pull the whole model toward the target domain. Everything else flows
@@ -62,8 +63,9 @@ A factored star-schema memory-bank model, with a **learned projection**
 of Perch embeddings and prototypes trained via Hopfield retrieval
 (supervised BCE on the species bank + unsupervised energy minimization
 on the site bank) will beat exp 106's ridge (0.749) and close a
-substantial fraction of the gap on species without focal data or
-without Perch coverage.
+substantial fraction of the gap on species where the Perch embedding
+already carries signal but per-species focal data is too thin to
+shape a flat prototype.
 
 The mechanistic claim: once the projection is learned end-to-end and
 both memory banks live in the same learned space, the factored
@@ -77,7 +79,7 @@ without needing pseudo-labels.
 ### Architecture
 
 A learnable memory-bank classifier operating on frozen Perch v2
-embeddings. All 4.1M parameters live downstream of the cached
+embeddings. All ~3.4M parameters live downstream of the cached
 embeddings — Perch itself is not fine-tuned.
 
 ```
@@ -94,10 +96,8 @@ Perch emb (1536)
    W_K_species             W_K_site
        │                       │
        ▼                       ▼
-  species memory           site memory
-  M_f[family_of]           (21, K, 512)
-    + Δ_species
-  (F,K,512) + (234,K,512)
+    M_species              site memory
+  (234, K=8, 512)         (23, K=8, 512)
        │                       │
   logsumexp_k             logsumexp_k
        │                       │
@@ -112,28 +112,76 @@ Perch emb (1536)
 ```
 
 - **Projection**: `Linear(1536, 1024) → GELU → Linear(1024, 512) → LayerNorm`.
-  Nonlinear; shaped by BCE over labeled data + the unsupervised site
-  loss via the site bank's gradient path.
-- **Hierarchical species memory**: `M_species[s] = M_family[family_of(s)]
-  + Δ_species[s]`. `M_family: (F, K, 512)` holds prototypes shared
-  across species in each family (~30 families from BirdCLEF taxonomy
-  metadata); `Δ_species: (234, K, 512)` holds species-specific
-  refinements. K=8 slots per bank. Weight decay on `Δ_species` (1e-2,
-  vs 1e-5 elsewhere) keeps low-resource species close to the family
-  prior; high-resource species specialize away from it.
-- **Site memory bank**: `(21, K, 512)`, K=8 per site. Flat — no
-  hierarchy (21 Pantanal sites aren't taxonomically grouped).
+  Nonlinear; shaped by BCE over labeled data. Detached in the site loss
+  (see below) so the site bank clusters within the species-shaped space,
+  not the other way around.
+
+- **Species memory bank**: `M_species : (234, K=8, 512)`. The **only**
+  prototype bank in the forward pass. Per-species retrieval:
+  `s_species(q, s) = (1/β) · logsumexp_k (β · q_r · W_K_species · M_species[s, k])`.
+  No family-level bank, no joint retrieval, no concatenation. Decisions
+  are made from species prototypes alone.
+
+- **Family-level partial pooling (training-time only).** Family
+  information sharing happens via a shrinkage regularizer on
+  `M_species`, not via a parameterized family bank. At each step, the
+  family centroid is computed as a **stop-grad mean** over siblings,
+  and each species is pulled toward its family centroid:
+
+  ```
+  M_family_mean[f] = stop_grad(mean_{s' ∈ f} M_species[s'])     # (67, K, 512)
+  L_family = λ_fam · mean_s || M_species[s] - M_family_mean[f(s)] ||²
+  ```
+
+  Classical hierarchical-Bayes partial pooling, implemented as uniform
+  attention over siblings. **Zero new parameters.** The `stop_grad`
+  makes the shrinkage asymmetric: low-resource species are pulled
+  toward the mean, but data-rich species don't feel backpressure from
+  noisy low-resource children distorting their prototypes.
+
+  Dynamics across the data regimes: data-rich birds have BCE ≫
+  shrinkage and develop their own patterns; medium-resource amphibians
+  feel proportionally stronger shrinkage and settle near the family
+  mean (which is itself shaped primarily by data-rich siblings);
+  orphans converge entirely to the mean. The family hierarchy is a
+  training artifact — the inference-time model contains only
+  `M_species`, `W_Q`, `W_K_species`, Platt, the site bank, and the gate.
+
+  The 67 families come from iNat taxonomy + one pseudo-family
+  `Insecta_unresolved` that groups the 25 `47158son01..25` morphotypes
+  (see "Insect morphotype containment" below). 33 of the 67 families
+  are singletons; for a singleton species, the family mean is just
+  that species itself, so the shrinkage term becomes a no-op (no
+  special casing needed — `(M_species[s] - M_species[s]) = 0`).
+  22 families have ≥3 species and cover 177/234 = 76% of the taxonomy.
+  See `docs/families.csv` for the mapping.
+
+- **Site memory bank**: `(23, K=8, 512)`, K=8 per site. Flat — 23
+  Pantanal sites aren't taxonomically grouped. Sites are `S01..S23`,
+  matching training filenames; the Kaggle test row_id
+  `BC2026_Test_NNNN_S##_<datetime>_<window>` also carries the site
+  code, so `site_idx` is parseable at inference.
+
 - **Retrieval projections** `W_Q`, `W_K_species`, `W_K_site` — standard
   Ramsauer formulation of modern Hopfield networks.
-- **Aggregation**: `(1/β)·logsumexp_k(β·q_r·W_K·M_{s,k})` per species,
-  then per-species Platt `sigmoid(a_s·score + b_s)`. Platt is
-  load-bearing: it makes the species scores proper probabilities so
-  the multiplicative `species · site_score` fusion is a valid Bayesian
-  composition.
+
+- **Platt calibration**: per-species `sigmoid(a_s·s_species + b_s)`.
+  Load-bearing: it makes species scores proper probabilities so the
+  multiplicative `species · site_score` fusion is a valid Bayesian
+  composition. Per-species `b_s` is also the only mechanism that
+  differentiates orphans from their data-rich siblings (see
+  Limitations).
+
 - **Gated fusion**: `score = g·species + (1-g)·species·site_score`,
-  with `g = sigmoid(Linear(q))` a learned per-window gate.
+  with `g = sigmoid(Linear(q))` a learned per-window gate. Note:
+  `site_score` is scalar per window (one gate for all 234 species),
+  not a per-species site prior — see Limitations.
+
 - **Output dim**: 234 competition species (no silence class).
-- **Total params**: ~4.1M.
+
+- **Total params**: ~3.4M (projection ~2.1M, W_Q/W_K_* ~786K, species
+  bank 959K, site bank 94K, gate+Platt ~1K). No family-bank parameters
+  at all; `M_family_mean` is derived at each training step.
 
 ### Data streams
 
@@ -147,21 +195,31 @@ Three streams, no filters, no pseudo-labels, no silence class:
 
 Every focal window keeps its recording's primary-species label,
 uniformly across the four regimes (bird/non-bird × has-Perch/no-Perch).
-Noise from silent between-call windows is absorbed by the K=8 prototype
-slots and the family hierarchy, not by a preprocessing filter. Perch's
-role in v1 is **only** the frozen embedding space — it is not a
-teacher, a filter, or a pseudo-labeler on any stream.
+Noise from silent between-call windows is absorbed by the prototype
+slots, not by a preprocessing filter. Perch's role in v1 is **only**
+the frozen embedding space — it is not a teacher, a filter, or a
+pseudo-labeler on any stream.
 
-### Loss: two terms, one novel mechanism
+**The focal stream is structurally bird-biased.** Aves p50 = 169
+recordings/species, Amphibia p50 = 6, Insecta p50 = 0 (25 of 28
+insects have zero focal data). Per-species balanced sampling (below)
+equalizes the *expected frequency* per epoch, but it cannot create
+data that doesn't exist. The supervised signal into `M_species` is
+therefore dominated by bird acoustic patterns, and the family-level
+shrinkage (above) is the main mechanism by which low-resource
+amphibians acquire meaningful prototypes — they are pulled toward a
+family mean that is itself shaped by their data-rich siblings.
+
+### Loss: three terms
 
 ```python
-def loss(batch, lambda_site=0.1):
-    # Labeled term: strong + weak focal through BCE
+def loss(batch, lambda_site=0.1, lambda_fam=1e-2):
+    # 1. Labeled term: strong + weak focal through BCE
     x = concat(batch.strong, batch.weak_focal)
     pred = model(x.emb, x.site_idx)              # site_idx=None for focal
     L_labeled = bce(pred, x.labels)
 
-    # Unsupervised term: Hopfield energy minimization on unlabeled SC.
+    # 2. Unsupervised term: Hopfield energy minimization on unlabeled SC.
     # Projection is DETACHED so the site bank clusters within the
     # species-shaped space, not the other way around.
     q_det = model.proj(batch.unsup.emb).detach()
@@ -171,60 +229,101 @@ def loss(batch, lambda_site=0.1):
     sim    = einsum(q_r, M_l, 'b d, b k d -> b k')
     L_site_unsup = -(torch.logsumexp(beta_l * sim, dim=-1) / beta_l).mean()
 
-    return L_labeled + lambda_site * L_site_unsup
+    # 3. Family partial pooling: pull each species toward its family
+    # centroid, computed as a stop_grad mean over siblings. Zero new
+    # parameters; pure regularizer on M_species.
+    #   family_idx: (234,) maps species index to family index in [0, 67)
+    M_family_mean = scatter_mean(model.M_species, family_idx, dim=0)   # (67, K, D)
+    target = M_family_mean[family_idx].detach()                        # (234, K, D)
+    L_family = ((model.M_species - target) ** 2).mean()
+
+    return L_labeled + lambda_site * L_site_unsup + lambda_fam * L_family
 ```
 
 **What each term does:**
 
-- **`L_labeled`**: trains the species bank (and everything that routes
-  into it — projection, W_Q, W_K_species, Platt, gate, site bank via
-  gated fusion on labeled SC windows) on the 739 strong + 265K weak
-  focal BCE signal. The species bank is the retrieval target of the
-  labeled supervision.
+- **`L_labeled`**: trains `M_species`, the projection, `W_Q`,
+  `W_K_species`, Platt, the gate, and the site bank (via gated fusion
+  on labeled SC windows) on the 739 strong + 265K weak focal BCE
+  signal. `M_species` is the only retrieval target of the labeled
+  supervision.
 - **`L_site_unsup`**: minimizes the Hopfield retrieval energy for each
   unlabeled SC window against its **known site's** memory bank. This is
-  the same equation (`(1/β)·logsumexp_k(β·q_r·W_K·M_{l,k})`) used in
-  the forward pass at inference — training and inference share the
-  retrieval operator. The loss pulls each window toward SOME prototype
-  in its site, which is soft-EM clustering in the projection space.
-  Projection is detached so this loss trains only the site memory,
-  `W_K_site`, and `log_beta_site` — **not** the projection. Without the
-  detach, the loss would push the projection to encode site-identifying
-  features (microphone fingerprints, ambient noise signatures), which
-  is the exp 106 "site structure entangled with domain shift" failure
-  mode we're trying to avoid.
+  the same equation used in the forward pass at inference — training
+  and inference share the retrieval operator. The loss pulls each
+  window toward SOME prototype in its site, which is soft-EM clustering
+  in the projection space. Projection is detached so this loss trains
+  only the site memory, `W_K_site`, and `log_beta_site` — **not** the
+  projection. Without the detach, the loss would push the projection
+  to encode site-identifying features (microphone fingerprints, ambient
+  noise signatures), which is the exp 106 "site structure entangled
+  with domain shift" failure mode we're trying to avoid.
+- **`L_family`**: implements hierarchical-Bayes partial pooling on
+  `M_species` as a stop-grad shrinkage toward the family centroid.
+  At each step, the family centroid is the uniform mean over siblings
+  in `f(s)`; detaching it ensures only the LHS moves. Low-resource
+  species receive proportionally stronger effective shrinkage (because
+  their BCE gradient is sparse), while data-rich species are essentially
+  unaffected. Zero new parameters — the family hierarchy lives entirely
+  in this loss term and never appears in the forward pass at inference.
 
 **Why this is principled.** The unsupervised site clustering reuses
 the Hopfield retrieval machinery already in the architecture. No
 pseudo-labels, no entropy minimization, no contrastive pair construction,
 no reconstruction head. The site bank learns from 127K windows of
 target-domain acoustic data via the same operator that composes with
-the species bank at inference time. The star schema's factored
-structure and the Hopfield energy function together give us a natural
-way to train each bank from the data source that best fits it:
-species ← labeled, site ← unsupervised + gated fusion on labels.
+the species bank at inference time. Family partial pooling is the
+textbook hierarchical-Bayes shrinkage estimator, implemented without
+any parameterized family prior.
 
-**Single hyperparameter**: `λ_site`. Default 0.1, tune via LOSO.
-No ramps, no warm-up, no `γ_weak`.
+**Hyperparameters**: `λ_site` (default 0.1) and `λ_fam` (default 1e-2),
+both tuned on the S22 LOSO fold. No ramps, no warm-up, no `γ_weak`.
 
 ### Per-species balanced sampling
 
 The weak focal stream uses a `WeightedRandomSampler` with per-species
 weights `1 / n_windows_in_species`. This gives every species equal
-representation per epoch and prevents common species from dominating
-the family prototype gradient — a known issue with the hierarchical
-`M_family + Δ_species` parameterization where gradient on a common
-species flows into its family prototype and would otherwise make
-`M_family[f]` track the common species instead of a family average.
+representation per epoch and prevents common (bird) species from
+dominating the projection gradient. It also keeps the family centroid
+honest: without balanced sampling, the `M_family_mean` for large bird
+families (Tyrannidae 22, Thraupidae 13, Furnariidae 13) would be pulled
+toward a handful of data-rich species — which is exactly the regime
+where low-resource siblings need a broad, representative family prior.
 
 The unsupervised SC stream is sampled uniformly (no species identity
 concept at this stream level).
 
+### Insect morphotype containment
+
+25 of the 28 Insecta species in the BirdCLEF 2026 taxonomy are
+`47158son01..son25`, all sharing iNat id 47158, which resolves to
+the **Insecta class**, not a species. These are unresolved
+sound-morphotype labels with no family, no genus, and no focal audio.
+No taxonomic hierarchy can help them: there is no real family to
+share information with, and `M_species[s]` receives no focal gradient.
+
+v1's containment strategy: one pseudo-family `Insecta_unresolved`
+groups all 25 morphotypes. Under partial pooling, all 25 species are
+shrunk toward their shared family centroid — which is itself the mean
+of the same 25 near-zero prototypes. The fixed point is `M_species[s]`
+for all 25 species collapsing toward the shared mean of whatever
+little signal the 739 strong SC windows + weak bag labels inject.
+At inference, all 25 emit effectively **identical** retrieval scores;
+per-species Platt `b_s` is the only differentiator, and with no focal
+data it's weakly trained at best.
+
+This is containment, not rescue. The alternatives considered —
+flat per-species prototypes outside the hierarchy, or acoustic
+pre-clustering into synthetic families — don't change the fundamental
+problem: no training signal, no learnable per-species prototype. v1
+ships with this hole and accepts near-random AUROC on the insect
+subset; they are reported separately and can optionally be excluded
+from the aggregate metric.
+
 ### Initialization — random
 
 - **Projection MLP**: Kaiming
-- **Family memory**: small Gaussian
-- **Species delta**: zero (species start as pure family fallback)
+- **M_species**: small Gaussian
 - **Site memory**: small Gaussian
 - **W_Q, W_K_*, gate**: default linear init
 - **Platt**: identity (`a_s = 1`, `b_s = 0`)
@@ -241,56 +340,162 @@ MLP partially destroys the cluster structure anyway.
 ### Training schedule
 
 - **Optimizer**: AdamW, `lr = 3e-4`, cosine decay, 30–40 epochs
-- **Parameter groups**:
-  - `species_delta`: weight decay `1e-2` (strong shrinkage to the
-    family prior)
-  - Everything else: `1e-5`
+- **Weight decay**: `1e-5` on all parameter groups. No asymmetric
+  shrinkage — the `L_family` term handles low-resource regularization
+  directly.
 - **Early stopping**: LOSO AUROC evaluated every 5 epochs
 - **Compute**: GPU (`gpu-rtx6000`, RTX 6000 × 1, 12h walltime)
 
-### Taxonomy hierarchy and low-resource species
+### Taxonomy hierarchy: what it actually buys
 
-Species prototypes are parameterized as
-`M_species[s] = M_family[f(s)] + Δ_species[s]`. Family memory
-receives gradient from every species in the family (plus the balanced
-sampler ensures per-species-equal gradient contribution), so `M_family`
-trains strongly regardless of any individual species' data volume.
-Weight decay on `Δ_species` keeps low-resource species close to their
-family prior.
+The `L_family` shrinkage term is motivated by **one specific regime:
+low-resource amphibians**.
+
+- Aves p50 = 169 focal recordings/species — plenty of data; BCE
+  gradient ≫ shrinkage gradient, species prototypes train to their
+  own patterns, and the family mean is essentially irrelevant to
+  them.
+- Amphibia p50 = 6 — 28× less data; BCE gradient is sparse, shrinkage
+  proportionally dominates, and the effective prototype settles near
+  the family mean with small species-specific deviations. This is
+  the textbook shrinkage estimator for this regime.
+
+Dominant families where partial pooling actually does work:
+Leptodactylidae(16), Hylidae(12), Thraupidae(13), Furnariidae(13),
+Tyrannidae(22), Psittacidae(11). Of these, the amphibian families
+(Leptodactylidae, Hylidae) are the ones most likely to benefit —
+they have many species, per-species data is thin, and the Perch
+embedding already carries amphibian-discriminative signal (exp 106
+ridge 0.749 on the full taxonomy is proof).
+
+Partial pooling is **not** primarily an orphan-rescue mechanism:
+- 28 species have zero focal data.
+- Only **3** are rescuable via family siblings with focal data:
+  Leptodactylidae, Microhylidae, Phyllomedusidae (amphibians).
+- The other 25 are insect morphotypes (above), all in a single
+  pseudo-family that provides no meaningful shrinkage target.
+
+For the 3 rescuable orphans, "rescue" is really **family-level
+detection, not species-level discrimination**. The orphan converges
+to the family centroid, which is shared with its data-rich siblings.
+At inference, the orphan's retrieval score is essentially identical
+to any low-data sibling's, and only per-species Platt `b_s` (trained
+from strong SC co-occurrence) gives any differentiation. This is a
+limit of any hierarchical prototype scheme, not a quirk of partial
+pooling; no architecture can manufacture species-specific signal
+from zero species-specific data.
+
+The main value of the hierarchy is **variance reduction on the
+~40–60 medium-resource amphibians** where Perch embeddings carry
+signal but focal data is thin. If that variance reduction is small
+in practice, the regularizer is dead weight — see the pre-registered
+`λ_fam` sweep under Evaluation.
 
 Effect across the four species regimes:
 
 | Regime | Behavior |
 |--------|----------|
-| Species with lots of focal data | Develops a strong `Δ_species[s]`, specializes away from the family prior |
-| Species with little focal data | `Δ_species[s]` stays near 0 under weight decay; effective prototype ≈ family mean — structural regularization |
-| Species with zero focal but family siblings have focal | `Δ_species[s]` never gets training gradient; effective prototype = family template. **Partially learnable via siblings.** |
-| Species with zero focal and no family sibling with focal | Truly unlearnable. Flagged and excluded from the aggregate AUROC. |
+| Lots of focal data (most birds) | BCE ≫ shrinkage; `M_species[s]` trains to its own pattern; family mean is near-irrelevant. |
+| Little focal data + data-rich family siblings (most amphibians in multi-species families) | Shrinkage is proportionally strong; `M_species[s]` settles near the family mean with small deviations. **The regime partial pooling is designed for.** |
+| Zero focal + data-rich family siblings (3 amphibians) | `M_species[s]` converges entirely to the family mean. Retrieval is family-level detection; Platt `b_s` is the only per-species differentiator from siblings. |
+| Zero focal + no informative family (25 insect morphotypes, singleton-family orphans) | All morphotypes collapse to the shared `Insecta_unresolved` centroid and emit identical retrieval scores. Unlearnable in v1. Flagged and excluded from aggregate AUROC. |
 
 Family level is chosen because whole bird families, frog families, and
 insect families typically share acoustic signatures (call morphology,
 frequency band, stridulation mechanism). Genus is too narrow; class is
-too broad. The species → family mapping is a preflight requirement,
-pulled from BirdCLEF metadata or an iNaturalist/eBird fallback CSV.
+too broad.
 
 ## Evaluation
 
-LOSO CV on 7 folds (sites with ≥20 labeled SC windows). Each fold
-retrains the full model from scratch on all data except the held-out
-site's strong-stream positives. Final metric: mean per-fold macro
-AUROC, reported with subset breakdowns.
+LOSO CV on up to **9 folds** (sites with any labeled SC windows:
+S03, S08, S09, S13, S15, S18, S19, S22, S23). Each fold retrains the
+full model from scratch on all data except the held-out site's
+strong-stream positives. **Every fold uses the identical training
+recipe** — same loss, same `λ_fam` (locked after the S22 sweep below),
+same sampler, same schedule. The only variable across folds is which
+site's labels are withheld.
+
+### Handling fold imbalance
+
+S22 alone = 954/1478 = 65% of all labeled SC windows; the other 8
+folds have 30–120 windows each. Naive macro averaging across folds
+is dominated by noise from the tiny folds. The strategy is a
+decomposition:
+
+- **Pooled AUROC** — **primary metric.** Concatenate held-out
+  predictions across all 9 folds into one prediction set, compute
+  one AUROC per species, then macro-average across species. Each
+  window contributes once; fold size is irrelevant to the weight;
+  this is the closest analog to how Kaggle's hidden test set is
+  scored. Directly comparable to exp 106 ridge 0.749.
+- **S22 as decision fold.** Because S22 alone has 954 windows, its
+  per-fold AUROC is statistically stable and is used for all
+  hyperparameter tuning (see `λ_fam` sweep below), subset
+  diagnostics, and the family ablation. Tuning on S22 — not on the
+  pooled metric — prevents the primary metric from becoming an
+  eval-overfitting target.
+- **Other 8 folds** → variance / generalization check. Report macro
+  mean + per-fold table with positive counts, but understand these
+  are noisy estimates of unseen-site generalization, not point
+  estimates. A fold AUROC from 30 windows has a confidence interval
+  wider than any plausible improvement; treat the distribution
+  across folds, not the individual numbers.
+- **Weighted fold mean** — sanity check. Should agree with the pooled
+  AUROC to within noise. Divergence between pooled and weighted
+  indicates cross-fold score calibration drift, which should be
+  flagged in the report.
+
+### What to report
 
 | Metric | Purpose |
 |--------|---------|
-| Overall LOSO macro AUROC | Primary — directly comparable to exp 106 ridge 0.749 |
-| Bird vs non-bird subset | Does the learned projection generalize to non-bird audio? |
-| With-focal vs without-focal subset | Prototype quality scales with focal data availability |
-| Has-family-sibling-with-focal vs orphaned subset | Does family inheritance rescue zero-focal species? |
+| Pooled AUROC over 9 held-out folds | Primary — directly comparable to exp 106 ridge 0.749 |
+| S22 fold AUROC + subset breakdown | Decision metric for tuning and ablation |
+| Macro mean + per-fold table over 8 small folds | Generalization variance check |
+| Bird vs non-bird subset (pooled) | Does the learned projection generalize to non-bird audio? |
+| Amphibian subset (pooled) | The regime partial pooling is designed for; main evidence for/against `L_family` |
+| With-focal vs without-focal subset (pooled) | Prototype quality scales with focal data availability |
+| Insecta subset (reported separately) | Expected near-random; sanity check that morphotypes aren't polluting other metrics |
 | Site × species affinity matrix | Eval-time deliverable; ecological interpretation |
 
 Species with no training signal from any source (no focal, no strong
 positives, no family sibling with focal) are flagged **unlearnable**
 and excluded from the aggregate AUROC; listed separately in the report.
+
+### Pre-registered λ_fam sweep (also the family ablation)
+
+The family partial pooling is the strongest single argument that this
+architecture is more than a flat prototype bank. v1 runs a pre-registered
+sweep over `λ_fam` on the S22 fold alone, which also serves as the
+family ablation:
+
+`λ_fam ∈ {0, 1e-3, 1e-2, 1e-1, 1}`
+
+- `λ_fam = 0` is the **flat ablation** — no family shrinkage, pure
+  per-species prototypes. Tests whether the hierarchy earns its
+  complexity at all.
+- `λ_fam ∈ {1e-3 .. 1}` maps the shrinkage strength curve.
+
+For each setting, track three subset AUROCs on the S22 held-out set:
+
+| Subset | What to watch for |
+|--------|-------------------|
+| Data-rich birds (Aves with ≥50 focal recordings) | Should be **flat** across `λ_fam`. A drop at high `λ_fam` = over-shrinkage distorting prototypes that have enough data to speak for themselves. |
+| Medium-resource amphibians | Should **rise** from `λ_fam=0`, saturate, possibly drop at very high `λ_fam`. Peak is the target. |
+| Overall S22 AUROC | Secondary — used only if the subset curves are ambiguous. |
+
+**Decision rule**: pick the smallest `λ_fam` that saturates the
+amphibian curve without measurably reducing the bird curve. If
+**no setting of `λ_fam > 0` beats `λ_fam = 0` on the amphibian
+subset by ≥ 0.5 AUROC points**, v2 drops `L_family` entirely and
+redistributes the complexity budget to a richer site structure
+(likely a low-rank site→species projection to turn `site_score`
+into a per-species prior).
+
+Once `λ_fam` is chosen from the S22 sweep, **lock it** and run the
+full 9-fold LOSO with the locked value for the primary pooled-AUROC
+report. Do not re-tune on the full LOSO. If the S22 tuning is wrong,
+the pooled metric will reflect that honestly.
 
 ### Baselines
 
@@ -301,38 +506,60 @@ and excluded from the aggregate AUROC; listed separately in the report.
 
 ### Success criteria
 
-- **Primary**: overall LOSO AUROC ≥ 0.76. Beats ridge, justifies the
+- **Primary**: pooled LOSO AUROC ≥ 0.76. Beats ridge, justifies the
   learned projection.
-- **Go/no-go**: overall LOSO AUROC ≥ 0.749 ± fold variance. If the
-  full model can't match a linear classifier in its own feature space,
-  the construction isn't earning its complexity.
+- **Go/no-go**: pooled LOSO AUROC ≥ 0.749. If the full model can't
+  match a linear classifier in its own feature space, the construction
+  isn't earning its complexity.
 - **Mechanism**: non-bird subset AUROC should substantially exceed the
   level a naive "don't use unlabeled SC, no site bank" baseline would
   achieve — evidence that the unsupervised site loss and the star
   schema are doing work. (This is not tested as a formal ablation in
   v1; inferred from the subset breakdowns of the primary run.)
 
-**No ablation grid in v1.** If primary LOSO beats ridge and the
-subset breakdowns look sensible, ship it. If it misses, ablations
-become diagnostic tools in v2.
+**No ablation grid in v1 beyond the `λ_fam` sweep above.** If the
+pooled LOSO beats ridge and the subset breakdowns look sensible, ship
+it. Further ablations become diagnostic tools in v2.
 
 ## Kaggle submission
 
 Exp 107 is a Kaggle deliverable, not just a research experiment.
 
-1. **LOSO validates the architecture** (7 folds + subset report)
-2. **Retrain on all data** — focal + 739 labeled SC + unlabeled SC,
-   no fold hold-out, LOSO-best hyperparameters, single training run
-3. **Package** with Perch v2 ONNX (reused from exp 102/105 Kaggle
-   package); exp 107 weights (~4.1M params) + preprocessing
-4. **Inference**: Perch v2 → 1536-d embedding → exp 107 model → 234-d
-   multi-label probabilities per 5-sec window
-5. **Standalone LB submission**
-6. **Ensemble with exp 102** — probability-space average, blend
-   weight tuned on LOSO against the 739 labels (not on LB). Prior
-   hypothesis: exp 107 contributes most to the long tail (non-bird,
-   rare, no-focal species); exp 102 dominates on common birds. A
-   per-species-group weighted blend may outperform a global weight.
+1. **Tune `λ_fam` on S22 fold** (pre-registered sweep over
+   {0, 1e-3, 1e-2, 1e-1, 1}). Lock `λ_fam` and `λ_site`.
+2. **LOSO validates the architecture** — run all 9 folds with the
+   locked hyperparameters. Report pooled AUROC + subset breakdown
+   + per-fold table. Same training recipe on every fold.
+3. **Retrain on all data** — focal + 739 labeled SC + unlabeled SC,
+   no fold hold-out, locked LOSO hyperparameters, single training run.
+4. **Package** with Perch v2 ONNX (reused from exp 102/105 Kaggle
+   package); exp 107 weights (~3.4M params) + preprocessing. Note:
+   `L_family` is a training-time loss only — the shipped model
+   contains no family-level parameters.
+5. **Inference**: parse `site_idx` from row_id
+   (`BC2026_Test_NNNN_S##_..._W`) → Perch v2 → 1536-d embedding →
+   exp 107 model → 234-d multi-label probabilities per 5-sec window.
+6. **OOD-site fallback.** If the hidden rerun uses sites outside
+   `S01..S23`, parsing succeeds but the site bank has no prototype.
+   Inference path: if `site_idx` ∉ training sites, set
+   `site_score = 1` (no site modulation — fall back to pure species
+   retrieval). Alternative: marginalize `max_l site_score(q, l)`
+   over the 23 training banks. **Decision**: start with the
+   `site_score = 1` fallback for simplicity, revisit if first
+   submission shows many unknown sites.
+7. **Sample-submission sanity check.** First submission should be
+   trivial (exp 102 weights + minimal exp 107 forward) to confirm the
+   row_id format matches the sample's single placeholder row. Only
+   commit to a full exp 107 run after that.
+8. **Standalone LB submission.**
+9. **Ensemble with exp 102** — probability-space average, blend weight
+   tuned on LOSO against the 739 labels (not on LB). Prior hypothesis:
+   exp 107 contributes most on low-resource amphibians; exp 102
+   dominates on common birds. A per-species-group weighted blend may
+   outperform a global weight. **Caveat**: exp 107's long-tail
+   contribution is bounded — 25 of 28 orphans are unresolved insects
+   with no focal signal and no taxonomic rescue path. Expect exp 107
+   to help amphibians and low-resource birds more than insects.
 
 Kaggle's macro AUROC is rank-based, so the per-species Platt
 calibration in exp 107 is wasted for standalone LB but is useful for
@@ -348,10 +575,55 @@ across models meaningful.
 - **Domain alignment is hoped, not guaranteed.** The learned projection
   is shaped by labeled data that spans both focal and soundscape.
   Whether it aligns the two domains well enough for retrieval to
-  transfer across the gap is the core empirical question.
-- **LOSO variance with 7 sites is large.** A fold std of 0.03–0.05 is
-  plausible and makes the 0.76 vs 0.749 comparison statistically
-  borderline. Fold-level results reported alongside the mean.
+  transfer across the gap is the core empirical question. With the
+  projection detached from `L_site_unsup`, the only target-domain
+  signal shaping the projection is the 739 strong SC windows — thin
+  compared to 265K focal windows on the same loss.
+- **LOSO is statistically fragile at the per-fold level.** 9 folds,
+  but S22 alone is 65% of labeled windows. Small folds have 30–120
+  windows each and have AUROC confidence intervals wider than any
+  plausible improvement over ridge. The pooled-AUROC primary metric
+  mitigates this (each window contributes once regardless of fold
+  size), but the per-fold macro table remains a noisy estimate of
+  unseen-site generalization rather than a precise number.
+- **Site bank is a scalar gate, not a per-species site prior.**
+  `site_memory` has no species index. At inference `site_score` is
+  scalar per window, broadcast across all 234 species. This is a
+  confidence gate, not a factored star schema in the strict sense.
+  Proposal v1 keeps this construction to avoid a parameter explosion;
+  if it underperforms, a low-rank site→species projection becomes the
+  first thing to try in v2.
+- **Family partial pooling is a regularizer for a narrow regime.**
+  `L_family` helps medium-resource amphibians where per-species focal
+  data is too thin (~40–60 species). It provides zero benefit on 33
+  singleton-family species (the shrinkage term is identically zero
+  for them) and is near-redundant on data-rich birds. If the `λ_fam`
+  sweep shows no setting with ≥ 0.5 AUROC gap on the amphibian subset
+  vs. `λ_fam = 0`, v2 drops the term entirely.
+- **Orphan "rescue" is family-level detection, not species-level
+  discrimination.** For the 3 amphibian orphans (Leptodactylidae,
+  Microhylidae, Phyllomedusidae), `M_species[s]` converges to the
+  family centroid, which is shared with data-rich siblings. At
+  inference, the orphan's retrieval score is essentially identical
+  to any low-data sibling's, and only the per-species Platt bias
+  `b_s` — trained from strong SC co-occurrence on 739 windows —
+  differentiates them. This is a limit of hierarchical prototype
+  schemes in general, not an architectural bug; no design can
+  manufacture per-species discrimination from zero per-species
+  data. v2 could add a per-species learned bias vector to give BCE
+  a more direct differentiation path; v1 relies on Platt.
+- **Insect morphotypes are unreachable in v1.** 25 of 28 Insecta
+  species are unresolved sound morphotypes (`47158son01..25`) with
+  no focal data, no family, no genus. Under partial pooling, all 25
+  collapse to their shared `Insecta_unresolved` centroid and emit
+  identical retrieval scores. This is containment, not a solution —
+  the model has no supervised signal for these species beyond
+  whatever the 739 strong SC windows provide. Expect near-random
+  AUROC on this subset.
+- **OOD-site risk at Kaggle.** If the hidden rerun uses sites outside
+  `S01..S23`, the site bank has no prototype and the inference path
+  falls back to species-only. The magnitude of this risk depends on
+  information we can't see until submission.
 - **Single-ecosystem scope.** The projection is trained on Pantanal
   soundscapes + BirdCLEF 2026 focal collection. The model won't
   transfer to other ecosystems without retraining.
@@ -366,4 +638,4 @@ across models meaningful.
   parent of exp 107's thesis.
 - **Exp 102** (EfficientNet): current best Kaggle LB 0.794, bird-biased.
   Exp 107 ensembles with it in the submission path — the long-tail
-  contribution is the expected value add.
+  contribution on amphibians is the expected value add.

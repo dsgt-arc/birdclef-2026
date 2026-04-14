@@ -78,6 +78,8 @@ user/anthony/experiments/*/artifacts/
 *.log
 slurm-*.out
 slurm-*.err
+# SLURM %x-%j.out pattern for experiment jobs (e.g. exp107-coverage-NNNN.out)
+exp*-*.out
 logs/
 **/sbatch/logs/
 
