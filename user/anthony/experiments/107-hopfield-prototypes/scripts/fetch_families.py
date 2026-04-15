@@ -22,7 +22,13 @@ from pathlib import Path
 TAXONOMY = Path(
     "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/taxonomy.csv"
 )
-OUT = Path(__file__).resolve().parent.parent / "docs" / "families.csv"
+OUT = (
+    Path(__file__).resolve().parent.parent
+    / "src"
+    / "birdclef_107"
+    / "assets"
+    / "families.csv"
+)
 API = "https://api.inaturalist.org/v1/taxa/{id}"
 DELAY = 0.6  # seconds between calls — iNat asks for <1 req/sec
 

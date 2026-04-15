@@ -26,7 +26,7 @@ from pathlib import Path
 
 DATA = Path("/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026")
 EXP = Path(__file__).resolve().parent.parent
-FAM_CSV = EXP / "docs" / "families.csv"
+FAM_CSV = EXP / "src" / "birdclef_107" / "assets" / "families.csv"
 
 
 def load_families() -> dict[str, dict]:
