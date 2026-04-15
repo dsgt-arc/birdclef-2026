@@ -288,10 +288,12 @@ class EmbeddingDataset(Dataset):
         embeddings: np.ndarray,
         labels: np.ndarray,
         site_indices: np.ndarray | None = None,
+        perch_logits: np.ndarray | None = None,
     ) -> None:
         self.embeddings = embeddings
         self.labels = labels
         self.site_indices = site_indices
+        self.perch_logits = perch_logits
 
     def __len__(self) -> int:
         return len(self.embeddings)
@@ -303,6 +305,8 @@ class EmbeddingDataset(Dataset):
         }
         if self.site_indices is not None:
             item["site_idx"] = torch.tensor(self.site_indices[idx], dtype=torch.long)
+        if self.perch_logits is not None:
+            item["perch_logits"] = torch.from_numpy(self.perch_logits[idx].copy()).float()
         return item
 
 
@@ -454,15 +458,24 @@ def collate_triple_batch(
     }
     if "recording_idx" in unsup_batch:
         unsup["recording_idx"] = unsup_batch["recording_idx"]
+
+    strong = {
+        "emb": strong_batch["emb"],
+        "site_idx": strong_batch["site_idx"],
+        "labels": strong_batch["labels"],
+    }
+    if "perch_logits" in strong_batch:
+        strong["perch_logits"] = strong_batch["perch_logits"]
+
+    weak_focal = {
+        "emb": focal_batch["emb"],
+        "labels": focal_batch["labels"],
+    }
+    if "perch_logits" in focal_batch:
+        weak_focal["perch_logits"] = focal_batch["perch_logits"]
+
     return {
-        "strong": {
-            "emb": strong_batch["emb"],
-            "site_idx": strong_batch["site_idx"],
-            "labels": strong_batch["labels"],
-        },
-        "weak_focal": {
-            "emb": focal_batch["emb"],
-            "labels": focal_batch["labels"],
-        },
+        "strong": strong,
+        "weak_focal": weak_focal,
         "unsup": unsup,
     }

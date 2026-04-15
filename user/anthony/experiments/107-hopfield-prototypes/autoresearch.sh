@@ -8,6 +8,11 @@ LAMBDA_SITE=${LAMBDA_SITE:-0.01}
 LAMBDA_XATTN=${LAMBDA_XATTN:-0.01}
 LAMBDA_FAM=${LAMBDA_FAM:-0.01}
 EPOCHS=${EPOCHS:-20}
+K_SPECIES=${K_SPECIES:-8}
+K_SITE=${K_SITE:-8}
+D_HIDDEN=${D_HIDDEN:-1024}
+D_PROJ=${D_PROJ:-512}
+CROSS_ATTENTION_HEADS=${CROSS_ATTENTION_HEADS:-4}
 LR=${LR:-5e-4}
 BATCH_SIZE=${BATCH_SIZE:-256}
 STRONG_STRIDE=${STRONG_STRIDE:-4}
@@ -46,6 +51,11 @@ python -u scripts/train.py \
   --lambda-xattn "$LAMBDA_XATTN" \
   --lambda-fam "$LAMBDA_FAM" \
   --epochs "$EPOCHS" \
+  --k-species "$K_SPECIES" \
+  --k-site "$K_SITE" \
+  --d-hidden "$D_HIDDEN" \
+  --d-proj "$D_PROJ" \
+  --cross-attention-heads "$CROSS_ATTENTION_HEADS" \
   --lr "$LR" \
   --batch-size "$BATCH_SIZE" \
   --weight-decay "$WEIGHT_DECAY" \

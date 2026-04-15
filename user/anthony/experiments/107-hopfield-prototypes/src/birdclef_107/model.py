@@ -43,6 +43,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import einsum, rearrange
 
+from birdclef_106.data_loading import load_species_mapping
+from birdclef_107.data import ARTIFACTS_DIR, get_species_list
+
 
 class PerchProjection(nn.Module):
     """Shared 1536 → 512 backbone + query head.
@@ -241,6 +244,9 @@ class SpeciesSiteCrossAttention(nn.Module):
         self.attn = nn.MultiheadAttention(
             d_proj, n_heads, batch_first=True, dropout=dropout
         )
+        self.update_gate = nn.Linear(d_proj, 1)
+        nn.init.zeros_(self.update_gate.weight)
+        nn.init.zeros_(self.update_gate.bias)
         nn.init.zeros_(self.attn.out_proj.weight)
         nn.init.zeros_(self.attn.out_proj.bias)
 
@@ -259,7 +265,8 @@ class SpeciesSiteCrossAttention(nn.Module):
         L = M_site.shape[0]
         Q = M_species.flatten(0, 1).unsqueeze(0).expand(L, -1, -1).contiguous()
         attended, _ = self.attn(Q, M_site, M_site)  # (L, S*K_sp, D)
-        refined = Q + attended  # attended = 0 at init
+        gate = torch.sigmoid(self.update_gate(Q))
+        refined = Q + gate * attended  # identity at init: attended=0
         return refined.reshape(L, S, K_sp, D)
 
     def forward(
@@ -271,6 +278,62 @@ class SpeciesSiteCrossAttention(nn.Module):
         """Return site-conditioned species prototypes ``(B, S, K_sp, D)``
         gathered by ``site_idx``. Thin wrapper over ``refine()``."""
         return self.refine(M_species, M_site)[site_idx]
+
+
+class FixedMappedPerchLogitAdapter(nn.Module):
+    """Zero-init side branch from fixed Perch logits into query space."""
+
+    def __init__(
+        self,
+        d_proj: int,
+        species_list: list[str] | None = None,
+        artifacts_dir: str = ARTIFACTS_DIR,
+    ) -> None:
+        super().__init__()
+        species_list = species_list or get_species_list(artifacts_dir)
+        mapping = load_species_mapping(artifacts_dir)
+        direct_map = {str(k): int(v) for k, v in mapping["direct_map"].items()}
+        genus_proxy_map = {
+            str(k): [int(i) for i in v]
+            for k, v in mapping["genus_proxy_map"].items()
+        }
+
+        direct_idx = torch.full((len(species_list),), -1, dtype=torch.long)
+        genus_species: list[int] = []
+        genus_indices: list[torch.Tensor] = []
+        mapped_mask = torch.zeros(len(species_list), dtype=torch.float32)
+        for s_idx, species in enumerate(species_list):
+            if species in direct_map:
+                direct_idx[s_idx] = direct_map[species]
+                mapped_mask[s_idx] = 1.0
+            elif species in genus_proxy_map:
+                genus_species.append(s_idx)
+                genus_indices.append(
+                    torch.tensor(genus_proxy_map[species], dtype=torch.long)
+                )
+                mapped_mask[s_idx] = 1.0
+
+        self.register_buffer("direct_idx", direct_idx)
+        self.register_buffer("mapped_mask", mapped_mask)
+        self.genus_species = genus_species
+        self.genus_indices = genus_indices
+        self.proj = nn.Linear(len(species_list), d_proj, bias=False)
+        nn.init.zeros_(self.proj.weight)
+
+    def map_logits(self, perch_logits: torch.Tensor) -> torch.Tensor:
+        perch_probs = torch.sigmoid(perch_logits)
+        mapped = perch_probs.new_zeros((perch_probs.shape[0], self.direct_idx.shape[0]))
+        direct_mask = self.direct_idx >= 0
+        if direct_mask.any():
+            mapped[:, direct_mask] = perch_probs[:, self.direct_idx[direct_mask]]
+        for s_idx, perch_idx in zip(self.genus_species, self.genus_indices):
+            mapped[:, s_idx] = perch_probs.index_select(
+                1, perch_idx.to(perch_probs.device)
+            ).amax(dim=1)
+        return mapped * self.mapped_mask.to(mapped.device)
+
+    def forward(self, perch_logits: torch.Tensor) -> torch.Tensor:
+        return self.proj(self.map_logits(perch_logits))
 
 
 class PrototypeRetrievalModel(nn.Module):
@@ -302,6 +365,7 @@ class PrototypeRetrievalModel(nn.Module):
         cross_attention_heads: int = 4,
         proj_dropout: float = 0.0,
         attn_dropout: float = 0.0,
+        use_perch_logits: bool = False,
     ) -> None:
         super().__init__()
         self.n_species = n_species
@@ -320,11 +384,17 @@ class PrototypeRetrievalModel(nn.Module):
             n_heads=cross_attention_heads,
             dropout=attn_dropout,
         )
+        self.perch_adapter = (
+            FixedMappedPerchLogitAdapter(d_proj=d_proj, species_list=list(get_species_list()))
+            if use_perch_logits
+            else None
+        )
 
     def forward(
         self,
         emb: torch.Tensor,
         site_idx: torch.Tensor | None = None,
+        perch_logits: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Return calibrated multi-label probabilities of shape
         ``(B, n_species)``.
@@ -337,14 +407,18 @@ class PrototypeRetrievalModel(nn.Module):
                 window; without it, the shared species bank is used.
         """
         q_r = self.projection(emb)
+        if self.perch_adapter is not None and perch_logits is not None:
+            q_r = q_r + self.perch_adapter(perch_logits)
 
+        sp_shared = self.species_head(q_r)
         if site_idx is None:
-            return self.species_head(q_r)
+            return sp_shared
 
         M_cond = self.cross_attn(
             self.species_head.M, self.site_head.M, site_idx
         )  # (B, S, K, D)
-        return self.species_head.forward_with_prototypes(q_r, M_cond)
+        sp_cond = self.species_head.forward_with_prototypes(q_r, M_cond)
+        return 0.8 * sp_cond + 0.2 * sp_shared
 
     def unsupervised_site_contrastive(
         self,

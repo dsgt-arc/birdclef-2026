@@ -74,6 +74,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lambda-fam", type=float, default=1e-2)
     p.add_argument("--epochs", type=int, default=20,
                    help="v4 default 20 (scheduler gets full LR range; regularization lets peak appear later than epoch 2).")
+    p.add_argument("--k-species", type=int, default=8,
+                   help="Number of prototypes per species in the Hopfield species bank.")
+    p.add_argument("--k-site", type=int, default=8,
+                   help="Number of prototypes per site in the Hopfield site bank.")
+    p.add_argument("--d-hidden", type=int, default=1024,
+                   help="Hidden width of the shared Perch projection MLP.")
+    p.add_argument("--d-proj", type=int, default=512,
+                   help="Shared projection / prototype dimension for species, site, and cross-attention modules.")
+    p.add_argument("--cross-attention-heads", type=int, default=4,
+                   help="Number of heads in species↔site cross-attention.")
     p.add_argument("--lr", type=float, default=5e-4,
                    help="AdamW LR. Default 5e-4 (v3); v2 used 1e-3 but contrastive losses need slower LR.")
     p.add_argument("--weight-decay", type=float, default=1e-2,
@@ -257,6 +267,9 @@ def train_one_fold(
     # Split labeled soundscape data
     train_sc_emb = sc_data.embeddings[train_mask]
     train_sc_labels = sc_data.labels[train_mask]
+    train_sc_perch = None
+    if sc_data.perch_logits is not None:
+        train_sc_perch = sc_data.perch_logits[train_mask]
     train_sc_sites_str = sc_data.sites[train_mask]
     train_sc_site_idx = np.array(
         [sc_data.site_to_idx[str(s)] for s in train_sc_sites_str], dtype=np.int64
@@ -264,14 +277,26 @@ def train_one_fold(
 
     test_emb = sc_data.embeddings[test_mask]
     test_labels = sc_data.labels[test_mask]
+    test_perch = None
+    if sc_data.perch_logits is not None:
+        test_perch = sc_data.perch_logits[test_mask]
     test_sites_str = sc_data.sites[test_mask]
     test_site_idx = np.array(
         [sc_data.site_to_idx[str(s)] for s in test_sites_str], dtype=np.int64
     )
 
     # Datasets
-    strong_ds = EmbeddingDataset(train_sc_emb, train_sc_labels, train_sc_site_idx)
-    focal_ds = EmbeddingDataset(focal_data.embeddings, focal_data.labels)
+    strong_ds = EmbeddingDataset(
+        train_sc_emb,
+        train_sc_labels,
+        train_sc_site_idx,
+        perch_logits=train_sc_perch,
+    )
+    focal_ds = EmbeddingDataset(
+        focal_data.embeddings,
+        focal_data.labels,
+        perch_logits=focal_data.perch_logits,
+    )
     unsup_ds = UnsupervisedDataset(
         unsup_data.embeddings,
         unsup_data.site_indices,
@@ -311,8 +336,14 @@ def train_one_fold(
     model = PrototypeRetrievalModel(
         n_species=len(species_list),
         n_sites=n_sites,
+        K_species=args.k_species,
+        K_site=args.k_site,
+        d_hidden=args.d_hidden,
+        d_proj=args.d_proj,
+        cross_attention_heads=args.cross_attention_heads,
         proj_dropout=args.proj_dropout,
         attn_dropout=args.attn_dropout,
+        use_perch_logits=bool(args.include_perch_logits),
     ).to(device)
 
     family_idx_dev = family_idx.to(device)
@@ -342,7 +373,13 @@ def train_one_fold(
     def run_validation() -> float:
         """Validate on held-out site and return AUROC."""
         model.eval()
-        preds = predict_fold(model, test_emb, test_site_idx, device=str(device))
+        preds = predict_fold(
+            model,
+            test_emb,
+            test_site_idx,
+            perch_logits=test_perch,
+            device=str(device),
+        )
         auroc = compute_auroc(test_labels, preds)
         model.train()
         return auroc
@@ -505,7 +542,13 @@ def train_one_fold(
     best_ckpt = torch.load(ckpt_dir / "best.pt", map_location=device, weights_only=False)
     model.load_state_dict(best_ckpt["model_state_dict"])
     model.eval()
-    best_preds = predict_fold(model, test_emb, test_site_idx, device=str(device))
+    best_preds = predict_fold(
+        model,
+        test_emb,
+        test_site_idx,
+        perch_logits=test_perch,
+        device=str(device),
+    )
     np.save(ckpt_dir / "preds.npy", best_preds)
     np.save(ckpt_dir / "labels.npy", test_labels)
 
