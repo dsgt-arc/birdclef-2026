@@ -389,6 +389,7 @@ class PrototypeRetrievalModel(nn.Module):
             if use_perch_logits
             else None
         )
+        self.site_blend_logit = nn.Parameter(torch.full((n_sites,), -1.5163474893680884))
 
     def forward(
         self,
@@ -418,7 +419,8 @@ class PrototypeRetrievalModel(nn.Module):
             self.species_head.M, self.site_head.M, site_idx
         )  # (B, S, K, D)
         sp_cond = self.species_head.forward_with_prototypes(q_r, M_cond)
-        return 0.82 * sp_cond + 0.18 * sp_shared
+        alpha = torch.sigmoid(self.site_blend_logit[site_idx]).unsqueeze(1)
+        return (1.0 - alpha) * sp_cond + alpha * sp_shared
 
     def unsupervised_site_contrastive(
         self,
