@@ -1,0 +1,1 @@
+- Delayed strong-site dropout on labeled soundscapes: the p=0.25 always-on variant improved `without_focal` and insect AUROC a lot but hurt overall and peaked at step 200. Try activating species-only routing only after the site/xattn warmup, or at a smaller rate (e.g. 0.05–0.10), so unlabeled/site-conditioned structure forms first and the anti-overfit regularizer comes later.
