@@ -89,6 +89,10 @@ def parse_args() -> argparse.Namespace:
                    help="v4: dropout inside PerchProjection MLP. Regularizes the shared trunk.")
     p.add_argument("--label-smoothing", type=float, default=0.01,
                    help="v4: BCE label smoothing ε. Small (0.01) because multi-hot binary labels.")
+    p.add_argument("--strong-site-dropout", type=float, default=0.0,
+                   help="Probability of routing a strong labeled SC window through the site-free species path instead of the site-conditioned path.")
+    p.add_argument("--strong-site-dropout-start", type=int, default=0,
+                   help="Training step at which strong-site dropout turns on. Use >0 to delay this regularizer until after the early scaffold forms.")
     p.add_argument("--unsup-warmup-start", type=int, default=200,
                    help="Step to begin ramping unsup lambdas from 0.")
     p.add_argument("--unsup-warmup-end", type=int, default=500,
@@ -397,6 +401,11 @@ def train_one_fold(
             # compute the strong BCE every Nth step so total passes per
             # window drop by N.
             include_strong = (global_step % args.strong_stride == 0)
+            strong_site_dropout = (
+                args.strong_site_dropout
+                if global_step >= args.strong_site_dropout_start
+                else 0.0
+            )
             optimizer.zero_grad()
             total_loss, components = compute_loss(
                 model,
@@ -407,6 +416,7 @@ def train_one_fold(
                 lambda_fam=args.lambda_fam,
                 label_smoothing=args.label_smoothing,
                 include_strong=include_strong,
+                strong_site_dropout=strong_site_dropout,
             )
             total_loss.backward()
             optimizer.step()
