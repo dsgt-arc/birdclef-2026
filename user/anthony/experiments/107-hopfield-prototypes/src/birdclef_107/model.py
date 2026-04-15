@@ -418,7 +418,7 @@ class PrototypeRetrievalModel(nn.Module):
             self.species_head.M, self.site_head.M, site_idx
         )  # (B, S, K, D)
         sp_cond = self.species_head.forward_with_prototypes(q_r, M_cond)
-        return 0.8 * sp_cond + 0.2 * sp_shared
+        return 0.82 * sp_cond + 0.18 * sp_shared
 
     def unsupervised_site_contrastive(
         self,
