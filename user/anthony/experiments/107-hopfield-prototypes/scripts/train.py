@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -93,6 +94,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="LR multiplier for the site-aware shared-fallback blend parameters (site_blend_logit).",
+    )
+    p.add_argument(
+        "--site-blend-anchor-lambda",
+        type=float,
+        default=0.0,
+        help="L2 penalty on site_blend_logit toward the 18% fallback prior. Useful when site_blend_lr_mult > 1.",
     )
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--patience", type=int, default=10,
@@ -396,6 +403,7 @@ def train_one_fold(
     best_step = -1
     patience_counter = 0
     global_step = 0
+    site_blend_anchor_logit = math.log(0.18 / (1.0 - 0.18))
 
     def run_validation() -> float:
         """Validate on held-out site and return AUROC."""
@@ -482,6 +490,10 @@ def train_one_fold(
                 include_strong=include_strong,
                 strong_site_dropout=strong_site_dropout,
             )
+            if args.site_blend_anchor_lambda > 0.0:
+                total_loss = total_loss + args.site_blend_anchor_lambda * (
+                    (model.site_blend_logit - site_blend_anchor_logit) ** 2
+                ).mean()
             total_loss.backward()
             optimizer.step()
             scheduler.step()
