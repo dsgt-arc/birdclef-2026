@@ -89,6 +89,15 @@ is less bird-heavy than focal suggests, v4's gain may invert**.
 3. If LOSO lands 0.70–0.72 → consider Bin B (Perch pseudo-labels on
    unlabeled SC, targets the bird subset orthogonally via projection +
    species head, uses exp 106's `perch_species_mapping.json`).
+   **Caveat**: Perch direct AUROC on labeled SC is **0.624 overall, 0.728
+   on S22, 0.683 on Aves** (see `scripts/measure_perch_direct.py`,
+   result at `~/scratch/birdclef-2026/checkpoints/exp107-v4/perch_direct_auroc.json`).
+   That's *worse* than v4 (0.7613 S22) and ridge (0.749 S22) on the same
+   windows. Pseudo-labels from this teacher add noise as readily as
+   signal — Bin B is now weakly motivated. Domain shift kills Perch's
+   classifier head even though its embeddings survive (ridge on the same
+   embeddings clears 0.749). The "Perch-as-base + exp107-as-residual"
+   architecture reframe is **falsified** by this number.
 4. If LOSO lands <0.70 or the `without_focal` regression dominates on
    other folds → trigger Bin C fallback (ship v1-no-gate + ridge
    probability-avg ensemble).
