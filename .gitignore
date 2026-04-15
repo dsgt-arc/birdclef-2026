@@ -115,6 +115,7 @@ wandb/
 
 # Environment files (secrets)
 .env
+.envrc
 
 # OS
 .DS_Store
