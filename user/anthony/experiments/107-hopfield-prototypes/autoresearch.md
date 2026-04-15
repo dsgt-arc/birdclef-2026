@@ -5,7 +5,7 @@ Build a faster development split for experiment 107 that still adheres to the th
 
 ## Metrics
 - **Primary**: `dev_auroc` (higher is better) — macro AUROC on the fast development validation split
-- **Secondary**: `without_focal_auroc`, `with_focal_auroc`, `bird_auroc`, `amphibian_auroc`, `best_step`, `n_val_windows` — monitor whether the split remains representative instead of becoming a bird-only toy task
+- **Secondary**: `benchmark_seconds`, `without_focal_auroc`, `with_focal_auroc`, `bird_auroc`, `amphibian_auroc`, `best_step`, `n_val_windows` — monitor whether the split remains representative and whether iteration speed is actually improving
 
 ## How to Run
 `./autoresearch.sh` — activates the existing scratch venv directly inside the current GPU allocation, runs the fast-split training/eval command, then emits `METRIC ...` lines from the saved JSON results.
@@ -18,7 +18,7 @@ Useful overrides:
 - `LABEL_SMOOTHING=0.0 ./autoresearch.sh`
 - `CKPT_SUBDIR=exp107-manual-test ./autoresearch.sh`
 
-The first run builds a local NPZ cache under `${TMPDIR:-/tmp}/birdclef-107-devcache`; later runs reuse it.
+The first run builds a local NPZ cache under `${TMPDIR:-/tmp}/birdclef-107-devcache/<config-key>/`; later runs reuse the matching cache. Different focal/unsup cache sizes now get separate keyed cache directories, so switching configs does not destroy fast reuse for earlier settings.
 
 ## Files in Scope
 - `src/birdclef_107/model.py` — cross-attention and prototype retrieval behavior

@@ -14,15 +14,20 @@ STRONG_STRIDE=${STRONG_STRIDE:-4}
 ATTN_DROPOUT=${ATTN_DROPOUT:-0.1}
 PROJ_DROPOUT=${PROJ_DROPOUT:-0.1}
 LABEL_SMOOTHING=${LABEL_SMOOTHING:-0.01}
+UNSUP_WARMUP_START=${UNSUP_WARMUP_START:-200}
+UNSUP_WARMUP_END=${UNSUP_WARMUP_END:-500}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-2}
 FOCAL_CACHE_SIZE=${FOCAL_CACHE_SIZE:-32768}
 UNSUP_CACHE_SIZE=${UNSUP_CACHE_SIZE:-32768}
+SEED=${SEED:-42}
 CACHE_ROOT=${CACHE_ROOT:-${TMPDIR:-/tmp}/birdclef-107-devcache}
+CACHE_DIR="$CACHE_ROOT/focal${FOCAL_CACHE_SIZE}-unsup${UNSUP_CACHE_SIZE}-seed${SEED}"
 CKPT_SUBDIR=${CKPT_SUBDIR:-exp107-autoresearch-dev-$(date +%Y%m%d-%H%M%S)-$$}
 RESULT_ROOT="$HOME/scratch/birdclef-2026/checkpoints/$CKPT_SUBDIR"
 RESULT_JSON="$RESULT_ROOT/dev/subset_aurocs.json"
 
-mkdir -p "$RESULT_ROOT"
+mkdir -p "$RESULT_ROOT" "$CACHE_DIR"
+SECONDS=0
 
 python -u scripts/train.py \
   --fold "$DEV_SITES" \
@@ -38,10 +43,13 @@ python -u scripts/train.py \
   --attn-dropout "$ATTN_DROPOUT" \
   --proj-dropout "$PROJ_DROPOUT" \
   --label-smoothing "$LABEL_SMOOTHING" \
+  --unsup-warmup-start "$UNSUP_WARMUP_START" \
+  --unsup-warmup-end "$UNSUP_WARMUP_END" \
   --checkpoint-dir "$RESULT_ROOT" \
-  --cache-dir "$CACHE_ROOT" \
+  --cache-dir "$CACHE_DIR" \
   --focal-cache-size "$FOCAL_CACHE_SIZE" \
-  --unsup-cache-size "$UNSUP_CACHE_SIZE"
+  --unsup-cache-size "$UNSUP_CACHE_SIZE" \
+  --seed "$SEED"
 
 echo "result_json=$RESULT_JSON"
 
@@ -63,3 +71,6 @@ for key in ["without_focal", "with_focal", "bird", "amphibian", "insect"]:
 print(f"METRIC best_step={data['best_step']}")
 print(f"METRIC n_val_windows={data.get('n_windows', 0)}")
 PY
+
+printf 'METRIC benchmark_seconds=%s\n' "$SECONDS"
+printf 'cache_dir=%s\n' "$CACHE_DIR"
