@@ -1,0 +1,2 @@
+{"type":"config","name":"exp107 fast thesis-adherent split","metricName":"dev_auroc","metricUnit":"","bestDirection":"higher"}
+{"run":1,"commit":"19b0a84","metric":0,"metrics":{},"status":"crash","description":"Baseline run failed immediately because autoresearch.sh was not executable; next step is chmod +x or invoke via bash while keeping the new /tmp cache + direct-venv path.","timestamp":1776226599104,"segment":0,"confidence":null,"iterationTokens":90}

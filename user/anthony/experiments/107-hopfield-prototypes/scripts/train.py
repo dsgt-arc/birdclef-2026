@@ -27,7 +27,10 @@ from torch.utils.tensorboard import SummaryWriter
 
 from birdclef_107.data import (
     EmbeddingDataset,
+    FocalData,
+    LabeledSoundscapeData,
     RecordingGroupedBatchSampler,
+    UnlabeledSoundscapeData,
     UnsupervisedDataset,
     build_focal_sampler,
     collate_triple_batch,
@@ -53,7 +56,13 @@ def parse_args() -> argparse.Namespace:
         "--fold",
         type=str,
         default="S22",
-        help="Site ID to hold out (e.g. S22), or 'all' for full LOSO CV",
+        help="Site ID to hold out (e.g. S22), comma-separated holdout sites for a custom dev split (e.g. S13,S15,S19), or 'all' for full LOSO CV",
+    )
+    p.add_argument(
+        "--split-name",
+        type=str,
+        default=None,
+        help="Optional output name for a custom split (defaults to --fold with commas replaced by '+').",
     )
     p.add_argument("--lambda-site", type=float, default=0.01,
                    help="Weight on L_site_contrastive (InfoNCE on M_site)")
@@ -101,6 +110,29 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="~/scratch/birdclef-2026/features/exp106",
     )
+    p.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Optional directory for a local NPZ cache of the dev subset (e.g. /tmp/birdclef-107-devcache).",
+    )
+    p.add_argument(
+        "--focal-cache-size",
+        type=int,
+        default=0,
+        help="If >0, cache/load only this many focal windows using rare-species-aware weighted sampling without replacement.",
+    )
+    p.add_argument(
+        "--unsup-cache-size",
+        type=int,
+        default=0,
+        help="If >0, cache/load only this many unlabeled soundscape windows using stratified-by-site sampling.",
+    )
+    p.add_argument(
+        "--cache-force-rebuild",
+        action="store_true",
+        help="Rebuild the local cache even if NPZ files already exist.",
+    )
     p.add_argument("--device", type=str, default="auto")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
@@ -134,6 +166,202 @@ def unsup_warmup_factor(step: int, start: int, end: int) -> float:
     return (step - start) / max(1, end - start)
 
 
+def _weighted_focal_subset(labels: np.ndarray, max_rows: int, seed: int) -> np.ndarray:
+    """Rare-species-aware focal subset without replacement."""
+    n = len(labels)
+    if max_rows <= 0 or max_rows >= n:
+        return np.arange(n, dtype=np.int64)
+
+    species_counts = labels.sum(axis=0).astype(np.float64)
+    species_counts = np.maximum(species_counts, 1.0)
+    species_weights = 1.0 / species_counts
+    per_row = np.maximum((labels * species_weights[None, :]).max(axis=1), 1e-12)
+    probs = per_row / per_row.sum()
+    rng = np.random.default_rng(seed)
+    return np.sort(rng.choice(n, size=max_rows, replace=False, p=probs))
+
+
+def _stratified_unsup_subset(site_indices: np.ndarray, max_rows: int, seed: int) -> np.ndarray:
+    """Site-stratified unlabeled subset for fast local dev runs."""
+    n = len(site_indices)
+    if max_rows <= 0 or max_rows >= n:
+        return np.arange(n, dtype=np.int64)
+
+    rng = np.random.default_rng(seed)
+    unique_sites, counts = np.unique(site_indices, return_counts=True)
+    raw = counts.astype(np.float64) * (max_rows / counts.sum())
+    quotas = np.floor(raw).astype(int)
+    quotas = np.minimum(quotas, counts)
+    quotas = np.maximum(quotas, 1)
+    quotas = np.minimum(quotas, counts)
+
+    total = int(quotas.sum())
+    if total < max_rows:
+        frac_order = np.argsort(-(raw - np.floor(raw)))
+        for idx in frac_order:
+            if total >= max_rows:
+                break
+            if quotas[idx] < counts[idx]:
+                quotas[idx] += 1
+                total += 1
+    elif total > max_rows:
+        frac_order = np.argsort(raw - np.floor(raw))
+        for idx in frac_order:
+            if total <= max_rows:
+                break
+            if quotas[idx] > 1:
+                quotas[idx] -= 1
+                total -= 1
+        if total > max_rows:
+            for idx in range(len(quotas)):
+                if total <= max_rows:
+                    break
+                while quotas[idx] > 1 and total > max_rows:
+                    quotas[idx] -= 1
+                    total -= 1
+
+    picks: list[np.ndarray] = []
+    for site, quota in zip(unique_sites, quotas):
+        pool = np.flatnonzero(site_indices == site)
+        picks.append(rng.choice(pool, size=int(quota), replace=False))
+    return np.sort(np.concatenate(picks))
+
+
+def _save_dev_cache(
+    cache_dir: Path,
+    sc_data: LabeledSoundscapeData,
+    focal_data: FocalData,
+    unsup_data: UnlabeledSoundscapeData,
+) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        cache_dir / "labeled_soundscape.npz",
+        embeddings=sc_data.embeddings,
+        labels=sc_data.labels,
+        sites=sc_data.sites.astype("U"),
+        filenames=np.asarray(sc_data.filenames, dtype="U"),
+        species_list=np.asarray(sc_data.species_list, dtype="U"),
+        site_keys=np.asarray(list(sc_data.site_to_idx.keys()), dtype="U"),
+        site_vals=np.asarray(list(sc_data.site_to_idx.values()), dtype=np.int64),
+    )
+    np.savez(
+        cache_dir / "focal.npz",
+        embeddings=focal_data.embeddings,
+        labels=focal_data.labels,
+        species_list=np.asarray(focal_data.species_list, dtype="U"),
+    )
+    np.savez(
+        cache_dir / "unlabeled_soundscape.npz",
+        embeddings=unsup_data.embeddings,
+        site_indices=unsup_data.site_indices,
+        recording_indices=unsup_data.recording_indices,
+        site_keys=np.asarray(list(unsup_data.site_to_idx.keys()), dtype="U"),
+        site_vals=np.asarray(list(unsup_data.site_to_idx.values()), dtype=np.int64),
+        recording_keys=np.asarray(list(unsup_data.recording_to_idx.keys()), dtype="U"),
+        recording_vals=np.asarray(list(unsup_data.recording_to_idx.values()), dtype=np.int64),
+    )
+
+
+def _load_dev_cache(cache_dir: Path) -> tuple[LabeledSoundscapeData, FocalData, UnlabeledSoundscapeData]:
+    sc_npz = np.load(cache_dir / "labeled_soundscape.npz", allow_pickle=False)
+    focal_npz = np.load(cache_dir / "focal.npz", allow_pickle=False)
+    unsup_npz = np.load(cache_dir / "unlabeled_soundscape.npz", allow_pickle=False)
+
+    sc_data = LabeledSoundscapeData(
+        embeddings=sc_npz["embeddings"],
+        labels=sc_npz["labels"],
+        sites=sc_npz["sites"],
+        filenames=sc_npz["filenames"].tolist(),
+        species_list=sc_npz["species_list"].tolist(),
+        site_to_idx={k: int(v) for k, v in zip(sc_npz["site_keys"].tolist(), sc_npz["site_vals"].tolist())},
+    )
+    focal_data = FocalData(
+        embeddings=focal_npz["embeddings"],
+        labels=focal_npz["labels"],
+        species_list=focal_npz["species_list"].tolist(),
+    )
+    unsup_data = UnlabeledSoundscapeData(
+        embeddings=unsup_npz["embeddings"],
+        site_indices=unsup_npz["site_indices"],
+        recording_indices=unsup_npz["recording_indices"],
+        site_to_idx={k: int(v) for k, v in zip(unsup_npz["site_keys"].tolist(), unsup_npz["site_vals"].tolist())},
+        recording_to_idx={k: int(v) for k, v in zip(unsup_npz["recording_keys"].tolist(), unsup_npz["recording_vals"].tolist())},
+    )
+    return sc_data, focal_data, unsup_data
+
+
+def load_training_data(args: argparse.Namespace) -> tuple[LabeledSoundscapeData, FocalData, UnlabeledSoundscapeData]:
+    """Load full data or materialize/load a fast local dev cache."""
+    if args.cache_dir is None:
+        print("Loading labeled soundscapes...")
+        sc_data = load_labeled_soundscape(args.features_dir)
+        print("Loading focal recordings...")
+        focal_data = load_all_focal(args.features_dir)
+        print("Loading unlabeled soundscapes...")
+        unsup_data = load_all_unlabeled(args.features_dir, sc_data.site_to_idx)
+        return sc_data, focal_data, unsup_data
+
+    cache_dir = Path(args.cache_dir).expanduser()
+    manifest_path = cache_dir / "manifest.json"
+    cache_ready = (
+        manifest_path.exists()
+        and (cache_dir / "labeled_soundscape.npz").exists()
+        and (cache_dir / "focal.npz").exists()
+        and (cache_dir / "unlabeled_soundscape.npz").exists()
+    )
+
+    if cache_ready and not args.cache_force_rebuild:
+        manifest = json.loads(manifest_path.read_text())
+        expected = {
+            "features_dir": args.features_dir,
+            "seed": args.seed,
+            "focal_cache_size": int(args.focal_cache_size),
+            "unsup_cache_size": int(args.unsup_cache_size),
+        }
+        if all(manifest.get(k) == v for k, v in expected.items()):
+            print(f"Loading dev cache from {cache_dir}")
+            return _load_dev_cache(cache_dir)
+        print(f"Cache config changed; rebuilding {cache_dir}")
+
+    print(f"Building dev cache at {cache_dir} (first run is slow; later runs reuse NPZ files)")
+    print("Loading labeled soundscapes...")
+    sc_data = load_labeled_soundscape(args.features_dir)
+    print("Loading focal recordings...")
+    focal_full = load_all_focal(args.features_dir)
+    print("Loading unlabeled soundscapes...")
+    unsup_full = load_all_unlabeled(args.features_dir, sc_data.site_to_idx)
+
+    focal_idx = _weighted_focal_subset(focal_full.labels, args.focal_cache_size, args.seed)
+    unsup_idx = _stratified_unsup_subset(unsup_full.site_indices, args.unsup_cache_size, args.seed)
+
+    focal_data = FocalData(
+        embeddings=focal_full.embeddings[focal_idx],
+        labels=focal_full.labels[focal_idx],
+        species_list=focal_full.species_list,
+    )
+    unsup_data = UnlabeledSoundscapeData(
+        embeddings=unsup_full.embeddings[unsup_idx],
+        site_indices=unsup_full.site_indices[unsup_idx],
+        recording_indices=unsup_full.recording_indices[unsup_idx],
+        site_to_idx=unsup_full.site_to_idx,
+        recording_to_idx=unsup_full.recording_to_idx,
+    )
+
+    _save_dev_cache(cache_dir, sc_data, focal_data, unsup_data)
+    manifest = {
+        "features_dir": args.features_dir,
+        "seed": args.seed,
+        "focal_cache_size": int(args.focal_cache_size),
+        "unsup_cache_size": int(args.unsup_cache_size),
+        "n_labeled": int(len(sc_data.embeddings)),
+        "n_focal": int(len(focal_data.embeddings)),
+        "n_unsup": int(len(unsup_data.embeddings)),
+    }
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    return sc_data, focal_data, unsup_data
+
+
 def train_one_fold(
     fold_site: str,
     sc_data,
@@ -146,34 +374,42 @@ def train_one_fold(
     writer: SummaryWriter | None = None,
     global_prefix: str = "",
 ) -> dict:
-    """Train and evaluate a single LOSO fold.
+    """Train and evaluate a single LOSO fold or custom multi-site holdout.
 
     Returns dict with fold results including best val AUROC and checkpoint path.
     """
-    # Build LOSO split on labeled soundscapes
+    held_out_sites = [s.strip() for s in fold_site.split(",") if s.strip()]
+    split_name = args.split_name or "+".join(held_out_sites)
+
+    # Build LOSO split on labeled soundscapes, or a custom multi-site holdout.
     folds = loso_folds(sc_data.sites)
-    fold = None
-    for f in folds:
-        if f.left_out_site == fold_site:
-            fold = f
-            break
-    if fold is None:
+    available_sites = {f.left_out_site for f in folds}
+    missing_sites = [s for s in held_out_sites if s not in available_sites]
+    if missing_sites:
         raise ValueError(
-            f"Site {fold_site} not found in labeled data. "
-            f"Available: {[f.left_out_site for f in folds]}"
+            f"Site(s) {missing_sites} not found in labeled data. "
+            f"Available: {sorted(available_sites)}"
         )
 
+    if len(held_out_sites) == 1:
+        fold = next(f for f in folds if f.left_out_site == held_out_sites[0])
+        train_mask = fold.train_mask
+        test_mask = fold.test_mask
+    else:
+        test_mask = np.isin(sc_data.sites, held_out_sites)
+        train_mask = ~test_mask
+
     # Split labeled soundscape data
-    train_sc_emb = sc_data.embeddings[fold.train_mask]
-    train_sc_labels = sc_data.labels[fold.train_mask]
-    train_sc_sites_str = sc_data.sites[fold.train_mask]
+    train_sc_emb = sc_data.embeddings[train_mask]
+    train_sc_labels = sc_data.labels[train_mask]
+    train_sc_sites_str = sc_data.sites[train_mask]
     train_sc_site_idx = np.array(
         [sc_data.site_to_idx[str(s)] for s in train_sc_sites_str], dtype=np.int64
     )
 
-    test_emb = sc_data.embeddings[fold.test_mask]
-    test_labels = sc_data.labels[fold.test_mask]
-    test_sites_str = sc_data.sites[fold.test_mask]
+    test_emb = sc_data.embeddings[test_mask]
+    test_labels = sc_data.labels[test_mask]
+    test_sites_str = sc_data.sites[test_mask]
     test_site_idx = np.array(
         [sc_data.site_to_idx[str(s)] for s in test_sites_str], dtype=np.int64
     )
@@ -240,7 +476,7 @@ def train_one_fold(
     scheduler = CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=0)
 
     # Checkpoint directory
-    ckpt_dir = Path(args.checkpoint_dir).expanduser() / fold_site
+    ckpt_dir = Path(args.checkpoint_dir).expanduser() / split_name
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     best_auroc = -1.0
@@ -257,7 +493,7 @@ def train_one_fold(
         return auroc
 
     print(f"\n{'='*60}")
-    print(f"Fold: {fold_site} | train={fold.train_mask.sum()}, test={fold.test_mask.sum()}")
+    print(f"Fold: {split_name} | holdout_sites={held_out_sites} | train={train_mask.sum()}, test={test_mask.sum()}")
     print(f"Strong: {len(strong_ds)}, Focal: {len(focal_ds)}, Unsup: {len(unsup_ds)}")
     print(f"Steps per epoch: {steps_per_epoch} | Total steps: {total_steps}")
     print(f"{'='*60}")
@@ -376,7 +612,8 @@ def train_one_fold(
                             "model_state_dict": model.state_dict(),
                             "optimizer_state_dict": optimizer.state_dict(),
                             "val_auroc": val_auroc,
-                            "fold_site": fold_site,
+                            "fold_site": split_name,
+                            "held_out_sites": held_out_sites,
                             "args": vars(args),
                         },
                         ckpt_dir / "best.pt",
@@ -414,11 +651,12 @@ def train_one_fold(
     print(f"  Best: step={best_step}, val_auroc={best_auroc:.4f}")
 
     return {
-        "fold_site": fold_site,
+        "fold_site": split_name,
+        "held_out_sites": held_out_sites,
         "best_step": best_step,
         "best_auroc": best_auroc,
-        "n_train": int(fold.train_mask.sum()),
-        "n_test": int(fold.test_mask.sum()),
+        "n_train": int(train_mask.sum()),
+        "n_test": int(test_mask.sum()),
     }
 
 
@@ -433,15 +671,8 @@ def main() -> None:
     print(f"Device: {device}")
 
     # Load all data once (shared across folds)
-    print("Loading labeled soundscapes...")
-    sc_data = load_labeled_soundscape(args.features_dir)
+    sc_data, focal_data, unsup_data = load_training_data(args)
     species_list = sc_data.species_list
-
-    print("Loading focal recordings...")
-    focal_data = load_all_focal(args.features_dir)
-
-    print("Loading unlabeled soundscapes...")
-    unsup_data = load_all_unlabeled(args.features_dir, sc_data.site_to_idx)
 
     print(
         f"Data: {len(sc_data.embeddings)} labeled SC, "
@@ -463,7 +694,7 @@ def main() -> None:
     log_dir = args.log_dir or str(
         Path(args.checkpoint_dir).expanduser() / "runs"
     )
-    run_name = f"lfam{args.lambda_fam}_lsite{args.lambda_site}"
+    run_name = f"{(args.split_name or args.fold).replace(',', '+')}_lfam{args.lambda_fam}_lsite{args.lambda_site}"
     writer = SummaryWriter(log_dir=f"{log_dir}/{run_name}")
 
     # Focal species for subset evaluation
@@ -487,12 +718,12 @@ def main() -> None:
             args=args,
             device=device,
             writer=writer,
-            global_prefix=fold_site,
+            global_prefix=(args.split_name or fold_site).replace(",", "+"),
         )
         all_results.append(result)
 
         # Load saved predictions for pooled evaluation
-        ckpt_dir = Path(args.checkpoint_dir).expanduser() / fold_site
+        ckpt_dir = Path(args.checkpoint_dir).expanduser() / result["fold_site"]
         fold_y_pred.append(np.load(ckpt_dir / "preds.npy"))
         fold_y_true.append(np.load(ckpt_dir / "labels.npy"))
 
@@ -540,8 +771,9 @@ def main() -> None:
         print(f"Single fold {r['fold_site']} | best step {r['best_step']}")
         print(f"{'='*60}")
         print(f"  Overall AUROC : {r['best_auroc']:.4f}")
-        print(f"  Ridge baseline: 0.7490  (Δ = {r['best_auroc'] - 0.749:+.4f})")
-        print(f"  v1-no-gate    : 0.7160  (Δ = {r['best_auroc'] - 0.716:+.4f})")
+        if r.get("held_out_sites") == ["S22"]:
+            print(f"  Ridge baseline: 0.7490  (Δ = {r['best_auroc'] - 0.749:+.4f})")
+            print(f"  v1-no-gate    : 0.7160  (Δ = {r['best_auroc'] - 0.716:+.4f})")
         print()
         print("Per-subset AUROC:")
         for name in ["bird", "amphibian", "insect", "with_focal", "without_focal"]:
@@ -556,7 +788,9 @@ def main() -> None:
                 {
                     "fold_site": r["fold_site"],
                     "best_step": r["best_step"],
+                    "held_out_sites": r.get("held_out_sites", [r["fold_site"]]),
                     "overall_auroc": r["best_auroc"],
+                    "n_windows": int(len(y_true)),
                     "subset_auroc": subset_aurocs,
                     "subset_n_species": {
                         name: int(masks[name].sum()) for name in subset_aurocs
