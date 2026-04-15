@@ -88,6 +88,12 @@ def parse_args() -> argparse.Namespace:
                    help="AdamW LR. Default 5e-4 (v3); v2 used 1e-3 but contrastive losses need slower LR.")
     p.add_argument("--weight-decay", type=float, default=1e-2,
                    help="AdamW weight decay. v4 default 1e-2 (was 1e-4); attacks labeled overfitting.")
+    p.add_argument(
+        "--site-blend-lr-mult",
+        type=float,
+        default=1.0,
+        help="LR multiplier for the site-aware shared-fallback blend parameters (site_blend_logit).",
+    )
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--patience", type=int, default=10,
                    help="Val-AUROC patience checks. Default 10 (v3); contrastive objectives take longer to find non-trivial optima than v2's softplus.")
@@ -348,9 +354,30 @@ def train_one_fold(
 
     family_idx_dev = family_idx.to(device)
 
-    optimizer = AdamW(
-        model.parameters(), lr=args.lr, weight_decay=args.weight_decay
-    )
+    if args.site_blend_lr_mult == 1.0:
+        optimizer = AdamW(
+            model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+        )
+    else:
+        blend_params = [model.site_blend_logit]
+        blend_param_ids = {id(p) for p in blend_params}
+        base_params = [
+            p for p in model.parameters() if id(p) not in blend_param_ids
+        ]
+        optimizer = AdamW(
+            [
+                {
+                    "params": base_params,
+                    "lr": args.lr,
+                    "weight_decay": args.weight_decay,
+                },
+                {
+                    "params": blend_params,
+                    "lr": args.lr * args.site_blend_lr_mult,
+                    "weight_decay": args.weight_decay,
+                },
+            ]
+        )
 
     # Steps per epoch = one full pass through the focal loader (largest stream).
     # This gives focal's 265K windows meaningful coverage — the proposal's

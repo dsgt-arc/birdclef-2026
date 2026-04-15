@@ -8,6 +8,7 @@ LAMBDA_SITE=${LAMBDA_SITE:-0.01}
 LAMBDA_XATTN=${LAMBDA_XATTN:-0.01}
 LAMBDA_FAM=${LAMBDA_FAM:-0.01}
 EPOCHS=${EPOCHS:-20}
+PATIENCE=${PATIENCE:-10}
 K_SPECIES=${K_SPECIES:-8}
 K_SITE=${K_SITE:-8}
 D_HIDDEN=${D_HIDDEN:-1024}
@@ -24,6 +25,7 @@ STRONG_SITE_DROPOUT_START=${STRONG_SITE_DROPOUT_START:-0}
 UNSUP_WARMUP_START=${UNSUP_WARMUP_START:-200}
 UNSUP_WARMUP_END=${UNSUP_WARMUP_END:-500}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-2}
+SITE_BLEND_LR_MULT=${SITE_BLEND_LR_MULT:-1}
 FOCAL_CACHE_SIZE=${FOCAL_CACHE_SIZE:-32768}
 UNSUP_CACHE_SIZE=${UNSUP_CACHE_SIZE:-32768}
 UNSUP_BATCH_RECORDINGS=${UNSUP_BATCH_RECORDINGS:-16}
@@ -51,6 +53,7 @@ python -u scripts/train.py \
   --lambda-xattn "$LAMBDA_XATTN" \
   --lambda-fam "$LAMBDA_FAM" \
   --epochs "$EPOCHS" \
+  --patience "$PATIENCE" \
   --k-species "$K_SPECIES" \
   --k-site "$K_SITE" \
   --d-hidden "$D_HIDDEN" \
@@ -59,6 +62,7 @@ python -u scripts/train.py \
   --lr "$LR" \
   --batch-size "$BATCH_SIZE" \
   --weight-decay "$WEIGHT_DECAY" \
+  --site-blend-lr-mult "$SITE_BLEND_LR_MULT" \
   --strong-stride "$STRONG_STRIDE" \
   --attn-dropout "$ATTN_DROPOUT" \
   --proj-dropout "$PROJ_DROPOUT" \
