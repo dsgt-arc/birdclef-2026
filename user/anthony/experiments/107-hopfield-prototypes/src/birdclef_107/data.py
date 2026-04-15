@@ -56,6 +56,7 @@ class LabeledSoundscapeData:
     filenames: list[str]  # (N,)
     species_list: list[str]  # (234,)
     site_to_idx: dict[str, int]  # site string → contiguous int
+    perch_logits: np.ndarray | None = None  # (N, 14795) float32, opt-in
 
 
 def load_labeled_soundscape(
@@ -93,6 +94,7 @@ class FocalData:
     embeddings: np.ndarray  # (N, 1536) float32
     labels: np.ndarray  # (N, 234) int8
     species_list: list[str]
+    perch_logits: np.ndarray | None = None  # (N, 14795) float32, opt-in
 
 
 def load_all_focal(features_dir: str = FEATURES_DIR) -> FocalData:
@@ -129,6 +131,7 @@ class UnlabeledSoundscapeData:
     recording_indices: np.ndarray  # (N,) int64 — contiguous recording index
     site_to_idx: dict[str, int]
     recording_to_idx: dict[str, int]
+    perch_logits: np.ndarray | None = None  # (N, 14795) float32, opt-in
 
 
 def load_all_unlabeled(
@@ -171,6 +174,72 @@ def load_all_unlabeled(
         site_to_idx=site_to_idx,
         recording_to_idx=recording_to_idx,
     )
+
+
+# ---------------------------------------------------------------------------
+# Subsample policies (shared by train.py and cache.py)
+# ---------------------------------------------------------------------------
+
+
+def weighted_focal_subset(labels: np.ndarray, max_rows: int, seed: int) -> np.ndarray:
+    """Rare-species-aware focal subset without replacement."""
+    n = len(labels)
+    if max_rows <= 0 or max_rows >= n:
+        return np.arange(n, dtype=np.int64)
+
+    species_counts = labels.sum(axis=0).astype(np.float64)
+    species_counts = np.maximum(species_counts, 1.0)
+    species_weights = 1.0 / species_counts
+    per_row = np.maximum((labels * species_weights[None, :]).max(axis=1), 1e-12)
+    probs = per_row / per_row.sum()
+    rng = np.random.default_rng(seed)
+    return np.sort(rng.choice(n, size=max_rows, replace=False, p=probs))
+
+
+def stratified_unsup_subset(site_indices: np.ndarray, max_rows: int, seed: int) -> np.ndarray:
+    """Site-stratified unlabeled subset for fast local dev runs."""
+    n = len(site_indices)
+    if max_rows <= 0 or max_rows >= n:
+        return np.arange(n, dtype=np.int64)
+
+    rng = np.random.default_rng(seed)
+    unique_sites, counts = np.unique(site_indices, return_counts=True)
+    raw = counts.astype(np.float64) * (max_rows / counts.sum())
+    quotas = np.floor(raw).astype(int)
+    quotas = np.minimum(quotas, counts)
+    quotas = np.maximum(quotas, 1)
+    quotas = np.minimum(quotas, counts)
+
+    total = int(quotas.sum())
+    if total < max_rows:
+        frac_order = np.argsort(-(raw - np.floor(raw)))
+        for idx in frac_order:
+            if total >= max_rows:
+                break
+            if quotas[idx] < counts[idx]:
+                quotas[idx] += 1
+                total += 1
+    elif total > max_rows:
+        frac_order = np.argsort(raw - np.floor(raw))
+        for idx in frac_order:
+            if total <= max_rows:
+                break
+            if quotas[idx] > 1:
+                quotas[idx] -= 1
+                total -= 1
+        if total > max_rows:
+            for idx in range(len(quotas)):
+                if total <= max_rows:
+                    break
+                while quotas[idx] > 1 and total > max_rows:
+                    quotas[idx] -= 1
+                    total -= 1
+
+    picks: list[np.ndarray] = []
+    for site, quota in zip(unique_sites, quotas):
+        pool = np.flatnonzero(site_indices == site)
+        picks.append(rng.choice(pool, size=int(quota), replace=False))
+    return np.sort(np.concatenate(picks))
 
 
 # ---------------------------------------------------------------------------
