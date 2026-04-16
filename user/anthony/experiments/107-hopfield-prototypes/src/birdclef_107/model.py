@@ -390,6 +390,7 @@ class PrototypeRetrievalModel(nn.Module):
             else None
         )
         self.site_blend_logit = nn.Parameter(torch.full((n_sites,), -1.5163474893680884))
+        self.site_blend_delta_coef = nn.Parameter(torch.zeros(n_sites))
 
     def forward(
         self,
@@ -419,7 +420,14 @@ class PrototypeRetrievalModel(nn.Module):
             self.species_head.M, self.site_head.M, site_idx
         )  # (B, S, K, D)
         sp_cond = self.species_head.forward_with_prototypes(q_r, M_cond)
-        alpha = torch.sigmoid(self.site_blend_logit[site_idx]).unsqueeze(1)
+        with torch.no_grad():
+            delta_mag = (M_cond - self.species_head.M.unsqueeze(0)).pow(2).mean(
+                dim=(1, 2, 3)
+            ).sqrt().unsqueeze(1)
+        alpha = torch.sigmoid(
+            self.site_blend_logit[site_idx].unsqueeze(1)
+            + self.site_blend_delta_coef[site_idx].unsqueeze(1) * delta_mag
+        )
         return (1.0 - alpha) * sp_cond + alpha * sp_shared
 
     def unsupervised_site_contrastive(

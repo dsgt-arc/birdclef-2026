@@ -367,6 +367,8 @@ def train_one_fold(
         )
     else:
         blend_params = [model.site_blend_logit]
+        if hasattr(model, "site_blend_delta_coef"):
+            blend_params.append(model.site_blend_delta_coef)
         blend_param_ids = {id(p) for p in blend_params}
         base_params = [
             p for p in model.parameters() if id(p) not in blend_param_ids
