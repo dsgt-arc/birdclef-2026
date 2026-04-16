@@ -104,26 +104,32 @@ def compute_loss(
                 sp_strong = torch.empty_like(strong["labels"], dtype=torch.float32)
                 keep_mask = ~drop_mask
                 if keep_mask.any():
-                    keep_perch = strong.get("perch_logits")
-                    if keep_perch is not None:
-                        keep_perch = keep_perch[keep_mask]
+                    keep_kwargs = {}
+                    for key in ("perch_mapped", "perch_topk_idx", "perch_topk_val"):
+                        val = strong.get(key)
+                        if val is not None:
+                            keep_kwargs[key] = val[keep_mask]
                     sp_strong[keep_mask] = model(
                         strong["emb"][keep_mask],
                         strong["site_idx"][keep_mask],
-                        perch_logits=keep_perch,
+                        **keep_kwargs,
                     )
                 if drop_mask.any():
-                    drop_perch = strong.get("perch_logits")
-                    if drop_perch is not None:
-                        drop_perch = drop_perch[drop_mask]
+                    drop_kwargs = {}
+                    for key in ("perch_mapped", "perch_topk_idx", "perch_topk_val"):
+                        val = strong.get(key)
+                        if val is not None:
+                            drop_kwargs[key] = val[drop_mask]
                     sp_strong[drop_mask] = model(
-                        strong["emb"][drop_mask], site_idx=None, perch_logits=drop_perch
+                        strong["emb"][drop_mask], site_idx=None, **drop_kwargs
                     )
             else:
                 sp_strong = model(
                     strong["emb"],
                     strong["site_idx"],
-                    perch_logits=strong.get("perch_logits"),
+                    perch_mapped=strong.get("perch_mapped"),
+                    perch_topk_idx=strong.get("perch_topk_idx"),
+                    perch_topk_val=strong.get("perch_topk_val"),
                 )
             losses.append(
                 F.binary_cross_entropy(sp_strong, _smooth(strong["labels"]))
@@ -132,7 +138,9 @@ def compute_loss(
             sp_weak = model(
                 weak_focal["emb"],
                 site_idx=None,
-                perch_logits=weak_focal.get("perch_logits"),
+                perch_mapped=weak_focal.get("perch_mapped"),
+                perch_topk_idx=weak_focal.get("perch_topk_idx"),
+                perch_topk_val=weak_focal.get("perch_topk_val"),
             )
             losses.append(
                 F.binary_cross_entropy(sp_weak, _smooth(weak_focal["labels"]))

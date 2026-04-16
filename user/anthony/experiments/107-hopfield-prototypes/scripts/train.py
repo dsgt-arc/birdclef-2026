@@ -28,6 +28,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from birdclef_107.cache import load_training_data_cached
 from birdclef_107.data import (
+    PERCH_FEATURE_KEYS,
     EmbeddingDataset,
     FocalData,
     LabeledSoundscapeData,
@@ -175,9 +176,11 @@ def parse_args() -> argparse.Namespace:
         help="Optional seed for focal/unlabeled cache subsampling. Defaults to --seed so training init and subset draw stay coupled unless explicitly separated.",
     )
     p.add_argument(
+        "--include-perch-features",
         "--include-perch-logits",
+        dest="include_perch_features",
         action="store_true",
-        help="Hydrate the optional perch_logits field on each dataclass. Triggers sidecar build on first use.",
+        help="Hydrate the optional compact Perch sidecar fields (dense mapped probs + sparse top-k activations). Triggers sidecar build on first use.",
     )
     p.add_argument("--device", type=str, default="auto")
     p.add_argument("--seed", type=int, default=42)
@@ -241,12 +244,25 @@ def load_training_data(
         focal_size=int(args.focal_cache_size),
         unsup_size=int(args.unsup_cache_size),
         seed=cache_subset_seed,
-        include_perch_logits=bool(args.include_perch_logits),
+        include_perch_logits=bool(args.include_perch_features),
         force_rebuild_base=bool(args.cache_force_rebuild_base),
         force_rebuild_index=bool(args.cache_force_rebuild),
         focal_subset_fn=weighted_focal_subset,
         unsup_subset_fn=stratified_unsup_subset,
     )
+
+
+def _slice_perch_features(data, mask: np.ndarray | None = None) -> dict[str, np.ndarray | None]:
+    out: dict[str, np.ndarray | None] = {}
+    for key in PERCH_FEATURE_KEYS:
+        val = getattr(data, key)
+        if val is None:
+            out[key] = None
+        elif mask is None:
+            out[key] = val
+        else:
+            out[key] = val[mask]
+    return out
 
 
 def train_one_fold(
@@ -289,9 +305,7 @@ def train_one_fold(
     # Split labeled soundscape data
     train_sc_emb = sc_data.embeddings[train_mask]
     train_sc_labels = sc_data.labels[train_mask]
-    train_sc_perch = None
-    if sc_data.perch_logits is not None:
-        train_sc_perch = sc_data.perch_logits[train_mask]
+    train_sc_perch = _slice_perch_features(sc_data, train_mask)
     train_sc_sites_str = sc_data.sites[train_mask]
     train_sc_site_idx = np.array(
         [sc_data.site_to_idx[str(s)] for s in train_sc_sites_str], dtype=np.int64
@@ -299,9 +313,7 @@ def train_one_fold(
 
     test_emb = sc_data.embeddings[test_mask]
     test_labels = sc_data.labels[test_mask]
-    test_perch = None
-    if sc_data.perch_logits is not None:
-        test_perch = sc_data.perch_logits[test_mask]
+    test_perch = _slice_perch_features(sc_data, test_mask)
     test_sites_str = sc_data.sites[test_mask]
     test_site_idx = np.array(
         [sc_data.site_to_idx[str(s)] for s in test_sites_str], dtype=np.int64
@@ -312,12 +324,17 @@ def train_one_fold(
         train_sc_emb,
         train_sc_labels,
         train_sc_site_idx,
-        perch_logits=train_sc_perch,
+        perch_mapped=train_sc_perch["perch_mapped"],
+        perch_topk_idx=train_sc_perch["perch_topk_idx"],
+        perch_topk_val=train_sc_perch["perch_topk_val"],
     )
+    focal_perch = _slice_perch_features(focal_data)
     focal_ds = EmbeddingDataset(
         focal_data.embeddings,
         focal_data.labels,
-        perch_logits=focal_data.perch_logits,
+        perch_mapped=focal_perch["perch_mapped"],
+        perch_topk_idx=focal_perch["perch_topk_idx"],
+        perch_topk_val=focal_perch["perch_topk_val"],
     )
     unsup_ds = UnsupervisedDataset(
         unsup_data.embeddings,
@@ -365,7 +382,7 @@ def train_one_fold(
         cross_attention_heads=args.cross_attention_heads,
         proj_dropout=args.proj_dropout,
         attn_dropout=args.attn_dropout,
-        use_perch_logits=bool(args.include_perch_logits),
+        use_perch_features=bool(args.include_perch_features),
     ).to(device)
 
     family_idx_dev = family_idx.to(device)
@@ -423,7 +440,9 @@ def train_one_fold(
             model,
             test_emb,
             test_site_idx,
-            perch_logits=test_perch,
+            perch_mapped=test_perch["perch_mapped"],
+            perch_topk_idx=test_perch["perch_topk_idx"],
+            perch_topk_val=test_perch["perch_topk_val"],
             device=str(device),
         )
         auroc = compute_auroc(test_labels, preds)
@@ -596,7 +615,9 @@ def train_one_fold(
         model,
         test_emb,
         test_site_idx,
-        perch_logits=test_perch,
+        perch_mapped=test_perch["perch_mapped"],
+        perch_topk_idx=test_perch["perch_topk_idx"],
+        perch_topk_val=test_perch["perch_topk_val"],
         device=str(device),
     )
     np.save(ckpt_dir / "preds.npy", best_preds)
