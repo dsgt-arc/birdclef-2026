@@ -21,6 +21,7 @@ BATCH_SIZE=${BATCH_SIZE:-256}
 STRONG_STRIDE=${STRONG_STRIDE:-4}
 ATTN_DROPOUT=${ATTN_DROPOUT:-0.1}
 PROJ_DROPOUT=${PROJ_DROPOUT:-0.1}
+DISABLE_SITE_BLEND_DELTA_TRUST=${DISABLE_SITE_BLEND_DELTA_TRUST:-0}
 LABEL_SMOOTHING=${LABEL_SMOOTHING:-0.01}
 STRONG_SITE_DROPOUT=${STRONG_SITE_DROPOUT:-0}
 STRONG_SITE_DROPOUT_START=${STRONG_SITE_DROPOUT_START:-0}
@@ -38,6 +39,7 @@ VAL_EVERY_STEPS=${VAL_EVERY_STEPS:-100}
 SEED=${SEED:-42}
 MULTI_SEEDS=${MULTI_SEEDS:-}
 CACHE_SUBSET_SEED=${CACHE_SUBSET_SEED:-}
+MULTI_CACHE_SUBSET_SEEDS=${MULTI_CACHE_SUBSET_SEEDS:-}
 CACHE_ROOT=${CACHE_ROOT:-$HOME/scratch/birdclef-2026/cache/exp107}
 INCLUDE_PERCH_LOGITS=${INCLUDE_PERCH_LOGITS:-}
 CKPT_SUBDIR=${CKPT_SUBDIR:-exp107-autoresearch-dev-$(date +%Y%m%d-%H%M%S)-$$}
@@ -58,14 +60,20 @@ if [[ "$DEV_SITES" != "all" ]]; then
   split_name_flag=(--split-name "$SPLIT_NAME")
 fi
 
-cache_subset_seed_flag=()
-if [[ -n "$CACHE_SUBSET_SEED" ]]; then
-  cache_subset_seed_flag=(--cache-subset-seed "$CACHE_SUBSET_SEED")
+disable_delta_trust_flag=()
+if [[ "$DISABLE_SITE_BLEND_DELTA_TRUST" != "0" ]]; then
+  disable_delta_trust_flag=(--disable-site-blend-delta-trust)
 fi
 
 run_one_seed() {
   local run_seed="$1"
   local run_root="$2"
+  local run_cache_subset_seed="${3:-}"
+  local cache_subset_seed_flag=()
+  if [[ -n "$run_cache_subset_seed" ]]; then
+    cache_subset_seed_flag=(--cache-subset-seed "$run_cache_subset_seed")
+  fi
+  mkdir -p "$run_root"
   mkdir -p "$run_root"
   python -u scripts/train.py \
     --fold "$DEV_SITES" \
@@ -88,6 +96,7 @@ run_one_seed() {
     --strong-stride "$STRONG_STRIDE" \
     --attn-dropout "$ATTN_DROPOUT" \
     --proj-dropout "$PROJ_DROPOUT" \
+    "${disable_delta_trust_flag[@]}" \
     --label-smoothing "$LABEL_SMOOTHING" \
     --strong-site-dropout "$STRONG_SITE_DROPOUT" \
     --strong-site-dropout-start "$STRONG_SITE_DROPOUT_START" \
@@ -116,11 +125,19 @@ result_json_for_root() {
 
 if [[ -n "$MULTI_SEEDS" ]]; then
   IFS=',' read -r -a seed_list <<< "$MULTI_SEEDS"
+  if [[ -n "$MULTI_CACHE_SUBSET_SEEDS" ]]; then
+    IFS=',' read -r -a subset_seed_list <<< "$MULTI_CACHE_SUBSET_SEEDS"
+  else
+    subset_seed_list=("$CACHE_SUBSET_SEED")
+  fi
   result_paths=()
-  for run_seed in "${seed_list[@]}"; do
-    seed_root="$RESULT_ROOT/seed-$run_seed"
-    run_one_seed "$run_seed" "$seed_root"
-    result_paths+=("$(result_json_for_root "$seed_root")")
+  for subset_seed in "${subset_seed_list[@]}"; do
+    subset_tag="${subset_seed:-default}"
+    for run_seed in "${seed_list[@]}"; do
+      seed_root="$RESULT_ROOT/subset-$subset_tag/seed-$run_seed"
+      run_one_seed "$run_seed" "$seed_root" "$subset_seed"
+      result_paths+=("$(result_json_for_root "$seed_root")")
+    done
   done
   printf 'result_json=%s\n' "${result_paths[*]}"
   python - "$PRIMARY_METRIC_NAME" "$DEV_SITES" "${result_paths[@]}" <<'PY'
@@ -163,7 +180,7 @@ else:
     print(f"METRIC n_val_windows={rows[0].get('n_windows', 0)}")
 PY
 else
-  run_one_seed "$SEED" "$RESULT_ROOT"
+  run_one_seed "$SEED" "$RESULT_ROOT" "$CACHE_SUBSET_SEED"
   RESULT_JSON="$(result_json_for_root "$RESULT_ROOT")"
   echo "result_json=$RESULT_JSON"
   python - "$RESULT_JSON" "$PRIMARY_METRIC_NAME" "$DEV_SITES" <<'PY'
