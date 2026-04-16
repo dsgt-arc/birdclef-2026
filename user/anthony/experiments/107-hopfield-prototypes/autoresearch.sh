@@ -26,6 +26,7 @@ UNSUP_WARMUP_START=${UNSUP_WARMUP_START:-200}
 UNSUP_WARMUP_END=${UNSUP_WARMUP_END:-500}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-2}
 SITE_BLEND_LR_MULT=${SITE_BLEND_LR_MULT:-1}
+SITE_BLEND_DELTA_LR_MULT=${SITE_BLEND_DELTA_LR_MULT:-}
 SITE_BLEND_ANCHOR_LAMBDA=${SITE_BLEND_ANCHOR_LAMBDA:-0}
 FOCAL_CACHE_SIZE=${FOCAL_CACHE_SIZE:-32768}
 UNSUP_CACHE_SIZE=${UNSUP_CACHE_SIZE:-32768}
@@ -47,6 +48,11 @@ if [[ -n "$INCLUDE_PERCH_LOGITS" && "$INCLUDE_PERCH_LOGITS" != "0" ]]; then
   perch_flag=(--include-perch-logits)
 fi
 
+delta_lr_flag=()
+if [[ -n "$SITE_BLEND_DELTA_LR_MULT" ]]; then
+  delta_lr_flag=(--site-blend-delta-lr-mult "$SITE_BLEND_DELTA_LR_MULT")
+fi
+
 python -u scripts/train.py \
   --fold "$DEV_SITES" \
   --split-name dev \
@@ -65,6 +71,7 @@ python -u scripts/train.py \
   --weight-decay "$WEIGHT_DECAY" \
   --site-blend-lr-mult "$SITE_BLEND_LR_MULT" \
   --site-blend-anchor-lambda "$SITE_BLEND_ANCHOR_LAMBDA" \
+  "${delta_lr_flag[@]}" \
   --strong-stride "$STRONG_STRIDE" \
   --attn-dropout "$ATTN_DROPOUT" \
   --proj-dropout "$PROJ_DROPOUT" \
