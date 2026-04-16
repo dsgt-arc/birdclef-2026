@@ -1,4 +1,4 @@
-# Autoresearch: exp107 fast thesis-adherent split
+# Exp107 fast dev proxy benchmark
 
 ## Objective
 Build a faster development split for experiment 107 that still adheres to the thesis: all three streams remain present (strong labeled soundscapes, weak focal recordings, unlabeled soundscapes), site-conditioning is still exercised, and the validation set is less misleading than S22-only. The goal is not just raw speed; it is a quick-turn proxy that preserves the hard parts of the problem, especially bird vs amphibian and with-focal vs without-focal behavior.
@@ -8,15 +8,15 @@ Build a faster development split for experiment 107 that still adheres to the th
 - **Secondary**: `benchmark_seconds`, `without_focal_auroc`, `with_focal_auroc`, `bird_auroc`, `amphibian_auroc`, `best_step`, `n_val_windows` — monitor whether the split remains representative and whether iteration speed is actually improving
 
 ## How to Run
-`./autoresearch.sh` — activates the existing scratch venv directly inside the current GPU allocation, runs the fast-split training/eval command, then emits `METRIC ...` lines from the saved JSON results.
+`bash scripts/benchmark_exp107_dev.sh` — activates the existing scratch venv directly inside the current GPU allocation, runs the fast-split training/eval command, then emits `METRIC ...` lines from the saved JSON results.
 
 Useful overrides:
-- `DEV_SITES=S13,S15,S19 ./autoresearch.sh`
-- `FOCAL_CACHE_SIZE=16384 UNSUP_CACHE_SIZE=16384 ./autoresearch.sh`
-- `ATTN_DROPOUT=0.05 ./autoresearch.sh`
-- `STRONG_STRIDE=2 ./autoresearch.sh`
-- `LABEL_SMOOTHING=0.0 ./autoresearch.sh`
-- `CKPT_SUBDIR=exp107-manual-test ./autoresearch.sh`
+- `DEV_SITES=S13,S15,S19 bash scripts/benchmark_exp107_dev.sh`
+- `FOCAL_CACHE_SIZE=16384 UNSUP_CACHE_SIZE=16384 bash scripts/benchmark_exp107_dev.sh`
+- `ATTN_DROPOUT=0.05 bash scripts/benchmark_exp107_dev.sh`
+- `STRONG_STRIDE=2 bash scripts/benchmark_exp107_dev.sh`
+- `LABEL_SMOOTHING=0.0 bash scripts/benchmark_exp107_dev.sh`
+- `CKPT_SUBDIR=exp107-manual-test bash scripts/benchmark_exp107_dev.sh`
 
 The first run builds a local NPZ cache under `${TMPDIR:-/tmp}/birdclef-107-devcache/<config-key>/`; later runs reuse the matching cache. Different focal/unsup cache sizes now get separate keyed cache directories, so switching configs does not destroy fast reuse for earlier settings.
 

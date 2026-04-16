@@ -1,7 +1,7 @@
 # exp107 training-data cache
 
 Persistent, sharded cache that backs `scripts/train.py` and
-`./autoresearch.sh`. Replaces the old per-`(focal_size, unsup_size,
+`bash scripts/benchmark_exp107_dev.sh`. Replaces the old per-`(focal_size, unsup_size,
 seed)` monolithic NPZ bundle under `$TMPDIR` with a split base + index
 layout on scratch.
 
@@ -46,7 +46,7 @@ both.
 
 ## Using it
 
-### From `autoresearch.sh`
+### From `scripts/benchmark_exp107_dev.sh`
 
 Default configuration needs nothing extra. The script passes
 `--cache-dir "$CACHE_ROOT"` with
@@ -65,8 +65,8 @@ Relevant overrides:
 Example: sweep focal subset size while keeping everything else:
 
 ```bash
-FOCAL_CACHE_SIZE=16384 ./autoresearch.sh
-FOCAL_CACHE_SIZE=65536 ./autoresearch.sh
+FOCAL_CACHE_SIZE=16384 bash scripts/benchmark_exp107_dev.sh
+FOCAL_CACHE_SIZE=65536 bash scripts/benchmark_exp107_dev.sh
 ```
 
 Both runs read the same `base-v1/` shards and reuse the same
