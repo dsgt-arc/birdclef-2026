@@ -4,6 +4,8 @@ set -euo pipefail
 source "$HOME/scratch/birdclef-2026/.venv-107/bin/activate"
 
 DEV_SITES=${DEV_SITES:-S13,S15,S19}
+SPLIT_NAME=${SPLIT_NAME:-dev}
+PRIMARY_METRIC_NAME=${PRIMARY_METRIC_NAME:-dev_auroc}
 LAMBDA_SITE=${LAMBDA_SITE:-0.01}
 LAMBDA_XATTN=${LAMBDA_XATTN:-0.01}
 LAMBDA_FAM=${LAMBDA_FAM:-0.01}
@@ -38,7 +40,8 @@ CACHE_ROOT=${CACHE_ROOT:-$HOME/scratch/birdclef-2026/cache/exp107}
 INCLUDE_PERCH_LOGITS=${INCLUDE_PERCH_LOGITS:-}
 CKPT_SUBDIR=${CKPT_SUBDIR:-exp107-autoresearch-dev-$(date +%Y%m%d-%H%M%S)-$$}
 RESULT_ROOT="$HOME/scratch/birdclef-2026/checkpoints/$CKPT_SUBDIR"
-RESULT_JSON="$RESULT_ROOT/dev/subset_aurocs.json"
+RESULT_JSON_SINGLE="$RESULT_ROOT/$SPLIT_NAME/subset_aurocs.json"
+RESULT_JSON_LOSO="$RESULT_ROOT/loso_results.json"
 
 mkdir -p "$RESULT_ROOT"
 SECONDS=0
@@ -48,14 +51,14 @@ if [[ -n "$INCLUDE_PERCH_LOGITS" && "$INCLUDE_PERCH_LOGITS" != "0" ]]; then
   perch_flag=(--include-perch-logits)
 fi
 
-delta_lr_flag=()
-if [[ -n "$SITE_BLEND_DELTA_LR_MULT" ]]; then
-  delta_lr_flag=(--site-blend-delta-lr-mult "$SITE_BLEND_DELTA_LR_MULT")
+split_name_flag=()
+if [[ "$DEV_SITES" != "all" ]]; then
+  split_name_flag=(--split-name "$SPLIT_NAME")
 fi
 
 python -u scripts/train.py \
   --fold "$DEV_SITES" \
-  --split-name dev \
+  "${split_name_flag[@]}" \
   --lambda-site "$LAMBDA_SITE" \
   --lambda-xattn "$LAMBDA_XATTN" \
   --lambda-fam "$LAMBDA_FAM" \
@@ -71,7 +74,6 @@ python -u scripts/train.py \
   --weight-decay "$WEIGHT_DECAY" \
   --site-blend-lr-mult "$SITE_BLEND_LR_MULT" \
   --site-blend-anchor-lambda "$SITE_BLEND_ANCHOR_LAMBDA" \
-  "${delta_lr_flag[@]}" \
   --strong-stride "$STRONG_STRIDE" \
   --attn-dropout "$ATTN_DROPOUT" \
   --proj-dropout "$PROJ_DROPOUT" \
@@ -90,25 +92,43 @@ python -u scripts/train.py \
   --seed "$SEED" \
   "${perch_flag[@]}"
 
+if [[ "$DEV_SITES" == "all" ]]; then
+  RESULT_JSON="$RESULT_JSON_LOSO"
+else
+  RESULT_JSON="$RESULT_JSON_SINGLE"
+fi
+
 echo "result_json=$RESULT_JSON"
 
-python - "$RESULT_JSON" <<'PY'
+python - "$RESULT_JSON" "$PRIMARY_METRIC_NAME" "$DEV_SITES" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1]).expanduser()
+metric_name = sys.argv[2]
+dev_sites = sys.argv[3]
 if not path.exists():
     raise SystemExit(f"Missing result file: {path}")
 
 data = json.loads(path.read_text())
-subset = data.get("subset_auroc", {})
-print(f"METRIC dev_auroc={data['overall_auroc']}")
-for key in ["without_focal", "with_focal", "bird", "amphibian", "insect"]:
-    if key in subset:
-        print(f"METRIC {key}_auroc={subset[key]}")
-print(f"METRIC best_step={data['best_step']}")
-print(f"METRIC n_val_windows={data.get('n_windows', 0)}")
+if dev_sites == "all":
+    print(f"METRIC {metric_name}={data['pooled_auroc']}")
+    for key in ["without_focal", "with_focal", "bird", "amphibian", "insect"]:
+        if key in data.get("subsets", {}):
+            print(f"METRIC {key}_auroc={data['subsets'][key]}")
+    if "S22" in data.get("per_fold", {}):
+        print(f"METRIC s22_fold_auroc={data['per_fold']['S22']['auroc']}")
+    print(f"METRIC n_val_windows={data.get('n_windows', 0)}")
+    print(f"METRIC n_folds={data.get('n_folds', 0)}")
+else:
+    subset = data.get("subset_auroc", {})
+    print(f"METRIC {metric_name}={data['overall_auroc']}")
+    for key in ["without_focal", "with_focal", "bird", "amphibian", "insect"]:
+        if key in subset:
+            print(f"METRIC {key}_auroc={subset[key]}")
+    print(f"METRIC best_step={data['best_step']}")
+    print(f"METRIC n_val_windows={data.get('n_windows', 0)}")
 PY
 
 printf 'METRIC benchmark_seconds=%s\n' "$SECONDS"
