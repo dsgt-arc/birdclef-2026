@@ -40,6 +40,7 @@ def compute_loss(
     lambda_fam: float = 1e-2,
     label_smoothing: float = 0.0,
     include_strong: bool = True,
+    strong_site_dropout: float = 0.0,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Compute the four-term total loss and return per-component diagnostics.
 
@@ -62,6 +63,10 @@ def compute_loss(
         include_strong: if False, the strong SC BCE term is skipped
             regardless of whether ``batch["strong"]`` is present. Used by
             the training loop to rate-limit strong SC (v4 strong_stride).
+        strong_site_dropout: probability of routing a strong labeled
+            soundscape window through the site-free species path
+            (``site_idx=None``) instead of the site-conditioned path.
+            Acts only on the strong stream; focal and unsup are unchanged.
 
     Returns:
         ``(total_loss, components)`` where ``components`` logs each
@@ -91,12 +96,44 @@ def compute_loss(
     if strong is not None or weak_focal is not None:
         losses = []
         if strong is not None:
-            sp_strong = model(strong["emb"], strong["site_idx"])
+            if strong_site_dropout > 0.0:
+                drop_mask = (
+                    torch.rand(strong["site_idx"].shape[0], device=device)
+                    < strong_site_dropout
+                )
+                sp_strong = torch.empty_like(strong["labels"], dtype=torch.float32)
+                keep_mask = ~drop_mask
+                if keep_mask.any():
+                    keep_perch = strong.get("perch_logits")
+                    if keep_perch is not None:
+                        keep_perch = keep_perch[keep_mask]
+                    sp_strong[keep_mask] = model(
+                        strong["emb"][keep_mask],
+                        strong["site_idx"][keep_mask],
+                        perch_logits=keep_perch,
+                    )
+                if drop_mask.any():
+                    drop_perch = strong.get("perch_logits")
+                    if drop_perch is not None:
+                        drop_perch = drop_perch[drop_mask]
+                    sp_strong[drop_mask] = model(
+                        strong["emb"][drop_mask], site_idx=None, perch_logits=drop_perch
+                    )
+            else:
+                sp_strong = model(
+                    strong["emb"],
+                    strong["site_idx"],
+                    perch_logits=strong.get("perch_logits"),
+                )
             losses.append(
                 F.binary_cross_entropy(sp_strong, _smooth(strong["labels"]))
             )
         if weak_focal is not None:
-            sp_weak = model(weak_focal["emb"], site_idx=None)
+            sp_weak = model(
+                weak_focal["emb"],
+                site_idx=None,
+                perch_logits=weak_focal.get("perch_logits"),
+            )
             losses.append(
                 F.binary_cross_entropy(sp_weak, _smooth(weak_focal["labels"]))
             )

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -25,9 +26,13 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+from birdclef_107.cache import load_training_data_cached
 from birdclef_107.data import (
     EmbeddingDataset,
+    FocalData,
+    LabeledSoundscapeData,
     RecordingGroupedBatchSampler,
+    UnlabeledSoundscapeData,
     UnsupervisedDataset,
     build_focal_sampler,
     collate_triple_batch,
@@ -35,6 +40,8 @@ from birdclef_107.data import (
     load_all_unlabeled,
     load_labeled_soundscape,
     loso_folds,
+    stratified_unsup_subset,
+    weighted_focal_subset,
 )
 from birdclef_107.eval import (
     compute_auroc,
@@ -53,7 +60,13 @@ def parse_args() -> argparse.Namespace:
         "--fold",
         type=str,
         default="S22",
-        help="Site ID to hold out (e.g. S22), or 'all' for full LOSO CV",
+        help="Site ID to hold out (e.g. S22), comma-separated holdout sites for a custom dev split (e.g. S13,S15,S19), or 'all' for full LOSO CV",
+    )
+    p.add_argument(
+        "--split-name",
+        type=str,
+        default=None,
+        help="Optional output name for a custom split (defaults to --fold with commas replaced by '+').",
     )
     p.add_argument("--lambda-site", type=float, default=0.01,
                    help="Weight on L_site_contrastive (InfoNCE on M_site)")
@@ -62,10 +75,32 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lambda-fam", type=float, default=1e-2)
     p.add_argument("--epochs", type=int, default=20,
                    help="v4 default 20 (scheduler gets full LR range; regularization lets peak appear later than epoch 2).")
+    p.add_argument("--k-species", type=int, default=8,
+                   help="Number of prototypes per species in the Hopfield species bank.")
+    p.add_argument("--k-site", type=int, default=8,
+                   help="Number of prototypes per site in the Hopfield site bank.")
+    p.add_argument("--d-hidden", type=int, default=1024,
+                   help="Hidden width of the shared Perch projection MLP.")
+    p.add_argument("--d-proj", type=int, default=512,
+                   help="Shared projection / prototype dimension for species, site, and cross-attention modules.")
+    p.add_argument("--cross-attention-heads", type=int, default=4,
+                   help="Number of heads in species↔site cross-attention.")
     p.add_argument("--lr", type=float, default=5e-4,
                    help="AdamW LR. Default 5e-4 (v3); v2 used 1e-3 but contrastive losses need slower LR.")
     p.add_argument("--weight-decay", type=float, default=1e-2,
                    help="AdamW weight decay. v4 default 1e-2 (was 1e-4); attacks labeled overfitting.")
+    p.add_argument(
+        "--site-blend-lr-mult",
+        type=float,
+        default=1.0,
+        help="LR multiplier for the site-aware shared-fallback blend parameters (site_blend_logit).",
+    )
+    p.add_argument(
+        "--site-blend-anchor-lambda",
+        type=float,
+        default=0.0,
+        help="L2 penalty on site_blend_logit toward the 18% fallback prior. Useful when site_blend_lr_mult > 1.",
+    )
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--patience", type=int, default=10,
                    help="Val-AUROC patience checks. Default 10 (v3); contrastive objectives take longer to find non-trivial optima than v2's softplus.")
@@ -77,6 +112,10 @@ def parse_args() -> argparse.Namespace:
                    help="v4: dropout inside PerchProjection MLP. Regularizes the shared trunk.")
     p.add_argument("--label-smoothing", type=float, default=0.01,
                    help="v4: BCE label smoothing ε. Small (0.01) because multi-hot binary labels.")
+    p.add_argument("--strong-site-dropout", type=float, default=0.0,
+                   help="Probability of routing a strong labeled SC window through the site-free species path instead of the site-conditioned path.")
+    p.add_argument("--strong-site-dropout-start", type=int, default=0,
+                   help="Training step at which strong-site dropout turns on. Use >0 to delay this regularizer until after the early scaffold forms.")
     p.add_argument("--unsup-warmup-start", type=int, default=200,
                    help="Step to begin ramping unsup lambdas from 0.")
     p.add_argument("--unsup-warmup-end", type=int, default=500,
@@ -100,6 +139,45 @@ def parse_args() -> argparse.Namespace:
         "--features-dir",
         type=str,
         default="~/scratch/birdclef-2026/features/exp106",
+    )
+    p.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Persistent cache root (contains base-v1/ + idx-v1/). Omit to bypass the cache and read parquet directly.",
+    )
+    p.add_argument(
+        "--focal-cache-size",
+        type=int,
+        default=0,
+        help="If >0, cache/load only this many focal windows using rare-species-aware weighted sampling without replacement.",
+    )
+    p.add_argument(
+        "--unsup-cache-size",
+        type=int,
+        default=0,
+        help="If >0, cache/load only this many unlabeled soundscape windows using stratified-by-site sampling.",
+    )
+    p.add_argument(
+        "--cache-force-rebuild",
+        action="store_true",
+        help="Recompute the idx-v1/*.npy files even if they exist. Leaves base shards alone.",
+    )
+    p.add_argument(
+        "--cache-force-rebuild-base",
+        action="store_true",
+        help="Rebuild the full base-v1/ from parquet. Use if a source parquet changed without its mtime advancing.",
+    )
+    p.add_argument(
+        "--cache-subset-seed",
+        type=int,
+        default=None,
+        help="Optional seed for focal/unlabeled cache subsampling. Defaults to --seed so training init and subset draw stay coupled unless explicitly separated.",
+    )
+    p.add_argument(
+        "--include-perch-logits",
+        action="store_true",
+        help="Hydrate the optional perch_logits field on each dataclass. Triggers sidecar build on first use.",
     )
     p.add_argument("--device", type=str, default="auto")
     p.add_argument("--seed", type=int, default=42)
@@ -134,6 +212,43 @@ def unsup_warmup_factor(step: int, start: int, end: int) -> float:
     return (step - start) / max(1, end - start)
 
 
+def load_training_data(
+    args: argparse.Namespace,
+) -> tuple[LabeledSoundscapeData, FocalData, UnlabeledSoundscapeData]:
+    """Load full data or go through the persistent sharded cache.
+
+    With ``--cache-dir`` unset, read parquet directly (uncached path,
+    useful for unit tests and ad-hoc full-corpus runs). Otherwise
+    delegate to :func:`birdclef_107.cache.load_training_data_cached`,
+    which keeps a sharded base on scratch and per-``(size, seed)``
+    index files. See ``docs/cache-usage.md``.
+    """
+    if args.cache_dir is None:
+        print("Loading labeled soundscapes...")
+        sc_data = load_labeled_soundscape(args.features_dir)
+        print("Loading focal recordings...")
+        focal_data = load_all_focal(args.features_dir)
+        print("Loading unlabeled soundscapes...")
+        unsup_data = load_all_unlabeled(args.features_dir, sc_data.site_to_idx)
+        return sc_data, focal_data, unsup_data
+
+    cache_subset_seed = (
+        int(args.seed) if args.cache_subset_seed is None else int(args.cache_subset_seed)
+    )
+    return load_training_data_cached(
+        features_dir=args.features_dir,
+        cache_root=args.cache_dir,
+        focal_size=int(args.focal_cache_size),
+        unsup_size=int(args.unsup_cache_size),
+        seed=cache_subset_seed,
+        include_perch_logits=bool(args.include_perch_logits),
+        force_rebuild_base=bool(args.cache_force_rebuild_base),
+        force_rebuild_index=bool(args.cache_force_rebuild),
+        focal_subset_fn=weighted_focal_subset,
+        unsup_subset_fn=stratified_unsup_subset,
+    )
+
+
 def train_one_fold(
     fold_site: str,
     sc_data,
@@ -146,41 +261,64 @@ def train_one_fold(
     writer: SummaryWriter | None = None,
     global_prefix: str = "",
 ) -> dict:
-    """Train and evaluate a single LOSO fold.
+    """Train and evaluate a single LOSO fold or custom multi-site holdout.
 
     Returns dict with fold results including best val AUROC and checkpoint path.
     """
-    # Build LOSO split on labeled soundscapes
+    held_out_sites = [s.strip() for s in fold_site.split(",") if s.strip()]
+    split_name = args.split_name or "+".join(held_out_sites)
+
+    # Build LOSO split on labeled soundscapes, or a custom multi-site holdout.
     folds = loso_folds(sc_data.sites)
-    fold = None
-    for f in folds:
-        if f.left_out_site == fold_site:
-            fold = f
-            break
-    if fold is None:
+    available_sites = {f.left_out_site for f in folds}
+    missing_sites = [s for s in held_out_sites if s not in available_sites]
+    if missing_sites:
         raise ValueError(
-            f"Site {fold_site} not found in labeled data. "
-            f"Available: {[f.left_out_site for f in folds]}"
+            f"Site(s) {missing_sites} not found in labeled data. "
+            f"Available: {sorted(available_sites)}"
         )
 
+    if len(held_out_sites) == 1:
+        fold = next(f for f in folds if f.left_out_site == held_out_sites[0])
+        train_mask = fold.train_mask
+        test_mask = fold.test_mask
+    else:
+        test_mask = np.isin(sc_data.sites, held_out_sites)
+        train_mask = ~test_mask
+
     # Split labeled soundscape data
-    train_sc_emb = sc_data.embeddings[fold.train_mask]
-    train_sc_labels = sc_data.labels[fold.train_mask]
-    train_sc_sites_str = sc_data.sites[fold.train_mask]
+    train_sc_emb = sc_data.embeddings[train_mask]
+    train_sc_labels = sc_data.labels[train_mask]
+    train_sc_perch = None
+    if sc_data.perch_logits is not None:
+        train_sc_perch = sc_data.perch_logits[train_mask]
+    train_sc_sites_str = sc_data.sites[train_mask]
     train_sc_site_idx = np.array(
         [sc_data.site_to_idx[str(s)] for s in train_sc_sites_str], dtype=np.int64
     )
 
-    test_emb = sc_data.embeddings[fold.test_mask]
-    test_labels = sc_data.labels[fold.test_mask]
-    test_sites_str = sc_data.sites[fold.test_mask]
+    test_emb = sc_data.embeddings[test_mask]
+    test_labels = sc_data.labels[test_mask]
+    test_perch = None
+    if sc_data.perch_logits is not None:
+        test_perch = sc_data.perch_logits[test_mask]
+    test_sites_str = sc_data.sites[test_mask]
     test_site_idx = np.array(
         [sc_data.site_to_idx[str(s)] for s in test_sites_str], dtype=np.int64
     )
 
     # Datasets
-    strong_ds = EmbeddingDataset(train_sc_emb, train_sc_labels, train_sc_site_idx)
-    focal_ds = EmbeddingDataset(focal_data.embeddings, focal_data.labels)
+    strong_ds = EmbeddingDataset(
+        train_sc_emb,
+        train_sc_labels,
+        train_sc_site_idx,
+        perch_logits=train_sc_perch,
+    )
+    focal_ds = EmbeddingDataset(
+        focal_data.embeddings,
+        focal_data.labels,
+        perch_logits=focal_data.perch_logits,
+    )
     unsup_ds = UnsupervisedDataset(
         unsup_data.embeddings,
         unsup_data.site_indices,
@@ -220,15 +358,44 @@ def train_one_fold(
     model = PrototypeRetrievalModel(
         n_species=len(species_list),
         n_sites=n_sites,
+        K_species=args.k_species,
+        K_site=args.k_site,
+        d_hidden=args.d_hidden,
+        d_proj=args.d_proj,
+        cross_attention_heads=args.cross_attention_heads,
         proj_dropout=args.proj_dropout,
         attn_dropout=args.attn_dropout,
+        use_perch_logits=bool(args.include_perch_logits),
     ).to(device)
 
     family_idx_dev = family_idx.to(device)
 
-    optimizer = AdamW(
-        model.parameters(), lr=args.lr, weight_decay=args.weight_decay
-    )
+    if args.site_blend_lr_mult == 1.0:
+        optimizer = AdamW(
+            model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+        )
+    else:
+        blend_params = [model.site_blend_logit]
+        if hasattr(model, "site_blend_delta_coef"):
+            blend_params.append(model.site_blend_delta_coef)
+        blend_param_ids = {id(p) for p in blend_params}
+        base_params = [
+            p for p in model.parameters() if id(p) not in blend_param_ids
+        ]
+        optimizer = AdamW(
+            [
+                {
+                    "params": base_params,
+                    "lr": args.lr,
+                    "weight_decay": args.weight_decay,
+                },
+                {
+                    "params": blend_params,
+                    "lr": args.lr * args.site_blend_lr_mult,
+                    "weight_decay": args.weight_decay,
+                },
+            ]
+        )
 
     # Steps per epoch = one full pass through the focal loader (largest stream).
     # This gives focal's 265K windows meaningful coverage — the proposal's
@@ -240,24 +407,31 @@ def train_one_fold(
     scheduler = CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=0)
 
     # Checkpoint directory
-    ckpt_dir = Path(args.checkpoint_dir).expanduser() / fold_site
+    ckpt_dir = Path(args.checkpoint_dir).expanduser() / split_name
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     best_auroc = -1.0
     best_step = -1
     patience_counter = 0
     global_step = 0
+    site_blend_anchor_logit = math.log(0.18 / (1.0 - 0.18))
 
     def run_validation() -> float:
         """Validate on held-out site and return AUROC."""
         model.eval()
-        preds = predict_fold(model, test_emb, test_site_idx, device=str(device))
+        preds = predict_fold(
+            model,
+            test_emb,
+            test_site_idx,
+            perch_logits=test_perch,
+            device=str(device),
+        )
         auroc = compute_auroc(test_labels, preds)
         model.train()
         return auroc
 
     print(f"\n{'='*60}")
-    print(f"Fold: {fold_site} | train={fold.train_mask.sum()}, test={fold.test_mask.sum()}")
+    print(f"Fold: {split_name} | holdout_sites={held_out_sites} | train={train_mask.sum()}, test={test_mask.sum()}")
     print(f"Strong: {len(strong_ds)}, Focal: {len(focal_ds)}, Unsup: {len(unsup_ds)}")
     print(f"Steps per epoch: {steps_per_epoch} | Total steps: {total_steps}")
     print(f"{'='*60}")
@@ -310,6 +484,11 @@ def train_one_fold(
             # compute the strong BCE every Nth step so total passes per
             # window drop by N.
             include_strong = (global_step % args.strong_stride == 0)
+            strong_site_dropout = (
+                args.strong_site_dropout
+                if global_step >= args.strong_site_dropout_start
+                else 0.0
+            )
             optimizer.zero_grad()
             total_loss, components = compute_loss(
                 model,
@@ -320,7 +499,12 @@ def train_one_fold(
                 lambda_fam=args.lambda_fam,
                 label_smoothing=args.label_smoothing,
                 include_strong=include_strong,
+                strong_site_dropout=strong_site_dropout,
             )
+            if args.site_blend_anchor_lambda > 0.0:
+                total_loss = total_loss + args.site_blend_anchor_lambda * (
+                    (model.site_blend_logit - site_blend_anchor_logit) ** 2
+                ).mean()
             total_loss.backward()
             optimizer.step()
             scheduler.step()
@@ -376,7 +560,8 @@ def train_one_fold(
                             "model_state_dict": model.state_dict(),
                             "optimizer_state_dict": optimizer.state_dict(),
                             "val_auroc": val_auroc,
-                            "fold_site": fold_site,
+                            "fold_site": split_name,
+                            "held_out_sites": held_out_sites,
                             "args": vars(args),
                         },
                         ckpt_dir / "best.pt",
@@ -407,18 +592,25 @@ def train_one_fold(
     best_ckpt = torch.load(ckpt_dir / "best.pt", map_location=device, weights_only=False)
     model.load_state_dict(best_ckpt["model_state_dict"])
     model.eval()
-    best_preds = predict_fold(model, test_emb, test_site_idx, device=str(device))
+    best_preds = predict_fold(
+        model,
+        test_emb,
+        test_site_idx,
+        perch_logits=test_perch,
+        device=str(device),
+    )
     np.save(ckpt_dir / "preds.npy", best_preds)
     np.save(ckpt_dir / "labels.npy", test_labels)
 
     print(f"  Best: step={best_step}, val_auroc={best_auroc:.4f}")
 
     return {
-        "fold_site": fold_site,
+        "fold_site": split_name,
+        "held_out_sites": held_out_sites,
         "best_step": best_step,
         "best_auroc": best_auroc,
-        "n_train": int(fold.train_mask.sum()),
-        "n_test": int(fold.test_mask.sum()),
+        "n_train": int(train_mask.sum()),
+        "n_test": int(test_mask.sum()),
     }
 
 
@@ -433,15 +625,8 @@ def main() -> None:
     print(f"Device: {device}")
 
     # Load all data once (shared across folds)
-    print("Loading labeled soundscapes...")
-    sc_data = load_labeled_soundscape(args.features_dir)
+    sc_data, focal_data, unsup_data = load_training_data(args)
     species_list = sc_data.species_list
-
-    print("Loading focal recordings...")
-    focal_data = load_all_focal(args.features_dir)
-
-    print("Loading unlabeled soundscapes...")
-    unsup_data = load_all_unlabeled(args.features_dir, sc_data.site_to_idx)
 
     print(
         f"Data: {len(sc_data.embeddings)} labeled SC, "
@@ -463,7 +648,7 @@ def main() -> None:
     log_dir = args.log_dir or str(
         Path(args.checkpoint_dir).expanduser() / "runs"
     )
-    run_name = f"lfam{args.lambda_fam}_lsite{args.lambda_site}"
+    run_name = f"{(args.split_name or args.fold).replace(',', '+')}_lfam{args.lambda_fam}_lsite{args.lambda_site}"
     writer = SummaryWriter(log_dir=f"{log_dir}/{run_name}")
 
     # Focal species for subset evaluation
@@ -487,12 +672,12 @@ def main() -> None:
             args=args,
             device=device,
             writer=writer,
-            global_prefix=fold_site,
+            global_prefix=(args.split_name or fold_site).replace(",", "+"),
         )
         all_results.append(result)
 
         # Load saved predictions for pooled evaluation
-        ckpt_dir = Path(args.checkpoint_dir).expanduser() / fold_site
+        ckpt_dir = Path(args.checkpoint_dir).expanduser() / result["fold_site"]
         fold_y_pred.append(np.load(ckpt_dir / "preds.npy"))
         fold_y_true.append(np.load(ckpt_dir / "labels.npy"))
 
@@ -540,8 +725,9 @@ def main() -> None:
         print(f"Single fold {r['fold_site']} | best step {r['best_step']}")
         print(f"{'='*60}")
         print(f"  Overall AUROC : {r['best_auroc']:.4f}")
-        print(f"  Ridge baseline: 0.7490  (Δ = {r['best_auroc'] - 0.749:+.4f})")
-        print(f"  v1-no-gate    : 0.7160  (Δ = {r['best_auroc'] - 0.716:+.4f})")
+        if r.get("held_out_sites") == ["S22"]:
+            print(f"  Ridge baseline: 0.7490  (Δ = {r['best_auroc'] - 0.749:+.4f})")
+            print(f"  v1-no-gate    : 0.7160  (Δ = {r['best_auroc'] - 0.716:+.4f})")
         print()
         print("Per-subset AUROC:")
         for name in ["bird", "amphibian", "insect", "with_focal", "without_focal"]:
@@ -556,7 +742,9 @@ def main() -> None:
                 {
                     "fold_site": r["fold_site"],
                     "best_step": r["best_step"],
+                    "held_out_sites": r.get("held_out_sites", [r["fold_site"]]),
                     "overall_auroc": r["best_auroc"],
+                    "n_windows": int(len(y_true)),
                     "subset_auroc": subset_aurocs,
                     "subset_n_species": {
                         name: int(masks[name].sum()) for name in subset_aurocs
