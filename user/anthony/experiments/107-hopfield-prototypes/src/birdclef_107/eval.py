@@ -21,6 +21,7 @@ def predict_fold(
     model: PrototypeRetrievalModel,
     embeddings: np.ndarray,
     site_indices: np.ndarray | None,
+    perch_logits: np.ndarray | None = None,
     site_to_idx: dict[str, int] | None = None,
     batch_size: int = 512,
     device: str = "cpu",
@@ -47,7 +48,10 @@ def predict_fold(
         si = None
         if site_indices is not None:
             si = torch.from_numpy(site_indices[start:end]).long().to(device)
-        out = model(emb, site_idx=si)
+        perch = None
+        if perch_logits is not None:
+            perch = torch.from_numpy(perch_logits[start:end]).float().to(device)
+        out = model(emb, site_idx=si, perch_logits=perch)
         preds.append(out.cpu().numpy())
     return np.concatenate(preds, axis=0)
 
