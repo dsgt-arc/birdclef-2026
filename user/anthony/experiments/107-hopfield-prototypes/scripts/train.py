@@ -169,6 +169,12 @@ def parse_args() -> argparse.Namespace:
         help="Rebuild the full base-v1/ from parquet. Use if a source parquet changed without its mtime advancing.",
     )
     p.add_argument(
+        "--cache-subset-seed",
+        type=int,
+        default=None,
+        help="Optional seed for focal/unlabeled cache subsampling. Defaults to --seed so training init and subset draw stay coupled unless explicitly separated.",
+    )
+    p.add_argument(
         "--include-perch-logits",
         action="store_true",
         help="Hydrate the optional perch_logits field on each dataclass. Triggers sidecar build on first use.",
@@ -226,12 +232,15 @@ def load_training_data(
         unsup_data = load_all_unlabeled(args.features_dir, sc_data.site_to_idx)
         return sc_data, focal_data, unsup_data
 
+    cache_subset_seed = (
+        int(args.seed) if args.cache_subset_seed is None else int(args.cache_subset_seed)
+    )
     return load_training_data_cached(
         features_dir=args.features_dir,
         cache_root=args.cache_dir,
         focal_size=int(args.focal_cache_size),
         unsup_size=int(args.unsup_cache_size),
-        seed=int(args.seed),
+        seed=cache_subset_seed,
         include_perch_logits=bool(args.include_perch_logits),
         force_rebuild_base=bool(args.cache_force_rebuild_base),
         force_rebuild_index=bool(args.cache_force_rebuild),

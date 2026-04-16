@@ -36,6 +36,7 @@ UNSUP_BATCH_RECORDINGS=${UNSUP_BATCH_RECORDINGS:-16}
 UNSUP_BATCH_WINDOWS_PER_RECORDING=${UNSUP_BATCH_WINDOWS_PER_RECORDING:-8}
 VAL_EVERY_STEPS=${VAL_EVERY_STEPS:-100}
 SEED=${SEED:-42}
+CACHE_SUBSET_SEED=${CACHE_SUBSET_SEED:-}
 CACHE_ROOT=${CACHE_ROOT:-$HOME/scratch/birdclef-2026/cache/exp107}
 INCLUDE_PERCH_LOGITS=${INCLUDE_PERCH_LOGITS:-}
 CKPT_SUBDIR=${CKPT_SUBDIR:-exp107-autoresearch-dev-$(date +%Y%m%d-%H%M%S)-$$}
@@ -54,6 +55,11 @@ fi
 split_name_flag=()
 if [[ "$DEV_SITES" != "all" ]]; then
   split_name_flag=(--split-name "$SPLIT_NAME")
+fi
+
+cache_subset_seed_flag=()
+if [[ -n "$CACHE_SUBSET_SEED" ]]; then
+  cache_subset_seed_flag=(--cache-subset-seed "$CACHE_SUBSET_SEED")
 fi
 
 python -u scripts/train.py \
@@ -84,6 +90,7 @@ python -u scripts/train.py \
   --unsup-warmup-end "$UNSUP_WARMUP_END" \
   --checkpoint-dir "$RESULT_ROOT" \
   --cache-dir "$CACHE_ROOT" \
+  "${cache_subset_seed_flag[@]}" \
   --focal-cache-size "$FOCAL_CACHE_SIZE" \
   --unsup-cache-size "$UNSUP_CACHE_SIZE" \
   --unsup-batch-recordings "$UNSUP_BATCH_RECORDINGS" \
