@@ -53,12 +53,12 @@ This is the recommended path for cold builds and for scaling to larger
 feature stores. The build logic now lives in the package CLI under
 `birdclef-107 cache ...`, while a single coordinator sbatch job handles
 parallelization by running bootstrap/finalize/verify locally and
-submitting the shard array as the only parallel stage.
+fanning shard workers out on the same node.
 
 Main entrypoint:
 
 ```bash
-# Default: coordinator job, shard array capped at 8 concurrent tasks
+# Default: coordinator job, shard workers capped at 4 concurrent tasks
 sbatch sbatch/cache_pipeline.sbatch
 
 # Also build compact Perch sidecars
@@ -76,14 +76,42 @@ The coordinator internally runs:
 3. `birdclef-107 cache finalize`
 4. `birdclef-107 cache verify` (optional, on by default in the coordinator)
 
+### Alternate: 3-stage SLURM dependency chain
+
+If you prefer explicit stage boundaries, the older staged flow is still
+available:
+
+1. `sbatch/cache_bootstrap.sbatch` — build `bootstrap_metadata.json`
+2. `sbatch/cache_shards.sbatch` — array over labeled + shard work units
+3. `sbatch/cache_finalize.sbatch` — write `base_manifest.json` and
+   optional subset-index files
+
+Use the submit wrapper to stitch the stages together with
+`--dependency=afterok` and a dynamic array size:
+
+```bash
+# Default: 3-stage chain, shard array capped at 8 concurrent tasks
+bash scripts/submit_cache_build.sh
+
+# Also build compact Perch sidecars
+INCLUDE_PERCH_FEATURES=1 bash scripts/submit_cache_build.sh
+
+# Refresh the common dev subset indexes at the finalization stage
+FOCAL_CACHE_SIZE=32768 UNSUP_CACHE_SIZE=32768 CACHE_SUBSET_SEED=42 \
+  bash scripts/submit_cache_build.sh
+```
+
+Run `birdclef-107 cache verify ...` afterward if you want the same final
+validation step that the coordinator job performs automatically.
 Relevant overrides:
 
 | Env var | Default | Effect |
 |---|---|---|
 | `FEATURES_DIR` | `$HOME/scratch/birdclef-2026/features/exp106` | Source parquet root. |
 | `CACHE_ROOT` | `$HOME/scratch/birdclef-2026/cache/exp107` | Cache root containing `base-v1/` and `idx-v1/`. |
-| `PARALLEL_WORKERS` | `4` | Max same-node shard workers. Must stay `<16` and `<= cpus-per-task`; this is the main scale knob. |
-| `INCLUDE_PERCH_FEATURES` | `0` | Set to `1` to build the optional compact `*_perch/*.npz` sidecars (mapped 234-d probs + sparse top-64 residual activations). `INCLUDE_PERCH_LOGITS` remains an alias. |
+| `PARALLEL_WORKERS` | `4` | Max same-node shard workers for `sbatch/cache_pipeline.sbatch`. Must stay `<16` and `<= cpus-per-task`; this is the main scale knob for the coordinator flow. |
+| `ARRAY_MAX_CONCURRENT` | `8` | Max concurrent shard-array tasks for `scripts/submit_cache_build.sh`. Must stay `<16`; this is the main scale knob for the staged flow. |
+| `INCLUDE_PERCH_FEATURES` | `0` | Set to `1` to build the optional compact `*_perch/*.npz` sidecars (mapped 234-d probs + sparse top-64 residual activations). `INCLUDE_PERCH_LOGITS` remains a back-compat alias. |
 | `CACHE_FORCE_REBUILD_BASE` | `0` | Set to `1` to rebuild metadata + shard outputs from parquet. |
 | `CACHE_FORCE_REBUILD` | `0` | Set to `1` to force the optional subset index files to rebuild in stage 3. |
 | `FOCAL_CACHE_SIZE` | `0` | If >0, build `idx-v1/focal-n{N}-seed{S}.npy` during stage 3. |
@@ -93,14 +121,16 @@ Relevant overrides:
 Why this scales better:
 
 - **Single packaged CLI.** Cache logic lives in `src/birdclef_107/cli.py`
-  and `cache_pipeline.py`, not in one-off script wrappers.
-- **One coordinator job.** `sbatch/cache_pipeline.sbatch` owns the orchestration.
-- **Dynamic work count.** The coordinator asks `birdclef-107 cache plan --count-only`.
-- **Bounded concurrency.** `PARALLEL_WORKERS` keeps same-node shard fanout under control.
+  and `cache_pipeline.py`, with thin script/sbatch wrappers on top.
+- **Two orchestration options.** Use one coordinator job or the explicit
+  3-stage SLURM dependency chain.
+- **Dynamic work count.** Both flows derive work-unit count from the
+  source shard enumeration.
+- **Bounded concurrency.** `PARALLEL_WORKERS` controls same-node fanout;
+  `ARRAY_MAX_CONCURRENT` controls array fanout.
 - **Still idempotent.** Stage 2 workers skip fresh outputs by comparing
   output mtimes against source parquet mtimes and by rejecting stale
   pre-compact sidecar files.
-
 
 ### From `birdclef-107` directly
 
@@ -114,8 +144,8 @@ birdclef-107 cache finalize --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_R
 birdclef-107 cache verify --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_ROOT"
 ```
 
-This is what `sbatch/cache_pipeline.sbatch` calls under the hood.
-
+This is what `sbatch/cache_pipeline.sbatch` calls under the hood, and it
+is also the verification step to run after the staged SLURM chain.
 ### From `scripts/benchmark_exp107_dev.sh`
 
 Default configuration needs nothing extra. The script passes
