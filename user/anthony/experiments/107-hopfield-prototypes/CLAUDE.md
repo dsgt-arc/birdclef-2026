@@ -114,15 +114,19 @@ Reuses the exp 106 parquet cache at `~/scratch/birdclef-2026/features/exp106/`:
 
 **Training now expects the persistent cache on scratch, not repeated cold
 parquet scans per job.** Cache build logic lives in the packaged CLI
-(`birdclef-107 cache ...`), and the recommended orchestration is the
-single coordinator job `sbatch/cache_pipeline.sbatch`.
+(`birdclef-107 cache ...`). The recommended orchestration is the single
+coordinator job `sbatch/cache_pipeline.sbatch`, which runs bootstrap,
+parallel shard workers, finalize, and optional verify in one place.
 
-That coordinator:
+If you prefer explicit SLURM stages, the alternate chain is:
 
-1. runs `birdclef-107 cache bootstrap`
-2. runs `birdclef-107 cache shard` over all work units with bounded same-node fanout
-3. runs `birdclef-107 cache finalize`
-4. runs `birdclef-107 cache verify` (optional, enabled by default)
+1. `sbatch/cache_bootstrap.sbatch`
+2. `sbatch/cache_shards.sbatch` (array, bounded fanout)
+3. `sbatch/cache_finalize.sbatch`
+4. `sbatch/verify_cache.sbatch` (optional)
+
+Wrapper: `bash scripts/submit_cache_build.sh` (`VERIFY_CACHE=1` to append
+stage 4).
 
 Core cache stays small by default (embeddings + labels + metadata only).
 The optional Perch sidecar is now **compact**, not raw-14795-d:
@@ -184,8 +188,15 @@ silently fails and torch falls back to CPU without error.
 # 1) Warm the persistent cache (recommended before training)
 sbatch sbatch/cache_pipeline.sbatch
 
+# Alternate staged chain
+bash scripts/submit_cache_build.sh
+
 # With compact Perch sidecars
 INCLUDE_PERCH_FEATURES=1 sbatch sbatch/cache_pipeline.sbatch
+INCLUDE_PERCH_FEATURES=1 bash scripts/submit_cache_build.sh
+
+# Explicit verify stage for the staged chain
+VERIFY_CACHE=1 bash scripts/submit_cache_build.sh
 
 # 2) Smoke test (S22 decision fold, default)
 sbatch sbatch/train_loso.sbatch
@@ -224,12 +235,17 @@ fresh by `sbatch/_setup-venv.sh` on first use.
 │   ├── data.py                       # 3-stream loaders + LOSO splits + compact Perch feature fields
 │   ├── eval.py                       # pooled AUROC + subsets
 │   ├── cache.py                      # persistent sharded cache loader/materializer
-│   ├── cache_pipeline.py             # shared cache build/verify semantics for the packaged CLI
+│   ├── cache_pipeline.py             # shared cache build/verify semantics for CLI + SLURM wrappers
 │   ├── perch_features.py             # dense-234 + sparse-top64 Perch sidecar projection
 │   └── assets/families.csv           # bundled package asset
 ├── scripts/
 │   ├── train.py                      # Training loop (outer=focal)
 │   ├── sweep_lambda_fam.py           # 5-point ablation driver
+│   ├── build_cache_bootstrap.py      # stage 1: metadata + work plan
+│   ├── build_cache_shard.py          # stage 2: one labeled/shard work unit
+│   ├── build_cache_finalize.py       # stage 3: manifest + optional idx files
+│   ├── verify_cache.py               # stage 4 / standalone cache verification
+│   ├── submit_cache_build.sh         # submits bootstrap -> array -> finalize (and optional verify)
 │   ├── make_synthetic_cache_fixture.py
 │   ├── smoke_cache_sidecar.py
 │   ├── analyze_coverage.py
@@ -237,6 +253,10 @@ fresh by `sbatch/_setup-venv.sh` on first use.
 ├── sbatch/
 │   ├── _setup-venv.sh
 │   ├── cache_pipeline.sbatch         # coordinator: bootstrap -> parallel shard workers -> finalize -> verify
+│   ├── cache_bootstrap.sbatch
+│   ├── cache_shards.sbatch
+│   ├── cache_finalize.sbatch
+│   ├── verify_cache.sbatch
 │   ├── test.sbatch                   # All tests (model/data/gradient/cross-attn)
 │   ├── test_cache_sidecar.sbatch     # tiny synthetic end-to-end cache/sidecar smoke
 │   ├── train_loso.sbatch             # single-job LOSO
@@ -275,8 +295,9 @@ fresh by `sbatch/_setup-venv.sh` on first use.
 ## Known issues / gotchas
 
 - **Cold cache build still pays the parquet scan.** Warm the cache once,
-  then reuse it. For cache build orchestration, use the staged SLURM
-  dependency chain rather than ad-hoc array workers with locks.
+  then reuse it. For cache build orchestration, use either the
+  coordinator job or the staged SLURM dependency chain rather than
+  ad-hoc array workers with locks.
 - **Default model has `n_sites=23`.** Matches the 23-site union, not the
   21 that appear in `by_site/` parquets.
 - **v4 `without_focal` regression on S22.** 28 species dropped 0.127
