@@ -1,15 +1,16 @@
 """Shared helpers for staged exp107 cache builds.
 
-This module contains the pure build logic used by the staged SLURM cache
-pipeline:
+This module contains the pure build logic used by the packaged CLI and
+SLURM cache pipeline:
 
 1. bootstrap metadata
 2. shard-array workers
 3. manifest/index finalization
+4. final verification
 
-The stages are intentionally coordination-free: SLURM job dependencies
-provide ordering, and each stage is idempotent via source-parquet mtime
-checks.
+The stages are intentionally coordination-free: orchestration happens in
+CLI/sbatch wrappers, while this module defines the reusable build and
+freshness semantics.
 """
 
 from __future__ import annotations
@@ -482,6 +483,133 @@ def build_optional_indexes(
     return written
 
 
+def verify_cache(
+    *,
+    features_dir: str | Path,
+    cache_dir: str | Path,
+    include_perch: bool,
+    focal_cache_size: int = 0,
+    unsup_cache_size: int = 0,
+    seed: int = 42,
+    sample_rows: int = 8,
+) -> dict:
+    """Validate a finalized cache build and return the manifest."""
+    features_dir = str(Path(features_dir).expanduser())
+    paths = resolve_paths(cache_dir)
+
+    metadata = load_bootstrap_metadata(paths, features_dir)
+    if metadata is None:
+        raise ValueError("bootstrap metadata missing or stale")
+
+    work_plan = load_work_plan(paths)
+    expected_units = list_work_units(features_dir)
+    if work_plan is None:
+        raise ValueError("work_plan.json missing or invalid")
+    if work_plan != expected_units:
+        raise ValueError("work plan does not match source shard enumeration")
+
+    if not all_units_complete(
+        features_dir=features_dir,
+        paths=paths,
+        units=expected_units,
+        include_perch=include_perch,
+    ):
+        raise ValueError("one or more shard outputs are missing/stale")
+
+    manifest = _load_manifest(paths, features_dir)
+    if not manifest_complete(features_dir=features_dir, paths=paths, include_perch=include_perch):
+        raise ValueError("base_manifest.json missing or stale")
+
+    if manifest["species_list"] != metadata["species_list"]:
+        raise ValueError("species_list mismatch metadata vs manifest")
+    if manifest["site_to_idx"] != metadata["site_to_idx"]:
+        raise ValueError("site_to_idx mismatch metadata vs manifest")
+    if manifest["recording_to_idx"] != metadata["recording_to_idx"]:
+        raise ValueError("recording_to_idx mismatch metadata vs manifest")
+
+    focal_total = sum(int(e["n_rows"]) for e in manifest["focal_shards"])
+    unsup_total = sum(int(e["n_rows"]) for e in manifest["unsup_shards"])
+    if int(manifest["labeled"]["n_rows"]) <= 0 or focal_total <= 0 or unsup_total <= 0:
+        raise ValueError("manifest row counts are invalid")
+
+    for unit in expected_units:
+        outs = output_paths_for_unit(paths, unit, include_perch=include_perch)
+        if not outs["core"].exists():
+            raise ValueError(f"missing core output for {unit.tag}")
+        if include_perch and not outs["perch"].exists():
+            raise ValueError(f"missing Perch sidecar for {unit.tag}")
+
+    if int(focal_cache_size) > 0:
+        idx = paths["idx"] / f"focal-n{int(focal_cache_size)}-seed{int(seed)}.npy"
+        if not idx.exists():
+            raise ValueError(f"missing focal idx file {idx.name}")
+    if int(unsup_cache_size) > 0:
+        idx = paths["idx"] / f"unsup-n{int(unsup_cache_size)}-seed{int(seed)}.npy"
+        if not idx.exists():
+            raise ValueError(f"missing unsup idx file {idx.name}")
+
+    sample_rows = max(1, int(sample_rows))
+    focal_sample_n = min(sample_rows, focal_total)
+    focal_fields = _materialize_from_shards(
+        paths["focal"],
+        manifest["focal_shards"],
+        np.arange(focal_sample_n, dtype=np.int64),
+        ["embeddings", "labels"],
+    )
+    if focal_fields["embeddings"].shape[0] != focal_sample_n or focal_fields["labels"].shape[0] != focal_sample_n:
+        raise ValueError("focal sample materialization failed")
+
+    unsup_sample_n = min(sample_rows, unsup_total)
+    unsup_fields = _materialize_from_shards(
+        paths["unsup"],
+        manifest["unsup_shards"],
+        np.arange(unsup_sample_n, dtype=np.int64),
+        ["embeddings", "site_indices", "recording_indices"],
+    )
+    if (
+        unsup_fields["embeddings"].shape[0] != unsup_sample_n
+        or unsup_fields["site_indices"].shape[0] != unsup_sample_n
+        or unsup_fields["recording_indices"].shape[0] != unsup_sample_n
+    ):
+        raise ValueError("unsup sample materialization failed")
+
+    if include_perch:
+        with np.load(paths["labeled_perch"], allow_pickle=False) as z:
+            mapped = np.asarray(z["mapped_probs"])
+            topk_idx = np.asarray(z["topk_idx"])
+            topk_val = np.asarray(z["topk_val"])
+        if mapped.shape[0] != int(manifest["labeled"]["n_rows"]):
+            raise ValueError("labeled mapped_probs row count mismatch")
+        if mapped.shape[1] != len(manifest["species_list"]):
+            raise ValueError("labeled mapped_probs width mismatch")
+        if topk_idx.shape != topk_val.shape:
+            raise ValueError("labeled topk idx/val shape mismatch")
+
+        focal_perch = _materialize_from_shards(
+            paths["focal_perch"],
+            manifest["focal_shards"],
+            np.arange(focal_sample_n, dtype=np.int64),
+            ["mapped_probs", "topk_idx", "topk_val"],
+        )
+        if focal_perch["mapped_probs"].shape != (focal_sample_n, len(manifest["species_list"])):
+            raise ValueError("focal mapped_probs wrong shape")
+        if focal_perch["topk_idx"].shape != focal_perch["topk_val"].shape:
+            raise ValueError("focal topk idx/val shape mismatch")
+
+        unsup_perch = _materialize_from_shards(
+            paths["unsup_perch"],
+            manifest["unsup_shards"],
+            np.arange(unsup_sample_n, dtype=np.int64),
+            ["mapped_probs", "topk_idx", "topk_val"],
+        )
+        if unsup_perch["mapped_probs"].shape != (unsup_sample_n, len(manifest["species_list"])):
+            raise ValueError("unsup mapped_probs wrong shape")
+        if unsup_perch["topk_idx"].shape != unsup_perch["topk_val"].shape:
+            raise ValueError("unsup topk idx/val shape mismatch")
+
+    return manifest
+
+
 __all__ = [
     "DEFAULT_ARTIFACTS_DIR",
     "DEFAULT_CACHE_DIR",
@@ -501,6 +629,7 @@ __all__ = [
     "resolve_paths",
     "source_path_for_unit",
     "unit_complete",
+    "verify_cache",
     "work_plan_path",
     "write_work_plan",
 ]

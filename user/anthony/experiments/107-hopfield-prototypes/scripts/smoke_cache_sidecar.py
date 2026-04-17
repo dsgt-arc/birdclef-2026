@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -28,20 +27,20 @@ def main() -> None:
     artifacts_dir = root / "artifacts"
     cache_dir = root / "cache"
 
-    run([sys.executable, "scripts/build_cache_bootstrap.py",
+    run(["birdclef-107", "cache", "bootstrap",
          "--features-dir", str(features_dir),
          "--cache-dir", str(cache_dir),
          "--artifacts-dir", str(artifacts_dir)])
 
     n_units = 1 + len(list((features_dir / "focal").glob("shard-*.parquet"))) + len(list((features_dir / "soundscape_unlabeled").glob("shard-*.parquet")))
     for task_id in range(n_units):
-        run([sys.executable, "scripts/build_cache_shard.py",
+        run(["birdclef-107", "cache", "shard",
              "--features-dir", str(features_dir),
              "--cache-dir", str(cache_dir),
              "--task-id", str(task_id),
              "--include-perch-features"])
 
-    run([sys.executable, "scripts/build_cache_finalize.py",
+    run(["birdclef-107", "cache", "finalize",
          "--features-dir", str(features_dir),
          "--cache-dir", str(cache_dir),
          "--include-perch-features",
@@ -72,6 +71,13 @@ def main() -> None:
     assert len(list((base / "unsup_perch").glob("*.npz"))) == 3
     assert np.all(labeled.perch_topk_idx >= -1)
     assert np.all(labeled.perch_topk_val >= 0.0)
+
+    run(["birdclef-107", "cache", "verify",
+         "--features-dir", str(features_dir),
+         "--cache-dir", str(cache_dir),
+         "--include-perch-features",
+         "--focal-cache-size", "10",
+         "--unsup-cache-size", "8"])
 
     print("smoke sidecar pipeline: OK", flush=True)
 

@@ -113,14 +113,16 @@ Reuses the exp 106 parquet cache at `~/scratch/birdclef-2026/features/exp106/`:
 | Focal | `focal/shard-*.parquet` (all 16 shards) | 265K | weak BCE |
 
 **Training now expects the persistent cache on scratch, not repeated cold
-parquet scans per job.** The recommended cache warmup is a 3-stage SLURM
-chain:
+parquet scans per job.** Cache build logic lives in the packaged CLI
+(`birdclef-107 cache ...`), and the recommended orchestration is the
+single coordinator job `sbatch/cache_pipeline.sbatch`.
 
-1. `sbatch/cache_bootstrap.sbatch`
-2. `sbatch/cache_shards.sbatch` (array, bounded fanout)
-3. `sbatch/cache_finalize.sbatch`
+That coordinator:
 
-Wrapper: `bash scripts/submit_cache_build.sh`
+1. runs `birdclef-107 cache bootstrap`
+2. runs `birdclef-107 cache shard` over all work units with bounded same-node fanout
+3. runs `birdclef-107 cache finalize`
+4. runs `birdclef-107 cache verify` (optional, enabled by default)
 
 Core cache stays small by default (embeddings + labels + metadata only).
 The optional Perch sidecar is now **compact**, not raw-14795-d:
@@ -180,10 +182,10 @@ silently fails and torch falls back to CPU without error.
 
 ```bash
 # 1) Warm the persistent cache (recommended before training)
-bash scripts/submit_cache_build.sh
+sbatch sbatch/cache_pipeline.sbatch
 
 # With compact Perch sidecars
-INCLUDE_PERCH_FEATURES=1 bash scripts/submit_cache_build.sh
+INCLUDE_PERCH_FEATURES=1 sbatch sbatch/cache_pipeline.sbatch
 
 # 2) Smoke test (S22 decision fold, default)
 sbatch sbatch/train_loso.sbatch
@@ -215,31 +217,26 @@ fresh by `sbatch/_setup-venv.sh` on first use.
 │   ├── star-schema-dimensional-analysis.md
 │   └── families.csv                  # species → family (iNat API)
 ├── src/birdclef_107/
+│   ├── cli.py                        # packaged `birdclef-107` CLI (`cache bootstrap/shard/finalize/verify/plan`)
 │   ├── model.py                      # PerchProjection + species/site heads + cross-attn + compact Perch adapter
 │   ├── losses.py                     # 4-component compute_loss (lab + site + xattn + fam)
 │   ├── family_utils.py               # build_family_index
 │   ├── data.py                       # 3-stream loaders + LOSO splits + compact Perch feature fields
 │   ├── eval.py                       # pooled AUROC + subsets
 │   ├── cache.py                      # persistent sharded cache loader/materializer
-│   ├── cache_pipeline.py             # staged SLURM cache build helpers
+│   ├── cache_pipeline.py             # shared cache build/verify semantics for the packaged CLI
 │   ├── perch_features.py             # dense-234 + sparse-top64 Perch sidecar projection
 │   └── assets/families.csv           # bundled package asset
 ├── scripts/
 │   ├── train.py                      # Training loop (outer=focal)
 │   ├── sweep_lambda_fam.py           # 5-point ablation driver
-│   ├── build_cache_bootstrap.py      # stage 1: metadata + work plan
-│   ├── build_cache_shard.py          # stage 2: one labeled/shard work unit
-│   ├── build_cache_finalize.py       # stage 3: manifest + optional idx files
-│   ├── submit_cache_build.sh         # submits bootstrap -> array -> finalize chain
 │   ├── make_synthetic_cache_fixture.py
 │   ├── smoke_cache_sidecar.py
 │   ├── analyze_coverage.py
 │   └── fetch_families.py
 ├── sbatch/
 │   ├── _setup-venv.sh
-│   ├── cache_bootstrap.sbatch
-│   ├── cache_shards.sbatch
-│   ├── cache_finalize.sbatch
+│   ├── cache_pipeline.sbatch         # coordinator: bootstrap -> parallel shard workers -> finalize -> verify
 │   ├── test.sbatch                   # All tests (model/data/gradient/cross-attn)
 │   ├── test_cache_sidecar.sbatch     # tiny synthetic end-to-end cache/sidecar smoke
 │   ├── train_loso.sbatch             # single-job LOSO
@@ -297,3 +294,7 @@ fresh by `sbatch/_setup-venv.sh` on first use.
 - **Back-compat flag name** — `--include-perch-logits` still works as an
   alias, but it now means "include compact Perch sidecar features"
   (`perch_mapped`, `perch_topk_idx`, `perch_topk_val`), not raw logits.
+- **Stage-2 freshness now validates sidecar schema.** A sidecar shard is
+  not considered fresh unless it has the compact keys
+  `mapped_probs`, `topk_idx`, and `topk_val`. This prevents stale old-format
+  full-logit sidecars from being silently reused.

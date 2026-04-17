@@ -47,30 +47,34 @@ both.
 
 ## Using it
 
-### Recommended: 3-stage SLURM dependency chain
+### Recommended: packaged CLI + coordinated SLURM pipeline
 
 This is the recommended path for cold builds and for scaling to larger
-feature stores. It splits the cache warmup into explicit stages:
+feature stores. The build logic now lives in the package CLI under
+`birdclef-107 cache ...`, while a single coordinator sbatch job handles
+parallelization by running bootstrap/finalize/verify locally and
+submitting the shard array as the only parallel stage.
 
-1. `sbatch/cache_bootstrap.sbatch` — build `bootstrap_metadata.json`
-2. `sbatch/cache_shards.sbatch` — array over labeled + shard work units
-3. `sbatch/cache_finalize.sbatch` — write `base_manifest.json` and
-   optional subset-index files
-
-Use the submit wrapper to stitch the stages together with
-`--dependency=afterok` and a dynamic array size:
+Main entrypoint:
 
 ```bash
-# Default: 3-stage chain, shard array capped at 8 concurrent tasks
-bash scripts/submit_cache_build.sh
+# Default: coordinator job, shard array capped at 8 concurrent tasks
+sbatch sbatch/cache_pipeline.sbatch
 
-# Also build perch sidecars
-INCLUDE_PERCH_LOGITS=1 bash scripts/submit_cache_build.sh
+# Also build compact Perch sidecars
+INCLUDE_PERCH_FEATURES=1 sbatch sbatch/cache_pipeline.sbatch
 
-# Refresh the common dev subset indexes at the finalization stage
-FOCAL_CACHE_SIZE=32768 UNSUP_CACHE_SIZE=32768 CACHE_SUBSET_SEED=42 \
-  bash scripts/submit_cache_build.sh
+# Refresh the common dev subset indexes and run final verification
+INCLUDE_PERCH_FEATURES=1 FOCAL_CACHE_SIZE=32768 UNSUP_CACHE_SIZE=32768 \
+  CACHE_SUBSET_SEED=42 VERIFY_CACHE=1 sbatch sbatch/cache_pipeline.sbatch
 ```
+
+The coordinator internally runs:
+
+1. `birdclef-107 cache bootstrap`
+2. `birdclef-107 cache shard` over all work units with bounded same-node fanout
+3. `birdclef-107 cache finalize`
+4. `birdclef-107 cache verify` (optional, on by default in the coordinator)
 
 Relevant overrides:
 
@@ -78,8 +82,8 @@ Relevant overrides:
 |---|---|---|
 | `FEATURES_DIR` | `$HOME/scratch/birdclef-2026/features/exp106` | Source parquet root. |
 | `CACHE_ROOT` | `$HOME/scratch/birdclef-2026/cache/exp107` | Cache root containing `base-v1/` and `idx-v1/`. |
-| `ARRAY_MAX_CONCURRENT` | `8` | Max concurrent shard-array tasks. Must stay `<16`; this is the main scale knob. |
-| `INCLUDE_PERCH_LOGITS` | `0` | Set to `1` to build the optional compact `*_perch/*.npz` sidecars (mapped 234-d probs + sparse top-64 residual activations). |
+| `PARALLEL_WORKERS` | `4` | Max same-node shard workers. Must stay `<16` and `<= cpus-per-task`; this is the main scale knob. |
+| `INCLUDE_PERCH_FEATURES` | `0` | Set to `1` to build the optional compact `*_perch/*.npz` sidecars (mapped 234-d probs + sparse top-64 residual activations). `INCLUDE_PERCH_LOGITS` remains an alias. |
 | `CACHE_FORCE_REBUILD_BASE` | `0` | Set to `1` to rebuild metadata + shard outputs from parquet. |
 | `CACHE_FORCE_REBUILD` | `0` | Set to `1` to force the optional subset index files to rebuild in stage 3. |
 | `FOCAL_CACHE_SIZE` | `0` | If >0, build `idx-v1/focal-n{N}-seed{S}.npy` during stage 3. |
@@ -88,12 +92,29 @@ Relevant overrides:
 
 Why this scales better:
 
-- **No cross-task locking or polling.** SLURM handles ordering.
-- **Dynamic array size.** The submit wrapper counts shards at submit time.
-- **Bounded concurrency.** `ARRAY_MAX_CONCURRENT` keeps array fanout under control.
+- **Single packaged CLI.** Cache logic lives in `src/birdclef_107/cli.py`
+  and `cache_pipeline.py`, not in one-off script wrappers.
+- **One coordinator job.** `sbatch/cache_pipeline.sbatch` owns the orchestration.
+- **Dynamic work count.** The coordinator asks `birdclef-107 cache plan --count-only`.
+- **Bounded concurrency.** `PARALLEL_WORKERS` keeps same-node shard fanout under control.
 - **Still idempotent.** Stage 2 workers skip fresh outputs by comparing
-  output mtimes against source parquet mtimes.
+  output mtimes against source parquet mtimes and by rejecting stale
+  pre-compact sidecar files.
 
+
+### From `birdclef-107` directly
+
+The packaged CLI exposes the cache stages directly:
+
+```bash
+birdclef-107 cache plan --count-only
+birdclef-107 cache bootstrap --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_ROOT"
+birdclef-107 cache shard --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_ROOT" --task-id 0
+birdclef-107 cache finalize --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_ROOT"
+birdclef-107 cache verify --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_ROOT"
+```
+
+This is what `sbatch/cache_pipeline.sbatch` calls under the hood.
 
 ### From `scripts/benchmark_exp107_dev.sh`
 
