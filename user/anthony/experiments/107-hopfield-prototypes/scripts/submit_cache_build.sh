@@ -8,6 +8,7 @@ cd "$exp107_dir"
 
 FEATURES_DIR=${FEATURES_DIR:-$HOME/scratch/birdclef-2026/features/exp106}
 ARRAY_MAX_CONCURRENT=${ARRAY_MAX_CONCURRENT:-8}
+VERIFY_CACHE=${VERIFY_CACHE:-0}
 export FEATURES_DIR
 
 if [[ "$ARRAY_MAX_CONCURRENT" -lt 1 ]]; then
@@ -45,6 +46,14 @@ BOOTSTRAP_JOBID=$(sbatch --parsable --export=ALL sbatch/cache_bootstrap.sbatch)
 SHARDS_JOBID=$(sbatch --parsable --export=ALL --dependency=afterok:${BOOTSTRAP_JOBID} --array="$ARRAY_SPEC" sbatch/cache_shards.sbatch)
 FINALIZE_JOBID=$(sbatch --parsable --export=ALL --dependency=afterok:${SHARDS_JOBID} sbatch/cache_finalize.sbatch)
 
+VERIFY_JOBID=""
+if [[ "$VERIFY_CACHE" != "0" ]]; then
+  VERIFY_JOBID=$(sbatch --parsable --export=ALL --dependency=afterok:${FINALIZE_JOBID} sbatch/verify_cache.sbatch)
+fi
+
 echo "bootstrap: $BOOTSTRAP_JOBID"
 echo "shards:    $SHARDS_JOBID"
 echo "finalize:  $FINALIZE_JOBID"
+if [[ -n "$VERIFY_JOBID" ]]; then
+  echo "verify:    $VERIFY_JOBID"
+fi

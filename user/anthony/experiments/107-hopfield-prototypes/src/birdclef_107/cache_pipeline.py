@@ -215,6 +215,16 @@ def output_paths_for_unit(paths: dict[str, Path], unit: WorkUnit, include_perch:
     raise ValueError(f"unknown unit kind: {unit.kind}")
 
 
+def _compact_perch_sidecar_ok(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        with np.load(path, allow_pickle=False) as z:
+            return all(k in z.files for k in ("mapped_probs", "topk_idx", "topk_val"))
+    except Exception:
+        return False
+
+
 def unit_complete(
     *,
     features_dir: str | Path,
@@ -230,7 +240,11 @@ def unit_complete(
         return False
     if include_perch:
         perch = outs["perch"]
-        if not perch.exists() or perch.stat().st_mtime_ns < src_mtime:
+        if (
+            not perch.exists()
+            or perch.stat().st_mtime_ns < src_mtime
+            or not _compact_perch_sidecar_ok(perch)
+        ):
             return False
     return True
 
