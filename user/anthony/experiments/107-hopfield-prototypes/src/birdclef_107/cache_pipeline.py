@@ -1,15 +1,15 @@
 """Shared helpers for staged exp107 cache builds.
 
-This module contains the pure build logic used by both the packaged CLI
-and the SLURM wrappers:
+This module contains the pure build logic used by the packaged CLI and
+SLURM cache pipeline:
 
 1. bootstrap metadata
-2. shard workers
+2. shard-array workers
 3. manifest/index finalization
 4. final verification
 
 The stages are intentionally coordination-free: orchestration happens in
-CLI/sbatch/script wrappers, while this module defines the reusable build,
+CLI/sbatch wrappers, while this module defines the reusable build,
 freshness, and verification semantics.
 """
 
