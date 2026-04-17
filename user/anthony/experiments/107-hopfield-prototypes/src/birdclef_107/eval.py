@@ -21,7 +21,9 @@ def predict_fold(
     model: PrototypeRetrievalModel,
     embeddings: np.ndarray,
     site_indices: np.ndarray | None,
-    perch_logits: np.ndarray | None = None,
+    perch_mapped: np.ndarray | None = None,
+    perch_topk_idx: np.ndarray | None = None,
+    perch_topk_val: np.ndarray | None = None,
     site_to_idx: dict[str, int] | None = None,
     batch_size: int = 512,
     device: str = "cpu",
@@ -48,10 +50,20 @@ def predict_fold(
         si = None
         if site_indices is not None:
             si = torch.from_numpy(site_indices[start:end]).long().to(device)
-        perch = None
-        if perch_logits is not None:
-            perch = torch.from_numpy(perch_logits[start:end]).float().to(device)
-        out = model(emb, site_idx=si, perch_logits=perch)
+        mapped = topk_idx = topk_val = None
+        if perch_mapped is not None:
+            mapped = torch.from_numpy(perch_mapped[start:end]).float().to(device)
+        if perch_topk_idx is not None:
+            topk_idx = torch.from_numpy(perch_topk_idx[start:end]).long().to(device)
+        if perch_topk_val is not None:
+            topk_val = torch.from_numpy(perch_topk_val[start:end]).float().to(device)
+        out = model(
+            emb,
+            site_idx=si,
+            perch_mapped=mapped,
+            perch_topk_idx=topk_idx,
+            perch_topk_val=topk_val,
+        )
         preds.append(out.cpu().numpy())
     return np.concatenate(preds, axis=0)
 

@@ -16,8 +16,8 @@ on Lustre scratch so that:
 
 - **Cold build** happens once per machine-state (not per SLURM job).
 - **Size/seed sweeps** only regenerate kilobyte-scale index files.
-- **`perch_logits` remains reachable** as an opt-in sidecar for future
-  iterations that need it.
+- **Compact Perch sidecars remain reachable** as an opt-in cache path for
+  iterations that want teacher features without storing all 14,795 logits.
 
 ## Layout
 
@@ -37,14 +37,84 @@ $HOME/scratch/birdclef-2026/cache/exp107/
 ```
 
 - **Default size on disk**: ~2.4 GB.
-- **With perch sidecars**: ~25 GB. Only build these when an iteration
-  actually consumes `perch_logits` (e.g. Perch pseudo-labeling).
+- **With compact Perch sidecars**: modestly larger than core-only. Each
+  row stores dense mapped 234-d probabilities plus a sparse top-64
+  residual teacher channel instead of all 14,795 logits.
 
 Row order inside `*_perch/shard-NN.npz` is identical to
 `*/shard-NN.npz`, so the same global indices in `idx-v1/` address
 both.
 
 ## Using it
+
+### Recommended: packaged CLI + coordinated SLURM pipeline
+
+This is the recommended path for cold builds and for scaling to larger
+feature stores. The build logic now lives in the package CLI under
+`birdclef-107 cache ...`, while a single coordinator sbatch job handles
+parallelization by running bootstrap/finalize/verify locally and
+submitting the shard array as the only parallel stage.
+
+Main entrypoint:
+
+```bash
+# Default: coordinator job, shard array capped at 8 concurrent tasks
+sbatch sbatch/cache_pipeline.sbatch
+
+# Also build compact Perch sidecars
+INCLUDE_PERCH_FEATURES=1 sbatch sbatch/cache_pipeline.sbatch
+
+# Refresh the common dev subset indexes and run final verification
+INCLUDE_PERCH_FEATURES=1 FOCAL_CACHE_SIZE=32768 UNSUP_CACHE_SIZE=32768 \
+  CACHE_SUBSET_SEED=42 VERIFY_CACHE=1 sbatch sbatch/cache_pipeline.sbatch
+```
+
+The coordinator internally runs:
+
+1. `birdclef-107 cache bootstrap`
+2. `birdclef-107 cache shard` over all work units with bounded same-node fanout
+3. `birdclef-107 cache finalize`
+4. `birdclef-107 cache verify` (optional, on by default in the coordinator)
+
+Relevant overrides:
+
+| Env var | Default | Effect |
+|---|---|---|
+| `FEATURES_DIR` | `$HOME/scratch/birdclef-2026/features/exp106` | Source parquet root. |
+| `CACHE_ROOT` | `$HOME/scratch/birdclef-2026/cache/exp107` | Cache root containing `base-v1/` and `idx-v1/`. |
+| `PARALLEL_WORKERS` | `4` | Max same-node shard workers. Must stay `<16` and `<= cpus-per-task`; this is the main scale knob. |
+| `INCLUDE_PERCH_FEATURES` | `0` | Set to `1` to build the optional compact `*_perch/*.npz` sidecars (mapped 234-d probs + sparse top-64 residual activations). `INCLUDE_PERCH_LOGITS` remains an alias. |
+| `CACHE_FORCE_REBUILD_BASE` | `0` | Set to `1` to rebuild metadata + shard outputs from parquet. |
+| `CACHE_FORCE_REBUILD` | `0` | Set to `1` to force the optional subset index files to rebuild in stage 3. |
+| `FOCAL_CACHE_SIZE` | `0` | If >0, build `idx-v1/focal-n{N}-seed{S}.npy` during stage 3. |
+| `UNSUP_CACHE_SIZE` | `0` | If >0, build `idx-v1/unsup-n{N}-seed{S}.npy` during stage 3. |
+| `CACHE_SUBSET_SEED` | `42` | Seed for the optional subset index files. |
+
+Why this scales better:
+
+- **Single packaged CLI.** Cache logic lives in `src/birdclef_107/cli.py`
+  and `cache_pipeline.py`, not in one-off script wrappers.
+- **One coordinator job.** `sbatch/cache_pipeline.sbatch` owns the orchestration.
+- **Dynamic work count.** The coordinator asks `birdclef-107 cache plan --count-only`.
+- **Bounded concurrency.** `PARALLEL_WORKERS` keeps same-node shard fanout under control.
+- **Still idempotent.** Stage 2 workers skip fresh outputs by comparing
+  output mtimes against source parquet mtimes and by rejecting stale
+  pre-compact sidecar files.
+
+
+### From `birdclef-107` directly
+
+The packaged CLI exposes the cache stages directly:
+
+```bash
+birdclef-107 cache plan --count-only
+birdclef-107 cache bootstrap --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_ROOT"
+birdclef-107 cache shard --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_ROOT" --task-id 0
+birdclef-107 cache finalize --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_ROOT"
+birdclef-107 cache verify --features-dir "$FEATURES_DIR" --cache-dir "$CACHE_ROOT"
+```
+
+This is what `sbatch/cache_pipeline.sbatch` calls under the hood.
 
 ### From `scripts/benchmark_exp107_dev.sh`
 
@@ -60,7 +130,7 @@ Relevant overrides:
 | `FOCAL_CACHE_SIZE` | `32768` | Rows in the focal subsample (indexed into the full base shards). `0` = full corpus. |
 | `UNSUP_CACHE_SIZE` | `32768` | Rows in the unlabeled subsample. `0` = full corpus. |
 | `SEED` | `42` | Seed for `_weighted_focal_subset` / `_stratified_unsup_subset`. |
-| `INCLUDE_PERCH_LOGITS` | unset | Set to `1` to hydrate the optional `perch_logits` field on all three dataclasses. Triggers sidecar build on first use. |
+| `INCLUDE_PERCH_LOGITS` | unset | Set to `1` to hydrate the optional compact Perch sidecar fields on all three dataclasses. Triggers sidecar build on first use. |
 
 Example: sweep focal subset size while keeping everything else:
 
@@ -91,7 +161,7 @@ Relevant cache flags:
 | `--focal-cache-size N` | Rows in focal subset; `0` means "use every focal row". |
 | `--unsup-cache-size N` | Same for unlabeled soundscapes. |
 | `--seed N` | Seed for subsample selection (separate from training seed). |
-| `--include-perch-logits` | Populate `FocalData.perch_logits`, etc. Builds sidecars on demand. |
+| `--include-perch-logits` | Populate `*.perch_mapped`, `*.perch_topk_idx`, and `*.perch_topk_val`. Builds sidecars on demand. |
 | `--cache-force-rebuild` | Re-derive the `idx-v1/` files even if they exist. Leaves `base-v1/` alone. |
 | `--cache-force-rebuild-base` | Re-derive the full `base-v1/` from parquet. Use if you suspect cache corruption or if a source parquet changed without its mtime advancing. |
 
@@ -112,9 +182,12 @@ sc, focal, unsup = load_training_data_cached(
 ```
 
 Returns the same three dataclasses the rest of exp107 already uses.
-With `include_perch_logits=True`, each dataclass's `perch_logits`
-field is populated with a `(n_subset, 14795) float32` array in the
-same row order as `embeddings`.
+With `include_perch_logits=True`, each dataclass gets three additional
+row-aligned fields:
+
+- `perch_mapped`: `(n_subset, 234)` float32 mapped BirdCLEF probabilities
+- `perch_topk_idx`: `(n_subset, 64)` int32 raw teacher class ids
+- `perch_topk_val`: `(n_subset, 64)` float32 residual teacher probabilities
 
 ## Invalidation
 
@@ -126,9 +199,9 @@ its manifest entry against the source parquet's `stat().st_mtime_ns`.
 - **A size or seed changed** → `base-v1/` is untouched; only the
   affected `idx-v1/*.npy` file is recomputed (tens of milliseconds on
   the labels/site arrays alone).
-- **`perch_logits` requested for the first time** → core shards are
-  left alone; `focal_perch/`, `unsup_perch/`, `labeled_perch.npz` are
-  built on demand from parquet.
+- **Perch sidecar features requested for the first time** → core shards
+  are left alone; `focal_perch/`, `unsup_perch/`, `labeled_perch.npz`
+  are built on demand from parquet.
 - **You think something went wrong** → delete `base-v1/` manually, or
   run with `--cache-force-rebuild-base`. The next call pays the full
   ~10–15 min cold cost.
@@ -172,7 +245,7 @@ rm -rf $HOME/scratch/birdclef-2026/cache/exp107
 | State | Expected load time |
 |---|---|
 | Cold build, no perch | ~10–15 min (parquet scans dominate) |
-| Cold build, with perch | ~20–30 min (perch_logits adds ~10 GB of parquet I/O) |
+| Cold build, with perch sidecars | ~20–30 min (still reads the raw `perch_logits` parquet column, then compresses to mapped+sparse sidecars) |
 | Warm reuse, same `(N, seed)` | <10 s |
 | Warm reuse, different `focal_size` only | <10 s (index rebuild is <1 s; materialization dominates) |
 | Warm reuse, different seed only | <10 s |

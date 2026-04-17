@@ -130,17 +130,23 @@ def test_roundtrip_matches_direct_load(features_dir: Path, cache_root: Path):
     assert len(labeled.filenames) == 15
     assert labeled.species_list == SPECIES
     assert set(labeled.site_to_idx.keys()) >= set(SITES)
-    assert labeled.perch_logits is None  # default off
+    assert labeled.perch_mapped is None  # default off
+    assert labeled.perch_topk_idx is None
+    assert labeled.perch_topk_val is None
 
     assert focal.embeddings.shape == (36, EMB_DIM)
     assert focal.labels.shape == (36, len(SPECIES))
     assert focal.species_list == SPECIES
-    assert focal.perch_logits is None
+    assert focal.perch_mapped is None
+    assert focal.perch_topk_idx is None
+    assert focal.perch_topk_val is None
 
     assert unsup.embeddings.shape == (30, EMB_DIM)
     assert unsup.site_indices.shape == (30,)
     assert unsup.recording_indices.shape == (30,)
-    assert unsup.perch_logits is None
+    assert unsup.perch_mapped is None
+    assert unsup.perch_topk_idx is None
+    assert unsup.perch_topk_val is None
 
     # Spot-check: labeled embeddings match direct read.
     df = pl.read_parquet(features_dir / "soundscape_labeled.parquet")
@@ -280,9 +286,15 @@ def test_perch_sidecars_opt_in(features_dir: Path, cache_root: Path):
         focal_size=0,
         unsup_size=0,
     )
-    assert labeled.perch_logits is None
-    assert focal.perch_logits is None
-    assert unsup.perch_logits is None
+    assert labeled.perch_mapped is None
+    assert labeled.perch_topk_idx is None
+    assert labeled.perch_topk_val is None
+    assert focal.perch_mapped is None
+    assert focal.perch_topk_idx is None
+    assert focal.perch_topk_val is None
+    assert unsup.perch_mapped is None
+    assert unsup.perch_topk_idx is None
+    assert unsup.perch_topk_val is None
 
     base = cache_root / cache_mod.BASE_DIRNAME
     assert not (base / "labeled_perch.npz").exists()
@@ -290,7 +302,7 @@ def test_perch_sidecars_opt_in(features_dir: Path, cache_root: Path):
         (base / "focal_perch").glob("*.npz")
     )
 
-    # Second call with include_perch_logits: sidecars built, fields populated.
+    # Second call with include_perch_logits: compact sidecars built, fields populated.
     labeled2, focal2, unsup2 = cache_mod.load_training_data_cached(
         features_dir=str(features_dir),
         cache_root=cache_root,
@@ -298,12 +310,24 @@ def test_perch_sidecars_opt_in(features_dir: Path, cache_root: Path):
         unsup_size=0,
         include_perch_logits=True,
     )
-    assert labeled2.perch_logits is not None
-    assert labeled2.perch_logits.shape == (15, PERCH_DIM)
-    assert focal2.perch_logits is not None
-    assert focal2.perch_logits.shape == (36, PERCH_DIM)
-    assert unsup2.perch_logits is not None
-    assert unsup2.perch_logits.shape == (30, PERCH_DIM)
+    assert labeled2.perch_mapped is not None
+    assert labeled2.perch_mapped.shape == (15, len(SPECIES))
+    assert labeled2.perch_topk_idx is not None
+    assert labeled2.perch_topk_idx.shape == (15, 64)
+    assert labeled2.perch_topk_val is not None
+    assert labeled2.perch_topk_val.shape == (15, 64)
+    assert focal2.perch_mapped is not None
+    assert focal2.perch_mapped.shape == (36, len(SPECIES))
+    assert focal2.perch_topk_idx is not None
+    assert focal2.perch_topk_idx.shape == (36, 64)
+    assert focal2.perch_topk_val is not None
+    assert focal2.perch_topk_val.shape == (36, 64)
+    assert unsup2.perch_mapped is not None
+    assert unsup2.perch_mapped.shape == (30, len(SPECIES))
+    assert unsup2.perch_topk_idx is not None
+    assert unsup2.perch_topk_idx.shape == (30, 64)
+    assert unsup2.perch_topk_val is not None
+    assert unsup2.perch_topk_val.shape == (30, 64)
 
     assert (base / "labeled_perch.npz").exists()
     focal_perch_shards = sorted((base / "focal_perch").glob("shard-*.npz"))

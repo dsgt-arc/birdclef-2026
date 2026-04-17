@@ -46,6 +46,9 @@ def get_species_list(artifacts_dir: str | None = None) -> list[str]:
     return build_species_list(d)
 
 
+PERCH_FEATURE_KEYS = ("perch_mapped", "perch_topk_idx", "perch_topk_val")
+
+
 @dataclass
 class LabeledSoundscapeData:
     """All 739 labeled soundscape windows, ready for training."""
@@ -56,7 +59,9 @@ class LabeledSoundscapeData:
     filenames: list[str]  # (N,)
     species_list: list[str]  # (234,)
     site_to_idx: dict[str, int]  # site string → contiguous int
-    perch_logits: np.ndarray | None = None  # (N, 14795) float32, opt-in
+    perch_mapped: np.ndarray | None = None  # (N, 234) float32, opt-in
+    perch_topk_idx: np.ndarray | None = None  # (N, K) int32, opt-in
+    perch_topk_val: np.ndarray | None = None  # (N, K) float32, opt-in
 
 
 def load_labeled_soundscape(
@@ -94,7 +99,9 @@ class FocalData:
     embeddings: np.ndarray  # (N, 1536) float32
     labels: np.ndarray  # (N, 234) int8
     species_list: list[str]
-    perch_logits: np.ndarray | None = None  # (N, 14795) float32, opt-in
+    perch_mapped: np.ndarray | None = None  # (N, 234) float32, opt-in
+    perch_topk_idx: np.ndarray | None = None  # (N, K) int32, opt-in
+    perch_topk_val: np.ndarray | None = None  # (N, K) float32, opt-in
 
 
 def load_all_focal(features_dir: str = FEATURES_DIR) -> FocalData:
@@ -131,7 +138,9 @@ class UnlabeledSoundscapeData:
     recording_indices: np.ndarray  # (N,) int64 — contiguous recording index
     site_to_idx: dict[str, int]
     recording_to_idx: dict[str, int]
-    perch_logits: np.ndarray | None = None  # (N, 14795) float32, opt-in
+    perch_mapped: np.ndarray | None = None  # (N, 234) float32, opt-in
+    perch_topk_idx: np.ndarray | None = None  # (N, K) int32, opt-in
+    perch_topk_val: np.ndarray | None = None  # (N, K) float32, opt-in
 
 
 def load_all_unlabeled(
@@ -288,12 +297,16 @@ class EmbeddingDataset(Dataset):
         embeddings: np.ndarray,
         labels: np.ndarray,
         site_indices: np.ndarray | None = None,
-        perch_logits: np.ndarray | None = None,
+        perch_mapped: np.ndarray | None = None,
+        perch_topk_idx: np.ndarray | None = None,
+        perch_topk_val: np.ndarray | None = None,
     ) -> None:
         self.embeddings = embeddings
         self.labels = labels
         self.site_indices = site_indices
-        self.perch_logits = perch_logits
+        self.perch_mapped = perch_mapped
+        self.perch_topk_idx = perch_topk_idx
+        self.perch_topk_val = perch_topk_val
 
     def __len__(self) -> int:
         return len(self.embeddings)
@@ -305,8 +318,12 @@ class EmbeddingDataset(Dataset):
         }
         if self.site_indices is not None:
             item["site_idx"] = torch.tensor(self.site_indices[idx], dtype=torch.long)
-        if self.perch_logits is not None:
-            item["perch_logits"] = torch.from_numpy(self.perch_logits[idx].copy()).float()
+        if self.perch_mapped is not None:
+            item["perch_mapped"] = torch.from_numpy(self.perch_mapped[idx].copy()).float()
+        if self.perch_topk_idx is not None:
+            item["perch_topk_idx"] = torch.from_numpy(self.perch_topk_idx[idx].copy()).long()
+        if self.perch_topk_val is not None:
+            item["perch_topk_val"] = torch.from_numpy(self.perch_topk_val[idx].copy()).float()
         return item
 
 
@@ -464,15 +481,17 @@ def collate_triple_batch(
         "site_idx": strong_batch["site_idx"],
         "labels": strong_batch["labels"],
     }
-    if "perch_logits" in strong_batch:
-        strong["perch_logits"] = strong_batch["perch_logits"]
+    for key in PERCH_FEATURE_KEYS:
+        if key in strong_batch:
+            strong[key] = strong_batch[key]
 
     weak_focal = {
         "emb": focal_batch["emb"],
         "labels": focal_batch["labels"],
     }
-    if "perch_logits" in focal_batch:
-        weak_focal["perch_logits"] = focal_batch["perch_logits"]
+    for key in PERCH_FEATURE_KEYS:
+        if key in focal_batch:
+            weak_focal[key] = focal_batch[key]
 
     return {
         "strong": strong,

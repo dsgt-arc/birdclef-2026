@@ -112,9 +112,27 @@ Reuses the exp 106 parquet cache at `~/scratch/birdclef-2026/features/exp106/`:
 | Unlabeled SC | `soundscape_unlabeled/by_site/*.parquet` | 127K | site Hopfield energy |
 | Focal | `focal/shard-*.parquet` (all 16 shards) | 265K | weak BCE |
 
-Data loading takes ~9 min per job (focal dominates). **Do not use array
-jobs** — they reload the same data N times. Prefer a single job with
-`--fold all` (sequential) for LOSO, and the sweep driver for lambda_fam.
+**Training now expects the persistent cache on scratch, not repeated cold
+parquet scans per job.** Cache build logic lives in the packaged CLI
+(`birdclef-107 cache ...`), and the recommended orchestration is the
+single coordinator job `sbatch/cache_pipeline.sbatch`.
+
+That coordinator:
+
+1. runs `birdclef-107 cache bootstrap`
+2. runs `birdclef-107 cache shard` over all work units with bounded same-node fanout
+3. runs `birdclef-107 cache finalize`
+4. runs `birdclef-107 cache verify` (optional, enabled by default)
+
+Core cache stays small by default (embeddings + labels + metadata only).
+The optional Perch sidecar is now **compact**, not raw-14795-d:
+
+- `perch_mapped`: dense `(N, 234)` BirdCLEF-aligned probabilities
+- `perch_topk_idx`: sparse `(N, 64)` raw teacher class ids
+- `perch_topk_val`: sparse `(N, 64)` residual teacher probabilities
+
+This replaces the old full-logit sidecar. Warm reuse is fast; cold build
+still pays the parquet scan once.
 
 ## Key design decisions
 
@@ -163,17 +181,26 @@ silently fails and torch falls back to CPU without error.
 ## Running
 
 ```bash
-# Smoke test (S22 decision fold, default)
+# 1) Warm the persistent cache (recommended before training)
+sbatch sbatch/cache_pipeline.sbatch
+
+# With compact Perch sidecars
+INCLUDE_PERCH_FEATURES=1 sbatch sbatch/cache_pipeline.sbatch
+
+# 2) Smoke test (S22 decision fold, default)
 sbatch sbatch/train_loso.sbatch
 
-# Full 9-fold LOSO (single sequential job, loads data once)
+# Full 9-fold LOSO (single sequential job, loads cached data once)
 FOLD=all sbatch sbatch/train_loso.sbatch
 
-# Pre-registered lambda_fam ablation on S22 (5 values, data loaded once)
+# Pre-registered lambda_fam ablation on S22
 sbatch sbatch/sweep_lambda_fam.sbatch
 
-# Tests
+# Core tests
 sbatch sbatch/test.sbatch
+
+# Cache + sidecar smoke test on tiny synthetic data
+sbatch sbatch/test_cache_sidecar.sbatch
 ```
 
 Venv: `~/scratch/birdclef-2026/.venv-107` (dedicated, CUDA torch). Created
@@ -190,23 +217,31 @@ fresh by `sbatch/_setup-venv.sh` on first use.
 │   ├── star-schema-dimensional-analysis.md
 │   └── families.csv                  # species → family (iNat API)
 ├── src/birdclef_107/
-│   ├── model.py                      # 5 nn.Modules: PerchProjection, 2 heads, cross-attn, top-level
-│   ├── losses.py                     # 4-component compute_loss (lab + site + xattn + fam; v4 adds label_smoothing + include_strong kwargs)
+│   ├── cli.py                        # packaged `birdclef-107` CLI (`cache bootstrap/shard/finalize/verify/plan`)
+│   ├── model.py                      # PerchProjection + species/site heads + cross-attn + compact Perch adapter
+│   ├── losses.py                     # 4-component compute_loss (lab + site + xattn + fam)
 │   ├── family_utils.py               # build_family_index
-│   ├── data.py                       # 3-stream loaders + LOSO splits
+│   ├── data.py                       # 3-stream loaders + LOSO splits + compact Perch feature fields
 │   ├── eval.py                       # pooled AUROC + subsets
+│   ├── cache.py                      # persistent sharded cache loader/materializer
+│   ├── cache_pipeline.py             # shared cache build/verify semantics for the packaged CLI
+│   ├── perch_features.py             # dense-234 + sparse-top64 Perch sidecar projection
 │   └── assets/families.csv           # bundled package asset
 ├── scripts/
 │   ├── train.py                      # Training loop (outer=focal)
 │   ├── sweep_lambda_fam.py           # 5-point ablation driver
+│   ├── make_synthetic_cache_fixture.py
+│   ├── smoke_cache_sidecar.py
 │   ├── analyze_coverage.py
 │   └── fetch_families.py
 ├── sbatch/
 │   ├── _setup-venv.sh
+│   ├── cache_pipeline.sbatch         # coordinator: bootstrap -> parallel shard workers -> finalize -> verify
 │   ├── test.sbatch                   # All tests (model/data/gradient/cross-attn)
+│   ├── test_cache_sidecar.sbatch     # tiny synthetic end-to-end cache/sidecar smoke
 │   ├── train_loso.sbatch             # single-job LOSO
 │   └── sweep_lambda_fam.sbatch       # single-job sweep
-├── tests/                            # 7 files covering model + data + gradient invariants
+├── tests/                            # model/data/cache tests + sidecar projection tests
 └── logs/                             # SLURM output
 ```
 
@@ -232,11 +267,16 @@ fresh by `sbatch/_setup-venv.sh` on first use.
   `weight_decay=1e-2`, `label_smoothing=0.01`, `strong_stride=4`. Fixes
   v3's labeled overfit (peak at ep 2 → v4 peak at step 600 with a
   +0.054 AUROC gain on S22).
+- **Perch side branch is now compact.** The old full 14,795-d logit
+  sidecar is gone. The current optional sidecar stores dense mapped
+  BirdCLEF probabilities plus a sparse top-64 residual teacher channel,
+  and `model.py` consumes those via a zero-init mapped+sparse adapter.
 
 ## Known issues / gotchas
 
-- **Data loading takes ~9 min per job.** Always prefer single jobs that
-  load once. Avoid array jobs.
+- **Cold cache build still pays the parquet scan.** Warm the cache once,
+  then reuse it. For cache build orchestration, use the staged SLURM
+  dependency chain rather than ad-hoc array workers with locks.
 - **Default model has `n_sites=23`.** Matches the 23-site union, not the
   21 that appear in `by_site/` parquets.
 - **v4 `without_focal` regression on S22.** 28 species dropped 0.127
@@ -251,3 +291,10 @@ fresh by `sbatch/_setup-venv.sh` on first use.
   early or regularization is too aggressive. Not distinguished.
 - **numpy string types** — `np.str_` from array indexing isn't the same
   as `str`; cast with `str(s)` before dict lookups in `site_to_idx`.
+- **Back-compat flag name** — `--include-perch-logits` still works as an
+  alias, but it now means "include compact Perch sidecar features"
+  (`perch_mapped`, `perch_topk_idx`, `perch_topk_val`), not raw logits.
+- **Stage-2 freshness now validates sidecar schema.** A sidecar shard is
+  not considered fresh unless it has the compact keys
+  `mapped_probs`, `topk_idx`, and `topk_val`. This prevents stale old-format
+  full-logit sidecars from being silently reused.

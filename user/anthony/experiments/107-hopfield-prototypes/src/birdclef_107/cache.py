@@ -9,11 +9,11 @@ Layout (under ``cache_root``)::
     │                              # recording_to_idx, per-shard fingerprints,
     │                              # labeled_has_perch, built_at
     ├── labeled.npz                # embeddings, labels, sites, filenames
-    ├── labeled_perch.npz          # OPTIONAL perch_logits sidecar
+    ├── labeled_perch.npz          # OPTIONAL mapped+dense Perch sidecar
     ├── focal/shard-NN.npz         # embeddings, labels (per source shard)
-    ├── focal_perch/shard-NN.npz   # OPTIONAL perch_logits sidecar
+    ├── focal_perch/shard-NN.npz   # OPTIONAL mapped+dense Perch sidecar
     ├── unsup/shard-NN.npz         # embeddings, site_indices, recording_indices
-    └── unsup_perch/shard-NN.npz   # OPTIONAL perch_logits sidecar
+    └── unsup_perch/shard-NN.npz   # OPTIONAL mapped+dense Perch sidecar
     idx-v1/
     ├── focal-n{N}-seed{S}.npy
     └── unsup-n{N}-seed{S}.npy
@@ -54,8 +54,9 @@ from birdclef_107.data import (
     stratified_unsup_subset,
     weighted_focal_subset,
 )
+from birdclef_107.perch_features import project_perch_sidecar
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 BASE_DIRNAME = "base-v1"
 IDX_DIRNAME = "idx-v1"
 
@@ -227,8 +228,8 @@ def _build_labeled(
         )
 
     if perch_stale:
-        perch = logits_to_numpy(df)
-        _atomic_write_npz(paths["labeled_perch"], perch_logits=perch)
+        perch = project_perch_sidecar(logits_to_numpy(df), species_list)
+        _atomic_write_npz(paths["labeled_perch"], **perch)
 
     manifest["species_list"] = species_list
     manifest["site_to_idx"] = site_to_idx
@@ -296,8 +297,8 @@ def _build_focal_shards(
             else:
                 n_rows = int(prev["n_rows"])
             if perch_stale:
-                perch = logits_to_numpy(df)
-                _atomic_write_npz(dest_perch, perch_logits=perch)
+                perch = project_perch_sidecar(logits_to_numpy(df), species_list)
+                _atomic_write_npz(dest_perch, **perch)
         else:
             n_rows = int(prev["n_rows"])
 
@@ -396,8 +397,8 @@ def _build_unsup_shards(
                 n_rows = int(prev["n_rows"])
 
             if perch_stale:
-                perch = logits_to_numpy(df)
-                _atomic_write_npz(dest_perch, perch_logits=perch)
+                perch = project_perch_sidecar(logits_to_numpy(df), manifest["species_list"])
+                _atomic_write_npz(dest_perch, **perch)
         else:
             n_rows = int(prev["n_rows"])
 
@@ -539,10 +540,12 @@ def _load_labeled(
         labels = np.asarray(z["labels"])
         sites = np.asarray(z["sites"])
         filenames = [str(s) for s in z["filenames"].tolist()]
-    perch = None
+    perch_mapped = perch_topk_idx = perch_topk_val = None
     if include_perch:
         with np.load(paths["labeled_perch"], allow_pickle=False) as z:
-            perch = np.asarray(z["perch_logits"])
+            perch_mapped = np.asarray(z["mapped_probs"])
+            perch_topk_idx = np.asarray(z["topk_idx"])
+            perch_topk_val = np.asarray(z["topk_val"])
     return LabeledSoundscapeData(
         embeddings=embeddings,
         labels=labels,
@@ -550,7 +553,9 @@ def _load_labeled(
         filenames=filenames,
         species_list=list(manifest["species_list"]),
         site_to_idx={str(k): int(v) for k, v in manifest["site_to_idx"].items()},
-        perch_logits=perch,
+        perch_mapped=perch_mapped,
+        perch_topk_idx=perch_topk_idx,
+        perch_topk_val=perch_topk_val,
     )
 
 
@@ -565,17 +570,21 @@ def _materialize_focal(
     fields = _materialize_from_shards(
         paths["focal"], entries, idx, ["embeddings", "labels"]
     )
-    perch = None
+    perch_mapped = perch_topk_idx = perch_topk_val = None
     if include_perch:
         perch_fields = _materialize_from_shards(
-            paths["focal_perch"], entries, idx, ["perch_logits"]
+            paths["focal_perch"], entries, idx, ["mapped_probs", "topk_idx", "topk_val"]
         )
-        perch = perch_fields["perch_logits"]
+        perch_mapped = perch_fields["mapped_probs"]
+        perch_topk_idx = perch_fields["topk_idx"]
+        perch_topk_val = perch_fields["topk_val"]
     return FocalData(
         embeddings=fields["embeddings"],
         labels=fields["labels"],
         species_list=list(manifest["species_list"]),
-        perch_logits=perch,
+        perch_mapped=perch_mapped,
+        perch_topk_idx=perch_topk_idx,
+        perch_topk_val=perch_topk_val,
     )
 
 
@@ -593,12 +602,14 @@ def _materialize_unsup(
         idx,
         ["embeddings", "site_indices", "recording_indices"],
     )
-    perch = None
+    perch_mapped = perch_topk_idx = perch_topk_val = None
     if include_perch:
         perch_fields = _materialize_from_shards(
-            paths["unsup_perch"], entries, idx, ["perch_logits"]
+            paths["unsup_perch"], entries, idx, ["mapped_probs", "topk_idx", "topk_val"]
         )
-        perch = perch_fields["perch_logits"]
+        perch_mapped = perch_fields["mapped_probs"]
+        perch_topk_idx = perch_fields["topk_idx"]
+        perch_topk_val = perch_fields["topk_val"]
     return UnlabeledSoundscapeData(
         embeddings=fields["embeddings"],
         site_indices=fields["site_indices"],
@@ -607,7 +618,9 @@ def _materialize_unsup(
         recording_to_idx={
             str(k): int(v) for k, v in manifest["recording_to_idx"].items()
         },
-        perch_logits=perch,
+        perch_mapped=perch_mapped,
+        perch_topk_idx=perch_topk_idx,
+        perch_topk_val=perch_topk_val,
     )
 
 
@@ -639,8 +652,9 @@ def load_training_data_cached(
             uses all focal rows.
         unsup_size: Same for unlabeled soundscapes.
         seed: Seed for the subsample sampler (separate from training seed).
-        include_perch_logits: If True, hydrate the optional ``perch_logits``
-            field on each dataclass. Triggers sidecar build on first use.
+        include_perch_logits: If True, hydrate the optional compact Perch
+            sidecar fields (dense mapped 234-d probs + sparse top-k teacher
+            activations) on each dataclass. Triggers sidecar build on first use.
         force_rebuild_base: Ignore existing base shards and rebuild from
             parquet. Useful if a source parquet changed without its mtime
             advancing, or to recover from corruption.
@@ -754,12 +768,12 @@ def _sanity_check_dataclasses() -> None:
     expected = {
         LabeledSoundscapeData: {
             "embeddings", "labels", "sites", "filenames", "species_list",
-            "site_to_idx", "perch_logits",
+            "site_to_idx", "perch_mapped", "perch_topk_idx", "perch_topk_val",
         },
-        FocalData: {"embeddings", "labels", "species_list", "perch_logits"},
+        FocalData: {"embeddings", "labels", "species_list", "perch_mapped", "perch_topk_idx", "perch_topk_val"},
         UnlabeledSoundscapeData: {
             "embeddings", "site_indices", "recording_indices",
-            "site_to_idx", "recording_to_idx", "perch_logits",
+            "site_to_idx", "recording_to_idx", "perch_mapped", "perch_topk_idx", "perch_topk_val",
         },
     }
     for cls, fset in expected.items():
