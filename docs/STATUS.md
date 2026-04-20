@@ -1,12 +1,12 @@
 # Project Status
 
-> **Last Updated**: 2026-03-30
+> **Last Updated**: 2026-04-20
 
 ## Current State
 
 **Best LB**: **0.918** (Perch ProtoSSM v4, murilo/exp 018 — on `mg/018-perch-ensemble` branch)
 **Best SED LB**: **0.859** (EfficientNet-B0 SED v4b, murilo/exp 017 — on branch)
-**Anthony's best**: **0.794** (EfficientNet-B1 LoRA + attention pooling, exp 102 run C)
+**Anthony's best**: **0.804** (exp 106 ridge on frozen Perch v2, shipped via exp 108 scaffold 2026-04-20)
 **Target**: 0.925+ (match top public notebooks), then 0.939+ (competition #1)
 
 ### Score Progression
@@ -16,6 +16,8 @@
 | EfficientNet-B1 frozen probe | anthony/012 | 0.649 | Frozen backbone + linear head |
 | ProtoCLR clip-level | murilo/012 | 0.767 | Best clip-level model |
 | **EfficientNet-B1 LoRA + attention** | **anthony/102** | **0.794** | 2 epochs, attention pooling critical |
+| **Perch v2 ridge (frozen)** | **anthony/106 via 108** | **0.804** | Ridge on frozen Perch v2 embeddings; LOSO 0.749 conservative by +0.055 |
+| Hopfield null-anchor (softshrink, S18) | anthony/107 via 108 | 0.797 | LOSO 0.7801 → LB +0.017 overshoot; loses to ridge by −0.007 |
 | EfficientNet-B0 SED v1 + pp2 | murilo/016 | 0.827 | SED architecture + post-processing |
 | Perch raw (no probes) | murilo/018 | 0.825 | Foundation model baseline |
 | Perch + genus proxy | murilo/018 | 0.836 | 6 genus-mapped species |
@@ -113,7 +115,10 @@ Clip-level bottleneck (013-015)    SED + Mel (016-017)           Perch Probes (0
 | 016 | Contrastive SED / Prototypical | Complete | Step 0 done |
 | 100 | BirdCLEF 2026 EDA | Complete | 206 species, amphibian-dominated, 499x imbalance |
 | 101 | Soundscape Label Calibration | Complete | Ensemble 0.880 AUROC, spectral contrast 0.888 |
-| 102 | Multi-Backbone LoRA Ladder | **In Progress** | **0.794 Kaggle LB**, attention pooling, teacher filtering |
+| 102 | Multi-Backbone LoRA Ladder | Paused | 0.794 Kaggle LB, attention pooling, teacher filtering |
+| 106 | Perch v2 Bayesian Label Transfer | Complete | Ridge **0.804 Kaggle LB** (+0.010 over 102), LOSO 0.749 conservative |
+| 107 | Hopfield Prototype Retrieval | In Progress | Null-anchor S18 0.7801 pooled LOSO (v4 0.7074); LB pending |
+| 108 | Kaggle Submission Scaffold | **In Progress** | Shared `birdclef_kaggle` module; ridge shipped; hopfield null-anchor next |
 
 ## Concept Docs
 
@@ -147,7 +152,8 @@ Clip-level bottleneck (013-015)    SED + Mel (016-017)           Perch Probes (0
 2. **Perch-guided pseudo-labeling** — use ProtoSSM teacher on 10,600 unlabeled soundscapes for SED training
 3. **SED ablation debugging** — understand offline/LB divergence before more ablations
 4. **Perch + SED ensemble** — combine 0.918 Perch + 0.859 SED for potential gains
-5. **Anthony exp 102** — push LoRA+attention past 0.794 (teacher filtering, more epochs with early stop)
+5. **Anthony exp 107 null-anchor LB** — ship `softshrink_null_site_anchored_residual` S18 (0.7801 pooled LOSO) via exp 108; characterize ridge→hopfield LB delta
+6. **Anthony exp 102** — push LoRA+attention past 0.794 (teacher filtering, more epochs with early stop)
 
 ## Quick Links
 

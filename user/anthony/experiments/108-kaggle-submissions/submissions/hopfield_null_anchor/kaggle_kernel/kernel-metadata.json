@@ -1,0 +1,16 @@
+{
+  "id": "acmiyaguchi/birdclef-2026-hopfield-null-anchor",
+  "title": "BirdCLEF 2026 Hopfield Null Anchor",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "acmiyaguchi/birdclef-2026-deps",
+    "acmiyaguchi/birdclef-2026-weights-null-anchor"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}
