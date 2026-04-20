@@ -17,6 +17,7 @@
 | ProtoCLR clip-level | murilo/012 | 0.767 | Best clip-level model |
 | **EfficientNet-B1 LoRA + attention** | **anthony/102** | **0.794** | 2 epochs, attention pooling critical |
 | **Perch v2 ridge (frozen)** | **anthony/106 via 108** | **0.804** | Ridge on frozen Perch v2 embeddings; LOSO 0.749 conservative by +0.055 |
+| Hopfield null-anchor (softshrink, S18) | anthony/107 via 108 | 0.797 | LOSO 0.7801 → LB +0.017 overshoot; loses to ridge by −0.007 |
 | EfficientNet-B0 SED v1 + pp2 | murilo/016 | 0.827 | SED architecture + post-processing |
 | Perch raw (no probes) | murilo/018 | 0.825 | Foundation model baseline |
 | Perch + genus proxy | murilo/018 | 0.836 | 6 genus-mapped species |
