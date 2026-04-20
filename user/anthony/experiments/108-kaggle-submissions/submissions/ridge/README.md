@@ -59,4 +59,7 @@ Kernel metadata (`kaggle_kernel/kernel-metadata.json`):
 
 ### 4. Result
 
-LB score goes here once submitted.
+- **Public LB: 0.804** (2026-04-20, kernel v2, submission `exp 106 ridge LOSO 0.749`)
+- Beats previous best (exp 102 Run C, EfficientNet LoRA+attention) of 0.794 by +0.010
+- **LB overshot LOSO by +0.055** (0.804 vs 0.749). The local metric is a conservative estimator for this model family; use it as a floor, not a ceiling.
+- Kernel runtime on hidden test set: ~22 minutes end-to-end (push → scored).
