@@ -44,6 +44,10 @@ import torch.nn.functional as F
 from einops import einsum, rearrange
 
 
+def _safe_logit(p: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+    p = p.clamp(eps, 1.0 - eps)
+    return torch.log(p / (1.0 - p))
+
 
 class PerchProjection(nn.Module):
     """Shared 1536 → 512 backbone + query head.
@@ -341,6 +345,14 @@ class PrototypeRetrievalModel(nn.Module):
         proj_dropout: float = 0.0,
         attn_dropout: float = 0.0,
         use_perch_features: bool = False,
+        centered_site_residual: bool = False,
+        null_site_anchored_residual: bool = False,
+        softshrink_null_site_anchored_residual: bool = False,
+        shared_null_site_anchor: bool = False,
+        shared_null_site_shrink: bool = False,
+        shared_site_blend: bool = False,
+        perch_presence_bias: bool = False,
+        site_species_logit_bias_rank: int = 0,
     ) -> None:
         super().__init__()
         self.n_species = n_species
@@ -348,6 +360,14 @@ class PrototypeRetrievalModel(nn.Module):
         self.K_species = K_species
         self.K_site = K_site
         self.d_proj = d_proj
+        self.centered_site_residual = centered_site_residual
+        self.null_site_anchored_residual = null_site_anchored_residual
+        self.softshrink_null_site_anchored_residual = softshrink_null_site_anchored_residual
+        self.shared_null_site_anchor = shared_null_site_anchor
+        self.shared_null_site_shrink = shared_null_site_shrink
+        self.shared_site_blend = shared_site_blend
+        self.perch_presence_bias = perch_presence_bias
+        self.site_species_logit_bias_rank = site_species_logit_bias_rank
 
         self.projection = PerchProjection(
             d_input, d_hidden, d_proj, dropout=proj_dropout
@@ -367,8 +387,112 @@ class PrototypeRetrievalModel(nn.Module):
             if use_perch_features
             else None
         )
-        self.site_blend_logit = nn.Parameter(torch.full((n_sites,), -1.5163474893680884))
-        self.site_blend_delta_coef = nn.Parameter(torch.zeros(n_sites))
+        blend_shape = (1,) if shared_site_blend else (n_sites,)
+        self.site_blend_logit = nn.Parameter(torch.full(blend_shape, -1.5163474893680884))
+        self.site_blend_delta_coef = nn.Parameter(torch.zeros(blend_shape))
+        self.null_site_M = None
+        if null_site_anchored_residual or softshrink_null_site_anchored_residual:
+            null_k = 1 if shared_null_site_anchor else K_site
+            self.null_site_M = nn.Parameter(torch.randn(1, null_k, d_proj) * 1e-2)
+        self.site_residual_shrink_logit = None
+        if softshrink_null_site_anchored_residual:
+            shrink_shape = (1,) if shared_null_site_shrink else (n_sites,)
+            self.site_residual_shrink_logit = nn.Parameter(torch.full(shrink_shape, -3.0))
+        self.site_species_bias_species = None
+        self.site_species_bias_site = None
+        if site_species_logit_bias_rank > 0:
+            self.site_species_bias_species = nn.Parameter(
+                torch.randn(n_species, site_species_logit_bias_rank) * 1e-2
+            )
+            self.site_species_bias_site = nn.Parameter(
+                torch.randn(n_sites, site_species_logit_bias_rank) * 1e-2
+            )
+        self.presence_head = None
+        if perch_presence_bias:
+            self.presence_head = nn.Sequential(
+                nn.Linear(d_proj + 4, d_proj // 4),
+                nn.GELU(),
+                nn.Linear(d_proj // 4, 1),
+            )
+            nn.init.zeros_(self.presence_head[-1].weight)
+            nn.init.zeros_(self.presence_head[-1].bias)
+
+    def _encode_query(
+        self,
+        emb: torch.Tensor,
+        perch_mapped: torch.Tensor | None = None,
+        perch_topk_idx: torch.Tensor | None = None,
+        perch_topk_val: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        q_r = self.projection(emb)
+        if self.perch_adapter is not None and perch_mapped is not None:
+            q_r = q_r + self.perch_adapter(
+                perch_mapped,
+                perch_topk_idx=perch_topk_idx,
+                perch_topk_val=perch_topk_val,
+            )
+        return q_r
+
+    def _presence_probability_from_query(
+        self,
+        q_r: torch.Tensor,
+        perch_mapped: torch.Tensor | None,
+    ) -> torch.Tensor:
+        if not self.perch_presence_bias or perch_mapped is None or self.presence_head is None:
+            return torch.ones((q_r.shape[0], 1), device=q_r.device, dtype=q_r.dtype)
+        p = perch_mapped.clamp(1e-6, 1.0 - 1e-6)
+        topk_mean = p.topk(k=min(4, p.shape[1]), dim=1).values.mean(dim=1, keepdim=True)
+        entropy = -(p * torch.log(p) + (1.0 - p) * torch.log1p(-p)).mean(
+            dim=1, keepdim=True
+        )
+        stats = torch.cat(
+            [
+                p.max(dim=1, keepdim=True).values,
+                p.mean(dim=1, keepdim=True),
+                topk_mean,
+                entropy,
+            ],
+            dim=1,
+        )
+        return torch.sigmoid(self.presence_head(torch.cat([q_r, stats], dim=1)))
+
+    def presence_probability(
+        self,
+        emb: torch.Tensor,
+        perch_mapped: torch.Tensor | None = None,
+        perch_topk_idx: torch.Tensor | None = None,
+        perch_topk_val: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        q_r = self._encode_query(
+            emb,
+            perch_mapped=perch_mapped,
+            perch_topk_idx=perch_topk_idx,
+            perch_topk_val=perch_topk_val,
+        )
+        return self._presence_probability_from_query(q_r, perch_mapped)
+
+    def _site_blend_terms(
+        self, site_idx: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.shared_site_blend:
+            return self.site_blend_logit.view(1, 1), self.site_blend_delta_coef.view(1, 1)
+        return self.site_blend_logit[site_idx].unsqueeze(1), self.site_blend_delta_coef[site_idx].unsqueeze(1)
+
+    def _site_species_logit_bias(
+        self, site_idx: torch.Tensor | None, dtype: torch.dtype, device: torch.device
+    ) -> torch.Tensor | None:
+        if (
+            site_idx is None
+            or self.site_species_logit_bias_rank <= 0
+            or self.site_species_bias_species is None
+            or self.site_species_bias_site is None
+        ):
+            return None
+        site_f = self.site_species_bias_site[site_idx]
+        species_f = self.site_species_bias_species
+        bias = einsum(site_f, species_f, "b r, s r -> b s")
+        bias = bias - bias.mean(dim=1, keepdim=True)
+        return bias.to(device=device, dtype=dtype)
 
     def forward(
         self,
@@ -388,31 +512,78 @@ class PrototypeRetrievalModel(nn.Module):
                 index the species bank is cross-attention-refined per
                 window; without it, the shared species bank is used.
         """
-        q_r = self.projection(emb)
-        if self.perch_adapter is not None and perch_mapped is not None:
-            q_r = q_r + self.perch_adapter(
-                perch_mapped,
-                perch_topk_idx=perch_topk_idx,
-                perch_topk_val=perch_topk_val,
-            )
+        q_r = self._encode_query(
+            emb,
+            perch_mapped=perch_mapped,
+            perch_topk_idx=perch_topk_idx,
+            perch_topk_val=perch_topk_val,
+        )
 
         sp_shared = self.species_head(q_r)
         if site_idx is None:
-            return sp_shared
+            out = sp_shared
+        else:
+            M_cond = self.cross_attn(
+                self.species_head.M, self.site_head.M, site_idx
+            )  # (B, S, K, D)
+            sp_cond = self.species_head.forward_with_prototypes(q_r, M_cond)
+            with torch.no_grad():
+                delta_mag = (M_cond - self.species_head.M.unsqueeze(0)).pow(2).mean(
+                    dim=(1, 2, 3)
+                ).sqrt().unsqueeze(1)
 
-        M_cond = self.cross_attn(
-            self.species_head.M, self.site_head.M, site_idx
-        )  # (B, S, K, D)
-        sp_cond = self.species_head.forward_with_prototypes(q_r, M_cond)
-        with torch.no_grad():
-            delta_mag = (M_cond - self.species_head.M.unsqueeze(0)).pow(2).mean(
-                dim=(1, 2, 3)
-            ).sqrt().unsqueeze(1)
-        alpha = torch.sigmoid(
-            self.site_blend_logit[site_idx].unsqueeze(1)
-            + self.site_blend_delta_coef[site_idx].unsqueeze(1) * delta_mag
-        )
-        return (1.0 - alpha) * sp_cond + alpha * sp_shared
+            if self.softshrink_null_site_anchored_residual:
+                shared_logit = _safe_logit(sp_shared)
+                cond_logit = _safe_logit(sp_cond)
+                null_idx = torch.zeros_like(site_idx)
+                M_null = self.cross_attn(self.species_head.M, self.null_site_M, null_idx)
+                null_logit = _safe_logit(
+                    self.species_head.forward_with_prototypes(q_r, M_null)
+                )
+                delta = cond_logit - null_logit
+                delta = delta - delta.mean(dim=1, keepdim=True)
+                if self.shared_null_site_shrink:
+                    tau = F.softplus(self.site_residual_shrink_logit).view(1, 1)
+                else:
+                    tau = F.softplus(self.site_residual_shrink_logit[site_idx].unsqueeze(1))
+                delta = delta.sign() * F.relu(delta.abs() - tau)
+                delta = delta - delta.mean(dim=1, keepdim=True)
+                blend_logit, delta_coef = self._site_blend_terms(site_idx)
+                scale = F.softplus(blend_logit + delta_coef * delta_mag)
+                out = torch.sigmoid(shared_logit + scale * delta)
+            elif self.null_site_anchored_residual:
+                shared_logit = _safe_logit(sp_shared)
+                cond_logit = _safe_logit(sp_cond)
+                null_idx = torch.zeros_like(site_idx)
+                M_null = self.cross_attn(self.species_head.M, self.null_site_M, null_idx)
+                null_logit = _safe_logit(
+                    self.species_head.forward_with_prototypes(q_r, M_null)
+                )
+                delta = cond_logit - null_logit
+                delta = delta - delta.mean(dim=1, keepdim=True)
+                blend_logit, delta_coef = self._site_blend_terms(site_idx)
+                scale = F.softplus(blend_logit + delta_coef * delta_mag)
+                out = torch.sigmoid(shared_logit + scale * delta)
+            elif self.centered_site_residual:
+                shared_logit = _safe_logit(sp_shared)
+                cond_logit = _safe_logit(sp_cond)
+                delta = cond_logit - shared_logit
+                delta = delta - delta.mean(dim=1, keepdim=True)
+                blend_logit, delta_coef = self._site_blend_terms(site_idx)
+                scale = F.softplus(blend_logit + delta_coef * delta_mag)
+                out = torch.sigmoid(shared_logit + scale * delta)
+            else:
+                blend_logit, delta_coef = self._site_blend_terms(site_idx)
+                alpha = torch.sigmoid(blend_logit + delta_coef * delta_mag)
+                out = (1.0 - alpha) * sp_cond + alpha * sp_shared
+
+        site_bias = self._site_species_logit_bias(site_idx, out.dtype, out.device)
+        if site_bias is not None:
+            out = torch.sigmoid(_safe_logit(out) + site_bias)
+
+        if self.perch_presence_bias:
+            out = out * self._presence_probability_from_query(q_r, perch_mapped)
+        return out
 
     def unsupervised_site_contrastive(
         self,

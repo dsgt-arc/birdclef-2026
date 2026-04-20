@@ -38,6 +38,7 @@ def compute_loss(
     lambda_site: float = 0.01,
     lambda_xattn: float = 0.01,
     lambda_fam: float = 1e-2,
+    lambda_presence: float = 0.0,
     label_smoothing: float = 0.0,
     include_strong: bool = True,
     strong_site_dropout: float = 0.0,
@@ -60,6 +61,9 @@ def compute_loss(
         lambda_fam: weight on the family shrinkage term.
         label_smoothing: BCE label smoothing ε applied to strong + focal
             targets as ``y * (1-ε) + 0.5 * ε``. Default 0.0 (disabled).
+        lambda_presence: weight on the Perch-guided weak-focal presence /
+            no-call auxiliary. Target = max mapped Perch support over the
+            recording's weak labels.
         include_strong: if False, the strong SC BCE term is skipped
             regardless of whether ``batch["strong"]`` is present. Used by
             the training loop to rate-limit strong SC (v4 strong_stride).
@@ -82,6 +86,7 @@ def compute_loss(
         "site": 0.0,
         "site_xattn": 0.0,
         "family": 0.0,
+        "presence": 0.0,
     }
     total = zero
 
@@ -148,6 +153,25 @@ def compute_loss(
         L_labeled = sum(losses)
         total = total + L_labeled
         components["labeled"] = float(L_labeled.detach().item())
+
+        if (
+            weak_focal is not None
+            and lambda_presence != 0.0
+            and getattr(model, "perch_presence_bias", False)
+            and weak_focal.get("perch_mapped") is not None
+        ):
+            presence_pred = model.presence_probability(
+                weak_focal["emb"],
+                perch_mapped=weak_focal.get("perch_mapped"),
+                perch_topk_idx=weak_focal.get("perch_topk_idx"),
+                perch_topk_val=weak_focal.get("perch_topk_val"),
+            )
+            presence_target = (
+                weak_focal["perch_mapped"] * weak_focal["labels"]
+            ).amax(dim=1, keepdim=True).detach()
+            L_presence = F.binary_cross_entropy(presence_pred, presence_target)
+            total = total + lambda_presence * L_presence
+            components["presence"] = float(L_presence.detach().item())
 
     unsup = batch.get("unsup")
     if unsup is not None:

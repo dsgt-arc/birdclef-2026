@@ -182,6 +182,53 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Hydrate the optional compact Perch sidecar fields (dense mapped probs + sparse top-k activations). Triggers sidecar build on first use.",
     )
+    p.add_argument(
+        "--centered-site-residual",
+        action="store_true",
+        help="Use centered logit residuals (conditioned minus shared, mean-centered across species) instead of probability blending for site correction.",
+    )
+    p.add_argument(
+        "--null-site-anchored-residual",
+        action="store_true",
+        help="Use a learned null-site anchor to define the site residual: subtract the null-site-conditioned logits before mean-centering the site correction.",
+    )
+    p.add_argument(
+        "--softshrink-null-site-anchored-residual",
+        action="store_true",
+        help="Use a sparse null-site-anchored residual: subtract null-site-conditioned logits, mean-center, soft-threshold, then re-center before applying the site correction.",
+    )
+    p.add_argument(
+        "--shared-null-site-anchor",
+        action="store_true",
+        help="Use a single shared null-site prototype (K=1) instead of a full K_site null bank inside the null-anchor residual lanes.",
+    )
+    p.add_argument(
+        "--shared-null-site-shrink",
+        action="store_true",
+        help="Use one shared soft-threshold across all sites inside the softshrink null-anchor lane instead of per-site thresholds.",
+    )
+    p.add_argument(
+        "--shared-site-blend",
+        action="store_true",
+        help="Share the site-blend scale parameters across all sites instead of learning per-site blend scalars.",
+    )
+    p.add_argument(
+        "--perch-presence-bias",
+        action="store_true",
+        help="Learn a Perch-guided global presence/no-call bias that suppresses all species logits on likely silent or weak-label-mismatched windows.",
+    )
+    p.add_argument(
+        "--lambda-presence",
+        type=float,
+        default=0.0,
+        help="Auxiliary BCE weight for the Perch-guided presence/no-call bias. Weak-focal target is the max mapped Perch support over the recording's weak labels.",
+    )
+    p.add_argument(
+        "--site-species-logit-bias-rank",
+        type=int,
+        default=0,
+        help="If >0, add a low-rank species×site logit bias B_{s,l}=U_s V_l^T on soundscape windows only.",
+    )
     p.add_argument("--device", type=str, default="auto")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
@@ -383,6 +430,14 @@ def train_one_fold(
         proj_dropout=args.proj_dropout,
         attn_dropout=args.attn_dropout,
         use_perch_features=bool(args.include_perch_features),
+        centered_site_residual=bool(args.centered_site_residual),
+        null_site_anchored_residual=bool(args.null_site_anchored_residual),
+        softshrink_null_site_anchored_residual=bool(args.softshrink_null_site_anchored_residual),
+        shared_null_site_anchor=bool(args.shared_null_site_anchor),
+        shared_null_site_shrink=bool(args.shared_null_site_shrink),
+        shared_site_blend=bool(args.shared_site_blend),
+        perch_presence_bias=bool(args.perch_presence_bias),
+        site_species_logit_bias_rank=int(args.site_species_logit_bias_rank),
     ).to(device)
 
     family_idx_dev = family_idx.to(device)
@@ -465,6 +520,7 @@ def train_one_fold(
             "site": 0.0,
             "site_xattn": 0.0,
             "family": 0.0,
+            "presence": 0.0,
             "total": 0.0,
         }
         n_steps = 0
@@ -516,6 +572,7 @@ def train_one_fold(
                 lambda_site=args.lambda_site * warmup,
                 lambda_xattn=args.lambda_xattn * warmup,
                 lambda_fam=args.lambda_fam,
+                lambda_presence=args.lambda_presence,
                 label_smoothing=args.label_smoothing,
                 include_strong=include_strong,
                 strong_site_dropout=strong_site_dropout,
@@ -529,7 +586,7 @@ def train_one_fold(
             scheduler.step()
 
             epoch_losses["total"] += total_loss.item()
-            for k in ["labeled", "site", "site_xattn", "family"]:
+            for k in ["labeled", "site", "site_xattn", "family", "presence"]:
                 epoch_losses[k] += components[k]
             n_steps += 1
             global_step += 1
@@ -551,6 +608,7 @@ def train_one_fold(
                     writer.add_scalar(f"{prefix}loss/labeled_step", components["labeled"], global_step)
                     writer.add_scalar(f"{prefix}loss/site_step", components["site"], global_step)
                     writer.add_scalar(f"{prefix}loss/site_xattn_step", components["site_xattn"], global_step)
+                    writer.add_scalar(f"{prefix}loss/presence_step", components["presence"], global_step)
                     writer.add_scalar(f"{prefix}loss/unsup_to_labeled_ratio", ratio, global_step)
                     writer.add_scalar(f"{prefix}sched/unsup_warmup", warmup, global_step)
                     writer.add_scalar(f"{prefix}lr", scheduler.get_last_lr()[0], global_step)
@@ -561,7 +619,8 @@ def train_one_fold(
                     f"(lab={components['labeled']:.4f} "
                     f"site={components['site']:.4f} "
                     f"xattn={components['site_xattn']:.4f} "
-                    f"fam={components['family']:.4f}) | "
+                    f"fam={components['family']:.4f} "
+                    f"presence={components['presence']:.4f}) | "
                     f"unsup/lab={ratio:.2f} warmup={warmup:.2f} | "
                     f"val_auroc={val_auroc:.4f} | "
                     f"lr={scheduler.get_last_lr()[0]:.2e}"
@@ -604,7 +663,8 @@ def train_one_fold(
             f"avg_loss={epoch_losses['total']:.4f} "
             f"(lab={epoch_losses['labeled']:.4f} "
             f"site={epoch_losses['site']:.4f} "
-            f"xattn={epoch_losses['site_xattn']:.4f}) ==="
+            f"xattn={epoch_losses['site_xattn']:.4f} "
+            f"presence={epoch_losses['presence']:.4f}) ==="
         )
 
     # Save predictions from best model for pooled evaluation
