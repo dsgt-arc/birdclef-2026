@@ -142,6 +142,7 @@ def _load_checkpoint(path: Path, device: str = "cpu"):
 def main() -> None:
     perch_path = Path(WEIGHTS_DIR) / "perch_v2_no_dft.onnx"
     ckpt_path = Path(WEIGHTS_DIR) / "best.pt"
+    mapping_path = Path(WEIGHTS_DIR) / "perch_species_mapping.json"
     sample_submission = Path(COMPETITION_DIR) / "sample_submission.csv"
     test_dir = Path(COMPETITION_DIR) / "test_soundscapes"
     out_path = Path("/kaggle/working/submission.csv")
@@ -151,7 +152,7 @@ def main() -> None:
     print(f"Test dir: {test_dir}", flush=True)
 
     device = "cpu"
-    species = build_species_list()
+    species = build_species_list(mapping_path)
     model, args, ckpt = _load_checkpoint(ckpt_path, device=device)
     print(
         f"loaded ckpt: fold={ckpt.get('fold_site')} val_auroc={ckpt.get('val_auroc')} "
@@ -159,7 +160,7 @@ def main() -> None:
         flush=True,
     )
 
-    projector = PerchSidecarProjector()
+    projector = PerchSidecarProjector(mapping_path=mapping_path)
     perch = PerchSession(model_path=perch_path)
     needs_logits = bool(args.get("include_perch_features", False))
     perch_outputs = ["embedding", "label"] if needs_logits else ["embedding"]
