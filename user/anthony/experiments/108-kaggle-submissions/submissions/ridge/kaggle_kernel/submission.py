@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Kaggle kernel entrypoint: BirdCLEF 2026 ridge submission (exp 106).
 
+Kernel version: v2 (2026-04-20, cp312 deps).
+
 Runs offline on a Kaggle CPU kernel (no internet, no GPU). Pipeline per
 60-second test soundscape:
 

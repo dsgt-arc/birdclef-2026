@@ -1,6 +1,6 @@
 {
-  "id": "acmiyaguchi/birdclef-2026-ridge",
-  "title": "BirdCLEF 2026 Ridge (exp 106)",
+  "id": "acmiyaguchi/birdclef-2026-ridge-exp-106",
+  "title": "BirdCLEF 2026 Ridge exp 106",
   "code_file": "submission.py",
   "language": "python",
   "kernel_type": "script",

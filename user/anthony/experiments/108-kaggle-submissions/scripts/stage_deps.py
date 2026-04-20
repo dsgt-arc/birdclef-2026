@@ -30,10 +30,14 @@ REQUIREMENTS = [
     "pandas",
 ]
 
-# Kaggle kernels run Python 3.11 on CPython x86_64.
+# Kaggle kernels run CPython x86_64; pin the interpreter to what the live
+# Kaggle image ships. As of 2026-04 the default image is 3.12. Modern
+# onnxruntime wheels ship with `manylinux_2_28` tags, so we pass both that
+# and the older `manylinux2014` target to keep resolution flexible.
 PLATFORM_ARGS = [
+    "--platform", "manylinux_2_28_x86_64",
     "--platform", "manylinux2014_x86_64",
-    "--python-version", "3.11",
+    "--python-version", "3.12",
     "--implementation", "cp",
     "--only-binary", ":all:",
 ]
