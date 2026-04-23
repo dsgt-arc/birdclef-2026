@@ -2,8 +2,8 @@
 
 - **URL**: https://www.kaggle.com/competitions/birdclef-2026/discussion/683791
 - **Posted**: 2026-03-21 (Antoine Masq)
-- **Captured**: 2026-04-13 (updated)
-- **46+ comments**
+- **Captured**: 2026-04-23 (updated)
+- **51+ comments**
 
 ---
 
@@ -24,22 +24,22 @@
 
 | Person | Rank | LB | Details |
 |--------|------|-----|---------|
-| **Boredom** | **1st** | **0.947+** w/ unlabeled, **0.937-0.938** w/o | Non-Perch, non-KD. ~13min inference. |
-| **Ali Ozan Memetoglu** | 3rd | **0.941** single model | Uses BirdCLEF 2025 pretrained checkpoint (2-stage) |
-| **Kurise** | 4th | — | Notes 2025 checkpoint = 2-stage training on 25+26 data |
-| **Tom** | 7th | ~similar to hengck23 | "slightly different approach which fits on 4x5sec" |
-| **Salman Ahmed** | 17th | **0.922** solo B0, **0.932** ens of 4 | 20sec training, no KD, no priors. Uses BG noise external data |
-| **tennogh** | 31st | — | ~0.02 diff between backbones; KD reduces diversity (cos sim 0.5→0.67) |
-| **Jack** | 50th | — | Confirms Perch KD causes backbone stability |
-| **yukiZ** | 57th | **0.904** (fold 0 only, 5-fold SKF) | Raw waveform augmentations |
-| **Murilo Gustineli** | 141st | **0.906** (HGNet+LSEHead) | No KD, no Perch in SED |
-| **Tucker Arrants** | 311th | **0.91** | Frozen Perch + learned pool + GRU, 5-fold, 3x TTA |
-| **hengck23** | 364th | **0.896** CNN only | Long input wave, multi-context head, no Perch, no PP |
-| **Gaurav Rawat** | 514th | **0.926** LB | GroupK on site CV, shows poor CV-LB correlation |
-| **EliKal** | 682nd | **0.909** single (EffNet-B0) | Perch KD (KLD loss) + 12ep finetune, time-shift TTA |
-| **XuKong Ji** | 1057th | **0.899** single fold | EffNet-B0+LSEHead+BCE, 5s. 5-fold=0.889 (worse!) |
-| Antoine Masq | 501st | 0.889 | EfficientNetV2-B0 |
-| Don Mathis | 1237th | 0.880 | CNN + logit-LSE, BCE, 5s clips |
+| **Boredom** | **2nd** | **0.950+** w/ unlabeled, **0.938-0.939** w/o | Non-Perch, timm+SED. ~11min inference. 1st iter on unlabeled. |
+| **Ali Ozan Memetoglu** | 6th | **0.941** single model | Uses BirdCLEF 2025 pretrained checkpoint (2-stage via XC pretrain) |
+| **Kurise** | 7th | — | Notes 2025 checkpoint = 2-stage training on 25+26 data |
+| **Tom** | 4th | ~similar to hengck23 | "slightly different approach which fits on 4x5sec" |
+| **Salman Ahmed** | **13th** | **0.937** solo v2B0, **0.932** ens of 4 | **Modeling breakthrough** — attention investigation. B0_NS now matching v2B0. Uses PP/TTA. |
+| **tennogh** | 48th | — | ~0.02 diff between backbones; KD reduces diversity (cos sim 0.5→0.67) |
+| **Jack** | 94th | — | Confirms Perch KD causes backbone stability |
+| **yukiZ** | 121st | **0.904** (fold 0 only, 5-fold SKF) | Raw waveform augmentations |
+| **Tucker Arrants** | 164th | **0.925** w/o deep learning, **0.91** w/ Perch+GRU | Clustering on frozen Perch + metadata engineering |
+| **Murilo Gustineli** | 362nd | **0.906** (HGNet+LSEHead) | No KD, no Perch in SED |
+| **Gaurav Rawat** | 370th | **0.926** LB | GroupK on site CV, shows poor CV-LB correlation |
+| **hengck23** | 586th | **0.896** CNN only | Long input wave, multi-context head, no Perch, no PP |
+| **EliKal** | 928th | **0.909** single (EffNet-B0) | Perch KD (KLD loss) + 12ep finetune, time-shift TTA |
+| **XuKong Ji** | 1324th | **0.899** single fold | EffNet-B0+LSEHead+BCE, 5s. 5-fold=0.889 (worse!) |
+| Antoine Masq | 85th | 0.889 | EfficientNetV2-B0 |
+| Don Mathis | 1526th | 0.880 | CNN + logit-LSE, BCE, 5s clips |
 
 ---
 
@@ -561,49 +561,222 @@ the backbone seeing 15s, not from the head aggregating over 15s.
 > 5 folds, 3x time-shift TTA
 > 0.91 public leaderboard
 
-### tennogh (31st) — Posted 5 days ago (UPDATED)
+### tennogh (48th) — Posted 18 days ago (UPDATED)
 
 > Edit: with KD and 4 different backbones, I still have a ~0.02 difference
 > between the worst and the best (the ranking is a little bit different too).
 > KD also reduces diversity to an extent (cosine similarity ~0.5->~0.67),
 > to the point where is might be worth ensembling KD and non-KD models.
 
+### Mahog (1300th) — Posted 8 days ago
+
+> Have you managed to fix this? I'm having the same issue, even a seed change
+> shifts LB by 0.005 :V
+
+### goevian (486th) — Posted 9 days ago
+
+> may i ask, what do you mean by "multi-context head"?
+
+### Salman Ahmed (13th) — Posted 3 days ago ⭐ NEW (MAJOR: 0.937 SINGLE MODEL)
+
+> Finally. Single model LB 0.937 without using Unlabeled data. Recently started
+> paying attention to the modeling part in this competition, Apparently, it was
+> not that important in previous competitions, but in this one, for me it is one
+> of the most important part. I have been investigating attention values on some
+> examples with highest loss during training, and minimum loss during training,
+> and now it's much better compared to previous models I had.
+
+### Leon (1336th) — Posted 3 days ago
+
+> Wow that is amazing! May I ask is it still efficientnet b0 ns?
+
+### Salman Ahmed (13th) — Posted 3 days ago
+
+> xD LB 0.937 is with Efficientnet v2B0 because it's faster to train compared
+> to others. Will try other variants (B0 NS / mixnet / nfnet etc) soon.
+
+### Seeing Times (1530th) — Posted 3 days ago
+
+> an amazing score, May I ask did you change sed head?
+
+### Leon (1336th) — Posted 3 days ago
+
+> I think you mentioned before b0 MBConv doesn't learn well, and ebv2 is using
+> Fused-MBConv, might be reason why its better (not sure). and may I also ask
+> if your b0 model (0.922) is with any post processing (I assume only model soup)?
+
+### Salman Ahmed (13th) — Posted 3 days ago
+
+> xD No worries, For that previous model architecture / training strategy MBConvs
+> were not learning, but now B0_NS is matching or performing even better than v2B0.
+> Yeah, I am not using Model Soup this time, simple model checkpoint.
+
+### Shiro (1501st) — Posted 2 days ago
+
+> Impressive results, with efficientnetb1 I am not able to reach that results
+> with single models, trying different architectures. May I ask if you include
+> postprocessing in the inference step or is it just a vanilla prediction on
+> 5 seconds?
+
+### Salman Ahmed (13th) — Posted 2 days ago
+
+> Hi @ludovick Yes, I definitely rely on some post processing / TTA.
+
+### Ali Ozan Memetoglu (6th) — Posted 2 days ago
+
+> Thank you :)) Are you using the soundscapes too or only this?
+
+### Salman Ahmed (13th) — Posted 2 days ago ⭐ NEW (SOUNDSCAPE TRAINING FAILURE)
+
+> Just Train Audios. Just started experimenting with Soundscapes, and for now,
+> adding Soundscapes reduce my LB to around 0.85.
+
+### Salman Ahmed (13th) — Posted 2 days ago
+
+> As I was typing this, i remember something, I think there is a bug in
+> Soundscapes training. I'll fix it soon.
+
+### Ali Ozan Memetoglu (6th) — Posted a day ago
+
+> No, I mean for the background noise I was only using soundscapes so I'm
+> thinking of combining them with the dataset you provided
+
+### Salman Ahmed (13th) — Posted 12 hours ago
+
+> Ah I see. No I don't use the SS as background noise, because there are
+> species in those SS recordings.
+
+### MengYe (171st) — Posted 5 days ago
+
+> does your cv correlate with lb?
+
+### Aic (178th) — Posted 15 days ago
+
+> May I ask, do you experience any score fluctuations in your experiments due to
+> different numbers of epochs or changes in other hyperparameters?...it's been
+> giving me a headache lately.
+
+### OpPrime (242nd) — Posted 11 days ago
+
+> I got 0.826 on EfficientNetB0 with 5-fold training, 0.835 on fold 0, 10 epochs
+> per fold, feeding in 5 seconds clips only. Following Salman's post below, I then
+> got a 0.801 from SED HGNetV2 feeding it 20s of mel with a temporal attention head.
+
+### EliKal (928th) — Posted 11 days ago
+
+> I'd start by focusing on your 5s models. You can get 0.915+ with an ensemble
+> of just two models. For 20s inputs, I'd try adding segment-wise labels from
+> the labeled soundscapes.
+
+### Tucker Arrants (164th) — Posted 12 days ago (UPDATED)
+
+> Frozen Perch embeddings + learned pool + GRU
+> 5 folds, 3x time-shift TTA
+> 0.91 public leaderboard
+>
+> Edit: I was able to score 0.925 without any deep learning, just some simple
+> clustering on the frozen perch embeddings and metadata engineering. The learned
+> pool + GRU was total over kill.
+
+### Ali Ozan Memetoglu (6th) — Posted 10 days ago ⭐ NEW (XC PRETRAIN DETAILS)
+
+> They used the entire Xeno-Canto dataset by filtering it and fixing a bug during
+> pretraining, but I didn't use anything beyond the checkpoint.
+
+### Cody_Null — Posted 9 days ago
+
+> Im not super excited about the idea of doing all these models 5 fold on the
+> entire XC dataset but we gotta do what we gotta do
+
+### Ali Ozan Memetoglu (6th) — Posted 8 days ago
+
+> it is pretraining, so there are no folds
+
+### Boredom (2nd) — Posted 3 days ago ⭐ NEW (SINGLE MODEL 0.950+)
+
+> Update: Single model LB 0.950+ (11 minutes). After reading Salman's latest
+> post, I realized I might have been constrained by my experience from past
+> competitions, which may have limited the optimal single-model performance of
+> this pipeline to around 0.953-0.955. I will soon build the next pipeline from
+> scratch for ensembling, hoping to push even higher.
+
+### Starry (1st) — Posted 17 hours ago
+
+> Hi Boredom, it is an amazing result, may I ask if you use unlabeled
+> train_soundscapes in your 0.950+ model. And if so, what the score with only
+> train_audio + labeled train_soundscapes?
+
+### Boredom (2nd) — Posted 10 hours ago
+
+> Yep! this is the result of the first iteration on unlabeled data. Maybe one or
+> two more iterations are possible. A single model using only labeled data achieves
+> an LB of 0.938-0.939. I've never been able to break 0.94 with a single model.
+> Compared to others with solid work, there might still be a significant gap in
+> potential.
+
+### Gaurav Rawat (370th) — Posted 16 hours ago
+
+> nice SED or vision model?
+
+### Boredom (2nd) — Posted 10 hours ago
+
+> timm backbone+SED
+
 ---
 
 ## Key Takeaways
 
-### Top Scores & Unlabeled Data (Updated 2026-04-13)
+### Top Scores & Unlabeled Data (Updated 2026-04-23)
 
-1. **Boredom: 0.947+ single model WITH unlabeled data** — non-Perch, ~13min inference.
-   Without unlabeled: 0.937-0.938. Confirms unlabeled data adds ~0.010.
-   Previous ceiling estimate (0.94-0.945 w/o unlabeled) was accurate.
+1. **Boredom: 0.950+ single model WITH unlabeled data** — non-Perch, timm+SED. ~11min inference.
+   First iteration on unlabeled data. Without unlabeled: 0.938-0.939. Now 2nd place (Starry is 1st).
+   Says pipeline ceiling may be 0.953-0.955. Plans to build new pipeline from scratch for ensembling.
 2. **Ali Ozan: 0.941 single model using BirdCLEF 2025 pretrained checkpoint** — 2-stage
-   training (pretrain on 2025, retrain on 2026). No extra compute, just leverages prior year data.
-3. **Salman: 0.922 solo EfficientNet-B0 on 20sec** — ensemble of 4 = 0.932. Dropped max-trick
-   in favor of full 20sec training. Still no KD, no priors. Uses background noise from prior
-   competition solutions as external data (but says same LB without it).
-4. **Unlabeled data is THE differentiator for 0.94+** — Boredom struggles to break 0.94 w/o it.
-   Ali Ozan uses 2025 data as proxy. Our Phase C waveform mixing is the right direction.
+   training. The checkpoint used XC dataset (filtered) for pretraining. No folds needed for pretrain.
+3. **Salman: 0.937 solo EfficientNetV2-B0** — **major jump from 0.922 to 0.937 via "modeling"**.
+   Investigated attention values on highest/lowest loss examples during training. B0_NS now
+   matching or better than v2B0. Uses PP/TTA. Simple checkpoint (no model soup).
+4. **Unlabeled data is THE differentiator for 0.94+** — Boredom: "never been able to break 0.94
+   with a single model" using labeled data only. 1 iteration of unlabeled → 0.950+.
+
+### Salman's 0.922→0.937 Breakthrough (NEW 2026-04-23)
+
+5. **"Modeling" is the key, not just data/augmentation** — Salman says "recently started paying
+   attention to the modeling part... for me it is one of the most important parts." This is a
+   departure from previous advice ("nothing fancy, simple model training setup").
+6. **Attention investigation on loss extremes** — "investigating attention values on some examples
+   with highest loss during training, and minimum loss during training, and now it's much better."
+   This suggests he debugged/tuned the attention head by examining what it attends to on hard
+   vs easy examples, not just changing hyperparameters.
+7. **EfficientNetV2-B0 (Fused-MBConv)** — 0.937 achieved with v2B0. Previously said MBConvs
+   "not learning well" but that was architecture/training-strategy-specific. With current strategy,
+   B0_NS is "matching or performing even better than v2B0."
+8. **No model soup** — simple checkpoint selection, not weight averaging.
+9. **Post-processing + TTA** — "I definitely rely on some post processing / TTA." Not vanilla.
+10. **Soundscape training currently hurts Salman** — "adding Soundscapes reduce my LB to around
+    0.85" but he suspects a bug. Does NOT use soundscapes as background noise because "there are
+    species in those SS recordings."
 
 ### Architecture & Training
 
-5. **Salman still on EfficientNet-B0** — clarified "Solo B0 was around 0.922". Previously
-   said MBConvs "not learning well" but apparently still using B0 with updated settings.
-6. **20sec full-audio training** (not split+max) is Salman's current approach. 10s/15s "almost
-   the same / sometimes better" — he only uses 20sec in his ensemble.
-7. **CE loss + sigmoid inference** remains Salman's approach with AttHead
-8. **Waveform augmentations** (pink noise, time stretch) recommended by yukiZ
-9. **Offline val/auroc is unreliable**: yukiZ's data shows correlation but with significant variance
+11. **Salman was on EfficientNet-B0 at 0.922, now EfficientNetV2-B0 at 0.937** — v2B0 is "faster
+    to train." Plans to try B0 NS / mixnet / nfnet variants.
+12. **20sec full-audio training** (not split+max) was Salman's 0.922 approach. 10s/15s "almost
+    the same / sometimes better" — he only uses 20sec in his ensemble.
+13. **CE loss + sigmoid inference** remains Salman's loss approach
+14. **Waveform augmentations** (pink noise, time stretch) recommended by yukiZ
+15. **Offline val/auroc is unreliable**: yukiZ's data shows correlation but with significant variance
+16. **Seed sensitivity**: Mahog reports seed changes shift LB by 0.005
 
-### 5-Fold Regression (NEW — validates our observation)
+### 5-Fold Regression
 
-10. **XuKong Ji: 5-fold ensemble (0.889) WORSE than single fold (0.899)** — with EffNet-B0 +
+17. **XuKong Ji: 5-fold ensemble (0.889) WORSE than single fold (0.899)** — with EffNet-B0 +
     LSEHead + BCE. Also confirms 10s input drops to 0.86 (matches our v5i experience).
     This validates that naive ensembling can hurt, and 5s is the right window size.
 
 ### CV/LB Correlation
 
-11. **Gaurav Rawat's CV/LB data (GroupKFold on site)** shows poor correlation:
+18. **Gaurav Rawat's CV/LB data (GroupKFold on site)** shows poor correlation:
    - 0.82 CV → 0.908 LB
    - 0.94 CV → 0.913 LB
    - 0.97 CV → 0.926 LB
@@ -611,48 +784,55 @@ the backbone seeing 15s, not from the head aggregating over 15s.
    - 0.942 CV → 0.915 LB
    The CV values are all over the place relative to LB ranking. Not monotonic.
 
-12. **Anil Ozturk: soundscape-val-only GKF on sites** — OOF 0.608, LB 0.879. The soundscape-only
+19. **Anil Ozturk: soundscape-val-only GKF on sites** — OOF 0.608, LB 0.879. The soundscape-only
     CV score is extremely low and not predictive of LB at all.
 
-13. **Tucker Arrants explains why**: GKF is "overly harsh" because **train and test sites overlap**.
+20. **Tucker Arrants explains why**: GKF is "overly harsh" because **train and test sites overlap**.
     GKF forces the model to generalize to *unseen* sites, but the test set includes *seen* sites too.
     Proposes **joint validation**: one metric for within-site generalization + one for site-level
     generalization, with combined checkpoint selection.
 
 ### Multi-Context & Architecture
 
-14. **hengck23: "context and augmentation is the key"** — 0.896 LB with CNN only (no Perch, no PP) using **long input wave** to capture temporal info. Hints at **multi-context head** for even better results.
-15. **Tom (7th) confirms similar approach** — "fits on 4x5sec" (20s total context via multiple 5s windows)
-16. **Multi-context (hengck23)** = ONE backbone pass on 15s, then SPLIT temporal features into 3 chunks, apply LSEHead per-chunk → 3 predictions. The backbone's convolutional receptive field provides cross-window context, but each prediction is still from a 5s chunk. NOT the same as Tattaka's train_period/infer_period crop (which aggregates attention over all 15s). hengck23 uses HGNetV2-B0 + LSE head + 4-fold → **+0.020 gain** (0.876→0.896).
-17. **Our v5i (10s single window) got 0.880 LB (worse than v5j's 0.906 at 5s)** — different from multi-context because v5i pools over the full 10s. hengck23's approach preserves 5s pooling resolution per chunk while adding backbone-level context.
-18. **Our v7 Phase D (AttHeadMultiContext) failed badly** (−0.054) because we changed the head AND aggregated over all 15s. The correct approach is: keep LSEHead, just feed longer input and split at head level.
+21. **hengck23: "context and augmentation is the key"** — 0.896 LB with CNN only (no Perch, no PP) using **long input wave** to capture temporal info. Hints at **multi-context head** for even better results.
+22. **Tom (4th) confirms similar approach** — "fits on 4x5sec" (20s total context via multiple 5s windows)
+23. **Multi-context (hengck23)** = ONE backbone pass on 15s, then SPLIT temporal features into 3 chunks, apply LSEHead per-chunk → 3 predictions. The backbone's convolutional receptive field provides cross-window context, but each prediction is still from a 5s chunk. NOT the same as Tattaka's train_period/infer_period crop (which aggregates attention over all 15s). hengck23 uses HGNetV2-B0 + LSE head + 4-fold → **+0.020 gain** (0.876→0.896).
+24. **Our v5i (10s single window) got 0.880 LB (worse than v5j's 0.906 at 5s)** — different from multi-context because v5i pools over the full 10s. hengck23's approach preserves 5s pooling resolution per chunk while adding backbone-level context.
+25. **Our v7 Phase D (AttHeadMultiContext) failed badly** (−0.054) because we changed the head AND aggregated over all 15s. The correct approach is: keep LSEHead, just feed longer input and split at head level.
 
 ### Knowledge Distillation & Perch KD
 
-19. **EliKal: KLD loss distillation from Perch** — 10 epochs distillation + 12 epochs finetune achieves 0.909 with EfficientNet-B0. Multiple architectures (EffNet-B0/B3, DINOv3-small, ConvNeXt-small) all land at 0.906-0.909 with same pipeline.
-20. **EliKal confirms using Perch embeddings** for all architectures' distillation.
-21. **Jack (50th) confirms**: Perch KD causes backbone stability — less difference between backbones. Without KD, he sees the same swings as tennogh.
-22. **tennogh (31st)**: Up to 0.02 diff between model families w/o KD. With KD: cosine similarity
+26. **EliKal: KLD loss distillation from Perch** — 10 epochs distillation + 12 epochs finetune achieves 0.909 with EfficientNet-B0. Multiple architectures (EffNet-B0/B3, DINOv3-small, ConvNeXt-small) all land at 0.906-0.909 with same pipeline.
+27. **EliKal confirms using Perch embeddings** for all architectures' distillation.
+28. **Jack (94th) confirms**: Perch KD causes backbone stability — less difference between backbones. Without KD, he sees the same swings as tennogh.
+29. **tennogh (48th)**: Up to 0.02 diff between model families w/o KD. With KD: cosine similarity
     increases 0.5→0.67. "Might be worth ensembling KD and non-KD models."
 
-### hengck23's Diagnostic Framework (NEW)
+### Perch Without Deep Learning (NEW 2026-04-23)
 
-23. **Root causes for 0.87+ vs 0.91+**: long tail + domain shift (focal=high SNR single species, soundscape=low SNR multi-species)
-24. **Key metric to monitor**: logit std as "proxy to logit distribution" — overfit models show high train logit std growing over training
-25. **Robust model traits**: low logit std, train-val agreement, can train for very long epochs, flat loss valley for low sample classes, low AUC variance across folds
-26. **Overfit model traits**: train-val disagreement, high growing logit std, low train BCE + high train AUC
+30. **Tucker Arrants: 0.925 without deep learning** — "simple clustering on the frozen perch
+    embeddings and metadata engineering." The learned pool + GRU (0.91) was "total over kill."
+    This is remarkable — frozen Perch + simple methods beats many trained SED models.
+
+### hengck23's Diagnostic Framework
+
+31. **Root causes for 0.87+ vs 0.91+**: long tail + domain shift (focal=high SNR single species, soundscape=low SNR multi-species)
+32. **Key metric to monitor**: logit std as "proxy to logit distribution" — overfit models show high train logit std growing over training
+33. **Robust model traits**: low logit std, train-val agreement, can train for very long epochs, flat loss valley for low sample classes, low AUC variance across folds
+34. **Overfit model traits**: train-val disagreement, high growing logit std, low train BCE + high train AUC
 
 ### Salman's Head Preference
 
-27. **Salman says "Attn head's framewise max is better than LSE head"** — we use LSEHead, he uses AttHead
-28. **hengck23 suggests our 0.906 may benefit from "temporal"** — but we tried multi-context and it regressed. The gap may be elsewhere.
+35. **Salman says "Attn head's framewise max is better than LSE head"** — we use LSEHead, he uses AttHead
+36. **hengck23 suggests our 0.906 may benefit from "temporal"** — but we tried multi-context and it regressed. The gap may be elsewhere.
 
-### External Data & 2-Stage Training (NEW 2026-04-13)
+### External Data & 2-Stage Training
 
-29. **Salman uses background noise from prior competitions** — nocall/BG noise from BirdCLEF 2020/2021
+37. **Salman uses background noise from prior competitions** — nocall/BG noise from BirdCLEF 2020/2021
     + rainforest + environment sound + freefield1010/warblrb/birdvox. Says "same LB without it" but
-    "helpful to generalize better."
-30. **Ali Ozan: BirdCLEF 2025 pretrained checkpoint → 0.941** — effectively 2-stage training on
-    2025+2026 data with zero extra compute. Kurise (4th) confirms this interpretation.
-31. **Boredom confirms 0.937-0.938 w/o unlabeled, 0.947+ with** — the ~0.010 gap from unlabeled
-    data is now confirmed by the #1 competitor. Our Phase C waveform mixing targets exactly this gap.
+    "helpful to generalize better." Does NOT use soundscapes as BG noise ("there are species in those").
+38. **Ali Ozan: BirdCLEF 2025 pretrained checkpoint → 0.941** — effectively 2-stage training on
+    2025+2026 data. The original checkpoint was pretrained on entire Xeno-Canto (filtered).
+    Ali Ozan didn't use anything beyond the checkpoint. "It is pretraining, so there are no folds."
+39. **Boredom confirms 0.938-0.939 w/o unlabeled, 0.950+ with** — first iteration of pseudo-labels
+    on unlabeled data. "Maybe one or two more iterations are possible." Uses timm backbone + SED.
