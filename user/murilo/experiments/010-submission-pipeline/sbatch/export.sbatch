@@ -766,6 +766,7 @@ export_hgnet_b0_sed_v5j_4fold() {
 EXP021_DIR="$(dirname "$EXPERIMENT_DIR")/021-sed-training"
 EXP026_DIR="$(dirname "$EXPERIMENT_DIR")/026-domain-shift-training"
 EXP022_DIR="$(dirname "$EXPERIMENT_DIR")/022-pcen-normalization"
+EXP025_DIR="$(dirname "$EXPERIMENT_DIR")/025-iter-pseudo-labeling"
 EXP027_DIR="$(dirname "$EXPERIMENT_DIR")/027-model-training-fixes"
 
 export_hgnet_b2_sed_v6h() {
@@ -957,6 +958,17 @@ export_hgnet_b0_sed_v5j_pl_v1() {
         --output-dir artifacts/weights/hgnet-b0-sed-v5j-pl-v1/
 }
 
+export_hgnet_b0_sed_v3_waveform_mix() {
+    echo "=== Exporting HGNetV2-B0 SED v3-waveform-mix (PL waveform mixing, exp 025 Phase C, 234 classes) ==="
+    local CKPT="${CHECKPOINTS_BASE}/025-iter-pseudo-labeling/checkpoints/2026-exp025-v3-waveform-mix/best-epochepoch=38.ckpt"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v3-waveform-mix/
+}
+
 export_hgnet_b0_sed_v6l() {
     echo "=== Exporting HGNetV2-B0 SED v6l (manifold mixup, 234 classes) ==="
     local CKPT
@@ -1058,7 +1070,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-fmax|hgnet-b0-sed-v5j-clip|hgnet-b0-atthead-v6k|\
     hgnet-b0-sed-v6b|hgnet-b0-sed-v6l|hgnet-b2-sed-v6h|effnet-b0-ns-sed-v6j|hgnet-b0-mc-lse-sed-v8a|hgnet-b0-mc-lse-sed-v8b|\
     hgnet-b0-sed-v10a|hgnet-b0-sed-v10b|hgnet-b0-sed-v10c|hgnet-b0-sed-v5j-repro|\
-    hgnet-b0-sed-v5j-pl-v1|hgnet-b0-sed-v5j-dualval|\
+    hgnet-b0-sed-v5j-pl-v1|hgnet-b0-sed-v3-waveform-mix|hgnet-b0-sed-v5j-dualval|\
     hgnet-b0-sed-v9a-10s-att|hgnet-b0-sed-v9b-15s-att|hgnet-b0-sed-v9c-20s-att|\
     hgnet-b0-sed-v10a-exp027|hgnet-b0-sed-v10b-exp027|hgnet-b0-sed-v11b-exp027|\
     all-017-ablations|all-2026-sed)
@@ -1177,6 +1189,7 @@ case "$MODEL" in
     hgnet-b0-sed-v10c)         export_hgnet_b0_sed_v10c ;;
     hgnet-b0-sed-v5j-repro)    export_hgnet_b0_sed_v5j_repro ;;
     hgnet-b0-sed-v5j-pl-v1)   export_hgnet_b0_sed_v5j_pl_v1 ;;
+    hgnet-b0-sed-v3-waveform-mix) export_hgnet_b0_sed_v3_waveform_mix ;;
     hgnet-b0-sed-v5j-dualval) export_hgnet_b0_sed_v5j_dualval ;;
     hgnet-b0-sed-v9a-10s-att) export_hgnet_b0_sed_v9a_10s_att ;;
     hgnet-b0-sed-v9b-15s-att) export_hgnet_b0_sed_v9b_15s_att ;;

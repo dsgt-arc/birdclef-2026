@@ -583,6 +583,29 @@ Inference-only change, no new model.
 
 v5j-control matches v5j-dualval (exp 026): val/auroc 0.849 vs 0.849. Pipeline verified.
 
+## Experiment 025: Iterative Pseudo-Labeling
+
+### Phase B: Row-addition (FAILED)
+
+Added PLs as separate dataset rows with stratified batch sampling (50/50 GT:PL).
+
+| Slug | Method | val/auroc | val/cmap | LB | Checkpoint |
+|------|--------|-----------|----------|-----|------------|
+| `v5j-pl-v1` | Row-addition (w=0.5, fold 0) | 0.872 | 0.620 | **0.897** | `025-.../best-epochepoch=18.ckpt` |
+
+### Phase C: Waveform mixing (FAILED)
+
+Mario-style PL waveform mixing: 30% of focal samples overlaid with random PL soundscape
+segment (amplitude-controlled). Labels: max(focal, PL). Standard 3-tuple, v5j recipe unchanged.
+
+| Slug | Method | Epochs | val/auroc | val/cmap | val_sc/auroc | Best Epoch | LB | Checkpoint |
+|------|--------|--------|-----------|----------|-------------|------------|-----|------------|
+| `v3-waveform-mix-20ep` | Waveform mixing (30%, 90/10) | 20 | 0.866 | 0.603 | — | 16 | — | `025-.../best-epochepoch=16.ckpt` |
+| `v3-waveform-mix-40ep` | Waveform mixing (30%, 90/10) | 40 | 0.851 | 0.612 | 0.991 | 38 | **0.894** | `025-.../best-epochepoch=38.ckpt` |
+
+**Result: 0.894 LB — regressed -0.012 vs v5j baseline (0.906).** Worse than Phase B
+row-addition (0.897). Both pseudo-label approaches failed.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

@@ -124,14 +124,28 @@ python generate_pseudo_labels.py --config configs/v1.yaml --stats-only
 
 ### Training
 
-Training extends the exp 021 pipeline. Commands TBD once data loader is extended.
+#### Phase B: Row-addition (failed, 0.897 LB)
 
 ```bash
-# Train fold 0 (sanity check)
-bash sbatch/run.sh configs/v1.yaml --fold 0
+# Phase B used --fold 0 + --pl-path (separate PL rows in batch)
+bash sbatch/run.sh configs/v1_train.yaml --fold 0 \
+  --pl-path /storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v1/pseudo_labels.parquet
+```
 
-# Train all 4 folds
-bash sbatch/run.sh configs/v1.yaml --all-folds
+#### Phase C: Waveform mixing (current)
+
+Phase C uses 90/10 fraction split (no `--fold`) to match the v5j baseline (0.906 LB).
+The PL path is in the config YAML, not a CLI arg.
+
+```bash
+# Fast-dev-run sanity check (5 batches)
+bash sbatch/run.sh configs/v3_waveform_mix.yaml --fast-dev-run
+
+# Baseline run: single model, 90/10 split, compare vs v5j 0.906 LB
+bash sbatch/run.sh configs/v3_waveform_mix.yaml
+
+# If single model improves → 4-fold ensemble
+bash sbatch/run.sh configs/v3_waveform_mix.yaml --all-folds
 ```
 
 ### Kaggle submission

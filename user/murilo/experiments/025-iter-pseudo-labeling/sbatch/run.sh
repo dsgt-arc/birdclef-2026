@@ -131,10 +131,8 @@ if [[ -z "$CONFIG" ]]; then
     exit 1
 fi
 
-if [[ -z "$PSEUDO_LABEL_PATH" ]]; then
-    echo "Error: --pl-path is required (path to pseudo_labels.parquet)"
-    exit 1
-fi
+# --pl-path is optional: Phase B uses CLI arg, Phase C reads from YAML config
+# (kept for backward compatibility with Phase B configs)
 
 # --all-folds: recursively submit 4 fold jobs
 if [[ "${ALL_FOLDS}" == "true" ]]; then

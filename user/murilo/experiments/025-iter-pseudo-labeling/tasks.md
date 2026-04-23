@@ -128,28 +128,34 @@ Wrapper around the existing GT training dataset. On each `__getitem__`:
 - With probability `pl_mix_chance`, load random PL segment + amplitude mix
 - Return mixed (or unmixed) sample as standard 3-tuple
 
-- [ ] Create `PseudoLabelMixingDataset` class in `src/birdclef/data/sed.py`
-- [ ] Pre-load PL segment index from parquet (file paths + start times + soft labels)
-- [ ] Implement amplitude-controlled waveform mixing:
+- [x] Create `PseudoLabelMixingDataset` class in `src/birdclef/data/sed.py`
+- [x] Pre-load PL segment index from parquet (file paths + start times + soft labels)
+- [x] Implement amplitude-controlled waveform mixing:
   ```python
   amp_focal = 10 ** random.uniform(amp_exp_min, amp_exp_max)
   amp_pl = 10 ** random.uniform(amp_exp_min, amp_exp_max)
   mixed = amp_focal * focal_waveform + amp_pl * pl_waveform
   mixed_label = torch.maximum(focal_label, pl_soft_labels)
   ```
-- [ ] Wire into SEDDataModule when `pseudo_label_mix` config is present
+- [x] Wire into SEDDataModule when `pseudo_label_mix` config is present
 
 ### C.2: Create config and train
 
-- [ ] Create `configs/v3_waveform_mix.yaml`:
+- [x] Create `configs/v3_waveform_mix.yaml`:
   - v5j recipe (BCE, LSEHead, spectrogram MixUp, 20 epochs)
   - PL waveform mixing at 30% probability
   - Amplitude range: [-0.5, 0.1] (log10 scale)
   - Use existing v1 PLs (347K segments, 196/234 species)
-- [ ] Fast-dev-run sanity check
-- [ ] Full training (20 epochs)
-- [ ] ONNX export + LB submission
-- [ ] Compare vs v5j baseline (0.906)
+- [x] Fast-dev-run sanity check ✅ — Job 6491524, 5 batches, PL mixing verified,
+  127236 PL segments (660 val excluded), loss OK
+- [x] Full training (20 epochs, 90/10 split) ✅ — Job 6492104, RTX 6000, 39m09s.
+  Best val/auroc=0.866 (epoch 16), val/cmap=0.603. Model still improving at epoch 20.
+- [x] Full training (40 epochs, 90/10 split, dual_validation) ✅ — Job 6494042, RTX 6000,
+  1h14m. Best val/auroc=0.851 (epoch 38), val/cmap=0.612, val_sc/auroc=0.991. Model
+  still improving at epoch 38 — never fully plateaued. Better calibration metrics
+  (cmap +0.009, f1_macro +0.037, top1_acc +0.024) despite lower auroc (different init).
+- [x] ONNX export + LB submission (40ep checkpoint) ✅
+- [x] Compare vs v5j baseline (0.906) — **0.894 LB, regressed -0.012** ❌
 
 ### C.3: Iterate (if C.2 improves)
 
@@ -167,6 +173,6 @@ Wrapper around the existing GT training dataset. On each `__getitem__`:
 ## Success Criteria (revised)
 
 - [x] Round 1 row-addition (Phase B): **>0.906** LB — ❌ 0.897 (regressed)
-- [ ] Waveform mixing (Phase C): **>0.906** LB (first PL approach to improve)
+- [ ] Waveform mixing (Phase C): **>0.906** LB — ❌ 0.894 (regressed -0.012)
 - [ ] After 2-3 iterations: **>0.920** LB
 - [ ] In ensemble: **>0.935** LB

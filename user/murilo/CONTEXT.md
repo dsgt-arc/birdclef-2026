@@ -3,7 +3,7 @@
 Session handoff document for Murilo's BirdCLEF 2026 experiments.
 Read this first, then read the referenced docs to get full context.
 
-Last updated: 2026-04-12 (end of session)
+Last updated: 2026-04-13 (end of session)
 
 ## Read these files first
 
@@ -11,22 +11,22 @@ Read ALL of these at session start to get full context.
 
 | File | Purpose | How to read |
 |------|---------|-------------|
-| `user/murilo/notes/sed-architecture-overview.md` | **Complete pipeline reference** — 13 sections covering data, audio processing, model architecture, training, loss, inference, window experiments, identified gaps | Read fully (primary doc) |
-| `user/murilo/notes/2026-04-12-salman-ahmed-birdclef2025.md` | **Salman's BirdCLEF 2025 code analysis** — max trick, RMS sampling, mel norm, full pipeline comparison vs v5j | Read fully |
-| `user/murilo/notes/2026-04-12-mario-lasseck-birdclef2024.md` | **Mario's BirdCLEF 2024 paper** — iterative pseudo-labeling (+8%), waveform mixing, model soup | Read fully |
-| `user/murilo/experiments/025-iter-pseudo-labeling/tasks.md` | **Exp 025 task tracking — Phase C next (waveform mixing)** | Read fully |
-| `user/murilo/experiments/025-iter-pseudo-labeling/waveform-mixing-blueprint.md` | **Mario-style PL waveform mixing recipe** | Read fully |
-| `user/murilo/experiments/027-model-training-fixes/tasks.md` | Exp 027 task tracking — Phases 1-4 (winding down) | Read fully |
-| `user/murilo/experiments/027-model-training-fixes/results.md` | Exp 027 results — all variants | Read fully |
+| `user/murilo/experiments/028-domain-shift-augmentation/proposal.md` | **Exp 028 proposal — next experiment** | Read fully (start here) |
+| `user/murilo/experiments/028-domain-shift-augmentation/tasks.md` | **Exp 028 task tracking** | Read fully |
+| `user/murilo/notes/2026-04-13-claude-deep-research-birdclef-strategy.md` | **Claude deep research** — unbiased BirdCLEF 2026 strategy analysis | Read fully |
+| `user/murilo/notes/2026-04-13-gemini-deep-research-birdclef-strategy.md` | **Gemini deep research** — unbiased BirdCLEF 2026 strategy analysis | Read fully |
+| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | **Competitor insights** — Boredom 0.938, Salman 0.922, techniques shared | Read fully |
 | `user/murilo/FINDINGS.md` | What worked, what didn't, key patterns (exps 006–027) | Read fully |
 | `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints | Skim |
+| `user/murilo/notes/sed-architecture-overview.md` | Complete pipeline reference (13 sections) | Skim |
+| `user/murilo/experiments/025-iter-pseudo-labeling/results.md` | Exp 025 Phase B+C results (both failed) | Skim |
 
 ## Current state
 
 **Best LB: 0.929** (Perch ONNX + SED v5j-4fold MLP-only ensemble, exp 023)
 **Best single SED: 0.906** (v5j, 5s LSEHead, exp 019)
 **Target: 0.948** (competition #1). Gap: 0.019.
-**Branch**: `mg/027-model-training-fixes` — PR #30
+**Branch**: `mg/025-waveform-mixing-pl` — PR #31
 
 | Model | LB | Notes |
 |-------|-----|-------|
@@ -35,115 +35,112 @@ Read ALL of these at session start to get full context.
 | SED v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
 | **SED v5j single (exp 019)** | **0.906** | **Best single SED — our ceiling** |
 | v5j-dualval (exp 026) | 0.897 | Soundscape checkpoint selection (worse) |
-| v5j-pl-v1 (exp 025) | 0.897 | Pseudo-labels (regressed) |
-| v10a addmix+CE (exp 027) | 0.494 | FAILED — CE logits too small for sigmoid |
-| v10b addmix+BCE (exp 027) | 0.875 | FAILED — additive MixUp regresses -0.031 |
+| v5j-pl-v1 (exp 025 Phase B) | 0.897 | Pseudo-labels as separate rows (regressed) |
+| v3-waveform-mix (exp 025 Phase C) | 0.894 | FAILED — Mario-style PL waveform mixing -0.012 |
 | v11b simple mel norm (exp 027) | 0.895 | FAILED — mel norm regresses -0.011 |
-| v5j-10s (10s window, exp 027) | 0.906 | Flat — TTA already covers overlap |
+| v10b addmix+BCE (exp 027) | 0.875 | FAILED — additive MixUp regresses -0.031 |
+| v10a addmix+CE (exp 027) | 0.494 | FAILED — CE logits too small for sigmoid |
 
-## What happened in this session (2026-04-12)
+## What happened in this session (2026-04-13)
 
-### Exp 027 Phases 1-3: Deep research recommendations — ALL FAILED
+### Exp 025 Phase C: Waveform mixing — FAILED (0.894 LB, -0.012)
 
-Tested three changes from Claude+Gemini deep research (2026-04-11):
+Implemented Mario Lasseck's waveform-mixing approach: 30% of focal samples get
+overlaid with random PL soundscape segment (amplitude-controlled). Trained 40 epochs,
+model still improving at epoch 38. val_sc/auroc=0.991 but LB regressed -0.012.
 
-| Change | LB | Delta | Outcome |
-|--------|-----|-------|---------|
-| v10a: additive MixUp + CE loss | 0.494 | -0.412 | CE logits random on soundscapes |
-| v10b: additive MixUp + BCE loss | 0.875 | -0.031 | Additive MixUp worse than spectrogram |
-| I-1: 10s overlapping window inference | 0.906 | +0.000 | TTA already covers overlap |
+| Approach | LB | Delta vs v5j |
+|----------|-----|-------------|
+| v5j baseline | 0.906 | — |
+| Phase B: row-addition (w=0.5) | 0.897 | -0.009 |
+| Phase C: waveform mixing (30%) | 0.894 | -0.012 |
 
-CE confirmed dead (7 tests). Additive MixUp confirmed worse (3 waveform MixUp tests, all regress).
+Both pseudo-label approaches failed. Waveform mixing was worse than row-addition.
 
-### Exp 027 Phase 4: Salman-derived structural changes
+### Re-evaluation: Deep research completed
 
-Analyzed Salman Ahmed's BirdCLEF 2025 training notebook and Mario Lasseck's
-BirdCLEF 2024 paper. Identified specific implementation differences from v5j.
-Created comprehensive reference notes for both.
+Key realization: the 0.906→0.93+ gap vs competitors (Boredom 0.938, Salman 0.922)
+using the **same labeled data** is the real problem. Ran unbiased deep research with
+both Claude and Gemini (no context of our experiments).
 
-| Change | val/auroc | Delta vs control | Notes |
-|--------|-----------|-----------------|-------|
-| v5j-control (baseline) | 0.849 | — | Matches v5j-dualval, pipeline verified |
-| v11a: max trick + RMS | 0.804 | **-0.045** | Focal regression, val_sc flat |
-| v11b: simple mel norm | 0.847 | -0.002 | **LB 0.895 (-0.011)** |
+**Convergent findings from both:**
+- The gap is about **domain adaptation**, not architecture
+- **Environmental noise augmentation** is critical (different from bird+bird MixUp)
+- **Secondary labels** from focal data are underutilized (multi-species supervision)
+- **Long-tail/non-bird taxa** (Insecta, Amphibia) are systematically undertreated
+- **Post-processing** (TopN temporal consistency) is a free +0.01-0.015
+- **SpecAugment** and **balanced sampling** are standard techniques we're missing
 
-v11a (max trick) regressed substantially on focal metrics despite being Salman's
-most distinctive technique. Likely cause: train/val mismatch (RMS-selected training
-vs random val crops) and reduced batch diversity (32 vs 64 samples).
+### Exp 028 proposed: Domain Shift Augmentation
 
-### Key realization: the bottleneck is data coverage, not model quality
+Created exp 028 with three phases:
+- **Phase A**: Diagnostic — analyze v5j predictions on labeled soundscapes (existing
+  inference data at `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/`). Per-species
+  and per-taxonomy AUC, check "Invisible 28" (soundscape-only species). Zero compute.
+- **Phase B**: TopN=1 post-processing — inference-only kernel change. Zero training cost.
+- **Phase C**: Combined training recipe — environmental noise mixing, secondary labels,
+  soundscape oversampling, SpecAugment, sqrt-balanced sampling. All five changes
+  tested together (21 individual changes have all failed — hypothesis: complementary).
 
-After 27 experiments and 18+ training changes with 0 LB improvements:
-
-- v5j achieves **0.9958 AUC** on 75 species seen in soundscapes (near-perfect)
-- **159 species** have zero soundscape training data (mean max-prob 0.036)
-- The entire LB gap comes from species the model never saw in soundscapes
-- No training recipe change can fix this — only DATA that bridges the domain gap
-
-### Git operations
-
-- Squash-merged PR #28 (exp 026) into main
-- All Phase 4 code (max trick, RMS sampling, simple_range mel norm) implemented
-- Salman + Mario reference notes created
-- v5j-control, v11a, v11b metrics recorded
+**Running total: 21+ changes, 0 LB improvements.**
 
 ## What needs to happen next
 
-### Priority 1: Mario-style pseudo-labeling (exp 025 Phase C)
+### Priority 1: Start exp 028 Phase A — Diagnostic analysis
 
-The ONLY direction with evidence of large gains (+8% from Mario, used by every
-top BirdCLEF solution). Extending exp 025 (not new experiment) since PL infra
-already exists. Blueprint: `025-iter-pseudo-labeling/waveform-mixing-blueprint.md`
+Use existing v5j inference data on labeled soundscapes to understand WHERE we fail:
+- v5j logits: `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/train_soundscapes/logits.parquet`
+- 4-fold logits: `shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/train_soundscapes/`
+- Ground truth: `shared/data/birdclef-2026/train_soundscapes_labels.csv`
+- Adapt script from `025-iter-pseudo-labeling/diagnose_regression.py`
 
-**Mario's approach** (BirdCLEF 2024 2nd place):
-1. Mix pseudo-labeled soundscape AUDIO with focal audio at waveform level
-2. Amplitude factors: `ampFactor = 10**(random.uniform(-0.5, 0.1))`
-3. Labels: `max(focal_label, pseudo_label_probs)`
-4. 25-45% of training samples get mixed with PL segments
-5. Iterate 2-3 times (retrain → regenerate PLs → retrain)
+Key questions:
+1. Per-species AUC on labeled soundscapes — which species are we worst at?
+2. Per-taxonomy breakdown — Aves vs Amphibia vs Insecta performance
+3. "Invisible 28" (soundscape-only: 25 insect sonotypes + 3 amphibians) — scoring 0.0?
+4. Confidence distributions — focal-trained vs soundscape-only species
 
-We already have: 347K pseudo-labels from Phase A, 0.929 ensemble as teacher.
-What failed in Phase B: adding PL as separate dataset rows (wrong approach).
+### Priority 2: Start exp 028 Phase B — TopN post-processing
 
-Implementation needed:
-1. `PseudoLabelMixingDataset` wrapper class in `src/birdclef/data/sed.py`
-2. `v3_waveform_mix.yaml` config
-3. Train + ONNX export + LB submission
+Implement in submission kernel (can run in parallel with Phase A):
+```python
+prob[file, segment, class] *= max(prob[file, :, class])
+```
+Apply to existing v5j ONNX model, submit to LB. Zero training cost.
 
-### Priority 2: v11b LB score — DONE (0.895, regressed -0.011)
+### Priority 3: Exp 028 Phase C — Combined training recipe
 
-v11b (simple mel norm) scored **0.895 LB** (-0.011 vs v5j 0.906). Another training
-recipe change that regresses. Mel normalization change is now a confirmed dead end.
+Based on Phase A findings, implement and train the combined recipe.
 
-### Priority 3: Ensemble improvements
+## Key patterns (updated 2026-04-13)
 
-- TF Perch instead of ONNX (+0.005 recovery)
-- Train v5j with different mel params for ensemble diversity
-- Better ensemble weighting (per-species or per-site)
-
-## Key patterns (updated 2026-04-12, end of session)
-
-- **18+ training recipe changes, 0 LB successes** — including max trick, RMS
-  sampling, additive MixUp, CE loss, overlapping windows, mel normalization.
-  The evidence is now overwhelming: v5j recipe changes cannot improve LB.
-- **The bottleneck is data coverage**: 159 species with zero soundscape data.
-  Pseudo-labeling is the only path that directly addresses this.
-- **CE loss is dead** (7 tests). Additive MixUp is dead (3 tests). Max trick
-  regresses offline (-0.045). Only spectrogram MixUp works.
+- **21+ changes, 0 LB successes** — includes 19 training recipe changes AND 2
+  pseudo-label approaches. Neither recipe changes nor data additions improved LB.
+- **The gap is on labeled data**: Boredom (0.938) and Salman (0.922) beat us by
+  0.016-0.032 using the same focal + labeled soundscape data. No KD, no Perch.
+- **Domain shift is the core problem**: Both deep research analyses converge on this.
+  Our model trains on clean focal recordings but is tested on noisy soundscapes.
+  We're undertreating: noise augmentation, secondary labels, non-bird taxa,
+  long-tail species, and post-processing.
+- **CE loss is dead** (7 tests). Additive MixUp is dead (3 tests). Pseudo-labels
+  are dead (2 approaches). Mel norm, max trick, multi-context all regressed.
 - **Offline metrics remain anti-correlated with LB** — DO NOT trust them.
-- **Mario's waveform-mixing pseudo-label approach is the clear next step** —
-  fundamentally different from our failed exp 025 (mixing audio, not adding rows).
+- **Individual changes fail; combined approach untested** — every single change
+  regressed. The hypothesis is these improvements are complementary.
 
 ## Key files for current work
 
 | File | Purpose |
 |------|---------|
-| `user/murilo/experiments/027-model-training-fixes/` | **Active experiment** |
-| `user/murilo/experiments/027-model-training-fixes/tasks.md` | Exp 027 task tracking (Phases 1-4) |
-| `user/murilo/notes/2026-04-12-salman-ahmed-birdclef2025.md` | Salman's pipeline analysis |
-| `user/murilo/notes/2026-04-12-mario-lasseck-birdclef2024.md` | Mario's pseudo-labeling paper |
-| `user/murilo/src/birdclef/lightning/sed_finetune.py` | Training module (max_trick, mixup_mode) |
-| `user/murilo/src/birdclef/data/sed.py` | Data module (rms_sampling) |
-| `user/murilo/src/birdclef/preprocessing/nnaudio_mel.py` | Mel transform (simple_range norm) |
-| `user/murilo/notes/sed-architecture-overview.md` | Complete pipeline reference (13 sections) |
+| `user/murilo/experiments/028-domain-shift-augmentation/` | **Active experiment — start here** |
+| `user/murilo/experiments/028-domain-shift-augmentation/proposal.md` | Experiment proposal (3 phases) |
+| `user/murilo/experiments/028-domain-shift-augmentation/tasks.md` | Task tracking |
+| `user/murilo/notes/2026-04-13-claude-deep-research-birdclef-strategy.md` | Claude's strategy analysis |
+| `user/murilo/notes/2026-04-13-gemini-deep-research-birdclef-strategy.md` | Gemini's strategy analysis |
+| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor insights |
+| `user/murilo/experiments/025-iter-pseudo-labeling/results.md` | Exp 025 results (both phases failed) |
+| `user/murilo/experiments/025-iter-pseudo-labeling/diagnose_regression.py` | Diagnostic script to adapt for Phase A |
+| `shared/inference/birdclef-2026/hgnet-b0-sed-v5j/` | **Existing v5j inference** (focal + soundscapes) |
+| `user/murilo/notes/sed-architecture-overview.md` | Complete pipeline reference |
 | `user/murilo/FINDINGS.md` | What worked / didn't across all experiments |
+| `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints |
