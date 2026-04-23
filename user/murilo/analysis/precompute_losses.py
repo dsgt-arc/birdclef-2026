@@ -86,13 +86,14 @@ def build_val_dataset(
 
     # Collect focal metadata
     for i in range(len(focal_val_dataset)):
-        rec = focal_val_dataset.recordings[i]
+        audio_path, _, label_vec, primary_idx = focal_val_dataset.recordings[i]
+        primary_label = species_list[primary_idx] if primary_idx < len(species_list) else "unknown"
         metadata.append(
             {
-                "filename": str(rec[0]),
+                "filename": str(audio_path),
                 "source": "focal",
-                "primary_label": rec[1],
-                "all_labels": rec[1],
+                "primary_label": primary_label,
+                "all_labels": primary_label,
             }
         )
 
@@ -100,9 +101,8 @@ def build_val_dataset(
         sc_df = pd.read_csv(soundscape_labels_csv)
         sc_train, sc_val, _ = _split_soundscape_by_file(
             sc_df,
-            soundscape_dir=str(data_dir / "train_soundscapes"),
-            n_val_files=config["data"].get("n_val_soundscape_files", 8),
-            n_test_files=0,
+            soundscape_val_files=config["data"].get("n_val_soundscape_files", 8),
+            soundscape_test_files=0,
             seed=seed + 1,
         )
 
@@ -119,13 +119,18 @@ def build_val_dataset(
             datasets.append(sc_val_dataset)
 
             for i in range(len(sc_val_dataset)):
-                chunk = sc_val_dataset.chunks[i]
+                audio_path, _, label_vec, primary_idx = sc_val_dataset.chunks[i]
+                primary_label = (
+                    species_list[primary_idx] if primary_idx < len(species_list) else "unknown"
+                )
+                # Collect all positive species from multi-hot label vector
+                active = [species_list[j] for j in range(len(species_list)) if label_vec[j] > 0.5]
                 metadata.append(
                     {
-                        "filename": str(chunk[0]),
+                        "filename": str(audio_path),
                         "source": "soundscape",
-                        "primary_label": chunk[2] if len(chunk) > 2 else "unknown",
-                        "all_labels": chunk[2] if len(chunk) > 2 else "unknown",
+                        "primary_label": primary_label,
+                        "all_labels": ";".join(active) if active else primary_label,
                     }
                 )
 
