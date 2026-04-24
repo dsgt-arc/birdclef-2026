@@ -6,24 +6,40 @@ Programmatic version of model_explorer.ipynb. For each selected sample, saves:
 - Competitor comparison PNG (GT vs top-1 or top-2, see rule below)
 - 5-second audio crop as WAV
 
-Plus summary batch figures for top-5 highest and top-5 lowest loss.
+Plus summary batch figures for top-5 highest and top-5 lowest loss (raw mode).
+
+Two modes:
+
+**Raw mode** (default): ranks samples by loss across the whole val set (or a
+`--source` subset) and outputs under `figures/<model>/<source>/highest_loss/`
+and `lowest_loss/`. This is the original behavior.
+
+**Filtered mode**: activated by any `--filter-category`, `--filter-species`, or
+`--filter-saliency-informative` flag. Joins with the triage parquet, applies
+filters, dedupes on `(filename, offset_sec)`, outputs a flat dir under
+`figures/<model>/<slug>/` where `slug = <category>[_<species>][_saliency]`.
+No `highest_loss`/`lowest_loss` split — we're inspecting a curated set.
 
 Competitor comparison rule:
-- highest_loss bucket: always save (top-1 when top-1 != GT, top-2 when top-1 == GT).
-- lowest_loss  bucket: save only when top-1 != GT (a confident wrong prediction on
-  an easy sample is a notable edge case; otherwise the comparison is uninformative).
+- highest_loss bucket (and filtered mode): always save (top-1 when top-1 != GT,
+  top-2 when top-1 == GT).
+- lowest_loss  bucket: save only when top-1 != GT.
 
 Usage:
+    # Raw top-20 highest/lowest on all val samples:
     python export_figures.py \\
         --losses data/losses_v5j.parquet \\
-        --logits data/losses_v5j_logits.npy \\
         --config ../experiments/019-sed-ablations/config/hgnet_b0_sed_v5j.yaml \\
         --checkpoint /path/to/best-epochepoch=19.ckpt \\
-        --top-k 20 \\
-        --batch-k 5 \\
-        --source all \\
-        --output-dir figures/ \\
-        --device cpu
+        --top-k 20 --source all
+
+    # Filtered: all roahaw mixed_uncertainty samples:
+    python export_figures.py \\
+        --losses data/losses_v5j.parquet \\
+        --config ... --checkpoint ... \\
+        --filter-category mixed_uncertainty \\
+        --filter-species roahaw \\
+        --top-k -1  # -1 or 0 means "all matched samples"
 """
 
 from __future__ import annotations
@@ -59,6 +75,55 @@ def _infer_model_name(losses_path: Path, override: str | None) -> str:
 
 def _rank_filename(rank: int, loss: float, row_id: int, suffix: str = "") -> str:
     return f"rank{rank:02d}_loss{loss:.4f}_row{row_id}{suffix}"
+
+
+def _infer_triage_path(losses_path: Path, override: Path | None) -> Path:
+    if override is not None:
+        return override
+    stem = losses_path.stem.replace("losses_", "triage_", 1)
+    return losses_path.parent / f"{stem}.parquet"
+
+
+def apply_triage_filters(
+    losses_df: pd.DataFrame,
+    triage_path: Path,
+    categories: list[str] | None,
+    species: str | None,
+    saliency_only: bool,
+) -> tuple[pd.DataFrame, str]:
+    """Join with triage, apply category/species/saliency filters, dedupe.
+
+    Returns:
+        (filtered_df, slug). The slug is `<cat1+cat2...>[_<species>][_saliency]`.
+    """
+    if not triage_path.exists():
+        raise SystemExit(f"Triage parquet not found: {triage_path}. Run triage.py first.")
+    triage = pd.read_parquet(triage_path)
+    merge_cols = ["idx", "triage_category", "saliency_informative"]
+    merged = losses_df.merge(triage[merge_cols], on="idx", how="left")
+
+    if categories:
+        merged = merged[merged["triage_category"].isin(categories)]
+    if species:
+        merged = merged[merged["primary_label"] == species]
+    if saliency_only:
+        merged = merged[merged["saliency_informative"].astype(bool)]
+
+    before = len(merged)
+    merged = merged.drop_duplicates(subset=["filename", "offset_sec"]).reset_index(drop=True)
+    after = len(merged)
+    if before != after:
+        logger.info(f"Deduped on (filename, offset_sec): {before} -> {after}")
+
+    slug_parts: list[str] = []
+    if categories:
+        slug_parts.append("+".join(sorted(categories)))
+    if species:
+        slug_parts.append(species)
+    if saliency_only:
+        slug_parts.append("saliency")
+    slug = "_".join(slug_parts)
+    return merged, slug
 
 
 def _compute_and_save_sample(
@@ -255,6 +320,10 @@ def export_figures(
     source_filter: str,
     model_name: str | None,
     device: str,
+    filter_categories: list[str] | None = None,
+    filter_species: str | None = None,
+    filter_saliency_informative: bool = False,
+    triage_path_override: Path | None = None,
 ) -> dict:
     config = load_config(config_path)
     sample_rate = config["data"]["sample_rate"]
@@ -263,13 +332,119 @@ def export_figures(
 
     df = pd.read_parquet(losses_path)
     logger.info(f"Loaded {len(df)} samples from {losses_path}")
+
+    model_name = _infer_model_name(losses_path, model_name)
+    filtered_mode = bool(filter_categories or filter_species or filter_saliency_informative)
+
+    if filtered_mode:
+        triage_path = _infer_triage_path(losses_path, triage_path_override)
+        logger.info(f"Filtered mode. Triage parquet: {triage_path}")
+        df, filter_slug = apply_triage_filters(
+            df, triage_path, filter_categories, filter_species, filter_saliency_informative
+        )
+        logger.info(f"After triage filter: {len(df)} samples matched filter slug='{filter_slug}'")
+        if source_filter != "all":
+            df = df[df["source"] == source_filter].reset_index(drop=True)
+            logger.info(f"After --source={source_filter}: {len(df)} samples")
+        if len(df) == 0:
+            raise SystemExit("No samples matched the filter.")
+
+        run_dir = output_dir / model_name / filter_slug
+        run_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Output dir: {run_dir}")
+
+        logger.info("Loading model")
+        model, mel_transform, species_list = load_model(config_path, checkpoint_path, device=device)
+
+        # top_k <= 0 means "all matched samples".
+        effective_k = len(df) if top_k <= 0 else min(top_k, len(df))
+        selected = df.nlargest(effective_k, "loss").reset_index(drop=True)
+        logger.info(f"Ranking by loss desc; exporting {effective_k} of {len(df)} matched samples")
+
+        manifest_ranks = []
+        for rank, (_, row) in enumerate(selected.iterrows(), start=1):
+            logger.info(
+                f"[{rank}/{effective_k}] row={row['idx']} species={row['primary_label']} "
+                f"source={row['source']} loss={row['loss']:.4f} "
+                f"top1={row['top1_species']}({row['top1_prob']:.3f})"
+            )
+            entry = _compute_and_save_sample(
+                row,
+                rank,
+                "highest_loss",  # competitor rule: always save top-1 or top-2
+                run_dir,
+                model,
+                mel_transform,
+                species_list,
+                lse_temp,
+                sample_rate,
+                window_duration,
+                device,
+            )
+            manifest_ranks.append(entry)
+
+        # Optional summary batch — first batch_k after loss-desc ranking.
+        if batch_k > 0 and len(selected) > 0:
+            summary_dir = run_dir / "summary"
+            summary_dir.mkdir(exist_ok=True)
+            batch_results, batch_metas = _collect_batch_results(
+                selected.head(batch_k),
+                model,
+                mel_transform,
+                species_list,
+                lse_temp,
+                sample_rate,
+                window_duration,
+                device,
+            )
+            if batch_results:
+                plot_batch_grid(
+                    batch_results,
+                    batch_metas,
+                    f"Filter '{filter_slug}': top-{batch_k} by loss",
+                    summary_dir / f"top{batch_k}_batch.png",
+                )
+
+        manifest = {
+            "mode": "filtered",
+            "model_name": model_name,
+            "config_path": str(config_path),
+            "checkpoint_path": str(checkpoint_path),
+            "losses_path": str(losses_path),
+            "triage_path": str(triage_path),
+            "filter": {
+                "categories": filter_categories,
+                "species": filter_species,
+                "saliency_informative": filter_saliency_informative,
+                "source_filter": source_filter,
+                "dedupe_key": "filename,offset_sec",
+            },
+            "filter_slug": filter_slug,
+            "top_k_requested": top_k,
+            "effective_k": effective_k,
+            "batch_k": batch_k,
+            "device": device,
+            "sample_rate": sample_rate,
+            "window_duration": window_duration,
+            "lse_temperature": lse_temp,
+            "n_samples_matched": int(len(df)),
+            "n_species": len(species_list),
+            "generated_at": datetime.now(UTC).isoformat(),
+            "ranks": manifest_ranks,
+        }
+        manifest_path = run_dir / "manifest.json"
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+        logger.info(f"Wrote manifest to {manifest_path}")
+        return manifest
+
+    # --- Raw mode (existing behavior) ---
     if source_filter != "all":
         df = df[df["source"] == source_filter].reset_index(drop=True)
         logger.info(f"Filtered to {len(df)} samples with source={source_filter}")
         if len(df) == 0:
             raise SystemExit(f"No samples with source={source_filter}")
 
-    model_name = _infer_model_name(losses_path, model_name)
     run_dir = output_dir / model_name / source_filter
     highest_dir = run_dir / "highest_loss"
     lowest_dir = run_dir / "lowest_loss"
@@ -366,6 +541,7 @@ def export_figures(
         )
 
     manifest = {
+        "mode": "raw",
         "model_name": model_name,
         "config_path": str(config_path),
         "checkpoint_path": str(checkpoint_path),
@@ -408,7 +584,13 @@ def main():
         default=Path("figures"),
         help="Root output directory (default: figures/)",
     )
-    parser.add_argument("--top-k", type=int, default=20, help="Per-sample figures per bucket")
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=20,
+        help="Per-sample figures per bucket (raw mode) or cap on filtered exports "
+        "(-1 or 0 = all matched samples in filtered mode)",
+    )
     parser.add_argument("--batch-k", type=int, default=5, help="Samples in summary batch figures")
     parser.add_argument(
         "--source",
@@ -422,6 +604,33 @@ def main():
         help="Override model name (default: inferred from losses filename)",
     )
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+
+    # Triage-aware filters (activate filtered mode)
+    parser.add_argument(
+        "--filter-category",
+        nargs="+",
+        default=None,
+        help="Filter by triage_category (one or more). Activates filtered mode. "
+        "Examples: mixed_uncertainty, confident_wrong, gt_invisible",
+    )
+    parser.add_argument(
+        "--filter-species",
+        default=None,
+        help="Filter by primary_label (single species code). Activates filtered mode.",
+    )
+    parser.add_argument(
+        "--filter-saliency-informative",
+        action="store_true",
+        help="Filter to samples where gt_prob in [0.05, 0.9]. Activates filtered mode.",
+    )
+    parser.add_argument(
+        "--triage",
+        type=Path,
+        default=None,
+        help="Triage parquet path. Defaults to inferring triage_<model>.parquet next "
+        "to the losses parquet.",
+    )
+
     args = parser.parse_args()
 
     export_figures(
@@ -434,6 +643,10 @@ def main():
         source_filter=args.source,
         model_name=args.model_name,
         device=args.device,
+        filter_categories=args.filter_category,
+        filter_species=args.filter_species,
+        filter_saliency_informative=args.filter_saliency_informative,
+        triage_path_override=args.triage,
     )
 
 
