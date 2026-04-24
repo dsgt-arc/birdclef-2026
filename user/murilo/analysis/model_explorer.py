@@ -51,7 +51,7 @@ def config(Path, mo):
         _project_dir / "experiments/017-mel-overhaul/checkpoints"
         "/2026-hgnet-b0-sed-v5j/best-epochepoch=19.ckpt"
     )
-    LOSSES_PATH = str(_analysis_dir / "losses_v5j.parquet")
+    LOSSES_PATH = str(_analysis_dir / "data/losses_v5j.parquet")
     SAMPLE_RATE = 32000
     WINDOW_DURATION = 5.0
 

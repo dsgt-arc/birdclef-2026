@@ -29,7 +29,7 @@ USER_DIR="$(dirname "$ANALYSIS_DIR")"
 
 CONFIG="${USER_DIR}/experiments/019-sed-ablations/config/hgnet_b0_sed_v5j.yaml"
 CHECKPOINT="/storage/project/${PROJECT_NAME}/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/best-epochepoch=19.ckpt"
-OUTPUT="losses_v5j.parquet"
+OUTPUT="data/losses_v5j.parquet"
 
 # Map short names to SLURM partition names
 resolve_partitions() {

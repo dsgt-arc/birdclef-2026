@@ -85,6 +85,8 @@ if [ -f "$USER_DIR/.env" ]; then
     set +a
 fi
 
+mkdir -p "$(dirname "${OUTPUT}")"
+
 echo "=============================================="
 echo "Starting pre-computation..."
 echo "=============================================="
