@@ -21,53 +21,57 @@ uv pip install -e .
 uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
-### 2. Pre-compute losses (GPU recommended, CPU works)
+### 2. Pre-compute losses (GPU, ~3 min)
 
 ```bash
 cd analysis/
-python precompute_losses.py \
-    --config ../experiments/019-sed-ablations/config/hgnet_b0_sed_v5j.yaml \
-    --checkpoint /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/best-epochepoch=19.ckpt \
-    --output losses_v5j.parquet \
-    --device cuda
+
+# Default: v5j model
+bash sbatch/run.sh
+
+# Custom model:
+bash sbatch/run.sh --config path/to/config.yaml --checkpoint path/to/ckpt --output data/losses_custom.parquet
 ```
 
-This creates `losses_v5j.parquet` (sample metadata + losses) and
-`losses_v5j_logits.npy` (raw logits for deeper analysis).
+This creates `data/losses_v5j.parquet` (sample metadata + losses + crop offsets) and
+`data/losses_v5j_logits.npy` (raw logits for deeper analysis).
 
-### 3. Launch the Marimo app
+### 3. Open the Jupyter notebook
 
-```bash
-# On the compute node
-marimo run model_explorer.py --host 0.0.0.0 --port 8080
+Open `model_explorer.ipynb` in VS Code / Antigravity (built-in Jupyter support).
+Select the venv kernel, then run all cells.
 
-# Or in edit mode (to see/modify cells)
-marimo edit model_explorer.py --host 0.0.0.0 --port 8080
-```
-
-### 4. SSH port forward from local machine
-
-```bash
-ssh -L 8080:localhost:8080 user@pace-login-node
-```
-
-Then open `http://localhost:8080` in your browser.
+To explore different samples, change `SAMPLE_IDX` in the "Select a sample" cell.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `model_explorer.py` | Marimo app — interactive UI |
-| `attribution.py` | Gradient saliency + LSE effective attention |
+| `model_explorer.ipynb` | **Main tool** — Jupyter notebook for interactive exploration |
+| `attribution.py` | Gradient saliency + LSE effective attention computation |
 | `model_loader.py` | Config-driven model loading (any SED model) |
-| `precompute_losses.py` | Batch script: val losses → parquet |
+| `precompute_losses.py` | Batch script: val losses → parquet (GPU) |
+| `model_explorer.py` | Marimo app (alternative to Jupyter, requires SSH tunneling) |
+| `data/` | Pre-computed parquet + logits files |
+| `sbatch/` | SLURM job scripts for precompute |
 
-## Using with a Different Model
+## What the notebook shows
+
+For each selected sample, a 4-panel visualization:
+
+1. **Mel spectrogram** — the raw input to the model
+2. **Gradient saliency** — which time-frequency regions drive the prediction for the target species
+3. **Top-10 species** — bar chart of predicted probabilities (red = ground truth, blue = other)
+4. **Per-frame analysis** — LSE effective attention + frame probabilities across ~16 temporal frames
+
+Plus: audio playback, GT vs top-1 saliency comparison, and batch view of top-5 highest-loss samples.
+
+## Using with a different model
 
 The pipeline is model-agnostic. To analyze a different SED model:
 
-1. Point `precompute_losses.py` at a different `--config` and `--checkpoint`
-2. Update the `CONFIG_PATH`, `CHECKPOINT_PATH`, and `LOSSES_PATH` in `model_explorer.py`
-
-Any model that uses `EfficientNetEncoder` + `LSEHead/AttHead/AttBlockV2` +
-`NNAudioMelSpectrogram/TtaharaMelTransform` will work.
+1. Run precompute with different config/checkpoint:
+   ```bash
+   bash sbatch/run.sh --config path/to/config.yaml --checkpoint path/to/ckpt --output data/losses_v6l.parquet
+   ```
+2. Update `LOSSES_PATH` (and optionally `CONFIG_PATH`, `CHECKPOINT_PATH`) in the notebook's config cell
