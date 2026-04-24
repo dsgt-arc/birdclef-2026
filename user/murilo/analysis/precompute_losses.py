@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import logging
+import random
 import sys
 from pathlib import Path
 
@@ -84,16 +85,25 @@ def build_val_dataset(
     datasets = [focal_val_dataset]
     metadata = []
 
-    # Collect focal metadata
+    # Collect focal metadata with deterministic crop offsets
+    window_samples = int(window_duration * sample_rate)
+    rng = random.Random(seed)
     for i in range(len(focal_val_dataset)):
-        audio_path, _, label_vec, primary_idx = focal_val_dataset.recordings[i]
+        audio_path, total_samples, label_vec, primary_idx = focal_val_dataset.recordings[i]
         primary_label = species_list[primary_idx] if primary_idx < len(species_list) else "unknown"
+        # Deterministic crop offset (matches what the dataset will produce with this seed)
+        if total_samples > window_samples:
+            offset = rng.randint(0, total_samples - window_samples)
+        else:
+            offset = 0
+        offset_sec = offset / sample_rate
         metadata.append(
             {
                 "filename": str(audio_path),
                 "source": "focal",
                 "primary_label": primary_label,
                 "all_labels": primary_label,
+                "offset_sec": offset_sec,
             }
         )
 
@@ -119,18 +129,22 @@ def build_val_dataset(
             datasets.append(sc_val_dataset)
 
             for i in range(len(sc_val_dataset)):
-                audio_path, _, label_vec, primary_idx = sc_val_dataset.chunks[i]
+                audio_path, start_sample, label_vec, primary_idx = sc_val_dataset.chunks[i]
                 primary_label = (
                     species_list[primary_idx] if primary_idx < len(species_list) else "unknown"
                 )
                 # Collect all positive species from multi-hot label vector
                 active = [species_list[j] for j in range(len(species_list)) if label_vec[j] > 0.5]
+                # Soundscape offset: center of the context window
+                extra_context = int((window_duration - 5.0) / 2 * sample_rate)
+                load_start = max(0, start_sample - extra_context)
                 metadata.append(
                     {
                         "filename": str(audio_path),
                         "source": "soundscape",
                         "primary_label": primary_label,
                         "all_labels": ";".join(active) if active else primary_label,
+                        "offset_sec": load_start / sample_rate,
                     }
                 )
 
@@ -168,11 +182,18 @@ def precompute_losses(
     val_dataset, sample_metadata = build_val_dataset(config, species_list, data_dir)
     logger.info(f"Val dataset: {len(val_dataset)} samples")
 
+    # Seed the global random module so SEDFocalDataset's random crops are
+    # deterministic and match the offsets stored in sample_metadata.
+    seed = config["data"].get("seed", 42)
+    import random as py_random
+
+    py_random.seed(seed)
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=num_workers,
+        num_workers=0,  # Must be 0 for deterministic random crops
         pin_memory=(device == "cuda"),
         drop_last=False,
     )
@@ -253,6 +274,7 @@ def precompute_losses(
                 "source": meta["source"],
                 "primary_label": primary,
                 "all_labels": meta["all_labels"],
+                "offset_sec": meta.get("offset_sec", 0.0),
                 "loss": float(all_losses[i]),
                 "gt_prob": gt_prob,
                 "gt_rank": gt_rank,
