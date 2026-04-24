@@ -49,12 +49,14 @@ To explore different samples, change `SAMPLE_IDX` in the "Select a sample" cell.
 |------|---------|
 | `model_explorer.ipynb` | **Interactive tool** — Jupyter notebook for single-sample exploration |
 | `export_figures.py` | **Bulk tool** — programmatic export of top-K figures to disk |
+| `triage.py` | **Tabular triage** — enrich losses parquet with secondary_labels, classify failure modes |
 | `run/export_<model>.sh` | Per-model wrapper with hard-coded paths (copy when adding a model) |
 | `plotting.py` | Shared plot functions (4-panel, competitor comparison, batch grid) |
 | `attribution.py` | Gradient saliency + LSE effective attention computation |
 | `model_loader.py` | Config-driven model loading (any SED model) |
 | `precompute_losses.py` | Batch script: val losses → parquet (GPU) |
 | `model_explorer.py` | Marimo app (alternative to Jupyter, requires SSH tunneling) |
+| `notes/` | Captured findings from analysis sessions (date-prefixed `.md`) |
 | `data/` | Pre-computed parquet + logits files |
 | `sbatch/` | SLURM job scripts for precompute |
 
@@ -68,6 +70,27 @@ For each selected sample, a 4-panel visualization:
 4. **Per-frame analysis** — LSE effective attention + frame probabilities across ~16 temporal frames
 
 Plus: audio playback, GT vs top-1 saliency comparison, and batch view of top-5 highest-loss samples.
+
+## Tabular triage
+
+Before spending time on saliency analysis, run `triage.py` to understand what
+"high loss" actually represents. It joins the losses parquet with `train.csv`
+to add `secondary_labels` (which aren't in the precompute output) and flags:
+
+- `top1_is_secondary` — the "wrong" top-1 is actually a co-occurring species
+- `saliency_informative` — gt_prob in [0.05, 0.9], where saliency isn't saturated
+- `triage_category` — heuristic bucket (correct_confident, correct_uncertain,
+  cooccurrence_label_ambiguity, gt_invisible, confident_wrong, mixed_uncertainty)
+
+```bash
+# Summary over all samples + top-20 detail:
+python triage.py --losses data/losses_v5j.parquet
+
+# Single-sample detail:
+python triage.py --losses data/losses_v5j.parquet --row-id 865
+```
+
+See `notes/2026-04-24-triage-v5j-failure-modes.md` for the first run's findings.
 
 ## Bulk figure export
 
