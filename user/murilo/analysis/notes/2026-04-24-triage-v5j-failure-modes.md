@@ -32,6 +32,29 @@ Output: `analysis/data/triage_v5j.parquet`.
 **`confident_wrong` — the actual "model is confidently wrong and it's nobody's
 fault but the model" bucket — is 1% of the val set.**
 
+### Category × source
+
+| Category | focal | soundscape |
+|---|---:|---:|
+| correct_confident | 1,613 | 30 |
+| correct_uncertain | 980 | 6 |
+| mixed_uncertainty | 547 | 4 |
+| gt_invisible | 223 | 2 |
+| cooccurrence_label_ambiguity | 81 | 130 |
+| **confident_wrong** | **38** | **0** |
+
+Two things fall out of this split:
+
+- **`confident_wrong` is 100% focal.** The "surgical failure" bucket only
+  probes the focal→focal regime — it can't tell us anything about focal→
+  soundscape domain shift directly. Any modeling fix derived from these 38
+  samples needs its LB effect validated separately.
+- **Soundscape is 76% co-occurrence** (130 / 172). Soundscape annotations are
+  inherently multi-species, so "top-1 ≠ primary but ∈ labels" is the norm,
+  not an error. Raw-loss ranking on soundscape is an even worse quality signal
+  than on focal — almost any soundscape row with non-trivial loss is an
+  arbitrary-primary artifact, not a model failure.
+
 ## Saliency informativeness (3,654 val samples)
 
 | gt_prob range | n | % | Meaning |
@@ -43,6 +66,29 @@ fault but the model" bucket — is 1% of the val set.**
 **Only ~35% of samples have informative gradient saliency.** A blind
 top-K highest-loss scan mostly looks at saturated maps (the two extremes
 dominate the loss tails).
+
+### Analyzable subset: real failure AND saliency informative
+
+Intersecting the "real failure mode" categories with `saliency_informative=True`
+yields the actual set where gradient saliency can be trusted on a genuine
+error:
+
+| Filter | n |
+|---|---:|
+| real failure: `{mixed_uncertainty, confident_wrong, gt_invisible}` | 814 |
+| AND `saliency_informative=True` | **197** |
+| └── `mixed_uncertainty` | 196 |
+| └── `confident_wrong` | 1 |
+| └── `gt_invisible` | 0 |
+
+**The surgical `confident_wrong` bucket is almost entirely saturated** — only
+1 of 38 is saliency-informative. `gt_invisible` is by definition outside the
+informative range (gt_prob < 0.05). So the saliency-actionable failure set is
+really **the ~196 saliency-informative `mixed_uncertainty` samples**.
+
+For a "what does good attention look like" baseline, `correct_uncertain`
+(n=986, all saliency-informative by construction — gt_prob<0.9, top-1==GT) is
+the natural comparison set.
 
 ## Top-20 highest-loss reclassification
 
@@ -87,9 +133,14 @@ known secondary species in the recording. Not a failure mode.
    a biased view of model quality.
 
 4. **Duplicate soundscape segments in top-20** — `1491113` and `47158son03`
-   each appear multiple times as "rank N highest loss" because the dataset
-   has duplicate annotation rows per 5s segment. This is a duplication bug
-   in how we materialize segments, not 4 distinct failures.
+   each appear multiple times as "rank N highest loss" because the losses
+   parquet has one row per ground-truth annotation, and soundscape segments
+   can carry multiple primary-label rows for the same `(filename, offset_sec)`.
+   E.g., idx 3484 and 3496 are identical rows (same file, same 10.0s offset,
+   same loss 0.110687, same primary 1491113, same top-1 22967). Not a
+   materialization bug — a known consequence of how the val set is built from
+   the annotation CSV. But it does inflate specific segments in loss rankings,
+   so ranking should dedupe on `(filename, offset_sec)` first.
 
 ## Prior interpretation errors (from the pre-triage saliency discussion)
 
@@ -115,14 +166,25 @@ known secondary species in the recording. Not a failure mode.
 ## Action items
 
 - Restrict saliency-based analysis to samples with `saliency_informative=True`.
-- For bulk figure export, add a `--filter-category` flag to only export
-  e.g. `mixed_uncertainty + confident_wrong` subsets.
+- For bulk figure export, add a `--filter-category` flag. Recommended default:
+  `{mixed_uncertainty, confident_wrong}` AND `saliency_informative=True` AND
+  dedupe on `(filename, offset_sec)`. That restricts output to the
+  ~197-sample analyzable set instead of the polluted raw top-K.
 - Cross-check all future "high loss" failure claims against triage category
   before drawing conclusions.
-- Investigate the `confident_wrong` bucket (n=38) — small and tractable,
-  and these are the only samples that are unambiguously model failures.
-- Consider de-duplicating soundscape segments in the loss parquet to avoid
-  duplicate rows inflating specific segments in loss rankings.
+- Investigate the `confident_wrong` bucket (n=38, all focal) — these are
+  unambiguous misidentifications but almost all have saturated saliency
+  (only 1/38 saliency-informative), so the analysis needs another handle
+  (top-1 saliency, per-frame attention, or audio inspection) rather than
+  GT-side gradient saliency.
+- Keep in mind `confident_wrong` is focal-only; any modeling change derived
+  from it needs LB validation to confirm the fix generalizes to the
+  soundscape domain.
+- Dedupe on `(filename, offset_sec)` before ranking to collapse the
+  `1491113` / `47158son03` duplicates.
+- Use `correct_uncertain` (n=986, all saliency-informative, top-1==GT) as
+  the "good attention" baseline — it's the natural counterpart to the
+  `mixed_uncertainty` failure set.
 
 ## Files
 

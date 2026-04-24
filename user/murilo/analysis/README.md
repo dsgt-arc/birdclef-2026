@@ -33,8 +33,15 @@ bash sbatch/run.sh
 bash sbatch/run.sh --config path/to/config.yaml --checkpoint path/to/ckpt --output data/losses_custom.parquet
 ```
 
-This creates `data/losses_v5j.parquet` (sample metadata + losses + crop offsets) and
-`data/losses_v5j_logits.npy` (raw logits for deeper analysis).
+This creates three files in `data/`:
+
+- `losses_v5j.parquet` — sample metadata + losses + crop offsets
+- `losses_v5j_logits.npy` — raw logits for deeper analysis
+- `triage_v5j.parquet` — losses enriched with `secondary_labels`,
+  `saliency_informative`, and `triage_category` (see `triage.py` below).
+  Triage runs automatically after precompute; re-run it manually with
+  `python triage.py --losses data/losses_v5j.parquet` if you only need to
+  refresh the enrichment without rerunning the GPU step.
 
 ### 3. Open the Jupyter notebook
 
@@ -73,9 +80,13 @@ Plus: audio playback, GT vs top-1 saliency comparison, and batch view of top-5 h
 
 ## Tabular triage
 
-Before spending time on saliency analysis, run `triage.py` to understand what
-"high loss" actually represents. It joins the losses parquet with `train.csv`
-to add `secondary_labels` (which aren't in the precompute output) and flags:
+`triage.py` runs automatically at the end of `sbatch/run.sh`, so every
+precompute produces a matching `triage_<model>.parquet` alongside the losses
+parquet. Run it manually when you only need to refresh the enrichment (e.g.,
+after editing triage heuristics) without paying the GPU cost again.
+
+It joins the losses parquet with `train.csv` to add `secondary_labels` (which
+aren't in the precompute output) and flags:
 
 - `top1_is_secondary` — the "wrong" top-1 is actually a co-occurring species
 - `saliency_informative` — gt_prob in [0.05, 0.9], where saliency isn't saturated
