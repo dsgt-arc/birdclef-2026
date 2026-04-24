@@ -17,7 +17,7 @@ Usage:
 
 import marimo
 
-__generated_with = "0.11.0"
+__generated_with = "0.23.2"
 app = marimo.App(width="full")
 
 
@@ -36,12 +36,11 @@ def imports():
     _user_dir = _analysis_dir.parent
     sys.path.insert(0, str(_user_dir / "src"))
     sys.path.insert(0, str(_analysis_dir))
-
-    return Path, mo, np, pd, plt, sys
+    return Path, mo, np, pd, plt
 
 
 @app.cell
-def config(mo, Path):
+def config(Path, mo):
     """Configuration — edit these paths for your setup."""
     _analysis_dir = Path(__file__).parent
     _user_dir = _analysis_dir.parent
@@ -65,12 +64,17 @@ def config(mo, Path):
         | **Losses**: `{Path(LOSSES_PATH).name}`
         """
     )
-
-    return CHECKPOINT_PATH, CONFIG_PATH, LOSSES_PATH, SAMPLE_RATE, WINDOW_DURATION
+    return (
+        CHECKPOINT_PATH,
+        CONFIG_PATH,
+        LOSSES_PATH,
+        SAMPLE_RATE,
+        WINDOW_DURATION,
+    )
 
 
 @app.cell
-def load_data(mo, pd, Path, LOSSES_PATH):
+def load_data(LOSSES_PATH, Path, mo, pd):
     """Load pre-computed losses parquet."""
     _losses_path = Path(LOSSES_PATH)
     if not _losses_path.exists():
@@ -87,12 +91,11 @@ def load_data(mo, pd, Path, LOSSES_PATH):
     all_sources = sorted(df["source"].unique().tolist())
 
     mo.md(f"Loaded **{len(df)}** samples across **{len(all_species)}** species.")
-
     return all_sources, all_species, df
 
 
 @app.cell
-def controls(mo, all_species, all_sources):
+def controls(all_sources, all_species, mo):
     """Filter and sort controls."""
     species_dropdown = mo.ui.dropdown(
         options=["(all)"] + all_species,
@@ -116,12 +119,11 @@ def controls(mo, all_species, all_sources):
     )
 
     mo.hstack([species_dropdown, sort_order, source_filter], justify="start", gap=1)
-
-    return source_filter, sort_order, species_dropdown
+    return sort_order, source_filter, species_dropdown
 
 
 @app.cell
-def sample_table(mo, df, species_dropdown, sort_order, source_filter):
+def sample_table(df, mo, sort_order, source_filter, species_dropdown):
     """Filtered and sorted sample table."""
     filtered = df.copy()
 
@@ -157,27 +159,25 @@ def sample_table(mo, df, species_dropdown, sort_order, source_filter):
         label=f"Select a sample ({len(filtered)} matches)",
     )
     _ = table  # display in Marimo
-
-    return filtered, table
+    return (table,)
 
 
 @app.cell
-def load_model_cell(mo, CONFIG_PATH, CHECKPOINT_PATH):
+def load_model_cell(CHECKPOINT_PATH, CONFIG_PATH, mo):
     """Load model (runs once, cached by Marimo's reactivity)."""
     from model_loader import load_config, load_model
 
     _config = load_config(CONFIG_PATH)
-    _lse_temp = _config.get("sed_head", {}).get("lse_temperature", 1.0)
+    lse_temp = _config.get("sed_head", {}).get("lse_temperature", 1.0)
 
     model, mel_transform, full_species_list = load_model(CONFIG_PATH, CHECKPOINT_PATH, device="cpu")
 
-    mo.md(f"Model loaded: **{len(full_species_list)}** classes, LSE temp={_lse_temp}")
-
-    return _config, _lse_temp, full_species_list, mel_transform, model
+    mo.md(f"Model loaded: **{len(full_species_list)}** classes, LSE temp={lse_temp}")
+    return full_species_list, lse_temp, mel_transform, model
 
 
 @app.cell
-def attribution_controls(mo, table, full_species_list):
+def attribution_controls(full_species_list, mo, table):
     """Species selector for attribution (defaults to GT species of selected sample)."""
     mo.stop(not table.value, mo.md("*Select a sample from the table above.*"))
 
@@ -205,22 +205,21 @@ def attribution_controls(mo, table, full_species_list):
         justify="start",
         gap=1,
     )
-
     return attr_species, selected
 
 
 @app.cell
 def compute_cell(
-    mo,
-    selected,
-    attr_species,
-    model,
-    mel_transform,
-    full_species_list,
-    _lse_temp,
-    df,
     SAMPLE_RATE,
     WINDOW_DURATION,
+    attr_species,
+    df,
+    full_species_list,
+    lse_temp,
+    mel_transform,
+    mo,
+    model,
+    selected,
 ):
     """Compute attribution for selected sample."""
     from attribution import compute_attribution, load_audio
@@ -238,7 +237,7 @@ def compute_cell(
         waveform=waveform,
         species_idx=species_idx,
         species_name=attr_species.value,
-        lse_temperature=_lse_temp,
+        lse_temperature=lse_temp,
         device="cpu",
     )
 
@@ -247,12 +246,11 @@ def compute_cell(
         f"(idx {species_idx}): "
         f"clipwise_prob={result.clipwise_probs[species_idx]:.4f}"
     )
-
     return filepath, result, waveform
 
 
 @app.cell
-def audio_player(mo, waveform, SAMPLE_RATE, filepath, Path):
+def audio_player(Path, SAMPLE_RATE, filepath, mo, waveform):
     """Audio playback."""
     mo.md(f"**Audio**: `{Path(filepath).name}`")
     mo.audio(src=waveform.numpy(), rate=SAMPLE_RATE)
@@ -260,7 +258,7 @@ def audio_player(mo, waveform, SAMPLE_RATE, filepath, Path):
 
 
 @app.cell
-def visualize(mo, result, full_species_list, np, plt):
+def visualize(full_species_list, np, plt, result):
     """4-panel visualization of model behavior on the selected sample."""
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
 
@@ -351,7 +349,11 @@ def visualize(mo, result, full_species_list, np, plt):
 
     plt.tight_layout()
     _ = fig  # display in Marimo
+    return
 
+
+@app.cell
+def _():
     return
 
 
