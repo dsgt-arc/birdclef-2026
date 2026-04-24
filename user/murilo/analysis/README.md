@@ -47,7 +47,10 @@ To explore different samples, change `SAMPLE_IDX` in the "Select a sample" cell.
 
 | File | Purpose |
 |------|---------|
-| `model_explorer.ipynb` | **Main tool** — Jupyter notebook for interactive exploration |
+| `model_explorer.ipynb` | **Interactive tool** — Jupyter notebook for single-sample exploration |
+| `export_figures.py` | **Bulk tool** — programmatic export of top-K figures to disk |
+| `run/export_<model>.sh` | Per-model wrapper with hard-coded paths (copy when adding a model) |
+| `plotting.py` | Shared plot functions (4-panel, competitor comparison, batch grid) |
 | `attribution.py` | Gradient saliency + LSE effective attention computation |
 | `model_loader.py` | Config-driven model loading (any SED model) |
 | `precompute_losses.py` | Batch script: val losses → parquet (GPU) |
@@ -66,12 +69,118 @@ For each selected sample, a 4-panel visualization:
 
 Plus: audio playback, GT vs top-1 saliency comparison, and batch view of top-5 highest-loss samples.
 
-## Using with a different model
+## Bulk figure export
 
-The pipeline is model-agnostic. To analyze a different SED model:
+`export_figures.py` is the programmatic counterpart to the notebook. It writes
+the same set of figures for the top-K highest- and lowest-loss samples to disk,
+so you can scroll through all of them in a file browser without editing the
+notebook between samples.
 
-1. Run precompute with different config/checkpoint:
+### When to use which
+
+- **Notebook**: single-sample deep dives, exploratory slicing by species, audio
+  playback, ad-hoc tweaks.
+- **export_figures.py**: first-pass survey of failure modes across many samples,
+  or when comparing multiple models side-by-side.
+
+### Run — per-model wrapper (recommended)
+
+Per-model wrappers in `run/` hard-code the paths so you don't have to retype
+them. Each file has sensible defaults and passes extra flags through to
+`export_figures.py`:
+
+```bash
+bash run/export_v5j.sh                       # defaults: top-k 20, source all
+bash run/export_v5j.sh --source focal        # override a flag
+bash run/export_v5j.sh --top-k 50 --device cuda
+```
+
+To add a new model, copy an existing wrapper and update the four paths
+(`LOSSES`, `LOGITS`, `CONFIG`, `CHECKPOINT`):
+
+```bash
+cp run/export_v5j.sh run/export_v6l.sh
+# edit the four paths at the top
+bash run/export_v6l.sh
+```
+
+### Run — direct invocation
+
+```bash
+python export_figures.py \
+  --losses data/losses_v5j.parquet \
+  --logits data/losses_v5j_logits.npy \
+  --config ../experiments/019-sed-ablations/config/hgnet_b0_sed_v5j.yaml \
+  --checkpoint /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/best-epochepoch=19.ckpt \
+  --top-k 20 \
+  --batch-k 5 \
+  --source all \
+  --output-dir figures/ \
+  --device cpu
+```
+
+### Flags
+
+| Flag | Default | Notes |
+|------|---------|-------|
+| `--top-k` | 20 | Per-sample figures per bucket (highest + lowest) |
+| `--batch-k` | 5 | Samples in the summary batch figures |
+| `--source` | `all` | `all` \| `focal` \| `soundscape` — filters the loss table before ranking |
+| `--output-dir` | `figures/` | Root dir; model/source subdirs created underneath |
+| `--model-name` | inferred | Defaults to losses filename stem minus `losses_` |
+| `--device` | `cpu` | CPU: ~2–5 s/sample. Use `cuda` for larger runs. |
+
+### Output structure
+
+```
+figures/<model_name>/<source>/
+  highest_loss/
+    rank01_loss<val>_row<row_id>.png             # 4-panel
+    rank01_loss<val>_row<row_id>_competitor.png  # GT vs competitor (see rule)
+    rank01_loss<val>_row<row_id>.wav             # 5s audio crop
+    rank02_...
+    ...
+  lowest_loss/
+    rank01_...
+  summary/
+    top5_highest_batch.png   # batch-k mel + saliency grid
+    top5_lowest_batch.png
+  manifest.json              # run config + per-rank metadata
+```
+
+The `<source>` subdir (`all` / `focal` / `soundscape`) lets multiple filtered
+runs on the same model coexist without overwriting each other.
+
+### Competitor comparison rule
+
+The `_competitor.png` shows GT saliency side-by-side with the saliency of a
+"wrong-class competitor" — the species the model was most tempted by.
+
+| Bucket | top-1 == GT | top-1 != GT |
+|--------|-------------|-------------|
+| `highest_loss/` | save (competitor = **top-2**, "near miss on correct") | save (competitor = **top-1**, "confident wrong") |
+| `lowest_loss/` | **skip** (nothing to compare on a clean win) | save (competitor = **top-1**, "confident wrong on easy sample" — notable edge case) |
+
+The asymmetry is intentional: the comparison is saved only when it tells you
+something about a failure mode.
+
+### Using with a different model
+
+Pipeline is model-agnostic:
+
+1. Precompute losses for the new model:
    ```bash
-   bash sbatch/run.sh --config path/to/config.yaml --checkpoint path/to/ckpt --output data/losses_v6l.parquet
+   bash sbatch/run.sh \
+     --config path/to/config.yaml \
+     --checkpoint path/to/ckpt \
+     --output data/losses_v6l.parquet
    ```
-2. Update `LOSSES_PATH` (and optionally `CONFIG_PATH`, `CHECKPOINT_PATH`) in the notebook's config cell
+2. Copy an existing wrapper and edit the four paths:
+   ```bash
+   cp run/export_v5j.sh run/export_v6l.sh
+   # edit LOSSES, LOGITS, CONFIG, CHECKPOINT at the top of the new file
+   bash run/export_v6l.sh
+   # figures/ gains v6l/all/ alongside v5j/all/
+   ```
+3. For the notebook: update `LOSSES_PATH` (and optionally `CONFIG_PATH`,
+   `CHECKPOINT_PATH`) in the config cell.

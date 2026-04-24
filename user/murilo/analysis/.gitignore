@@ -1,0 +1,3 @@
+# Bulk attribution export output — regenerable via run/export_<model>.sh.
+# ~25MB per (model, source) run, binary, shouldn't live in git history.
+figures/
