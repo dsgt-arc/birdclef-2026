@@ -57,6 +57,8 @@ To explore different samples, change `SAMPLE_IDX` in the "Select a sample" cell.
 | `model_explorer.ipynb` | **Interactive tool** — Jupyter notebook for single-sample exploration |
 | `export_figures.py` | **Bulk tool** — programmatic export of top-K figures to disk |
 | `triage.py` | **Tabular triage** — enrich losses parquet with secondary_labels, classify failure modes |
+| `certainty.py` | **Certainty scalars** — add `shannon_norm`, `bernoulli_sum`, `top1_top2_gap`, `n_active` columns to the triage parquet |
+| `species_composition.py` | **Species comparison** — per-category and pairwise species breakdowns (e.g. which species over-represent in `mixed_uncertainty`) |
 | `run/export_<model>.sh` | Per-model wrapper with hard-coded paths (copy when adding a model) |
 | `plotting.py` | Shared plot functions (4-panel, competitor comparison, batch grid) |
 | `attribution.py` | Gradient saliency + LSE effective attention computation |
@@ -102,6 +104,39 @@ python triage.py --losses data/losses_v5j.parquet --row-id 865
 ```
 
 See `notes/2026-04-24-triage-v5j-failure-modes.md` for the first run's findings.
+
+## Certainty scalars and species composition
+
+Two small follow-on scripts that enrich the triage parquet with more
+information. Both operate on the already-computed triage + logits files — no
+GPU, no new inference.
+
+**`certainty.py`** — per-sample scalars derived from clipwise logits:
+`shannon_norm` (Shannon entropy of normalized sigmoid probs), `bernoulli_sum`
+(sum of per-class Bernoulli entropies, better for multi-label), `top1_top2_gap`
+(logit margin), `n_active` (species with `prob > 0.1`). Columns are appended to
+`triage_<model>.parquet` in place.
+
+```bash
+python certainty.py --triage data/triage_v5j.parquet --summary
+```
+
+`shannon_norm` is largely redundant with `top1_prob` (corr ~−0.86 on v5j).
+`bernoulli_sum` is the one scalar that distinguishes `confident_wrong` from
+`correct_uncertain` — see
+`notes/2026-04-24-certainty-and-species-composition.md` for the analysis.
+
+**`species_composition.py`** — per-category or pairwise species stats.
+
+```bash
+# Per-category top-20 species by count:
+python species_composition.py --triage data/triage_v5j.parquet --top-n 20
+
+# Which species over-represent in one category vs another (log2 ratio):
+python species_composition.py --triage data/triage_v5j.parquet \
+    --compare mixed_uncertainty correct_uncertain \
+    --output data/species_composition_mixed_vs_correct.csv
+```
 
 ## Bulk figure export
 
