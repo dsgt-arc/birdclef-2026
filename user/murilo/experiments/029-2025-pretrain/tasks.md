@@ -65,38 +65,41 @@ analysis.
 
 ---
 
-## Stage 3: Evaluate — IN PROGRESS
+## Stage 3: Evaluate — DONE
 
-### 3.1 ONNX export + LB submission
+### 3.1 ONNX export + LB submission — done
 
-- [ ] 3.1.1 ONNX export via standard pipeline
-      (use the v5j inference kernel's export script as reference)
-- [ ] 3.1.2 Submit to LB
-- [ ] 3.1.3 Record result in `results.md` and `MODEL-RUNS.md`
+- [x] 3.1.1 ONNX export via standard pipeline (`bash sbatch/run.sh export`)
+- [x] 3.1.2 Submit to LB. **Result: 0.885 (−0.021 vs v5j baseline 0.906)**
+- [x] 3.1.3 Recorded in `results.md` and `MODEL-RUNS.md`. Mid-flight slug
+      fix: 52→47 chars (Kaggle's 50-char limit was silently failing).
 
-### 3.2 Per-frame triage on the new model
+### 3.2 Per-frame triage on the new model — pending (independent of LB)
 
 - [ ] 3.2.1 Re-run `precompute_losses.py` on the stage-2 checkpoint,
       pointing at 2026 val data (need to point `--checkpoint` at
       `029-.../best-epochepoch=12.ckpt` and use 2026 v5j config)
 - [ ] 3.2.2 Run `triage.py` + `per_frame_analysis.py` on new outputs
 - [ ] 3.2.3 Compare attention entropy / logit_std on `mixed_uncertainty`
-      vs v5j baseline — did the head behavior change even though
-      val/auroc didn't?
+      vs v5j baseline — useful to understand *what* the failed pretrain
+      changed structurally, even though LB regressed.
 
 ---
 
-## Decision gate
-
-After 3.1 and 3.2:
+## Decision gate — landed on REJECT
 
 | Outcome | LB | Triage shift | Action |
 |---------|---|---|---|
 | Confirm | > 0.906 | any | Record win, plan 4-fold scaleup |
 | Strong confirm | ≥ 0.910 | any | Plan 4-fold + ensemble + Perch fusion |
-| Retry | ≤ 0.906 | per-frame structure changed (e.g., logit_std rose on mixed_uncertainty) | Lever may be real; tune fine-tune LR / epochs / freeze schedule before giving up |
-| Reject | ≤ 0.906 | per-frame structure unchanged | 2025 pretrain at our scale doesn't transfer; consider Salman replication or silent-class as next exp |
+| Retry | ≤ 0.906 | per-frame structure changed | Lever may be real; tune fine-tune LR / epochs / freeze schedule before giving up |
+| **Reject** | **≤ 0.906 by ≥0.005 (got −0.021)** | **TBD (triage queued)** | **2025 pretrain at our scale doesn't transfer; pivot to Salman replication or silent-class.** |
 | Pivot | Stage 1 val/auroc didn't converge | n/a | Debug 2025 pipeline rather than proceed to Stage 2 |
+
+**Outcome: REJECTED.** Final LB 0.885. See `results.md` for full
+interpretation. Cheap retry candidate (`head_lr: 5e-4` split LR)
+exists, but strategic call is whether to keep investing in
+training-side variations at all given the per-frame finding.
 
 ---
 

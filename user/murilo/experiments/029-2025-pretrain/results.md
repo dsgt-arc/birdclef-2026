@@ -1,6 +1,6 @@
 ---
 experiment: "029-2025-pretrain"
-status: in_progress
+status: rejected
 date: 2026-04-25
 author: Murilo Gustineli
 ---
@@ -182,29 +182,122 @@ across all 234 classes.
    with LB. The fact that exp 029 stage-2 matches v5j-control offline
    tells us nothing about whether LB will move.
 
-## Stage 3: ONNX export + LB submission + triage — PENDING
+## Stage 3: ONNX export + LB submission — DONE (REGRESSED)
 
-Pending steps:
-1. ONNX export of `best-epochepoch=12.ckpt`
-2. Submit to LB
-3. Re-run triage + per-frame analysis on stage-2 checkpoint
-4. Compare per-frame structure (entropy, logit_std on `mixed_uncertainty`)
-   to v5j baseline. Did the head behavior change even though val/auroc
-   didn't?
+- ONNX export: completed
+- Kaggle dataset slug: `birdclef-2026-hgnet-b0-sed-v5j-finetune-weights`
+  (47 chars; original 52-char slug exceeded Kaggle's 50-char limit and
+  silently failed to attach to the kernel — fixed mid-flight)
+- LB result: **0.885** (Public LB)
 
-## Comparison to LB baselines (TBD)
+### LB comparison
 
 | Slug | Init | LB | Δ vs v5j |
 |------|------|---:|---------:|
-| v5j (exp 019) baseline | ImageNet | 0.906 | — |
+| v5j (exp 019) baseline | ImageNet | **0.906** | — |
 | v5j-pp2 (exp 021) | ImageNet + priors | 0.909 | +0.003 |
 | v5j-4fold-pp2 (exp 021, 4-fold ensemble) | ImageNet + priors | 0.917 | +0.011 |
-| **exp 029 stage-2 single fold** | **2025-pretrained** | **TBD** | **TBD** |
+| **exp 029 stage-2 single fold** | **2025-pretrained** | **0.885** | **−0.021** |
 | Reference: Ali Ozan single (filtered XC pretrain) | XC-pretrained | 0.941 | (different pretrain corpus, much larger) |
 
-## Decision-gate state
+### Per-frame triage on stage-2 checkpoint — pending (independent)
 
-Offline result is **neutral** (within ±0.001 of v5j-control). Cannot
-predict LB direction from this. Awaiting LB submission to make any
-real call. Decision matrix in [tasks.md](tasks.md) applies after LB
-result lands.
+`precompute_losses.py` re-run on stage-2 ckpt + `per_frame_analysis.py`
+comparison to v5j baseline still queued. Not blocking the headline
+result, but useful for understanding *what* changed structurally.
+
+## Decision-gate state: REJECT
+
+Decision matrix from [tasks.md](tasks.md):
+
+| Outcome | LB | Action |
+|---------|---|---|
+| Confirm | > 0.906 | — |
+| Strong confirm | ≥ 0.910 | — |
+| Retry | ≤ 0.906 with per-frame structural shift | — |
+| **Reject** | **≤ 0.906 by ≥0.005** | **2025 pretrain at our scale doesn't transfer; consider Salman replication or silent-class as next exp** |
+
+LB delta is **−0.021**, well past the −0.005 threshold for "Reject".
+Per-frame triage hasn't run yet, but the LB signal is decisive on its
+own.
+
+## Interpretation
+
+Three things are simultaneously true:
+
+1. **The pipeline worked end-to-end.** Stage 1 converged cleanly
+   (val/auroc 0.972). Stage 2 trained without instability (val/auroc
+   0.850). Classifier transfer logged the expected 41 species mapped.
+   ONNX export and Kaggle inference ran cleanly. So this is a clean
+   negative result, not a broken experiment.
+
+2. **Offline did not predict LB direction** (yet again). val/auroc
+   0.850 was within ±0.001 of v5j-control's 0.851. LB regressed
+   −0.021. The offline-LB anti-correlation pattern continues — this
+   is at least the 22nd training-side change where offline metrics
+   gave no LB signal.
+
+3. **The result is consistent with the 2026-04-25 per-frame finding.**
+   That note argued v5j sits at a generalization equilibrium and
+   training-side changes that perturb that equilibrium tend to hurt
+   LB. Pretraining is a training-side perturbation — different
+   initialization, different LR (2e-4 vs 5e-4), different feature
+   space at the start. The −0.021 result is what the structural
+   argument predicted.
+
+### Possible direct mechanisms
+
+Without per-frame triage we can't fully attribute, but candidates:
+
+- **Reduced LR (2e-4 vs v5j's 5e-4)** undertrained the 193 random-init
+  classifier rows. They reached a worse equilibrium for soundscape
+  inference. Standard transfer-learning advice (lower LR for warm
+  start) doesn't fit cleanly here because most of the head was
+  random-init, not fine-tuned.
+- **Mixed-init head** (41 warm + 193 random) creates an asymmetric
+  optimization landscape. Warm rows pull gradients in directions that
+  don't help the random rows learn from 2026 data alone.
+- **Negative transfer from 2025 backbone features.** 2025 species
+  composition differs from 2026; the backbone may have learned
+  emphases that hurt 2026 species the model has to un-learn at lower
+  LR than v5j.
+- **Recipe perturbation** generally — per-frame finding says v5j sits
+  at a generalization equilibrium; *any* training trajectory change
+  (different init, different LR, different optimizer dynamics) can
+  leave the model at a worse equilibrium for soundscape inference
+  even when offline focal val/auroc looks identical.
+
+The cleanest single-variable retry would be `head_lr: 5e-4` with
+`lr: 2e-4` (split LR — lower backbone, full head), testing whether
+under-training the random-init head is the dominant cause. But
+strategically the question is whether to keep investing in
+training-side variations at all given the per-frame finding.
+
+## What this rules out and what it leaves open
+
+**Ruled out (or strongly demoted):**
+- 2025 pretrain at this scale (28K rows, 41-species overlap, with
+  reduced LR for warm start) does not transfer usefully to 2026 LB.
+- Standard transfer-learning practice (lower LR for warm start) does
+  not work cleanly when most of the classifier is random-init.
+
+**Still open (cheap single-axis retries):**
+- `head_lr: 5e-4` / `lr: 2e-4` (split LR) — diagnoses whether
+  random-init head was undertrained. ~38 min training run.
+- Filtered XC pretrain (matching Ali Ozan more faithfully) — much
+  larger and richer pretrain corpus, but significant data engineering
+  required.
+
+**Still open (different bets):**
+- exp 030 silent-class — engages the structural finding directly.
+- Salman recipe replication on EffNetV2-B0 — different architecture
+  bet; only the disclosed parts are replicable (the +0.015 attention
+  jump remains opaque).
+
+## Open work after LB result
+
+- Run per-frame triage on stage-2 checkpoint (small SLURM job already
+  queued for user). Independent of the LB headline; tells us *what*
+  changed structurally even though LB regressed.
+- Decide next experiment direction — see strategic discussion in the
+  session.
