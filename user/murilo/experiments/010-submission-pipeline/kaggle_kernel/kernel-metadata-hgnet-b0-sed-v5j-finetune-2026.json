@@ -9,7 +9,7 @@
   "enable_internet": false,
   "dataset_sources": [
     "murilogustineli/birdclef-deps",
-    "murilogustineli/birdclef-2026-hgnet-b0-sed-v5j-finetune-2026-weights"
+    "murilogustineli/birdclef-2026-hgnet-b0-sed-v5j-finetune-weights"
   ],
   "competition_sources": ["birdclef-2026"],
   "kernel_sources": []

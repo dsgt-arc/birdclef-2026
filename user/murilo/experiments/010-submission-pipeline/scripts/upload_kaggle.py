@@ -305,8 +305,10 @@ MODELS = {
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j.json",
     },
     # Exp 029: 2025-pretrained → 2026 fine-tuned (Ali Ozan path)
+    # Slug intentionally drops "-2026" after "finetune" to stay within Kaggle's
+    # 50-char dataset slug limit (52→47 chars).
     "hgnet-b0-sed-v5j-finetune-2026": {
-        "slug": "birdclef-2026-hgnet-b0-sed-v5j-finetune-2026-weights",
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-finetune-weights",
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-finetune-2026",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-finetune-2026.json",
     },
