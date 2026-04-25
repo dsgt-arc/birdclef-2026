@@ -200,6 +200,7 @@ def precompute_losses(
 
     # Run inference
     all_logits = []
+    all_framewise_logits = []
     all_losses = []
 
     training_cfg = config.get("training", {})
@@ -231,9 +232,12 @@ def precompute_losses(
             ).mean(dim=-1)
 
             all_logits.append(blended_logits.cpu().numpy())
+            # framewise_logits shape: (B, n_classes, T) — last dim is time frames
+            all_framewise_logits.append(framewise_logits.cpu().numpy().astype(np.float16))
             all_losses.append(per_sample_loss.cpu().numpy())
 
     all_logits = np.concatenate(all_logits, axis=0)  # (N, 234)
+    all_framewise_logits = np.concatenate(all_framewise_logits, axis=0)  # (N, 234, T)
     all_losses = np.concatenate(all_losses, axis=0)  # (N,)
     all_probs = 1.0 / (1.0 + np.exp(-all_logits))  # sigmoid
 
@@ -290,10 +294,15 @@ def precompute_losses(
     df.to_parquet(output_path, index=False)
     logger.info(f"Saved {len(df)} samples to {output_path}")
 
-    # Save raw logits as numpy array for deeper analysis
+    # Save raw clipwise logits for deeper analysis
     logits_path = output_path.with_name(output_path.stem + "_logits.npy")
     np.save(logits_path, all_logits)
-    logger.info(f"Saved logits ({all_logits.shape}) to {logits_path}")
+    logger.info(f"Saved clipwise logits ({all_logits.shape}) to {logits_path}")
+
+    # Save per-frame logits for LSE-attention / per-frame analysis (float16 to save space)
+    perframe_path = output_path.with_name(output_path.stem + "_perframe_logits.npy")
+    np.save(perframe_path, all_framewise_logits)
+    logger.info(f"Saved per-frame logits ({all_framewise_logits.shape}) to {perframe_path}")
 
     return df
 
