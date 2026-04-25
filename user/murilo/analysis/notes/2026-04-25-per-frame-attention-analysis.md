@@ -256,16 +256,38 @@ paths:
   tests regressed; the diffuse-on-hard-crops pattern would persist
   there too because it's data-driven, not LSEHead-specific.
 
-**Possibly novel candidate** (not queued, flagging for future
-consideration):
+**Future experiment candidate (exp 030): explicit silent / no-call class.**
 
-- **Explicit silent / no-call class.** Add a 235th "no signal in this
-  5s window" class to the multi-hot label, supervise via crop energy at
-  training time. Lets the model say "no signal" honestly instead of
-  being forced to predict the recording-level primary. At inference,
-  gate predictions by the silent-class probability. Matches what the
-  model is already learning to do; it would just give it permission to
-  say so explicitly. Requires data work but no architectural change.
+Add a 235th class for "no signal in this 5s window," supervise it
+during training, and use it at inference to gate predictions. Matches
+what the model is already learning to do; it would just give it
+permission to say so explicitly. Engages directly with the structural
+finding (model is honest; training objective punishes honesty) rather
+than going around it like augmentation tweaks do.
+
+**Why this is queued and not the next experiment**: it has its own
+data-acquisition challenge that overlaps with the BG noise problem we
+just paused. The silent-class supervision data MUST contain no bird
+calls, otherwise the model learns "label silent when this species is
+also present" — defeating the purpose. Sources we considered:
+
+- Labeled soundscapes: every 5s segment has at least one species
+  annotated (verified 2026-04-25). Not viable.
+- Synthetic silence (zeros + tiny gaussian): clean by construction
+  but out-of-distribution from real soundscapes. Weak test of the
+  concept.
+- Self-bootstrap from unlabeled 2026 soundscapes via low-RMS energy
+  filter + v5j confidence filter (find segments where all 234 species
+  probs are < 0.1 — model is already confident no species is present).
+  Most pragmatic option, but requires a precompute pass and accepts
+  some implicit dependence on v5j's existing predictions.
+- External clean datasets (freefield1010 no-bird subset, ESC-50): we
+  reviewed these for the BG noise experiment. Available but require
+  download + format normalization.
+
+If exp 029 (2025 pretrain) helps, exp 030 is the natural follow-up
+to test whether the structural finding can be acted on directly.
+If exp 029 lands at 0.92+ already, exp 030 may be lower priority.
 
 ## Why this is single-purpose, not multi-axis
 
