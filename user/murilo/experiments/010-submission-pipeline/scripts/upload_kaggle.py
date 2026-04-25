@@ -304,6 +304,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j.json",
     },
+    # Exp 029: 2025-pretrained → 2026 fine-tuned (Ali Ozan path)
+    "hgnet-b0-sed-v5j-finetune-2026": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-finetune-2026-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-finetune-2026",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-finetune-2026.json",
+    },
     # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "hgnet-b0-sed-v5j-fmax": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",
