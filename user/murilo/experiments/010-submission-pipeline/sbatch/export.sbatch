@@ -653,6 +653,18 @@ export_hgnet_b0_sed_v5j_finetune_2026() {
         --output-dir artifacts/weights/hgnet-b0-sed-v5j-finetune-2026/
 }
 
+export_hgnet_b0_sed_v5j_ft_splitlr() {
+    echo "=== Exporting HGNetV2-B0 SED v5j fine-tune 2026 split-LR retry (exp 029 path A) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/029-2025-pretrain/checkpoints/2026-exp029-v5j-finetune-2026-split-lr")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP029_DIR}/configs/v5j_finetune_2026_split_lr.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-ft-splitlr/
+}
+
 export_hgnet_b0_sed_v5j_fmax() {
     echo "=== Exporting HGNetV2-B0 SED v5j-fmax (framewise-max only, 234 classes) ==="
     local CKPT
@@ -1086,7 +1098,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-pl-v1|hgnet-b0-sed-v3-waveform-mix|hgnet-b0-sed-v5j-dualval|\
     hgnet-b0-sed-v9a-10s-att|hgnet-b0-sed-v9b-15s-att|hgnet-b0-sed-v9c-20s-att|\
     hgnet-b0-sed-v10a-exp027|hgnet-b0-sed-v10b-exp027|hgnet-b0-sed-v11b-exp027|\
-    hgnet-b0-sed-v5j-finetune-2026|\
+    hgnet-b0-sed-v5j-finetune-2026|hgnet-b0-sed-v5j-ft-splitlr|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1191,6 +1203,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-clip)     export_hgnet_b0_sed_v5j_clip ;;
     hgnet-b0-sed-v5j-4fold)    export_hgnet_b0_sed_v5j_4fold ;;
     hgnet-b0-sed-v5j-finetune-2026) export_hgnet_b0_sed_v5j_finetune_2026 ;;
+    hgnet-b0-sed-v5j-ft-splitlr) export_hgnet_b0_sed_v5j_ft_splitlr ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;

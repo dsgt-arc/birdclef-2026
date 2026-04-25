@@ -103,6 +103,46 @@ training-side variations at all given the per-frame finding.
 
 ---
 
+## Path A retry: split-LR fine-tune (queued)
+
+Single-variable retry from the rejected Stage 2: keep `lr: 2e-4`
+(backbone — preserve pretrained features), bump `head_lr: 5e-4`
+(match v5j's full LR for the 193 random-init classifier rows).
+
+**Hypothesis**: the original Stage 2 regression was caused by
+undertraining the random-init head at 2e-4. Splitting the LR
+should give random-init rows the same training signal they got in
+v5j-from-scratch, while preserving pretrained backbone features.
+
+**Config**: `configs/v5j_finetune_2026_split_lr.yaml`
+(only changes from `v5j_finetune_2026.yaml`: `head_lr` 2e-4 → 5e-4,
+`run_name` suffix `-split-lr`)
+
+**Kaggle pipeline**: 4-file dance done in
+`010-submission-pipeline/`. Slug: `hgnet-b0-sed-v5j-ft-splitlr`
+→ Kaggle dataset `birdclef-2026-hgnet-b0-sed-v5j-ft-splitlr-weights`
+(49 chars, just under 50-char limit).
+
+**Decision logic**:
+
+| Outcome | Action |
+|---|---|
+| LB ≈ 0.906 ± 0.005 | LR was the dominant cause; pretrain backbone is neutral. Stage 2 setup was wrong, not the lever. |
+| LB regresses (<0.900) | 2025-pretrain at our scale is fully ruled out regardless of LR config. |
+| LB > 0.910 | Surprise win; pretrain helps when head LR is correct. Plan 4-fold scaleup. |
+
+**Pending tasks**:
+
+- [ ] Submit pretrain SLURM job:
+      `bash sbatch/run.sh configs/v5j_finetune_2026_split_lr.yaml`
+- [ ] ONNX export:
+      `bash sbatch/run.sh export --model hgnet-b0-sed-v5j-ft-splitlr` (in 010-submission-pipeline)
+- [ ] Kaggle dataset upload + kernel push (per `010-submission-pipeline/adding-new-models.md`)
+- [ ] LB submission
+- [ ] Record result here and decide next experiment
+
+---
+
 ## What is NOT in this experiment
 
 For reference; each is a future experiment if pursued.

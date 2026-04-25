@@ -312,6 +312,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-finetune-2026",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-finetune-2026.json",
     },
+    # Exp 029 path A retry: split LR (lr=2e-4 backbone, head_lr=5e-4 random-init head)
+    "hgnet-b0-sed-v5j-ft-splitlr": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-ft-splitlr-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-ft-splitlr",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-ft-splitlr.json",
+    },
     # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "hgnet-b0-sed-v5j-fmax": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",
