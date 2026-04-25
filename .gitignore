@@ -40,6 +40,9 @@ uv.lock
 # Jupyter
 .ipynb_checkpoints/
 
+# Marimo
+__marimo__/
+
 # Testing
 .pytest_cache/
 .coverage
