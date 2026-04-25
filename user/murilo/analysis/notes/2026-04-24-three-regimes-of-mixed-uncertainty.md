@@ -1,11 +1,71 @@
-# 2026-04-24 — three regimes of mixed_uncertainty (supersedes roahaw-only story)
+# 2026-04-24 — three regimes of mixed_uncertainty (hypothesis, not yet validated)
 
 Extension of [the roahaw analysis](2026-04-24-roahaw-failure-mode-analysis.md).
-Verified the silent-crop hypothesis on 3 more species (`coffal1`, `socfly1`,
-`epaori4`) plus a `roahaw correct_confident` baseline. **The silent-crop
-pattern does NOT generalize uniformly.** `mixed_uncertainty` decomposes into
-three structurally different failure regimes, identifiable by **median gt_prob
-across all val samples for the species**.
+Looked at one rank01 figure each from `coffal1`, `socfly1`, `epaori4`
+(`mixed_uncertainty`) plus a `roahaw correct_confident` baseline. **Hypothesis
+formed**: the silent-crop pattern does NOT generalize uniformly;
+`mixed_uncertainty` may decompose into three structurally different failure
+regimes, identifiable by **median gt_prob across all val samples for the
+species**.
+
+**Important — confidence is medium, not high.** The narrative below describes
+what 4 figures + per-species statistics suggest. It is not yet validated to
+the degree that should drive experiment design. See the confidence audit
+section below.
+
+## Confidence audit
+
+Tier 1 (high confidence — mechanical / statistical facts):
+
+- The triage category counts and the per-sample certainty scalars.
+- Median gt_prob per species. The numbers are what they are.
+- Per-species focal counts in `train.csv`.
+- The aggregate split (87 / 50 / 23 species) **at the chosen thresholds 0.8 / 0.3**.
+
+Tier 2 (medium confidence — supported by small visual evidence, extrapolated):
+
+- "roahaw mixed_uncertainty failures look like silent-crop label noise."
+  Based on 4 of 15 spectrograms inspected. **No audio has been listened to.**
+  The "silent" framing is inferred from spectrogram-visual reasoning.
+- "epaori4 is real acoustic confusion (model decisively wrong)" — based on
+  one rank01 figure.
+- "socfly1 is a 'uniformly uncertain' regime" — based on one rank01 figure
+  and process-of-elimination thinking.
+- "saliency_informative correctly flagged the one real failure in the roahaw
+  set." N=1.
+
+Tier 3 (low confidence — conjecture):
+
+- "50% of mixed_uncertainty is label noise" — extrapolation from one bimodal
+  species (roahaw) to all 87 bimodal species. No direct evidence on the
+  other 86. coffal1 rank01 already had visible chirp content, not pure
+  silence — a counter-data-point I should have weighted more.
+- "Three regimes" as a structural property of v5j. I picked thresholds (0.8,
+  0.3) without sensitivity analysis. **Median gt_prob does not actually
+  measure bimodality** — a unimodal distribution centered at 0.85 also has
+  median 0.85. Bimodality has not been verified directly.
+- "8 abundant-but-model-blind species are the cleanest target." Multi-step
+  inference. I have not checked whether these species appear meaningfully
+  in the public test set; if they don't, fixing them won't help LB.
+- The story generalizes to other models (v5g, etc.). v5j-only result.
+
+### Specific weaknesses
+
+1. **No audio listened.** Cheapest verification step — never done.
+2. **6 figures total drive the entire interpretive layer** (rank01s for 4
+   species + rank15 of roahaw + correct_confident baseline).
+3. **Cherry-picked species.** The 4 inspected were the over-represented
+   species from species composition. Non-random — biased toward "interesting
+   failures."
+4. **Threshold sensitivity untested.** Why 0.8 and 0.3? Made up. A sweep
+   would tell us if the 50/33/17 split is robust or an artifact of cuts.
+5. **Median != bimodality.** I conflated "median is high" with "distribution
+   is bimodal." Should plot histograms or compute a bimodality coefficient.
+6. **Test-set relevance not checked.** LB doesn't care about species absent
+   from the test soundscapes.
+7. **Inference window vs val window mismatch.** v5j val computes loss on a
+   single 5s crop per recording; LB inference uses TTA + smoothing. The
+   relationship between val-set bimodality and test-set behavior is unclear.
 
 ## The per-species diagnostic
 
@@ -154,23 +214,49 @@ python export_figures.py ... \
     --filter-category correct_confident --filter-species roahaw --top-k 10
 ```
 
-## Action items (narrow)
+## Action items (validation first, then investigation)
 
-- **Do not propose** a single training experiment aimed at reducing
-  `mixed_uncertainty` loss globally. It conflates three regimes that need
-  different treatments.
-- **Next autonomous step**: broaden visual verification — look at rank01 or
-  rank02 of 3–5 more species from each regime to confirm the predicted
-  pattern holds. Currently 1 figure per regime is thin evidence.
-- **Next manual step**: listen to a few WAVs from each regime, particularly
-  the `bimodal` cases, to confirm the "silent crop" interpretation is
-  literal in audio (not just visual-spectrogram inference).
-- **Targeted investigation**: the 8 abundant-but-model-blind species. What
-  are their top-1 confusions? Do they cluster? If they consistently confuse
-  with 1–2 common species, that's actionable (per-class margin loss).
-- **Regime analysis on v5g** (0.892 LB) to check if the 50/33/17 split is
-  v5j-specific or a general property of this dataset. Would need a
-  `losses_v5g.parquet`.
+The deep-dive audit (see top of note) identified that the three-regime story
+sits at medium confidence. Validation steps are required before basing any
+experiment on it.
+
+### Validation (run before any experiment design)
+
+1. **Listen to 15 roahaw `mixed_uncertainty` WAVs + 5 `correct_confident`
+   WAVs.** Cheapest, highest-signal verification. Settles "silent crop"
+   literally. Files at `figures/v5j/mixed_uncertainty_roahaw/*.wav` and
+   `figures/v5j/correct_confident_roahaw/*.wav`.
+2. **Plot full gt_prob distributions** (histograms, not just medians) for
+   5 species in each regime. Tests bimodality directly. If "bimodal"
+   species show unimodal distributions, the regime label is wrong even if
+   median value is correct.
+3. **Threshold sensitivity sweep**: recompute regime shares at thresholds
+   `(0.7, 0.3)`, `(0.8, 0.3)`, `(0.9, 0.3)`, `(0.8, 0.2)`, `(0.8, 0.4)`.
+   If 50/33/17 is stable, the regime story is robust; if it shifts a lot,
+   classification is just a Procrustean cut.
+4. **Random-sample figure verification**: pick 3 random species per regime
+   (NOT from species composition top list) and view rank01. If patterns
+   hold on a non-cherry-picked sample, much stronger evidence.
+5. **Test-set relevance check** for the 8 "abundant-but-model-blind"
+   species: do they appear meaningfully in the public test soundscapes?
+   If not, modeling work on them won't move LB.
+6. **Cross-model validation** on v5g: re-run the regime split on a
+   `losses_v5g.parquet`. Same patterns → property of the data; different
+   patterns → v5j-specific artifact.
+
+### Investigation (only if validation holds)
+
+- **Per-species top-1 confusion analysis** for the 8 abundant-but-model-blind
+  species. Do confusions cluster on 1–2 common species (actionable for
+  margin loss / hard-negative mining), or scatter (broader representation
+  problem)?
+
+### Experiment design (only if both validation AND investigation produce a
+clear lever)
+
+- One experiment per regime, in isolation, evaluated against
+  regime-restricted metrics. See the regime/lever table earlier in this
+  note. **Do NOT** propose any experiment yet — the evidence isn't there.
 
 ## Files
 
