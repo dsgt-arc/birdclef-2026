@@ -1,5 +1,12 @@
 # Experiment 028: Background-Noise Mixing on v5j — Tasks
 
+> **Status (2026-04-25 evening): PAUSED and DEMOTED.** Demoted by the
+> per-frame analysis on the same date —
+> see [proposal.md](proposal.md) and the
+> [per-frame analysis note](../../analysis/notes/2026-04-25-per-frame-attention-analysis.md).
+> The tasks below are preserved as-is for historical reference; they are
+> not the active plan.
+
 ## Goal
 
 Test whether adding additive background-noise mixing to the v5j training

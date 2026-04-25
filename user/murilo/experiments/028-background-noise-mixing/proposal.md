@@ -1,9 +1,25 @@
 # Proposal: Background-Noise Mixing on v5j
 
-**Status**: proposed
+**Status**: **PAUSED / DEMOTED** (as of 2026-04-25 evening)
 **Created**: 2026-04-13 (as `028-domain-shift-augmentation`, bundled-everything plan)
 **Rewritten**: 2026-04-25 — renamed and rescoped to a single-variable experiment after audio validation
+**Demoted**: 2026-04-25 (evening) — by per-frame analysis findings
 **Author**: Murilo
+
+> **Status update (2026-04-25 evening): PAUSED and DEMOTED.**
+> The [per-frame analysis on this same date](../../analysis/notes/2026-04-25-per-frame-attention-analysis.md)
+> showed v5j's diffuse-on-hard-crops behavior is honest signal-matching
+> under low-SNR conditions, not a failure mode. BG noise mixing would
+> teach the model to predict species through noise — the false-positive
+> behavior that hurts LB. This experiment is parked as historical
+> reasoning, not run in current form.
+>
+> The proposal below reflects the 2026-04-25 morning thinking
+> (single-variable, evidence-led BG noise mixing motivated by the
+> audio-validation finding) and is preserved as-is for reference. If
+> the structural finding is later revised, or if external clean BG
+> noise becomes a different bet (e.g., as part of an exp 029 follow-up),
+> this proposal can be revisited from this baseline.
 
 ## Hypothesis
 
