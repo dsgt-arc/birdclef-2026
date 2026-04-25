@@ -102,35 +102,109 @@ or cosine annealing instead) have produced richer representations for
 transfer? The current data can't answer that. If stage 2 underperforms
 v5j, "use a longer pretrain schedule" is a candidate retry.
 
-## Stage 2: Fine-tune on 2026 — PENDING
+## Stage 2: Fine-tune on 2026 — TRAINING COMPLETE, LB PENDING
 
-**Config**: `configs/v5j_finetune_2026.yaml` (placeholder
-`init.from_checkpoint` updated to point at the stage-1 best checkpoint
-above before submission)
+**Config**: `configs/v5j_finetune_2026.yaml` with
+`init.from_checkpoint` pointed at stage-1 best checkpoint
+(`best-epochepoch=15.ckpt`).
+
+**Classifier transfer at init** (verified in fast-dev-run logs):
+- 318 full-copy params (backbone + head except final classifier)
+- 2 partial-copy params (`sed_head.cls_fc.3.weight`, `sed_head.cls_fc.3.bias`)
+- 41 of 234 target species mapped from source
+- 0 skipped — no pretrained params lost
+
+**SLURM**: Job 7433914, RTX 6000, **38m40s walltime**
+**Best checkpoint**: epoch 12 (best by val/auroc)
+**Path**: `/storage/.../experiments/029-2025-pretrain/checkpoints/2026-exp029-v5j-finetune-2026/best-epochepoch=12.ckpt`
+
+### Final metrics (epoch 12 = best)
+
+| Metric | Value |
+|--------|------:|
+| **val/auroc** | **0.850** |
+| val/cmap | 0.590 |
+| val/f1_macro | 0.505 |
+| val/top1_acc | 0.757 |
+| val/top5_acc | 0.872 |
+| val_sc/auroc | 0.950 (broken metric — see exp 026 caveat) |
+| val/loss | 0.011 |
+
+### Training trajectory
+
+| Epoch | val/auroc | Δ vs prior best | Note |
+|------:|----------:|----------------:|------|
+| 0 | 0.566 | — | Warm start: head already calibrated for 41 species |
+| 1 | 0.635 | +0.069 | |
+| 2 | 0.737 | +0.103 | |
+| 3 | 0.800 | +0.063 | |
+| 4 | 0.820 | +0.020 | |
+| 5 | 0.829 | +0.009 | MixUp warmup ends |
+| 6 | 0.830 | +0.001 | |
+| 7 | 0.833 | +0.003 | |
+| 8 | 0.837 | +0.004 | |
+| 9 | 0.843 | +0.006 | |
+| 11 | 0.849 | +0.005 | (epoch 10 didn't beat) |
+| **12** | **0.850** | **+0.001** | **Best — checkpoint saved.** |
+| 13–19 | (no improvement) | 0 | Plateau through end of OneCycleLR schedule |
+
+### Comparison vs comparable baseline (apples-to-apples)
+
+The original v5j (exp 019, no dual_validation) reports val/auroc 0.874,
+but that metric is computed across focal+SS combined and is not
+directly comparable. The valid comparison is **v5j-control (exp 027,
+dual_validation enabled)**, which gives a focal-only val/auroc:
+
+| Slug | Init | Best val/auroc | Best epoch | Δ |
+|---|---|---:|---:|---:|
+| v5j-control (exp 027) | ImageNet | 0.851 | ~14 | — |
+| **exp 029 stage 2** | **2025-pretrained** | **0.850** | **12** | **−0.001** |
+
+**Within seed noise.** The 2025 pretrain produced a model essentially
+identical on offline focal val/auroc to v5j-control. The 41-species
+warm start gave an early head start (epoch 0: 0.566 vs ImageNet
+~0.5something) but this washes out by the time training equilibrates
+across all 234 classes.
+
+### Observations
+
+1. **Best epoch shifted earlier (12 vs ~14).** The warm-started model
+   plateaus a bit sooner. Consistent with the 41 overlap species
+   already being calibrated.
+
+2. **Reduced LR (2e-4 vs v5j's 5e-4) didn't hurt the final val/auroc
+   noticeably.** Confirms that the lower LR was a defensible warm-start
+   choice; whether it's optimal vs full LR is empirically untested in
+   this run.
+
+3. **Offline metric being neutral does not predict LB.** Throughout this
+   project, offline val/auroc has been anti-correlated or uncorrelated
+   with LB. The fact that exp 029 stage-2 matches v5j-control offline
+   tells us nothing about whether LB will move.
+
+## Stage 3: ONNX export + LB submission + triage — PENDING
 
 Pending steps:
-1. Update stage-2 config with stage-1 best checkpoint path (above)
-2. Fast-dev-run on stage-2 config to verify transfer logs report
-   41 overlap species correctly mapped
-3. Full stage-2 training
-4. ONNX export
-5. LB submission
-6. Triage on stage-2 model — does the per-frame structure (entropy,
-   logit_std) on `mixed_uncertainty` change vs v5j baseline?
+1. ONNX export of `best-epochepoch=12.ckpt`
+2. Submit to LB
+3. Re-run triage + per-frame analysis on stage-2 checkpoint
+4. Compare per-frame structure (entropy, logit_std on `mixed_uncertainty`)
+   to v5j baseline. Did the head behavior change even though val/auroc
+   didn't?
 
-## Comparison to baselines (LB)
-
-To be filled in after stage 2 LB submission.
+## Comparison to LB baselines (TBD)
 
 | Slug | Init | LB | Δ vs v5j |
 |------|------|---:|---------:|
 | v5j (exp 019) baseline | ImageNet | 0.906 | — |
 | v5j-pp2 (exp 021) | ImageNet + priors | 0.909 | +0.003 |
+| v5j-4fold-pp2 (exp 021, 4-fold ensemble) | ImageNet + priors | 0.917 | +0.011 |
 | **exp 029 stage-2 single fold** | **2025-pretrained** | **TBD** | **TBD** |
+| Reference: Ali Ozan single (filtered XC pretrain) | XC-pretrained | 0.941 | (different pretrain corpus, much larger) |
 
 ## Decision-gate state
 
-We're at the boundary between Stage 1 and Stage 2. Stage 1 produced a
-clean checkpoint (val/auroc 0.972 at epoch 15) that's ready for transfer.
-The decision-gate matrix in [tasks.md](tasks.md) applies to stage-2 LB +
-triage, not stage 1.
+Offline result is **neutral** (within ±0.001 of v5j-control). Cannot
+predict LB direction from this. Awaiting LB submission to make any
+real call. Decision matrix in [tasks.md](tasks.md) applies after LB
+result lands.

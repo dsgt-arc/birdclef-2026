@@ -36,35 +36,36 @@ over the v5j baseline (0.906). **Single-variable change from v5j**:
 
 ---
 
-## Stage 2: Fine-tune on 2026 with classifier transfer — IN PROGRESS
+## Stage 2: Fine-tune on 2026 with classifier transfer — TRAINING DONE
 
-### 2.1 Configure
+### 2.1 Configure — done
 
-- [ ] 2.1.1 Update `configs/v5j_finetune_2026.yaml` `init.from_checkpoint`
-      to: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/029-2025-pretrain/checkpoints/2026-exp029-v5j-pretrain-2025/best-epochepoch=15.ckpt`
+- [x] 2.1.1 Updated `configs/v5j_finetune_2026.yaml` `init.from_checkpoint`
+      to point at `best-epochepoch=15.ckpt` from Stage 1
 - [x] 2.1.2 Confirm `init.source_taxonomy_csv` points to 2025 taxonomy.csv
-      (already correct in committed config)
 
-### 2.2 Sanity check
+### 2.2 Sanity check — done
 
-- [ ] 2.2.1 Fast-dev-run on `configs/v5j_finetune_2026.yaml`. Verify
-      classifier transfer logs report:
-      - 41 overlap species mapped
-      - ~140+ params copied directly (backbone + head except final classifier)
-      - 2 partial transfers (`model.head.cls_fc.3.weight`, `model.head.cls_fc.3.bias`)
+- [x] 2.2.1 Fast-dev-run completed (SLURM 7433613). Transfer logs verified:
+      - 41 of 234 target species mapped from source ✓
+      - 318 params copied directly (backbone + non-classifier head) ✓
+      - 2 partial transfers: `sed_head.cls_fc.3.weight`, `sed_head.cls_fc.3.bias` ✓
+      - 0 skipped — no pretrained params lost ✓
 
-### 2.3 Train
+### 2.3 Train — done
 
-- [ ] 2.3.1 Submit fine-tune SLURM job:
-      `bash sbatch/run.sh configs/v5j_finetune_2026.yaml`
-- [ ] 2.3.2 Monitor — expected ~1–2h on RTX 6000 (revised down based on
-      Stage 1 walltime); 2026 dataset is slightly larger so expect a bit
-      longer than Stage 1's 30 min
-- [ ] 2.3.3 Verify best-by-val/auroc checkpoint saved
+- [x] 2.3.1 Submitted fine-tune SLURM job (job 7433914)
+- [x] 2.3.2 **Walltime 38m40s on RTX 6000** (within revised estimate)
+- [x] 2.3.3 Best-by-val/auroc checkpoint saved at epoch 12 (val/auroc 0.850)
+      Path: `/storage/.../mgustineli3/experiments/029-2025-pretrain/checkpoints/2026-exp029-v5j-finetune-2026/best-epochepoch=12.ckpt`
+
+**Result**: val/auroc 0.850 — within ±0.001 of v5j-control (0.851).
+**Offline result is neutral.** See `results.md` for full trajectory and
+analysis.
 
 ---
 
-## Stage 3: Evaluate
+## Stage 3: Evaluate — IN PROGRESS
 
 ### 3.1 ONNX export + LB submission
 
@@ -76,10 +77,12 @@ over the v5j baseline (0.906). **Single-variable change from v5j**:
 ### 3.2 Per-frame triage on the new model
 
 - [ ] 3.2.1 Re-run `precompute_losses.py` on the stage-2 checkpoint,
-      pointing at 2026 val data
+      pointing at 2026 val data (need to point `--checkpoint` at
+      `029-.../best-epochepoch=12.ckpt` and use 2026 v5j config)
 - [ ] 3.2.2 Run `triage.py` + `per_frame_analysis.py` on new outputs
 - [ ] 3.2.3 Compare attention entropy / logit_std on `mixed_uncertainty`
-      vs v5j baseline — did the head behavior change?
+      vs v5j baseline — did the head behavior change even though
+      val/auroc didn't?
 
 ---
 

@@ -629,17 +629,35 @@ Trajectory: 0.543 (ep 0) → 0.794 (ep 2) → 0.945 (ep 5) → 0.968 (ep 11) →
 **0.972 (ep 15)** → plateau through ep 19. Clean convergence under
 OneCycleLR(20 ep), no overfitting, no instability.
 
-### Stage 2: Fine-tune on 2026 — PENDING
+### Stage 2: Fine-tune on 2026 — TRAINING DONE, LB PENDING
 
-| Slug | Init | LR | Epochs | val/auroc | LB | Δ vs v5j | Checkpoint |
-|------|------|----|--------|-----------|-----|----------|------------|
-| `hgnet-b0-sed-v5j-finetune-2026` | 2025-pretrained (Stage 1) | 2e-4 | 20 | TBD | TBD | TBD | TBD |
+| Slug | Init | LR | val/auroc | val/cmap | val/top1 | Best Epoch | Walltime | LB | Checkpoint |
+|------|------|----|-----------|----------|----------|------------|----------|-----|------------|
+| `hgnet-b0-sed-v5j-finetune-2026` | 2025-pretrained (Stage 1) | 2e-4 | **0.850** | 0.590 | 0.757 | 12 | 38m40s | TBD | `029-.../checkpoints/2026-exp029-v5j-finetune-2026/best-epochepoch=12.ckpt` |
 
-Comparison baselines:
+Trajectory: 0.566 (ep 0, warm start) → 0.829 (ep 5) → 0.850 (ep 12, best)
+→ plateau through ep 19. Earlier peak than v5j-control (~ep 14) consistent
+with warm-started overlap species calibrating sooner.
 
-- v5j single fold (exp 019): **0.906 LB** (ImageNet init)
+**Apples-to-apples offline comparison** (same dual_validation schema):
+
+| Slug | Init | Best val/auroc | Best Epoch | Δ |
+|---|---|---:|---:|---:|
+| v5j-control (exp 027) | ImageNet | 0.851 | ~14 | — |
+| **exp 029 stage 2** | **2025-pretrained** | **0.850** | **12** | **−0.001** |
+
+Offline result is essentially identical to v5j-control — within seed noise
+(Mahog reports ±0.005). The 41-species warm start gave an epoch-0 head
+start (0.566 vs ~0.5 random) but this washed out as the 193 random-init
+classifier rows trained up. Offline being neutral does not predict LB
+direction (offline-LB has been anti-correlated throughout this project).
+
+Comparison baselines (LB):
+
+- v5j single fold (exp 019): **0.906 LB** (ImageNet init, no dual_val)
 - v5j-pp2 (exp 021): 0.909 LB (priors)
-- Reference: Ali Ozan (filtered XC pretrain, different scale): 0.941 LB
+- v5j-4fold-pp2 (exp 021): 0.917 LB (4-fold + priors)
+- Reference: Ali Ozan single model (filtered XC pretrain, much larger): 0.941 LB
 
 ## Checkpoint Base Path
 
