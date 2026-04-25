@@ -79,6 +79,15 @@ After step 4, classify the outcome:
 
 For reference; each of these would be its own future experiment if pursued.
 
+- **Salman's disclosed-recipe replication on EfficientNetV2-B0** — likely
+  candidate for **exp 029** if pursued. Bundle of ~6 simultaneous changes
+  from v5j (backbone, head, loss, window, MixUp form, training data
+  filter). Tests whether Salman's documented 0.922 setup transfers to our
+  pipeline. **Caveat**: Salman's 0.937 jump is opaque (attention work,
+  undocumented), and his current focal-only stance may be a bug
+  workaround on his side rather than a real signal — see audio-validation
+  note's Salman-recipe audit
+  ([2026-04-25](../../analysis/notes/2026-04-25-audio-validation-low-snr-crops.md)).
 - Secondary label supervision
 - Soundscape oversampling
 - SpecAugment (time/frequency masking)
