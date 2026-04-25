@@ -1,6 +1,6 @@
 {
   "id": "murilogustineli/birdclef-2026-hgnet-b0-sed-v5j-finetune-2026",
-  "title": "BirdCLEF 2026 HGNet-B0 SED v5j Finetune 2026 (exp029)",
+  "title": "BirdCLEF 2026 HGNet-B0 SED v5j Finetune 2026",
   "code_file": "submission.py",
   "language": "python",
   "kernel_type": "script",
