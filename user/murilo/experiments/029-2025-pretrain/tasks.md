@@ -12,44 +12,54 @@ over the v5j baseline (0.906). **Single-variable change from v5j**:
 
 ---
 
-## Stage 1: Pretrain on 2025 focal data
+## Stage 1: Pretrain on 2025 focal data — COMPLETE
 
-### 1.1 Sanity check
+### 1.1 Sanity check — done
 
-- [ ] 1.1.1 Verify 2025 train.csv loads cleanly via existing `SEDFocalDataset`
+- [x] 1.1.1 Verify 2025 train.csv loads cleanly via existing `SEDFocalDataset`
       (point `data_dir` at 2025 path)
-- [ ] 1.1.2 Fast-dev-run on `configs/v5j_pretrain_2025.yaml` (2 batches,
-      no W&B). Confirms data pipeline + 206-class head works.
+- [x] 1.1.2 Fast-dev-run on `configs/v5j_pretrain_2025.yaml` (5 batches,
+      no W&B). First attempt failed on missing `train_soundscapes_labels.csv`
+      → fixed in `src/birdclef/data/soundscape.py:load_soundscape_labels`
+      (graceful empty-DF fallback). Second fast-dev-run completed
+      successfully (SLURM 7432783).
 
-### 1.2 Train
+### 1.2 Train — done
 
-- [ ] 1.2.1 Submit pretrain SLURM job:
-      `bash sbatch/run.sh configs/v5j_pretrain_2025.yaml`
-- [ ] 1.2.2 Monitor — expected ~1.5–2h on RTX 6000
-- [ ] 1.2.3 Verify best-by-val/auroc checkpoint saved
-- [ ] 1.2.4 Record stage-1 val/auroc in `results.md` (informational only)
+- [x] 1.2.1 Submit pretrain SLURM job: `bash sbatch/run.sh configs/v5j_pretrain_2025.yaml`
+- [x] 1.2.2 Walltime: **30m16s on RTX 6000** (much faster than the 1.5–2h estimate)
+- [x] 1.2.3 Best-by-val/auroc checkpoint saved at epoch 15 (val/auroc 0.972)
+      Path: `/storage/.../mgustineli3/experiments/029-2025-pretrain/checkpoints/2026-exp029-v5j-pretrain-2025/best-epochepoch=15.ckpt`
+- [x] 1.2.4 Recorded stage-1 metrics in `results.md`. Headline:
+      val/auroc 0.972, val/cmap 0.649, val/top1 0.761. Convergence
+      trajectory and shape documented.
 
 ---
 
-## Stage 2: Fine-tune on 2026 with classifier transfer
+## Stage 2: Fine-tune on 2026 with classifier transfer — IN PROGRESS
 
 ### 2.1 Configure
 
 - [ ] 2.1.1 Update `configs/v5j_finetune_2026.yaml` `init.from_checkpoint`
-      with the actual stage-1 checkpoint path (after stage 1 completes)
-- [ ] 2.1.2 Confirm `init.source_taxonomy_csv` points to 2025 taxonomy.csv
+      to: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/029-2025-pretrain/checkpoints/2026-exp029-v5j-pretrain-2025/best-epochepoch=15.ckpt`
+- [x] 2.1.2 Confirm `init.source_taxonomy_csv` points to 2025 taxonomy.csv
+      (already correct in committed config)
 
 ### 2.2 Sanity check
 
 - [ ] 2.2.1 Fast-dev-run on `configs/v5j_finetune_2026.yaml`. Verify
-      classifier transfer logs report 41 overlap species, ~140+ params
-      copied directly, ~2 partial transfers (cls_fc.3.weight + bias).
+      classifier transfer logs report:
+      - 41 overlap species mapped
+      - ~140+ params copied directly (backbone + head except final classifier)
+      - 2 partial transfers (`model.head.cls_fc.3.weight`, `model.head.cls_fc.3.bias`)
 
 ### 2.3 Train
 
 - [ ] 2.3.1 Submit fine-tune SLURM job:
       `bash sbatch/run.sh configs/v5j_finetune_2026.yaml`
-- [ ] 2.3.2 Monitor — expected ~1.5–2h on RTX 6000
+- [ ] 2.3.2 Monitor — expected ~1–2h on RTX 6000 (revised down based on
+      Stage 1 walltime); 2026 dataset is slightly larger so expect a bit
+      longer than Stage 1's 30 min
 - [ ] 2.3.3 Verify best-by-val/auroc checkpoint saved
 
 ---

@@ -69,10 +69,10 @@ training:
   onecycle_div_factor: 25.0
   onecycle_final_div_factor: 4.0
 
-# CHANGED — new init block. Loaded by train.py after model construction.
+# Init block — loaded by train.py after model construction.
 init:
-  # PLACEHOLDER — update after Stage 1 completes:
-  from_checkpoint: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/029-2025-pretrain/checkpoints/2026-exp029-v5j-pretrain-2025/best-epochepoch=XX.ckpt"
+  # Stage 1 best-by-val/auroc checkpoint (epoch 15, val/auroc 0.972, SLURM 7432887)
+  from_checkpoint: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/029-2025-pretrain/checkpoints/2026-exp029-v5j-pretrain-2025/best-epochepoch=15.ckpt"
   source_taxonomy_csv: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2025/taxonomy.csv"
   # transfer behaviour:
   #   - any ckpt param with shape matching the destination → copy directly

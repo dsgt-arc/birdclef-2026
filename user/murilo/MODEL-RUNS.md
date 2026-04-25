@@ -606,6 +606,41 @@ segment (amplitude-controlled). Labels: max(focal, PL). Standard 3-tuple, v5j re
 **Result: 0.894 LB — regressed -0.012 vs v5j baseline (0.906).** Worse than Phase B
 row-addition (0.897). Both pseudo-label approaches failed.
 
+## Experiment 029: 2025 Pretrain → 2026 Fine-tune (Ali Ozan path)
+
+Sequential transfer learning. Stage 1 pretrains v5j on BirdCLEF 2025 focal data
+(28,564 rows, 206 species) from ImageNet init. Stage 2 (pending) fine-tunes on
+2026 with the 41 (2025 ∩ 2026) overlap species' classifier rows transferred;
+remaining 193 rows (165 2026-only + 28 soundscape-only) kept at random init.
+Single-variable change from v5j: 2025-pretrained init vs ImageNet init.
+
+Motivated by 2026-04-25 per-frame analysis (v5j is structurally honest on hard
+crops; further training-recipe tweaks won't move LB; adding more *information*
+via 2025 data is the credible remaining lever). Ali Ozan (0.941 LB) used a
+similar pretrain → finetune pattern with filtered Xeno-Canto.
+
+### Stage 1: Pretrain on 2025 — DONE
+
+| Slug | Backbone | Head | Loss | val/auroc | val/cmap | val/top1 | Best Epoch | Walltime | Checkpoint |
+|------|----------|------|------|-----------|----------|----------|------------|----------|------------|
+| `hgnet-b0-sed-v5j-pretrain-2025` | HGNetV2-B0 | LSEHead | BCE | **0.972** | 0.649 | 0.761 | 15 | 30m16s | `029-.../checkpoints/2026-exp029-v5j-pretrain-2025/best-epochepoch=15.ckpt` |
+
+Trajectory: 0.543 (ep 0) → 0.794 (ep 2) → 0.945 (ep 5) → 0.968 (ep 11) →
+**0.972 (ep 15)** → plateau through ep 19. Clean convergence under
+OneCycleLR(20 ep), no overfitting, no instability.
+
+### Stage 2: Fine-tune on 2026 — PENDING
+
+| Slug | Init | LR | Epochs | val/auroc | LB | Δ vs v5j | Checkpoint |
+|------|------|----|--------|-----------|-----|----------|------------|
+| `hgnet-b0-sed-v5j-finetune-2026` | 2025-pretrained (Stage 1) | 2e-4 | 20 | TBD | TBD | TBD | TBD |
+
+Comparison baselines:
+
+- v5j single fold (exp 019): **0.906 LB** (ImageNet init)
+- v5j-pp2 (exp 021): 0.909 LB (priors)
+- Reference: Ali Ozan (filtered XC pretrain, different scale): 0.941 LB
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
