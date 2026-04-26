@@ -3,7 +3,7 @@
 Session handoff document for Murilo's BirdCLEF 2026 experiments.
 Read this first, then read the referenced docs to get full context.
 
-Last updated: 2026-04-25 (end of session)
+Last updated: 2026-04-25 (end of session, after exp 029 LB result + path A no-op + working notes inventory)
 
 ## Read these files first
 
@@ -14,7 +14,7 @@ top three fully, the rest can be skimmed.
 |------|---------|-------------|
 | `user/murilo/analysis/notes/2026-04-25-per-frame-attention-analysis.md` | **HEADLINE finding (high confidence)**: v5j is structurally honest. Per-frame attention entropy + GT-class logit std rise monotonically with failure severity; bimodal-species deep dive shows the same species produces qualitatively different head outputs under low-SNR vs clean conditions. Mechanistically explains 21+ failed recipe changes: most "improvements" teach false positives. Captures `silent-class` as exp 030 candidate. | Read fully (start here) |
 | `user/murilo/analysis/notes/2026-04-25-audio-validation-low-snr-crops.md` | Audio listening validation. All 15 roahaw `mixed_uncertainty` clips + 10 `correct_confident` baseline + cross-species samples confirmed: failures are dominated by ambient/anthropogenic noise with weak/absent calls. Reframed "silent crop" → "low SNR within 5s window." Includes Salman recipe audit (disclosed vs assumed). | Read fully |
-| `user/murilo/experiments/029-2025-pretrain/results.md` | **Active experiment — LB pending.** Stage 1 (2025 pretrain) val/auroc 0.972 ✓. Stage 2 (2026 fine-tune from pretrained init, classifier transfer for 41/234 overlap species) val/auroc 0.850 — within seed noise of v5j-control (0.851). Offline result is **neutral**; LB is the only signal that matters. | Read fully |
+| `user/murilo/experiments/029-2025-pretrain/results.md` | **REJECTED.** Stage 2 LB 0.885 (−0.021 vs v5j). Stage 1 val/auroc 0.972, Stage 2 val/auroc 0.850 (offline-LB anti-correlation continued). Path A retry (split LR) was a silent no-op — `head_lr` is ignored under `scheduler_type: one_cycle` (only used in `cosine` branch). Decision matrix landed on REJECT; pivoting to working-notes review. | Read fully |
 | `user/murilo/analysis/notes/2026-04-24-triage-v5j-failure-modes.md` | Foundation — triage categorization of 3,654 val samples. Only 1% is `confident_wrong`; 50% of top-20-by-loss is co-occurrence, not failure. | Skim |
 | `user/murilo/analysis/notes/2026-04-24-three-regimes-of-mixed-uncertainty.md` | 04-24 working hypothesis. Largely *superseded* by the 04-25 per-frame finding (the regimes are real but the strategic implication has changed). | Skim for context only |
 | `user/murilo/analysis/README.md` | Tooling map — triage, certainty, species_composition, export_figures, **per_frame_analysis (new 04-25)**, model_explorer | Skim |
@@ -30,7 +30,7 @@ top three fully, the rest can be skimmed.
 **Best single SED: 0.906** (v5j, 5s LSEHead, exp 019)
 **Target: 0.948** (competition #1). Gap: 0.019.
 
-**Active branch**: `mg/exp029-2025-pretrain` — PR #41 (open)
+**Active branch**: `mg/exp029-2025-pretrain` — PR #41 (open). exp 029 is closed (REJECTED) — branch can be merged or kept open as parking lot for the path-A retry that was a no-op. User to decide.
 
 **Recent merges to main this session (2026-04-25):**
 - PR #38 → analysis tooling + audio-validation note
@@ -43,7 +43,7 @@ top three fully, the rest can be skimmed.
 | Perch ProtoSSM v18 TF (exp 020) | 0.925 | Best individual model |
 | SED v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
 | **SED v5j single (exp 019)** | **0.906** | Best single SED — our ceiling |
-| **exp 029 stage 2 single fold** | **TBD (in flight 2026-04-25)** | 2025-pretrained → 2026 finetuned. Offline neutral (val/auroc 0.850 ≈ v5j-control 0.851). LB pending. |
+| **exp 029 stage 2 single fold** | **0.885 (−0.021, REJECTED)** | 2025-pretrained → 2026 finetuned. Offline neutral, LB regressed. Mechanistic explanation: training-side perturbation of v5j's equilibrium. |
 
 ## What happened recently
 
@@ -96,10 +96,33 @@ pretrain → 2026-finetune) scaffolded and executed:
 |---|---|
 | Stage 1 (pretrain on 2025 focal, 28K rows, 206 species) | val/auroc 0.972 at ep 15, 30 min walltime, clean convergence |
 | Stage 2 (fine-tune on 2026, classifier transfer for 41/234 overlap species, lr 2e-4 warm start) | val/auroc 0.850 at ep 12, 38 min walltime — **within seed noise of v5j-control (0.851)** |
-| Stage 3 (LB submission) | **In flight on Kaggle as of end-of-session.** Result pending. |
+| Stage 3 (LB submission) | **0.885 LB (−0.021 vs v5j 0.906) — REJECTED.** Mid-flight slug fix (52→47 chars; original Kaggle slug exceeded the 50-char dataset-slug limit and silently failed to attach to the kernel). |
 
-Triage on the stage-2 checkpoint (compare per-frame structure to v5j)
-also queued; user runs the SLURM job when ready.
+**Late evening — path A retry**: with offline-LB anti-correlation now
+22 in a row, attempted the cheap split-LR diagnostic (`head_lr: 5e-4`,
+`lr: 2e-4`) thinking the random-init head was undertrained. **Was a
+silent no-op.** Investigation revealed: in `src/birdclef/lightning/sed_finetune.py:783`,
+under `scheduler_type: "one_cycle"` the optimizer uses a single param
+group with `lr=self.hparams.lr` only — `head_lr` is ignored. (`head_lr`
+is wired up only in the `cosine` scheduler branch.) Both runs had
+identical effective settings → bit-identical metrics (val/auroc
+0.847821… to 16 decimals) → no information gained. Did not submit to
+LB.
+
+**Late evening — strategic pivot to working notes review**:
+22+ training-side failures + the per-frame mechanistic explanation
+make further training-side knob-turning a low-EV bet. Stepped back
+to identify what we may have implemented *differently* from
+competitors (e.g., waveform mixup details, BG noise mixing recipe,
+loss specifics). Searched CEUR-WS for BirdCLEF 2023/2024/2025
+working notes and identified gaps. Highest-leverage paper:
+**Sydorskyi 2nd place 2025** — explicit domain-shift focus + GitHub
+code + same author as 2023 1st place we already have a doc for.
+
+Triage on the stage-2 checkpoint not run (decision: not blocking the
+already-decided REJECT, low diagnostic value). Could be revived if
+the working-notes review surfaces a specific structural hypothesis
+worth testing on that checkpoint.
 
 ### 2026-04-24 — analysis methodology + working hypothesis on failure regimes
 
@@ -118,46 +141,143 @@ precompute_losses.py + the marimo/jupyter explorer. Captured Salman
 
 ## What needs to happen next
 
-### Priority 1 (in flight): exp 029 LB result
+### Priority 1: Working notes deep-dive (start here next session)
 
-The actual signal we're waiting on. Three branching outcomes:
+After 22+ training-side failures + exp 029 REJECT, the move is to read
+the formal CEUR-WS working notes from past BirdCLEF winners — far more
+detailed than Kaggle discussion summaries — and identify implementation
+differences from our pipeline. The published competition is in
+2026; working notes for prior years (2023, 2024, 2025) are the closest
+ground-truth recipes available.
 
-| LB result | Interpretation | Next |
-|---|---|---|
-| > 0.906 | Pretrain helped despite flat offline | Plan 4-fold scaleup of exp 029 |
-| ≈ 0.906 (±0.005 seed noise) | Pretrain didn't move LB at our scale | Decide: retry with `head_lr: 5e-4` (tests whether reduced LR was wrong given 83% of head was random-init) OR pivot to exp 030 silent-class |
-| < 0.906 by ≥0.005 | Pretrain hurt | Diagnose which axis: LR / classifier-transfer / 2025-data quality. Either retry one variable or pivot. |
+**Highest-priority single source: Sydorskyi 2025 2nd place.** Same
+author as the 2023 1st place we already have a doc for, explicit
+domain-shift focus, has reproducible GitHub code at
+`https://github.com/VSydorskyy/BirdCLEF_2025_2nd_place`. Paper:
+[CEUR Vol-4038 paper_256](https://ceur-ws.org/Vol-4038/paper_256.pdf).
+**This is the recommended starting point** for the next session.
 
-### Priority 2 (parallel, in flight): triage on exp 029 stage-2 checkpoint
+Tier-1 reading priority (likely high-leverage for the 0.03 gap):
+1. **Sydorskyi 2nd place 2025** — paper_256 + GitHub repo
+2. **Nikita Babych 1st place 2025** — full Kaggle writeup at
+   https://www.kaggle.com/competitions/birdclef-2025/writeups/nikita-babych-1st-place-solution-multi-iterative-n
+   (we have his inference notebook but the writeup adds: iterative
+   noisy-student PL across 4 rounds, SoftAUCLoss, separate insect/
+   amphibian pipeline, EffNet-l0/B4/B3/RegNetY ensemble)
+3. **Witting et al 2024 — "Domain Shift in Bird Call Classification"** —
+   [CEUR Vol-3740 paper-211](https://ceur-ws.org/Vol-3740/) — directly
+   targets the focal→soundscape problem we're stuck on
 
-Compare per-frame entropy / logit_std on `mixed_uncertainty` vs v5j
-baseline. Tells us whether pretraining changed the head's *internal*
-behavior even when val/auroc didn't. SLURM command queued for user to
-run; analysis lands after.
+Tier-2 reading priority (verify / complete what we have):
+4. **Team Kefir 2024 1st place** — verify our existing doc (2024
+   1st place) captures the CE-loss-with-sigmoid-inference details
+   (our exp 027 keeps failing on CE; their 1st place used CE >> BCE)
+5. **Dmitriev 2024** — [paper-193](https://ceur-ws.org/Vol-3740/) —
+   practical CNN training methods for soundscape recordings
 
-### Priority 3 (post-LB): decide next experiment
+Tier-3 reading priority (own prior work — refresh):
+6. DS@GT papers Murilo co-authored: BirdCLEF 2023 paper-177, 2024
+   paper-202, 2025 "Distilling Spectrograms into Tokens"
 
-Three credible candidates depending on exp 029 outcome:
+Tier-4 (scan for surprises):
+7. paper-172 (Hong 2023), paper-175 (Lasseck 2023), paper-204, 206
 
-- **4-fold scaleup of exp 029** (if Stage 2 LB wins)
-- **exp 030 silent-class** (if exp 029 is flat — engages the structural
-  finding directly; supervises a "no signal" class via crop energy.
-  Data acquisition for clean silent samples is the open challenge —
-  see 04-25 per-frame note for sourcing options reviewed)
-- **Salman recipe replication on EffNetV2-B0** (different architecture
-  bet; bundle of ~6 simultaneous changes; only viable if narrower paths
-  fail. Caveat: Salman's 0.922→0.937 jump is opaque)
+**Recommended workflow**: produce a methodology-map doc at
+`docs/references/kaggle/birdclef-2025/birdclef2025-2nd-place-domain-shift.md`
+(matching our existing `birdclef2023-1st-place-solution.md` pattern)
+based on paper_256 + the Sydorskyi GitHub repo. Then map our v5j
+implementation against theirs to surface specific differences. ~1-2h
+of focused work. After that, the next experiment proposal will have
+real grounding rather than yet-another-recipe-tweak.
+
+### Priority 2 (after working-notes review): pick next experiment
+
+Candidates depend on what the lit review surfaces. Pre-review priors:
+
+- **Faithful replication of one specific winning recipe** — most
+  likely Sydorskyi 2nd (transfer + SS distillation + PP), since he
+  publishes code and explicitly addresses our problem
+- **exp 030 silent-class** — engages the structural finding directly;
+  may overlap with techniques surfaced by the lit review
+- **Salman recipe replication on EffNetV2-B0** — disclosed-parts ceiling
+  is ~0.922; the +0.015 jump is opaque, so this is a weaker bet
 
 ### Deferred / superseded
 
-- **04-24 three-regimes validation queue** (histograms, threshold
-  sweep, cross-model on v5g, test-set relevance check): low priority
-  now. The per-frame analysis already validated the part that mattered
-  most for picking a lever, and the strategic frame has shifted from
-  "fix mixed_uncertainty" to "the model is doing the right thing,
-  add information not training pressure."
-- **8 abundant-but-model-blind species investigation**: deferred for
-  the same reason. May be revisited if exp 029/030 don't move LB.
+- **04-24 three-regimes validation queue**: low priority. Per-frame
+  finding already gave the structural backing.
+- **8 abundant-but-model-blind species investigation**: deferred.
+- **Triage on exp 029 stage-2 ckpt**: decision already made (REJECT);
+  diagnostic value low unless lit review surfaces a structural
+  hypothesis to test on it.
+- **Path A retry (split LR fix)**: would require modifying
+  `configure_optimizers` in `sed_finetune.py` to support split LR
+  under `one_cycle` (currently only supported under `cosine`). Cheap
+  fix (~10 lines). Defer unless lit review suggests split LR is a
+  validated technique.
+
+## Working notes / papers — inventory (added 2026-04-25 evening)
+
+What we already have in `docs/references/kaggle/`:
+
+| Year | Have | Source |
+|---|---|---|
+| 2023 | 1st place (Sydorskyi) summary | Kaggle writeup |
+| 2024 | 1st place (Team Kefir) summary | Kaggle writeup |
+| 2025 | 1st place (Nikita Babych) inference notebook + Python code; 9th place; ~30 BirdCLEF 2025 notebook references | Kaggle |
+| Cross-cutting | `docs/references/kaggle/winning-solutions-analysis.md` (technique comparison matrix across 2023/24/25) | DS@GT internal |
+
+What the formal CEUR working notes have that we don't:
+
+**BirdCLEF 2023 — [Vol-3497](https://ceur-ws.org/Vol-3497/)**
+- paper-172 — Hong: CNN training + OpenVINO inference acceleration
+- paper-175 — Lasseck: CNN with attention on frequency bands
+- paper-177 — Miyaguchi/Zhong/**Gustineli**/Hayduk (DS@GT)
+- paper-176, 178 (lower priority)
+
+**BirdCLEF 2024 — [Vol-3740](https://ceur-ws.org/Vol-3740/)**
+- paper-193 — Dmitriev: CNN training methods for complex soundscapes
+- paper-202 — Miyaguchi/Cheung/**Gustineli**/Kim (DS@GT)
+- paper-204 — Porwal: EfficientNet-B0 + B1 ensemble
+- paper-206 — Sampathkumar et al (TUC Media Computing): single learning models
+- **paper-211 — Witting et al: "Addressing the Challenges of Domain Shift in Bird Call Classification"** ← directly relevant
+
+**BirdCLEF 2025 — [Vol-4038](https://ceur-ws.org/Vol-4038/)**
+- paper_232 (overview)
+- "Notebook for the LifeCLEF Lab at CLEF 2025" (paper_249)
+- **paper_256 — Sydorskyi & Gonçalves 2nd place: "Tackling Domain Shift via Transfer Learning + Semi-Supervised Distillation"** ← highest priority
+- "Distilling Spectrograms into Tokens" — Miyaguchi/**Gustineli**/Cheung (DS@GT)
+- "One Detector per Bird" — Suthraye Gokulnath et al (binary-classifier-per-species)
+
+Other Tier-1 sources (non-CEUR):
+
+- **Sydorskyi 2025 2nd place GitHub**: https://github.com/VSydorskyy/BirdCLEF_2025_2nd_place
+- **Sydorskyi 2023 1st place GitHub**: https://github.com/VSydorskyy/BirdCLEF_2023_1st_place
+- **Nikita Babych 2025 1st place writeup**: https://www.kaggle.com/competitions/birdclef-2025/writeups/nikita-babych-1st-place-solution-multi-iterative-n
+- **Team Kefir 2024 1st place**: Kaggle /competitions/birdclef-2024/discussion/512197
+- **TheoViel 2024 GitHub**: https://github.com/TheoViel/kaggle_birdclef2024
+- **JFPuget 2024 GitHub**: https://github.com/jfpuget/birdclef-2024
+
+### Specific implementation questions to answer from the reading
+
+Driven by our 22+ failures and the per-frame finding:
+
+1. **Waveform MixUp specifics** — additive vs interpolative, applied
+   before/after BG noise, label combination (max vs sum vs interpolated),
+   application probability, alpha distribution
+2. **BG noise mixing recipe** — sources, SNR distribution, mixing point
+   (waveform vs mel), application probability
+3. **Loss function full math** — particularly CE-on-clipwise-and-framewise-max
+   (Salman's loss, Team Kefir's CE-vs-BCE win); exact reduction + aggregation
+4. **Augmentation cascade order** — full sequence raw audio → input batch
+5. **Inference / PP chain** — top winners' PP can be +0.01-0.02; ours has
+   TTA + smoothing + TopN + priors but the parameters may be off
+6. **Anything resembling silent-class / honest-no-call handling** — would
+   inform our exp 030 candidate
+7. **Training curriculum** — full schedule: warmup, mixup ramp-up, when
+   each augmentation turns on
+8. **Domain-shift adaptation** specifically (paper-211 2024, paper_256 2025) —
+   what worked for the focal→soundscape transition
 
 ## Key patterns (updated 2026-04-25)
 
@@ -194,6 +314,18 @@ Three credible candidates depending on exp 029 outcome:
 - **CE loss is dead** (7 tests). **Additive MixUp is dead** (3 tests).
   **Pseudo-labels are dead** (2 approaches). **BG noise mixing is now
   also demoted** before being run, per the per-frame argument.
+- **NEW (added end-of-day 2026-04-25)**: **2025 pretrain at our scale
+  is rejected** (exp 029 stage 2 → 0.885 LB, −0.021 vs v5j). Training-
+  side pretraining is a perturbation of v5j's equilibrium just like
+  any other recipe change, and the per-frame finding's prediction
+  held cleanly. Also discovered a quirk: `head_lr` is silently ignored
+  under `scheduler_type: one_cycle` (only used in the `cosine` branch
+  of `configure_optimizers`). Worth fixing if we ever want true split
+  LR under one_cycle.
+- **NEW**: Working-notes review is the next strategic move. 22+
+  recipe-side failures + a mechanistic explanation = the gap is
+  unlikely on knob-turning. Reading what winners actually did, in
+  full detail, is higher-EV than another isolated tweak.
 
 ## Key files for current work
 
@@ -210,4 +342,8 @@ Three credible candidates depending on exp 029 outcome:
 | `user/murilo/experiments/028-background-noise-mixing/` | PAUSED / DEMOTED historical artifact |
 | `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor insights |
 | `user/murilo/FINDINGS.md` | Cross-experiment history |
-| `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints (exp 029 stage 1+2 added) |
+| `user/murilo/MODEL-RUNS.md` | All model scores and checkpoints (exp 029 stage 1+2 added with REJECTED status) |
+| `docs/references/kaggle/winning-solutions-analysis.md` | Cross-cutting comparison matrix of past BirdCLEF winners — useful start point before fetching new papers |
+| `docs/references/kaggle/birdclef-2023/birdclef2023-1st-place-solution.md` | Sydorskyi 2023 1st place — same author as the highest-priority 2025 paper to read next |
+| `docs/references/kaggle/birdclef-2024/birdclef2024-1st-place-solution.md` | Team Kefir 2024 1st place — verify CE+sigmoid details |
+| `docs/references/kaggle/birdclef-2025/birdclef2025-1st-place-inference.md` + `birdclef-2025-nikita-1st-place-sed.py` | Nikita Babych 2025 1st place — inference + SED head code |
