@@ -21,6 +21,7 @@ DRY_RUN=false
 PROJECT_NAME="ps-clef2026_birdclef-0"
 GPU_TYPE=""
 BATCH_SIZE=64
+DATA_SPLIT="val"
 
 # Default: v5j model
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -80,6 +81,10 @@ while [[ $# -gt 0 ]]; do
             BATCH_SIZE="$2"
             shift 2
             ;;
+        --data-split)
+            DATA_SPLIT="$2"
+            shift 2
+            ;;
         --project-name)
             PROJECT_NAME="$2"
             shift 2
@@ -116,6 +121,7 @@ echo "=============================================="
 echo "Config: ${CONFIG}"
 echo "Checkpoint: $(basename "${CHECKPOINT}")"
 echo "Output: ${OUTPUT}"
+echo "Data split: ${DATA_SPLIT}"
 echo "Partition: ${PARTITION}"
 echo ""
 
@@ -138,7 +144,7 @@ RUN_NAME="$(basename "$OUTPUT" .parquet)"
 CMD="sbatch \
     --partition=${PARTITION} \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},CHECKPOINT=${CHECKPOINT},OUTPUT=${OUTPUT},BATCH_SIZE=${BATCH_SIZE},PROJECT_NAME=${PROJECT_NAME} \
+    --export=ALL,CONFIG=${CONFIG},CHECKPOINT=${CHECKPOINT},OUTPUT=${OUTPUT},BATCH_SIZE=${BATCH_SIZE},PROJECT_NAME=${PROJECT_NAME},DATA_SPLIT=${DATA_SPLIT} \
     --job-name=losses-${RUN_NAME} \
     ${JOB_SCRIPT}"
 

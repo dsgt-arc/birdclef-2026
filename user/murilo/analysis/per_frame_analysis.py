@@ -60,26 +60,52 @@ def compute_per_sample_metrics(
     perframe: np.ndarray,
     species_list: list[str],
     lse_temperature: float = 1.0,
+    head_type: str = "lse",
+    perframe_att: np.ndarray | None = None,
 ) -> pd.DataFrame:
-    """Compute per-sample LSE-attention diagnostics.
+    """Compute per-sample attention diagnostics.
+
+    Two head modes:
+
+    ``head_type="lse"`` (default, v5j-family):
+        Attention is *implicit* — derived from per-frame logits as
+        ``softmax(lse_temperature · z_t)``. No learned attention parameters.
+
+    ``head_type="atthead"`` (AttHead-family, v6k):
+        Attention is *learned* via a separate Conv1D producing pre-activation
+        ``att_raw``; weights are ``softmax(tanh(att_raw[gt]))`` per class.
+        Requires ``perframe_att`` of shape ``(N, n_classes, T)`` saved
+        alongside framewise logits by precompute_losses.py.
 
     Args:
-        triage: DataFrame with one row per val sample (must have `idx`,
-            `primary_label`, `top1_species`, `triage_category`).
-        perframe: (N, n_classes, T) per-frame logits.
+        triage: DataFrame with one row per sample (must have `idx`,
+            `primary_label`, `top1_species`).
+        perframe: (N, n_classes, T) per-frame logits (the "value" branch).
         species_list: list mapping class index → species string.
-        lse_temperature: α used in LSE pooling. v5j uses 1.0.
+        lse_temperature: α used in LSE pooling. v5j uses 1.0. Ignored
+            when head_type='atthead'.
+        head_type: "lse" or "atthead".
+        perframe_att: (N, n_classes, T) attention pre-activation. Required
+            when head_type='atthead'.
 
     Returns:
         triage augmented with per-frame columns:
-            - `gt_attn_entropy`: entropy of LSE-implicit attention on GT class (nats)
+            - `gt_attn_entropy`: entropy of attention on GT class (nats)
             - `gt_attn_max`: max attention weight on any one frame (peakedness)
-            - `gt_peak_frame`: index of the frame with highest GT-class logit
-            - `gt_logit_std`: std of GT-class logits across frames (variability)
+            - `gt_peak_frame`: index of the frame with highest GT-class
+              attention weight (NOT the highest logit — they differ for
+              AttHead; for LSE these are the same since attention is
+              monotonic in the logit).
+            - `gt_logit_std`: std of GT-class per-frame logits (logit variability)
             - `top1_wander`: number of distinct frame-level top-1 species
             - `top1_majority_frac`: fraction of frames where top-1 == sample's
-              clipwise-top1 (high = stable, low = wandering)
+              clipwise-top1
     """
+    if head_type not in ("lse", "atthead"):
+        raise ValueError(f"head_type must be 'lse' or 'atthead', got {head_type}")
+    if head_type == "atthead" and perframe_att is None:
+        raise ValueError("perframe_att is required when head_type='atthead'")
+
     N, C, T = perframe.shape
     species_to_idx = {s: i for i, s in enumerate(species_list)}
 
@@ -95,6 +121,8 @@ def compute_per_sample_metrics(
 
     # Cast perframe to float32 for math (was stored as float16)
     perframe_f32 = perframe.astype(np.float32)
+    if perframe_att is not None:
+        perframe_att_f32 = perframe_att.astype(np.float32)
 
     # Per-sample loop (vectorizable but readability matters more here for now)
     for row in triage.itertuples(index=False):
@@ -104,14 +132,21 @@ def compute_per_sample_metrics(
             continue
         g = species_to_idx[primary]
 
-        z_g_t = perframe_f32[i, g, :]  # (T,)
-        attn_g = softmax(z_g_t * lse_temperature)
+        z_g_t = perframe_f32[i, g, :]  # (T,) — per-frame logits ("value")
+
+        if head_type == "lse":
+            attn_g = softmax(z_g_t * lse_temperature)
+        else:
+            # AttHead: softmax(tanh(att_raw[gt]))
+            att_raw_g = perframe_att_f32[i, g, :]
+            attn_g = softmax(np.tanh(att_raw_g))
+
         cols["gt_attn_entropy"][i] = float(shannon_entropy(attn_g))
         cols["gt_attn_max"][i] = float(attn_g.max())
-        cols["gt_peak_frame"][i] = int(z_g_t.argmax())
+        cols["gt_peak_frame"][i] = int(attn_g.argmax())
         cols["gt_logit_std"][i] = float(z_g_t.std())
 
-        # Top-1 per frame (across all classes)
+        # Top-1 per frame (across all classes) — based on logits, head-agnostic
         per_frame_top1 = perframe_f32[i, :, :].argmax(axis=0)  # (T,)
         unique_top1, counts = np.unique(per_frame_top1, return_counts=True)
         cols["top1_wander"][i] = int(len(unique_top1))
@@ -183,7 +218,7 @@ def bimodal_species_deep_dive(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Per-frame analysis of v5j")
+    parser = argparse.ArgumentParser(description="Per-frame attention analysis")
     parser.add_argument(
         "--triage",
         type=str,
@@ -195,6 +230,23 @@ def main():
         type=str,
         default="data/losses_v5j_perframe_logits.npy",
         help="Path to per-frame logits (N, C, T) saved by precompute_losses.py.",
+    )
+    parser.add_argument(
+        "--perframe-att",
+        type=str,
+        default=None,
+        help="Path to per-frame attention pre-activation (N, C, T). "
+        "Required when --head-type=atthead. Saved by precompute_losses.py "
+        "as `*_perframe_att.npy` when an AttHead-family head is detected.",
+    )
+    parser.add_argument(
+        "--head-type",
+        type=str,
+        default="lse",
+        choices=["lse", "atthead"],
+        help="Head family. 'lse' = LSEHead-implicit attention "
+        "(softmax(α·z_t)). 'atthead' = AttHead learned attention "
+        "(softmax(tanh(att_raw))).",
     )
     parser.add_argument(
         "--species-list-source",
@@ -214,6 +266,12 @@ def main():
         default="data/perframe/",
         help="Directory for outputs (parquet + summary text).",
     )
+    parser.add_argument(
+        "--model-tag",
+        type=str,
+        default="v5j",
+        help="Short tag used in output filenames (e.g. 'v5j', 'v6k', 'v5j_train').",
+    )
     args = parser.parse_args()
 
     triage_path = Path(args.triage)
@@ -228,6 +286,28 @@ def main():
             f"Run precompute_losses.py first (which now also dumps "
             f"_perframe_logits.npy)."
         )
+
+    perframe_att = None
+    if args.head_type == "atthead":
+        if args.perframe_att is None:
+            # Try to auto-derive by sibling filename convention
+            sibling = perframe_path.with_name(
+                perframe_path.stem.replace("_perframe_logits", "_perframe_att") + ".npy"
+            )
+            if sibling.exists():
+                args.perframe_att = str(sibling)
+            else:
+                raise SystemExit(
+                    f"--head-type=atthead but no --perframe-att provided and "
+                    f"sibling {sibling} not found. Re-run precompute_losses.py "
+                    f"with an AttHead-family config to generate the attention file."
+                )
+        att_path = Path(args.perframe_att)
+        if not att_path.exists():
+            raise SystemExit(f"Per-frame attention not found: {att_path}")
+        logger.info(f"Loading per-frame attention pre-activation from {att_path}")
+        perframe_att = np.load(att_path)
+        logger.info(f"Per-frame attention shape: {perframe_att.shape}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -251,33 +331,45 @@ def main():
             f"({len(species_list)}). Continuing anyway, but check alignment."
         )
 
-    logger.info("Computing per-sample metrics...")
+    logger.info(f"Computing per-sample metrics (head_type={args.head_type})...")
     out = compute_per_sample_metrics(
-        triage, perframe, species_list, lse_temperature=args.lse_temperature
+        triage,
+        perframe,
+        species_list,
+        lse_temperature=args.lse_temperature,
+        head_type=args.head_type,
+        perframe_att=perframe_att,
     )
 
     # Save enriched parquet
-    enriched_path = output_dir / "triage_v5j_perframe.parquet"
+    enriched_path = output_dir / f"triage_{args.model_tag}_perframe.parquet"
     out.to_parquet(enriched_path, index=False)
     logger.info(f"Saved enriched parquet to {enriched_path}")
 
-    # Category-level summary
-    summary = summarize_by_category(out)
-    print("\n=== Per-frame metrics by triage category ===")
-    print(summary.to_string())
-    summary_path = output_dir / "perframe_summary_by_category.csv"
-    summary.to_csv(summary_path)
-    logger.info(f"Saved category summary to {summary_path}")
+    # Category-level summary (only if triage_category exists — train-side runs
+    # may not have it).
+    if "triage_category" in out.columns:
+        summary = summarize_by_category(out)
+        print("\n=== Per-frame metrics by triage category ===")
+        print(summary.to_string())
+        summary_path = output_dir / f"perframe_summary_by_category_{args.model_tag}.csv"
+        summary.to_csv(summary_path)
+        logger.info(f"Saved category summary to {summary_path}")
 
-    # Bimodal-species deep dive (the 4 species we already inspected via audio)
-    bimodal_targets = ["roahaw", "coffal1", "socfly1", "compot1", "whtdov", "barant1"]
-    deep = bimodal_species_deep_dive(out, bimodal_targets)
-    if not deep.empty:
-        print("\n=== Bimodal-species deep dive ===")
-        print(deep.to_string(index=False))
-        deep_path = output_dir / "perframe_bimodal_species_deepdive.csv"
-        deep.to_csv(deep_path, index=False)
-        logger.info(f"Saved bimodal deep-dive to {deep_path}")
+        # Bimodal-species deep dive (the 4 species we already inspected via audio)
+        bimodal_targets = ["roahaw", "coffal1", "socfly1", "compot1", "whtdov", "barant1"]
+        deep = bimodal_species_deep_dive(out, bimodal_targets)
+        if not deep.empty:
+            print("\n=== Bimodal-species deep dive ===")
+            print(deep.to_string(index=False))
+            deep_path = output_dir / f"perframe_bimodal_species_deepdive_{args.model_tag}.csv"
+            deep.to_csv(deep_path, index=False)
+            logger.info(f"Saved bimodal deep-dive to {deep_path}")
+    else:
+        logger.info(
+            "No 'triage_category' column on input — skipping category summary "
+            "(expected for train-split inputs where triage isn't run)."
+        )
 
     # Reference: theoretical max entropy for uniform distribution over T frames
     T = perframe.shape[2]

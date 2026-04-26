@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH -qinferno
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=mgustineli3@gatech.edu
@@ -24,6 +24,7 @@ CHECKPOINT="${CHECKPOINT:?CHECKPOINT must be set}"
 OUTPUT="${OUTPUT:-losses.parquet}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
+DATA_SPLIT="${DATA_SPLIT:-val}"
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     ANALYSIS_DIR="$SLURM_SUBMIT_DIR"
@@ -98,23 +99,26 @@ srun python precompute_losses.py \
     --output "${OUTPUT}" \
     --batch-size "${BATCH_SIZE}" \
     --device cuda \
-    --num-workers "${SLURM_CPUS_PER_TASK}"
+    --num-workers "${SLURM_CPUS_PER_TASK}" \
+    --data-split "${DATA_SPLIT}"
 
-echo ""
-echo "=============================================="
-echo "Running triage enrichment..."
-echo "=============================================="
-# Triage joins the losses parquet with train.csv to add secondary_labels +
-# failure-mode categories. ~2s CPU step. Kept as a separate script so triage
-# heuristics can iterate without re-running the GPU job, chained here so every
-# precompute produces both losses_<model>.parquet and triage_<model>.parquet.
-# Failure does not fail the job — the expensive GPU output is preserved.
-set +e
-python triage.py --losses "${OUTPUT}"
-TRIAGE_RC=$?
-set -e
-if [ $TRIAGE_RC -ne 0 ]; then
-    echo "WARNING: triage.py exited with code $TRIAGE_RC — losses parquet is fine, re-run triage manually"
+# Triage enrichment is val-only (joins with train.csv to derive co-occurrence
+# categories that don't make sense for the train split). Skip on train mode.
+if [ "${DATA_SPLIT}" = "val" ]; then
+    echo ""
+    echo "=============================================="
+    echo "Running triage enrichment..."
+    echo "=============================================="
+    set +e
+    python triage.py --losses "${OUTPUT}"
+    TRIAGE_RC=$?
+    set -e
+    if [ $TRIAGE_RC -ne 0 ]; then
+        echo "WARNING: triage.py exited with code $TRIAGE_RC — losses parquet is fine, re-run triage manually"
+    fi
+else
+    echo ""
+    echo "Train split: skipping triage (val-only)."
 fi
 
 echo ""
@@ -124,5 +128,10 @@ echo "Job completed successfully!"
 echo ""
 echo "Output files:"
 TRIAGE_OUTPUT="$(dirname "${OUTPUT}")/$(basename "${OUTPUT}" | sed 's/^losses_/triage_/')"
-ls -lh "${OUTPUT}" "${OUTPUT%.parquet}_logits.npy" "${TRIAGE_OUTPUT}" 2>/dev/null
+ls -lh \
+    "${OUTPUT}" \
+    "${OUTPUT%.parquet}_logits.npy" \
+    "${OUTPUT%.parquet}_perframe_logits.npy" \
+    "${OUTPUT%.parquet}_perframe_att.npy" \
+    "${TRIAGE_OUTPUT}" 2>/dev/null
 echo "=============================================="
