@@ -1,0 +1,48 @@
+{
+  "n_simulations": 100000,
+  "n_classes": 234,
+  "n_positive_target_values_total": 264561,
+  "n_full_positives_post_cap": 54262,
+  "n_sub1_positives_post_cap": 210299,
+  "frac_full_positives_post_cap": 0.20510203695934018,
+  "pct_samples_with_at_least_one_full_pos_post_cap": 40.925,
+  "mean_positives_per_sample_post_cap": 2.6456100940704346,
+  "mean_full_positives_per_sample_post_cap": 0.5426200032234192,
+  "hist_bins": [
+    0.0,
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    1.0001
+  ],
+  "hist_pre_cap": [
+    26226,
+    26602,
+    26006,
+    26567,
+    26369,
+    26282,
+    26549,
+    25698,
+    26545,
+    27717
+  ],
+  "hist_post_cap": [
+    26226,
+    26602,
+    26006,
+    26567,
+    26369,
+    26282,
+    26549,
+    25698,
+    0,
+    54262
+  ]
+}
