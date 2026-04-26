@@ -606,6 +606,80 @@ segment (amplitude-controlled). Labels: max(focal, PL). Standard 3-tuple, v5j re
 **Result: 0.894 LB — regressed -0.012 vs v5j baseline (0.906).** Worse than Phase B
 row-addition (0.897). Both pseudo-label approaches failed.
 
+## Experiment 029: 2025 Pretrain → 2026 Fine-tune (Ali Ozan path)
+
+Sequential transfer learning. Stage 1 pretrains v5j on BirdCLEF 2025 focal data
+(28,564 rows, 206 species) from ImageNet init. Stage 2 (pending) fine-tunes on
+2026 with the 41 (2025 ∩ 2026) overlap species' classifier rows transferred;
+remaining 193 rows (165 2026-only + 28 soundscape-only) kept at random init.
+Single-variable change from v5j: 2025-pretrained init vs ImageNet init.
+
+Motivated by 2026-04-25 per-frame analysis (v5j is structurally honest on hard
+crops; further training-recipe tweaks won't move LB; adding more *information*
+via 2025 data is the credible remaining lever). Ali Ozan (0.941 LB) used a
+similar pretrain → finetune pattern with filtered Xeno-Canto.
+
+### Stage 1: Pretrain on 2025 — DONE
+
+| Slug | Backbone | Head | Loss | val/auroc | val/cmap | val/top1 | Best Epoch | Walltime | Checkpoint |
+|------|----------|------|------|-----------|----------|----------|------------|----------|------------|
+| `hgnet-b0-sed-v5j-pretrain-2025` | HGNetV2-B0 | LSEHead | BCE | **0.972** | 0.649 | 0.761 | 15 | 30m16s | `029-.../checkpoints/2026-exp029-v5j-pretrain-2025/best-epochepoch=15.ckpt` |
+
+Trajectory: 0.543 (ep 0) → 0.794 (ep 2) → 0.945 (ep 5) → 0.968 (ep 11) →
+**0.972 (ep 15)** → plateau through ep 19. Clean convergence under
+OneCycleLR(20 ep), no overfitting, no instability.
+
+### Stage 2: Fine-tune on 2026 — DONE (REGRESSED)
+
+| Slug | Init | LR | val/auroc | val/cmap | val/top1 | Best Epoch | Walltime | LB | Δ vs v5j | Checkpoint |
+|------|------|----|-----------|----------|----------|------------|----------|-----|----------|------------|
+| `hgnet-b0-sed-v5j-finetune-2026` | 2025-pretrained (Stage 1) | 2e-4 | **0.850** | 0.590 | 0.757 | 12 | 38m40s | **0.885** | **−0.021** | `029-.../checkpoints/2026-exp029-v5j-finetune-2026/best-epochepoch=12.ckpt` |
+
+**Result: 0.885 LB — regressed −0.021 vs v5j baseline (0.906). REJECTED.**
+
+Offline val/auroc 0.850 was essentially identical to v5j-control's 0.851
+(Δ −0.001), but LB regressed clearly. Offline-LB anti-correlation
+continues — this is the 22nd training-side change where offline metrics
+gave no LB signal.
+
+The result is consistent with the 2026-04-25 per-frame finding: v5j
+sits at a soundscape-generalization equilibrium, and any training-side
+perturbation (different init, different LR) tends to hurt LB even
+when offline metrics look identical. 2025 pretraining is itself a
+training perturbation — different starting point, different LR, mixed
+warm/random head — and the result is what the structural argument
+predicted.
+
+Trajectory: 0.566 (ep 0, warm start) → 0.829 (ep 5) → 0.850 (ep 12, best)
+→ plateau through ep 19. Earlier peak than v5j-control (~ep 14) consistent
+with warm-started overlap species calibrating sooner.
+
+**Apples-to-apples offline comparison** (same dual_validation schema):
+
+| Slug | Init | Best val/auroc | Best Epoch | Δ |
+|---|---|---:|---:|---:|
+| v5j-control (exp 027) | ImageNet | 0.851 | ~14 | — |
+| **exp 029 stage 2** | **2025-pretrained** | **0.850** | **12** | **−0.001** |
+
+Offline result is essentially identical to v5j-control — within seed noise
+(Mahog reports ±0.005). The 41-species warm start gave an epoch-0 head
+start (0.566 vs ~0.5 random) but this washed out as the 193 random-init
+classifier rows trained up. Offline being neutral does not predict LB
+direction (offline-LB has been anti-correlated throughout this project).
+
+Comparison baselines (LB):
+
+- v5j single fold (exp 019): **0.906 LB** (ImageNet init, no dual_val)
+- v5j-pp2 (exp 021): 0.909 LB (priors)
+- v5j-4fold-pp2 (exp 021): 0.917 LB (4-fold + priors)
+- Reference: Ali Ozan single model (filtered XC pretrain, much larger): 0.941 LB
+
+**Decision: REJECTED.** Pretrain at our scale (28K 2025 rows, 41-species
+overlap, reduced LR for warm start) does not transfer usefully to 2026
+LB. Cheap retry candidate: `head_lr: 5e-4` with `lr: 2e-4` (split LR)
+to test whether random-init head was undertrained. Otherwise, pivot to
+exp 030 silent-class or Salman recipe replication.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

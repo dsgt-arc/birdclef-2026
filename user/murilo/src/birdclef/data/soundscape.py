@@ -37,9 +37,23 @@ def load_soundscape_labels(labels_csv: str | Path) -> pd.DataFrame:
     The CSV contains duplicate rows (each segment appears 2x with identical labels).
     Deduplicates by (filename, start, end), keeping the first occurrence.
 
+    If ``labels_csv`` does not exist, returns an empty DataFrame with the
+    expected schema. This supports training on datasets that do not ship a
+    labeled-soundscape CSV (e.g., BirdCLEF 2025 in our project storage,
+    used for exp 029 pretraining). Downstream code already tolerates an
+    empty soundscape DataFrame (split → empty splits → zero-length
+    SEDSoundscapeDataset → ConcatDataset omits it implicitly).
+
     Returns:
         DataFrame with columns: filename, start, end, primary_label (deduplicated)
     """
+    if not Path(labels_csv).exists():
+        logger.info(
+            f"Soundscape labels file not found: {labels_csv} — "
+            f"returning empty DataFrame (focal-only training)"
+        )
+        return pd.DataFrame(columns=["filename", "start", "end", "primary_label"])
+
     df = pd.read_csv(labels_csv)
     n_raw = len(df)
     df = df.drop_duplicates(subset=["filename", "start", "end"], keep="first")

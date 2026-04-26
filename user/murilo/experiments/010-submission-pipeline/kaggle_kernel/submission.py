@@ -91,6 +91,10 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 029 path A retry: 2025-pretrained → 2026 split-LR fine-tune
+    "birdclef-2026-hgnet-b0-sed-v5j-ft-splitlr-weights",
+    # Exp 029: 2025-pretrained → 2026 fine-tuned (Ali Ozan path)
+    "birdclef-2026-hgnet-b0-sed-v5j-finetune-weights",
     # Exp 027 Phase 4: Salman-derived changes
     "birdclef-2026-hgnet-b0-sed-v11b-exp027-weights",
     # Exp 027: v5j with 10s overlapping window inference
