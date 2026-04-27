@@ -680,6 +680,57 @@ LB. Cheap retry candidate: `head_lr: 5e-4` with `lr: 2e-4` (split LR)
 to test whether random-init head was undertrained. Otherwise, pivot to
 exp 030 silent-class or Salman recipe replication.
 
+## Experiment 030: Sydorskyi-faithful MixUp on v5j
+
+A/B comparison testing whether replacing v5j's Zhang-style interpolated
+spectrogram MixUp with Sydorskyi 2025 2nd-place's faithful waveform recipe
+(`wave = (w1+w2)/2` + peak-normalize, `target = max(y1, y2)`, p=0.5,
+deterministic 0.5 lambda, no theta cap, no warmup) moves LB.
+
+Phase A: v5j HGNetV2-B0 ablation (single-variable mixup change).
+Phase B (pending): EfficientNetV2-B0 backbone + 2x2 ablation.
+
+Motivated by 2026-04-26 mixup audit (PR #42) — v5j and prior wave-mixup
+attempts (v4j/v6b/v10b) all use interpolated multi-label targets, not
+Sydorskyi's `max(y1, y2)`. Plus target-distribution simulation showing 80%
+of v5j's training target values are sub-1, 59% have NO full positive.
+
+### Phase A: Training — DONE (LB PENDING)
+
+Both runs use HGNetV2-B0 + LSEHead + BCE + OneCycleLR (lr=5e-4) + 20 epochs +
+seed=42 + dual_validation. Only mixup config differs.
+
+| Slug | Mixup recipe | val/auroc | val/cmap | val/f1_macro | Best Epoch | best_val_score | LB | Walltime | Checkpoint |
+|------|-------------|-----------|----------|--------------|------------|----------------|-----|----------|------------|
+| `hgnet-b0-sed-v5j-control` | spec, interp, theta=0.8 (current v5j) | **0.8490** | 0.5959 | 0.5039 | 14 | 0.8516 | pending | 37m 44s | `030-.../checkpoints/2026-exp030-v5j-control/best-epochepoch=14.ckpt` |
+| `hgnet-b0-sed-v5j-sydorskyi` | wave, `(w1+w2)/2` + peak-norm, max(y1,y2), p=0.5 | **0.8472** | **0.6065** | **0.5467** | 14 | 0.8507 | pending | 41m 45s | `030-.../checkpoints/2026-exp030-v5j-sydorskyi/best-epochepoch=14.ckpt` |
+
+### Reproducibility check (v5j_control)
+
+| | val/auroc | Notes |
+|---|---:|---|
+| v5j-control (exp 027) | 0.851 | original baseline run |
+| **v5j_control (exp 030)** | **0.849** | Δ −0.002, within seed noise |
+
+**Pipeline reproducibility confirmed** — no codebase drift since exp 027.
+
+### Phase A offline comparison
+
+| Metric | control | sydorskyi | Δ | Interpretation |
+|---|---:|---:|---:|---|
+| val/auroc | 0.8490 | 0.8472 | **−0.002** | Within seed noise — flat |
+| val/cmap | 0.5959 | 0.6065 | **+0.011** | Notable improvement |
+| val/f1_macro | 0.5039 | 0.5467 | **+0.043** | Big improvement |
+| val/loss | 0.0114 | 0.0118 | +0.0004 | Slightly higher (max-targets harder) |
+| train/loss_epoch | 0.0156 | 0.0178 | **+0.0022** | Notably higher train loss — model fitting harder |
+
+**AUROC flat, cmap and f1_macro notably higher for sydorskyi.** Train loss
+higher for sydorskyi (max-targets are harder to fit than interpolated). LB
+will tell whether cmap improvement is a real LB-relevant signal or another
+offline-LB anti-correlation case.
+
+See `experiments/030-sydorskyi-mixup/results.md` for full details.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

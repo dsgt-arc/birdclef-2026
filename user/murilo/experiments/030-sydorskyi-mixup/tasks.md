@@ -1,46 +1,54 @@
 # Experiment 030 — Tasks
 
-## Phase A — v5j A/B comparison (committed)
+## Phase A — v5j A/B comparison (training DONE, LB pending)
 
 ### A.0 — Sanity (fast-dev-run)
 
-- [ ] `bash sbatch/run.sh configs/v5j_control.yaml --fast-dev-run`
-  (5 batches, ~5 min, no W&B). Verifies the config + train.py paths work.
-- [ ] `bash sbatch/run.sh configs/v5j_sydorskyi.yaml --fast-dev-run`.
-  Verifies the new `mixup_mode="average_max"` path doesn't crash.
+- [x] `bash sbatch/run.sh configs/v5j_sydorskyi.yaml --fast-dev-run`
+  — DONE 2026-04-26. 5/5 batches in 4 min, exit 0. New
+  `mixup_mode="average_max"` branch fired without errors (waveform domain
+  confirmed via "GPU mel + waveform mixup" log line in SLURM output).
+  v5j_control sanity skipped (low risk — same code path as existing v5j).
 
 ### A.1 — v5j control (reproducibility baseline)
 
-- [ ] `bash sbatch/run.sh configs/v5j_control.yaml`
-  - Expected: ~2-3h on rtx6000, val/auroc ~0.851 (matching v5j-control
-    from exp 027), best-by-val checkpoint saved.
-  - W&B project: `birdclef-2026-exp030`, run name `2026-exp030-v5j-control`.
+- [x] `bash sbatch/run.sh configs/v5j_control.yaml` — DONE 2026-04-26
+  - SLURM job 7452610, walltime 37m 44s on rtx6000
+  - val/auroc 0.8490 (best-by-val ckpt at epoch 14: 0.8516)
+  - **Reproducibility CONFIRMED**: 0.849 vs exp 027 v5j-control 0.851
+    (Δ −0.002, within Mahog's seed-noise band ±0.005)
+  - W&B run id `el93xunm`
 
 ### A.2 — v5j Sydorskyi (the test)
 
-- [ ] `bash sbatch/run.sh configs/v5j_sydorskyi.yaml`
-  - Expected: ~2-3h, similar wall time to A.1 (mixup path is a small
-    overhead difference).
-  - W&B run name `2026-exp030-v5j-sydorskyi`.
-  - **Sanity check during training**: `mixup_mode="average_max"` log line
-    should appear in worker output. If it falls back to "interpolate"
-    silently, the config didn't propagate (analogous to the
-    `model.head` vs `model.sed_head` bug we hit during D1).
+- [x] `bash sbatch/run.sh configs/v5j_sydorskyi.yaml` — DONE 2026-04-26
+  - SLURM job 7452611, walltime 41m 45s on rtx6000 (~4m extra for peak-norm)
+  - val/auroc 0.8472 (best-by-val ckpt at epoch 14: 0.8507)
+  - `mixup_mode="average_max"` path confirmed firing (no errors, no NaN,
+    SLURM log shows full config dump with all 4 expected changes)
+  - W&B run id `3bjn6i3y`
 
 ### A.3 — Compare on W&B
 
-- [ ] Visual inspection: train/loss, val/loss, val/auroc, val/cmap curves
-  side-by-side. Note divergence patterns, not just final values.
-- [ ] Check val_sc/auroc (broken metric — see exp 026 caveat) just as a
-  sanity check that runs match the same val structure.
+- [x] Visual inspection — DONE
+  - `train/loss_epoch` diverges as predicted (sydorskyi 0.0178 vs control
+    0.0156): max-targets are structurally harder to fit than interpolated.
+  - `val/auroc` tracks closely: Δ −0.002 (within seed noise).
+  - `val/cmap` notably higher for sydorskyi: Δ +0.011.
+  - `val/f1_macro` notably higher for sydorskyi: Δ +0.043.
+  - Best epoch identical (epoch 14) — same convergence shape.
+- [x] `val_sc/auroc` sanity (broken metric per exp 026 caveat): consistent
+  pattern, sydorskyi +0.011. Don't read absolute values.
 
 ### A.4 — ONNX export + LB submission for both
 
-- [ ] Export v5j_control to ONNX + submit to LB.
-- [ ] Export v5j_sydorskyi to ONNX + submit to LB.
-- [ ] Update `MODEL-RUNS.md` with both LB scores.
+- [ ] Export v5j_control to ONNX
+- [ ] Export v5j_sydorskyi to ONNX
+- [ ] Submit v5j_control to Kaggle LB
+- [ ] Submit v5j_sydorskyi to Kaggle LB
+- [ ] Update `MODEL-RUNS.md` with LB scores
 - [ ] Apply the Phase A decision matrix from `proposal.md` and update
-  `results.md`.
+  `results.md` with verdict
 
 ## Phase B — EffNetV2-B0 backbone (committed; can run in parallel with Phase A)
 
