@@ -1,6 +1,6 @@
 {
   "id": "murilogustineli/birdclef-2026-hgnet-b0-sed-v5j-control",
-  "title": "BirdCLEF 2026 HGNet-B0 SED v5j Control (Exp 030)",
+  "title": "BirdCLEF 2026 HGNet-B0 SED v5j Control",
   "code_file": "submission.py",
   "language": "python",
   "kernel_type": "script",

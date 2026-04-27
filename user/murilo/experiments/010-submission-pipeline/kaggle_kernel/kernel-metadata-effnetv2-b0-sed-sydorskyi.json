@@ -1,6 +1,6 @@
 {
   "id": "murilogustineli/birdclef-2026-effnetv2-b0-sed-sydorskyi",
-  "title": "BirdCLEF 2026 EffNetV2-B0 SED Sydorskyi (Exp 030)",
+  "title": "BirdCLEF 2026 EffNetV2-B0 SED Sydorskyi",
   "code_file": "submission.py",
   "language": "python",
   "kernel_type": "script",
