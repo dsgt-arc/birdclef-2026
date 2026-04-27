@@ -9,10 +9,13 @@ author: Murilo Gustineli
 
 ## Status
 
-**Phase A**: training COMPLETE, LB submission PENDING. Both v5j_control and
-v5j_sydorskyi finished cleanly. ~37-42 min walltime each on rtx6000.
+**Phase A** (HGNetV2-B0 ablation): training COMPLETE, LB submission PENDING.
+~37-42 min walltime each on rtx6000.
 
-**Phase B** (EffNetV2-B0 2x2 ablation): not started.
+**Phase B** (EfficientNetV2-B0 2x2 ablation): training COMPLETE, LB submission
+PENDING. ~41-46 min walltime each on rtx6000.
+
+All 4 cells of the 2x2 are now offline-evaluated. LB submissions queued.
 
 ## Context
 
@@ -157,6 +160,161 @@ Use the W&B UI to compare:
 - `val/auroc` — should track each other closely
 - Both should peak around epoch 14
 
+## Phase B: EfficientNetV2-B0 2x2 — DONE
+
+### Setup confirmation
+
+- `INFO:birdclef.encoders.efficientnet:EfficientNetEncoder: tf_efficientnetv2_b0.in1k, embed_dim=192, stages=5`
+  — backbone loaded correctly. **Note**: actual feature dim is **192 channels**
+  (stage-5 of EfficientNetV2-B0), NOT the 1280 we set in the config. The
+  encoder takes the spatial feature map at stage 5, ignoring the config's
+  `embed_dim` value. The 1280 figure is the post-pool projection in standard
+  classifier-head usage; we use the spatial features. Both EffNetV2-B0 cells
+  share this same effective architecture so the within-backbone mixup
+  comparison is internally clean — but the v2-B0-vs-HGNet comparison is
+  at very different feature dims (192 vs 1024).
+- Total params: 6.0M (vs HGNet's 3.1M). LSEHead's input projection is now
+  Linear(192 → 1024), so the head is smaller (437K params) and the backbone
+  is bigger.
+- Both runs confirmed log lines: control `GPU mel + spectrogram mixup`,
+  sydorskyi `GPU mel + waveform mixup: mixup before mel on GPU`.
+- No errors / NaN / instability. Both jobs exit 0. Best epoch = 19 for both
+  (later than HGNet's 14 — bigger backbone keeps improving longer).
+
+### effnetv2b0_control (v2-B0 + spec/interpolated mixup)
+
+| Metric | Value | Δ vs HGNet control |
+|---|---:|---:|
+| **val/auroc** | **0.8510** | +0.002 |
+| val/cmap | 0.6124 | +0.017 |
+| val/f1_macro | 0.5320 | +0.028 |
+| val/loss | 0.0109 | −0.0005 |
+| val_sc/auroc * | 0.9278 | −0.027 |
+| val_sc/cmap * | 0.8163 | −0.037 |
+| train/loss_epoch | 0.0146 | −0.001 |
+| **best_val_score** | **0.8510** (epoch 19) | — |
+| Walltime | 41m 17s | +3.5 min |
+| SLURM job ID | 7454128 | — |
+| W&B run id | `jhfx75pb` | — |
+
+### effnetv2b0_sydorskyi (v2-B0 + Sydorskyi mixup) — best cell
+
+| Metric | Value | Δ vs HGNet sydorskyi | Δ vs v2-B0 control |
+|---|---:|---:|---:|
+| **val/auroc** | **0.8518** | +0.005 | +0.001 |
+| val/cmap | **0.6303** | +0.024 | +0.018 |
+| val/f1_macro | **0.5751** | +0.028 | +0.043 |
+| val/loss | 0.0109 | −0.0009 | +0.000 |
+| val_sc/auroc * | 0.9416 | −0.024 | +0.014 |
+| val_sc/cmap * | 0.8535 | −0.024 | +0.037 |
+| train/loss_epoch | 0.0166 | −0.001 | +0.002 |
+| **best_val_score** | **0.8518** (epoch 19) | — | — |
+| Walltime | 45m 37s | +3.9 min | +4.4 min |
+| SLURM job ID | 7454131 | — | — |
+| W&B run id | `bampbee6` | — | — |
+
+### 2x2 offline summary
+
+Reading: `val/auroc / val/cmap / val/f1_macro`
+
+| | control (spec, interp) | sydorskyi (wave, max) |
+|---|---|---|
+| **HGNetV2-B0** (v5j) | 0.8490 / 0.5959 / 0.5039 | 0.8472 / 0.6065 / 0.5467 |
+| **EfficientNetV2-B0** | 0.8510 / 0.6124 / 0.5320 | **0.8518 / 0.6303 / 0.5751** |
+
+The bottom-right cell (EfficientNetV2-B0 + Sydorskyi mixup) is the best on
+every offline metric except val/auroc, where it ties the v2-B0 control.
+
+### Main effects (averaging across the other axis)
+
+**Backbone main effect** (EffNetV2-B0 − HGNetV2-B0, averaged over mixup):
+
+| Metric | Δ |
+|---|---:|
+| val/auroc | **+0.003** |
+| val/cmap | **+0.020** |
+| val/f1_macro | **+0.028** |
+| val/loss | −0.001 |
+
+**MixUp main effect** (sydorskyi − control, averaged over backbone):
+
+| Metric | Δ |
+|---|---:|
+| val/auroc | **−0.001** (flat) |
+| val/cmap | **+0.014** |
+| val/f1_macro | **+0.043** |
+| val/loss | +0.000 |
+
+### Interaction term
+
+`(v2-B0 sydorskyi − v2-B0 control) − (HGNet sydorskyi − HGNet control)` per metric:
+
+| Metric | Interaction Δ | Interpretation |
+|---|---:|---|
+| val/auroc | +0.003 | Sydorskyi mixup helps slightly more on v2-B0 than HGNet |
+| val/cmap | +0.007 | Sydorskyi mixup helps more on v2-B0 |
+| val/f1_macro | +0.000 | Same magnitude on both backbones |
+
+Mostly additive: the two improvements (backbone + mixup) stack roughly
+independently on cmap and f1_macro. Slight positive interaction on auroc
+and cmap (sydorskyi is *slightly* more helpful on the bigger backbone).
+
+### Phase B observations
+
+1. **EfficientNetV2-B0 is offline-better than HGNetV2-B0** across both mixup
+   conditions, even at our atypical 192-channel feature depth. cmap +0.020,
+   f1_macro +0.028 averaged across mixup. Salman's backbone choice has
+   empirical support in our pipeline.
+
+2. **Sydorskyi mixup helps offline on BOTH backbones**, especially on cmap
+   (+0.014) and f1_macro (+0.043). Mixup main effect is consistent across
+   architectures.
+
+3. **AUROC is essentially flat across the entire 2x2** (range 0.847-0.852).
+   The signal is not in rank-ordering; it's in the *calibration* of
+   confidences — exactly what cmap and f1_macro measure.
+
+4. **The "best" cell offline is `effnetv2b0_sydorskyi`**: val/auroc 0.8518,
+   val/cmap 0.6303, val/f1_macro 0.5751. Compared to v5j-original
+   (HGNetV2-B0 + spec mixup, our 0.906 LB), the offline improvements are:
+   - val/auroc: +0.003 (negligible)
+   - val/cmap: +0.034 (huge)
+   - val/f1_macro: +0.071 (huge)
+
+5. **Train loss pattern matches the structural prediction**: Sydorskyi
+   mixup → harder targets → higher train loss. EffNetV2-B0 → more capacity
+   → lower train loss. Both effects compose: v2-B0 sydorskyi has the lowest
+   val/loss (0.0109, tied with v2-B0 control) and intermediate train loss
+   (0.0166).
+
+### Caveats specific to Phase B
+
+- **Feature-dim mismatch**: our config sets `embed_dim: 1280` for v2-B0 but
+  the encoder uses 192-channel stage-5 features. The two v2-B0 cells share
+  this same effective architecture so within-backbone comparison is clean,
+  but a "faithful" v2-B0 setup might use a different feature extraction
+  layer with more channels. Worth investigating if Phase B LB confirms.
+- **Best epoch shifted from 14 (HGNet) to 19 (v2-B0)**: bigger backbone
+  keeps improving longer, but we cap at 20 epochs. v2-B0 might benefit from
+  more epochs — it didn't plateau cleanly.
+
+## Phase B trajectory (W&B)
+
+- `2026-exp030-effnetv2b0-control` (run id `jhfx75pb`)
+- `2026-exp030-effnetv2b0-sydorskyi` (run id `bampbee6`)
+
+## Combined offline picture (all 4 cells)
+
+The Sydorskyi mixup recipe and EfficientNetV2-B0 backbone both improve our
+offline cmap/f1_macro metrics, and they stack roughly additively. The best
+cell (`effnetv2b0_sydorskyi`) hits val/cmap 0.6303 — a +0.034 improvement
+over v5j (0.5959) on cmap.
+
+But this is offline. The historical offline-LB anti-correlation is the
+strong prior (val/auroc 0.874 → 0.906 LB for v5j, vs val/auroc 0.874 →
+0.899 LB for v6l manifold mixup). cmap improvements have not consistently
+translated to LB gains.
+
 ## Open work
 
 ### Phase A continuation
@@ -166,12 +324,15 @@ Use the W&B UI to compare:
 - [ ] Apply [proposal.md](proposal.md) decision matrix once LB is in
 - [ ] Update results.md with verdict
 
-### Phase B (after Phase A LB results)
+### Phase B (training DONE; LB pending)
 
-- [ ] effnetv2b0_control: SLURM run + LB
-- [ ] effnetv2b0_sydorskyi: SLURM run + LB
-- [ ] 2x2 ablation analysis: backbone main effect, mixup main effect,
-  interaction
+- [x] effnetv2b0_control: SLURM run COMPLETE (val/auroc 0.8510)
+- [x] effnetv2b0_sydorskyi: SLURM run COMPLETE (val/auroc 0.8518 — best cell)
+- [x] 2x2 offline ablation analysis: backbone +0.020 cmap, mixup +0.014 cmap,
+  mostly additive interaction
+- [ ] effnetv2b0_control: ONNX export + LB
+- [ ] effnetv2b0_sydorskyi: ONNX export + LB
+- [ ] Apply 2x2 LB analysis (main effects + interaction on LB)
 
 ### Documentation (after LB)
 

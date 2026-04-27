@@ -50,32 +50,44 @@
 - [ ] Apply the Phase A decision matrix from `proposal.md` and update
   `results.md` with verdict
 
-## Phase B — EffNetV2-B0 backbone (committed; can run in parallel with Phase A)
+## Phase B — EffNetV2-B0 backbone (training DONE, LB pending)
 
 ### B.0 — Sanity (fast-dev-run)
 
-- [ ] `bash sbatch/run.sh configs/effnetv2b0_control.yaml --fast-dev-run`.
-  - First time using `tf_efficientnetv2_b0.in1k` in our pipeline; verifies
-    the 1280-channel feature dim flows through to the head correctly.
-- [ ] `bash sbatch/run.sh configs/effnetv2b0_sydorskyi.yaml --fast-dev-run`.
+- [x] `bash sbatch/run.sh configs/effnetv2b0_sydorskyi.yaml --fast-dev-run`
+  — DONE 2026-04-26. EfficientNetV2-B0 backbone loaded successfully via
+  `tf_efficientnetv2_b0.in1k`. Encoder log shows `embed_dim=192, stages=5`
+  (uses stage-5 spatial features, not the 1280-d post-pool projection).
+  control sanity skipped (low risk — same backbone, only mixup differs).
 
 ### B.1 — EffNetV2-B0 control
 
-- [ ] `bash sbatch/run.sh configs/effnetv2b0_control.yaml`.
-  - W&B run name `2026-exp030-effnetv2b0-control`.
+- [x] `bash sbatch/run.sh configs/effnetv2b0_control.yaml` — DONE 2026-04-26
+  - SLURM job 7454128, walltime 41m 17s on rtx6000
+  - val/auroc 0.8510 (best-by-val ckpt at epoch 19: same value)
+  - W&B run id `jhfx75pb`
 
-### B.2 — EffNetV2-B0 Sydorskyi
+### B.2 — EffNetV2-B0 Sydorskyi (best offline cell)
 
-- [ ] `bash sbatch/run.sh configs/effnetv2b0_sydorskyi.yaml`.
-  - W&B run name `2026-exp030-effnetv2b0-sydorskyi`.
+- [x] `bash sbatch/run.sh configs/effnetv2b0_sydorskyi.yaml` — DONE 2026-04-26
+  - SLURM job 7454131, walltime 45m 37s on rtx6000
+  - val/auroc 0.8518 (best-by-val ckpt at epoch 19: same value)
+  - val/cmap 0.6303, val/f1_macro 0.5751 — best on every offline metric
+  - W&B run id `bampbee6`
 
-### B.3 — 2x2 ablation analysis
+### B.3 — 2x2 ablation analysis (offline DONE; LB pending)
 
-- [ ] Compute main effects + interaction on LB:
-  - Mixup main effect: average of (sydorskyi - control) across both backbones
-  - Backbone main effect: average of (effnetv2b0 - v5j) across both mixup conditions
-  - Interaction: deviation from additivity
-- [ ] Apply Phase B decision matrix from `proposal.md`.
+- [x] Offline 2x2 main effects + interaction:
+  - **Backbone** (v2-B0 − HGNet, avg over mixup): +0.003 auroc, **+0.020 cmap**,
+    **+0.028 f1_macro**
+  - **Mixup** (sydorskyi − control, avg over backbone): −0.001 auroc,
+    **+0.014 cmap**, **+0.043 f1_macro**
+  - **Interaction**: small positive on auroc/cmap (sydorskyi helps slightly
+    more on v2-B0). Mostly additive.
+  - Best cell: `effnetv2b0_sydorskyi`. +0.034 cmap and +0.071 f1_macro vs
+    v5j (HGNet + spec interp).
+- [ ] Compute LB main effects + interaction (after all 4 LBs in)
+- [ ] Apply Phase B decision matrix from `proposal.md`
 
 ## Documentation
 

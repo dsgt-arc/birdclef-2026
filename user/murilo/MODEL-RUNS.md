@@ -695,15 +695,35 @@ attempts (v4j/v6b/v10b) all use interpolated multi-label targets, not
 Sydorskyi's `max(y1, y2)`. Plus target-distribution simulation showing 80%
 of v5j's training target values are sub-1, 59% have NO full positive.
 
-### Phase A: Training — DONE (LB PENDING)
+### Phase A + Phase B: Training — DONE (LB PENDING)
 
-Both runs use HGNetV2-B0 + LSEHead + BCE + OneCycleLR (lr=5e-4) + 20 epochs +
-seed=42 + dual_validation. Only mixup config differs.
+All 4 cells use LSEHead + BCE + OneCycleLR (lr=5e-4) + 20 epochs + seed=42 +
+dual_validation. Only backbone (Phase A vs B) and mixup recipe (control vs
+sydorskyi) differ.
 
-| Slug | Mixup recipe | val/auroc | val/cmap | val/f1_macro | Best Epoch | best_val_score | LB | Walltime | Checkpoint |
-|------|-------------|-----------|----------|--------------|------------|----------------|-----|----------|------------|
-| `hgnet-b0-sed-v5j-control` | spec, interp, theta=0.8 (current v5j) | **0.8490** | 0.5959 | 0.5039 | 14 | 0.8516 | pending | 37m 44s | `030-.../checkpoints/2026-exp030-v5j-control/best-epochepoch=14.ckpt` |
-| `hgnet-b0-sed-v5j-sydorskyi` | wave, `(w1+w2)/2` + peak-norm, max(y1,y2), p=0.5 | **0.8472** | **0.6065** | **0.5467** | 14 | 0.8507 | pending | 41m 45s | `030-.../checkpoints/2026-exp030-v5j-sydorskyi/best-epochepoch=14.ckpt` |
+| Slug | Backbone | Mixup recipe | val/auroc | val/cmap | val/f1_macro | Best Ep | LB | Walltime | Checkpoint |
+|------|----------|-------------|-----------|----------|--------------|---------|-----|----------|------------|
+| `hgnet-b0-sed-v5j-control` | HGNetV2-B0 | spec, interp, theta=0.8 | **0.8490** | 0.5959 | 0.5039 | 14 | pending | 37m 44s | `030-.../2026-exp030-v5j-control/best-epochepoch=14.ckpt` |
+| `hgnet-b0-sed-v5j-sydorskyi` | HGNetV2-B0 | wave, `(w1+w2)/2` + peak-norm, max(y1,y2), p=0.5 | 0.8472 | **0.6065** | **0.5467** | 14 | pending | 41m 45s | `030-.../2026-exp030-v5j-sydorskyi/best-epochepoch=14.ckpt` |
+| `effnetv2b0-sed-control` | EffNetV2-B0 (192-ch features) | spec, interp, theta=0.8 | 0.8510 | 0.6124 | 0.5320 | 19 | pending | 41m 17s | `030-.../2026-exp030-effnetv2b0-control/best-epochepoch=19.ckpt` |
+| **`effnetv2b0-sed-sydorskyi`** | **EffNetV2-B0** | **wave, sydorskyi** | **0.8518** | **0.6303** | **0.5751** | 19 | pending | 45m 37s | `030-.../2026-exp030-effnetv2b0-sydorskyi/best-epochepoch=19.ckpt` |
+
+### 2x2 offline summary (val/auroc / val/cmap / val/f1_macro)
+
+| | control (spec, interp) | sydorskyi (wave, max) |
+|---|---|---|
+| **HGNetV2-B0** (v5j arch) | 0.8490 / 0.5959 / 0.5039 | 0.8472 / 0.6065 / 0.5467 |
+| **EfficientNetV2-B0** | 0.8510 / 0.6124 / 0.5320 | **0.8518 / 0.6303 / 0.5751** |
+
+Main effects (averaged across the other axis):
+- **Backbone** (v2-B0 − HGNet): +0.003 auroc, **+0.020 cmap**, **+0.028 f1_macro**
+- **MixUp** (sydorskyi − control): −0.001 auroc, **+0.014 cmap**, **+0.043 f1_macro**
+- Interaction: small positive on auroc/cmap (sydorskyi helps slightly more on v2-B0)
+
+`effnetv2b0_sydorskyi` is the best cell on every offline metric. cmap +0.034
+and f1_macro +0.071 vs v5j (HGNet + spec interp). LB will tell whether this
+translates or hits the same offline-LB anti-correlation as our 22+ prior
+recipe attempts.
 
 ### Reproducibility check (v5j_control)
 
@@ -714,20 +734,15 @@ seed=42 + dual_validation. Only mixup config differs.
 
 **Pipeline reproducibility confirmed** — no codebase drift since exp 027.
 
-### Phase A offline comparison
+### Phase B caveat (EffNetV2-B0 feature dim)
 
-| Metric | control | sydorskyi | Δ | Interpretation |
-|---|---:|---:|---:|---|
-| val/auroc | 0.8490 | 0.8472 | **−0.002** | Within seed noise — flat |
-| val/cmap | 0.5959 | 0.6065 | **+0.011** | Notable improvement |
-| val/f1_macro | 0.5039 | 0.5467 | **+0.043** | Big improvement |
-| val/loss | 0.0114 | 0.0118 | +0.0004 | Slightly higher (max-targets harder) |
-| train/loss_epoch | 0.0156 | 0.0178 | **+0.0022** | Notably higher train loss — model fitting harder |
-
-**AUROC flat, cmap and f1_macro notably higher for sydorskyi.** Train loss
-higher for sydorskyi (max-targets are harder to fit than interpolated). LB
-will tell whether cmap improvement is a real LB-relevant signal or another
-offline-LB anti-correlation case.
+Encoder uses `tf_efficientnetv2_b0.in1k` stage-5 spatial features (192
+channels), NOT the post-pool 1280-d projection set in the config. Both
+v2-B0 cells share this same effective architecture, so the within-backbone
+mixup comparison is internally clean. The v2-B0-vs-HGNet comparison is at
+very different feature dims (192 vs 1024); take backbone main effect with
+that caveat. A "faithful" v2-B0 setup might use a different feature
+extraction layer with more channels.
 
 See `experiments/030-sydorskyi-mixup/results.md` for full details.
 
