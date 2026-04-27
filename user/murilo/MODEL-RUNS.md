@@ -723,13 +723,66 @@ vs v5j_control. Best offline cell is also this one — offline 2x2 and LB
 2x2 agree on the winner, even though absolute numbers are below v5j 0.906
 due to the dual_validation regime cost.
 
-### v2 retraining (in progress)
+### Phase A + Phase B v2: Training DONE (no dual_validation, LB pending)
 
-All 4 variants being retrained with `dual_validation: true` removed.
-Run names get `-v2` suffix so v1 checkpoints stay intact. Same seed,
-same recipe otherwise. If the dual_validation hypothesis holds, v2 LBs
-should land ~0.009 above v1, with effnetv2b0_sydorskyi_v2 potentially
-crossing 0.906 — first single-model improvement over v5j for us if so.
+All 4 variants retrained with `dual_validation: true` removed; run names
+get `-v2` suffix so v1 checkpoints stay intact. Same seed, same recipe
+otherwise. Trained overnight 2026-04-26 → 2026-04-27. All 4 SLURM jobs
+exit 0; same checkpoint slugs/dirs as v1 (Kaggle export pipeline already
+points at `-v2` dirs).
+
+| Slug (v2) | val/auroc | val/cmap | val/f1_macro | Best Ep | best_val | Walltime | SLURM |
+|------|----------|----------|-------------|--------:|---------:|---------|------:|
+| `hgnet-b0-sed-v5j-control` | 0.8728 | 0.6268 | 0.5270 | 15 | 0.8747 | 40m 12s | 7455688 |
+| `hgnet-b0-sed-v5j-sydorskyi` | 0.8700 | 0.6339 | 0.5663 | 14 | 0.8737 | 1h 14m 54s | 7455689 |
+| `effnetv2-b0-sed-control` | 0.8745 | 0.6461 | 0.5545 | 19 | 0.8745 | 41m 5s | 7455690 |
+| **`effnetv2-b0-sed-sydorskyi`** | **0.8760** | **0.6556** | **0.5922** | 19 | **0.8760** | 41m 16s | 7455691 |
+
+W&B run ids: `586p423f`, `e6hdxkg8`, `fyqjktl5`, `cg9v7ksj`.
+
+### v2 reproducibility check (vs v5j-original 0.874 → 0.906 LB regime)
+
+| | val/auroc | Δ vs v5j 0.874 | Within seed noise (±0.005)? |
+|---|---:|---:|---|
+| v5j_control_v2 | **0.8728** | −0.001 | ✓ YES |
+| v5j_sydorskyi_v2 | 0.8700 | −0.004 | ✓ YES |
+| effnetv2b0_control_v2 | 0.8745 | +0.001 | ✓ YES |
+| effnetv2b0_sydorskyi_v2 | **0.8760** | **+0.002** | ✓ YES |
+
+**Pipeline reproducibility CONFIRMED in the v2 (no-dual_val) regime.**
+v5j_control_v2 reproduces v5j-original within −0.001 val/auroc. The +0.024
+val/auroc shift across all 4 cells from v1 → v2 is consistent with the
+dual_validation hypothesis (val/auroc focal-only → combined focal+SS).
+
+### v2 2x2 offline summary (val/auroc / val/cmap / val/f1_macro)
+
+| | control (spec, interp) | sydorskyi (wave, max) |
+|---|---|---|
+| **HGNetV2-B0** | 0.8728 / 0.6268 / 0.5270 | 0.8700 / 0.6339 / 0.5663 |
+| **EfficientNetV2-B0** | 0.8745 / 0.6461 / 0.5545 | **0.8760 / 0.6556 / 0.5922** |
+
+Main effects (averaged across the other axis):
+- **Backbone** (v2-B0 − HGNet): +0.004 auroc, **+0.020 cmap**, **+0.027 f1_macro**
+- **MixUp** (sydorskyi − control): −0.001 auroc, +0.008 cmap, **+0.039 f1_macro**
+- **Interaction**: small positive on auroc (+0.004), tiny on cmap (+0.002),
+  near-flat on f1_macro (−0.002)
+
+Best v2 cell on every offline metric: `effnetv2b0_sydorskyi_v2`. Compared to
+v5j-original, +0.002 auroc / +0.029 cmap (vs v5j_control_v2) / +0.065 f1_macro.
+
+The 2x2 *structure* reproduces across v1 and v2 (backbone +0.020 cmap, mixup
+positive on cmap/f1_macro, additive interaction). LB ordering should match
+v1 (`effnetv2b0_sydorskyi` > rest); each cell expected ~+0.009 LB above v1
+if dual_val cost is fully recoverable.
+
+### v2 LB predictions (decision matrix)
+
+| Cell | v1 LB | Predicted v2 LB | Verdict if hits band |
+|---|---:|---:|---|
+| v5j_control_v2 | 0.890 | 0.899-0.906 | dual_val confound CONFIRMED |
+| v5j_sydorskyi_v2 | 0.892 | 0.899-0.906 | mixup null on HGNet (consistent w/ v1) |
+| effnetv2b0_control_v2 | 0.893 | 0.901-0.905 | backbone null on control |
+| **effnetv2b0_sydorskyi_v2** | **0.901** | **0.908-0.912** | **first single-model > v5j 0.906** |
 
 ### 2x2 offline summary (val/auroc / val/cmap / val/f1_macro)
 

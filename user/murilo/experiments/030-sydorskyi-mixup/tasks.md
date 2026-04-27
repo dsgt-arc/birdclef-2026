@@ -115,27 +115,53 @@ changes `val/auroc` to focal-only, shifts checkpoint selection, costs
 - [x] `configs/effnetv2b0_sydorskyi.yaml`: removed `dual_validation: true`,
   run_name → `2026-exp030-effnetv2b0-sydorskyi-v2`
 
-### V2.1 — Retrain all 4 (commands ready, awaiting Murilo)
+### V2.1 — Retrain all 4 — DONE 2026-04-26 → 2026-04-27 (overnight)
 
-- [ ] `bash sbatch/run.sh configs/v5j_control.yaml`
-- [ ] `bash sbatch/run.sh configs/v5j_sydorskyi.yaml`
-- [ ] `bash sbatch/run.sh configs/effnetv2b0_control.yaml`
-- [ ] `bash sbatch/run.sh configs/effnetv2b0_sydorskyi.yaml`
+- [x] `bash sbatch/run.sh configs/v5j_control.yaml` — SLURM 7455688, walltime
+  40m 12s. val/auroc **0.8728**, cmap 0.6268, f1_macro 0.5270, best_val
+  0.8747 @ ep 15. W&B `586p423f`.
+- [x] `bash sbatch/run.sh configs/v5j_sydorskyi.yaml` — SLURM 7455689, walltime
+  1h 14m 54s. val/auroc **0.8700**, cmap 0.6339, f1_macro 0.5663, best_val
+  0.8737 @ ep 14. W&B `e6hdxkg8`.
+- [x] `bash sbatch/run.sh configs/effnetv2b0_control.yaml` — SLURM 7455690,
+  walltime 41m 5s. val/auroc **0.8745**, cmap 0.6461, f1_macro 0.5545,
+  best_val 0.8745 @ ep 19. W&B `fyqjktl5`.
+- [x] `bash sbatch/run.sh configs/effnetv2b0_sydorskyi.yaml` — SLURM 7455691,
+  walltime 41m 16s. val/auroc **0.8760**, cmap **0.6556**, f1_macro
+  **0.5922**, best_val 0.8760 @ ep 19. W&B `cg9v7ksj`. **best v2 cell.**
 
-### V2.2 — Re-export, re-upload, re-push, re-submit
+**Reproducibility check (v5j_control_v2 vs v5j-original 0.874 val/auroc)**:
+Δ −0.001 → ✓ PASS within ±0.005 seed noise band. Pipeline reproducibility
+confirmed for v2 regime; +0.024 val/auroc shift across all 4 cells matches
+the dual_validation hypothesis (focal-only → combined focal+SS).
 
-For each model, after training completes:
+**v2 2x2 offline structure replicates v1**: backbone +0.020 cmap (matches
+v1), mixup +0.008 cmap (vs +0.014 v1), additive interaction. Best cell on
+every metric: `effnetv2b0_sydorskyi_v2`.
+
+### V2.2 — Re-export, re-upload, re-push, re-submit (NEXT)
+
+Pipeline wiring is in place — `export.sbatch` points at `-v2` checkpoint
+dirs (lines 678/691/704/717), `upload_kaggle.py` has the 4 MODELS entries
+(lines 322-340), `submission.py` has the 4 weight slugs in MODEL_SLUGS
+(lines 95-98), and 4 kernel-metadata-*.json files exist. Existing-model
+re-export path: re-export overwrites `artifacts/weights/`, `--push-kernel`
+works one-shot.
+
+For each of the 4 models, after training completes:
 - [ ] ONNX export: `bash exp010/sbatch/run.sh export --model {slug}`
-  (export.sbatch updated to point at -v2 checkpoint dirs)
 - [ ] Upload + push: `python exp010/scripts/upload_kaggle.py --model {slug} --push-kernel`
   (replaces v1 weights at the same Kaggle slug; same kernel-metadata files)
-- [ ] Submit to LB
+- [ ] Submit to LB from Kaggle UI
+
+Slugs: `hgnet-b0-sed-v5j-control`, `hgnet-b0-sed-v5j-sydorskyi`,
+`effnetv2-b0-sed-control`, `effnetv2-b0-sed-sydorskyi`.
 
 ### V2.3 — Verdict (after v2 LBs in)
 
-- [ ] **Reproducibility check**: does v5j_control_v2 reproduce v5j 0.906
-  (within ±0.005)? If yes → pipeline confirmed reproducible. If no →
-  there's another confound besides dual_validation.
+- [ ] **Reproducibility check on LB**: does v5j_control_v2 reproduce v5j 0.906
+  (within ±0.005)? If yes → dual_val confound confirmed; pipeline reproduces.
+  If 0.895-0.900 → partial recovery; investigate. If ≤ 0.895 → halt.
 - [ ] **Mixup main effect on HGNet**: v5j_sydorskyi_v2 vs v5j_control_v2.
 - [ ] **Backbone main effect**: effnetv2b0_control_v2 vs v5j_control_v2.
 - [ ] **Combined effect**: effnetv2b0_sydorskyi_v2 vs v5j_control_v2.

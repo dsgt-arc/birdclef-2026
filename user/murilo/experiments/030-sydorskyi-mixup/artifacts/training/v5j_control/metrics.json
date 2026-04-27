@@ -1,11 +1,11 @@
 {
-  "auroc": 0.849035918712616,
-  "cmap": 0.5959193706512451,
-  "f1_macro": 0.5038890838623047,
-  "f1_micro": 0.6854909062385559,
-  "top1_accuracy": 0.7515795230865479,
-  "top5_accuracy": 0.8664560317993164,
-  "loss": 0.011438650079071522,
+  "auroc": 0.8727680444717407,
+  "cmap": 0.6267606616020203,
+  "f1_macro": 0.5269961357116699,
+  "f1_micro": 0.6843976378440857,
+  "top1_accuracy": 0.7567264437675476,
+  "top5_accuracy": 0.8693946003913879,
+  "loss": 0.0120239881798625,
   "metrics_source": "val",
   "architecture": "sed",
   "encoder_type": "efficientnet",
@@ -25,8 +25,8 @@
   },
   "dataset": "birdclef-2026",
   "num_classes": 234,
-  "best_val_score": 0.8515515923500061,
-  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-control/best-epochepoch=14.ckpt",
+  "best_val_score": 0.8747435212135315,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-control-v2/best-epochepoch=15.ckpt",
   "stopped_epoch": 20,
   "training": {
     "max_epochs": 20,
@@ -53,8 +53,8 @@
   },
   "compute": {
     "gpu": "0",
-    "slurm_job_id": 7452610,
-    "node": "atl1-1-03-006-23-0",
+    "slurm_job_id": 7455688,
+    "node": "atl1-1-02-004-35-0",
     "cpus_per_task": "8"
   }
 }

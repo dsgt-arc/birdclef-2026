@@ -9,9 +9,9 @@ author: Murilo Gustineli
 
 ## Status
 
-**v1 (with `dual_validation: true`)**: training + LB COMPLETE. Re-training in
-progress with `dual_validation` removed (v2) to recover the original v5j
-0.906 LB regime.
+**v1 (with `dual_validation: true`)**: training + LB COMPLETE.
+**v2 (no `dual_validation`)**: training COMPLETE for all 4 cells (2026-04-26
+overnight). LB pending — ONNX export + Kaggle push + submission next.
 
 ### v1 LB results (all 4 cells)
 
@@ -338,7 +338,7 @@ and cmap (sydorskyi is *slightly* more helpful on the bigger backbone).
 - `2026-exp030-effnetv2b0-control` (run id `jhfx75pb`)
 - `2026-exp030-effnetv2b0-sydorskyi` (run id `bampbee6`)
 
-## Combined offline picture (all 4 cells)
+## Combined offline picture (all 4 cells, v1)
 
 The Sydorskyi mixup recipe and EfficientNetV2-B0 backbone both improve our
 offline cmap/f1_macro metrics, and they stack roughly additively. The best
@@ -350,28 +350,203 @@ strong prior (val/auroc 0.874 → 0.906 LB for v5j, vs val/auroc 0.874 →
 0.899 LB for v6l manifold mixup). cmap improvements have not consistently
 translated to LB gains.
 
+## Phase A + Phase B v2: Training — DONE
+
+All 4 variants retrained with `dual_validation: true` removed; run names
+get `-v2` suffix so v1 checkpoints stay intact. Same seed, same recipe
+otherwise. Trained overnight 2026-04-26 → 2026-04-27, all 4 SLURM jobs
+exited 0, all checkpoints saved.
+
+### v5j_control_v2 (HGNet + spec interp; reproducibility baseline)
+
+| Metric | Value | Δ vs v5j_control v1 |
+|---|---:|---:|
+| **val/auroc** | **0.8728** | **+0.024** |
+| val/cmap | 0.6268 | +0.031 |
+| val/f1_macro | 0.5270 | +0.023 |
+| val/f1_micro | 0.6844 | −0.001 |
+| val/top1_acc | 0.7567 | +0.005 |
+| val/top5_acc | 0.8694 | +0.003 |
+| val/loss | 0.0120 | +0.0006 |
+| **best_val_score** | **0.8747** (epoch 15) | +0.023 |
+| Walltime | 40m 12s | +2m 28s |
+| SLURM job ID | 7455688 | — |
+| W&B run id | `586p423f` | — |
+| Checkpoint | `2026-exp030-v5j-control-v2/best-epochepoch=15.ckpt` | — |
+
+### v5j_sydorskyi_v2 (HGNet + Sydorskyi mixup)
+
+| Metric | Value | Δ vs v5j_sydorskyi v1 |
+|---|---:|---:|
+| **val/auroc** | **0.8700** | **+0.023** |
+| val/cmap | 0.6339 | +0.027 |
+| val/f1_macro | 0.5663 | +0.020 |
+| val/f1_micro | 0.6984 | +0.004 |
+| val/top1_acc | 0.7567 | +0.005 |
+| val/top5_acc | 0.8646 | +0.003 |
+| val/loss | 0.0123 | +0.0005 |
+| **best_val_score** | **0.8737** (epoch 14) | +0.023 |
+| Walltime | 1h 14m 54s | +33m (queue/node variance) |
+| SLURM job ID | 7455689 | — |
+| W&B run id | `e6hdxkg8` | — |
+| Checkpoint | `2026-exp030-v5j-sydorskyi-v2/best-epochepoch=14.ckpt` | — |
+
+### effnetv2b0_control_v2 (EffNetV2-B0 + spec interp)
+
+| Metric | Value | Δ vs effnetv2b0_control v1 |
+|---|---:|---:|
+| **val/auroc** | **0.8745** | **+0.024** |
+| val/cmap | 0.6461 | +0.034 |
+| val/f1_macro | 0.5545 | +0.022 |
+| val/f1_micro | 0.7120 | — |
+| val/top1_acc | 0.7777 | — |
+| val/top5_acc | 0.8758 | — |
+| val/loss | 0.0117 | +0.0008 |
+| **best_val_score** | **0.8745** (epoch 19) | +0.024 |
+| Walltime | 41m 5s | −0m 12s |
+| SLURM job ID | 7455690 | — |
+| W&B run id | `fyqjktl5` | — |
+| Checkpoint | `2026-exp030-effnetv2b0-control-v2/best-epochepoch=19.ckpt` | — |
+
+### effnetv2b0_sydorskyi_v2 (EffNetV2-B0 + Sydorskyi mixup) — best cell
+
+| Metric | Value | Δ vs effnetv2b0_sydorskyi v1 |
+|---|---:|---:|
+| **val/auroc** | **0.8760** | **+0.024** |
+| val/cmap | **0.6556** | +0.025 |
+| val/f1_macro | **0.5922** | +0.017 |
+| val/f1_micro | 0.7241 | — |
+| val/top1_acc | 0.7870 | — |
+| val/top5_acc | 0.8803 | — |
+| val/loss | 0.0116 | +0.0007 |
+| **best_val_score** | **0.8760** (epoch 19) | +0.024 |
+| Walltime | 41m 16s | −4m 21s |
+| SLURM job ID | 7455691 | — |
+| W&B run id | `cg9v7ksj` | — |
+| Checkpoint | `2026-exp030-effnetv2b0-sydorskyi-v2/best-epochepoch=19.ckpt` | — |
+
+### v2 reproducibility check vs v5j-original
+
+v5j-original from exp 019 had val/auroc ≈ 0.874 → LB 0.906. With dual_val
+removed in v2, val/auroc is the combined focal+SS macro-AUROC again, which
+is directly comparable to v5j-original.
+
+| | val/auroc | Δ vs v5j 0.874 | Within seed noise (±0.005)? |
+|---|---:|---:|---|
+| v5j_control_v2 | **0.8728** | −0.001 | ✓ YES |
+| v5j_sydorskyi_v2 | 0.8700 | −0.004 | ✓ YES |
+| effnetv2b0_control_v2 | 0.8745 | +0.001 | ✓ YES |
+| effnetv2b0_sydorskyi_v2 | **0.8760** | **+0.002** | ✓ YES |
+
+**Pipeline reproducibility CONFIRMED in the v2 regime** — v5j_control_v2 lands
+−0.001 from the v5j-original 0.874. The dual_validation regime cost (~+0.024
+val/auroc when removed) matches the exp 026 documentation.
+
+### v2 2x2 offline summary
+
+Reading: `val/auroc / val/cmap / val/f1_macro`
+
+| | control (spec, interp) | sydorskyi (wave, max) |
+|---|---|---|
+| **HGNetV2-B0** (v5j arch) | 0.8728 / 0.6268 / 0.5270 | 0.8700 / 0.6339 / 0.5663 |
+| **EfficientNetV2-B0** | 0.8745 / 0.6461 / 0.5545 | **0.8760 / 0.6556 / 0.5922** |
+
+Best v2 cell on every offline metric: `effnetv2b0_sydorskyi_v2` —
+val/auroc 0.8760, val/cmap 0.6556, val/f1_macro 0.5922.
+
+### v2 main effects
+
+**Backbone main effect** (EffNetV2-B0 − HGNetV2-B0, averaged over mixup):
+
+| Metric | v2 Δ | v1 Δ | Match? |
+|---|---:|---:|---|
+| val/auroc | +0.004 | +0.003 | ✓ |
+| val/cmap | +0.020 | +0.020 | ✓ |
+| val/f1_macro | +0.027 | +0.028 | ✓ |
+
+**MixUp main effect** (sydorskyi − control, averaged over backbone):
+
+| Metric | v2 Δ | v1 Δ | Match? |
+|---|---:|---:|---|
+| val/auroc | −0.001 | −0.001 | ✓ |
+| val/cmap | +0.008 | +0.014 | smaller in v2 |
+| val/f1_macro | +0.039 | +0.043 | similar |
+
+**Interaction** ((v2-B0 sydorskyi − v2-B0 control) − (HGNet sydorskyi − HGNet control)):
+
+| Metric | v2 Δ | v1 Δ |
+|---|---:|---:|
+| val/auroc | +0.004 | +0.003 |
+| val/cmap | +0.002 | +0.007 |
+| val/f1_macro | −0.002 | +0.000 |
+
+Conclusion: **v2 offline structure replicates v1**. Backbone main effect is
+robust (+0.004 auroc / +0.020 cmap / +0.027 f1_macro across both regimes).
+Mixup main effect on cmap is smaller in v2 but still positive (+0.008 vs
++0.014). Mixup main effect on f1_macro and the slight positive interaction
+on auroc both reproduce.
+
+### v2 vs v1 — what changed
+
+The +0.024 val/auroc shift across all 4 cells from v1 → v2 is consistent with
+the dual_validation hypothesis: when `dual_validation: true`, val/auroc is
+focal-only (~0.85 range); when removed, it's macro-AUROC over the combined
+focal+SS val (~0.87 range, since SS samples push macro-AUROC up). All 4 v2
+cells shifted by ~+0.024, ruling out any cell-specific drift.
+
+The 2x2 *structure* (backbone +, mixup +, additive interaction) reproduced
+across v1 and v2. This means the LB will likely show the same ordering as
+v1 (`effnetv2b0_sydorskyi` > `effnetv2b0_control` > `v5j_sydorskyi` >
+`v5j_control`) — but each cell should land ~+0.009 LB above its v1 value
+if the dual_val cost (per exp 026) is fully recoverable.
+
+### v2 LB predictions (decision matrix)
+
+If the dual_val confound is fully responsible for the v1 LB shortfall:
+
+| Cell | v1 LB | Predicted v2 LB | If lands in this band |
+|---|---:|---:|---|
+| v5j_control_v2 | 0.890 | 0.899-0.906 | dual_val confirmed; pipeline reproduces |
+| v5j_sydorskyi_v2 | 0.892 | 0.899-0.906 | mixup null on HGNet (consistent w/ v1) |
+| effnetv2b0_control_v2 | 0.893 | 0.901-0.905 | backbone null on control (consistent w/ v1) |
+| **effnetv2b0_sydorskyi_v2** | **0.901** | **0.908-0.912** | **first single-model improvement over v5j 0.906** |
+
+Headline question: does `effnetv2b0_sydorskyi_v2` clear ≥ 0.908?
+
+## Combined offline picture (all 4 cells, v2)
+
+The 2x2 offline structure from v1 holds in v2 (backbone +0.020 cmap / mixup
++0.008 cmap, mostly additive). The best cell is the diagonal corner
+`effnetv2b0_sydorskyi_v2` on every metric — val/auroc 0.8760, val/cmap
+0.6556, val/f1_macro 0.5922. Vs v5j-original 0.874 val/auroc, this is +0.002
+auroc — within seed noise on auroc, but with materially higher cmap and
+f1_macro.
+
+Whether that translates to LB depends on whether the cmap/f1 improvements
+break the historical offline-LB anti-correlation. We've seen offline cmap
+improvements regress on LB before (22+ training-recipe failures). But this
+time the 2x2 structure is internally consistent across v1 LBs (already in)
+and v2 offline metrics, which is a stronger signal than offline-only.
+
 ## Open work
 
-### Phase A continuation
+### v2 cycle (training DONE — pipeline next)
 
-- [ ] ONNX export for both v5j_control and v5j_sydorskyi
-- [ ] Kaggle LB submission for both
-- [ ] Apply [proposal.md](proposal.md) decision matrix once LB is in
-- [ ] Update results.md with verdict
-
-### Phase B (training DONE; LB pending)
-
-- [x] effnetv2b0_control: SLURM run COMPLETE (val/auroc 0.8510)
-- [x] effnetv2b0_sydorskyi: SLURM run COMPLETE (val/auroc 0.8518 — best cell)
-- [x] 2x2 offline ablation analysis: backbone +0.020 cmap, mixup +0.014 cmap,
-  mostly additive interaction
-- [ ] effnetv2b0_control: ONNX export + LB
-- [ ] effnetv2b0_sydorskyi: ONNX export + LB
-- [ ] Apply 2x2 LB analysis (main effects + interaction on LB)
+- [x] All 4 v2 SLURM jobs complete; metrics recorded above
+- [x] v5j_control_v2 reproduces v5j-original 0.874 val/auroc within ±0.005
+  → pipeline reproducibility confirmed for v2 regime
+- [ ] ONNX export for all 4 v2 checkpoints (4 × `bash sbatch/run.sh export
+  --model {hgnet-b0-sed-v5j-control, hgnet-b0-sed-v5j-sydorskyi,
+  effnetv2-b0-sed-control, effnetv2-b0-sed-sydorskyi}`)
+- [ ] Re-upload weights + push kernels (existing-model path; same Kaggle slugs
+  as v1, replaces in place): 4 × `python scripts/upload_kaggle.py --model X
+  --push-kernel`
+- [ ] Submit 4 kernels from Kaggle UI; collect LBs
+- [ ] Apply v2 decision matrix (above) + update results.md with verdict
 
 ### Documentation (after LB)
 
-- [ ] Update `MODEL-RUNS.md` with LB scores
+- [ ] Update `MODEL-RUNS.md` with v2 LB scores (replace placeholder section)
 - [ ] Update `CONTEXT.md` "What happened recently" section
 - [ ] Decision: continue with this direction, or pivot to pseudo-distillation
 
@@ -402,17 +577,28 @@ translated to LB gains.
 
 ## Decision matrix (from proposal.md, applied to current state)
 
-| Step | Threshold | Status |
-|---|---|---|
-| `v5j_control` reproducibility | val/auroc within ±0.005 of v5j-control 0.851 | ✓ PASS (0.849) |
-| `v5j_control` LB | should land 0.901-0.911 | PENDING |
-| `v5j_sydorskyi` LB | apply control vs sydorskyi matrix | PENDING |
+| Step | Threshold | v1 status | v2 status |
+|---|---|---|---|
+| `v5j_control` reproducibility (offline, dualval regime) | val/auroc within ±0.005 of v5j-control 0.851 | ✓ PASS (0.849) | n/a |
+| `v5j_control_v2` reproducibility (offline, original regime) | val/auroc within ±0.005 of v5j-original 0.874 | n/a | ✓ PASS (0.873) |
+| `v5j_control_v2` LB | should land 0.899-0.906 (dual_val cost recovers) | LB 0.890 | PENDING |
+| `v5j_sydorskyi_v2` LB | apply control vs sydorskyi matrix | LB 0.892 (+0.002) | PENDING |
+| `effnetv2b0_control_v2` LB | backbone main effect on LB | LB 0.893 (+0.003 vs v5j_control v1) | PENDING |
+| `effnetv2b0_sydorskyi_v2` LB | combined effect; ≥ 0.908 = first single-model > v5j 0.906 | LB 0.901 (+0.011 vs v5j_control v1) | PENDING |
 
 ## Files
 
-- Configs: `configs/v5j_control.yaml`, `configs/v5j_sydorskyi.yaml`
-- Checkpoints: `/storage/project/.../experiments/030-sydorskyi-mixup/checkpoints/`
-- Metrics JSON: `artifacts/training/v5j_*/metrics.json`
-- Test results: `outputs/test_results/2026-exp030-*.json`
+- Configs: `configs/{v5j,effnetv2b0}_{control,sydorskyi}.yaml` (v2 = same files,
+  `dual_validation` removed, run_name `-v2` suffix)
+- Checkpoints v1: `/storage/project/.../experiments/030-sydorskyi-mixup/checkpoints/2026-exp030-{model}-{recipe}/`
+- Checkpoints v2: `/storage/project/.../experiments/030-sydorskyi-mixup/checkpoints/2026-exp030-{model}-{recipe}-v2/`
+- Metrics JSON (v2 overwrote v1): `artifacts/training/{v5j,effnetv2b0}_{control,sydorskyi}/metrics.json`
+- Test results: `outputs/test_results/2026-exp030-*.json` (v1) and `2026-exp030-*-v2.json` (v2)
 - W&B runs: project `birdclef-2026-exp030`
-- SLURM logs: `logs/slurm_v5j_control_7452610.log`, `logs/slurm_v5j_sydorskyi_7452611.log`
+  - v1: `el93xunm`, `3bjn6i3y`, `jhfx75pb`, `bampbee6`
+  - v2: `586p423f`, `e6hdxkg8`, `fyqjktl5`, `cg9v7ksj`
+- SLURM logs:
+  - v1: `slurm_v5j_control_7452610.log`, `slurm_v5j_sydorskyi_7452611.log`,
+    `slurm_effnetv2b0_control_7454128.log`, `slurm_effnetv2b0_sydorskyi_7454131.log`
+  - v2: `slurm_v5j_control_7455688.log`, `slurm_v5j_sydorskyi_7455689.log`,
+    `slurm_effnetv2b0_control_7455690.log`, `slurm_effnetv2b0_sydorskyi_7455691.log`
