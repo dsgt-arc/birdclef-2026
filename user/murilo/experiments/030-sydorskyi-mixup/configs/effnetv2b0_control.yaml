@@ -20,7 +20,7 @@
 #   Salman uses v2-B0 specifically; he says it's "faster to train compared
 #   to others" and he gets 0.937 LB with it.
 
-run_name: "2026-exp030-effnetv2b0-control"
+run_name: "2026-exp030-effnetv2b0-control-v2"
 
 encoder:
   type: "efficientnet"
@@ -56,7 +56,8 @@ data:
   soundscape_val_files: 8
   soundscape_test_files: 0
   seed: 42
-  dual_validation: true
+  # v2 (2026-04-26): removed dual_validation. See v5j_control.yaml for the
+  # rationale (-0.009 LB cost from focal-only val checkpoint selection).
 
 training:
   max_epochs: 20

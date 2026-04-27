@@ -670,9 +670,12 @@ export_hgnet_b0_sed_v5j_ft_splitlr() {
 # ============================================================================
 
 export_hgnet_b0_sed_v5j_control() {
-    echo "=== Exporting Exp 030 v5j_control (HGNetV2-B0 + spec interp mixup) ==="
+    # v2: dual_validation removed (v1 hit -0.009 LB from focal-only val
+    # checkpoint selection). Run name has -v2 suffix; checkpoint dir is
+    # 2026-exp030-v5j-control-v2/.
+    echo "=== Exporting Exp 030 v5j_control v2 (HGNetV2-B0, no dual_val) ==="
     local CKPT
-    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-control")"
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-control-v2")"
     echo "Using checkpoint: $CKPT"
     python scripts/export_efficientnet_sed.py \
         --checkpoint "$CKPT" \
@@ -682,9 +685,10 @@ export_hgnet_b0_sed_v5j_control() {
 }
 
 export_hgnet_b0_sed_v5j_sydorskyi() {
-    echo "=== Exporting Exp 030 v5j_sydorskyi (HGNetV2-B0 + Sydorskyi wave-mixup max-targets) ==="
+    # v2: dual_validation removed. Run name has -v2 suffix.
+    echo "=== Exporting Exp 030 v5j_sydorskyi v2 (HGNetV2-B0 + Sydorskyi wave-mixup, no dual_val) ==="
     local CKPT
-    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-sydorskyi")"
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-sydorskyi-v2")"
     echo "Using checkpoint: $CKPT"
     python scripts/export_efficientnet_sed.py \
         --checkpoint "$CKPT" \
@@ -694,9 +698,10 @@ export_hgnet_b0_sed_v5j_sydorskyi() {
 }
 
 export_effnetv2_b0_sed_control() {
-    echo "=== Exporting Exp 030 effnetv2b0_control (EfficientNetV2-B0 + spec interp mixup) ==="
+    # v2: dual_validation removed. Run name has -v2 suffix.
+    echo "=== Exporting Exp 030 effnetv2b0_control v2 (EfficientNetV2-B0, no dual_val) ==="
     local CKPT
-    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-control")"
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-control-v2")"
     echo "Using checkpoint: $CKPT"
     python scripts/export_efficientnet_sed.py \
         --checkpoint "$CKPT" \
@@ -706,9 +711,10 @@ export_effnetv2_b0_sed_control() {
 }
 
 export_effnetv2_b0_sed_sydorskyi() {
-    echo "=== Exporting Exp 030 effnetv2b0_sydorskyi (EfficientNetV2-B0 + Sydorskyi wave-mixup) ==="
+    # v2: dual_validation removed. Run name has -v2 suffix.
+    echo "=== Exporting Exp 030 effnetv2b0_sydorskyi v2 (EffNetV2-B0 + Sydorskyi mixup, no dual_val) ==="
     local CKPT
-    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-sydorskyi")"
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-sydorskyi-v2")"
     echo "Using checkpoint: $CKPT"
     python scripts/export_efficientnet_sed.py \
         --checkpoint "$CKPT" \

@@ -89,6 +89,59 @@
 - [ ] Compute LB main effects + interaction (after all 4 LBs in)
 - [ ] Apply Phase B decision matrix from `proposal.md`
 
+## v1 LB DONE — CONFOUND IDENTIFIED
+
+| Slug (v1) | LB | Notes |
+|---|---:|---|
+| hgnet-b0-sed-v5j-control | 0.890 | dual_validation cost vs v5j 0.906 |
+| hgnet-b0-sed-v5j-sydorskyi | 0.892 | mixup +0.002 (null) on HGNet |
+| effnetv2b0-sed-control | 0.893 | backbone main effect tiny on control side |
+| **effnetv2b0-sed-sydorskyi** | **0.901** | best v1 cell, +0.011 vs v5j_control |
+
+`dual_validation: true` (added to all 4 v1 configs) is the confound:
+changes `val/auroc` to focal-only, shifts checkpoint selection, costs
+~0.009 LB per exp 026 v5j-dualval = 0.897 vs v5j = 0.906.
+
+## v2 retraining — all 4 variants
+
+### V2.0 — Configs updated
+
+- [x] `configs/v5j_control.yaml`: removed `dual_validation: true`,
+  run_name → `2026-exp030-v5j-control-v2`
+- [x] `configs/v5j_sydorskyi.yaml`: removed `dual_validation: true`,
+  run_name → `2026-exp030-v5j-sydorskyi-v2`
+- [x] `configs/effnetv2b0_control.yaml`: removed `dual_validation: true`,
+  run_name → `2026-exp030-effnetv2b0-control-v2`
+- [x] `configs/effnetv2b0_sydorskyi.yaml`: removed `dual_validation: true`,
+  run_name → `2026-exp030-effnetv2b0-sydorskyi-v2`
+
+### V2.1 — Retrain all 4 (commands ready, awaiting Murilo)
+
+- [ ] `bash sbatch/run.sh configs/v5j_control.yaml`
+- [ ] `bash sbatch/run.sh configs/v5j_sydorskyi.yaml`
+- [ ] `bash sbatch/run.sh configs/effnetv2b0_control.yaml`
+- [ ] `bash sbatch/run.sh configs/effnetv2b0_sydorskyi.yaml`
+
+### V2.2 — Re-export, re-upload, re-push, re-submit
+
+For each model, after training completes:
+- [ ] ONNX export: `bash exp010/sbatch/run.sh export --model {slug}`
+  (export.sbatch updated to point at -v2 checkpoint dirs)
+- [ ] Upload + push: `python exp010/scripts/upload_kaggle.py --model {slug} --push-kernel`
+  (replaces v1 weights at the same Kaggle slug; same kernel-metadata files)
+- [ ] Submit to LB
+
+### V2.3 — Verdict (after v2 LBs in)
+
+- [ ] **Reproducibility check**: does v5j_control_v2 reproduce v5j 0.906
+  (within ±0.005)? If yes → pipeline confirmed reproducible. If no →
+  there's another confound besides dual_validation.
+- [ ] **Mixup main effect on HGNet**: v5j_sydorskyi_v2 vs v5j_control_v2.
+- [ ] **Backbone main effect**: effnetv2b0_control_v2 vs v5j_control_v2.
+- [ ] **Combined effect**: effnetv2b0_sydorskyi_v2 vs v5j_control_v2.
+  If ≥ +0.005 LB and v5j_control_v2 ≥ 0.901, this is the **first
+  single-model improvement over v5j 0.906** for our pipeline.
+
 ## Documentation
 
 - [ ] Write `results.md` with all 4 LB scores + decision-matrix verdict.

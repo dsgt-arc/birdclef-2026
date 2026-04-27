@@ -695,18 +695,41 @@ attempts (v4j/v6b/v10b) all use interpolated multi-label targets, not
 Sydorskyi's `max(y1, y2)`. Plus target-distribution simulation showing 80%
 of v5j's training target values are sub-1, 59% have NO full positive.
 
-### Phase A + Phase B: Training — DONE (LB PENDING)
+### Phase A + Phase B v1: Training + LB DONE (all with dual_validation=true)
 
 All 4 cells use LSEHead + BCE + OneCycleLR (lr=5e-4) + 20 epochs + seed=42 +
-dual_validation. Only backbone (Phase A vs B) and mixup recipe (control vs
-sydorskyi) differ.
+**dual_validation=true**. Only backbone and mixup recipe differ. v1 LBs are
+~0.009 below the original v5j regime due to dual_validation changing
+checkpoint selection (see exp 026 v5j-dualval = 0.897 vs v5j = 0.906).
 
-| Slug | Backbone | Mixup recipe | val/auroc | val/cmap | val/f1_macro | Best Ep | LB | Walltime | Checkpoint |
-|------|----------|-------------|-----------|----------|--------------|---------|-----|----------|------------|
-| `hgnet-b0-sed-v5j-control` | HGNetV2-B0 | spec, interp, theta=0.8 | **0.8490** | 0.5959 | 0.5039 | 14 | pending | 37m 44s | `030-.../2026-exp030-v5j-control/best-epochepoch=14.ckpt` |
-| `hgnet-b0-sed-v5j-sydorskyi` | HGNetV2-B0 | wave, `(w1+w2)/2` + peak-norm, max(y1,y2), p=0.5 | 0.8472 | **0.6065** | **0.5467** | 14 | pending | 41m 45s | `030-.../2026-exp030-v5j-sydorskyi/best-epochepoch=14.ckpt` |
-| `effnetv2b0-sed-control` | EffNetV2-B0 (192-ch features) | spec, interp, theta=0.8 | 0.8510 | 0.6124 | 0.5320 | 19 | pending | 41m 17s | `030-.../2026-exp030-effnetv2b0-control/best-epochepoch=19.ckpt` |
-| **`effnetv2b0-sed-sydorskyi`** | **EffNetV2-B0** | **wave, sydorskyi** | **0.8518** | **0.6303** | **0.5751** | 19 | pending | 45m 37s | `030-.../2026-exp030-effnetv2b0-sydorskyi/best-epochepoch=19.ckpt` |
+| Slug (v1) | Backbone | Mixup recipe | val/auroc | val/cmap | val/f1_macro | Best Ep | **LB** | Walltime |
+|------|----------|-------------|-----------|----------|--------------|---------|------:|----------|
+| `hgnet-b0-sed-v5j-control` | HGNetV2-B0 | spec, interp, theta=0.8 | 0.8490 | 0.5959 | 0.5039 | 14 | **0.890** | 37m 44s |
+| `hgnet-b0-sed-v5j-sydorskyi` | HGNetV2-B0 | wave sydorskyi (avg+peak-norm+max) | 0.8472 | 0.6065 | 0.5467 | 14 | **0.892** | 41m 45s |
+| `effnetv2b0-sed-control` | EffNetV2-B0 (192-ch) | spec, interp, theta=0.8 | 0.8510 | 0.6124 | 0.5320 | 19 | **0.893** | 41m 17s |
+| **`effnetv2b0-sed-sydorskyi`** | **EffNetV2-B0** | **wave sydorskyi** | **0.8518** | **0.6303** | **0.5751** | 19 | **0.901** | 45m 37s |
+
+### v1 2x2 LB matrix
+
+| | control (spec interp) | sydorskyi (wave max) | mixup Δ |
+|---|---:|---:|---:|
+| HGNetV2-B0 | 0.890 | 0.892 | +0.002 (null) |
+| EfficientNetV2-B0 | 0.893 | **0.901** | **+0.008** |
+| backbone Δ | +0.003 | +0.009 | |
+
+**Strong interaction**: Sydorskyi mixup helps on v2-B0 but not HGNet. The
+diagonal corner (effnetv2b0_sydorskyi) is the best v1 cell at +0.011 LB
+vs v5j_control. Best offline cell is also this one — offline 2x2 and LB
+2x2 agree on the winner, even though absolute numbers are below v5j 0.906
+due to the dual_validation regime cost.
+
+### v2 retraining (in progress)
+
+All 4 variants being retrained with `dual_validation: true` removed.
+Run names get `-v2` suffix so v1 checkpoints stay intact. Same seed,
+same recipe otherwise. If the dual_validation hypothesis holds, v2 LBs
+should land ~0.009 above v1, with effnetv2b0_sydorskyi_v2 potentially
+crossing 0.906 — first single-model improvement over v5j for us if so.
 
 ### 2x2 offline summary (val/auroc / val/cmap / val/f1_macro)
 

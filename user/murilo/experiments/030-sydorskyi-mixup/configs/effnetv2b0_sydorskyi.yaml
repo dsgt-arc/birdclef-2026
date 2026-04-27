@@ -8,7 +8,7 @@
 #
 # Single-variable changes from effnetv2b0_control: only the mixup config block.
 
-run_name: "2026-exp030-effnetv2b0-sydorskyi"
+run_name: "2026-exp030-effnetv2b0-sydorskyi-v2"
 
 encoder:
   type: "efficientnet"
@@ -44,7 +44,8 @@ data:
   soundscape_val_files: 8
   soundscape_test_files: 0
   seed: 42
-  dual_validation: true
+  # v2 (2026-04-26): removed dual_validation. See v5j_control.yaml for the
+  # rationale (-0.009 LB cost from focal-only val checkpoint selection).
 
 training:
   max_epochs: 20

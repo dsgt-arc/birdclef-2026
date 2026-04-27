@@ -9,7 +9,7 @@
 # Only difference from exp 029 fine-tune: lr restored to 5e-4 (no warm start),
 # init block removed (ImageNet init).
 
-run_name: "2026-exp030-v5j-control"
+run_name: "2026-exp030-v5j-control-v2"
 
 encoder:
   type: "efficientnet"
@@ -45,7 +45,12 @@ data:
   soundscape_val_files: 8
   soundscape_test_files: 0
   seed: 42
-  dual_validation: true
+  # v2 (2026-04-26): removed dual_validation. v1 had dual_validation=true
+  # which changed val/auroc to focal-only and shifted the best-by-val
+  # checkpoint vs the original v5j (LB 0.906) which used the combined-val
+  # checkpoint. exp 026 documented the cost: v5j-dualval = 0.897 vs
+  # v5j = 0.906 (-0.009 LB). v1 of this exp got 0.890 LB, consistent with
+  # that regime. v2 reverts to combined-val to recover the original LB regime.
 
 training:
   max_epochs: 20

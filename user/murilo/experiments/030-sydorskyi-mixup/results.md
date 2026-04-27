@@ -9,13 +9,48 @@ author: Murilo Gustineli
 
 ## Status
 
-**Phase A** (HGNetV2-B0 ablation): training COMPLETE, LB submission PENDING.
-~37-42 min walltime each on rtx6000.
+**v1 (with `dual_validation: true`)**: training + LB COMPLETE. Re-training in
+progress with `dual_validation` removed (v2) to recover the original v5j
+0.906 LB regime.
 
-**Phase B** (EfficientNetV2-B0 2x2 ablation): training COMPLETE, LB submission
-PENDING. ~41-46 min walltime each on rtx6000.
+### v1 LB results (all 4 cells)
 
-All 4 cells of the 2x2 are now offline-evaluated. LB submissions queued.
+| | control (spec, interp) | sydorskyi (wave, max) | mixup Δ |
+|---|---:|---:|---:|
+| **HGNetV2-B0** (v5j) | 0.890 | 0.892 | +0.002 (null) |
+| **EfficientNetV2-B0** | 0.893 | **0.901** | **+0.008** (small positive) |
+| backbone Δ | +0.003 | +0.009 | |
+
+**Best v1 cell**: `effnetv2b0_sydorskyi` at LB 0.901 — the diagonal corner.
+
+### Why all 4 v1 cells are below v5j 0.906
+
+`dual_validation: true` (added between exp 019 and exp 030) changed `val/auroc`
+from "macro-AUROC over the COMBINED focal+SS val" to "focal-only" via the
+new `val_dataloader()` returning `[focal_loader, sc_loader]` instead of one
+ConcatDataset loader. Because the model_checkpoint callback monitors
+`val/auroc`, this changed which checkpoint gets saved as best (focal-only
+val peaks at a different epoch than combined val).
+
+The cost was documented in exp 026: v5j-dualval = 0.897 LB vs v5j = 0.906 LB
+(−0.009). Our v1 runs landed at 0.890-0.901, consistent with that regime
+(dual-validation cost compounded with the architecture/mixup variants).
+
+### v2 plan: retrain all 4 with dual_validation removed
+
+To get a clean comparison vs v5j 0.906, all 4 variants are being retrained
+with `dual_validation: true` removed. Run names get `-v2` suffix to keep
+v1 checkpoints intact for forensic comparison.
+
+Expected v2 outcomes (assuming the −0.009 dual_val cost is recoverable):
+- v5j_control_v2: ~0.899-0.906 (reproduces v5j; pipeline reproducibility check)
+- v5j_sydorskyi_v2: ~0.899-0.906 (mixup change null on HGNet, per v1 result)
+- effnetv2b0_control_v2: ~0.900-0.905 (backbone null on its own, per v1)
+- effnetv2b0_sydorskyi_v2: **~0.908-0.912** (best v1 cell + dual_val cost recovery)
+
+If effnetv2b0_sydorskyi_v2 lands ≥ 0.908, it would be **the first single-model
+improvement over v5j 0.906** for us in this competition. That's the
+load-bearing test.
 
 ## Context
 
