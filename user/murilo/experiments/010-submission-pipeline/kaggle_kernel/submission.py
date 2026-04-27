@@ -91,6 +91,9 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Diagnostic: re-export of original v5j ckpt (LB 0.906) on today's submission.py
+    # to separate training-pipeline drift from inference-pipeline drift.
+    "birdclef-2026-hgnet-b0-sed-v5j-resubmit-weights",
     # Exp 030: Sydorskyi-faithful MixUp 2x2 (HGNet × EffNetV2-B0 × control × sydorskyi)
     "birdclef-2026-effnetv2-b0-sed-sydorskyi-weights",
     "birdclef-2026-effnetv2-b0-sed-control-weights",

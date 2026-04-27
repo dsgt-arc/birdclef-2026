@@ -641,6 +641,23 @@ export_hgnet_b0_sed_v5j() {
         --output-dir artifacts/weights/hgnet-b0-sed-v5j/
 }
 
+export_hgnet_b0_sed_v5j_resubmit() {
+    # Re-export of the ORIGINAL v5j checkpoint (epoch 19, LB 0.906 from exp 019)
+    # using TODAY's submission.py kernel. Diagnostic for separating training-pipeline
+    # drift from inference-pipeline drift after v5j_control_v2 regressed to 0.896 LB.
+    # Same checkpoint and config as `hgnet-b0-sed-v5j`, different output dir to keep
+    # the original kernel intact.
+    echo "=== Exporting HGNetV2-B0 SED v5j resubmit (original ckpt, fresh kernel) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-resubmit/
+}
+
 export_hgnet_b0_sed_v5j_finetune_2026() {
     echo "=== Exporting HGNetV2-B0 SED v5j fine-tune 2026 (2025-pretrained, exp 029) ==="
     local CKPT
@@ -1159,6 +1176,7 @@ case "$MODEL" in
     hgnet-b0-sed-v10a-exp027|hgnet-b0-sed-v10b-exp027|hgnet-b0-sed-v11b-exp027|\
     hgnet-b0-sed-v5j-finetune-2026|hgnet-b0-sed-v5j-ft-splitlr|\
     hgnet-b0-sed-v5j-control|hgnet-b0-sed-v5j-sydorskyi|effnetv2-b0-sed-control|effnetv2-b0-sed-sydorskyi|\
+    hgnet-b0-sed-v5j-resubmit|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1259,6 +1277,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5k)          export_hgnet_b0_sed_v5k ;;
     hgnet-b0-sed-v5i)          export_hgnet_b0_sed_v5i ;;
     hgnet-b0-sed-v5j)          export_hgnet_b0_sed_v5j ;;
+    hgnet-b0-sed-v5j-resubmit) export_hgnet_b0_sed_v5j_resubmit ;;
     hgnet-b0-sed-v5j-fmax)     export_hgnet_b0_sed_v5j_fmax ;;
     hgnet-b0-sed-v5j-clip)     export_hgnet_b0_sed_v5j_clip ;;
     hgnet-b0-sed-v5j-4fold)    export_hgnet_b0_sed_v5j_4fold ;;
