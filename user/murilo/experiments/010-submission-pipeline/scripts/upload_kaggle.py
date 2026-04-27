@@ -318,6 +318,27 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-ft-splitlr",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-ft-splitlr.json",
     },
+    # Exp 030: Sydorskyi-faithful MixUp 2x2 (HGNet × EffNetV2-B0 × control × sydorskyi)
+    "hgnet-b0-sed-v5j-control": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-control-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-control",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-control.json",
+    },
+    "hgnet-b0-sed-v5j-sydorskyi": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-sydorskyi-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-sydorskyi",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-sydorskyi.json",
+    },
+    "effnetv2-b0-sed-control": {
+        "slug": "birdclef-2026-effnetv2-b0-sed-control-weights",
+        "weights_dir": "artifacts/weights/effnetv2-b0-sed-control",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-control.json",
+    },
+    "effnetv2-b0-sed-sydorskyi": {
+        "slug": "birdclef-2026-effnetv2-b0-sed-sydorskyi-weights",
+        "weights_dir": "artifacts/weights/effnetv2-b0-sed-sydorskyi",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-sydorskyi.json",
+    },
     # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "hgnet-b0-sed-v5j-fmax": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",

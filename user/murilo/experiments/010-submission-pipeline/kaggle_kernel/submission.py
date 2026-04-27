@@ -91,6 +91,11 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 030: Sydorskyi-faithful MixUp 2x2 (HGNet × EffNetV2-B0 × control × sydorskyi)
+    "birdclef-2026-effnetv2-b0-sed-sydorskyi-weights",
+    "birdclef-2026-effnetv2-b0-sed-control-weights",
+    "birdclef-2026-hgnet-b0-sed-v5j-sydorskyi-weights",
+    "birdclef-2026-hgnet-b0-sed-v5j-control-weights",
     # Exp 029 path A retry: 2025-pretrained → 2026 split-LR fine-tune
     "birdclef-2026-hgnet-b0-sed-v5j-ft-splitlr-weights",
     # Exp 029: 2025-pretrained → 2026 fine-tuned (Ali Ozan path)
