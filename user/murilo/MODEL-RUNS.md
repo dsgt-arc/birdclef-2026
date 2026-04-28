@@ -784,30 +784,40 @@ if dual_val cost is fully recoverable.
 | effnetv2b0_control_v2 | 0.893 | 0.901-0.905 | backbone null on control |
 | **effnetv2b0_sydorskyi_v2** | **0.901** | **0.908-0.912** | **first single-model > v5j 0.906** |
 
-### Seed=43 retrain (2026-04-28): training DONE, LB pending
+### Seed=43 retrain (2026-04-28): training DONE, partial LB, exp closed
 
 Diagnostic for the seed=42 EffNet × Sydorskyi +0.008 LB asymmetry. Only
 `data.seed` changes (42 → 43); everything else identical to v2. Different
 seed → different 90/10 val split → absolute val/auroc not comparable across
 seed groups. Within-seed deltas are the diagnostic.
 
-| Slug (seed=43) | val/auroc | val/cmap | val/f1_macro | Best Ep | best_val | Walltime | SLURM |
-|------|---------:|---------:|-------------:|--------:|---------:|---------:|------:|
-| `hgnet-b0-sed-v5j-control-seed43` | 0.8926 | 0.6426 | 0.5679 | 16 | 0.8933 | 43m 21s | 7488877 |
-| `hgnet-b0-sed-v5j-sydorskyi-seed43` | 0.8967 | 0.6437 | 0.5854 | 16 | 0.8978 | 44m 16s | 7488880 |
-| `effnetv2-b0-sed-control-seed43` | 0.8890 | 0.6455 | 0.5604 | 18 | 0.8930 | 41m 7s | 7488881 |
-| **`effnetv2-b0-sed-sydorskyi-seed43`** | **0.8932** | **0.6490** | **0.5945** | 18 | **0.8982** | 42m 50s | 7488884 |
+| Slug (seed=43) | val/auroc | val/cmap | val/f1_macro | Best Ep | best_val | LB | SLURM |
+|------|---------:|---------:|-------------:|--------:|---------:|---:|------:|
+| `hgnet-b0-sed-v5j-control-seed43` | 0.8926 | 0.6426 | 0.5679 | 16 | 0.8933 | **0.883** | 7488877 |
+| `hgnet-b0-sed-v5j-sydorskyi-seed43` | 0.8967 | 0.6437 | 0.5854 | 16 | 0.8978 | (skipped) | 7488880 |
+| `effnetv2-b0-sed-control-seed43` | 0.8890 | 0.6455 | 0.5604 | 18 | 0.8930 | (skipped) | 7488881 |
+| **`effnetv2-b0-sed-sydorskyi-seed43`** | **0.8932** | **0.6490** | **0.5945** | 18 | **0.8982** | (skipped) | 7488884 |
 
-Seed=43 within-seed signal:
-- **Mixup main effect on auroc**: +0.004 (both backbones similar) vs seed=42 v2 −0.001
-- **Backbone main effect**: collapses to ±0.004 (vs seed=42 v2 +0.004 / +0.020 cmap)
-- **f1_macro interaction direction reproduces**: EffNet responds more to mixup
-  than HGNet on f1_macro (+0.034 vs +0.018) — same as seed=42
+**`v5j_control_seed43` LB = 0.883**, −0.013 below `v5j_control_v2` (0.896).
+This widens the documented single-fold seed band from ±0.005 to ~±0.013 on
+HGNet for this codebase. Within-seed mixup Δs (±0.004 offline) sit inside
+this wider noise floor → remaining 3 seed=43 LB submissions skipped as
+**conscious decision** to redirect daily-cap budget to the next experiment.
 
-Best cell on every offline metric: `effnetv2b0_sydorskyi_seed43`. Robust
-across seeds even though absolute main effects are seed-sensitive. LB
-submissions pending; verdict matrix in `experiments/030-sydorskyi-mixup/tasks.md`
-(V3.3).
+### Exp 030 closing verdict (2026-04-28)
+
+| Question | Answer |
+|---|---|
+| Does Sydorskyi waveform mixup beat Zhang interpolated mixup on this codebase? | **Null on HGNet**, borderline +0.008 on EffNet (inside ±0.013 noise floor) |
+| Does EffNetV2-B0 backbone beat HGNetV2-B0? | **Null on LB** (offline cmap/f1 +; LB inside noise) |
+| First single-model training-recipe LB lift? | Not confirmed |
+| Best single-model still | **v5j 0.906** (exp 019, reconfirmed via v5j-resubmit) |
+| Best single-model challenger | **`effnetv2b0_sydorskyi` 0.901** (v1≡v2 weights) |
+
+The cmap +0.014 / f1 +0.039 offline mixup signals are real and reproduce
+across seeds, but don't translate to single-fold LB above noise. If
+revisited, the right setup is 4-fold ensemble (where seed noise averages
+out), not another single-fold seed.
 
 ### 2x2 offline summary (val/auroc / val/cmap / val/f1_macro)
 

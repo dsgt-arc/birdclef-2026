@@ -1,23 +1,105 @@
 ---
 experiment: "030-sydorskyi-mixup"
-status: in-progress
+status: closed
 date: 2026-04-26
+closed_date: 2026-04-28
 author: Murilo Gustineli
 ---
 
 # Experiment 030: Sydorskyi-faithful MixUp on v5j — Results
 
-## Status
+## Status: CLOSED 2026-04-28
 
-**v1 (with `dual_validation: true`)**: training + LB COMPLETE.
-**v2 (no `dual_validation`)**: training + LB COMPLETE. **Result (2026-04-28):
-3/4 v2 LBs literally identical to v1** — root-cause traced to deterministic
-training making v2 weights bit-identical to v1 (see "v2 LB results" section
-below).
-**Seed=43 retrain**: training COMPLETE 2026-04-28 (jobs 7488877/7488880/
-7488881/7488884, all exit 0, ~40-44 min each). Pipeline plumbing (export
-configs / kernel metadata / dataset uploads) IN PROGRESS — LB submissions
-will follow after the next Kaggle daily-cap reset.
+**Verdict**: Mixup-recipe lever (Sydorskyi `(w1+w2)/2` + peak-norm + max-targets
+vs Zhang interpolated) is **inside the single-fold seed-noise band** on this
+codebase. The seed=42 EffNet+Sydorskyi +0.008 LB asymmetry did not cleanly
+replicate under seed=43 (single LB submitted: v5j_control_seed43 = **0.883**,
+−0.013 vs v5j_control_v2 0.896, wider than the documented ±0.005 seed band).
+
+**Decision**: skip the remaining 3 seed=43 LB submissions. The seed-band
+floor is wider than the predicted within-seed mixup deltas (±0.004), so even
+if the other 3 came back, they wouldn't be statistically separable from the
+v2 readings. Daily-cap submissions are better spent on the next experiment.
+
+The work landed:
+- v1 (with `dual_validation: true`): training + LB COMPLETE
+- v2 (no `dual_validation`): training + LB COMPLETE. 3/4 LBs bit-identical
+  to v1 (deterministic training discovery).
+- v5j-resubmit diagnostic: 0.906 LB confirmed inference pipeline is clean
+  (the 0.010 v5j_control_v2 → v5j-original gap is fully training-side)
+- seed=43 retrain: training COMPLETE; only v5j_control submitted (0.883 LB)
+- Sydorskyi `mixup_mode="average_max"` implementation now in `_apply_mixup`
+- Kaggle pipeline scaffolded for 4 seed=43 cells (configs, kernel metadata,
+  weights datasets uploaded) — left in place for future use if ever needed
+
+## Final 2x2 LB summary (seed=42 v2)
+
+|  | control (spec interp) | sydorskyi (wave max) | mixup Δ |
+|---|---:|---:|---:|
+| HGNetV2-B0 (v5j) | 0.896 | 0.892 | **−0.004** (null, in noise) |
+| EfficientNetV2-B0 | 0.893 | **0.901** | **+0.008** (in noise per seed=43) |
+| backbone Δ | −0.003 | +0.009 | |
+
+**Best cell**: `effnetv2b0_sydorskyi` at **0.901 LB** (within 0.005 of v5j 0.906).
+Best non-v5j single-model in the project.
+
+## Final verdict (V3.3)
+
+Applying the proposal's decision matrix with all evidence in:
+
+| Pattern observed | Reading | Action taken |
+|---|---|---|
+| Seed=42: EffNet syd − control = +0.008 | Borderline; could be real interaction | Launched seed=43 retrain |
+| Seed=43: v5j_control LB = 0.883 (−0.013 vs seed=42 v2) | Single-fold seed band wider than ±0.005 noise floor | **Pivot.** Within-seed deltas (±0.004) are inside this noise band. |
+| Other 3 seed=43 LBs not submitted | Unable to fully complete decision matrix | **Conscious decision** to spend submissions on next experiment instead |
+
+**Net result**: Sydorskyi mixup recipe is **null on HGNet** (consistent across
+seed=42 and seed=43 directions of the within-seed Δ) and **borderline +0.008
+on EffNet** for seed=42 only. With single-fold seed band of ±0.013, the
++0.008 reading is inside noise.
+
+## What this rules out vs leaves open
+
+**Rules out** (or strongly demotes):
+- Sydorskyi mixup recipe as a meaningful single-variable lever on HGNet
+- Single-fold ±0.005 as a reliable seed band — it's actually ±0.010-0.013
+  for HGNet on this codebase
+- Treating absolute LB readings on single-fold trainings as load-bearing
+  evidence — within-seed deltas are the right unit
+
+**Leaves open**:
+- Whether Sydorskyi mixup helps on EffNet specifically (the +0.008 didn't
+  rule itself in OR out cleanly under one extra seed). Would need 4-fold or
+  3+ seeds to disambiguate.
+- Whether a 4-fold version of `effnetv2b0_sydorskyi` (the offline-best cell)
+  would clear v5j-4fold-pp2's 0.917. Not pursued here.
+- Why our trainings reproduce v5j's 0.874 val/auroc but not v5j's 0.906 LB.
+  Best-by-val plateaus at ep 14-16 in new runs (vs ep 19 in v5j-original);
+  ep 19 weights aren't serialized due to `save_top_k: 1`. A `save_top_k=-1`
+  retrain would isolate this, but is not exp 030's question.
+
+## Personal/intuition note (2026-04-28)
+
+There's still a reasonable case that **Sydorskyi-style waveform mixup is
+mechanistically better than Zhang interpolated mixup** for multi-label
+audio: the simulation showed our training target distribution is far from
+the test multi-hot binary distribution. The cmap +0.008-0.014 and f1 +0.039
+offline signals are real and reproducible across seeds. But on single-fold
+LB, the effect is below the noise floor. If we revisit, the right setup is
+a 4-fold ensemble (where seed noise averages out) rather than another
+single-fold seed.
+
+## Pipeline artifacts left in place (for future reference)
+
+In case we want to revisit with 4-fold or different env:
+- 4 seed=43 ONNX exports + Kaggle datasets uploaded (slugs use shortened
+  prefix `birdclef-{base}-seed43-weights`)
+- 4 kernel-metadata JSONs in `kaggle_kernel/`
+- 4 export functions in `sbatch/export.sbatch`
+- 4 MODELS entries in `upload_kaggle.py`
+- 4 `MODEL_SLUGS` entries in `submission.py`
+- 4 new configs `configs/{base}_seed43.yaml`
+- 4 SLURM training logs and metrics.json under `artifacts/training/{base}_seed43/`
 
 ## Seed=43 retrain — offline training results (2026-04-28)
 

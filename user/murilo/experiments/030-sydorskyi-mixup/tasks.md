@@ -203,7 +203,7 @@ Within-seed signal (seed=43):
 - **f1_macro interaction reproduces**: EffNet mixup +0.034 vs HGNet +0.018
 - Best cell on every offline metric: `effnetv2b0_sydorskyi_seed43`
 
-### V3.2 — Pipeline plumbing — IN PROGRESS 2026-04-28
+### V3.2 — Pipeline plumbing — DONE 2026-04-28 (closed early)
 
 Four-file pattern per `experiments/010-submission-pipeline/adding-new-models.md`.
 NEW kernel slugs (`*-seed43`) so the seed=42 v2 weights stay live.
@@ -214,23 +214,33 @@ dataset slug limit (53-55 chars). Drop `-2026-` from prefix → `birdclef-{base}
 
 - [x] Add 4 new MODELS entries to `upload_kaggle.py` for seed43 slugs
 - [x] Add 4 new export functions to `export.sbatch` pointing at seed43 ckpt dirs
-  (`2026-exp030-{model}-seed43`)
 - [x] Add 4 new kernel-metadata-*-seed43.json files
 - [x] Add 4 new entries to submission.py MODEL_SLUGS
-- [ ] ONNX export × 4 (`bash sbatch/run.sh export --model X-seed43`)
-- [ ] Upload + push × 4 (two-step: `upload_kaggle.py --model X` then `--push-kernel`)
-- [ ] Submit to LB × 4 (Kaggle 5/day cap)
+- [x] ONNX export × 4 (run by user)
+- [x] Upload + push × 4 (run by user)
+- [x] Submit to LB × 1 → `v5j_control_seed43` = **0.883 LB**
+- [~] Submit to LB × 3 (remaining: v5j_sydorskyi_seed43, effnetv2b0_control_seed43,
+  effnetv2b0_sydorskyi_seed43) — **CONSCIOUS SKIP** (see V3.3 verdict below)
 
-### V3.3 — Verdict (after seed=43 LBs in)
+### V3.3 — Verdict — CLOSED 2026-04-28
 
-Apply the matrix below; pick next experiment based on outcome:
+**Outcome**: only 1 seed=43 LB submitted (`v5j_control_seed43` = **0.883**).
+This sits −0.013 below v5j_control_v2 (0.896), wider than the documented ±0.005
+seed band. Single-fold seed noise floor on HGNet is ~±0.013 on this codebase.
 
-| Pattern | Conclusion | Action |
+**Decision**: skip the remaining 3 LB submissions. The within-seed mixup deltas
+(±0.004 in seed=43 offline) are inside the wider noise floor; further LB
+points won't disambiguate the seed=42 EffNet +0.008 reading. Daily-cap
+submissions are better spent on the next experiment.
+
+| Pattern | Outcome | Action taken |
 |---|---|---|
-| EffNet syd − control ≥ +0.005 AND HGNet syd − control near 0 | Architectural interaction is real | Endorse `effnetv2b0_sydorskyi`; 4-fold + Sydorskyi component staircase |
-| Both 2x2 Δs flip sign or change > ±0.005 | All seed=42 LBs were noise | Pivot to pseudo-distillation |
-| EffNet Δ shrinks but stays positive (≥+0.003) | Borderline | 4-fold disambiguator |
-| v5j_control_seed43 LB ≥ 0.901 | 0.010 gap was seed/checkpoint sensitivity | Confirms pipeline isn't structurally broken |
+| Seed=42 EffNet syd − control = +0.008, HGNet null | Borderline; possibly real | Launched seed=43 retrain to disambiguate |
+| Seed=43 v5j_control LB = 0.883 (−0.013 from seed=42) | Seed band wider than predicted; can't separate signal from noise on single fold | **Pivot.** Close exp 030 with verdict that mixup-recipe lever is null at single-fold resolution. |
+| Other 3 seed=43 LBs | Not submitted (skipped) | Recovery path: 4-fold retrain of `effnetv2b0_sydorskyi` if/when revisited |
+
+**Net result**: Sydorskyi mixup recipe is null on HGNet (consistent both seeds)
+and borderline-but-inside-noise +0.008 on EffNet for one seed only.
 
 ## Documentation
 

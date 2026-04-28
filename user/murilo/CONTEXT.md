@@ -3,7 +3,7 @@
 Session handoff document for Murilo's BirdCLEF 2026 experiments.
 Read this first, then read the referenced docs to get full context.
 
-Last updated: 2026-04-28 (v5j-resubmit confirmed 0.906 → inference clean, gap is training-side; 3 remaining v2 LBs came back IDENTICAL to v1 → root cause traced to deterministic training making v2 weights bit-identical to v1; seed=43 retrain in flight to confirm the architectural EffNet × Sydorskyi interaction is real)
+Last updated: 2026-04-28 (exp 030 CLOSED — Sydorskyi mixup recipe is null at single-fold resolution. seed=43 v5j_control LB = 0.883 widened the noise floor from ±0.005 to ±0.013, putting the seed=42 EffNet +0.008 reading inside noise. Best single-model still v5j 0.906; closest challenger effnetv2b0_sydorskyi 0.901. PR #43 ready for squash merge. Next experiment up for discussion before scaffolding.)
 
 ## Read these files first
 
@@ -12,7 +12,8 @@ top three fully, the rest can be skimmed.
 
 | File | Purpose | How to read |
 |------|---------|-------------|
-| `user/murilo/experiments/030-sydorskyi-mixup/results.md` | **ACTIVE EXPERIMENT — seed=43 retrain in flight.** All 4 v2 LBs in: v5j_control 0.896, v5j_sydorskyi 0.892, effnetv2b0_control 0.893, effnetv2b0_sydorskyi 0.901. v5j-resubmit (original v5j ckpt re-exported) → 0.906 → **inference pipeline clean**, all 0.010 gap is training-side. **3/4 v2 LBs literally identical to v1** because deterministic training (`seed_everything(42)` + `Trainer(deterministic=True)`) makes v2 weights bit-identical to v1 at every epoch — `dual_validation: true` only changes val_dataloader, not training trajectory. Only `_val_sc_pos_counts` buffer differs (val-only, stripped from ONNX). Per-key audit: 420/420 effnet weights and 320/320 v5j_sydorskyi weights are bit-identical. Only v5j_control v2 differs (max\|v1−v2\|=511) because best-by-val epoch shifted (14→15) under different val metric. **2x2 reading**: HGNet mixup Δ −0.004 (null), EffNet mixup Δ +0.008 (borderline architectural interaction). Seed=43 retrain (jobs 7488877/7488880/7488881/7488884) is the noise estimate to confirm/reject the EffNet asymmetry. | Read fully (start here) |
+| `user/murilo/experiments/030-sydorskyi-mixup/results.md` | **EXPERIMENT CLOSED 2026-04-28**. Final 2x2 LB: HGNet control 0.896, HGNet sydorskyi 0.892 (Δ −0.004 null); EffNet control 0.893, EffNet sydorskyi 0.901 (Δ +0.008 borderline). seed=43 retrain submitted only `v5j_control_seed43` = **0.883 LB** (−0.013 vs v5j_control_v2 0.896) → seed band wider than ±0.005, so within-seed mixup Δs sit inside noise floor → remaining 3 LB submissions consciously skipped. Verdict: Sydorskyi mixup recipe is **null at single-fold resolution** on this codebase. Best single-model still v5j 0.906. Closest challenger `effnetv2b0_sydorskyi` 0.901. Pipeline artifacts (configs, kernel metadata, datasets) left in place if 4-fold revisit ever desired. | Read fully (start here) |
+| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | **NEW (04-28 update)**: Tucker Arrants broke 0.93+ with Perch-distilled B0 + 5s + BCE + waveform augs + site/hour priors + Gaussian smooth + 5-fold (without PP: 0.922). Includes "Proven 0.93+ Recipes" synthesis section comparing Salman 0.937, Tucker 0.93+, Boredom 0.938-0.950+, Ali Ozan 0.941. **Key open question**: why did Tucker's Perch-pseudo-label student succeed where our exp 015/025 attempts failed? | Read fully — central to next-experiment discussion |
 | `user/murilo/analysis/notes/2026-04-26-mixup-implementation-audit.md` | **HEADLINE finding**: v5j and prior wave-mixup attempts (v4j/v6b/v10b) all use Zhang-style INTERPOLATED multi-label targets, not Sydorskyi's `max(y1, y2)`. The audit verifies this with line numbers in `sed_finetune.py`. Refutes that Xu 2018 is the source of Sydorskyi's recipe (Xu actually uses interpolation on log-mel). Reframes "wave-mixup is dead" → "interpolated wave-mixup is dead; the Sydorskyi-faithful recipe was never tested." | Read fully |
 | `user/murilo/analysis/notes/2026-04-26-mixup-target-simulation-results.md` | **CPU simulation finding**: 80% of v5j's active training target values are sub-1; 59% of training samples have NO class at full presence. Quantifies the "trained honesty" hypothesis: model rarely sees the multi-label binary test distribution during training. | Read fully |
 | `user/murilo/analysis/notes/2026-04-26-d1-train-side-attention-verdict.md` | **D1 verdict**: 84% top-1% failure overlap between v5j (LSEHead) and v6k (AttHead). Failure pattern is data-driven, not head-architecture-driven. v6k's attention is essentially uniform (entropy 2.5/2.77 max) — but this is because v6k's recipe uses framewise-max-only inference (`blend_clip=0.0`), so attention has no gradient pressure. H2 not testable from v6k specifically. | Read fully |
@@ -33,13 +34,13 @@ top three fully, the rest can be skimmed.
 ## Current state
 
 **Best LB: 0.929** (Perch ONNX + SED v5j-4fold MLP-only ensemble, exp 023) — unchanged.
-**Best single SED: 0.906** (v5j original, exp 019) — confirmed reproducible today via `v5j-resubmit` kernel (re-export of exp 019 ckpt on today's submission.py → 0.906 LB).
-**Closest single-model challenger: 0.901** (effnetv2b0_sydorskyi, exp 030 v2 — same weights as v1) — within 0.005 of v5j original. Architectural interaction: EffNet+Sydorskyi mixup is +0.008 vs EffNet+control; HGNet+Sydorskyi mixup is null (−0.004). Seed=43 retrain pending to rule out seed noise.
-**Reproducibility resolved (2026-04-28)**: v5j-resubmit landed at 0.906 → inference pipeline today is clean, all 0.010 gap (v5j_control_v2 0.896 vs v5j-original 0.906) is training-side. Likely best-by-val epoch shift (v5j-original best=ep 19, v5j_control_v2 best=ep 15) — to be confirmed by seed=43 + `save_top_k=-1` follow-up.
-**3/4 v2 LBs identical to v1 (2026-04-28)**: deterministic training (`pl.seed_everything(42)` + `Trainer(deterministic=True)`) reproduces v1 weights bit-identically at every epoch. `dual_validation` only changes val_dataloader; the v2 retrain was a no-op for inference for the 3 cells where best-by-val landed at the same epoch. Per-key audit confirms (e.g., effnet sydorskyi: 420/420 learnable tensors bit-identical, only `_val_sc_pos_counts` non-trainable buffer differs).
+**Best single SED: 0.906** (v5j original, exp 019) — reconfirmed today via `v5j-resubmit` kernel.
+**Closest single-model challenger: 0.901** (effnetv2b0_sydorskyi, exp 030) — within 0.005 of v5j. Sydorskyi mixup recipe null on HGNet, borderline +0.008 on EffNet (inside ±0.013 noise floor).
+**Single-fold seed band: ±0.013 on HGNet** (was assumed ±0.005). v5j_control_v2 (seed=42) = 0.896, v5j_control_seed43 = 0.883. Implication: any single-fold LB delta below ±0.013 is inside noise. Future single-model experiments should use 4-fold ensembles or 3+ seeds.
+**Best-by-val epoch instability**: v5j-original best=ep 19, v5j_control_v2 best=ep 15, v5j_control_seed43 best=ep 16. With `save_top_k: 1` we never serialize ep 19 in new runs; only the EffNet v2 cells happened to land best=ep 19. To isolate "best plateau too early" from real codebase drift, would need `save_top_k: -1` retrain (deferred — not blocking).
 **Target: 0.948** (competition #1). Gap: 0.019.
 
-**Active branch**: `mg/exp030-sydorskyi-mixup` — PR #43 (OPEN). exp 030 v2 LBs in; seed=43 retrain in flight (4 SLURM jobs).
+**Active branch**: `mg/exp030-sydorskyi-mixup` — PR #43 (READY FOR SQUASH MERGE).
 
 **Recent merges to main:**
 - PR #42 (2026-04-26) → D1 diagnosis + Sydorskyi 2025 reference doc + MixUp audit + train-side attention tooling. **Merged at `3a1e18b`.** *(Note: not yet present on this branch — fork point predates the merge; will arrive on next rebase/merge from main.)*
@@ -61,7 +62,58 @@ top three fully, the rest can be skimmed.
 
 ## What happened recently
 
-### 2026-04-28 — v5j-resubmit confirms inference clean (0.906) + 3/4 v2 LBs identical to v1 (root cause: deterministic training) + seed=43 retrain launched
+### 2026-04-28 (afternoon) — exp 030 closed; awaiting squash merge
+
+**v5j_control_seed43 LB came back at 0.883.** This is −0.013 below
+v5j_control_v2 (0.896) — the only thing that changed between runs is the
+seed. Result: **the single-fold seed band on HGNet is ~±0.013**, much wider
+than the ±0.005 we'd been assuming. Within-seed mixup Δs (±0.004) sit
+inside this noise floor, so the seed=42 EffNet +0.008 reading can't be
+disambiguated by another single-fold LB point.
+
+**Decision**: skip the remaining 3 seed=43 LB submissions; close exp 030;
+move on. The Sydorskyi mixup recipe is **null at single-fold resolution**
+on this codebase. The cmap +0.014 / f1 +0.039 offline signals are real and
+reproduce across seeds, but they don't translate to single-fold LB above
+noise. If the recipe is ever revisited, the right setup is a 4-fold
+ensemble (where seed noise averages out), not another single-fold seed.
+
+**Updated competitor context** (per the latest pull of the
+`kaggle-discussion-best-single-model-lb.md` thread — central reading for
+the next experiment):
+- Tucker Arrants broke 0.93 with **Perch-distilled B0 + 5s + BCE +
+  waveform augs + site/hour priors + Gaussian smooth + 5-fold** (without
+  PP: 0.922)
+- Salman 0.937 with EffNetV2-B0 + AttHead + 20s + CE + sigmoid-infer +
+  PP/TTA + waveform mixup. Key non-recipe move: "investigating attention
+  values on highest/lowest loss examples" → +0.015 jump from 0.922 → 0.937
+- Boredom 0.938-0.939 single-model timm+SED + simple PP (~+0.004) + no TTA
+- Ali Ozan 0.941 with 2025-pretrained ckpt + bug-fixed XC pretrain
+- EliKal 0.909 with KLD distillation from Perch + 12ep finetune
+
+**Open question for next experiment**: Tucker's "Perch distilled B0 +
+BCE" is structurally what our exp 015/025 student-on-pseudo-labels
+attempted (we marked those "dead"). Why did Tucker succeed where we
+failed? Differences to compare:
+- Teacher: Tucker uses Perch directly; we used Perch+SED ensemble
+- Folds: Tucker 5-fold; we did single-fold
+- Recipe: Tucker simple BCE + waveform augs; ours had recipe variations
+- PP: Tucker site/hour priors + Gaussian smooth; we have pp2 (similar)
+
+Discussion of the next experiment direction is on the table BEFORE
+scaffolding anything. Likely candidates:
+1. **Replicate Tucker's Perch-PL recipe at full fidelity** — same teacher
+   (Perch alone, not ensemble), 5-fold, simple BCE, waveform augs,
+   site/hour priors + Gaussian smooth
+2. **Pseudo-distillation on 2026 unlabeled SS** with our 0.929 ensemble
+   as teacher (Sydorskyi 2025's biggest published lift was +0.029 from
+   pseudo-distillation on top of in-domain pretrain)
+3. **Salman's attention-investigation move** — debug attention on extreme
+   train losses; aligns with our 04-25 per-frame finding (which says
+   attention IS doing the right thing, contradicting the "+0.015 by
+   investigating" framing — interesting tension to resolve)
+
+### 2026-04-28 (morning) — v5j-resubmit confirms inference clean (0.906) + 3/4 v2 LBs identical to v1 (root cause: deterministic training) + seed=43 retrain launched
 
 **v5j-resubmit submitted to LB**: came back at exactly **0.906**. This proves
 today's inference pipeline (submission.py + Kaggle kernel) reproduces the
@@ -429,62 +481,59 @@ precompute_losses.py + the marimo/jupyter explorer. Captured Salman
 
 ## What needs to happen next
 
-### Priority 1 (in flight): seed=43 retrain LB + apply asymmetry decision matrix
+### Priority 1: discuss next-experiment direction (BEFORE scaffolding)
 
-4 SLURM jobs launched 2026-04-28 evening — all 4 cells with `seed: 43`,
-otherwise identical recipes. Wait for completion (~40 min/job, parallel),
-then export + upload + push + submit each to LB.
+Exp 030 is closed; PR #43 is being squash-merged. The next experiment is on
+the table for explicit discussion before any scaffolding. The user
+specifically wants to engage with:
+- The 04-25 per-frame finding (model is structurally honest; can't be made
+  more confident on low-SNR crops)
+- The 2026-04-28 update to the Kaggle discussion thread (Tucker 0.93+
+  Perch-PL recipe; Salman 0.937 attention investigation; Boredom 0.938-0.950+;
+  Ali Ozan 0.941 in-domain pretrain)
+- Why our exp 015/025 Perch-PL student attempts failed where Tucker's
+  Perch-PL recipe succeeded
 
-**Decision matrix on LB outcome**:
+Candidates on the table (no implementation yet):
 
-| Pattern observed under seed=43 | Conclusion | Action |
-|---|---|---|
-| EffNet sydorskyi − control ≥ +0.005 AND HGNet sydorskyi − control near 0 | **Architectural interaction is real**: first training-recipe LB lift | Endorse `effnetv2b0_sydorskyi`, queue 4-fold + Sydorskyi component layering |
-| Both 2x2 Δs flip sign or change > ±0.005 | All seed=42 readings were noise; mixup is null on both backbones | Pivot to pseudo-distillation (0.929 ensemble as teacher on 2026 unlabeled SS) |
-| EffNet Δ shrinks but stays positive (e.g., +0.003) | Borderline. Need 4-fold or more seeds | Provisionally endorse with caveats; 4-fold next |
-| Anything weird (one cell crashes, etc.) | Investigate before concluding | Halt LB submissions |
+1. **Tucker-style Perch-PL recipe replication** — Perch alone as teacher
+   (not Perch+SED ensemble), 5-fold KFold + MultiLabelStrat, BCE, waveform
+   augs, site/hour priors + Gaussian smooth at inference. The ablations
+   that differ from our exp 015/025: teacher choice, fold count, augmentation
+   set, PP. Rough lift estimate: +0.005-0.020 over v5j 0.906.
 
-**Side-bet on the 0.010 v5j_control gap**: if v5j_control_seed43 LB lands
-≥ 0.901, the gap is mostly seed/checkpoint-selection sensitivity. If it
-lands at 0.896 again, the gap is something more structural about the
-exp 030 codebase since exp 019.
+2. **Pseudo-distillation on 2026 unlabeled SS** — use our 0.929 Perch+SED
+   ensemble as teacher to label the 26K-ish unlabeled SS files; train SED
+   on the result. Sydorskyi's biggest published 2025 lift was +0.029 from
+   this. Aligns with the 04-25 strategic implication (information lever,
+   not training-recipe lever).
 
-### Priority 2 (after seed=43 verdict): structural diagnostic on best-vs-last checkpoint selection
+3. **Salman's attention-investigation move** — interesting tension with our
+   04-25 finding. Salman: "investigating attention values on highest/lowest
+   loss examples" → +0.015 jump. Our 04-25 conclusion: attention IS doing
+   the right thing (correctly diffuse on hard crops). If both readings are
+   true, Salman's lift came from finding cases where attention was
+   incorrectly diffuse on EASY crops, not hard ones — debug-then-fix on
+   that subset specifically.
 
-`save_top_k: 1` + `save_last: True` here makes `last.ckpt` mirror the most
-recent `best.ckpt` (verified empirically: HGNet v2 last.ckpt = ep 14/15,
-not ep 19). v5j-original was best=ep 19=last; new HGNet trainings plateau
-earlier and never serialize ep 19. To definitively answer whether the
-0.010 v5j_control_v2 gap is "best plateau too early" vs "real training
-drift", patch `save_top_k: -1` in v5j_control config and submit ep 19 of
-the new run. Cheap follow-up after seed=43 results.
+### Priority 2 (deferred, not blocking): structural diagnostic on best-vs-last checkpoint selection
 
-### Priority 3 (depends on outcomes above): pick next experiment
-
-Decision space at this point depends on the seed=43 readings:
-
-- **Architectural interaction confirmed (EffNet+Sydorskyi real lift)**:
-  4-fold version of `effnetv2b0_sydorskyi` (matches v5j-4fold-pp2 stack).
-  Then Sydorskyi component staircase: label smoothing → BG noise →
-  SpecAugment → balanced sampler — one at a time, single-variable.
-- **Mixup recipe is null on both backbones**: pivot to **pseudo-
-  distillation on 2026 unlabeled SS** using our 0.929 ensemble (Perch+SED
-  MLP-only) as teacher. Sydorskyi's pseudo-distillation was +0.029 Public
-  on top of in-domain pretrain — biggest published 2025 single-experiment
-  lift. Engages directly with the 04-25 per-frame finding (information
-  lever, not training-recipe lever).
-- **Borderline**: 4-fold on EffNet+Sydorskyi as the disambiguator.
+`save_top_k: 1` + `save_last: True` makes `last.ckpt` mirror the most
+recent `best.ckpt` (verified: HGNet v2 last.ckpt = ep 14/15, not ep 19).
+v5j-original was best=ep 19=last; new HGNet trainings plateau earlier and
+never serialize ep 19. A `save_top_k: -1` retrain of v5j_control would let
+us submit ep 19 specifically and isolate "best plateau too early" from
+real codebase drift. Cheap (1 SLURM job). Not blocking the next experiment.
 
 ### Deferred / superseded
 
-- **Working notes Tier 1+ reading** (Nikita 1st place 2025, Witting
-  2024 paper-211 domain shift): captured as future work but lower
-  priority than resolving the reproducibility issue. Sydorskyi 2025 is done.
-- **exp 030 silent-class candidate**: still queued, hasn't been
-  designed; addresses a different problem than mixup target
-  distribution.
+- **exp 030 silent-class candidate**: still queued, hasn't been designed.
+- **Working notes Tier 1+ reading** (Nikita 1st place 2025, Witting 2024
+  paper-211 domain shift): future work, lower priority.
 - **Path A retry (split LR fix in `one_cycle` branch)**: low priority.
 - **Triage on exp 029 stage-2 ckpt**: low priority.
+- **4-fold version of `effnetv2b0_sydorskyi`**: deferred unless a separate
+  reason to revisit Sydorskyi mixup arises.
 
 ## Working notes / papers — inventory (added 2026-04-25 evening)
 
