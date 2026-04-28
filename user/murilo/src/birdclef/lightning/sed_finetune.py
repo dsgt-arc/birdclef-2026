@@ -302,20 +302,28 @@ class SEDFinetuneModule(pl.LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Apply mixup augmentation on input tensor (mel spectrogram or raw waveform).
 
-        Two modes controlled by mixup_mode:
+        Three modes controlled by mixup_mode:
 
         "interpolate" (default): Standard λ-weighted blend.
             x_mix = λ*x1 + (1-λ)*x2,  labels_mix = λ*y1 + (1-λ)*y2
             Lambda from Beta(alpha, alpha), enforced >= 0.5.
 
-        "additive": Physically correct audio mixing (BirdCLEF 2025 winners).
+        "additive": Pure additive (BirdCLEF 2025 winner-flavored, no scale fix).
             x_mix = x1 + x2,  labels_mix = max(y1, y2)
-            Simulates real multi-species overlap via waveform superposition.
-            No lambda — both samples contribute fully. Labels use union (max).
+            Doubles peak amplitude — input distribution shift.
             loss_weight keeps the first sample's weight (CE uses primary_idx
             from the first sample).
 
-        Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N).
+        "average_max" (Sydorskyi 2025 2nd place faithful, audit 2026-04-26):
+            x_mix = (x1 + x2) / 2  → peak-normalize per sample
+            labels_mix = max(y1, y2)  ≡  clip(y1+y2, 0, 1) for binary
+            Deterministic 0.5 lambda. Matches the 2nd place 2025 recipe and
+            the multi-label test distribution (both birds at probability 1.0).
+            Only valid in waveform domain (peak-normalize on mel doesn't
+            have the same meaning).
+
+        Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N),
+        except "average_max" which requires waveform domain.
         """
         indices = torch.randperm(x.size(0), device=x.device)
 
@@ -324,6 +332,19 @@ class SEDFinetuneModule(pl.LightningModule):
             x = x + x[indices]
             labels = torch.maximum(labels, labels[indices])
             # loss_weight unchanged — CE uses primary_idx from the first sample
+        elif self.hparams.mixup_mode == "average_max":
+            # Sydorskyi 2025 2nd place faithful: (w1+w2)/2 + peak-normalize, max targets.
+            # Peak-normalize is meaningful only in waveform domain.
+            if x.dim() != 2:
+                raise ValueError(
+                    f"mixup_mode='average_max' requires waveform domain (2D tensor), "
+                    f"got x.dim()={x.dim()}. Set raw_waveform_mixup: true in config."
+                )
+            x = (x + x[indices]) / 2
+            # librosa.util.normalize equivalent: divide by max(abs(x)) per sample
+            x = x / (x.abs().amax(dim=-1, keepdim=True) + 1e-6)
+            labels = torch.maximum(labels, labels[indices])
+            # loss_weight unchanged
         elif self.hparams.mixup_per_sample:
             beta_dist = torch.distributions.Beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
             lam = beta_dist.sample(sample_shape=(x.size(0),)).to(x.device)

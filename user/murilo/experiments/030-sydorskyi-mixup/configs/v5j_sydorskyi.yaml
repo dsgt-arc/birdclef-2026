@@ -1,0 +1,113 @@
+# Experiment 030, v5j-sydorskyi: v5j with Sydorskyi 2025 2nd-place faithful
+# MixUp recipe. Single-variable change vs v5j_control.yaml — only the mixup
+# config differs.
+#
+# Motivated by:
+#   - 2026-04-26 mixup audit: v5j uses Zhang-style INTERPOLATED multi-label
+#     targets, Sydorskyi (LB 0.917 single fold, top-3 finishers all do this)
+#     uses max(y1, y2). All 3 of our prior wave-mixup attempts (v4j, v6b,
+#     v10b) regressed but each used a different variant — none matched
+#     Sydorskyi's exact recipe.
+#   - 2026-04-26 mixup target simulation: 80% of v5j's active training
+#     target values are sub-1, 59% of training samples have NO class at full
+#     presence. Test distribution (multi-label, both birds at 1.0) has
+#     barely been seen during training.
+#   - 2026-04-26 D1 verdict: failure pattern is data-driven (84% top-1%
+#     overlap between v5j and v6k). Information lever has support;
+#     target-distribution mismatch is the most concrete actionable finding.
+#
+# Sydorskyi recipe specifics (from /tmp/sydorskyi_2025/code_base/datasets/
+# wave_dataset.py:WaveDataset.__getitem__ lines 762-820, alpha=None branch):
+#   wave = (w1 + w2) / 2  →  peak-normalize per sample
+#   target = max(y1, y2)  ≡  clip(y1+y2, 0, 1) for binary multi-hot
+#   prob = 0.5, deterministic 0.5 lambda, no theta cap, no warmup
+#
+# Implemented as new mixup_mode="average_max" in sed_finetune.py:_apply_mixup
+# (see sed_finetune.py changes in this PR).
+
+run_name: "2026-exp030-v5j-sydorskyi-v2"
+
+encoder:
+  type: "efficientnet"
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"
+  pretrained: true
+  embed_dim: 1024
+
+sed_head:
+  type: "lse_head"
+  hidden_dim: 1024
+  dropout: 0.5
+  gem_p: 3.0
+  lse_temperature: 1.0
+  freq_pool: "mean"
+
+mel:
+  n_fft: 2048
+  hop_length: 313
+  n_mels: 256
+  fmax: null
+  top_db: 80.0
+  norm_type: "amplitude_to_db"
+  gpu: true
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 5.0
+  batch_size: 64
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 8
+  soundscape_test_files: 0
+  seed: 42
+  # v2 (2026-04-26): removed dual_validation. See v5j_control.yaml for the
+  # rationale (-0.009 LB cost from focal-only val checkpoint selection).
+  # v2 reverts to combined-val to recover the original v5j 0.906 LB regime.
+
+training:
+  max_epochs: 20
+  lr: 5.0e-4
+  head_lr: 5.0e-4
+  weight_decay: 1.0e-4
+  warmup_epochs: 5
+  threshold: 0.5
+  grad_clip_val: 0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+  clipwise_weight: 1.0
+  framewise_weight: 0.0
+  blend_clip: 1.0
+  blend_frame: 0.0
+  loss_type: "bce"
+  # Sydorskyi 2025 2nd place mixup recipe — CHANGED from v5j_control.yaml:
+  raw_waveform_mixup: true       # CHANGED: spec → wave domain
+  mixup_mode: "average_max"      # CHANGED: interpolate → (w1+w2)/2 + peak-norm + max(y1,y2) targets
+  mixup_prob: 0.5                # CHANGED: 1.0 → 0.5 (Sydorskyi's per-sample probability)
+  mixup_warmup_epochs: 0         # CHANGED: 5 → 0 (Sydorskyi has no warmup)
+  mixup_theta: 1.0               # CHANGED: 0.8 → 1.0 (no cap; max-target replaces theta-cap)
+  mixup_alpha: 1.0               # unused for "average_max" (deterministic 0.5)
+  mixup_per_sample: true         # unused for "average_max"
+  scheduler_type: "one_cycle"
+  onecycle_div_factor: 25.0
+  onecycle_final_div_factor: 4.0
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/auroc"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/auroc"
+    mode: "max"
+    patience: 999
+    min_delta: 0.0
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp030"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

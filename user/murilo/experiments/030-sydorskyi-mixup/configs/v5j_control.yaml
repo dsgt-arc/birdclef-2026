@@ -1,0 +1,101 @@
+# Experiment 030, v5j-control: exact reproduction of v5j (LB 0.906) for the
+# baseline arm of the Sydorskyi-mixup A/B comparison. Two purposes:
+#   1. Reproducibility check — does v5j-control land at val/auroc 0.851 like
+#      the exp 027 v5j-control did, and at LB 0.906 ± seed noise like v5j
+#      did originally?
+#   2. Provides the W&B baseline curve we compare v5j_sydorskyi.yaml against.
+#
+# All hyperparameters identical to exp 019/027 v5j-control.
+# Only difference from exp 029 fine-tune: lr restored to 5e-4 (no warm start),
+# init block removed (ImageNet init).
+
+run_name: "2026-exp030-v5j-control-v2"
+
+encoder:
+  type: "efficientnet"
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"
+  pretrained: true
+  embed_dim: 1024
+
+sed_head:
+  type: "lse_head"
+  hidden_dim: 1024
+  dropout: 0.5
+  gem_p: 3.0
+  lse_temperature: 1.0
+  freq_pool: "mean"
+
+mel:
+  n_fft: 2048
+  hop_length: 313
+  n_mels: 256
+  fmax: null
+  top_db: 80.0
+  norm_type: "amplitude_to_db"
+  gpu: true
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 5.0
+  batch_size: 64
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 8
+  soundscape_test_files: 0
+  seed: 42
+  # v2 (2026-04-26): removed dual_validation. v1 had dual_validation=true
+  # which changed val/auroc to focal-only and shifted the best-by-val
+  # checkpoint vs the original v5j (LB 0.906) which used the combined-val
+  # checkpoint. exp 026 documented the cost: v5j-dualval = 0.897 vs
+  # v5j = 0.906 (-0.009 LB). v1 of this exp got 0.890 LB, consistent with
+  # that regime. v2 reverts to combined-val to recover the original LB regime.
+
+training:
+  max_epochs: 20
+  lr: 5.0e-4
+  head_lr: 5.0e-4
+  weight_decay: 1.0e-4
+  warmup_epochs: 5
+  threshold: 0.5
+  grad_clip_val: 0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+  clipwise_weight: 1.0
+  framewise_weight: 0.0
+  blend_clip: 1.0
+  blend_frame: 0.0
+  loss_type: "bce"
+  # Mixup: v5j original recipe (spectrogram-domain, interpolated targets,
+  # Beta(1,1) per-sample with theta=0.8 cap, p=1.0, 5-epoch warmup).
+  mixup_prob: 1.0
+  mixup_alpha: 1.0
+  mixup_warmup_epochs: 5
+  mixup_theta: 0.8
+  mixup_per_sample: true
+  mixup_mode: "interpolate"
+  raw_waveform_mixup: false
+  scheduler_type: "one_cycle"
+  onecycle_div_factor: 25.0
+  onecycle_final_div_factor: 4.0
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/auroc"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/auroc"
+    mode: "max"
+    patience: 999
+    min_delta: 0.0
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp030"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

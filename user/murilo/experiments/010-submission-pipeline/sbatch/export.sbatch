@@ -641,6 +641,23 @@ export_hgnet_b0_sed_v5j() {
         --output-dir artifacts/weights/hgnet-b0-sed-v5j/
 }
 
+export_hgnet_b0_sed_v5j_resubmit() {
+    # Re-export of the ORIGINAL v5j checkpoint (epoch 19, LB 0.906 from exp 019)
+    # using TODAY's submission.py kernel. Diagnostic for separating training-pipeline
+    # drift from inference-pipeline drift after v5j_control_v2 regressed to 0.896 LB.
+    # Same checkpoint and config as `hgnet-b0-sed-v5j`, different output dir to keep
+    # the original kernel intact.
+    echo "=== Exporting HGNetV2-B0 SED v5j resubmit (original ckpt, fresh kernel) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-resubmit/
+}
+
 export_hgnet_b0_sed_v5j_finetune_2026() {
     echo "=== Exporting HGNetV2-B0 SED v5j fine-tune 2026 (2025-pretrained, exp 029) ==="
     local CKPT
@@ -663,6 +680,115 @@ export_hgnet_b0_sed_v5j_ft_splitlr() {
         --config "${EXP029_DIR}/configs/v5j_finetune_2026_split_lr.yaml" \
         --train-csv "$TAXONOMY_CSV_2026" \
         --output-dir artifacts/weights/hgnet-b0-sed-v5j-ft-splitlr/
+}
+
+# ============================================================================
+# Exp 030: Sydorskyi-faithful MixUp (HGNet 2x2 + EffNetV2-B0 2x2)
+# ============================================================================
+
+export_hgnet_b0_sed_v5j_control() {
+    # v2: dual_validation removed (v1 hit -0.009 LB from focal-only val
+    # checkpoint selection). Run name has -v2 suffix; checkpoint dir is
+    # 2026-exp030-v5j-control-v2/.
+    echo "=== Exporting Exp 030 v5j_control v2 (HGNetV2-B0, no dual_val) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-control-v2")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/v5j_control.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-control/
+}
+
+export_hgnet_b0_sed_v5j_sydorskyi() {
+    # v2: dual_validation removed. Run name has -v2 suffix.
+    echo "=== Exporting Exp 030 v5j_sydorskyi v2 (HGNetV2-B0 + Sydorskyi wave-mixup, no dual_val) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-sydorskyi-v2")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/v5j_sydorskyi.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-sydorskyi/
+}
+
+export_effnetv2_b0_sed_control() {
+    # v2: dual_validation removed. Run name has -v2 suffix.
+    echo "=== Exporting Exp 030 effnetv2b0_control v2 (EfficientNetV2-B0, no dual_val) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-control-v2")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/effnetv2b0_control.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnetv2-b0-sed-control/
+}
+
+export_effnetv2_b0_sed_sydorskyi() {
+    # v2: dual_validation removed. Run name has -v2 suffix.
+    echo "=== Exporting Exp 030 effnetv2b0_sydorskyi v2 (EffNetV2-B0 + Sydorskyi mixup, no dual_val) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-sydorskyi-v2")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/effnetv2b0_sydorskyi.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnetv2-b0-sed-sydorskyi/
+}
+
+# Exp 030 V3 — seed=43 diagnostic retrains. Same recipes as the v2 cells above;
+# only data.seed differs (42 → 43). Run names have -seed43 suffix.
+
+export_hgnet_b0_sed_v5j_control_seed43() {
+    echo "=== Exporting Exp 030 v5j_control seed=43 (HGNetV2-B0, no dual_val) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-control-seed43")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/v5j_control_seed43.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-control-seed43/
+}
+
+export_hgnet_b0_sed_v5j_sydorskyi_seed43() {
+    echo "=== Exporting Exp 030 v5j_sydorskyi seed=43 (HGNetV2-B0 + Sydorskyi wave-mixup) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-sydorskyi-seed43")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/v5j_sydorskyi_seed43.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-sydorskyi-seed43/
+}
+
+export_effnetv2_b0_sed_control_seed43() {
+    echo "=== Exporting Exp 030 effnetv2b0_control seed=43 (EfficientNetV2-B0) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-control-seed43")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/effnetv2b0_control_seed43.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnetv2-b0-sed-control-seed43/
+}
+
+export_effnetv2_b0_sed_sydorskyi_seed43() {
+    echo "=== Exporting Exp 030 effnetv2b0_sydorskyi seed=43 (EffNetV2-B0 + Sydorskyi mixup) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-sydorskyi-seed43")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/effnetv2b0_sydorskyi_seed43.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnetv2-b0-sed-sydorskyi-seed43/
 }
 
 export_hgnet_b0_sed_v5j_fmax() {
@@ -793,6 +919,7 @@ EXP022_DIR="$(dirname "$EXPERIMENT_DIR")/022-pcen-normalization"
 EXP025_DIR="$(dirname "$EXPERIMENT_DIR")/025-iter-pseudo-labeling"
 EXP027_DIR="$(dirname "$EXPERIMENT_DIR")/027-model-training-fixes"
 EXP029_DIR="$(dirname "$EXPERIMENT_DIR")/029-2025-pretrain"
+EXP030_DIR="$(dirname "$EXPERIMENT_DIR")/030-sydorskyi-mixup"
 
 export_hgnet_b2_sed_v6h() {
     echo "=== Exporting HGNetV2-B2 SED v6h (AttHead + BCE, 234 classes) ==="
@@ -1099,6 +1226,9 @@ case "$MODEL" in
     hgnet-b0-sed-v9a-10s-att|hgnet-b0-sed-v9b-15s-att|hgnet-b0-sed-v9c-20s-att|\
     hgnet-b0-sed-v10a-exp027|hgnet-b0-sed-v10b-exp027|hgnet-b0-sed-v11b-exp027|\
     hgnet-b0-sed-v5j-finetune-2026|hgnet-b0-sed-v5j-ft-splitlr|\
+    hgnet-b0-sed-v5j-control|hgnet-b0-sed-v5j-sydorskyi|effnetv2-b0-sed-control|effnetv2-b0-sed-sydorskyi|\
+    hgnet-b0-sed-v5j-control-seed43|hgnet-b0-sed-v5j-sydorskyi-seed43|effnetv2-b0-sed-control-seed43|effnetv2-b0-sed-sydorskyi-seed43|\
+    hgnet-b0-sed-v5j-resubmit|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1199,11 +1329,20 @@ case "$MODEL" in
     hgnet-b0-sed-v5k)          export_hgnet_b0_sed_v5k ;;
     hgnet-b0-sed-v5i)          export_hgnet_b0_sed_v5i ;;
     hgnet-b0-sed-v5j)          export_hgnet_b0_sed_v5j ;;
+    hgnet-b0-sed-v5j-resubmit) export_hgnet_b0_sed_v5j_resubmit ;;
     hgnet-b0-sed-v5j-fmax)     export_hgnet_b0_sed_v5j_fmax ;;
     hgnet-b0-sed-v5j-clip)     export_hgnet_b0_sed_v5j_clip ;;
     hgnet-b0-sed-v5j-4fold)    export_hgnet_b0_sed_v5j_4fold ;;
     hgnet-b0-sed-v5j-finetune-2026) export_hgnet_b0_sed_v5j_finetune_2026 ;;
     hgnet-b0-sed-v5j-ft-splitlr) export_hgnet_b0_sed_v5j_ft_splitlr ;;
+    hgnet-b0-sed-v5j-control)    export_hgnet_b0_sed_v5j_control ;;
+    hgnet-b0-sed-v5j-sydorskyi)  export_hgnet_b0_sed_v5j_sydorskyi ;;
+    effnetv2-b0-sed-control)     export_effnetv2_b0_sed_control ;;
+    effnetv2-b0-sed-sydorskyi)   export_effnetv2_b0_sed_sydorskyi ;;
+    hgnet-b0-sed-v5j-control-seed43)    export_hgnet_b0_sed_v5j_control_seed43 ;;
+    hgnet-b0-sed-v5j-sydorskyi-seed43)  export_hgnet_b0_sed_v5j_sydorskyi_seed43 ;;
+    effnetv2-b0-sed-control-seed43)     export_effnetv2_b0_sed_control_seed43 ;;
+    effnetv2-b0-sed-sydorskyi-seed43)   export_effnetv2_b0_sed_sydorskyi_seed43 ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;

@@ -304,6 +304,15 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j.json",
     },
+    # Re-export of the original v5j ckpt (LB 0.906) into a fresh kernel slug, to
+    # diagnose training-pipeline vs inference-pipeline drift. Same checkpoint as
+    # `hgnet-b0-sed-v5j`; pushed to a separate kernel so the original isn't
+    # overwritten.
+    "hgnet-b0-sed-v5j-resubmit": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-resubmit-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-resubmit",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-resubmit.json",
+    },
     # Exp 029: 2025-pretrained → 2026 fine-tuned (Ali Ozan path)
     # Slug intentionally drops "-2026" after "finetune" to stay within Kaggle's
     # 50-char dataset slug limit (52→47 chars).
@@ -317,6 +326,53 @@ MODELS = {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-ft-splitlr-weights",
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-ft-splitlr",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-ft-splitlr.json",
+    },
+    # Exp 030: Sydorskyi-faithful MixUp 2x2 (HGNet × EffNetV2-B0 × control × sydorskyi)
+    "hgnet-b0-sed-v5j-control": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-control-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-control",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-control.json",
+    },
+    "hgnet-b0-sed-v5j-sydorskyi": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-sydorskyi-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-sydorskyi",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-sydorskyi.json",
+    },
+    "effnetv2-b0-sed-control": {
+        "slug": "birdclef-2026-effnetv2-b0-sed-control-weights",
+        "weights_dir": "artifacts/weights/effnetv2-b0-sed-control",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-control.json",
+    },
+    "effnetv2-b0-sed-sydorskyi": {
+        "slug": "birdclef-2026-effnetv2-b0-sed-sydorskyi-weights",
+        "weights_dir": "artifacts/weights/effnetv2-b0-sed-sydorskyi",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-sydorskyi.json",
+    },
+    # Exp 030 V3 (seed=43): diagnostic retrain to disambiguate the seed=42
+    # EffNet × Sydorskyi +0.008 LB asymmetry from seed noise. Same recipe as
+    # the v2 cells above; only data.seed changes (42 → 43). Slugs drop the
+    # "-2026-" prefix to fit Kaggle's 50-char dataset slug limit (full
+    # "birdclef-2026-{base}-seed43-weights" is 53-55 chars; "birdclef-{base}-seed43-weights"
+    # is 47-50 chars). Kernel id keeps "birdclef-2026-" (no length issue).
+    "hgnet-b0-sed-v5j-control-seed43": {
+        "slug": "birdclef-hgnet-b0-sed-v5j-control-seed43-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-control-seed43",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-control-seed43.json",
+    },
+    "hgnet-b0-sed-v5j-sydorskyi-seed43": {
+        "slug": "birdclef-hgnet-b0-sed-v5j-sydorskyi-seed43-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-sydorskyi-seed43",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-sydorskyi-seed43.json",
+    },
+    "effnetv2-b0-sed-control-seed43": {
+        "slug": "birdclef-effnetv2-b0-sed-control-seed43-weights",
+        "weights_dir": "artifacts/weights/effnetv2-b0-sed-control-seed43",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-control-seed43.json",
+    },
+    "effnetv2-b0-sed-sydorskyi-seed43": {
+        "slug": "birdclef-effnetv2-b0-sed-sydorskyi-seed43-weights",
+        "weights_dir": "artifacts/weights/effnetv2-b0-sed-sydorskyi-seed43",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-sydorskyi-seed43.json",
     },
     # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "hgnet-b0-sed-v5j-fmax": {

@@ -1,0 +1,16 @@
+{
+  "id": "murilogustineli/birdclef-2026-effnetv2-b0-sed-control",
+  "title": "BirdCLEF 2026 EffNetV2-B0 SED Control",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-deps",
+    "murilogustineli/birdclef-2026-effnetv2-b0-sed-control-weights"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}

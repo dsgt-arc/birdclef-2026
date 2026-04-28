@@ -88,6 +88,25 @@ The `dataset_sources` must reference the exact slug from step 2.
 }
 ```
 
+> **CRITICAL — title must slug-resolve to the same id.** Kaggle derives a
+> slug from the title (lowercase, strip special chars, collapse whitespace
+> to `-`) and compares it against the trailing component of `id`. If they
+> mismatch, the kernel push fails with **`409 Conflict for url:
+> .../SaveKernel`**. Common causes:
+>
+> - Parens in the title: `"... v5j Control (Exp 030)"` → slug
+>   `...-v5j-control-exp-030` ≠ id `...-v5j-control`
+> - Trailing version suffix in title not in id: `"... PP2"` vs id without
+>   `pp2`
+> - Special characters: `"v5j (4-fold)"`, `"v1 / v2"`, etc.
+>
+> **Fix**: drop the trailing parenthetical / suffix from the title so the
+> remaining text slug-resolves cleanly to the id. Example fix commits:
+> `b26c53b` (finetune-2026 kernel), the exp 030 4-cell fix in
+> `mg/exp030-sydorskyi-mixup`. Verify ahead of time by lowercase-stripping
+> non-alphanumerics from the title and replacing whitespace with `-`; the
+> result must equal the id's trailing component verbatim.
+
 ### 4. `kaggle_kernel/submission.py` — MODEL_SLUGS list
 
 Add the weight dataset slug to `MODEL_SLUGS` near the top of the file. The
@@ -175,3 +194,14 @@ run name in the config.
 **Kernel push fails with dataset not found** — The weights dataset hasn't
 been created on Kaggle yet. Run `upload_kaggle.py` without `--push-kernel`
 first, wait a few minutes, then push.
+
+**`409 Conflict for url: .../SaveKernel`** preceded by a warning
+`"Your kernel title does not resolve to the specified id"` — the kernel
+title contains characters that produce a slug different from the `id`
+field. Most common offender: parens in the title (e.g., `"... (Exp 030)"`).
+Open the relevant `kernel-metadata-{model}.json` and rewrite the title so
+that lowercase-stripping non-alphanumerics + whitespace-to-`-` produces
+exactly the trailing component of the `id`. Example fix commits: `b26c53b`,
+the exp 030 fix on `mg/exp030-sydorskyi-mixup`. This has bitten the project
+multiple times — always sanity-check the title-to-slug derivation when
+adding a new kernel-metadata file.
