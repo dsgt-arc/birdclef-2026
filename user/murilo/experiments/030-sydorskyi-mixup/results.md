@@ -10,8 +10,123 @@ author: Murilo Gustineli
 ## Status
 
 **v1 (with `dual_validation: true`)**: training + LB COMPLETE.
-**v2 (no `dual_validation`)**: training COMPLETE for all 4 cells (2026-04-26
-overnight). LB pending — ONNX export + Kaggle push + submission next.
+**v2 (no `dual_validation`)**: training + LB COMPLETE. **Result (2026-04-28):
+3/4 v2 LBs literally identical to v1** — root-cause traced to deterministic
+training making v2 weights bit-identical to v1 (see "v2 LB results" section
+below).
+**Seed=43 retrain (in flight 2026-04-28)**: 4 SLURM jobs (7488877/7488880/
+7488881/7488884) launched to disambiguate seed noise from real architectural
+interaction. Training ETA ~40 min/job parallel; LB submission to follow.
+
+## v2 LB results (2026-04-28) — all 4 cells
+
+| Cell | v1 LB | v2 LB | Δ | Mechanism |
+|---|---:|---:|---:|---|
+| v5j_control | 0.890 | **0.896** | +0.006 | Best-by-val epoch shifted (ep 14 → ep 15) under different val metric → genuinely different weights |
+| v5j_sydorskyi | 0.892 | **0.892** | 0.000 | v1 ≡ v2 weights (best epoch unchanged at 14) → identical LB |
+| effnetv2b0_control | 0.893 | **0.893** | 0.000 | v1 ≡ v2 weights (best epoch unchanged at 19) → identical LB |
+| effnetv2b0_sydorskyi | 0.901 | **0.901** | 0.000 | v1 ≡ v2 weights (best epoch unchanged at 19) → identical LB |
+
+**Plus the diagnostic**: `v5j-resubmit` (original v5j ckpt from exp 019
+re-exported on today's submission.py) → **0.906 LB**, exactly reproducing
+the original. Inference pipeline today is verified clean.
+
+### Root cause of identical v2 LBs
+
+Per-key state_dict audit (shape + dtype aware) on the v1/v2 checkpoints:
+
+| Cell | v1 keys / v2 keys | Diff | max\|v1−v2\| on common learnable weights |
+|---|---|---|---:|
+| v5j_control | 321 / 320 | `_val_sc_pos_counts` (v1 only) | **511.0** (real retrain — best epoch shifted 14→15) |
+| v5j_sydorskyi | 321 / 320 | `_val_sc_pos_counts` (v1 only) | **0.0 — bit-identical** |
+| effnetv2b0_control | 421 / 420 | `_val_sc_pos_counts` (v1 only) | **0.0 — bit-identical** |
+| effnetv2b0_sydorskyi | 421 / 420 | `_val_sc_pos_counts` (v1 only) | **0.0 — bit-identical** |
+
+**Mechanism**: `pl.seed_everything(seed=42, workers=True)` +
+`Trainer(deterministic=True)` (set in `train.py`) make training fully
+reproducible. `dual_validation: true` only changes `val_dataloader` — it
+returns `[focal_loader, sc_loader]` instead of one `ConcatDataset`. **It
+does not change the training step RNG or trajectory at all.** So v1 and v2
+trainings produce bit-identical weights at every epoch for cells where the
+best-by-val callback landed at the same epoch.
+
+The `_val_sc_pos_counts` buffer is defined at `sed_finetune.py:228`:
+```python
+if dual_validation:
+    self.register_buffer("_val_sc_pos_counts", torch.zeros(num_classes, dtype=torch.long))
+```
+It's a non-trainable Long buffer used only for dual-val metric tracking
+(lines 689, 693, 735, 758). It's **not used in `forward()`** and is
+stripped during ONNX export. So even though it accounts for the 2,239-byte
+ckpt-size delta between v1 and v2, the inference behavior is identical.
+
+The `val/auroc` value AT each epoch differs between dual_val=true (focal-
+only metric) and dual_val=false (combined focal+SS), which is what
+determines which epoch the `ModelCheckpoint` callback labels as "best":
+- v5j_control: best shifted ep 14 → ep 15 → different weights → +0.006 LB
+- v5j_sydorskyi: same best (ep 14) → identical weights → identical LB
+- effnetv2b0_control: same best (ep 19) → identical weights → identical LB
+- effnetv2b0_sydorskyi: same best (ep 19) → identical weights → identical LB
+
+### 2x2 LB reading (within v2 regime, today's reproducible scores)
+
+|  | control (spec interp) | sydorskyi (wave max) | mixup Δ |
+|---|---:|---:|---:|
+| HGNetV2-B0 (v5j) | 0.896 (ep 15) | 0.892 (ep 14) | **−0.004** (null, within seed noise) |
+| EfficientNetV2-B0 | 0.893 (ep 19) | **0.901** (ep 19) | **+0.008** |
+| backbone Δ | −0.003 | +0.009 | |
+
+**Mixup main effect on LB**: HGNet null (−0.004), EffNet positive (+0.008).
+**Backbone main effect on LB**: tiny on control side (−0.003), bigger with
+Sydorskyi mixup (+0.009).
+**Interaction**: positive — Sydorskyi mixup helps more on EffNet than on
+HGNet.
+
+Both Δs sit near the ±0.005 seed-noise band, so neither is statistically
+iron-clad. But the direction asymmetry replicates v1 (offline cmap +0.020
+backbone main effect, +0.014 mixup main effect, mostly additive
+interaction). If +0.008 holds under seed=43, `effnetv2b0_sydorskyi` is
+**the first single-model training-recipe LB lift in this project's history**
+(after 22+ HGNet failures).
+
+### EffNet ONNX sanity check
+
+To rule out an architecture-specific export bug for EffNet (since it uses
+192-ch stage-5 features vs HGNet's 1024-ch):
+- Loaded EffNet sydorskyi v2 ONNX, ran on fixed random mel input shape
+  `(4, 1, 256, 313)`. Output shape `(4, 234)`, raw min 0.0 max 0.052,
+  std **0.006** (non-degenerate), top-3 species stable across 4 samples
+  (227, 169, 129 dominate).
+- Loaded HGNet v5j-resubmit ONNX on same input. Output std 0.00001 (very
+  tight near 0.5, expected for OOD input on a "honest" model).
+- Cross-model Pearson correlation: 0.37 — different models predicting in
+  moderately different directions, not random and not duplicates.
+- **Conclusion**: no EffNet export bug. The 0.901 LB is real.
+
+EffNet's better offline metrics (val/auroc 0.876, cmap 0.656, f1 0.592) +
+worse LB than v5j-original (0.901 < 0.906) is the documented offline-LB
+anti-correlation pattern (FINDINGS.md insight #2), not a pipeline issue.
+
+## Seed=43 retrain (2026-04-28, in flight)
+
+To rule out seed noise as the source of the architectural asymmetry,
+launched 4 retrains with `seed: 43` (default `seed: 42` preserved in the
+existing v2 configs):
+
+- `configs/v5j_control_seed43.yaml` → SLURM 7488877
+- `configs/v5j_sydorskyi_seed43.yaml` → SLURM 7488880
+- `configs/effnetv2b0_control_seed43.yaml` → SLURM 7488881
+- `configs/effnetv2b0_sydorskyi_seed43.yaml` → SLURM 7488884
+
+ETA ~40 min/job in parallel. After training completes, ONNX export
++ Kaggle upload + push + LB submission, then apply the verdict matrix:
+
+| Pattern under seed=43 | Reading | Action |
+|---|---|---|
+| EffNet syd − control ≥ +0.005 AND HGNet syd − control near 0 | Architectural interaction is real | Endorse `effnetv2b0_sydorskyi`; queue 4-fold + Sydorskyi component staircase |
+| Both 2x2 Δs flip sign or change > ±0.005 | All seed=42 readings were noise | Pivot to pseudo-distillation |
+| EffNet Δ shrinks but stays positive (e.g., +0.003) | Borderline, needs 4-fold or more seeds | Provisional endorse |
+| v5j_control_seed43 LB ≥ 0.901 | The 0.010 gap was seed/checkpoint sensitivity | Confirms training pipeline isn't structurally broken |
 
 ### v1 LB results (all 4 cells)
 

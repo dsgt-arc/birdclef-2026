@@ -139,34 +139,76 @@ the dual_validation hypothesis (focal-only → combined focal+SS).
 v1), mixup +0.008 cmap (vs +0.014 v1), additive interaction. Best cell on
 every metric: `effnetv2b0_sydorskyi_v2`.
 
-### V2.2 — Re-export, re-upload, re-push, re-submit (NEXT)
+### V2.2 — Re-export, re-upload, re-push, re-submit (DONE 2026-04-27/28)
 
-Pipeline wiring is in place — `export.sbatch` points at `-v2` checkpoint
-dirs (lines 678/691/704/717), `upload_kaggle.py` has the 4 MODELS entries
-(lines 322-340), `submission.py` has the 4 weight slugs in MODEL_SLUGS
-(lines 95-98), and 4 kernel-metadata-*.json files exist. Existing-model
-re-export path: re-export overwrites `artifacts/weights/`, `--push-kernel`
-works one-shot.
+- [x] ONNX export for all 4 v2 cells (04-27 09:49–09:50)
+- [x] Kaggle upload + kernel push for all 4 v2 cells (04-27 14:11–14:20)
+- [x] Submitted v5j-resubmit kernel → **0.906 LB** (inference pipeline confirmed clean)
+- [x] Submitted v5j_control_v2 → **0.896 LB**
+- [x] Submitted v5j_sydorskyi_v2 → **0.892 LB**
+- [x] Submitted effnetv2b0_control_v2 → **0.893 LB**
+- [x] Submitted effnetv2b0_sydorskyi_v2 → **0.901 LB**
 
-For each of the 4 models, after training completes:
-- [ ] ONNX export: `bash exp010/sbatch/run.sh export --model {slug}`
-- [ ] Upload + push: `python exp010/scripts/upload_kaggle.py --model {slug} --push-kernel`
-  (replaces v1 weights at the same Kaggle slug; same kernel-metadata files)
-- [ ] Submit to LB from Kaggle UI
+### V2.3 — Verdict (DONE 2026-04-28)
 
-Slugs: `hgnet-b0-sed-v5j-control`, `hgnet-b0-sed-v5j-sydorskyi`,
-`effnetv2-b0-sed-control`, `effnetv2-b0-sed-sydorskyi`.
+- [x] **Reproducibility on LB**: v5j-resubmit landed at 0.906 → original v5j
+  reproduces today; inference pipeline clean.
+- [x] **3/4 v2 LBs literally identical to v1** (0.892, 0.893, 0.901): root-
+  caused to deterministic training (`pl.seed_everything` + `deterministic=True`)
+  making v2 weights bit-identical to v1. `dual_validation: true` only changes
+  val_dataloader, not training. Per-key state_dict audit confirmed:
+  420/420 effnet learnable tensors and 320/320 v5j_sydorskyi tensors are
+  bit-identical between v1 and v2. Only `_val_sc_pos_counts` non-trainable
+  buffer differs (val-only, stripped from ONNX).
+- [x] **2x2 LB reading**: HGNet mixup Δ −0.004 (null), EffNet mixup Δ +0.008
+  (borderline architectural interaction). Both within ±0.005 seed-noise
+  band — needs seed=43 retrain to confirm.
+- [x] **EffNet ONNX sanity**: produces non-degenerate, valid output (std 0.006
+  on random mel, top-3 stable). No export bug. 0.901 < 0.906 is offline-LB
+  anti-correlation, not a pipeline issue.
 
-### V2.3 — Verdict (after v2 LBs in)
+## V3 — Seed=43 retrain (LAUNCHED 2026-04-28)
 
-- [ ] **Reproducibility check on LB**: does v5j_control_v2 reproduce v5j 0.906
-  (within ±0.005)? If yes → dual_val confound confirmed; pipeline reproduces.
-  If 0.895-0.900 → partial recovery; investigate. If ≤ 0.895 → halt.
-- [ ] **Mixup main effect on HGNet**: v5j_sydorskyi_v2 vs v5j_control_v2.
-- [ ] **Backbone main effect**: effnetv2b0_control_v2 vs v5j_control_v2.
-- [ ] **Combined effect**: effnetv2b0_sydorskyi_v2 vs v5j_control_v2.
-  If ≥ +0.005 LB and v5j_control_v2 ≥ 0.901, this is the **first
-  single-model improvement over v5j 0.906** for our pipeline.
+Diagnostic to disambiguate the EffNet × Sydorskyi mixup +0.008 interaction
+from seed noise. Default `seed: 42` preserved in the existing 4 v2 configs.
+
+### V3.0 — New configs
+
+- [x] `configs/v5j_control_seed43.yaml` (`seed: 43`, run_name `-seed43`)
+- [x] `configs/v5j_sydorskyi_seed43.yaml`
+- [x] `configs/effnetv2b0_control_seed43.yaml`
+- [x] `configs/effnetv2b0_sydorskyi_seed43.yaml`
+
+### V3.1 — Train (in flight)
+
+- [x] `bash sbatch/run.sh configs/v5j_control_seed43.yaml` → SLURM 7488877
+- [x] `bash sbatch/run.sh configs/v5j_sydorskyi_seed43.yaml` → SLURM 7488880
+- [x] `bash sbatch/run.sh configs/effnetv2b0_control_seed43.yaml` → SLURM 7488881
+- [x] `bash sbatch/run.sh configs/effnetv2b0_sydorskyi_seed43.yaml` → SLURM 7488884
+
+### V3.2 — Re-export, upload, push, submit (after training completes)
+
+For each of the 4 seed=43 cells, with NEW kernel slugs (e.g.,
+`hgnet-b0-sed-v5j-control-seed43`) so the seed=42 v2 weights stay live:
+
+- [ ] Add 4 new MODELS entries to `upload_kaggle.py` for seed43 slugs
+- [ ] Add 4 new export functions to `export.sbatch` pointing at seed43 ckpt dirs
+- [ ] Add 4 new kernel-metadata-*-seed43.json files
+- [ ] Add 4 new entries to submission.py MODEL_SLUGS
+- [ ] ONNX export × 4
+- [ ] Upload + push × 4
+- [ ] Submit to LB × 4
+
+### V3.3 — Verdict (after seed=43 LBs in)
+
+Apply the matrix below; pick next experiment based on outcome:
+
+| Pattern | Conclusion | Action |
+|---|---|---|
+| EffNet syd − control ≥ +0.005 AND HGNet syd − control near 0 | Architectural interaction is real | Endorse `effnetv2b0_sydorskyi`; 4-fold + Sydorskyi component staircase |
+| Both 2x2 Δs flip sign or change > ±0.005 | All seed=42 LBs were noise | Pivot to pseudo-distillation |
+| EffNet Δ shrinks but stays positive (≥+0.003) | Borderline | 4-fold disambiguator |
+| v5j_control_seed43 LB ≥ 0.901 | 0.010 gap was seed/checkpoint sensitivity | Confirms pipeline isn't structurally broken |
 
 ## Documentation
 
