@@ -2,8 +2,8 @@
 
 - **URL**: https://www.kaggle.com/competitions/birdclef-2026/discussion/683791
 - **Posted**: 2026-03-21 (Antoine Masq)
-- **Captured**: 2026-04-23 (updated)
-- **51+ comments**
+- **Captured**: 2026-04-28 (updated)
+- **55+ comments** (2 marked "This comment has been deleted." in latest pull)
 
 ---
 
@@ -22,24 +22,33 @@
 
 ## Key Competitor Scores
 
+Ranks reflect latest pull (2026-04-28); some have shifted since prior captures.
+"DM" = D.M. = Don Mathis (same person; Kaggle username changed).
+
 | Person | Rank | LB | Details |
 |--------|------|-----|---------|
-| **Boredom** | **2nd** | **0.950+** w/ unlabeled, **0.938-0.939** w/o | Non-Perch, timm+SED. ~11min inference. 1st iter on unlabeled. |
-| **Ali Ozan Memetoglu** | 6th | **0.941** single model | Uses BirdCLEF 2025 pretrained checkpoint (2-stage via XC pretrain) |
-| **Kurise** | 7th | — | Notes 2025 checkpoint = 2-stage training on 25+26 data |
-| **Tom** | 4th | ~similar to hengck23 | "slightly different approach which fits on 4x5sec" |
-| **Salman Ahmed** | **13th** | **0.937** solo v2B0, **0.932** ens of 4 | **Modeling breakthrough** — attention investigation. B0_NS now matching v2B0. Uses PP/TTA. |
-| **tennogh** | 48th | — | ~0.02 diff between backbones; KD reduces diversity (cos sim 0.5→0.67) |
-| **Jack** | 94th | — | Confirms Perch KD causes backbone stability |
-| **yukiZ** | 121st | **0.904** (fold 0 only, 5-fold SKF) | Raw waveform augmentations |
-| **Tucker Arrants** | 164th | **0.925** w/o deep learning, **0.91** w/ Perch+GRU | Clustering on frozen Perch + metadata engineering |
-| **Murilo Gustineli** | 362nd | **0.906** (HGNet+LSEHead) | No KD, no Perch in SED |
-| **Gaurav Rawat** | 370th | **0.926** LB | GroupK on site CV, shows poor CV-LB correlation |
-| **hengck23** | 586th | **0.896** CNN only | Long input wave, multi-context head, no Perch, no PP |
-| **EliKal** | 928th | **0.909** single (EffNet-B0) | Perch KD (KLD loss) + 12ep finetune, time-shift TTA |
-| **XuKong Ji** | 1324th | **0.899** single fold | EffNet-B0+LSEHead+BCE, 5s. 5-fold=0.889 (worse!) |
-| Antoine Masq | 85th | 0.889 | EfficientNetV2-B0 |
-| Don Mathis | 1526th | 0.880 | CNN + logit-LSE, BCE, 5s clips |
+| **Starry** | **2nd** | — | (asked Boredom about 0.950+ unlabeled flow) |
+| **Boredom** | **3rd** | **0.950+** w/ unlabeled, **0.938-0.939** w/o | Non-Perch, timm+SED. ~11min inference. 1st iter on unlabeled. **No TTA**; "simple PP" worth ~+0.004 (corrected from 0.03-0.04 typo). |
+| **Tom** | 10th | ~similar to hengck23 | "slightly different approach which fits on 4x5sec" |
+| **Ali Ozan Memetoglu** | 13th | **0.941** single model | Uses BirdCLEF 2025 pretrained checkpoint (XC-filtered, 2-stage). Pretrain → no folds. |
+| **Salman Ahmed** | **19th** | **0.937** solo v2B0, **0.932** ens of 4 | **Modeling breakthrough** — attention investigation. B0_NS now matching v2B0. Uses PP/TTA. **NEW**: 20s segments, ~50-60min inference. |
+| **tennogh** | 62nd | — | ~0.02 diff between backbones; KD reduces diversity (cos sim 0.5→0.67) |
+| **Anil Ozturk** | 67th | 0.879 | GKF on sites OOF=0.608 (extreme CV/LB disconnect) |
+| **Jake** | **102nd** | **0.915 w/o unlabeled, 0.922 w/ unlabeled** | NEW (2026-04-28). Solo model; small ~0.007 lift from unlabeled. |
+| **Jack** | 126th | — | Confirms Perch KD causes backbone stability |
+| **yukiZ** | 173rd | **0.904** (fold 0 only, 5-fold SKF) | Raw waveform augmentations |
+| **Tucker Arrants** | **248th** | **0.93+ NEW** w/ PP (5-fold ensemble), **0.922** w/o PP | **NEW (2026-04-28)**: Perch-distilled B0 + 5s clips + BCE + waveform augs + site/hour priors + Gaussian smooth (5 folds). Also: 0.925 w/o deep learning (frozen Perch + clustering + metadata), 0.91 w/ Perch+GRU. |
+| **Aic** | 266th | — | Asks about LB stability; soundscape AUC closely aligned with LB |
+| **OpPrime** | 353rd | 0.826 5-fold / 0.835 fold0 | EfficientNetB0, 10ep/fold, 5s clips |
+| **Murilo Gustineli** | 484th | **0.906** (HGNet+LSEHead) | No KD, no Perch in SED |
+| **Gaurav Rawat** | 493rd | **0.926** LB | GroupK on site CV, shows poor CV-LB correlation |
+| **hengck23** | 706th | **0.896** CNN only | Long input wave, multi-context head, no Perch, no PP |
+| **!!!!!** | 851st | 0.88 | Pretrained timm |
+| **EliKal** | 1072nd | **0.909** single (EffNet-B0) | Perch KD (KLD loss) + 12ep finetune, time-shift TTA |
+| **MengYe** | 209th | — | Asks Salman about CV/LB correlation |
+| **D.M. (Don Mathis)** | 1691st | 0.880 (~0.875 reproducible) | CNN + logit-LSE, BCE, 5s clips. **Pain point**: ".921 with mixup on waves + train_audio + labelled SS — I get .865 doing same." |
+| **XuKong Ji** | 1383rd | **0.899** single fold | EffNet-B0+LSEHead+BCE, 5s. 5-fold=0.889 (worse!) |
+| Antoine Masq | 46th | 0.889 | EfficientNetV2-B0 |
 
 ---
 
@@ -721,6 +730,207 @@ the backbone seeing 15s, not from the head aggregating over 15s.
 ### Boredom (2nd) — Posted 10 hours ago
 
 > timm backbone+SED
+
+---
+
+## Comments — 2026-04-28 update (NEW since 04-23 capture)
+
+### Tucker Arrants (248th) — Posted ~1 day ago ⭐ NEW (FIRST 0.93+ NON-PERCH-FREE PUBLIC RECIPE)
+
+> Finally broke 0.93 with a single model only using focal recordings and labeled
+> soundscapes.
+>
+> Perch distilled B0 trained on 5s clips. Simple BCE loss, waveform augmentations,
+> and moderate post processing (site/hour priors + Gaussian smooth)
+>
+> Without any post processing it is 0.922
+
+### Salman Ahmed (19th) — Posted ~1 day ago (asks Tucker)
+
+> HI @tuckerarrants Did you use site/hour priors from labeled soundscapes only?
+> Also is this a single model or 5 folds of the same model?
+
+### Tucker Arrants (248th) — Posted ~1 day ago ⭐ NEW (TUCKER 0.93+ DETAILS)
+
+> Labeled soundscapes only for the site/hour priors, for now…
+>
+> This is 5 folds of the same model, simple KFold on filenames and MultiLabelStrat
+> on focal labels.
+
+### Jake (102nd) — Posted ~1 day ago ⭐ NEW (0.915 SOLO)
+
+> Best solo model 0.915 w/o using any of the unlabelled soundscape data.
+> 0.922 using the unlabelled soundscape data.
+
+### Boredom (3rd) — Posted ~4 days ago ⭐ NEW (NO TTA, PP CORRECTION)
+
+> [Re: 0.950+ inference] no tta, 950+ lb include some simple pp, these can
+> improve about 0.03-0.04
+>
+> [Then corrected:] sorry, 0.004. haha 😂
+
+### D.M. (Don Mathis, 1691st) — Posted ~3 days ago ⭐ NEW (KEY PAIN POINT)
+
+> How can cv correlate with LB? The training data are "clean" clips not embedded
+> in soundscapes. Mixup of clean clips with unlabeled soundscapes doesn't work
+> because there is unlabeled signal in the soundscapes. Mixup with labeled
+> soundscapes helps got from .80 to .86 but there's not enough of them to go
+> further. I'm stumped.
+
+### D.M. (1691st) — Posted ~3 days ago ⭐ NEW (CAN'T REPRODUCE SALMAN'S 0.921)
+
+> [Re: Salman 0.921] "Simple training with mixup on waves. Trained with
+> train_audio and labelled soundscapes only." No clue how you are doing that.
+> I get .865 when I do that :/
+
+### Mahog (1466th) — Posted ~14 days ago (under Salman 20s reply, MISSED IN 04-23 CAPTURE)
+
+> Does training on longer audio segments increase training time by a lot for
+> you? 20 second segments should in theory increase training time by 4x right?
+
+### Salman Ahmed (19th) — Posted ~17 days ago ⭐ NEW (RUNTIME)
+
+> Around 50 to 60 minutes I think.
+
+### Jiacheng Ma (1273rd) — Posted ~11 days ago
+
+> Great！It's still efficientnet_b0 or efficientnet_v2b0?
+
+### lhwcv (1796th) — Posted ~15 days ago
+
+> @salmanahmedtamu Hi Salman, are you still on Discord?
+
+### Salman Ahmed (19th) — Posted ~15 days ago
+
+> Hi @lihaoweicvch, Great to see you in this year's competition as well. Yes,
+> but not too active there. 😅
+
+### Shiro (1652nd) — Posted ~2 days ago
+
+> [To Salman] thanks, do you know your LB on single model without postprocessing/TTA?
+
+(no answer recorded)
+
+### Shiro (1652nd) — Posted ~4 days ago (to Boredom)
+
+> Impressive! does it include TTA/postprocessing during inference? Is there a big
+> gap between with/without those postprocessing in term of LB score?
+
+### MengYe (209th) — Posted ~10 days ago
+
+> [To Salman] does your cv correlate with lb?
+
+(Salman did not directly answer)
+
+### Tucker Arrants (248th) — Posted ~19 days ago ⭐ NEW (UPDATED DUAL-VAL FRAMING)
+
+Updated from earlier "joint validation" hint to a fully-specified proposal:
+
+> GKF is overly harsh for this competition because the test set has site overlap
+> with training. GKF models can't learn site-level species priors that would
+> help at test time — they're forced to hold out entire sites during training,
+> so they never see the "this site has these species" signal that exists in
+> reality. But removing GKF entirely is also risky: the model might memorize
+> site-specific artifacts that don't transfer, and you'd have no way to detect
+> that the model relies on site memorization versus learning general features.
+>
+> But you can try **dual validation on a single training run**: train on
+> everything, but hold out two disjoint val sets. **Val-A** holds out specific
+> recordings from seen sites (tests the regime: new recordings at seen sites).
+> **Val-B** holds out an entire site (tests whether the model has any ability
+> to generalize to unseen sites as a hedge against test sets that include
+> unseen sites). Combine them into a weighted metric for early stopping,
+> weighted toward Val-A because it matches the test regime more directly.
+
+### "This comment has been deleted." × 2 (preserved markers)
+
+Two comments in the latest pull are marked deleted by author (no recoverable
+content). Locations:
+- Between hengck23 ("I checked your Claude report... very first day") and D.M.
+  ("I sort of see the overall goal..."). Likely an interim back-and-forth.
+- Under Salman's 0.908 single-model post. Original author + content unknown.
+
+---
+
+## Proven 0.93+ Recipes (synthesis, 2026-04-28)
+
+Filtering everything down to **single-model recipes that have publicly hit ≥0.93 LB**:
+
+### 1. Salman Ahmed — 0.937 v2B0 SED (no KD, no unlabeled)
+
+| Component | Value |
+|---|---|
+| Backbone | EfficientNetV2-B0 (Fused-MBConv) — also B0_NS now matches |
+| Head | "simple Attn head's framewise max is better than LSE head" |
+| Loss | CE on clipwise + framewise max; **sigmoid at inference** |
+| Window | 20s training segments (not split+max). 10s/15s "almost the same / sometimes better" |
+| Mixup | Wave mixup |
+| Epochs | 25; "more epochs make the model too confident" |
+| Data | train_audio + labeled soundscapes (Salman says SS adds ~0 to LB; he sometimes only uses train_audio) |
+| KD | None |
+| External | BG noise from prior comps (nocall 2020/21, freefield1010, etc.) |
+| PP / TTA | "I definitely rely on some post processing / TTA" |
+| Soundscape-as-BGN | Does NOT use SS as BG noise (species in them) |
+| Inference time | ~50-60 min |
+| Breakthrough | "investigating attention values on highest/lowest loss examples" — modeling > tricks |
+
+### 2. Tucker Arrants — 0.93+ Perch-distilled B0 SED (5-fold ensemble)
+
+| Component | Value |
+|---|---|
+| Backbone | EfficientNet-B0 with **Perch distillation** |
+| Window | 5s clips |
+| Loss | BCE |
+| Mixup | Waveform augmentations (no specifics; "simple") |
+| Folds | **5-fold ensemble** (KFold on filenames + MultiLabelStrat on focal labels) |
+| Data | Focal + labeled soundscapes only (no unlabeled) |
+| PP | Site/hour priors (from labeled SS only) + Gaussian smooth — "moderate" |
+| Without PP | 0.922 |
+| With PP | 0.93+ |
+
+### 3. Boredom — 0.938-0.939 timm+SED (no unlabeled), 0.950+ (with unlabeled, 1 iter)
+
+| Component | Value |
+|---|---|
+| Backbone | timm + SED, non-Perch |
+| Inference | ~11 min total; **no TTA** |
+| PP | "simple PP" worth ~+0.004 (he initially said 0.03-0.04, corrected to 0.004) |
+| Unlabeled | 1 iteration of pseudo-labels → 0.938-0.939 → 0.950+ |
+| Pipeline ceiling | 0.953-0.955 estimated |
+
+### 4. Ali Ozan Memetoglu — 0.941 (BirdCLEF 2025 pretrained checkpoint)
+
+| Component | Value |
+|---|---|
+| Approach | 2-stage: pretrain on filtered Xeno-Canto (entire 2025 checkpoint), then fine-tune on 2026 |
+| Pretrain | "It is pretraining, so there are no folds" — XC + bug fix |
+| Fine-tune | Standard on 2026 data; only used the existing checkpoint, not the XC dataset |
+| Architecture | Not specified in the thread |
+
+### What 0.93+ recipes have in common
+
+1. **Either** Perch KD (Tucker, EliKal etc. land 0.91+ with KD as the pipeline floor) **OR** in-domain pretrain (Ali Ozan via 2025 ckpt) **OR** modeling refinement on attention (Salman, "investigating attention values" → +0.015 LB jump 0.922→0.937)
+2. **Simple post-processing**: site/hour priors + Gaussian smoothing (Tucker, Boredom). PP alone worth +0.005-0.010.
+3. **5-fold ensemble OR a single-model breakthrough** — Tucker uses 5-fold; Salman/Boredom/Ali Ozan get there single-model
+4. **Either CE or BCE** (Salman: CE+sigmoid-infer; Tucker: BCE)
+5. **5s OR 20s window** — both work; 5s is dominant (Tucker, Boredom, EliKal). 10s is the "death zone" (XuKong Ji, OpPrime)
+6. **NOT**: special head architecture, exotic loss (ASL, etc.), 3-channel mel, 15s multi-context as the silver bullet
+
+### Where our 0.906 stalls vs 0.93+
+
+| Lever they have / we don't | Estimated LB lift |
+|---|---:|
+| Perch knowledge distillation (KLD loss on Perch embeddings during training) | +0.005-0.020 |
+| Site/hour priors at inference (from labeled SS) | +0.005-0.010 |
+| 4 or 5-fold ensemble (proper KFold + ensembling) | +0.005-0.010 |
+| 2025-pretrained checkpoint (Ali Ozan style, on filtered XC) | +0.030 (Ali Ozan 0.941 vs us 0.906) |
+| Attention-quality investigation (Salman) | +0.015 (Salman 0.922→0.937) |
+
+### Occam's-razor priorities for us
+
+The simplest path to 0.93+ for a non-Perch SED today is **(5-fold ensemble) + (site/hour priors) + (Gaussian smooth)**. Tucker explicitly states this gets him from 0.922 → 0.93+. Our v5j-4fold-pp2 already exists at **LB 0.917** (per MODEL-RUNS), which is ≥0.917 from the same pattern. The +0.013 gap to Tucker's 0.93+ is most likely **Perch distillation** during training.
+
+This argues exp 030's mixup-recipe lever is small relative to the unexplored levers (Perch KD, fold ensembling at scale, simple PP). The recipe-level deltas from exp 030 sit inside the seed-noise band on a single fold.
 
 ---
 
