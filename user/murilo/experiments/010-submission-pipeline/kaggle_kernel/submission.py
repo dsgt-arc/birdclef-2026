@@ -91,6 +91,13 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 030 V3 (seed=43) diagnostic retrain — disambiguates the seed=42 EffNet ×
+    # Sydorskyi +0.008 LB asymmetry from seed noise. Slugs drop "-2026-" prefix to
+    # fit Kaggle's 50-char dataset slug limit.
+    "birdclef-effnetv2-b0-sed-sydorskyi-seed43-weights",
+    "birdclef-effnetv2-b0-sed-control-seed43-weights",
+    "birdclef-hgnet-b0-sed-v5j-sydorskyi-seed43-weights",
+    "birdclef-hgnet-b0-sed-v5j-control-seed43-weights",
     # Diagnostic: re-export of original v5j ckpt (LB 0.906) on today's submission.py
     # to separate training-pipeline drift from inference-pipeline drift.
     "birdclef-2026-hgnet-b0-sed-v5j-resubmit-weights",

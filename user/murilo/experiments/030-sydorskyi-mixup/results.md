@@ -14,9 +14,90 @@ author: Murilo Gustineli
 3/4 v2 LBs literally identical to v1** — root-cause traced to deterministic
 training making v2 weights bit-identical to v1 (see "v2 LB results" section
 below).
-**Seed=43 retrain (in flight 2026-04-28)**: 4 SLURM jobs (7488877/7488880/
-7488881/7488884) launched to disambiguate seed noise from real architectural
-interaction. Training ETA ~40 min/job parallel; LB submission to follow.
+**Seed=43 retrain**: training COMPLETE 2026-04-28 (jobs 7488877/7488880/
+7488881/7488884, all exit 0, ~40-44 min each). Pipeline plumbing (export
+configs / kernel metadata / dataset uploads) IN PROGRESS — LB submissions
+will follow after the next Kaggle daily-cap reset.
+
+## Seed=43 retrain — offline training results (2026-04-28)
+
+All 4 SLURM jobs completed successfully. Same recipe as v2; only `data.seed`
+changed from 42 to 43, which alters the 90/10 val split, mixup pair
+selection, and head init.
+
+| Cell | val/auroc | val/cmap | val/f1_macro | best_val | best epoch | Walltime | SLURM |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `v5j_control_seed43` | 0.8926 | 0.6426 | 0.5679 | 0.8933 | 16 | 43m 21s | 7488877 |
+| `v5j_sydorskyi_seed43` | 0.8967 | 0.6437 | 0.5854 | 0.8978 | 16 | 44m 16s | 7488880 |
+| `effnetv2b0_control_seed43` | 0.8890 | 0.6455 | 0.5604 | 0.8930 | 18 | 41m 7s | 7488881 |
+| **`effnetv2b0_sydorskyi_seed43`** | **0.8932** | **0.6490** | **0.5945** | **0.8982** | 18 | 42m 50s | 7488884 |
+
+### Caveat: absolute val metrics not comparable across seeds
+
+`data.seed=43` produces a different 90/10 val split than `seed=42`. The +0.020
+val/auroc shift across all 4 cells from seed=42 v2 (~0.873) → seed=43 (~0.892)
+is most plausibly **val-split variance**, not a real model improvement. Only
+the **within-seed deltas** (mixup Δ, backbone Δ, interaction) are meaningful
+for the diagnostic.
+
+### Seed=43 within-seed 2x2 (val/auroc / val/cmap / val/f1_macro)
+
+| | control (spec, interp) | sydorskyi (wave, max) |
+|---|---|---|
+| **HGNetV2-B0** | 0.8926 / 0.6426 / 0.5679 | 0.8967 / 0.6437 / 0.5854 |
+| **EfficientNetV2-B0** | 0.8890 / 0.6455 / 0.5604 | **0.8932 / 0.6490 / 0.5945** |
+
+### Seed=43 within-seed main effects + interaction
+
+**MixUp main effect** (sydorskyi − control, averaged over backbone):
+
+| Metric | seed=43 Δ | seed=42 v2 Δ | seed=42 v1 Δ | Direction |
+|---|---:|---:|---:|---|
+| val/auroc | **+0.004** | −0.001 | −0.001 | Now small + on both |
+| val/cmap | **+0.002** | +0.008 | +0.014 | Smaller in seed=43 |
+| val/f1_macro | **+0.026** | +0.039 | +0.043 | Smaller but still + |
+
+**Backbone main effect** (EffNet − HGNet, averaged over mixup):
+
+| Metric | seed=43 Δ | seed=42 v2 Δ | seed=42 v1 Δ | Direction |
+|---|---:|---:|---:|---|
+| val/auroc | **−0.004** | +0.004 | +0.003 | Flipped sign |
+| val/cmap | **+0.004** | +0.020 | +0.020 | Much smaller |
+| val/f1_macro | **+0.001** | +0.027 | +0.028 | Collapsed to flat |
+
+**Interaction** (EffNet mixup Δ − HGNet mixup Δ):
+
+| Metric | seed=43 | seed=42 v2 | seed=42 v1 |
+|---|---:|---:|---:|
+| val/auroc | +0.000 | +0.004 | +0.003 |
+| val/cmap | +0.002 | +0.002 | +0.007 |
+| val/f1_macro | **+0.017** | −0.002 | +0.000 |
+
+### Seed=43 reading
+
+- **Mixup main effect on auroc reverses sign**: was −0.001 in seed=42, now
+  +0.004 in seed=43. The HGNet null vs EffNet positive split from seed=42
+  also collapses — both backbones now show similar small positive mixup
+  auroc effects.
+- **Backbone main effect collapses**: EffNet was offline-better than HGNet
+  by +0.020 cmap / +0.027 f1_macro in seed=42 v2. In seed=43 it's only
+  +0.004 cmap / +0.001 f1_macro, and auroc flipped to favor HGNet.
+- **f1_macro interaction reproduces**: EffNet still responds more to
+  Sydorskyi mixup on f1_macro than HGNet (+0.034 vs +0.018, vs seed=42 v2's
+  +0.034 vs +0.020).
+- **Best cell on every offline metric is still `effnetv2b0_sydorskyi_seed43`**
+  — the diagonal corner robust across seeds, even though absolute backbone
+  and mixup main effects are seed-sensitive.
+
+The offline picture is muddier in seed=43 than seed=42. The seed=42 EffNet
++0.008 LB lift could reflect either:
+- (a) seed=42 happened to land on a favorable val split + checkpoint epoch
+  for the EffNet+sydorskyi cell, inflating both offline and LB metrics; or
+- (b) the architectural interaction is real but the seed-noise band on a
+  single fold is wider than the ±0.005 we'd been assuming.
+
+LB on seed=43 is the actual disambiguator. Apply the V3.3 verdict matrix
+(see `tasks.md`).
 
 ## v2 LB results (2026-04-28) — all 4 cells
 

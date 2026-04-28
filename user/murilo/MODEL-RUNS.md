@@ -784,6 +784,31 @@ if dual_val cost is fully recoverable.
 | effnetv2b0_control_v2 | 0.893 | 0.901-0.905 | backbone null on control |
 | **effnetv2b0_sydorskyi_v2** | **0.901** | **0.908-0.912** | **first single-model > v5j 0.906** |
 
+### Seed=43 retrain (2026-04-28): training DONE, LB pending
+
+Diagnostic for the seed=42 EffNet × Sydorskyi +0.008 LB asymmetry. Only
+`data.seed` changes (42 → 43); everything else identical to v2. Different
+seed → different 90/10 val split → absolute val/auroc not comparable across
+seed groups. Within-seed deltas are the diagnostic.
+
+| Slug (seed=43) | val/auroc | val/cmap | val/f1_macro | Best Ep | best_val | Walltime | SLURM |
+|------|---------:|---------:|-------------:|--------:|---------:|---------:|------:|
+| `hgnet-b0-sed-v5j-control-seed43` | 0.8926 | 0.6426 | 0.5679 | 16 | 0.8933 | 43m 21s | 7488877 |
+| `hgnet-b0-sed-v5j-sydorskyi-seed43` | 0.8967 | 0.6437 | 0.5854 | 16 | 0.8978 | 44m 16s | 7488880 |
+| `effnetv2-b0-sed-control-seed43` | 0.8890 | 0.6455 | 0.5604 | 18 | 0.8930 | 41m 7s | 7488881 |
+| **`effnetv2-b0-sed-sydorskyi-seed43`** | **0.8932** | **0.6490** | **0.5945** | 18 | **0.8982** | 42m 50s | 7488884 |
+
+Seed=43 within-seed signal:
+- **Mixup main effect on auroc**: +0.004 (both backbones similar) vs seed=42 v2 −0.001
+- **Backbone main effect**: collapses to ±0.004 (vs seed=42 v2 +0.004 / +0.020 cmap)
+- **f1_macro interaction direction reproduces**: EffNet responds more to mixup
+  than HGNet on f1_macro (+0.034 vs +0.018) — same as seed=42
+
+Best cell on every offline metric: `effnetv2b0_sydorskyi_seed43`. Robust
+across seeds even though absolute main effects are seed-sensitive. LB
+submissions pending; verdict matrix in `experiments/030-sydorskyi-mixup/tasks.md`
+(V3.3).
+
 ### 2x2 offline summary (val/auroc / val/cmap / val/f1_macro)
 
 | | control (spec, interp) | sydorskyi (wave, max) |

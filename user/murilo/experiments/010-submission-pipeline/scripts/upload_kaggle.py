@@ -348,6 +348,32 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnetv2-b0-sed-sydorskyi",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-sydorskyi.json",
     },
+    # Exp 030 V3 (seed=43): diagnostic retrain to disambiguate the seed=42
+    # EffNet × Sydorskyi +0.008 LB asymmetry from seed noise. Same recipe as
+    # the v2 cells above; only data.seed changes (42 → 43). Slugs drop the
+    # "-2026-" prefix to fit Kaggle's 50-char dataset slug limit (full
+    # "birdclef-2026-{base}-seed43-weights" is 53-55 chars; "birdclef-{base}-seed43-weights"
+    # is 47-50 chars). Kernel id keeps "birdclef-2026-" (no length issue).
+    "hgnet-b0-sed-v5j-control-seed43": {
+        "slug": "birdclef-hgnet-b0-sed-v5j-control-seed43-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-control-seed43",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-control-seed43.json",
+    },
+    "hgnet-b0-sed-v5j-sydorskyi-seed43": {
+        "slug": "birdclef-hgnet-b0-sed-v5j-sydorskyi-seed43-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-sydorskyi-seed43",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-sydorskyi-seed43.json",
+    },
+    "effnetv2-b0-sed-control-seed43": {
+        "slug": "birdclef-effnetv2-b0-sed-control-seed43-weights",
+        "weights_dir": "artifacts/weights/effnetv2-b0-sed-control-seed43",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-control-seed43.json",
+    },
+    "effnetv2-b0-sed-sydorskyi-seed43": {
+        "slug": "birdclef-effnetv2-b0-sed-sydorskyi-seed43-weights",
+        "weights_dir": "artifacts/weights/effnetv2-b0-sed-sydorskyi-seed43",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-sydorskyi-seed43.json",
+    },
     # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "hgnet-b0-sed-v5j-fmax": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",

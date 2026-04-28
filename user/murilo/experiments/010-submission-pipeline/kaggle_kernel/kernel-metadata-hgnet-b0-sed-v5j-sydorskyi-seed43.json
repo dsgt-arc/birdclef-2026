@@ -1,0 +1,16 @@
+{
+  "id": "murilogustineli/birdclef-2026-hgnet-b0-sed-v5j-sydorskyi-seed43",
+  "title": "BirdCLEF 2026 HGNet-B0 SED v5j Sydorskyi seed43",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-deps",
+    "murilogustineli/birdclef-hgnet-b0-sed-v5j-sydorskyi-seed43-weights"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}

@@ -179,25 +179,47 @@ from seed noise. Default `seed: 42` preserved in the existing 4 v2 configs.
 - [x] `configs/effnetv2b0_control_seed43.yaml`
 - [x] `configs/effnetv2b0_sydorskyi_seed43.yaml`
 
-### V3.1 — Train (in flight)
+### V3.1 — Train — DONE 2026-04-28 (~00:25)
 
-- [x] `bash sbatch/run.sh configs/v5j_control_seed43.yaml` → SLURM 7488877
-- [x] `bash sbatch/run.sh configs/v5j_sydorskyi_seed43.yaml` → SLURM 7488880
-- [x] `bash sbatch/run.sh configs/effnetv2b0_control_seed43.yaml` → SLURM 7488881
-- [x] `bash sbatch/run.sh configs/effnetv2b0_sydorskyi_seed43.yaml` → SLURM 7488884
+All 4 SLURM jobs exit 0; ~40-44 min each on rtx6000/v100. Only `data.seed`
+changes vs v2 (42 → 43); everything else identical.
 
-### V3.2 — Re-export, upload, push, submit (after training completes)
+| Cell | val/auroc | val/cmap | val/f1_macro | best_val | best epoch | SLURM |
+|---|---:|---:|---:|---:|---:|---:|
+| `v5j_control_seed43` | 0.8926 | 0.6426 | 0.5679 | 0.8933 | 16 | 7488877 |
+| `v5j_sydorskyi_seed43` | 0.8967 | 0.6437 | 0.5854 | 0.8978 | 16 | 7488880 |
+| `effnetv2b0_control_seed43` | 0.8890 | 0.6455 | 0.5604 | 0.8930 | 18 | 7488881 |
+| **`effnetv2b0_sydorskyi_seed43`** | **0.8932** | **0.6490** | **0.5945** | **0.8982** | 18 | 7488884 |
 
-For each of the 4 seed=43 cells, with NEW kernel slugs (e.g.,
-`hgnet-b0-sed-v5j-control-seed43`) so the seed=42 v2 weights stay live:
+**Caveat**: different seed → different val split → absolute val/auroc not
+comparable across seed groups. Within-seed deltas are the diagnostic
+(see `results.md` "Seed=43 within-seed main effects + interaction").
 
-- [ ] Add 4 new MODELS entries to `upload_kaggle.py` for seed43 slugs
-- [ ] Add 4 new export functions to `export.sbatch` pointing at seed43 ckpt dirs
-- [ ] Add 4 new kernel-metadata-*-seed43.json files
-- [ ] Add 4 new entries to submission.py MODEL_SLUGS
-- [ ] ONNX export × 4
-- [ ] Upload + push × 4
-- [ ] Submit to LB × 4
+Within-seed signal (seed=43):
+- **Mixup main effect on auroc**: +0.004 (vs seed=42 v2: −0.001) — both
+  backbones now show small positive
+- **Backbone main effect**: collapses to ±0.004 across all metrics (vs
+  seed=42 v2: +0.020 cmap / +0.027 f1_macro)
+- **f1_macro interaction reproduces**: EffNet mixup +0.034 vs HGNet +0.018
+- Best cell on every offline metric: `effnetv2b0_sydorskyi_seed43`
+
+### V3.2 — Pipeline plumbing — IN PROGRESS 2026-04-28
+
+Four-file pattern per `experiments/010-submission-pipeline/adding-new-models.md`.
+NEW kernel slugs (`*-seed43`) so the seed=42 v2 weights stay live.
+
+Slug shortening: `birdclef-2026-{base}-seed43-weights` exceeds Kaggle's 50-char
+dataset slug limit (53-55 chars). Drop `-2026-` from prefix → `birdclef-{base}-seed43-weights`
+(47-50 chars). Kernel id keeps `birdclef-2026-` (no length issue there).
+
+- [x] Add 4 new MODELS entries to `upload_kaggle.py` for seed43 slugs
+- [x] Add 4 new export functions to `export.sbatch` pointing at seed43 ckpt dirs
+  (`2026-exp030-{model}-seed43`)
+- [x] Add 4 new kernel-metadata-*-seed43.json files
+- [x] Add 4 new entries to submission.py MODEL_SLUGS
+- [ ] ONNX export × 4 (`bash sbatch/run.sh export --model X-seed43`)
+- [ ] Upload + push × 4 (two-step: `upload_kaggle.py --model X` then `--push-kernel`)
+- [ ] Submit to LB × 4 (Kaggle 5/day cap)
 
 ### V3.3 — Verdict (after seed=43 LBs in)
 

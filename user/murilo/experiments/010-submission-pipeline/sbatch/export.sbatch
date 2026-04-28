@@ -740,6 +740,57 @@ export_effnetv2_b0_sed_sydorskyi() {
         --output-dir artifacts/weights/effnetv2-b0-sed-sydorskyi/
 }
 
+# Exp 030 V3 — seed=43 diagnostic retrains. Same recipes as the v2 cells above;
+# only data.seed differs (42 → 43). Run names have -seed43 suffix.
+
+export_hgnet_b0_sed_v5j_control_seed43() {
+    echo "=== Exporting Exp 030 v5j_control seed=43 (HGNetV2-B0, no dual_val) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-control-seed43")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/v5j_control_seed43.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-control-seed43/
+}
+
+export_hgnet_b0_sed_v5j_sydorskyi_seed43() {
+    echo "=== Exporting Exp 030 v5j_sydorskyi seed=43 (HGNetV2-B0 + Sydorskyi wave-mixup) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-v5j-sydorskyi-seed43")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/v5j_sydorskyi_seed43.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-sydorskyi-seed43/
+}
+
+export_effnetv2_b0_sed_control_seed43() {
+    echo "=== Exporting Exp 030 effnetv2b0_control seed=43 (EfficientNetV2-B0) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-control-seed43")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/effnetv2b0_control_seed43.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnetv2-b0-sed-control-seed43/
+}
+
+export_effnetv2_b0_sed_sydorskyi_seed43() {
+    echo "=== Exporting Exp 030 effnetv2b0_sydorskyi seed=43 (EffNetV2-B0 + Sydorskyi mixup) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/030-sydorskyi-mixup/checkpoints/2026-exp030-effnetv2b0-sydorskyi-seed43")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP030_DIR}/configs/effnetv2b0_sydorskyi_seed43.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/effnetv2-b0-sed-sydorskyi-seed43/
+}
+
 export_hgnet_b0_sed_v5j_fmax() {
     echo "=== Exporting HGNetV2-B0 SED v5j-fmax (framewise-max only, 234 classes) ==="
     local CKPT
@@ -1176,6 +1227,7 @@ case "$MODEL" in
     hgnet-b0-sed-v10a-exp027|hgnet-b0-sed-v10b-exp027|hgnet-b0-sed-v11b-exp027|\
     hgnet-b0-sed-v5j-finetune-2026|hgnet-b0-sed-v5j-ft-splitlr|\
     hgnet-b0-sed-v5j-control|hgnet-b0-sed-v5j-sydorskyi|effnetv2-b0-sed-control|effnetv2-b0-sed-sydorskyi|\
+    hgnet-b0-sed-v5j-control-seed43|hgnet-b0-sed-v5j-sydorskyi-seed43|effnetv2-b0-sed-control-seed43|effnetv2-b0-sed-sydorskyi-seed43|\
     hgnet-b0-sed-v5j-resubmit|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
@@ -1287,6 +1339,10 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-sydorskyi)  export_hgnet_b0_sed_v5j_sydorskyi ;;
     effnetv2-b0-sed-control)     export_effnetv2_b0_sed_control ;;
     effnetv2-b0-sed-sydorskyi)   export_effnetv2_b0_sed_sydorskyi ;;
+    hgnet-b0-sed-v5j-control-seed43)    export_hgnet_b0_sed_v5j_control_seed43 ;;
+    hgnet-b0-sed-v5j-sydorskyi-seed43)  export_hgnet_b0_sed_v5j_sydorskyi_seed43 ;;
+    effnetv2-b0-sed-control-seed43)     export_effnetv2_b0_sed_control_seed43 ;;
+    effnetv2-b0-sed-sydorskyi-seed43)   export_effnetv2_b0_sed_sydorskyi_seed43 ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;
