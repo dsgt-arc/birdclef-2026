@@ -3,7 +3,7 @@
 Session handoff document for Murilo's BirdCLEF 2026 experiments.
 Read this first, then read the referenced docs to get full context.
 
-Last updated: 2026-04-28 (exp 030 CLOSED — Sydorskyi mixup recipe is null at single-fold resolution. seed=43 v5j_control LB = 0.883 widened the noise floor from ±0.005 to ±0.013, putting the seed=42 EffNet +0.008 reading inside noise. Best single-model still v5j 0.906; closest challenger effnetv2b0_sydorskyi 0.901. PR #43 ready for squash merge. Next experiment up for discussion before scaffolding.)
+Last updated: 2026-04-28 PM (exp 030 CLOSED + PR #43 squash-merged at `58dd8c2`. **Key insight from end-of-session discussion**: "Pseudo-labels are dead" was about ONE category — PL on unlabeled SS, exp 014/015/025. We have NEVER tried KD-on-labeled (Tucker/EliKal style) or crop-level relabeling (Sydorskyi-style soft pseudo-distillation). These engage the 04-25 label-noise mechanism more directly than what we tried. **Phase 1 next step**: post-mortem on exp 014/015/025 + read Sydorskyi's formal soft-pseudo-distillation definition before scaffolding. See `user/murilo/analysis/notes/2026-04-28-next-experiment-direction.md` ADDENDUM for full plan.)
 
 ## Read these files first
 
@@ -12,8 +12,9 @@ top three fully, the rest can be skimmed.
 
 | File | Purpose | How to read |
 |------|---------|-------------|
-| `user/murilo/experiments/030-sydorskyi-mixup/results.md` | **EXPERIMENT CLOSED 2026-04-28**. Final 2x2 LB: HGNet control 0.896, HGNet sydorskyi 0.892 (Δ −0.004 null); EffNet control 0.893, EffNet sydorskyi 0.901 (Δ +0.008 borderline). seed=43 retrain submitted only `v5j_control_seed43` = **0.883 LB** (−0.013 vs v5j_control_v2 0.896) → seed band wider than ±0.005, so within-seed mixup Δs sit inside noise floor → remaining 3 LB submissions consciously skipped. Verdict: Sydorskyi mixup recipe is **null at single-fold resolution** on this codebase. Best single-model still v5j 0.906. Closest challenger `effnetv2b0_sydorskyi` 0.901. Pipeline artifacts (configs, kernel metadata, datasets) left in place if 4-fold revisit ever desired. | Read fully (start here) |
-| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | **NEW (04-28 update)**: Tucker Arrants broke 0.93+ with Perch-distilled B0 + 5s + BCE + waveform augs + site/hour priors + Gaussian smooth + 5-fold (without PP: 0.922). Includes "Proven 0.93+ Recipes" synthesis section comparing Salman 0.937, Tucker 0.93+, Boredom 0.938-0.950+, Ali Ozan 0.941. **Key open question**: why did Tucker's Perch-pseudo-label student succeed where our exp 015/025 attempts failed? | Read fully — central to next-experiment discussion |
+| `user/murilo/analysis/notes/2026-04-28-next-experiment-direction.md` | **CENTRAL FOR NEXT SESSION**. Strategic synthesis post exp 030 close + ADDENDUM with the PL vs KD distinction (the load-bearing insight from this session). Tucker's "Perch distilled B0 + BCE" is most likely KD-on-labeled — structurally different from our exp 014/015/025 PL-on-unlabeled. Ranks three candidate next-experiments (α: KD-on-labeled, β: crop-level relabeling, γ: hybrid filtered PL + KD). Recommends Phase 1 = post-mortem on exp 014/015/025 + Sydorskyi soft-pseudo-distillation reading before training. | Read fully (start here) |
+| `user/murilo/experiments/030-sydorskyi-mixup/results.md` | **EXPERIMENT CLOSED 2026-04-28**. Final 2x2 LB: HGNet control 0.896, HGNet sydorskyi 0.892 (Δ −0.004 null); EffNet control 0.893, EffNet sydorskyi 0.901 (Δ +0.008 borderline). seed=43 retrain submitted only `v5j_control_seed43` = **0.883 LB** (−0.013 vs v5j_control_v2 0.896) → seed band wider than ±0.005, so within-seed mixup Δs sit inside noise floor → remaining 3 LB submissions consciously skipped. Verdict: Sydorskyi mixup recipe is **null at single-fold resolution** on this codebase. Best single-model still v5j 0.906. Closest challenger `effnetv2b0_sydorskyi` 0.901. Pipeline artifacts (configs, kernel metadata, datasets) left in place if 4-fold revisit ever desired. | Read fully |
+| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | **NEW (04-28 update)**: Tucker Arrants broke 0.93+ with Perch-distilled B0 + 5s + BCE + waveform augs + site/hour priors + Gaussian smooth + 5-fold (without PP: 0.922). Includes "Proven 0.93+ Recipes" synthesis section comparing Salman 0.937, Tucker 0.93+, Boredom 0.938-0.950+, Ali Ozan 0.941. **Tucker's recipe is most likely KD-on-labeled, not PL-on-unlabeled** (see analysis note for the distinction). | Read fully — central to next-experiment discussion |
 | `user/murilo/analysis/notes/2026-04-26-mixup-implementation-audit.md` | **HEADLINE finding**: v5j and prior wave-mixup attempts (v4j/v6b/v10b) all use Zhang-style INTERPOLATED multi-label targets, not Sydorskyi's `max(y1, y2)`. The audit verifies this with line numbers in `sed_finetune.py`. Refutes that Xu 2018 is the source of Sydorskyi's recipe (Xu actually uses interpolation on log-mel). Reframes "wave-mixup is dead" → "interpolated wave-mixup is dead; the Sydorskyi-faithful recipe was never tested." | Read fully |
 | `user/murilo/analysis/notes/2026-04-26-mixup-target-simulation-results.md` | **CPU simulation finding**: 80% of v5j's active training target values are sub-1; 59% of training samples have NO class at full presence. Quantifies the "trained honesty" hypothesis: model rarely sees the multi-label binary test distribution during training. | Read fully |
 | `user/murilo/analysis/notes/2026-04-26-d1-train-side-attention-verdict.md` | **D1 verdict**: 84% top-1% failure overlap between v5j (LSEHead) and v6k (AttHead). Failure pattern is data-driven, not head-architecture-driven. v6k's attention is essentially uniform (entropy 2.5/2.77 max) — but this is because v6k's recipe uses framewise-max-only inference (`blend_clip=0.0`), so attention has no gradient pressure. H2 not testable from v6k specifically. | Read fully |
@@ -40,7 +41,7 @@ top three fully, the rest can be skimmed.
 **Best-by-val epoch instability**: v5j-original best=ep 19, v5j_control_v2 best=ep 15, v5j_control_seed43 best=ep 16. With `save_top_k: 1` we never serialize ep 19 in new runs; only the EffNet v2 cells happened to land best=ep 19. To isolate "best plateau too early" from real codebase drift, would need `save_top_k: -1` retrain (deferred — not blocking).
 **Target: 0.948** (competition #1). Gap: 0.019.
 
-**Active branch**: `mg/exp030-sydorskyi-mixup` — PR #43 (READY FOR SQUASH MERGE).
+**Active branch**: `mg/exp030-wrapup-and-next-direction` — wrap-up doc updates only (CONTEXT.md + analysis note ADDENDUM). PR #43 was squash-merged at `58dd8c2`.
 
 **Recent merges to main:**
 - PR #42 (2026-04-26) → D1 diagnosis + Sydorskyi 2025 reference doc + MixUp audit + train-side attention tooling. **Merged at `3a1e18b`.** *(Note: not yet present on this branch — fork point predates the merge; will arrive on next rebase/merge from main.)*
@@ -481,42 +482,60 @@ precompute_losses.py + the marimo/jupyter explorer. Captured Salman
 
 ## What needs to happen next
 
-### Priority 1: discuss next-experiment direction (BEFORE scaffolding)
+### Priority 1 — Phase 1 post-mortem (analysis only, no GPU)
 
-Exp 030 is closed; PR #43 is being squash-merged. The next experiment is on
-the table for explicit discussion before any scaffolding. The user
-specifically wants to engage with:
-- The 04-25 per-frame finding (model is structurally honest; can't be made
-  more confident on low-SNR crops)
-- The 2026-04-28 update to the Kaggle discussion thread (Tucker 0.93+
-  Perch-PL recipe; Salman 0.937 attention investigation; Boredom 0.938-0.950+;
-  Ali Ozan 0.941 in-domain pretrain)
-- Why our exp 015/025 Perch-PL student attempts failed where Tucker's
-  Perch-PL recipe succeeded
+End-of-session discussion (2026-04-28 PM) clarified the load-bearing question
+that was driving the next-experiment debate. See
+`user/murilo/analysis/notes/2026-04-28-next-experiment-direction.md` ADDENDUM
+for full reasoning. Summary:
 
-Candidates on the table (no implementation yet):
+**The PL vs KD distinction**: "Pseudo-labels are dead" (CONTEXT key pattern)
+applies to ONE category — PL on UNlabeled data (exp 014/015/025). Two other
+categories of "Perch as teacher" remain unexplored:
 
-1. **Tucker-style Perch-PL recipe replication** — Perch alone as teacher
-   (not Perch+SED ensemble), 5-fold KFold + MultiLabelStrat, BCE, waveform
-   augs, site/hour priors + Gaussian smooth at inference. The ablations
-   that differ from our exp 015/025: teacher choice, fold count, augmentation
-   set, PP. Rough lift estimate: +0.005-0.020 over v5j 0.906.
+| Category | Description | Status |
+|---|---|---|
+| #1 PL on unlabeled | Teacher labels unlabeled audio; expand training set | exp 014/015/025 → "dead" |
+| #2 KD on labeled | BCE on hard labels + KLD against teacher logits, jointly | **NEVER TRIED** |
+| #3 Crop-level relabeling on labeled | Replace recording-level labels with teacher's per-crop verdict | **NEVER TRIED** |
 
-2. **Pseudo-distillation on 2026 unlabeled SS** — use our 0.929 Perch+SED
-   ensemble as teacher to label the 26K-ish unlabeled SS files; train SED
-   on the result. Sydorskyi's biggest published 2025 lift was +0.029 from
-   this. Aligns with the 04-25 strategic implication (information lever,
-   not training-recipe lever).
+User confirmed (2026-04-28 PM): exp 015/025 only ran #1 on unlabeled SS.
+Tucker's "Perch distilled B0 + BCE" is most likely #2 (cf. EliKal "10 epochs
+of distillation with KLD loss" in same thread).
 
-3. **Salman's attention-investigation move** — interesting tension with our
-   04-25 finding. Salman: "investigating attention values on highest/lowest
-   loss examples" → +0.015 jump. Our 04-25 conclusion: attention IS doing
-   the right thing (correctly diffuse on hard crops). If both readings are
-   true, Salman's lift came from finding cases where attention was
-   incorrectly diffuse on EASY crops, not hard ones — debug-then-fix on
-   that subset specifically.
+**Phase 1 deliverable** (next session, ~1-2 hours, no GPU):
 
-### Priority 2 (deferred, not blocking): structural diagnostic on best-vs-last checkpoint selection
+Read these four sources and produce a comparison note (e.g.,
+`2026-04-29-pl-kd-postmortem.md`):
+
+1. `user/murilo/experiments/014-*/results.md` — PL generation pipeline, what
+   teacher composition, which unlabeled data, what filters
+2. `user/murilo/experiments/015-*/results.md` — student training recipe, fold
+   structure, loss, why it underperformed v5j
+3. `user/murilo/experiments/025-iter-pseudo-labeling/results.md` — iterative PL,
+   what changed vs exp 015, why still failed
+4. `docs/references/kaggle/birdclef-2025/birdclef2025-2nd-place-domain-shift.md`
+   — Sydorskyi's formal "soft pseudo-distillation" definition (canonical source)
+
+Output: ranked list of candidate next experiments with mechanistic argument
+for each (α / β / γ in the analysis note).
+
+### Priority 2 — Phase 2 single experiment (after post-mortem)
+
+Three candidates (full detail in analysis note):
+
+- **(α) KD-on-labeled (EliKal-style)**: BCE + KLD against Perch jointly on
+  labeled focal+SS. Closest to EliKal's published 0.909 single-model recipe.
+- **(β) Crop-level relabeling (Sydorskyi soft-PD)**: replace recording-level
+  hard labels with Perch's per-crop verdict on labeled data. Most directly
+  engages the 04-25 label-noise mechanism.
+- **(γ) Hybrid (filtered PL + KD)**: incremental — keep #1 with stricter
+  quality filtering + add KD on labeled data. Lower risk, smaller expected
+  lift.
+
+Decision between α/β/γ depends on Phase 1 post-mortem findings.
+
+### Priority 3 (deferred, not blocking): structural diagnostic on best-vs-last checkpoint selection
 
 `save_top_k: 1` + `save_last: True` makes `last.ckpt` mirror the most
 recent `best.ckpt` (verified: HGNet v2 last.ckpt = ep 14/15, not ep 19).
@@ -681,9 +700,20 @@ Driven by our 22+ failures and the per-frame finding:
   val/f1_macro give a directionally cleaner signal — they correctly
   flagged effnetv2b0_sydorskyi as the best v1 cell.
 - **CE loss is dead** (7 tests). **Interpolated MixUp is dead** (3
-  tests). **Pseudo-labels are dead** (2 approaches). **BG noise mixing
+  tests). **PL on UNLABELED data is dead** (exp 014/015/025; previously
+  loosely called "pseudo-labels are dead"). **BG noise mixing
   is demoted** before being run, per the per-frame argument. **2025
   pretrain at our scale is rejected** (exp 029 stage 2 → 0.885 LB).
+- **HEADLINE (04-28 PM, end-of-session) — PL vs KD distinction**: "Pseudo-
+  labels are dead" was scoped wrong. Three categories of "Perch as teacher":
+  (#1) PL on unlabeled audio → expand training set; (#2) KD on labeled
+  data via auxiliary KLD loss alongside BCE on ground truth; (#3) crop-level
+  relabeling on labeled data via teacher's per-crop verdict. Only #1 is
+  killed by exp 014/015/025. **#2 and #3 remain untested.** Tucker's
+  0.93+ "Perch distilled B0 + BCE" is most likely #2 (cf. EliKal "10 epochs
+  of distillation with KLD loss" in same thread). Phase 1 post-mortem
+  before any new training run. Full reasoning in
+  `analysis/notes/2026-04-28-next-experiment-direction.md` ADDENDUM.
 - **`head_lr` quirk (carried from 04-25)**: silently ignored under
   `scheduler_type: one_cycle` (only used in the `cosine` branch of
   `configure_optimizers`). Worth fixing if we ever want true split LR
