@@ -1,0 +1,125 @@
+# Experiment 031, v5j-kd: v5j (LB 0.906 historical / 0.896 today) + Perch v2
+# embedding-space knowledge distillation. Single-variable add of the KD branch
+# on top of the v5j-original recipe.
+#
+# Recipe (per Tucker Arrants's bc2026-distilled-sed audit, 2026-05-09):
+#   - Frozen Perch v2 ONNX teacher embeds the raw 5s waveform -> (B, 1536).
+#   - DistillHead = GAP(backbone features) -> Linear(C, 1536). MSE vs teacher.
+#   - feat.detach() on the SED branch -> backbone gradient comes ONLY from KD
+#     loss; SED head learns to read off the Perch-aligned representation.
+#   - alpha_distill = 1.0. cls_loss and dist_loss have very different absolute
+#     magnitudes (cls ~0.03, dist ~0.003 final), but only dist drives the
+#     backbone, so the relative weighting matters for the head only.
+#
+# Mixup interaction (Option B, 2026-05-09 discussion):
+#   - Spec mixup on mel as in v5j (mixup_mode='interpolate', interpolated targets).
+#   - Teacher target under mixup: lam * perch(x) + (1-lam) * perch(x[indices]),
+#     using the SAME (lam, indices) the input mix uses. Perch is per-sample
+#     (no cross-batch coupling), so this costs ZERO extra teacher forwards.
+#
+# Read against v5j_control_v2 = 0.896 LB baseline (today's codebase no-KD,
+# structurally identical to this config minus the KD keys). v5j-original 0.906
+# is a historical reference; the 0.010 gap is codebase drift (best-by-val
+# epoch 14-15 today vs 19 originally), unrelated to KD.
+#
+# Success criteria (single fold, ±0.013 seed band per exp 030):
+#   CONFIRM:  LB >= 0.910  (>= +0.014 over 0.896, outside noise)
+#   PARTIAL:  LB 0.903-0.909
+#   WEAK:     LB 0.897-0.902 (inside noise)
+#   REJECT:   LB <= 0.896
+
+run_name: "2026-exp031-v5j-kd"
+
+encoder:
+  type: "efficientnet"
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"
+  pretrained: true
+  embed_dim: 1024
+
+sed_head:
+  type: "lse_head"
+  hidden_dim: 1024
+  dropout: 0.5
+  gem_p: 3.0
+  lse_temperature: 1.0
+  freq_pool: "mean"
+
+mel:
+  # Same as v5j-original (NNAudio, hop=313). Phase 0.0 verified library
+  # agreement (cos sim 0.987 STFT-only) -> KEEP NNAudio. Hop length is
+  # irrelevant for KD because Perch teacher takes raw waveforms.
+  n_fft: 2048
+  hop_length: 313
+  n_mels: 256
+  fmax: null
+  top_db: 80.0
+  norm_type: "amplitude_to_db"
+  gpu: true
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 5.0
+  batch_size: 64
+  num_workers: 8
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 8
+  soundscape_test_files: 0
+  seed: 42
+  # Single-fold methodology unchanged from v5j_control_v2. The 4 single-sample
+  # focal species are duplicated train+val (per current _split_focal_dataframe);
+  # this is val/auroc reporting bias only (~0.002 macro), not train-weight leak.
+  # Phase 1 reads LB which is unaffected. Methodology audit deferred.
+
+training:
+  max_epochs: 20
+  lr: 5.0e-4
+  head_lr: 5.0e-4
+  weight_decay: 1.0e-4
+  warmup_epochs: 5
+  threshold: 0.5
+  grad_clip_val: 0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+  clipwise_weight: 1.0
+  framewise_weight: 0.0
+  blend_clip: 1.0
+  blend_frame: 0.0
+  loss_type: "bce"
+  # v5j-original mixup recipe — explicit defaults for hygiene + KD path needs them.
+  mixup_prob: 1.0
+  mixup_alpha: 1.0
+  mixup_warmup_epochs: 5
+  mixup_theta: 0.8
+  mixup_per_sample: true
+  mixup_mode: "interpolate"     # required by KD path (only mode supported)
+  raw_waveform_mixup: false     # required by KD path (waveform-mixup-domain blocked)
+  scheduler_type: "one_cycle"
+  onecycle_div_factor: 25.0
+  onecycle_final_div_factor: 4.0
+  # --- Perch v2 KD branch (exp 031, Tucker recipe) ---
+  use_perch_distill: true
+  perch_onnx_path: "vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx"
+  perch_embed_dim: 1536
+  alpha_distill: 1.0
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/auroc"
+    mode: "max"
+    save_top_k: 1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+  early_stopping:
+    monitor: "val/auroc"
+    mode: "max"
+    patience: 999
+    min_delta: 0.0
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp031"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

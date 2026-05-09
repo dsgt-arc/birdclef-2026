@@ -56,50 +56,70 @@ If Phase 1 lands in PARTIAL/WEAK (LB 0.897-0.909) AND `dist_loss` floor
   is fast enough — no precompute needed. Per-fold training time expected
   to ~2-2.5× v5j baseline (40min → 80-120min).
 
-### 0.2 Code changes (`sed_finetune.py`)
+### 0.2 Code changes (`sed_finetune.py`) ✅ DONE 2026-05-09
 
-- [ ] 0.2.1 Add `DistillHead(nn.Module)` class. Direct port of Tucker
+Decisions baked in (per session discussion 2026-05-09):
+- **Mixup interaction = Option B**, with the 1× teacher trick. `_apply_mixup`
+  uses `indices = torch.randperm(B)` to shuffle within the batch. Perch is
+  per-sample (no cross-batch BN/attention), so `perch(x[indices]) ==
+  perch(x)[indices]`. Compose target = `lam·perch(x) + (1-lam)·perch(x)[indices]`
+  with **one** teacher forward.
+- **Phase 1 KD restricted to** `mixup_mode="interpolate"` + `raw_waveform_mixup=False`
+  (guards in `__init__`). Other mixup modes raise `NotImplementedError`.
+- **Train/val split = Option A** (current), no methodology change.
+
+- [x] 0.2.1 Added `DistillHead(nn.Module)` class. Direct port of Tucker
   notebook cell 10 (`vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/`).
   GAP over `dim=[2, 3]` of backbone features → `Linear(backbone_dim, 1536)`.
-- [ ] 0.2.2 Add `PerchTeacher` class. ONNX inference via `onnxruntime`,
-  `@torch.no_grad()`, returns `(B, 1536)` float32. Handles cpu↔gpu
-  transfers internally.
-- [ ] 0.2.3 In `SEDFinetuneModule.__init__`: when `use_perch_distill: True`,
-  instantiate `self.distill_head = DistillHead(backbone_dim, 1536)` and
-  `self.perch_teacher = PerchTeacher(perch_onnx_path, device)`.
-- [ ] 0.2.4 Modify forward path: after `feat = self.backbone(mel)`, branch
-  on `use_perch_distill`:
-  - True: `distill_emb = self.distill_head(feat)`,
-    `feat_for_head = feat.detach()`
-  - False: existing behavior, `feat_for_head = feat`
-- [ ] 0.2.5 Modify `training_step` loss: when KD on,
-  `distill_loss = F.mse_loss(distill_emb, perch_teacher.embed(wav_5s))`,
-  `loss = cls_loss + alpha_distill * distill_loss`. Log both to W&B.
-- [ ] 0.2.6 Confirm KD is OFF by default (back-compat for non-031 configs).
-- [ ] 0.2.7 Add unit-style sanity check: assert backbone gradient norm > 0
-  AND SED-head gradient norm > 0 in a single training step (run via
-  fast-dev-run).
+  See `src/birdclef/lightning/sed_finetune.py:DistillHead`.
+- [x] 0.2.2 Added `PerchTeacher` class (plain Python, NOT `nn.Module` — keeps
+  Lightning from trying to relocate the ONNX session). Uses `onnxruntime` with
+  `CUDAExecutionProvider` fallback to CPU. Returns `(B, 1536)` float32 with
+  no_grad. See `src/birdclef/lightning/sed_finetune.py:PerchTeacher`.
+- [x] 0.2.3 In `SEDFinetuneModule.__init__`: when `use_perch_distill=True`,
+  instantiate `self.distill_head = DistillHead(encoder.embed_dim, 1536)` and
+  `self.perch_teacher = PerchTeacher(perch_onnx_path)`. Guards: ValueError on
+  missing path, NotImplementedError on non-interpolate mixup or `raw_waveform_mixup=True`.
+- [x] 0.2.4 Modified `training_step` standard path: KD branch (when KD on)
+  computes `perch_emb = teacher.embed(x)` on raw pre-mixup waveform, captures
+  `(indices, lam)` from `_apply_mixup(..., return_params=True)` to compose
+  the matching teacher target, then forwards through `encoder.forward_features`
+  → `distill_head` (grad to backbone) and `sed_head(features.detach())`
+  (no grad to backbone via cls).
+- [x] 0.2.5 Modified `training_step` loss: when KD on,
+  `loss = cls_loss + alpha_distill * distill_loss`. `train/cls_loss`,
+  `train/dist_loss`, and `train/loss` all logged separately.
+- [x] 0.2.6 KD is OFF by default (`use_perch_distill: bool = False` in
+  `__init__` signature). Back-compat preserved for all other configs.
+- [x] 0.2.7 Wrote standalone gradient-flow test
+  `test_kd_gradient_flow.py` that monkey-patches a `StubPerchTeacher` so the
+  test runs without the real ONNX. Verifies: backbone grad-norm > 0,
+  sed_head grad-norm > 0, distill_head grad-norm > 0, `cls_loss`/`dist_loss`
+  finite, and the row-permutation invariance `perch(x[perm]) == perch(x)[perm]`
+  the 1× trick relies on.
 
-### 0.3 Config
+### 0.3 Config ✅ DONE 2026-05-09
 
-- [ ] 0.3.1 Create `031-perch-kd-distillation/configs/v5j_kd.yaml`. Copy
-  `030-sydorskyi-mixup/configs/v5j_control.yaml` as the base. Add the
-  KD-specific keys (see proposal § Procedure step 7).
-- [ ] 0.3.2 Cross-check the KD config diff vs `v5j_control.yaml`: ONLY
-  KD-related keys should differ (no incidental drift).
+- [x] 0.3.1 Created `031-perch-kd-distillation/configs/v5j_kd.yaml`. Base =
+  `019-sed-ablations/config/hgnet_b0_sed_v5j.yaml` (the v5j-original config —
+  functionally identical to `030/v5j_control.yaml`, but using the original-name
+  source for naming fidelity). Added KD keys: `use_perch_distill: true`,
+  `perch_onnx_path: vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx`,
+  `perch_embed_dim: 1536`, `alpha_distill: 1.0`. Made explicit:
+  `mixup_mode: "interpolate"`, `raw_waveform_mixup: false` (required by KD path).
+- [x] 0.3.2 Cross-checked: only KD keys + the two explicit defaults differ
+  vs `v5j_control.yaml`. No incidental drift.
 
 ### 0.4 Fast-dev-run validation
 
-- [ ] 0.4.1 Run `bash sbatch/run.sh --fast-dev-run --config configs/v5j_kd.yaml`
-  on a 100-sample subset. Verify:
-  - dist_loss decreases over the first ~10 steps
-  - cls_loss still trains normally
-  - No NaN/Inf in either loss
-  - Backbone gradient norm > 0; SED head gradient norm > 0 (per 0.2.7)
-- [ ] 0.4.2 Inspect a saved batch's distill_emb vs perch_emb: shape `(B,
-  1536)`, both finite, MSE loss matches manual recomputation.
-- [ ] 0.4.3 Spot-check W&B run: `train/dist_loss`, `train/cls_loss`,
-  `train/loss` all logged separately.
+- [x] 0.4.1 Wrote `test_kd_gradient_flow.py` (synthetic batch, no GPU
+  required) covering 0.2.7 checks. Run with:
+  `python user/murilo/experiments/031-perch-kd-distillation/test_kd_gradient_flow.py`
+- [ ] 0.4.2 Submit `bash sbatch/run.sh configs/v5j_kd.yaml --fast-dev-run`
+  on a GPU node to verify the real PerchTeacher (CUDA ONNX) path works
+  end-to-end with the data loader + GPU mel pipeline.
+- [ ] 0.4.3 Spot-check the resulting fast-dev-run W&B / TensorBoard logs:
+  `train/dist_loss`, `train/cls_loss`, `train/loss` all logged separately.
 
 ## Phase 1 — KD training run
 

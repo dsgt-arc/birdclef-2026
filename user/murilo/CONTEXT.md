@@ -3,47 +3,57 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-09 (end-of-session pause; PR #46 merged exp 031
-Phase 0 setup to main as squash `24d813a`. Fresh `mg/exp031-perch-kd-distillation`
-branch checked out, empty, ready for Phase 0.2 work. **Phase 0.2 implementation
-strategy still unresolved** — see "Pick up here" below).
+**Last updated**: 2026-05-09 (Phase 0.2-0.4 implementation done; on
+`mg/exp031-perch-kd-distillation` branch; ready for SLURM fast-dev-run
++ Phase 1 LB).
 
 ---
 
-## Pick up here (next session, before any code)
+## Pick up here (next session)
 
-**Open question that paused us**: how should the KD branch interact with
-v5j's existing mixup? Phase 1 needs to resolve this before scaffolding
-the `DistillHead` + `PerchTeacher` code. Four candidates surfaced last
-session:
+**Phase 0 code is in.** Mixup-interaction question from last session
+resolved as **Option B with the 1× teacher trick**: `_apply_mixup` uses
+`indices = torch.randperm(B)` to shuffle within the batch; Perch is
+per-sample (no cross-batch coupling), so `perch(x[indices]) ==
+perch(x)[indices]`. Teacher target under mixup composes from one
+teacher forward — no 2× cost. See `proposal.md` § Mixup interaction.
 
-| Option | Changes vs v5j | Pros | Cons |
-|---|---|---|---|
-| **A** | KD only, single variable | strict single-variable discipline | teacher embeds clean wav while student sees a mixed mel → supervision inconsistent under mixup |
-| **B** | KD + 2× teacher fwd to compose pre-mix targets `lam·perch(w1) + (1-lam)·perch(w2)` | mathematically clean, consistent supervision | dataloader has to surface both wavs; ~2× teacher compute cost |
-| **C** | KD + `mixup_prob=0` for Phase 1 | clean attribution; no dataloader surgery | gives up v5j's mixup contribution (~unknown LB cost) |
-| **D** | KD + waveform mixup like Tucker | matches Tucker's exact stack | two variables — can't isolate KD lever |
+Train/val split question resolved as **Option A (no change)** after
+discriminator analysis: the current 4-single-sample-species
+duplicate-into-train+val is val/auroc reporting bias only (~0.002 macro),
+not train-weight contamination. Defer methodology cleanup to a dedicated
+post-031 experiment that addresses the actual load-bearing weaknesses
+(per-site stratification, fold-balance asymmetry).
 
-I recommended **C** at session end. User wasn't convinced. **Re-discuss
-before writing Phase 0.2 code.** My fuller reasoning is in the prior
-session transcript / referenced via the audit note's "Implementation
-sketch" section.
+**Next concrete steps** (compute, not code):
+
+1. Run `python user/murilo/experiments/031-perch-kd-distillation/test_kd_gradient_flow.py`
+   — synthetic-batch gradient-flow check, no GPU needed. Verifies all
+   three submodules (encoder, sed_head, distill_head) get gradient when
+   KD is on, and that `perch(x[perm]) == perch(x)[perm]` for the stub.
+2. `bash sbatch/run.sh configs/v5j_kd.yaml --fast-dev-run` — real ONNX
+   path on a GPU node, verify dist_loss/cls_loss logged separately,
+   no NaN.
+3. `bash sbatch/run.sh configs/v5j_kd.yaml` — full Phase 1 training
+   (~80-120 min on rtx6000). Halt watch: `dist_loss > 0.01` by epoch 5.
+4. ONNX export → Kaggle weights upload → kernel push → LB submit.
+5. Apply success matrix vs v5j_control_v2 = 0.896 (CONFIRM ≥ 0.910).
 
 ---
 
 ## Where exp 031 is
 
-**Status**: approved; Phase 0 mostly done. Proposal:
-`user/murilo/experiments/031-perch-kd-distillation/proposal.md`.
+**Status**: Phase 0 implementation complete; ready for fast-dev-run + Phase 1.
+Proposal: `user/murilo/experiments/031-perch-kd-distillation/proposal.md`.
 
 | Phase | What | Status |
 |---|---|---|
 | 0.0 | Mel pipeline equivalence diagnostic | ✅ KEEP NNAUDIO + hop=313 (cosine sim 0.987 on STFT-only; libraries agree) |
-| 0.1 | Vendor + verify Perch v2 ONNX teacher | ✅ All 6 checks pass; CUDA 17 ms/batch=4 on rtx6000 (vs 2135 ms CPU, 125× speedup) |
-| 0.2 | `DistillHead` + `PerchTeacher` + `feat.detach()` in `sed_finetune.py` | ⚠️ **BLOCKED** on mixup-interaction decision |
-| 0.3 | Config `configs/v5j_kd.yaml` | pending 0.2 |
-| 0.4 | Fast-dev-run validation | pending 0.3 |
-| 1 | Single-fold KD training + LB submission | pending |
+| 0.1 | Vendor + verify Perch v2 ONNX teacher | ✅ All 6 checks pass; CUDA 17 ms/batch=4 on rtx6000 |
+| 0.2 | `DistillHead` + `PerchTeacher` + KD branch in `sed_finetune.py` | ✅ DONE — Option B with 1× teacher trick |
+| 0.3 | Config `configs/v5j_kd.yaml` + train.py + sbatch wrappers | ✅ DONE |
+| 0.4 | Fast-dev-run validation | ⏭️ `test_kd_gradient_flow.py` written; SLURM fast-dev-run pending |
+| 1 | Single-fold KD training + LB submission | pending 0.4 |
 
 **Phase 1 success gate** (vs `v5j_control_v2 = 0.896` baseline, ±0.013 noise):
 - CONFIRM if LB ≥ 0.910 → KD lever works on our codebase, proceed to Phase 2 (ownership + 4-fold).
@@ -167,15 +177,13 @@ branch of `configure_optimizers`). Only matters if we revisit split LR.
 
 ## Branch / git state
 
-- **Current branch**: `mg/exp031-perch-kd-distillation` (fresh, cut off
-  the post-merge main; **0 commits ahead of main** — empty workspace
-  ready for Phase 0.2 work).
+- **Current branch**: `mg/exp031-perch-kd-distillation`. Phase 0.2-0.4
+  implementation committed; ahead of main by 1 commit ("Implement Perch v2 KD
+  distillation branch (Phase 0.2-0.4)"). Pushed to origin.
 - **Latest commit on main**: `24d813a` — "Scaffold exp 031: Perch v2
   knowledge distillation (Phase 0 setup) (#46)" (squash-merge of PR #46).
-- **No open PRs.** Next PR opens when Phase 0.2+ has real diff against
-  main (likely combined with Phase 1 LB receipt — exp 029 PR #41 set
-  the scaffold-only precedent; exp 030 set the full-lifecycle precedent;
-  either is fine here).
+- **No open PRs.** Next PR opens after Phase 1 LB receipt (or sooner if
+  we want a code-only review pass before paying compute).
 - **Deleted branches** (cleanup history):
   - `mg/exp030-sydorskyi-mixup` (local + remote, fully on main via squash `58dd8c2`)
   - `mg/exp030-wrapup-and-next-direction` (local + remote, fully on main via squash `24d813a`)
