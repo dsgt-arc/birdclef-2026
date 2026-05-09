@@ -2,8 +2,8 @@
 
 - **URL**: https://www.kaggle.com/competitions/birdclef-2026/discussion/683791
 - **Posted**: 2026-03-21 (Antoine Masq)
-- **Captured**: 2026-04-28 (updated)
-- **55+ comments** (2 marked "This comment has been deleted." in latest pull)
+- **Captured**: 2026-05-09 (updated; prior pulls 2026-04-23, 2026-04-28)
+- **58 comments** (3 marked "This comment has been deleted." in latest pull)
 
 ---
 
@@ -22,33 +22,39 @@
 
 ## Key Competitor Scores
 
-Ranks reflect latest pull (2026-04-28); some have shifted since prior captures.
+Ranks reflect latest pull (2026-05-09); some have shifted since prior captures.
 "DM" = D.M. = Don Mathis (same person; Kaggle username changed).
 
 | Person | Rank | LB | Details |
 |--------|------|-----|---------|
-| **Starry** | **2nd** | — | (asked Boredom about 0.950+ unlabeled flow) |
-| **Boredom** | **3rd** | **0.950+** w/ unlabeled, **0.938-0.939** w/o | Non-Perch, timm+SED. ~11min inference. 1st iter on unlabeled. **No TTA**; "simple PP" worth ~+0.004 (corrected from 0.03-0.04 typo). |
+| **Boredom** | **1st** | **0.950+** w/ unlabeled, **0.938-0.939** w/o | Non-Perch, timm+SED. ~11min inference. 1st iter on unlabeled. **No TTA**; "simple PP" worth ~+0.004 (corrected from 0.03-0.04 typo). |
+| **Ali Ozan Memetoglu** | **2nd** | **0.941** single model | **Uses Sydorskyi 2nd-place 2025 published checkpoint directly** ([dataset](https://www.kaggle.com/datasets/vladimirsydor/bird-clef-2025-all-pretrained-models)). 1028 attention dim. ONNX 5-fold ~30 min total. |
+| **Starry** | **5th** | — | (asked Boredom about 0.950+ unlabeled flow) |
 | **Tom** | 10th | ~similar to hengck23 | "slightly different approach which fits on 4x5sec" |
-| **Ali Ozan Memetoglu** | 13th | **0.941** single model | Uses BirdCLEF 2025 pretrained checkpoint (XC-filtered, 2-stage). Pretrain → no folds. |
-| **Salman Ahmed** | **19th** | **0.937** solo v2B0, **0.932** ens of 4 | **Modeling breakthrough** — attention investigation. B0_NS now matching v2B0. Uses PP/TTA. **NEW**: 20s segments, ~50-60min inference. |
-| **tennogh** | 62nd | — | ~0.02 diff between backbones; KD reduces diversity (cos sim 0.5→0.67) |
-| **Anil Ozturk** | 67th | 0.879 | GKF on sites OOF=0.608 (extreme CV/LB disconnect) |
-| **Jake** | **102nd** | **0.915 w/o unlabeled, 0.922 w/ unlabeled** | NEW (2026-04-28). Solo model; small ~0.007 lift from unlabeled. |
-| **Jack** | 126th | — | Confirms Perch KD causes backbone stability |
-| **yukiZ** | 173rd | **0.904** (fold 0 only, 5-fold SKF) | Raw waveform augmentations |
-| **Tucker Arrants** | **248th** | **0.93+ NEW** w/ PP (5-fold ensemble), **0.922** w/o PP | **NEW (2026-04-28)**: Perch-distilled B0 + 5s clips + BCE + waveform augs + site/hour priors + Gaussian smooth (5 folds). Also: 0.925 w/o deep learning (frozen Perch + clustering + metadata), 0.91 w/ Perch+GRU. |
-| **Aic** | 266th | — | Asks about LB stability; soundscape AUC closely aligned with LB |
-| **OpPrime** | 353rd | 0.826 5-fold / 0.835 fold0 | EfficientNetB0, 10ep/fold, 5s clips |
-| **Murilo Gustineli** | 484th | **0.906** (HGNet+LSEHead) | No KD, no Perch in SED |
-| **Gaurav Rawat** | 493rd | **0.926** LB | GroupK on site CV, shows poor CV-LB correlation |
-| **hengck23** | 706th | **0.896** CNN only | Long input wave, multi-context head, no Perch, no PP |
-| **!!!!!** | 851st | 0.88 | Pretrained timm |
-| **EliKal** | 1072nd | **0.909** single (EffNet-B0) | Perch KD (KLD loss) + 12ep finetune, time-shift TTA |
-| **MengYe** | 209th | — | Asks Salman about CV/LB correlation |
-| **D.M. (Don Mathis)** | 1691st | 0.880 (~0.875 reproducible) | CNN + logit-LSE, BCE, 5s clips. **Pain point**: ".921 with mixup on waves + train_audio + labelled SS — I get .865 doing same." |
-| **XuKong Ji** | 1383rd | **0.899** single fold | EffNet-B0+LSEHead+BCE, 5s. 5-fold=0.889 (worse!) |
-| Antoine Masq | 46th | 0.889 | EfficientNetV2-B0 |
+| **Jack** | **17th** | — | NEW (2026-05-09): also yoinked Sydorskyi's pretrained backbone + own head; matched melspec; reports −0.012 LB swap to that melspec. Confirms Perch KD causes backbone stability |
+| **Kurise** | **26th** | — | Asking about Sydorskyi-checkpoint reuse |
+| **tennogh** | 34th | — | ~0.02 diff between backbones; KD reduces diversity (cos sim 0.5→0.67) |
+| **!!!!!** | 35th | 0.88 | Pretrained timm |
+| **Jake** | **31st** | **0.915 w/o unlabeled, 0.922 w/ unlabeled** | Solo model; small ~0.007 lift from unlabeled. |
+| **MengYe** | 71st | — | Asks Salman about CV/LB correlation |
+| **Anil Ozturk** | 248th | 0.879 | GKF on sites OOF=0.608 (extreme CV/LB disconnect) |
+| **Salman Ahmed** | **383rd** | **0.937** solo v2B0, **0.932** ens of 4 | **Modeling breakthrough** — attention investigation. B0_NS now matching v2B0. Uses PP/TTA. 20s segments, ~50-60min inference. |
+| **goevian** | 376th | — | Asks about multi-context head |
+| **Aic** | 772nd | — | Asks about LB stability; soundscape AUC closely aligned with LB |
+| **Antoine Masq** | 773rd | 0.889 | EfficientNetV2-B0 |
+| **Tucker Arrants** | **918th** | **0.93+** w/ PP (5-fold ensemble), **0.922** w/o PP | Perch-distilled B0 + 5s clips + BCE + waveform augs + site/hour priors + Gaussian smooth (5 folds). NEW (2026-05-09): quantified Perch KD lift at **~+0.02 LB** (without distill ≈0.89, with ≈0.91). Also: 0.925 w/o deep learning (frozen Perch + clustering + metadata), 0.91 w/ Perch+GRU. |
+| **Jiacheng Ma** | 947th | — | Asks Tucker how to add priors (logit space?) |
+| **Murilo Gustineli** | 1101st | **0.906** (HGNet+LSEHead) | No KD, no Perch in SED |
+| **EliKal** | 1509th | **0.909** single (EffNet-B0) | Perch KD (KLD loss) + 12ep finetune, time-shift TTA |
+| **chenwenqiang_001** | **1546th** | — | NEW (2026-05-09): own 0.886 teacher → student +0.013 from own-teacher distillation |
+| **XuKong Ji** | 1539th | **0.899** single fold | EffNet-B0+LSEHead+BCE, 5s. 5-fold=0.889 (worse!) |
+| **Gaurav Rawat** | 666th | **0.926** LB | GroupK on site CV, shows poor CV-LB correlation |
+| **hengck23** | 1232nd | **0.896** CNN only | Long input wave, multi-context head, no Perch, no PP |
+| **D.M. (Don Mathis)** | 2071st | 0.880 (~0.875 reproducible) | CNN + logit-LSE, BCE, 5s clips. **Pain point**: ".921 with mixup on waves + train_audio + labelled SS — I get .865 doing same." |
+| **Mahog** | 1866th | — | Reports ±0.005 LB shift on seed change |
+| **Shiro** | 2000th | — | Asks Salman about no-PP/TTA score |
+| **Leon** | 1900th | — | Working to match Salman's 0.922 single B0 |
+| **lhwcv** | 2176th | — | Discord ping to Salman |
 
 ---
 
@@ -701,6 +707,32 @@ the backbone seeing 15s, not from the head aggregating over 15s.
 
 > it is pretraining, so there are no folds
 
+### Jack (17th) — Posted 7 days ago ⭐ NEW (2026-05-09 — SYDORSKYI BACKBONE CONFIRMED)
+
+> You just yoinked a backbone from 2nd place and trained another head on it,
+> yeah? They mentioned doing that with the full xc data backbone I believe
+
+### Ali Ozan Memetoglu (2nd) — Posted 7 days ago ⭐ NEW (PUBLISHED CHECKPOINT URL)
+
+> yes https://www.kaggle.com/datasets/vladimirsydor/bird-clef-2025-all-pretrained-models
+
+### Jack (17th) — Posted 5 days ago ⭐ NEW (MELSPEC MATCH)
+
+> Did you match their melspec? My first experiment's results went well but my
+> notebook runtime is pretty much your team's name smh
+
+### Ali Ozan Memetoglu (2nd) — Posted 5 days ago ⭐ NEW (ATTENTION DIM + ONNX RUNTIME)
+
+> Yes, 1028 is the attention dimension too. When I convert them to ONNX, all 5
+> folds only take half an hour
+
+### Jack (17th) — Posted 4 days ago ⭐ NEW (MELSPEC SWAP COST)
+
+> Is your 0.941 with tta/postprocessing/priors? Swapping to match their melspec
+> lowered my score 0.012.. the runtime is a LOT faster though hahaha
+
+(no recorded reply from Ali Ozan in latest pull)
+
 ### Boredom (2nd) — Posted 3 days ago ⭐ NEW (SINGLE MODEL 0.950+)
 
 > Update: Single model LB 0.950+ (11 minutes). After reading Salman's latest
@@ -708,6 +740,22 @@ the backbone seeing 15s, not from the head aggregating over 15s.
 > competitions, which may have limited the optimal single-model performance of
 > this pipeline to around 0.953-0.955. I will soon build the next pipeline from
 > scratch for ensembling, hoping to push even higher.
+
+### Cody_Null — Posted 9 days ago ⭐ NEW (CV QUERY TO BOREDOM)
+
+> @cudacoding what sort of cv are you getting for your single model .95+ LB?
+> If you are feeling extra generous I would also be super curious about your cv
+> method? I was really excited about this competition because I saw they
+> included a validation set this year, but there has proven to be a significant
+> gap, curious if that still exists at the top end, and to what degree.
+
+(no recorded reply from Boredom on CV details)
+
+### Kurise (26th) — Posted 14 days ago ⭐ NEW (PP SKEPTICAL)
+
+> Are you sure? I don't know how "simple" pp can enhance 0.04😨
+
+(this prompted Boredom's "sorry, 0.004. haha 😂" correction)
 
 ### Starry (1st) — Posted 17 hours ago
 
@@ -757,10 +805,38 @@ the backbone seeing 15s, not from the head aggregating over 15s.
 > This is 5 folds of the same model, simple KFold on filenames and MultiLabelStrat
 > on focal labels.
 
-### Jake (102nd) — Posted ~1 day ago ⭐ NEW (0.915 SOLO)
+### Jiacheng Ma (947th) — Posted ~1 day ago ⭐ NEW (PRIORS QUESTION)
+
+> Hi, How do you add "priors" to your model? Transfer to logits space?
+
+(no recorded answer from Tucker in latest pull)
+
+### chenwenqiang_001 (1546th) — Posted 9 days ago ⭐ NEW (CHALLENGES TUCKER)
+
+> what is the public score without distilling.the public score is 0.732 without
+> using distilling on your Perch distilled B0.
+
+### Tucker Arrants (918th) — Posted 7 days ago ⭐ NEW (KD LIFT QUANTIFIED ≈+0.02)
+
+> It is about 0.02 less than with distillation, so around 0.89, definitely much
+> higher than 0.732. A simple linear probe on frozen perch features will get you
+> in the mid 0.8s, so something is wrong if you are not above that.
+
+### chenwenqiang_001 (1546th) — Posted ~1 day ago ⭐ NEW (OWN-TEACHER KD = +0.013)
+
+> appreciate your reply. I once used a single mode of 0.886 as the teacher and
+> trained a student mode the same as the teacher. It increased 0.013.
+
+### Jake (31st) — Posted ~12 days ago ⭐ NEW (0.915 SOLO)
 
 > Best solo model 0.915 w/o using any of the unlabelled soundscape data.
 > 0.922 using the unlabelled soundscape data.
+
+### BNBU Anpeng Yuan (44th) — Posted 5 days ago ⭐ NEW (UNLABELED FILE COUNT)
+
+> May i ask how to choose the number of unlabelled filels?
+
+(no recorded reply from Jake)
 
 ### Boredom (3rd) — Posted ~4 days ago ⭐ NEW (NO TTA, PP CORRECTION)
 
@@ -887,6 +963,8 @@ Filtering everything down to **single-model recipes that have publicly hit ≥0.
 | PP | Site/hour priors (from labeled SS only) + Gaussian smooth — "moderate" |
 | Without PP | 0.922 |
 | With PP | 0.93+ |
+| **KD lift quantified** | **~+0.02 LB** — without distillation ≈0.89, with distillation ≈0.91 (Tucker, 2026-05-09) |
+| Comparison: own-teacher KD | chenwenqiang_001: 0.886 self-teacher → student +0.013 (≈+0.013 from a weaker teacher) |
 
 ### 3. Boredom — 0.938-0.939 timm+SED (no unlabeled), 0.950+ (with unlabeled, 1 iter)
 
@@ -898,14 +976,21 @@ Filtering everything down to **single-model recipes that have publicly hit ≥0.
 | Unlabeled | 1 iteration of pseudo-labels → 0.938-0.939 → 0.950+ |
 | Pipeline ceiling | 0.953-0.955 estimated |
 
-### 4. Ali Ozan Memetoglu — 0.941 (BirdCLEF 2025 pretrained checkpoint)
+### 4. Ali Ozan Memetoglu — 0.941 (Sydorskyi 2025 published checkpoint + own head)
+
+**CONFIRMED 2026-05-09**: Ali Ozan is using **Sydorskyi 2nd-place 2025's published
+pretrained backbone directly** ([dataset](https://www.kaggle.com/datasets/vladimirsydor/bird-clef-2025-all-pretrained-models)),
+trained a new head on top. Jack confirms doing the same thing in parallel.
 
 | Component | Value |
 |---|---|
-| Approach | 2-stage: pretrain on filtered Xeno-Canto (entire 2025 checkpoint), then fine-tune on 2026 |
-| Pretrain | "It is pretraining, so there are no folds" — XC + bug fix |
-| Fine-tune | Standard on 2026 data; only used the existing checkpoint, not the XC dataset |
-| Architecture | Not specified in the thread |
+| Approach | "Yoink" Sydorskyi's published 2025 backbone (819K-recording XC pretrain + bug fix) + train new classification head on 2026 |
+| Pretrain corpus | Filtered Xeno-Canto (entire 2025 checkpoint, no folds) — Sydorskyi did this; Ali Ozan didn't redo it |
+| Backbone source | Public dataset `vladimirsydor/bird-clef-2025-all-pretrained-models` (EfficientNetV2-S + ECA-NFNet-L0) |
+| Attention dim | **1028** (Ali Ozan: "1028 is the attention dimension too") |
+| Inference | ONNX, 5 folds, ~30 min total (Ali Ozan) |
+| Melspec | Must match Sydorskyi's exact mel pipeline (Jack: swapping to it cost −0.012 LB on his end) |
+| 2026 training | Standard fine-tune on 2026 data with the new head |
 
 ### What 0.93+ recipes have in common
 
@@ -918,36 +1003,69 @@ Filtering everything down to **single-model recipes that have publicly hit ≥0.
 
 ### Where our 0.906 stalls vs 0.93+
 
-| Lever they have / we don't | Estimated LB lift |
-|---|---:|
-| Perch knowledge distillation (KLD loss on Perch embeddings during training) | +0.005-0.020 |
-| Site/hour priors at inference (from labeled SS) | +0.005-0.010 |
-| 4 or 5-fold ensemble (proper KFold + ensembling) | +0.005-0.010 |
-| 2025-pretrained checkpoint (Ali Ozan style, on filtered XC) | +0.030 (Ali Ozan 0.941 vs us 0.906) |
-| Attention-quality investigation (Salman) | +0.015 (Salman 0.922→0.937) |
+| Lever they have / we don't | Estimated LB lift | Source |
+|---|---:|---|
+| Perch knowledge distillation (KLD loss on Perch embeddings) | **+0.020** | Tucker (2026-05-09): with KD ≈0.91, without ≈0.89 |
+| Own-teacher KD (KLD on weaker teacher) | **+0.013** | chenwenqiang_001 (2026-05-09): 0.886 self-teacher → +0.013 |
+| Site/hour priors at inference (from labeled SS) | +0.005-0.010 | Tucker, our pp2 |
+| 4 or 5-fold ensemble (proper KFold + ensembling) | +0.005-0.010 | v5j → v5j-4fold |
+| Sydorskyi-published-backbone direct reuse (Ali Ozan path) | **+0.030** | Ali Ozan 0.941 vs us 0.906; backbone freely available on Kaggle |
+| Attention-quality investigation (Salman) | +0.015 | Salman 0.922→0.937 |
 
-### Occam's-razor priorities for us
+### Occam's-razor priorities for us (updated 2026-05-09)
 
-The simplest path to 0.93+ for a non-Perch SED today is **(5-fold ensemble) + (site/hour priors) + (Gaussian smooth)**. Tucker explicitly states this gets him from 0.922 → 0.93+. Our v5j-4fold-pp2 already exists at **LB 0.917** (per MODEL-RUNS), which is ≥0.917 from the same pattern. The +0.013 gap to Tucker's 0.93+ is most likely **Perch distillation** during training.
+Two newly-confirmed simple paths to ≥0.93+ for a non-Perch SED:
 
-This argues exp 030's mixup-recipe lever is small relative to the unexplored levers (Perch KD, fold ensembling at scale, simple PP). The recipe-level deltas from exp 030 sit inside the seed-noise band on a single fold.
+**Path A — Yoink Sydorskyi's published 2025 backbone (Ali Ozan / Jack path)**.
+The 819K-recording in-domain pretrained EffNetV2-S + ECA-NFNet-L0 backbones are
+**publicly downloadable** from
+`vladimirsydor/bird-clef-2025-all-pretrained-models`. Ali Ozan does NO additional
+pretraining; he just attaches a new head and fine-tunes on 2026. ONNX inference
+~30 min for 5 folds. Match the melspec exactly (1028 attention dim; Jack reports
+−0.012 swing from melspec mismatch). This is **directly responsible for his
+single-model 0.941 LB** — supersedes our exp 029 conclusion, which was about
+2025-only pretrain at our scale (28K rows), not Sydorskyi's 819K-row pretrain.
+
+**Path B — Perch knowledge distillation** (KLD loss on logits/embeddings).
+Tucker now quantifies this at **~+0.02 LB** (without distillation ≈0.89, with
+≈0.91). EliKal lands 0.909 with the same recipe (10ep KD + 12ep finetune).
+Multiple architectures converge to 0.906-0.909 with KD, suggesting the lift is
+**robust to backbone choice**. **Critically**: this is **KD-on-labeled** (joint
+BCE + KLD) and is structurally distinct from "PL on unlabeled" (exp 014/015/025
+"dead" pattern). Our prior PL failures don't refute this.
+
+**Either path closes most of the 0.906 → 0.93+ gap with public artifacts.**
+Path A is faster (no training pipeline change; just backbone swap + fine-tune).
+Path B requires implementing KLD-against-Perch in our training loop but engages
+the 04-25 label-noise mechanism more directly.
+
+This argues exp 030's mixup-recipe lever is small relative to the unexplored
+levers above. The recipe-level deltas from exp 030 sit inside the seed-noise
+band on a single fold.
 
 ---
 
 ## Key Takeaways
 
-### Top Scores & Unlabeled Data (Updated 2026-04-23)
+### Top Scores & Unlabeled Data (Updated 2026-05-09)
 
 1. **Boredom: 0.950+ single model WITH unlabeled data** — non-Perch, timm+SED. ~11min inference.
-   First iteration on unlabeled data. Without unlabeled: 0.938-0.939. Now 2nd place (Starry is 1st).
+   First iteration on unlabeled data. Without unlabeled: 0.938-0.939. Currently 1st place.
    Says pipeline ceiling may be 0.953-0.955. Plans to build new pipeline from scratch for ensembling.
-2. **Ali Ozan: 0.941 single model using BirdCLEF 2025 pretrained checkpoint** — 2-stage
-   training. The checkpoint used XC dataset (filtered) for pretraining. No folds needed for pretrain.
+2. **Ali Ozan: 0.941 single model using Sydorskyi 2025 published backbone** — 2026-05-09 confirmed:
+   he is **directly downloading and using** Sydorskyi's `bird-clef-2025-all-pretrained-models`
+   dataset (EffNetV2-S + ECA-NFNet-L0, pretrained on 819K-recording filtered XC), then
+   training his own head on 2026. Attention dim 1028. ONNX 5-fold ~30 min. Jack confirms
+   doing the same; warns the melspec must match exactly (−0.012 LB cost from mismatch).
 3. **Salman: 0.937 solo EfficientNetV2-B0** — **major jump from 0.922 to 0.937 via "modeling"**.
    Investigated attention values on highest/lowest loss examples during training. B0_NS now
    matching or better than v2B0. Uses PP/TTA. Simple checkpoint (no model soup).
 4. **Unlabeled data is THE differentiator for 0.94+** — Boredom: "never been able to break 0.94
    with a single model" using labeled data only. 1 iteration of unlabeled → 0.950+.
+5. **Tucker quantifies Perch KD at ~+0.02 LB** (2026-05-09): with distillation ≈0.91,
+   without ≈0.89. chenwenqiang_001 reports a parallel data point: own-teacher KD
+   (0.886 self-teacher) → student +0.013. KD-on-labeled is structurally distinct from
+   PL-on-unlabeled and remains an unexplored lever for us.
 
 ### Salman's 0.922→0.937 Breakthrough (NEW 2026-04-23)
 
@@ -1044,5 +1162,38 @@ This argues exp 030's mixup-recipe lever is small relative to the unexplored lev
 38. **Ali Ozan: BirdCLEF 2025 pretrained checkpoint → 0.941** — effectively 2-stage training on
     2025+2026 data. The original checkpoint was pretrained on entire Xeno-Canto (filtered).
     Ali Ozan didn't use anything beyond the checkpoint. "It is pretraining, so there are no folds."
+    **NEW (2026-05-09)**: he is using Sydorskyi's *publicly downloadable* checkpoint
+    (`vladimirsydor/bird-clef-2025-all-pretrained-models`) directly, with a new head trained on
+    2026. Jack confirms parallel attempts. Attention dim 1028; melspec must match exactly.
 39. **Boredom confirms 0.938-0.939 w/o unlabeled, 0.950+ with** — first iteration of pseudo-labels
     on unlabeled data. "Maybe one or two more iterations are possible." Uses timm backbone + SED.
+
+### Knowledge Distillation — Quantified Lift (NEW 2026-05-09)
+
+40. **Tucker Arrants quantifies Perch KD at ~+0.02 LB**: "without distillation around 0.89,
+    with around 0.91." Linear probe on frozen Perch features alone "will get you in the mid 0.8s,
+    so something is wrong if you are not above that."
+41. **chenwenqiang_001 own-teacher data point**: a 0.886 single-model teacher → student trained
+    with same architecture got **+0.013 LB**. This is a parallel KD experiment showing the lift
+    survives weaker teachers, just at smaller magnitude.
+42. **Implication for us**: KD-on-labeled is structurally **distinct from PL-on-unlabeled**
+    (exp 014/015/025 "dead" pattern). Tucker's +0.02 lift is a joint BCE + KLD-against-Perch
+    setup on the *same labeled focal + SS data we already have*, not new pseudo-labels on
+    unlabeled audio. Our prior PL failures don't refute it. EliKal's published 0.909 with
+    KLD-distillation-from-Perch is the closest replication target; Tucker's 0.93+ likely just
+    adds 5-fold + PP on top.
+
+### Sydorskyi Backbone Reuse (NEW 2026-05-09)
+
+43. **Ali Ozan + Jack are both reusing Sydorskyi's published 2025 pretrained backbone** without
+    redoing the 819K-recording XC pretrain. Public dataset:
+    `vladimirsydor/bird-clef-2025-all-pretrained-models`.
+44. **Two architectures in the dataset**: EfficientNetV2-S (`tf_efficientnetv2_s_in21k`) and
+    ECA-NFNet-L0. Both pretrained ImageNet-21k → 819K-recording in-domain pretrain.
+45. **Attention dim 1028** (not the standard 1024 or 512) — this is a Sydorskyi-specific
+    hyperparameter that must be matched in any new head you attach.
+46. **Melspec must match exactly**: 32 kHz / n_mels=128 / n_fft=2048 / hop=512 / f_min=20 / top_db=80
+    / AmplitudeToDB → standardize → min-max. Jack reports a **−0.012 LB swing** when his melspec
+    differed from Sydorskyi's. Same melspec also unlocks much faster runtime (he was previously
+    over-spectrogramming).
+47. **ONNX inference runtime**: Ali Ozan reports ~30 min for 5 folds on Kaggle.

@@ -4,6 +4,13 @@
 line-length = 88
 target-version = "py310"
 
+# Skip vendored upstream code — Kaggle notebooks/datasets/source we pull
+# from external authors should remain bit-identical to the upstream version
+# so it stays a faithful reference. We don't lint or reformat it.
+extend-exclude = [
+    "vendor/",
+]
+
 [lint]
 select = [
     "E",      # pycodestyle errors

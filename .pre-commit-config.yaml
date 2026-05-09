@@ -1,3 +1,8 @@
+# Skip vendored upstream code — Kaggle notebooks/datasets/source we pull
+# from external authors should stay bit-identical to the upstream version
+# so it remains a faithful reference. Don't lint, format, or auto-fix it.
+exclude: ^vendor/
+
 repos:
   # General checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
