@@ -113,6 +113,11 @@ logs/
 weights/
 /models/
 
+# Vendored Kaggle datasets — large binary bundles (ONNX/wheels/etc),
+# reproducible via `kaggle datasets download <slug>`. Track only the README.
+vendor/kaggle/datasets/*
+!vendor/kaggle/datasets/README.md
+
 # Wandb
 wandb/
 

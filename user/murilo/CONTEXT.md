@@ -3,7 +3,29 @@
 Session handoff document for Murilo's BirdCLEF 2026 experiments.
 Read this first, then read the referenced docs to get full context.
 
-Last updated: 2026-04-28 PM (exp 030 CLOSED + PR #43 squash-merged at `58dd8c2`. **Key insight from end-of-session discussion**: "Pseudo-labels are dead" was about ONE category — PL on unlabeled SS, exp 014/015/025. We have NEVER tried KD-on-labeled (Tucker/EliKal style) or crop-level relabeling (Sydorskyi-style soft pseudo-distillation). These engage the 04-25 label-noise mechanism more directly than what we tried. **Phase 1 next step**: post-mortem on exp 014/015/025 + read Sydorskyi's formal soft-pseudo-distillation definition before scaffolding. See `user/murilo/analysis/notes/2026-04-28-next-experiment-direction.md` ADDENDUM for full plan.)
+Last updated: 2026-05-09 (Tucker Arrants's `bc2026-distilled-sed` notebook
+audited; KD lever now structurally confirmed. **Three new structural findings
+from the code audit** in `user/murilo/analysis/notes/2026-05-09-tucker-distilled-sed-code-audit.md`:
+(1) Tucker's recipe is **#3 embedding-space KD** (GAP-pooled backbone projection
+→ Linear → MSE vs Perch v2's 1536-d clip embedding) with **`feat.detach()`** on
+the SED branch when KD is on — confirmed by code; (2) Tucker's `AttHead`
+aggregates `clip_logits = sum(softmax(tanh(att)) * frame_logits)` in
+**logit space**, NOT probability space — our `AttHead` does
+`logit(clamp(sum(att * sigmoid(frame_logits))))` and the round-trip likely
+explains why our 7 AttHead attempts regressed; (3) Tucker uses
+**dual-supervision at inference** (`0.5 * sigmoid(clip_logits) + 0.5 *
+sigmoid(frame_max)`) — this is the structural fix to v6k's uniform attention
+(D1 verdict, 04-26 found `blend_clip=0.0` removed gradient pressure).
+**Tucker's notebook**: `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/`.
+**Captured competitor knowledge**: Tucker quantifies KD lift at ~+0.02 LB
+publicly; Ali Ozan + Jack confirmed reusing Sydorskyi's 2025 published
+backbone directly (`vladimirsydor/bird-clef-2025-all-pretrained-models`,
+attention dim 1028, 30 min ONNX 5-fold) for Ali Ozan's 0.941 single-model.
+Prior 2026-04-28 framing (PL vs KD distinction) still holds — Tucker's
+recipe is the prototype #3 implementation, not #2 (joint KLD on logits) or
+#1 (PL on unlabeled, exp 014/015/025 "dead").)
+
+Prior update: 2026-04-28 PM (exp 030 CLOSED + PR #43 squash-merged at `58dd8c2`. **Key insight from end-of-session discussion**: "Pseudo-labels are dead" was about ONE category — PL on unlabeled SS, exp 014/015/025. We have NEVER tried KD-on-labeled (Tucker/EliKal style) or crop-level relabeling (Sydorskyi-style soft pseudo-distillation). These engage the 04-25 label-noise mechanism more directly than what we tried. **Phase 1 next step**: post-mortem on exp 014/015/025 + read Sydorskyi's formal soft-pseudo-distillation definition before scaffolding. See `user/murilo/analysis/notes/2026-04-28-next-experiment-direction.md` ADDENDUM for full plan.)
 
 ## Read these files first
 
@@ -12,7 +34,10 @@ top three fully, the rest can be skimmed.
 
 | File | Purpose | How to read |
 |------|---------|-------------|
-| `user/murilo/analysis/notes/2026-04-28-next-experiment-direction.md` | **CENTRAL FOR NEXT SESSION**. Strategic synthesis post exp 030 close + ADDENDUM with the PL vs KD distinction (the load-bearing insight from this session). Tucker's "Perch distilled B0 + BCE" is most likely KD-on-labeled — structurally different from our exp 014/015/025 PL-on-unlabeled. Ranks three candidate next-experiments (α: KD-on-labeled, β: crop-level relabeling, γ: hybrid filtered PL + KD). Recommends Phase 1 = post-mortem on exp 014/015/025 + Sydorskyi soft-pseudo-distillation reading before training. | Read fully (start here) |
+| `user/murilo/analysis/notes/2026-05-09-tucker-distilled-sed-code-audit.md` | **CENTRAL — START HERE (NEW 05-09)**. Code audit of Tucker's `bc2026-distilled-sed` notebook. Three structural findings: (1) embedding-space MSE distillation on GAP-pooled backbone vs Perch v2 1536-d clip embedding, with `feat.detach()` on SED branch when KD is on; (2) Tucker's AttHead aggregates `sum(softmax(tanh(att)) * frame_logits)` in **logit space**, our AttHead aggregates in **probability space** with sigmoid+inverse-sigmoid round-trip — likely root cause of our 7 AttHead regressions; (3) dual-supervision at inference (`0.5 * sigmoid(clip) + 0.5 * sigmoid(frame_max)`) is the structural fix to v6k's uniform attention from D1 verdict. Includes 3 ranked candidate experiments: α=minimum-change KD on v5j, β=full Tucker replication, γ=v6k 50/50-blend retest (free, no training). | Read fully (start here) |
+| `user/murilo/notes/kaggle-discussion-tucker-distilled-sed-baseline.md` | **NEW (05-09)** — Tucker's "Distilled SED Baseline" Kaggle post + figures + commentary. Captures the discussion-thread framing of the architecture before reading the code audit. Has the architecture diagrams. | Read fully alongside the audit |
+| `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/bc2026-distilled-sed.ipynb` | **NEW (05-09)** — Tucker's actual notebook code, vendored locally. Cells 4 (config), 10 (model), 12 (data), 14 (training) are the load-bearing ones. | Reference; the audit note already extracts the load-bearing parts |
+| `user/murilo/analysis/notes/2026-04-28-next-experiment-direction.md` | Strategic synthesis post exp 030 close + ADDENDUM with the PL vs KD distinction (the load-bearing insight that pointed at Tucker's recipe). Tucker audit (05-09) confirms his recipe is category #3 (embedding KD on labeled). Phase 1 (post-mortem on exp 014/015/025) is now lower priority — the audit answers the load-bearing question those experiments would have answered. | Skim |
 | `user/murilo/experiments/030-sydorskyi-mixup/results.md` | **EXPERIMENT CLOSED 2026-04-28**. Final 2x2 LB: HGNet control 0.896, HGNet sydorskyi 0.892 (Δ −0.004 null); EffNet control 0.893, EffNet sydorskyi 0.901 (Δ +0.008 borderline). seed=43 retrain submitted only `v5j_control_seed43` = **0.883 LB** (−0.013 vs v5j_control_v2 0.896) → seed band wider than ±0.005, so within-seed mixup Δs sit inside noise floor → remaining 3 LB submissions consciously skipped. Verdict: Sydorskyi mixup recipe is **null at single-fold resolution** on this codebase. Best single-model still v5j 0.906. Closest challenger `effnetv2b0_sydorskyi` 0.901. Pipeline artifacts (configs, kernel metadata, datasets) left in place if 4-fold revisit ever desired. | Read fully |
 | `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | **NEW (04-28 update)**: Tucker Arrants broke 0.93+ with Perch-distilled B0 + 5s + BCE + waveform augs + site/hour priors + Gaussian smooth + 5-fold (without PP: 0.922). Includes "Proven 0.93+ Recipes" synthesis section comparing Salman 0.937, Tucker 0.93+, Boredom 0.938-0.950+, Ali Ozan 0.941. **Tucker's recipe is most likely KD-on-labeled, not PL-on-unlabeled** (see analysis note for the distinction). | Read fully — central to next-experiment discussion |
 | `user/murilo/analysis/notes/2026-04-26-mixup-implementation-audit.md` | **HEADLINE finding**: v5j and prior wave-mixup attempts (v4j/v6b/v10b) all use Zhang-style INTERPOLATED multi-label targets, not Sydorskyi's `max(y1, y2)`. The audit verifies this with line numbers in `sed_finetune.py`. Refutes that Xu 2018 is the source of Sydorskyi's recipe (Xu actually uses interpolation on log-mel). Reframes "wave-mixup is dead" → "interpolated wave-mixup is dead; the Sydorskyi-faithful recipe was never tested." | Read fully |
