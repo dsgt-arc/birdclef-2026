@@ -3,8 +3,10 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-09 (mid-session pause; exp 031 Phase 0 setup
-done, Phase 0.2 implementation strategy unresolved).
+**Last updated**: 2026-05-09 (end-of-session pause; PR #46 merged exp 031
+Phase 0 setup to main as squash `24d813a`. Fresh `mg/exp031-perch-kd-distillation`
+branch checked out, empty, ready for Phase 0.2 work. **Phase 0.2 implementation
+strategy still unresolved** — see "Pick up here" below).
 
 ---
 
@@ -165,14 +167,19 @@ branch of `configure_optimizers`). Only matters if we revisit split LR.
 
 ## Branch / git state
 
-- **Current branch**: `mg/exp030-wrapup-and-next-direction` (carries
-  exp 031 Phase 0 work despite the name — consider renaming or creating
-  a fresh `mg/exp031-perch-kd-distillation` branch before the eventual PR)
-- **Latest commit (pushed)**: `521e35e` — "Scaffold exp 031 (Perch v2 KD
-  distillation): Phase 0 setup"
-- **Deleted branches**: `mg/exp030-sydorskyi-mixup` (local + remote;
-  fully on main via squash `58dd8c2`)
-- **No open PRs.** Next PR is exp 031 once Phase 1 LB is in.
+- **Current branch**: `mg/exp031-perch-kd-distillation` (fresh, cut off
+  the post-merge main; **0 commits ahead of main** — empty workspace
+  ready for Phase 0.2 work).
+- **Latest commit on main**: `24d813a` — "Scaffold exp 031: Perch v2
+  knowledge distillation (Phase 0 setup) (#46)" (squash-merge of PR #46).
+- **No open PRs.** Next PR opens when Phase 0.2+ has real diff against
+  main (likely combined with Phase 1 LB receipt — exp 029 PR #41 set
+  the scaffold-only precedent; exp 030 set the full-lifecycle precedent;
+  either is fine here).
+- **Deleted branches** (cleanup history):
+  - `mg/exp030-sydorskyi-mixup` (local + remote, fully on main via squash `58dd8c2`)
+  - `mg/exp030-wrapup-and-next-direction` (local + remote, fully on main via squash `24d813a`)
+  - `mg/exp031-perch-kd-distillation` was the head of PR #46; auto-deleted by GitHub on squash-merge, then recreated locally off updated main as the new working branch.
 
 ---
 
@@ -188,7 +195,7 @@ branch of `configure_optimizers`). Only matters if we revisit split LR.
 | 04-27 | exp 030 v2 retrain + v5j-resubmit kernel | v5j_control_v2 LB 0.896 surfaces ckpt-selection issue |
 | 04-28 AM | v5j-resubmit LB 0.906 + deterministic-training root cause | seed=43 retrain launched |
 | 04-28 PM | seed=43 LB 0.883 → seed band ±0.013 | **exp 030 closed**; PL vs KD distinction surfaced |
-| 05-09 | Tucker notebook audit + exp 031 Phase 0 | Phase 0.0/0.1 done; Phase 0.2 mixup-interaction unresolved |
+| 05-09 | Tucker notebook audit + exp 031 Phase 0 | Phase 0.0/0.1 done; PR #46 merged to main as squash `24d813a`; Phase 0.2 mixup-interaction unresolved |
 
 ---
 
