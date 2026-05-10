@@ -374,6 +374,12 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnetv2-b0-sed-sydorskyi-seed43",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-sydorskyi-seed43.json",
     },
+    # Exp 031: Perch v2 knowledge distillation on v5j (Tucker recipe, Phase 1)
+    "hgnet-b0-sed-v5j-kd": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-kd-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-kd",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-kd.json",
+    },
     # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "hgnet-b0-sed-v5j-fmax": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",

@@ -791,6 +791,26 @@ export_effnetv2_b0_sed_sydorskyi_seed43() {
         --output-dir artifacts/weights/effnetv2-b0-sed-sydorskyi-seed43/
 }
 
+# ============================================================================
+# Exp 031: Perch v2 knowledge distillation on v5j (Tucker recipe, Phase 1)
+# ============================================================================
+
+export_hgnet_b0_sed_v5j_kd() {
+    # Phase 1: v5j with Perch v2 embedding-space KD branch.
+    # Distill head is excluded from the ONNX export (export script builds
+    # SEDFinetuneModule without use_perch_distill, so distill_head.* keys
+    # land in `unexpected` under strict=False and are ignored).
+    echo "=== Exporting Exp 031 v5j_kd (HGNetV2-B0 + Perch v2 KD) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/031-perch-kd-distillation/checkpoints/2026-exp031-v5j-kd")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP031_DIR}/configs/v5j_kd.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-kd/
+}
+
 export_hgnet_b0_sed_v5j_fmax() {
     echo "=== Exporting HGNetV2-B0 SED v5j-fmax (framewise-max only, 234 classes) ==="
     local CKPT
@@ -920,6 +940,7 @@ EXP025_DIR="$(dirname "$EXPERIMENT_DIR")/025-iter-pseudo-labeling"
 EXP027_DIR="$(dirname "$EXPERIMENT_DIR")/027-model-training-fixes"
 EXP029_DIR="$(dirname "$EXPERIMENT_DIR")/029-2025-pretrain"
 EXP030_DIR="$(dirname "$EXPERIMENT_DIR")/030-sydorskyi-mixup"
+EXP031_DIR="$(dirname "$EXPERIMENT_DIR")/031-perch-kd-distillation"
 
 export_hgnet_b2_sed_v6h() {
     echo "=== Exporting HGNetV2-B2 SED v6h (AttHead + BCE, 234 classes) ==="
@@ -1228,6 +1249,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-finetune-2026|hgnet-b0-sed-v5j-ft-splitlr|\
     hgnet-b0-sed-v5j-control|hgnet-b0-sed-v5j-sydorskyi|effnetv2-b0-sed-control|effnetv2-b0-sed-sydorskyi|\
     hgnet-b0-sed-v5j-control-seed43|hgnet-b0-sed-v5j-sydorskyi-seed43|effnetv2-b0-sed-control-seed43|effnetv2-b0-sed-sydorskyi-seed43|\
+    hgnet-b0-sed-v5j-kd|\
     hgnet-b0-sed-v5j-resubmit|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
@@ -1343,6 +1365,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-sydorskyi-seed43)  export_hgnet_b0_sed_v5j_sydorskyi_seed43 ;;
     effnetv2-b0-sed-control-seed43)     export_effnetv2_b0_sed_control_seed43 ;;
     effnetv2-b0-sed-sydorskyi-seed43)   export_effnetv2_b0_sed_sydorskyi_seed43 ;;
+    hgnet-b0-sed-v5j-kd)                export_hgnet_b0_sed_v5j_kd ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;
