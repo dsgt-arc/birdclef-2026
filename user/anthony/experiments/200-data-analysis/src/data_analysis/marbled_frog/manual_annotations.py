@@ -27,7 +27,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir
+from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir, fresh_subdir
 from data_analysis.common.spectrogram import (
     DISPLAY_BAND,
     MEL_HOP_LENGTH,
@@ -242,16 +242,9 @@ def render_standard_plot(item: ManualAnnotationSet, rows: list[dict[str, str]], 
 
 def copy_and_combine(sets: list[ManualAnnotationSet], output_dir: Path) -> int:
     """Copy curated tables, render plots, and build manifest + combined CSV."""
-    plots_dir = output_dir / "plots"
-    source_plots_dir = output_dir / "source_plots"
-    tables_dir = output_dir / "tables"
-    plots_dir.mkdir(parents=True, exist_ok=True)
-    source_plots_dir.mkdir(parents=True, exist_ok=True)
-    tables_dir.mkdir(parents=True, exist_ok=True)
-    for directory in [plots_dir, source_plots_dir, tables_dir]:
-        for path in directory.glob("*"):
-            if path.is_file():
-                path.unlink()
+    plots_dir = fresh_subdir(output_dir, "plots")
+    source_plots_dir = fresh_subdir(output_dir, "source_plots")
+    tables_dir = fresh_subdir(output_dir, "tables")
 
     manifest_rows = []
     combined_rows = []

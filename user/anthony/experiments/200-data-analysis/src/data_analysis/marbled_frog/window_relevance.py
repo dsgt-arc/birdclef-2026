@@ -27,6 +27,7 @@ from data_analysis.common.paths import (
     PERCH_TRAIN_AUDIO_EMBEDDINGS,
     TRAIN_AUDIO_DIR,
     artifact_dir,
+    fresh_subdir,
 )
 from data_analysis.common.spectrogram import (
     MEL_FMAX,
@@ -39,7 +40,7 @@ from data_analysis.common.spectrogram import (
 )
 from data_analysis.marbled_frog.frequency_perch import (
     DEFAULT_LABEL,
-    run as run_frequency_analysis,
+    compute_window_scores,
 )
 from data_analysis.soundscapes.pacmap_embeddings import (
     embedding_columns,
@@ -49,27 +50,12 @@ from data_analysis.soundscapes.pacmap_embeddings import (
     with_coords,
 )
 
-FREQUENCY_ANALYSIS_DIRNAME = "marbled_frog/frequency_perch"
 RELEVANT_LOGIT_THRESHOLD = 8.5
 RELEVANT_BAND_ENERGY_THRESHOLD = 0.5
 CANDIDATE_BAND = (1000, 3000)
 PLOT_CIRCLE_CENTER = (-4.0, 0.0)
 PLOT_CIRCLE_RADIUS = 3.0
 ROBUST_Z_THRESHOLD = 2.0
-
-
-def frequency_artifact_dir() -> Path:
-    """Return the Marbled Frog frequency analysis artifact directory."""
-    return artifact_dir(FREQUENCY_ANALYSIS_DIRNAME)
-
-
-def load_or_build_window_scores() -> pl.DataFrame:
-    """Load frequency/logit window scores, running the upstream analysis if needed."""
-    freq_dir = frequency_artifact_dir()
-    scores_path = freq_dir / "window_scores_and_spectral_features.csv"
-    if not scores_path.exists():
-        run_frequency_analysis(freq_dir, label=DEFAULT_LABEL)
-    return pl.read_csv(scores_path)
 
 
 def add_relevance_labels(scores: pl.DataFrame) -> pl.DataFrame:
@@ -958,7 +944,7 @@ def render_summary(
 | Date | 2026-05-10 |
 | Label | `22967` |
 | Species | Marbled White-lipped Frog / *Leptodactylus elenae* |
-| Input analysis | `artifacts/marbled_frog/frequency_perch/window_scores_and_spectral_features.csv` |
+| Upstream code | `data_analysis.marbled_frog.frequency_perch.compute_window_scores` |
 | Output directory | `{output_dir}` |
 
 ## Heuristic label rule
@@ -1029,14 +1015,12 @@ Generated artifacts are organized by type:
 def run(output_dir: Path | None = None, *, seed: int = 42) -> Path:
     """Run window relevance analysis."""
     output_dir = output_dir or artifact_dir("marbled_frog/window_relevance")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    plots_dir = output_dir / "plots"
-    tables_dir = output_dir / "tables"
-    spectra_dir = output_dir / "spectra"
-    for path in [plots_dir, tables_dir, spectra_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+    plots_dir = fresh_subdir(output_dir, "plots")
+    tables_dir = fresh_subdir(output_dir, "tables")
+    spectra_dir = fresh_subdir(output_dir, "spectra")
 
-    labels = add_relevance_labels(load_or_build_window_scores())
+    scores, _ctx = compute_window_scores(label=DEFAULT_LABEL)
+    labels = add_relevance_labels(scores)
     coords = add_circle_membership(build_pacmap(labels, seed=seed))
     coords, pacmap_boundary_summary = add_pacmap_mad_boundary(coords)
     coords, embedding_boundary_summary = add_embedding_mad_boundary(coords)

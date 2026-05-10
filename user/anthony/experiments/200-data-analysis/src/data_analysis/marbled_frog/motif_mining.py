@@ -26,7 +26,7 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir
+from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir, fresh_subdir
 from data_analysis.common.spectrogram import (
     DISPLAY_BAND,
     MEL_HOP_LENGTH,
@@ -266,7 +266,6 @@ def plot_candidate_embedding(candidates: pl.DataFrame, output_path: Path) -> Non
 
 def plot_cluster_grid(candidates: pl.DataFrame, output_dir: Path, *, max_items: int = MAX_GRID_ITEMS) -> None:
     """Render one spectrogram crop grid per cluster."""
-    output_dir.mkdir(parents=True, exist_ok=True)
     for cluster in sorted(candidates["motif_cluster"].unique().to_list()):
         df = candidates.filter(pl.col("motif_cluster") == cluster).sort("filename", "start_sec").head(max_items)
         n_items = df.height
@@ -339,11 +338,9 @@ def plot_cluster_grid(candidates: pl.DataFrame, output_dir: Path, *, max_items: 
 def run(output_dir: Path | None = None, *, n_clusters: int = 8, seed: int = 42) -> Path:
     """Run motif mining."""
     output_dir = output_dir or artifact_dir("marbled_frog/motif_mining")
-    plots_dir = output_dir / "plots"
-    tables_dir = output_dir / "tables"
-    cluster_dir = output_dir / "clusters"
-    for path in [plots_dir, tables_dir, cluster_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+    plots_dir = fresh_subdir(output_dir, "plots")
+    tables_dir = fresh_subdir(output_dir, "tables")
+    cluster_dir = fresh_subdir(output_dir, "clusters")
 
     candidates, patches, _cache = generate_candidates()
     if candidates.is_empty():

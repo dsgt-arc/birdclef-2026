@@ -20,11 +20,12 @@ import numpy as np
 import polars as pl
 
 from data_analysis.common.paths import (
+    ARTIFACTS_DIR,
     PERCH_TRAIN_AUDIO_EMBEDDINGS,
     TAXONOMY_CSV,
     TRAIN_CSV,
     TRAIN_SCHEMA_OVERRIDES,
-    artifact_dir,
+    fresh_subdir,
 )
 from data_analysis.common.selected_species import REPRESENTATIVE_LABELS
 from data_analysis.soundscapes.pacmap_embeddings import (
@@ -254,8 +255,12 @@ def run(
     max_pca_dims: int = 50,
 ) -> Path:
     """Run selected-species train-audio PaCMAP analysis."""
-    output_dir = output_dir or artifact_dir("soundscapes/per_species_train_pacmap")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is None:
+        # Per-species PNG/CSV pairs vary with REPRESENTATIVE_LABELS, so wipe the
+        # whole directory before each run to avoid stale species artifacts.
+        output_dir = fresh_subdir(ARTIFACTS_DIR / "soundscapes", "per_species_train_pacmap")
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
     labels = labels or REPRESENTATIVE_LABELS
 
     metadata = load_species_metadata(labels)

@@ -24,7 +24,7 @@ import polars as pl
 from scipy.ndimage import label as label_components
 from scipy.signal import find_peaks, peak_widths
 
-from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir
+from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir, fresh_subdir
 from data_analysis.common.spectrogram import (
     DISPLAY_BAND,
     MEL_HOP_LENGTH,
@@ -1059,10 +1059,9 @@ def run_template_matching(output_dir: Path, *, seed_filename: str = DEFAULT_FILE
     """Build a seed template and match it across all Marbled Frog train recordings."""
     template, _template_freqs, _template_times, seed_boxes = build_seed_template(filename=seed_filename)
     template_dir = output_dir / "template_matches"
-    plots_dir = template_dir / "plots"
-    tables_dir = template_dir / "tables"
-    plots_dir.mkdir(parents=True, exist_ok=True)
-    tables_dir.mkdir(parents=True, exist_ok=True)
+    template_dir.mkdir(parents=True, exist_ok=True)
+    plots_dir = fresh_subdir(template_dir, "plots")
+    tables_dir = fresh_subdir(template_dir, "tables")
 
     all_tables = []
     for audio_path in sorted((TRAIN_AUDIO_DIR / "22967").glob("*.ogg")):
@@ -1120,10 +1119,8 @@ def run(
 ) -> Path:
     """Run prototype motif detection for one recording window."""
     output_dir = output_dir or artifact_dir("marbled_frog/motif_boxes")
-    plots_dir = output_dir / "plots"
-    tables_dir = output_dir / "tables"
-    plots_dir.mkdir(parents=True, exist_ok=True)
-    tables_dir.mkdir(parents=True, exist_ok=True)
+    plots_dir = fresh_subdir(output_dir, "plots")
+    tables_dir = fresh_subdir(output_dir, "tables")
 
     audio_path = TRAIN_AUDIO_DIR / filename
     audio, _ = librosa.load(audio_path, sr=MEL_SAMPLE_RATE, mono=True, offset=start_sec, duration=duration_sec)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import polars as pl
@@ -43,4 +44,18 @@ def artifact_dir(name: str) -> Path:
     """
     path = ARTIFACTS_DIR / name
     path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def fresh_subdir(parent: Path, name: str) -> Path:
+    """Wipe and recreate a leaf subdir so re-runs don't leave stale files.
+
+    Use for output directories whose file list depends on inputs that may shrink
+    between runs (per-recording plots, per-cluster grids, per-species figures).
+    Top-level summary files and fixed CSVs don't need this — overwrite is safe.
+    """
+    path = parent / name
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
     return path

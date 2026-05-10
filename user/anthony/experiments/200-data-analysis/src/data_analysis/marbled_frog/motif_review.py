@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import polars as pl
 
-from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir
+from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir, fresh_subdir
 from data_analysis.common.spectrogram import (
     DISPLAY_BAND,
     MEL_HOP_LENGTH,
@@ -232,10 +232,8 @@ def plot_recording_review(
 def run(output_dir: Path | None = None) -> Path:
     """Run review plot generation."""
     output_dir = output_dir or artifact_dir("marbled_frog/motif_review")
-    plots_dir = output_dir / "plots"
-    tables_dir = output_dir / "tables"
-    plots_dir.mkdir(parents=True, exist_ok=True)
-    tables_dir.mkdir(parents=True, exist_ok=True)
+    plots_dir = fresh_subdir(output_dir, "plots")
+    tables_dir = fresh_subdir(output_dir, "tables")
 
     all_rows = []
     for filename in recording_files():

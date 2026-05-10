@@ -408,21 +408,23 @@ Direct target species logit status: {target_rank_text}.
 """
 
 
-def run(
-    output_dir: Path | None = None,
+def compute_window_scores(
     *,
     label: str = DEFAULT_LABEL,
     genus: str = DEFAULT_GENUS,
-) -> Path:
-    """Run analysis."""
-    taxon = load_taxon(label)
-    output_dir = output_dir or artifact_dir("marbled_frog/frequency_perch")
-    output_dir.mkdir(parents=True, exist_ok=True)
+) -> tuple[pl.DataFrame, dict[str, object]]:
+    """Build the per-window Perch + mel-spectral scoring DataFrame.
 
+    Returns (windows DF, context dict). The context contains the train file
+    table, top-mean-logits DF, band enrichment DF, recommended band, target
+    Perch index, taxon, mel frequencies, and per-window spectra — everything
+    `run()` needs to write the artifact bundle. Callers that just want the
+    scores can read `context['windows']` (same object as the first return).
+    """
+    taxon = load_taxon(label)
     files = load_train_files(label)
     logits_for_scores, info = load_logits_for_files(files, label, genus)
 
-    # Reload all logits only for the small selected file set to identify top Perch taxa.
     all_logits = (
         pl.scan_parquet(PERCH_TRAIN_AUDIO_LOGITS)
         .join(files.select("filename").lazy(), on="filename", how="inner")
@@ -433,18 +435,47 @@ def run(
     windows, freqs, spectra = add_spectral_features(logits_for_scores)
     bands = band_summary(windows)
     band = recommended_band(bands)
+    context = {
+        "label": label,
+        "genus": genus,
+        "taxon": taxon,
+        "files": files,
+        "windows": windows,
+        "top_logits": top_logits,
+        "bands": bands,
+        "band": band,
+        "freqs": freqs,
+        "spectra": spectra,
+        "target_index": int(info["target_index"]),
+    }
+    return windows, context
 
-    files.write_csv(output_dir / "train_files.csv")
-    windows.write_csv(output_dir / "window_scores_and_spectral_features.csv")
-    top_logits.write_csv(output_dir / "top_mean_perch_logits.csv")
-    bands.write_csv(output_dir / "band_enrichment.csv")
 
-    plot_logit_summary(top_logits, int(info["target_index"]), output_dir / "top_mean_perch_logits.png")
-    plot_window_scores(windows, output_dir / "window_perch_scores.png")
-    plot_spectrum_comparison(windows, freqs, spectra, band, output_dir / "spectrum_high_vs_low_genus_logit.png")
+def run(
+    output_dir: Path | None = None,
+    *,
+    label: str = DEFAULT_LABEL,
+    genus: str = DEFAULT_GENUS,
+) -> Path:
+    """Run analysis and write the artifact bundle."""
+    output_dir = output_dir or artifact_dir("marbled_frog/frequency_perch")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    _windows, ctx = compute_window_scores(label=label, genus=genus)
+
+    ctx["files"].write_csv(output_dir / "train_files.csv")
+    ctx["windows"].write_csv(output_dir / "window_scores_and_spectral_features.csv")
+    ctx["top_logits"].write_csv(output_dir / "top_mean_perch_logits.csv")
+    ctx["bands"].write_csv(output_dir / "band_enrichment.csv")
+
+    plot_logit_summary(ctx["top_logits"], ctx["target_index"], output_dir / "top_mean_perch_logits.png")
+    plot_window_scores(ctx["windows"], output_dir / "window_perch_scores.png")
+    plot_spectrum_comparison(
+        ctx["windows"], ctx["freqs"], ctx["spectra"], ctx["band"], output_dir / "spectrum_high_vs_low_genus_logit.png"
+    )
 
     (output_dir / "summary.md").write_text(
-        render_markdown(label, taxon, windows, top_logits, bands, band, output_dir)
+        render_markdown(label, ctx["taxon"], ctx["windows"], ctx["top_logits"], ctx["bands"], ctx["band"], output_dir)
     )
     return output_dir
 
