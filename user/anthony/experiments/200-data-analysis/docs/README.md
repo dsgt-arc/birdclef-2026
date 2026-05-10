@@ -13,6 +13,7 @@ This directory uses short Markdown files as lightweight notebooks. Each notebook
 | `marbled-white-lipped-frog-case-study.md` | Consolidated narrative for the Marbled White-lipped Frog analysis. |
 | `marbled-white-lipped-frog-frequency-perch.md` | Detailed frequency-band and Perch-logit notes for the case study. |
 | `marbled-white-lipped-frog-window-relevance.md` | Detailed weak relevance labeling notes for the case study. |
+| `marbled-white-lipped-frog-motif-mining.md` | Candidate motif-box mining and clustering to avoid per-recording hand annotation. |
 
 ## Consolidation note
 
