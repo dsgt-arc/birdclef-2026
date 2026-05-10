@@ -65,6 +65,10 @@ logging.getLogger("transformers").setLevel(logging.WARNING)
 DEFAULT_PROJECT_NAME = "ps-clef2026_birdclef-0"
 EXPERIMENT_NAME = "031-perch-kd-distillation"
 
+# `repo_root` above is actually <repo>/user/murilo (3 parents from train.py).
+# The actual repo root (where vendor/ lives) is one level higher.
+ACTUAL_REPO_ROOT = repo_root.parent.parent
+
 
 def load_config(config_path: str) -> dict:
     with open(config_path) as f:
@@ -379,7 +383,7 @@ def main():
         # --- Perch v2 KD branch (exp 031) ---
         use_perch_distill=training_cfg.get("use_perch_distill", False),
         perch_onnx_path=(
-            str(repo_root / training_cfg["perch_onnx_path"])
+            str(ACTUAL_REPO_ROOT / training_cfg["perch_onnx_path"])
             if training_cfg.get("use_perch_distill", False)
             else None
         ),

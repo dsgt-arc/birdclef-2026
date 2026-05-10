@@ -120,7 +120,18 @@ class PerchTeacher:
             providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
         else:
             providers = ["CPUExecutionProvider"]
-        self.session = ort.InferenceSession(str(onnx_path), providers=providers)
+
+        # Explicit thread count avoids the `pthread_setaffinity_np` warnings
+        # ONNX Runtime emits on cluster nodes where it can't pin threads to
+        # specific cores. With CUDAExecutionProvider doing the compute, CPU
+        # intra-op threading doesn't matter for performance.
+        sess_options = ort.SessionOptions()
+        sess_options.intra_op_num_threads = 1
+        sess_options.inter_op_num_threads = 1
+
+        self.session = ort.InferenceSession(
+            str(onnx_path), sess_options=sess_options, providers=providers
+        )
         self.input_name = self.session.get_inputs()[0].name
         # Output[0] is the 1536-d clip embedding per the schema in
         # phase0_perch_teacher_schema.md.
