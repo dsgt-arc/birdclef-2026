@@ -7,14 +7,25 @@ author: Murilo Gustineli
 
 # Experiment 031: Perch v2 Knowledge Distillation on v5j — Results (Phase 1)
 
-## Status: TRAINING DONE — LB PENDING
+## Status: REJECT (with last-ckpt diagnostic pending)
 
-Phase 1 training completed 2026-05-10 AM. Both SLURM jobs exited 0; checkpoints
-saved. ONNX export, Kaggle upload, kernel push, and LB submission are still
-pending. Verdict against the success matrix in
-[`proposal.md`](proposal.md) is read against `v5j_control`'s actual LB
-(not the historical 0.896), so the matrix can't be applied until both
-LBs come back.
+Phase 1 training completed 2026-05-10 AM. v5j_kd best-by-val ckpt (ep 17)
+submitted to LB → **0.890**, **−0.006 below** v5j_control's expected 0.896
+(via bit-identical-weights inheritance from exp 030 `v5j_control_v2`).
+
+Per the success matrix in [`proposal.md` § Success Criteria](proposal.md):
+**REJECT**. KD as a single-variable add on the v5j pipeline (HGNetV2-B0 +
+LSEHead + spec-interp mixup, 20 epochs, α_distill=1.0) did NOT transfer.
+
+**Caveat — best-vs-last diagnostic requires retrain.** The submitted
+checkpoint is best-by-val (ep 17). v5j-original (LB 0.906) used the LAST
+epoch (ep 19). On post-hoc inspection, **neither run actually saved ep 19
+weights**: with `save_top_k: 1` + `save_last: true`, Lightning's `last.ckpt`
+mirrored the best-by-val ckpt (same global_step), NOT the literal final
+epoch. The diagnostic requires a `save_top_k: -1` retrain. Configs scaffolded
+([`configs/v5j_kd_resave.yaml`](configs/v5j_kd_resave.yaml),
+[`configs/v5j_control_resave.yaml`](configs/v5j_control_resave.yaml));
+retrain pending. See § Best-vs-last checkpoint diagnostic below.
 
 ## Summary
 
@@ -24,14 +35,17 @@ That kills the largest pre-flight risk (mel-pipeline mismatch raising the
 floor) — see [`phase0_mel_equivalence.md`](phase0_mel_equivalence.md). The
 no-KD path's offline numbers in this experiment are **bit-identical** to
 exp 030's `v5j_control_v2` (val/auroc 0.8728, cmap 0.6268, f1_macro 0.5270),
-giving us the **offline-side back-compat receipt** for the KD-branch
-additions to `sed_finetune.py`. The LB-side back-compat receipt is pending.
+sealing the **offline-side back-compat receipt** for the KD-branch additions
+to `sed_finetune.py`. Bit-identical offline metrics under deterministic
+training imply bit-identical weights, so v5j_control's LB inherits exp 030's
+0.896 without needing a separate submission.
 
-Offline, KD trails control on every metric (val/auroc −0.012, val/cmap
-−0.089, val/f1_macro −0.097). This is a yellow flag but not a verdict —
-val/auroc is anti-correlated with LB historically, and cmap/f1 are slightly
-more directional but not confidently LB-predictive at this magnitude.
-LB is the actual disambiguator.
+Offline, KD trailed control on every metric (val/auroc −0.012, val/cmap
+−0.089, val/f1_macro −0.097). LB confirmed the offline cmap/f1 gap was
+directionally informative this time: 0.890 sits below control by −0.006.
+The historical offline-LB anti-correlation pattern (cmap improvement →
+LB regression on training-recipe levers) didn't apply here because the
+KD recipe HURT cmap; that turned out to be predictive.
 
 ## Phase 1 training: DONE
 
@@ -192,6 +206,154 @@ within our 20-epoch budget. This is one of the diagnostic questions for
 LB: did the KD recipe need more epochs to fully express its lift, or is
 it structurally below the control's offline ceiling regardless?
 
+## Phase 1.3 LB submission (2026-05-10)
+
+| Run | Checkpoint | LB | Notes |
+|---|---|---:|---|
+| `v5j_kd` | `best-epochepoch=17.ckpt` | **0.890** | Submitted via kernel `birdclef-2026-hgnet-b0-sed-v5j-kd` |
+| `v5j_control` | (not submitted) | **0.896** (inherited) | Bit-identical weights to exp 030 `v5j_control_v2` (LB 0.896) under deterministic training; sealed via offline 4-dp metric match |
+| `v5j_kd` Δ vs control | — | **−0.006** | Inside the ±0.013 single-fold seed band, but on the wrong side of zero |
+
+Kernel logs verify the run was clean: ONNX session created in 0.2s, 24 rows
+predicted across 2 train soundscapes used as test substitutes, 36.9s total.
+No errors, no degenerate output.
+
+### Success matrix application (REJECT)
+
+Per [`proposal.md` § Success Criteria](proposal.md), reading against
+`v5j_control` LB 0.896:
+
+| Bucket | LB threshold | v5j_kd LB 0.890 |
+|---|---|---|
+| CONFIRM | ≥ 0.910 (control + 0.014) | ❌ |
+| PARTIAL | 0.903 – 0.909 | ❌ |
+| WEAK | 0.897 – 0.902 | ❌ |
+| **REJECT** | ≤ 0.896 | **✅ (LB = 0.890, −0.006 below)** |
+
+KD did not add anything as a single-variable add on this codebase. The
+single-fold seed band (±0.013 per exp 030) is wider than this delta, so we
+can't statistically distinguish "KD slightly hurt" from "KD null in noise."
+Either way, the lift is not present.
+
+## Post-mortem: why didn't the KD lever transfer?
+
+Tucker's published +0.02 LB lift was on the FULL distilled-SED stack
+(EfficientNet-B0 NS-JFT + AttHead with logit-space aggregation +
+dual-supervision BCE + hard-max mixup + SpecAugment + focal×labeled-SS
+mixup + 90/10 batch composition + 25-epoch warmup+cosine + 5-fold + Tucker
+PP). We isolated only the KD branch and added it on the v5j stack. The
+delta could come from any of these axes, ranked by likelihood:
+
+### 1. LSEHead is the wrong downstream consumer of Perch features (highest likelihood)
+
+LSEHead pools per-frame logits by their MAGNITUDE (`(1/τ) log Σ exp(τ·z_t)`,
+soft-max-over-time). AttHead pools them by LOCALIZATION (`Σ_t softmax(tanh(att_t)) · logit_t`,
+attention-weighted). Perch v2 was trained at scale on 14,795 species — its
+representation almost certainly encodes "WHERE the species cue is," not just
+"how loud it is." LSEHead drops the spatial information that KD just
+installed. AttHead would consume it directly.
+
+This is consistent with the `feedback_atthead_aggregation_domain.md` audit
+finding: our `AttHead` aggregates in probability space (a known bug), but
+Tucker's logit-space aggregation should be a clean test. A `v5j_kd` retrain
+swapping LSEHead → bug-fixed AttHead is the **strongest single follow-up**.
+
+### 2. 20-epoch budget too short
+
+KD's val/auroc trajectory was still narrowing the gap to control through
+the end of training (Δ −0.164 ep 3 → −0.083 ep 4 → −0.025 ep 8 → −0.012
+ep 14 → best ep 17). The detached cls branch trains on a rapidly-changing
+backbone representation; convergence is slower than non-KD. Tucker uses 25
+epochs + cosine; we use 20 + OneCycle. A 25- or 30-epoch retrain on the
+same recipe (cheap to test) would tell us whether the lift just needs
+more time.
+
+### 3. `alpha_distill = 1.0` may be miscalibrated for our codebase
+
+With detach on the cls branch, the backbone is driven ENTIRELY by Perch
+matching. At α=1.0, dist_loss (≈0.05 mid-training, ≈0.004 final) and
+cls_loss (≈0.7 → 0.02) are at very different scales. Backbone optimization
+is fully dominated by dist_loss; cls only shapes the head. A sweep of
+α∈{0.1, 0.5, 1.0, 2.0} would tell us whether the recipe is sensitive to
+this hyperparameter at our codebase's mel pipeline / feature dim.
+
+### 4. Compounding stack: KD lift may not be portable as an isolated lever
+
+Tucker's 0.02 LB delta (his "without KD ~0.89" → "with KD ~0.91") was
+quantified on his full pipeline. Possible the lift requires interaction
+with one or more of: AttHead's logit-space aggregation, dual-supervision
+loss giving attention real gradient pressure, hard-max mixup keeping
+training targets close to the test multi-hot binary distribution,
+SpecAugment forcing the representation to be invariant. Single-variable
+discipline is a strong methodology when levers are independent; less so
+when they are.
+
+### Ranked follow-up experiments (Phase 3+ candidates)
+
+Ordered by expected information value per LB submission:
+
+1. **`v5j_kd` with bug-fixed AttHead** (logit-space aggregation per
+   `feedback_atthead_aggregation_domain.md`). Tests hypothesis #1 directly.
+   Cost: 1 retrain + 1 LB.
+2. **25- or 30-epoch retrain** of same v5j_kd recipe. Tests hypothesis #2.
+   Cost: ~110 min training (1.4× current) + 1 LB.
+3. **α_distill sweep** (0.1, 0.5, 2.0). Tests hypothesis #3. Cost: 3 trainings + 3 LB.
+4. **Full Tucker replication on EfficientNet-B0 NS-JFT** (multi-variable, not
+   single-variable). Tests hypothesis #4 by reversing the methodology — start
+   with full reproduction, then ablate. Cost: 1 retrain + 1 LB.
+
+Phase 2 (ownership work + 4-fold) is **halted** per the proposal's REJECT
+action. Decision on next direction (any of the above 4, or pivot away from
+KD entirely) is pending session discussion.
+
+## Best-vs-last checkpoint diagnostic (RETRAIN REQUIRED)
+
+The 0.890 result is on best-by-val ep 17. v5j-original's 0.906 was on the
+LAST epoch (ep 19). Two LB submissions would disambiguate ckpt-selection
+from KD/codebase drift — but the original runs cannot supply the inputs.
+
+### Why we need a retrain (post-hoc finding 2026-05-10)
+
+Inspection of every checkpoint in `2026-exp031-v5j-{kd,control}/`:
+
+| File | Epoch | global_step | Note |
+|---|---:|---:|---|
+| v5j_kd `last.ckpt` | 1 | 5 | **Fast-dev-run** state from job 8318887; pre-dates the full training |
+| v5j_kd `last-v1.ckpt` | 17 | 9198 | **Bit-identical to** `best-epochepoch=17.ckpt` (same global_step) |
+| v5j_kd `best-epochepoch=17.ckpt` | 17 | 9198 | What we already submitted (LB 0.890) |
+| v5j_control `last.ckpt` | 15 | 8176 | **Bit-identical to** `best-epochepoch=15.ckpt` (same global_step) |
+| v5j_control `best-epochepoch=15.ckpt` | 15 | 8176 | Bit-identical to exp 030 v5j_control_v2 (LB 0.896 inherited) |
+
+With `save_top_k: 1` + `save_last: true`, Lightning's `ModelCheckpoint`
+callback only fires on metric improvement. `save_last: true` is a
+save-action modifier, not a separate trigger — it mirrors whatever
+checkpoint was just written. Once val/auroc plateaus, neither file is
+updated again. **The literal final-epoch weights were never serialized
+for either run.** Saved as a feedback memory:
+`feedback_save_top_k_does_not_preserve_last.md`.
+
+### Retrain plan
+
+Two new configs scaffolded with `save_top_k: -1` (saves every epoch):
+
+- [`configs/v5j_kd_resave.yaml`](configs/v5j_kd_resave.yaml) — run name `2026-exp031-v5j-kd-resave`. Disk cost ~1.5 GB (20 × 75 MB).
+- [`configs/v5j_control_resave.yaml`](configs/v5j_control_resave.yaml) — run name `2026-exp031-v5j-control-resave`. Disk cost ~1.1 GB (20 × 55 MB).
+
+All other recipe parameters identical to the original configs. Training is
+deterministic (`seed_everything(42, workers=True)` + `Trainer(deterministic=True)`),
+so per-epoch weights will be bit-identical to what would've been saved if
+the original runs had used `save_top_k: -1`. Wall time: ~80 min KD + ~40
+min control on rtx6000 (1.5–2× v5j_control walltime due to ckpt I/O).
+
+### Diagnostic submissions (after retrain)
+
+| Submission | Checkpoint | What it tests |
+|---|---|---|
+| `v5j_kd_last` | `2026-exp031-v5j-kd-resave/best-epochepoch=19.ckpt` | Was the 0.890 a ckpt-selection artifact? If LB ≥ 0.910, REJECT was wrong; verdict flips to CONFIRM/PARTIAL. |
+| `v5j_control_last` | `2026-exp031-v5j-control-resave/best-epochepoch=19.ckpt` | Does ep 19 recover v5j-original's 0.906 on the new codebase? Isolates ckpt-selection from codebase drift. |
+
+Pipeline cost: 2 retrains + 4-file scaffolding × 2 + 2 LB slots.
+
 ## Offline read on KD vs control gap
 
 The −0.089 cmap and −0.097 f1_macro gaps are larger than the val/auroc gap.
@@ -223,23 +385,23 @@ directional than val/auroc but not reliably so at this magnitude.
 
 ## Pipeline next steps
 
-In order:
+Phase 1 LB pipeline complete (commits `1cdd5cb`, `2241093`):
 
-1. **ONNX export both checkpoints** via
-   `experiments/010-submission-pipeline/scripts/export_efficientnet_sed.py`.
-   The export only loads `encoder` + `sed_head` state_dicts, so
-   `distill_head` is naturally excluded from the KD ONNX. Verify both
-   ONNX outputs are `(B, 234)` non-degenerate on a fixed random mel.
-2. **Add MODELS entries** to `experiments/010-submission-pipeline/scripts/upload_kaggle.py`:
-   `hgnet-b0-sed-v5j-kd` and `hgnet-b0-sed-v5j-control`.
-3. **Add MODEL_SLUGS entries** to `experiments/010-submission-pipeline/kaggle_kernel/submission.py`.
-4. **Create `kernel-metadata-*.json` files** in `kaggle_kernel/`.
-5. **Upload weights datasets** (×2) and **push kernels** (×2).
-6. **Submit both kernels** from the Kaggle UI; record both LBs.
-7. **Apply success matrix** in [`proposal.md` § Success Criteria](proposal.md)
-   using `v5j_control`'s actual LB as the baseline (not historical 0.896).
-8. **Update this `results.md`** with the verdict, update `MODEL-RUNS.md`,
-   update `CONTEXT.md`.
+- [x] ONNX export `v5j_kd` checkpoint via `export_efficientnet_sed.py`
+- [x] MODELS entry in `upload_kaggle.py`
+- [x] MODEL_SLUGS entry in `submission.py`
+- [x] `kernel-metadata-hgnet-b0-sed-v5j-kd.json` created
+- [x] Weights dataset uploaded to Kaggle
+- [x] Kernel pushed and submitted; LB = 0.890
+- [x] v5j_control LB inheritance from exp 030 0.896 sealed via offline 4-dp metric match (no separate submission needed)
+- [x] Apply success matrix → REJECT
+- [x] Update `MODEL-RUNS.md` with v5j_kd LB 0.890
+
+Pending:
+
+- [ ] Last-checkpoint diagnostic: scaffold + submit `v5j_kd_last` + `v5j_control_last` (see § Last-checkpoint diagnostic above)
+- [ ] Update `CONTEXT.md` "What happened recently" section
+- [ ] Decide on Phase 3+ direction (post-mortem candidates above) or pivot
 
 ## Decision matrix (LB-pending)
 
@@ -253,25 +415,32 @@ Once both LBs are in, apply (read against `v5j_control`'s actual LB):
 | `v5j_kd` LB control + 0.001 to control + 0.006 | **WEAK**: inside seed noise | Need 4-fold to disambiguate, but high variance cost |
 | `v5j_kd` LB ≤ control | **REJECT**: KD didn't add anything as a single-variable add | Halt Phase 2; structural post-mortem (head architecture, schedule, alpha) |
 
-## What this RULES OUT vs LEAVES OPEN (so far)
+## What this RULES OUT vs LEAVES OPEN
 
-**Rules out** (offline evidence only, may revise after LB):
+**Rules out** (post-LB):
 - *Mel-pipeline mismatch raising the dist_loss floor.* Floor 0.004 ≈
   Tucker's 0.003. Phase 0.0a stays SKIPPED.
-- *KD-branch additions breaking the non-KD path.* Bit-identical match to
-  exp 030 v5j_control_v2 on every offline metric.
+- *KD-branch additions breaking the non-KD path.* Bit-identical offline
+  match to exp 030 v5j_control_v2; bit-identical weights → inherit 0.896 LB.
 - *Detach bug or NaN/Inf.* All gradients flowed cleanly per Phase 0.4
-  test; cls_loss landed at 0.019 (well-behaved); zero NaN/Inf in
-  training.
+  test; cls_loss landed at 0.019 (well-behaved); zero NaN/Inf in training.
+- *KD as a single-variable add on v5j (HGNet + LSEHead + 20 ep + α=1.0).*
+  LB 0.890 vs control 0.896 → REJECT bucket. The lever does NOT transfer
+  in this configuration.
 
-**Leaves open** (LB-dependent):
-- Whether KD transfers as a single-variable add to v5j on our codebase.
-- Whether the −0.089 offline cmap gap predicts LB regression or is the
-  usual offline-LB anti-correlation.
-- Whether 20 epochs is enough for KD to express its lift (best epoch
-  17 in KD run is later than 15 in control — KD may need more epochs).
-- Whether LSEHead is a worse downstream consumer of Perch features than
-  AttHead.
+**Leaves open** (require additional submissions to resolve):
+- Whether the 0.890 was ckpt-selection artifact vs structural KD failure.
+  Tested by `v5j_kd_last` (ep 19 weights). PENDING.
+- Whether LSEHead is the wrong downstream consumer of Perch features.
+  Tested by KD + bug-fixed AttHead retrain. NOT SCHEDULED.
+- Whether 20 epochs was the binding constraint. Tested by 25- or 30-epoch
+  retrain. NOT SCHEDULED.
+- Whether Tucker's lift requires the full stack (AttHead + dual-supervision
+  + hard mixup + SpecAugment + focal×SS + 90/10 batch). Tested by full
+  Tucker replication. NOT SCHEDULED.
+- Whether the v5j-original 0.906 → v5j_control_v2 0.896 gap is
+  ckpt-selection sensitivity vs codebase drift. Tested by `v5j_control_last`
+  (ep 19 weights). PENDING.
 
 ## Caveats
 
@@ -313,18 +482,33 @@ Once both LBs are in, apply (read against `v5j_control`'s actual LB):
 
 ## Open work
 
-- [ ] ONNX export `v5j_kd` and `v5j_control` checkpoints
-- [ ] Verify ONNX outputs `(B, 234)` non-degenerate on fixed random mel
-- [ ] Add `hgnet-b0-sed-v5j-kd` + `hgnet-b0-sed-v5j-control` to `upload_kaggle.py` MODELS
-- [ ] Add both slugs to `submission.py` MODEL_SLUGS
-- [ ] Create both `kernel-metadata-*.json` files in `kaggle_kernel/`
-- [ ] Upload both weights datasets to Kaggle
-- [ ] Push both kernels
-- [ ] Submit both kernels to LB; record scores
-- [ ] Apply decision matrix; update this `results.md` with verdict
-- [ ] Update `MODEL-RUNS.md` with new LB scores
-- [ ] Update `CONTEXT.md` "What happened recently" section
-- [ ] If CONFIRM: scaffold Phase 2 (ownership + 4-fold)
-- [ ] If REJECT/PARTIAL/WEAK: write focused post-mortem identifying most
-      likely cause (head architecture / schedule / alpha / teacher mismatch /
-      seed noise)
+Phase 1 (DONE):
+
+- [x] ONNX export `v5j_kd` checkpoint (commit `2241093`)
+- [x] Wire `hgnet-b0-sed-v5j-kd` through Kaggle pipeline (4 file edits, commit `2241093`)
+- [x] Upload weights, push kernel, submit to LB → 0.890
+- [x] Seal v5j_control back-compat via offline 4-dp metric match (no separate LB needed)
+- [x] Apply decision matrix → REJECT
+- [x] Update `results.md` with verdict + post-mortem
+- [x] Update `MODEL-RUNS.md`
+- [x] Update `tasks.md`
+
+Best-vs-last checkpoint diagnostic (RETRAIN PENDING):
+
+- [x] Configs scaffolded: `configs/v5j_kd_resave.yaml` + `configs/v5j_control_resave.yaml` (save_top_k=-1)
+- [ ] Submit 2 SLURM jobs: `bash sbatch/run.sh configs/v5j_kd_resave.yaml` + `bash sbatch/run.sh configs/v5j_control_resave.yaml` (~80m + ~40m on rtx6000)
+- [ ] After both finish, sanity check: `best-epochepoch=15.ckpt` (or 17.ckpt for kd) from the resave run should be bit-identical to the original — confirms determinism
+- [ ] Add `hgnet-b0-sed-v5j-kd-last` + `hgnet-b0-sed-v5j-control-last` MODELS entries pointing at `best-epochepoch=19.ckpt` from the resave dirs
+- [ ] 2 kernel-metadata files + 2 MODEL_SLUGS entries (4-file pattern × 2 models)
+- [ ] Export, upload, push, submit both → record LBs
+- [ ] If `v5j_kd_last` ≥ 0.910: REJECT was wrong (ckpt-selection artifact); revise verdict
+- [ ] If `v5j_control_last` ≈ 0.906: codebase reproduces v5j-original; future runs should use ep 19 as the canonical submission and shift baselines accordingly
+
+Phase 3+ direction (DECISION pending):
+
+- [ ] Post-mortem follow-up: pick from ranked candidates (AttHead bug-fix /
+      longer schedule / α sweep / full Tucker replication) or pivot away
+      from KD entirely
+- [ ] Update `CONTEXT.md` "What happened recently" to reflect REJECT verdict
+- [ ] If pivoting, update `analysis/notes/2026-04-28-next-experiment-direction.md`
+      with the post-031 strategic decision

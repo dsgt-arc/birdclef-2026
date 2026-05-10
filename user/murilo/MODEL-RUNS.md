@@ -857,6 +857,62 @@ extraction layer with more channels.
 
 See `experiments/030-sydorskyi-mixup/results.md` for full details.
 
+## Experiment 031: Perch v2 Knowledge Distillation on v5j (Tucker recipe, Phase 1)
+
+Single-variable add of Perch v2 embedding-space KD on top of v5j_control_v2.
+DistillHead (GAP + Linear 1024→1536) MSE-aligned to frozen Perch v2 ONNX
+clip embedding on the same pre-mix waveform. Backbone driven by `dist_loss`
+only (`feat.detach()` on LSEHead branch), BCE-clip cls loss unchanged from
+v5j. α_distill=1.0, single-fold seed=42, 20 epochs.
+
+| Slug | Variant | val/auroc | best ep | LB | Δ vs v5j_control_v2 (0.896) | Checkpoint |
+|------|---------|----------:|--------:|----:|---:|---|
+| `hgnet-b0-sed-v5j-kd` | v5j + Perch v2 KD (best-by-val) | 0.8629 | 17 | **0.890** | **−0.006** | `031-perch-kd-distillation/.../2026-exp031-v5j-kd/best-epochepoch=17.ckpt` |
+| `v5j_control` (exp 031) | back-compat receipt (no KD) | 0.8747 | 15 | **0.896**† | 0.000† | bit-identical to exp 030 v5j_control_v2; no separate submission |
+
+† Inherited from exp 030 v5j_control_v2 (LB 0.896). All 8 offline metrics
+bit-identical to 4 dp under deterministic training (`seed_everything(42, workers=True) + Trainer(deterministic=True)`),
+so weights are bit-identical and inference is deterministic.
+
+### Verdict: REJECT (with last-ckpt diagnostic pending)
+
+Per the success matrix in `experiments/031-perch-kd-distillation/proposal.md`,
+read against v5j_control 0.896 with ±0.013 single-fold seed band:
+
+| Bucket | LB threshold | v5j_kd 0.890 |
+|---|---|---|
+| CONFIRM | ≥ 0.910 | ❌ |
+| PARTIAL | 0.903–0.909 | ❌ |
+| WEAK | 0.897–0.902 | ❌ |
+| **REJECT** | ≤ 0.896 | **✅** |
+
+The KD lever did not transfer as a single-variable add on this codebase.
+Phase 2 (ownership + 4-fold) is HALTED.
+
+### Post-mortem candidates (ranked by likelihood)
+
+1. **LSEHead is the wrong downstream consumer of Perch features.** LSE pools
+   per-frame logits by magnitude; Perch encodes spatial localization that
+   AttHead would consume directly. Highest-likelihood candidate.
+2. **20-epoch budget too short.** KD's val/auroc trajectory still narrowing
+   the gap to control through ep 17 (best). Tucker uses 25 + cosine.
+3. **`alpha_distill = 1.0` miscalibrated** for our codebase's mel + feature dim.
+4. **KD lift may require Tucker's full stack** (AttHead + dual-supervision +
+   hard-max mixup + SpecAugment + focal×SS + 90/10 batch composition).
+
+See `experiments/031-perch-kd-distillation/results.md` § Post-mortem for full
+discussion + ranked Phase 3+ follow-up experiments.
+
+### Diagnostic pending: best-vs-last checkpoint instability
+
+The 0.890 was on best-by-val ep 17. v5j-original's 0.906 was on the LAST
+epoch (ep 19). Both runs save `last.ckpt` (`save_last: true` in the config);
+ep 19 weights are on disk for both v5j_kd and v5j_control but unsubmitted.
+Two pending submissions:
+
+- `v5j_kd_last`: tests "0.890 was ckpt-selection artifact" vs "KD doesn't transfer"
+- `v5j_control_last`: tests "ep 19 weights recover 0.906 on new codebase" (isolates ckpt-selection from codebase drift)
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
