@@ -65,7 +65,7 @@ Why:
 - Template matches were useful conceptually, but the user preferred returning to explicit motif boxes.
 - It also risked over-anchoring on a few source crops.
 
-### 3. Motif mining / clustering experiment
+### 3. Motif mining via connected components
 
 Code:
 
@@ -79,13 +79,19 @@ Artifacts:
 artifacts/marbled_frog/motif_mining/
 ```
 
-This over-detected candidate boxes, extracted normalized spectrogram crops, clustered them, and generated cluster review grids.
+Each motif candidate is exactly one 8-connected component in the robust-excess-z spectrogram. Components are gated on physical event properties rather than hand-picked frequency bands:
 
-Takeaway:
+```text
+z_threshold        binarization cutoff over robust-excess-z
+min/max duration   bbox time-extent must fall in this range
+min/max bandwidth  bbox frequency-extent range
+min peak z         component must contain at least one pixel this bright
+min area (pixels)  minimum component size
+```
 
-- Useful conceptually for scaling review.
-- But early clusters were still strongly detector-dependent.
-- We decided not to rely on this yet for final annotations.
+This replaced an earlier three-band detector bank (`low_primary_600_1300`, `rising_chip_1000_1800`, `broad_upper_1000_3000`) that re-encoded the curated subset's hand inspection. The component-based detector treats *all* recordings the same way, so any band structure that appears in clusters comes from the data, not from the detector.
+
+Each component yields one bounding box (its time-frequency extent), plus features `peak_z`, `mean_z`, `area_pixels`, `fill_ratio`, `freq_centroid_hz`, `freq_slope_hz_per_s`. Crops are then PCA-embedded and KMeans-clustered as before.
 
 ### 4. Claude Opus review
 
