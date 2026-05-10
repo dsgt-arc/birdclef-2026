@@ -3,94 +3,155 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-10 (Phase 0 done; Phase 1 IN FLIGHT — full
-training kicked off late 05-09 / early 05-10. Two SLURM jobs running:
-8318953 v5j_kd, 8319084 v5j_control. Resume here when both finish.)
+**Last updated**: 2026-05-10 PM (Phase 1 LB done; verdict REJECT;
+**codebase regression discovered** — can't reproduce v5j-original 0.906
+from scratch. Ground-truth worktree training job 8330980 is RUNNING
+on node `atl1-1-02-004-35-0`. Resume when it finishes.)
 
 ---
 
 ## Pick up here (next session)
 
-**Two SLURM jobs are running** (or just finished). Check status first:
+**SLURM job 8330980 is running** (or just finished). It retrains
+v5j_control using the v5j-era source code from a worktree at commit
+`e420633`. This is the **ground-truth test** for whether the
+codebase regression that landed today's training at LB 0.897 (vs
+v5j-original 0.906) is in the codebase itself.
 
 ```bash
 squeue -u $USER
-ls -lt user/murilo/experiments/031-perch-kd-distillation/logs/
+ls -lt /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-v5j-era/user/murilo/experiments/019-perch-guided-sed/logs/
 ```
 
-| Job | What | Started | Expected wall time |
-|---|---|---|---|
-| **8318953** | `v5j_kd` full training (KD on, the test) | 2026-05-09 23:37 | ~80-150 min on rtx6000 |
-| **8319084** | `v5j_control` full training (KD off, the baseline + back-compat check) | 2026-05-10 00:05 | ~80-120 min on rtx6000 |
+Expected walltime: ~40 min on rtx6000. Output checkpoints at:
+`/storage/project/.../experiments/017-mel-overhaul/checkpoints/2026-exp019-v5j-diag-eracode-may10/`
 
-**When both finish** (per session-end exchange 2026-05-10 00:08):
+**When it finishes**, run the **hash-compare first** (no LB slot needed):
 
-1. **Pull the W&B side-by-side** in project `birdclef-2026-exp031`. Confirm:
-   - `v5j_kd` `train/dist_loss` decayed monotonically — Tucker's published
-     floor is ~0.003 by ep 25; we're at 20 epochs so expect ~0.005-0.010 floor.
-   - `v5j_kd` `train/cls_loss` is finite throughout (no divergence).
-   - `v5j_control` `val/auroc` trajectory matches exp 030's v5j_control_v2
-     (best-by-val ep ~14-15, val/auroc plateau ~0.85). If it lands close to
-     0.851 by ep 14-15, the KD-branch additions to `sed_finetune.py` are
-     back-compat for non-KD runs (implicit verification).
-   - **Halt-watch retro**: did `train/dist_loss > 0.01` by epoch 5? If yes,
-     mel-pipeline mismatch contributed; document as a Phase 2 diagnostic
-     question. (If not, the KD path is clean.)
-2. **ONNX export both checkpoints** from `outputs/checkpoints/` dirs.
-3. **Upload to Kaggle**:
-   - `birdclef-2026-hgnet-b0-sed-v5j-kd-weights`
-   - `birdclef-2026-hgnet-b0-sed-v5j-control-weights` (back-compat receipt)
-4. **Push two kernels**, submit to LB.
-5. **Apply success matrix** on KD result vs control's actual LB number:
-   - CONFIRM if `v5j_kd` LB ≥ `v5j_control` LB + 0.014
-   - PARTIAL if +0.007 to +0.013
-   - WEAK if +0.001 to +0.006 (inside seed noise)
-   - REJECT if ≤ control LB
+```bash
+source ~/clef/birdclef-2026/.venv/bin/activate
+python -c "
+import torch, hashlib
+def h(p):
+    s = torch.load(p, map_location='cpu', weights_only=False)['state_dict']
+    keys = sorted(k for k in s if not any(m in k for m in ['cmap','auroc','f1_macro','f1_micro','top1','top5','_val_sc']))
+    return hashlib.sha256(b''.join(s[k].cpu().numpy().tobytes() for k in keys)).hexdigest()
+print('v5j-original (Mar 31):', h('/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/best-epochepoch=19.ckpt'))
+print('diagnostic (May 10): ', h('/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-exp019-v5j-diag-eracode-may10/best-epochepoch=19.ckpt'))
+"
+```
 
-If `v5j_control` LB diverges from exp 030's 0.896 by more than ±0.005,
-that's a **back-compat failure** and we'd need to diagnose drift in the
-KD-branch additions before trusting the KD result.
+Three possible outcomes:
 
-### Implementation decisions (locked, don't re-litigate)
+| Hash result | Interpretation | Next step |
+|---|---|---|
+| **Identical** | Training is fully deterministic across May 10 vs Mar 31 of v5j-era code. **HEAD codebase IS the cause** of the 0.906→0.897 regression. LB will be 0.906. | **Bisect the 8 PRs** (exp 021/022/025/026/027/030/031) to localize the offending commit. No LB submission needed. |
+| **Different but val/auroc matches** | Training is non-deterministic across runs. | Submit ep 19 to LB. If 0.906, env-stable; if 0.897, env-shifted; intermediate suggests partial cause. |
+| **Different and val/auroc shifts** | Codebase + env both changed. | Deeper investigation: bisect AND environment audit. |
 
-- **Mixup interaction = Option B with the 1× teacher trick.**
-  `_apply_mixup(return_params=True)` returns `(indices, lam)`; per-sample
-  Perch invariance gives `perch(x[indices]) == perch(x)[indices]`, so
-  the matched target costs 1× teacher forward. Phase 1 KD restricted to
-  `mixup_mode="interpolate"` and `raw_waveform_mixup=False`; other modes
-  raise `NotImplementedError`. See `proposal.md` § Mixup interaction.
-- **Train/val split = Option A (no change).** The 4-single-sample-species
-  duplicate-into-train+val is val/auroc reporting bias only (~0.002 macro),
-  not train-weight contamination. Methodology audit deferred to a dedicated
-  post-031 experiment.
-- **Single fold for Phase 1.** ±0.013 seed noise band accepted; +0.014
-  CONFIRM threshold sits at ~1.1× the noise floor. Phase 2 = 4-fold if
-  Phase 1 confirms.
+Read the full diagnostic README at
+`user/murilo/analysis/diagnostics/v5j-codebase-drift/README.md`.
+
+---
+
+## Exp 031 verdict: REJECT
+
+Phase 1 KD as a single-variable add on v5j HGNet+LSEHead **did not transfer**.
+
+| Submission | Checkpoint | LB | vs same-codebase control |
+|---|---|---:|---:|
+| v5j_kd (exp 031) | ep 17 best-by-val | **0.890** | −0.006 |
+| v5j_control (exp 031) | ep 15 best-by-val | **0.896** (inherited from exp 030) | — |
+| v5j_kd_last | ep 19 (save_top_k=-1 rerun) | **0.891** | −0.006 |
+| v5j_control_last | ep 19 (save_top_k=-1 rerun) | **0.897** | — |
+
+Both ckpt-selection regimes give the same within-codebase KD delta: **−0.006**.
+Inside the ±0.013 seed band but systematic and on the wrong side. KD doesn't help on this stack.
+
+### Why REJECT is unambiguous despite the codebase regression
+
+The KD-vs-control comparisons happen **within the same codebase** (today's HEAD).
+Whatever drift broke 0.906 → 0.897 affects BOTH v5j_kd and v5j_control identically.
+The within-codebase delta (−0.006 at both best and last ckpts) is uncontaminated.
+
+### Post-mortem (4 ranked candidate causes)
+
+1. **LSEHead is the wrong consumer of Perch features** (highest likelihood) — LSE pools by magnitude; Perch encodes spatial localization that AttHead would consume directly.
+2. **20-epoch budget too short** — KD trajectory still narrowing gap to control through ep 17 best.
+3. **α_distill = 1.0 miscalibrated** for our codebase's mel + feature dim.
+4. **KD lift may require Tucker's full stack** (AttHead + dual-supervision + hard-max mixup + SpecAugment + focal×SS + 90/10 batch composition + 25-ep cosine).
+
+Phase 2 (ownership + 4-fold) HALTED. Phase 3+ candidates documented in
+`experiments/031-perch-kd-distillation/results.md` and `tasks.md`.
+
+---
+
+## BIG FINDING: v5j codebase regression (priority #1)
+
+Discovered 2026-05-10 PM via the best-vs-last LB diagnostic. **The training pipeline produces different (worse) weights today than it did on Mar 31, with identical config + seed + data.**
+
+| Run | LB | val/auroc | val/cmap | val/f1_macro |
+|---|---:|---:|---:|---:|
+| v5j-original (Mar 31, exp 019) | **0.906** | 0.8737 (ep 19) | **0.6429** | **0.5515** |
+| v5j-resubmit (exp 019 ep 19 ckpt → today's inference) | **0.906** | — | — | — |
+| v5j_control (today, ep 15 best) | 0.896 | 0.8747 | 0.6268 | 0.5270 |
+| v5j_control_last (today, ep 19) | 0.897 | 0.8728 | 0.6268 | 0.5270 |
+
+**Inference is verified clean** (v5j-resubmit 0.906 exactly reproduces original).
+**Training has drifted**: val/auroc parity, but cmap −0.016 and f1_macro −0.025
+relative to v5j-original. Per-epoch val/auroc trajectory **diverges at epoch 0**
+(orig 0.50607 vs today 0.50880).
+
+### Diagnostic findings: 8 STATIC CAUSES RULED OUT
+
+All bit-identical between v5j-era (`e420633`) code and HEAD code under same venv:
+
+- ✅ Init-state hash (encoder + sed_head + module)
+- ✅ Pretrained backbone weights (across timm 1.0.25/1.0.26/1.0.27 + hf-hub 1.6.0/1.8.0/1.14.0)
+- ✅ Forward+backward gradient hash on synthetic input
+- ✅ Train/val split filenames + ORDER
+- ✅ `configure_optimizers` config
+- ✅ All ML/CUDA libs in actual training (torch 2.5.1+cu121, cuDNN 9.1.0.70, cublas 12.1.3.1, nccl 2.21.5, driver 575.57.08)
+- ✅ Python 3.11.11 in both training runs
+- ✅ Data files (train.csv mtime 2026-03-11, unchanged)
+
+The drift requires **end-to-end GPU training** to manifest. Candidates:
+multi-worker DataLoader RNG state, GPU fp non-determinism, GradScaler
+state evolution, wheel binary drift at unchanged version numbers.
+
+**Decisive next step**: the worktree training job 8330980 (currently
+running) retrains v5j_control using v5j-era source code. Hash-compare
+ep 19 vs v5j-original ep 19 → ground-truth answer on whether codebase
+is to blame.
+
+Full forensics: `analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md`
+and `analysis/notes/2026-05-10-v5j-drift-diagnostics-findings.md`.
+
+### Implications
+
+- **0.906 is the real v5j baseline** (proven by v5j-resubmit). Stay with it; don't lower the bar to 0.897.
+- **Within-codebase deltas are valid**; cross-codebase deltas (today vs Mar 31 era) are contaminated by ~0.009 of regression.
+- **Reproducibility is the highest-priority fix** before any further training-recipe experiments. Until resolved, we're 0.009 in the hole before starting.
+- Several historical "REJECT/WEAK" verdicts comparing today's runs against the 0.906 baseline overstated negative deltas by ~0.009.
 
 ---
 
 ## Where exp 031 is
 
-**Status**: Phase 0 implementation complete and verified; Phase 1 training
-in flight (jobs 8318953 + 8319084).
+**Status**: Phase 1 COMPLETE → REJECT verdict. Codebase regression
+discovered. Ground-truth diagnostic in flight.
 
 | Phase | What | Status |
 |---|---|---|
-| 0.0 | Mel pipeline equivalence diagnostic | ✅ KEEP NNAUDIO + hop=313 (cosine sim 0.987 on STFT-only) |
-| 0.1 | Vendor + verify Perch v2 ONNX teacher | ✅ All 6 checks pass; CUDA 17 ms/batch=4 |
-| 0.2 | `DistillHead` + `PerchTeacher` + KD branch in `sed_finetune.py` | ✅ DONE — Option B with 1× teacher trick (commit `ede03e6`) |
-| 0.3 | Config `configs/v5j_kd.yaml` + train.py + sbatch wrappers | ✅ DONE (commit `ede03e6`) |
-| 0.4.1 | `test_kd_gradient_flow.py` (synthetic-batch local check) | ✅ ALL CHECKS PASS — backbone/head/distill_head grads > 0 in both mixup-on and mixup-off cases; row-permutation invariance exact (diff=0.0) |
-| 0.4.2 | SLURM fast-dev-run (real Perch ONNX on GPU) | ✅ PASSED (job 8318887). 5 batches: cls_loss=0.699, dist_loss=0.058, loss=0.757 (= cls + 1.0·dist ✓). Zero affinity warnings. (Earlier job 8318761 failed on ONNX path; fixed in commit `5f4b6aa`.) |
-| 0.4.3 | Add `v5j_control.yaml` for live W&B comparison + back-compat receipt | ✅ DONE (commit `fa94043`) |
-| 1.1 | `v5j_kd` SLURM training | ⏳ RUNNING (job 8318953, started 2026-05-09 23:37) |
-| 1.2 | `v5j_control` SLURM training (parallel) | ⏳ RUNNING (job 8319084, started 2026-05-10 00:05) |
-| 1.3 | ONNX export + Kaggle upload + LB submit | pending 1.1/1.2 |
-
-**Phase 1 success gate** (vs `v5j_control_v2 = 0.896` baseline, ±0.013 noise):
-- CONFIRM if LB ≥ 0.910 → KD lever works on our codebase, proceed to Phase 2 (ownership + 4-fold).
-- PARTIAL/WEAK 0.897-0.909 → diagnose mel pipeline, dist_loss floor.
-- REJECT ≤ 0.896 → halt Phase 2; structural post-mortem.
+| 0.0–0.4 | Phase 0 prerequisites | ✅ DONE |
+| 1.1 | v5j_kd + v5j_control SLURM training | ✅ DONE (jobs 8318953, 8319084) |
+| 1.2 | ONNX export + Kaggle pipeline scaffolding (v5j_kd) | ✅ DONE (commit `2241093`) |
+| 1.3 | v5j_kd LB submission | ✅ DONE — LB 0.890 → **REJECT** |
+| 1.4a | save_top_k=-1 retrains (v5j_kd_resave, v5j_control_resave) | ✅ DONE — determinism verified bit-identical |
+| 1.4b | v5j_kd_last + v5j_control_last pipeline scaffolding | ✅ DONE (commit `b884fc3`) |
+| 1.4c | Best-vs-last LB submissions | ✅ DONE — control 0.897, KD 0.891 (REJECT confirmed) |
+| 1.4d | Codebase regression investigation | ✅ 8 static causes ruled out |
+| 1.4e | Worktree training (ground-truth test) | ⏳ RUNNING (job 8330980, node `atl1-1-02-004-35-0`) |
 
 ---
 
@@ -100,128 +161,119 @@ Top three are read fully; others are reference / skim.
 
 | File | Why |
 |---|---|
-| `user/murilo/experiments/031-perch-kd-distillation/proposal.md` | Active experiment hypothesis + method + success criteria |
-| `user/murilo/analysis/notes/2026-05-09-tucker-distilled-sed-code-audit.md` | Three structural findings from auditing Tucker's notebook (KD recipe shape, AttHead aggregation domain, dual-supervision blend) |
-| `user/murilo/experiments/031-perch-kd-distillation/v5j-vs-tucker-pipeline-comparison.md` | Side-by-side full pipeline comparison, risk-coded; identifies the 7+ axes Tucker differs from v5j |
+| `user/murilo/experiments/031-perch-kd-distillation/results.md` | Full Phase 1 results + REJECT verdict + post-mortem |
+| `user/murilo/analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md` | Initial drift analysis + ranked hypotheses |
+| `user/murilo/analysis/notes/2026-05-10-v5j-drift-diagnostics-findings.md` | 8 static causes ruled out; worktree-training plan |
+| `user/murilo/analysis/diagnostics/v5j-codebase-drift/README.md` | Worktree training experiment: how to run + interpret |
 | `user/murilo/experiments/031-perch-kd-distillation/tasks.md` | Phase-by-phase task list with completion status |
-| `user/murilo/experiments/031-perch-kd-distillation/phase0_perch_teacher_schema.md` | Perch ONNX schema: 4 outputs (clip emb, spatial emb, internal mel, classifier logits); Phase 1 uses output 0 only |
-| `user/murilo/experiments/031-perch-kd-distillation/phase0_mel_equivalence.md` | Phase 0.0 verdict + hop_length explanation |
-| `user/murilo/notes/kaggle-discussion-tucker-distilled-sed-baseline.md` | Tucker's discussion post + architecture figures |
-| `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/bc2026-distilled-sed.ipynb` | Tucker's actual notebook code; cells 4/10/12/14 are load-bearing |
-| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | Competitor scores + "Proven 0.93+ recipes" synthesis |
+| `user/murilo/experiments/031-perch-kd-distillation/proposal.md` | KD experiment proposal (historical, success matrix) |
+| `user/murilo/analysis/notes/2026-05-09-tucker-distilled-sed-code-audit.md` | Tucker recipe code audit (KD shape, AttHead aggregation, dual-supervision blend) |
 
 Backlog (skim only if older context needed):
-- `analysis/notes/2026-04-28-next-experiment-direction.md` — strategic synthesis post exp 030; PL vs KD distinction
-- `analysis/notes/2026-04-26-mixup-implementation-audit.md` — v5j uses interpolated targets; Sydorskyi/Tucker use max
-- `analysis/notes/2026-04-26-d1-train-side-attention-verdict.md` — v5j vs v6k attention; data-driven failure
+- `analysis/notes/2026-04-28-next-experiment-direction.md` — pre-exp 031 strategic synthesis
+- `analysis/notes/2026-04-26-mixup-implementation-audit.md` — v5j vs Sydorskyi/Tucker
 - `analysis/notes/2026-04-25-per-frame-attention-analysis.md` — v5j is structurally honest on hard crops
 
 ---
 
-## Best LB (unchanged through exp 030 close)
+## Best LB (UNCHANGED — 0.906 still real)
 
 | Model | LB | Notes |
 |---|---:|---|
 | Perch + SED MLP-only ensemble (exp 023) | **0.929** | Current best |
 | v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
-| v5j single (exp 019) | **0.906** | Best single SED; inference reproducible |
+| v5j single (exp 019) | **0.906** | Best single SED. Proven achievable via v5j-resubmit reproduction. Today's pipeline gets 0.897 instead — that's a REGRESSION, not a new normal. |
 | effnetv2b0_sydorskyi (exp 030) | 0.901 | Best non-v5j single |
-| v5j_control_v2 (exp 030) | **0.896** | Same recipe retrained, single fold seed=42 — Phase 1 baseline |
+| v5j_control_v2 (exp 030) | 0.896 | Single-fold seed=42 same recipe; the same regression that makes today's runs land at 0.896-0.897 |
+| **v5j_kd (exp 031)** | **0.890** | REJECTED — KD doesn't transfer as single-variable add |
 
 **Target**: 0.948 (gap 0.019 from current best ensemble, 0.014 from best
-single SED).
+single SED). Reproducing 0.906 from scratch is a precondition.
 
 ---
 
 ## Key patterns and constraints
 
-### Tucker audit findings (load-bearing 05-09)
-1. **Tucker's KD = embedding-space MSE distillation with `feat.detach()`
-   on SED branch.** Category #3 of "Perch as teacher", distinct from
-   our exp 014/015/025 PL-on-unlabeled.
-2. **Tucker's AttHead aggregates in logit space**
-   (`sum(softmax(tanh(att)) * frame_logits)`); ours aggregates in
-   probability space with `sigmoid → average → inverse-sigmoid`
-   roundtrip. Likely root cause of our 7 AttHead regressions. Worth a
-   fresh AttHead test with the bug fixed *after* exp 031, not as part of it.
-3. **Dual-supervision blend at inference** (`0.5 * sigmoid(clip) + 0.5
-   * sigmoid(frame_max)`) is the structural fix to v6k's uniform
-   attention. Our v6k had `blend_clip=0.0`, removing gradient pressure
-   on attention.
+### Lightning save_top_k pitfall (NEW — feedback memory)
+`save_last: true` with `save_top_k: 1` makes `last.ckpt` a name-alias of
+the best checkpoint, NOT the literal final epoch. Use `save_top_k: -1` if
+best-vs-last analysis may matter (which is essentially always for v5j-family
+single-fold runs). Documented in
+`feedback_save_top_k_does_not_preserve_last.md`.
 
-### "Perch as teacher" — three categories, only one tried
+### Codebase regression: 0.906 → 0.897 on v5j retraining (NEW)
+Today's training pipeline can't reproduce v5j-original 0.906 from scratch.
+Same config, same seed, same data, same most-libs → different weights →
+worse LB. 8 static diagnostics ruled out all testable causes. Drift
+requires end-to-end GPU training to manifest. Worktree experiment (job
+8330980) is the decisive test. Until resolved, single-fold experiments
+are comparing against a known-broken baseline.
+
+### Tucker audit findings (load-bearing)
+1. **Tucker's KD = embedding-space MSE distillation with `feat.detach()` on SED branch** (category #3 of "Perch as teacher")
+2. **Tucker's AttHead aggregates in logit space** (`sum(softmax(tanh(att)) * frame_logits)`); ours aggregates in probability space with `sigmoid → average → inverse-sigmoid` roundtrip. Likely root cause of our 7 AttHead regressions.
+3. **Dual-supervision blend at inference** (`0.5 * sigmoid(clip) + 0.5 * sigmoid(frame_max)`) is the structural fix to v6k's uniform attention.
+
+### "Perch as teacher" — three categories
 | # | What | Status |
 |---|---|---|
-| 1 | PL on UNlabeled data | exp 014/015/025 → "dead" |
+| 1 | PL on UNlabeled data | exp 014/015/025 → dead |
 | 2 | KD on labeled (KLD on logits) | NEVER TRIED (likely EliKal's 0.909) |
-| 3 | KD on labeled (MSE on embedding + stop-grad) | NEVER TRIED (Tucker's 0.917 recipe) — **exp 031 tests this** |
+| 3 | KD on labeled (MSE on embedding + stop-grad) | **REJECTED on v5j+LSEHead+20ep (exp 031, LB 0.890 vs 0.896 control)** |
 
-### What moves LB
+### What moves LB (revised, post-031)
 Backbone change (+0.037), mel normalization (+0.034), PP/TTA/smoothing
 (+0.032), SED architecture (+0.028), Perch+SED ensemble fusion (+0.004).
 **Common thread**: change *what the model sees* or *how predictions are
-combined* — never *how the model trains*.
+combined* — never *how the model trains*. Exp 031's KD addition is a
+training-side change; consistent with the failure pattern.
 
 ### What's dead (don't redo)
 - CE loss (7 attempts, -0.015 to -0.409)
 - Interpolated mixup variants (3 attempts, -0.019 to -0.031)
 - PL on unlabeled (exp 014/015/025) — categories #2/#3 above are NOT this
 - 2025-only pretrain at our scale (exp 029, -0.021)
-- 7 AttHead variants — but see above audit finding; aggregation-domain bug means our test was structurally broken
-- Background noise mixing (paused before run; per-frame analysis demoted it)
+- 7 AttHead variants — but aggregation-domain bug means our test was structurally broken
+- Background noise mixing (paused before run)
 - Multi-context heads (-0.010 to -0.075)
+- **NEW**: Tucker-style embedding KD on v5j+LSEHead (exp 031, -0.006). Still untested: KD on bug-fixed AttHead or KD on EffNet.
 
 ### Single-fold seed band: ±0.013 on HGNet
-v5j_control_v2 (seed=42) = 0.896, v5j_control_seed43 = 0.883. Any
-single-fold delta below ±0.013 is inside noise. Future single-model
-experiments need 4-fold or ≥3 seeds to escape it.
+v5j_control_v2 (seed=42) = 0.896, v5j_control_seed43 = 0.883.
 
 ### v5j is structurally honest on hard crops
-Per the 04-25 per-frame finding: GT-class attention entropy rises and
-logit std collapses on low-SNR crops. BCE+random-crop training penalizes
-this honesty (recording-level label says species is present whether or
-not it's in the 5s window). Mechanistically explains 22+ recipe-tweak
-failures. Implication: useful levers are *more information* (KD,
-pretraining, external data) or *better inference* (PP/TTA), NOT making
-the model more confident on hard crops.
+GT-class attention entropy rises and logit std collapses on low-SNR crops.
+Mechanistically explains 22+ recipe-tweak failures.
 
-### Best-vs-last checkpoint instability (deferred)
-v5j-original best=ep 19; v5j_control_v2 best=ep 15. With `save_top_k=1`
-we never serialize ep 19 in new runs. A `save_top_k=-1` retrain of
-v5j_control would isolate "best plateau too early" from real codebase
-drift. Cheap, not blocking exp 031.
-
-### dual_validation lesson
-Any flag that affects which checkpoint we serialize needs an LB receipt,
-not just an offline-metric receipt. Verify weight divergence via
-state_dict hash, not run-name alone.
-
-### Offline metrics anti-correlate with LB
-Cross-architecture comparisons via val/auroc are unreliable. cmap and
-f1_macro are slightly more directional but still not LB-predictive
-above noise.
+### Phase 3+ candidates (if v5j codebase regression resolved)
+1. KD + bug-fixed AttHead (logit-space aggregation) — highest priority
+2. KD with 25-30 epoch schedule
+3. α_distill sweep (0.1, 0.5, 2.0)
+4. Full Tucker replication (EfficientNet-B0 NS-JFT + AttHead + dual-supervision + hard mixup + SpecAugment + focal×SS)
+5. KLD-on-logits (Perch category #2, EliKal's recipe — never tried)
 
 ### `head_lr` quirk
-Silently ignored under `scheduler_type: one_cycle` (only used in cosine
-branch of `configure_optimizers`). Only matters if we revisit split LR.
+Silently ignored under `scheduler_type: one_cycle`. Only matters if we revisit split LR.
 
 ---
 
 ## Branch / git state
 
-- **Current branch**: `mg/exp031-perch-kd-distillation`. **4 commits ahead**
-  of main, all pushed to origin:
-  - `fa94043` — Add v5j_control.yaml for live W&B comparison
-  - `5f4b6aa` — Fix exp 031 fast-dev-run: ONNX path resolution + onnxruntime warnings
-  - `ede03e6` — Implement exp 031 Perch v2 KD branch (Phase 0.2-0.4)
-  - `3bb7afc` — Update CONTEXT.md branch/git state after PR #46 merge
-- **Latest commit on main**: `24d813a` — "Scaffold exp 031: Perch v2
-  knowledge distillation (Phase 0 setup) (#46)" (squash-merge of PR #46).
-- **No open PRs.** Next PR opens after Phase 1 LB receipt.
-- **Deleted branches** (cleanup history):
-  - `mg/exp030-sydorskyi-mixup` (local + remote, fully on main via squash `58dd8c2`)
-  - `mg/exp030-wrapup-and-next-direction` (local + remote, fully on main via squash `24d813a`)
-  - `mg/exp031-perch-kd-distillation` was the head of PR #46; auto-deleted by GitHub on squash-merge, then recreated locally off updated main as the new working branch.
+- **Current branch**: `mg/exp031-perch-kd-distillation`. **9 commits ahead** of main, all pushed to origin:
+  - `c6aaadf` — Scaffold v5j-era worktree training experiment (drift root-cause diagnostic)
+  - `65fc467` — v5j drift diagnostics: 8 static causes RULED OUT
+  - `dae4abe` — v5j_kd_last LB 0.891; correct codebase-regression framing
+  - `3e1cb11` — Comprehensive v5j codebase drift analysis
+  - `773280b` — Exp 031 best-vs-last LB: codebase reproduction FAILED
+  - `df6a779` — Add v5j_control_resave training metrics
+  - `c101906` — Add v5j_kd_resave training metrics
+  - `b884fc3` — Wire exp 031 best-vs-last LB diagnostic through submission pipeline
+  - `b1aa7e7` — Exp 031 Phase 1 REJECT verdict + best-vs-last retrain scaffolding
+- **Latest commit on main**: `24d813a` (squash-merge of PR #46, Phase 0 setup)
+- **No open PRs.** Next PR opens when worktree experiment resolves drift.
+- **Worktrees**:
+  - main: `/storage/project/.../mgustineli3/birdclef-2026/` (branch `mg/exp031-perch-kd-distillation`)
+  - **v5j-era diag**: `/storage/project/.../mgustineli3/birdclef-v5j-era/` (detached HEAD at `e420633`). Remove with `git worktree remove` after the experiment.
 
 ---
 
@@ -230,16 +282,17 @@ branch of `configure_optimizers`). Only matters if we revisit split LR.
 | Date | What | Outcome |
 |---|---|---|
 | 04-23 | Built model attention explorer | Captured Salman 0.937 + Boredom 0.950+ |
-| 04-24 | v5j triage tooling | Foundation for per-frame analysis |
-| 04-25 | Audio validation + per-frame analysis | **v5j is structurally honest**; explains recipe failures. exp 029 launched |
-| 04-25 PM | exp 029 LB 0.885 | REJECTED — 2025 pretrain at our scale doesn't help |
-| 04-26 | Sydorskyi audit + D1 verdict + mixup audit + exp 030 scaffold | PR #42 merged; exp 030 v1 trained |
-| 04-27 | exp 030 v2 retrain + v5j-resubmit kernel | v5j_control_v2 LB 0.896 surfaces ckpt-selection issue |
-| 04-28 AM | v5j-resubmit LB 0.906 + deterministic-training root cause | seed=43 retrain launched |
-| 04-28 PM | seed=43 LB 0.883 → seed band ±0.013 | **exp 030 closed**; PL vs KD distinction surfaced |
-| 05-09 | Tucker notebook audit + exp 031 Phase 0 | Phase 0.0/0.1 done; PR #46 merged to main as squash `24d813a`; Phase 0.2 mixup-interaction unresolved |
-| 05-09 PM | Mixup-interaction + split methodology resolved; Phase 0.2-0.4 implemented; fast-dev-run passed | Option B with 1× teacher trick locked; Option A (no split change) locked; commits `ede03e6` `5f4b6aa` `fa94043` |
-| 05-10 AM | Phase 1 SLURM jobs kicked off | 8318953 v5j_kd + 8319084 v5j_control running in parallel; resume here next session |
+| 04-25 | Audio validation + per-frame analysis | **v5j is structurally honest** |
+| 04-26 | Sydorskyi audit + D1 + mixup audit + exp 030 scaffold | PR #42 merged |
+| 04-27 | exp 030 v2 + v5j-resubmit | v5j_control_v2 LB 0.896 surfaces ckpt-selection issue |
+| 04-28 | v5j-resubmit LB 0.906 + seed=43 retrain (LB 0.883) | exp 030 closed; PL vs KD distinction |
+| 05-09 | Tucker audit + exp 031 Phase 0 | PR #46 merged; Phase 0.2-0.4 implemented |
+| 05-10 AM | Phase 1 SLURM (v5j_kd + v5j_control) | Both train cleanly; bit-identical to exp 030 v5j_control_v2 |
+| 05-10 PM | v5j_kd LB 0.890 = REJECT; best-vs-last diagnostic launched | save_top_k=-1 retrains kicked off |
+| 05-10 PM | v5j_kd_resave + v5j_control_resave done; determinism confirmed | save_last pitfall codified as feedback memory |
+| 05-10 PM | v5j_control_last LB 0.897, v5j_kd_last LB 0.891 | **CODEBASE REGRESSION DISCOVERED**: can't reproduce 0.906 from scratch |
+| 05-10 PM | 8 static diagnostics — ALL ruled out causes | Init, math, libs, CUDA, Python, data, optimizer, splits all bit-identical |
+| 05-10 PM | Worktree training scaffolded + submitted (job 8330980) | Ground-truth test running on node `atl1-1-02-004-35-0` (same as v5j-original!) |
 
 ---
 
@@ -247,17 +300,17 @@ branch of `configure_optimizers`). Only matters if we revisit split LR.
 
 | File | Purpose |
 |---|---|
-| `user/murilo/experiments/031-perch-kd-distillation/` | **Active experiment** |
-| `user/murilo/experiments/031-perch-kd-distillation/configs/v5j_kd.yaml` | KD training config (use_perch_distill: true) |
-| `user/murilo/experiments/031-perch-kd-distillation/configs/v5j_control.yaml` | No-KD baseline config (parallel run for W&B comparison) |
-| `user/murilo/experiments/031-perch-kd-distillation/test_kd_gradient_flow.py` | Synthetic-batch local sanity check (no GPU/ONNX needed) |
-| `user/murilo/experiments/031-perch-kd-distillation/train.py` | Training driver with KD param plumbing |
-| `user/murilo/experiments/031-perch-kd-distillation/sbatch/run.sh` | Launcher (`bash sbatch/run.sh configs/v5j_kd.yaml`) |
-| `user/murilo/experiments/031-perch-kd-distillation/logs/` | SLURM logs — most recent: `slurm_v5j_kd_8318953.log`, `slurm_v5j_control_8319084.log` |
+| `user/murilo/experiments/031-perch-kd-distillation/results.md` | **Phase 1 results + REJECT verdict** |
+| `user/murilo/experiments/031-perch-kd-distillation/tasks.md` | Full task list (1.4e for worktree experiment) |
+| `user/murilo/analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md` | Initial drift analysis + 7 ranked hypotheses |
+| `user/murilo/analysis/notes/2026-05-10-v5j-drift-diagnostics-findings.md` | **8 static diagnostics — all RULED OUT** |
+| `user/murilo/analysis/diagnostics/v5j-codebase-drift/README.md` | Worktree experiment: run + interpret |
+| `user/murilo/analysis/diagnostics/v5j-codebase-drift/hgnet_b0_sed_v5j_diag_eracode.yaml` | Diagnostic config (save_top_k=-1) |
+| `/storage/project/.../mgustineli3/birdclef-v5j-era/` | **v5j-era worktree** (detached HEAD `e420633`) |
+| `/storage/project/.../mgustineli3/experiments/017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/` | v5j-original ep 19 ckpt (LB 0.906 reference) |
+| `/storage/project/.../mgustineli3/experiments/031-perch-kd-distillation/checkpoints/` | All exp 031 ckpts (v5j_kd, v5j_control, both resaves) |
+| `user/murilo/experiments/031-perch-kd-distillation/artifacts/training/` | metrics.json for all 4 exp 031 runs |
+| `user/murilo/experiments/010-submission-pipeline/` | Kaggle pipeline (kernel-metadata for 4 v5j models: kd, kd-last, control-last; v5j_control inherited via offline match) |
 | `user/murilo/src/birdclef/lightning/sed_finetune.py` | DistillHead, PerchTeacher, KD branch in training_step |
-| `user/murilo/analysis/mel_pipeline_comparison.py` | Phase 0.0 mel equivalence script |
-| `user/murilo/analysis/verify_perch_teacher.py` | Phase 0.1 ONNX schema/IO verification |
-| `vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx` | Vendored Perch teacher (413 MB, gitignored) |
-| `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/` | Tucker's notebook (vendored) |
 | `user/murilo/MODEL-RUNS.md` | All model scores |
 | `user/murilo/FINDINGS.md` | Cross-experiment history |
