@@ -28,13 +28,13 @@ import polars as pl
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from data_analysis.paths import (
+from data_analysis.common.paths import (
     PERCH_SOUNDSCAPE_EMBEDDINGS,
     TAXONOMY_CSV,
     TRAIN_SOUNDSCAPES_LABELS_CSV,
     artifact_dir,
 )
-from data_analysis.labeled_soundscapes import hms_to_seconds
+from data_analysis.soundscapes.labeled_soundscapes import hms_to_seconds
 
 
 @dataclass(frozen=True)
@@ -387,7 +387,7 @@ def run(
     max_pca_dims: int = 50,
 ) -> Path:
     """Run the three PaCMAP projections and write plot/coordinate artifacts."""
-    output_dir = output_dir or artifact_dir("pacmap_soundscape_embeddings")
+    output_dir = output_dir or artifact_dir("soundscapes/pacmap")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     windows, emb_cols = load_window_embeddings(scope=scope)
@@ -486,7 +486,7 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=None,
-        help="Output directory; defaults to artifacts/pacmap_soundscape_embeddings/.",
+        help="Output directory; defaults to artifacts/soundscapes/pacmap/.",
     )
     parser.add_argument(
         "--scope",

@@ -21,14 +21,14 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import polars as pl
 
-from data_analysis.marbled_frog_motif_boxes import (
+from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir
+from data_analysis.common.spectrogram import (
     DISPLAY_BAND,
-    MotifBox,
-    detect_custom_band_boxes,
+    MEL_HOP_LENGTH,
+    MEL_SAMPLE_RATE,
     robust_excess_spectrogram,
 )
-from data_analysis.paths import TRAIN_AUDIO_DIR, artifact_dir
-from data_analysis.species_frequency_perch_analysis import MEL_HOP_LENGTH, MEL_SAMPLE_RATE
+from data_analysis.marbled_frog.motif_boxes import MotifBox, detect_custom_band_boxes
 
 TARGET_LABEL = "22967"
 
@@ -231,7 +231,7 @@ def plot_recording_review(
 
 def run(output_dir: Path | None = None) -> Path:
     """Run review plot generation."""
-    output_dir = output_dir or artifact_dir("marbled_frog_motif_review")
+    output_dir = output_dir or artifact_dir("marbled_frog/motif_review")
     plots_dir = output_dir / "plots"
     tables_dir = output_dir / "tables"
     plots_dir.mkdir(parents=True, exist_ok=True)

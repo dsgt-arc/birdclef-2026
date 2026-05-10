@@ -7,9 +7,9 @@
 | Date | 2026-05-10 |
 | BirdCLEF label | `22967` |
 | Species | Marbled White-lipped Frog / *Leptodactylus elenae* |
-| Analysis code | `src/data_analysis/marbled_frog_window_relevance.py` |
-| Input analysis | `artifacts/species_frequency_perch_22967/window_scores_and_spectral_features.csv` |
-| Output directory | `artifacts/marbled_frog_window_relevance/` |
+| Analysis code | `src/data_analysis/marbled_frog/window_relevance.py` |
+| Input analysis | `artifacts/marbled_frog/frequency_perch/window_scores_and_spectral_features.csv` |
+| Output directory | `artifacts/marbled_frog/window_relevance/` |
 
 ## Heuristic label rule
 
@@ -63,7 +63,7 @@ outside k-means cluster 1: 5 windows, all iNat1698105
 Artifacts are now grouped to avoid top-level sprawl:
 
 ```text
-artifacts/marbled_frog_window_relevance/
+artifacts/marbled_frog/window_relevance/
 ├── summary.md
 ├── plots/
 │   ├── window_relevance_pacmap.png
@@ -92,8 +92,8 @@ artifacts/marbled_frog_window_relevance/
 The script also creates a `relevant_vs_not`-style grid with the highest relevance-score window from each of the 8 train recordings:
 
 ```text
-artifacts/marbled_frog_window_relevance/plots/best_window_per_recording_spectrogram_grid.png
-artifacts/marbled_frog_window_relevance/tables/best_window_per_recording.csv
+artifacts/marbled_frog/window_relevance/plots/best_window_per_recording_spectrogram_grid.png
+artifacts/marbled_frog/window_relevance/tables/best_window_per_recording.csv
 ```
 
 Selected windows:

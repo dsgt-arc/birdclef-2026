@@ -6,13 +6,13 @@
 |---|---|
 | Date | 2026-05-10 |
 | Status | initial count complete |
-| Analysis code | `src/data_analysis/labeled_species_training_coverage.py` |
+| Analysis code | `src/data_analysis/soundscapes/species_coverage.py` |
 | Labeled soundscape labels | `/mnt/data/scratch/birdclef-2026/train_soundscapes_labels.csv` |
 | Training metadata | `/mnt/data/scratch/birdclef-2026/train.csv` |
 | Train-audio windows | `/mnt/data/scratch/birdclef-2026/inference/perch-v2-tf/train_audio/embeddings.parquet` |
-| Output table | `artifacts/labeled_species_training_coverage/coverage.csv` |
-| Output plot | `artifacts/labeled_species_training_coverage/coverage_scatter.png` |
-| Output bar plot | `artifacts/labeled_species_training_coverage/train_audio_windows_by_label.png` |
+| Output table | `artifacts/soundscapes/species_coverage/coverage.csv` |
+| Output plot | `artifacts/soundscapes/species_coverage/coverage_scatter.png` |
+| Output bar plot | `artifacts/soundscapes/species_coverage/train_audio_windows_by_label.png` |
 | Scope | 75 labels appearing in labeled soundscapes |
 
 ## At-a-glance takeaway
@@ -52,7 +52,7 @@ Key finding: many soundscape labels have little or no matching isolated-ish `tra
 
 Generated plot:
 
-`artifacts/labeled_species_training_coverage/coverage_scatter.png`
+`artifacts/soundscapes/species_coverage/coverage_scatter.png`
 
 Plot encoding:
 
@@ -67,7 +67,7 @@ The plot makes the main imbalance visible: birds mostly sit far to the right wit
 
 Generated plot:
 
-`artifacts/labeled_species_training_coverage/train_audio_windows_by_label.png`
+`artifacts/soundscapes/species_coverage/train_audio_windows_by_label.png`
 
 This horizontal bar plot shows `train_audio_any_windows` for every label found in the labeled soundscapes. It is sorted by window count and uses a symlog x-axis so the many zero/low-count labels remain visible while the high-coverage bird labels still fit on the same chart.
 

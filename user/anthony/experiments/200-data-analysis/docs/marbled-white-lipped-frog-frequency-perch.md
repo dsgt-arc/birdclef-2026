@@ -11,10 +11,10 @@
 | Class | Amphibia |
 | Train-audio files | 8 |
 | Train-audio 5s windows | 33 |
-| Analysis code | `src/data_analysis/species_frequency_perch_analysis.py` |
+| Analysis code | `src/data_analysis/marbled_frog/frequency_perch.py` |
 | Audio features | librosa mel spectrogram, 32 kHz, 128 mel bands, 50-8000 Hz |
 | Perch logits | `/mnt/data/scratch/birdclef-2026/inference/perch-v2-tf/train_audio/logits.parquet` |
-| Output directory | `artifacts/species_frequency_perch_22967/` |
+| Output directory | `artifacts/marbled_frog/frequency_perch/` |
 
 ## At-a-glance takeaway
 

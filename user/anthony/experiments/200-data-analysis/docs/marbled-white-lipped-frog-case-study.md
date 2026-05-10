@@ -10,8 +10,8 @@
 | Class | Amphibia |
 | Train-audio files | 8 |
 | Train-audio 5s windows | 33 |
-| Main artifacts | `artifacts/species_frequency_perch_22967/`, `artifacts/marbled_frog_window_relevance/` |
-| Main code | `src/data_analysis/species_frequency_perch_analysis.py`, `src/data_analysis/marbled_frog_window_relevance.py` |
+| Main artifacts | `artifacts/marbled_frog/frequency_perch/`, `artifacts/marbled_frog/window_relevance/` |
+| Main code | `src/data_analysis/marbled_frog/frequency_perch.py`, `src/data_analysis/marbled_frog/window_relevance.py` |
 
 ## One-line takeaway
 
@@ -140,9 +140,9 @@ The `iNat1698107` group is the cleanest high-confidence repeated-call prototype 
 Generated inspection grids:
 
 ```text
-artifacts/marbled_frog_window_relevance/plots/inside_cluster_spectrogram_grid.png
-artifacts/marbled_frog_window_relevance/plots/outside_cluster_kmeans_spectrogram_grid.png
-artifacts/marbled_frog_window_relevance/plots/best_window_per_recording_spectrogram_grid.png
+artifacts/marbled_frog/window_relevance/plots/inside_cluster_spectrogram_grid.png
+artifacts/marbled_frog/window_relevance/plots/outside_cluster_kmeans_spectrogram_grid.png
+artifacts/marbled_frog/window_relevance/plots/best_window_per_recording_spectrogram_grid.png
 ```
 
 The best-window-per-recording grid selects the highest relevance-score window from each of the 8 train recordings, making it easier to compare the most target-like motif per source file.
@@ -160,9 +160,9 @@ So the inside cluster is not simply false positives. It is better treated as a *
 I added line-plot spectra for all 8 train recordings:
 
 ```text
-artifacts/marbled_frog_window_relevance/spectra/*_frequency_spectra.png
-artifacts/marbled_frog_window_relevance/tables/all_recording_peak_summary.csv
-artifacts/marbled_frog_window_relevance/plots/peak_frequency_by_recording.png
+artifacts/marbled_frog/window_relevance/spectra/*_frequency_spectra.png
+artifacts/marbled_frog/window_relevance/tables/all_recording_peak_summary.csv
+artifacts/marbled_frog/window_relevance/plots/peak_frequency_by_recording.png
 ```
 
 For each 5s window, the code computes mean log-power from 500-3500 Hz and detects the top spectral peaks.

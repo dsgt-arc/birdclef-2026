@@ -1,8 +1,8 @@
-"""Frequency-band and Perch-logit analysis for one train-audio species.
+"""Frequency-band and Perch-logit analysis for Marbled White-lipped Frog.
 
-Default target is Marbled White-lipped Frog (`22967`, Leptodactylus elenae).
-The analysis compares train-audio window mel spectra against Perch target/genus
-logits to estimate which frequency bands are most supported by the data.
+Default target is `22967` (*Leptodactylus elenae*). The analysis compares
+train-audio window mel spectra against Perch target/genus logits to estimate
+which frequency bands are most supported by the data.
 """
 
 from __future__ import annotations
@@ -19,8 +19,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 
-from data_analysis.labeled_species_training_coverage import TRAIN_SCHEMA_OVERRIDES
-from data_analysis.paths import PERCH_TRAIN_AUDIO_LOGITS, TAXONOMY_CSV, TRAIN_AUDIO_DIR, TRAIN_CSV, artifact_dir
+from data_analysis.common.paths import (
+    PERCH_TRAIN_AUDIO_LOGITS,
+    TAXONOMY_CSV,
+    TRAIN_CSV,
+    TRAIN_SCHEMA_OVERRIDES,
+    artifact_dir,
+)
+from data_analysis.common.spectrogram import (
+    MEL_FMAX,
+    MEL_FMIN,
+    MEL_HOP_LENGTH,
+    MEL_N_FFT,
+    MEL_N_MELS,
+    MEL_SAMPLE_RATE,
+    read_audio_window,
+)
 
 PERCH_LABELS_CSV = Path(
     "/mnt/data/research/arc/birdclef-2026/user/anthony/experiments/106-perch-bayesian/artifacts/perch_v2_labels.csv"
@@ -28,13 +42,6 @@ PERCH_LABELS_CSV = Path(
 
 DEFAULT_LABEL = "22967"
 DEFAULT_GENUS = "Leptodactylus"
-
-MEL_SAMPLE_RATE = 32_000
-MEL_N_FFT = 2048
-MEL_HOP_LENGTH = 512
-MEL_N_MELS = 128
-MEL_FMIN = 50
-MEL_FMAX = 8_000
 
 BANDS_HZ = [
     (0, 250),
@@ -156,26 +163,6 @@ def top_mean_logits(logits: pl.DataFrame, perch_labels: pl.DataFrame, top_n: int
             "mean_prob": sigmoid(means[order]),
         }
     )
-
-
-def read_audio_window(filename: str, start_sec: float, end_sec: float) -> np.ndarray:
-    """Read a mono 32 kHz audio window from train_audio with librosa."""
-    path = TRAIN_AUDIO_DIR / filename
-    audio, _ = librosa.load(
-        path,
-        sr=MEL_SAMPLE_RATE,
-        mono=True,
-        offset=float(start_sec),
-        duration=float(end_sec - start_sec),
-    )
-    if audio.size == 0:
-        return audio.astype(np.float32)
-    audio = audio.astype(np.float32, copy=False)
-    audio = audio - float(np.mean(audio))
-    peak = float(np.max(np.abs(audio)))
-    if peak > 0:
-        audio = audio / peak
-    return audio
 
 
 def window_mel_spectrum(filename: str, start_sec: float, end_sec: float) -> tuple[np.ndarray, np.ndarray]:
@@ -429,7 +416,7 @@ def run(
 ) -> Path:
     """Run analysis."""
     taxon = load_taxon(label)
-    output_dir = output_dir or artifact_dir(f"species_frequency_perch_{label}")
+    output_dir = output_dir or artifact_dir("marbled_frog/frequency_perch")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     files = load_train_files(label)

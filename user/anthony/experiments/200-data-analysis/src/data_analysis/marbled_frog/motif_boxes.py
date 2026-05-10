@@ -21,17 +21,16 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import numpy as np
 import polars as pl
-from scipy.ndimage import gaussian_filter, label as label_components
+from scipy.ndimage import label as label_components
 from scipy.signal import find_peaks, peak_widths
 
-from data_analysis.paths import TRAIN_AUDIO_DIR, artifact_dir
-from data_analysis.species_frequency_perch_analysis import (
-    MEL_FMAX,
-    MEL_FMIN,
+from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir
+from data_analysis.common.spectrogram import (
+    DISPLAY_BAND,
     MEL_HOP_LENGTH,
     MEL_N_FFT,
-    MEL_N_MELS,
     MEL_SAMPLE_RATE,
+    robust_excess_spectrogram,
 )
 
 DEFAULT_FILENAME = "22967/iNat1448422.ogg"
@@ -42,15 +41,10 @@ PRIMARY_BAND = (600.0, 1300.0)
 # Default/seed secondary band. Some motif families, especially iNat1697350,
 # use a broader recording-specific secondary validation band below.
 SECONDARY_BAND = (1500.0, 2300.0)
-DISPLAY_BAND = (500.0, 3000.0)
 TEMPLATE_BAND = (800.0, 2300.0)
 TEMPLATE_HALF_FRAMES = 15
 TEMPLATE_MATCH_THRESHOLD = 0.35
 TEMPLATE_MATCH_MIN_SPACING_SEC = 0.35
-MAD_DB_FLOOR = 0.5
-ROBUST_Z_CLIP = 8.0
-GAUSSIAN_SIGMA_FREQ_BINS = 1.5
-GAUSSIAN_SIGMA_TIME_FRAMES = 1.0
 
 
 @dataclass(frozen=True)
@@ -71,27 +65,6 @@ def smooth(x: np.ndarray, n: int = 9) -> np.ndarray:
     if n <= 1:
         return x
     return np.convolve(x, np.ones(n) / n, mode="same")
-
-
-def robust_excess_spectrogram(audio: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Return display dB, robust excess-z spectrogram, freqs, and times."""
-    power = np.abs(
-        librosa.stft(audio, n_fft=MEL_N_FFT, hop_length=MEL_HOP_LENGTH, window="hann")
-    ) ** 2
-    freqs = librosa.fft_frequencies(sr=MEL_SAMPLE_RATE, n_fft=MEL_N_FFT)
-    times = librosa.frames_to_time(np.arange(power.shape[1]), sr=MEL_SAMPLE_RATE, hop_length=MEL_HOP_LENGTH)
-    db = librosa.power_to_db(power, ref=np.max)
-
-    mask = (freqs >= DISPLAY_BAND[0]) & (freqs <= DISPLAY_BAND[1])
-    db_band = db[mask]
-    freqs_band = freqs[mask]
-    med = np.median(db_band, axis=1, keepdims=True)
-    mad = np.median(np.abs(db_band - med), axis=1, keepdims=True)
-    denom = 1.4826 * np.maximum(mad, MAD_DB_FLOOR)
-    z = np.maximum((db_band - med) / denom, 0.0)
-    z = np.clip(z, 0.0, ROBUST_Z_CLIP)
-    z = gaussian_filter(z, sigma=(GAUSSIAN_SIGMA_FREQ_BINS, GAUSSIAN_SIGMA_TIME_FRAMES))
-    return db_band, z, freqs_band, times
 
 
 def component_tracks(
@@ -1146,7 +1119,7 @@ def run(
     duration_sec: float = DEFAULT_DURATION_SEC,
 ) -> Path:
     """Run prototype motif detection for one recording window."""
-    output_dir = output_dir or artifact_dir("marbled_frog_motif_boxes")
+    output_dir = output_dir or artifact_dir("marbled_frog/motif_boxes")
     plots_dir = output_dir / "plots"
     tables_dir = output_dir / "tables"
     plots_dir.mkdir(parents=True, exist_ok=True)

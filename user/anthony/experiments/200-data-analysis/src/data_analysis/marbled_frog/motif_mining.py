@@ -26,14 +26,14 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from data_analysis.marbled_frog_motif_boxes import (
+from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir
+from data_analysis.common.spectrogram import (
     DISPLAY_BAND,
-    MotifBox,
-    detect_custom_band_boxes,
+    MEL_HOP_LENGTH,
+    MEL_SAMPLE_RATE,
     robust_excess_spectrogram,
 )
-from data_analysis.paths import TRAIN_AUDIO_DIR, artifact_dir
-from data_analysis.species_frequency_perch_analysis import MEL_HOP_LENGTH, MEL_SAMPLE_RATE
+from data_analysis.marbled_frog.motif_boxes import MotifBox, detect_custom_band_boxes
 
 TARGET_LABEL = "22967"
 PATCH_SHAPE = (64, 48)  # frequency bins x time bins
@@ -338,7 +338,7 @@ def plot_cluster_grid(candidates: pl.DataFrame, output_dir: Path, *, max_items: 
 
 def run(output_dir: Path | None = None, *, n_clusters: int = 8, seed: int = 42) -> Path:
     """Run motif mining."""
-    output_dir = output_dir or artifact_dir("marbled_frog_motif_mining")
+    output_dir = output_dir or artifact_dir("marbled_frog/motif_mining")
     plots_dir = output_dir / "plots"
     tables_dir = output_dir / "tables"
     cluster_dir = output_dir / "clusters"

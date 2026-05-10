@@ -1,10 +1,12 @@
-"""Shared filesystem paths for experiment 200 analyses."""
+"""Shared filesystem paths and read constants for experiment 200 analyses."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-EXPERIMENT_DIR = Path(__file__).resolve().parents[2]
+import polars as pl
+
+EXPERIMENT_DIR = Path(__file__).resolve().parents[3]
 ARTIFACTS_DIR = EXPERIMENT_DIR / "artifacts"
 
 DATA_ROOT = Path("/mnt/data/scratch/birdclef-2026")
@@ -26,9 +28,19 @@ PERCH_234_PROBS = PERCH_ROOT / "train_soundscapes" / "perch_234_probs.parquet"
 PERCH_234_RAW_PROBS = PERCH_ROOT / "train_soundscapes" / "perch_234_raw_probs.parquet"
 PERCH_234_SCORES = PERCH_ROOT / "train_soundscapes" / "perch_234_scores.parquet"
 
+# Polars schema overrides for reading train.csv. The raw CSV mixes integer-looking
+# eBird codes with string labels; force these columns to Utf8 so joins work.
+TRAIN_SCHEMA_OVERRIDES = {
+    "primary_label": pl.Utf8,
+    "secondary_labels": pl.Utf8,
+}
+
 
 def artifact_dir(name: str) -> Path:
-    """Create and return an artifact subdirectory."""
+    """Create and return an artifact subdirectory.
+
+    `name` may contain slashes to nest under `artifacts/` (e.g. ``"marbled_frog/motif_boxes"``).
+    """
     path = ARTIFACTS_DIR / name
     path.mkdir(parents=True, exist_ok=True)
     return path

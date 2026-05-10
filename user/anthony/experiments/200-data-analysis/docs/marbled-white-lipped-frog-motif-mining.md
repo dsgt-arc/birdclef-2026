@@ -7,8 +7,8 @@
 | Date | 2026-05-10 |
 | BirdCLEF label | `22967` |
 | Species | Marbled White-lipped Frog / *Leptodactylus elenae* |
-| Analysis code | `src/data_analysis/marbled_frog_motif_mining.py` |
-| Output directory | `artifacts/marbled_frog_motif_mining/` |
+| Analysis code | `src/data_analysis/marbled_frog/motif_mining.py` |
+| Output directory | `artifacts/marbled_frog/motif_mining/` |
 
 ## Purpose
 
@@ -35,7 +35,7 @@ Each detector produces candidate time-frequency boxes from robust-excess spectro
 ## Artifacts
 
 ```text
-artifacts/marbled_frog_motif_mining/
+artifacts/marbled_frog/motif_mining/
 ├── summary.md
 ├── plots/
 │   └── candidate_motif_pca.png

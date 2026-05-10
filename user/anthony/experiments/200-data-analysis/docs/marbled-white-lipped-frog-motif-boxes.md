@@ -7,10 +7,10 @@
 | Date | 2026-05-10 |
 | BirdCLEF label | `22967` |
 | Species | Marbled White-lipped Frog / *Leptodactylus elenae* |
-| Main code | `src/data_analysis/marbled_frog_motif_boxes.py` |
-| Manual export code | `src/data_analysis/export_marbled_frog_manual_annotations.py` |
-| Review code | `src/data_analysis/marbled_frog_motif_review.py` |
-| Main artifacts | `artifacts/marbled_frog_motif_boxes/`, `artifacts/marbled_frog_manual_motif_annotations/`, `artifacts/marbled_frog_motif_review/` |
+| Main code | `src/data_analysis/marbled_frog/motif_boxes.py` |
+| Manual export code | `src/data_analysis/marbled_frog/manual_annotations.py` |
+| Review code | `src/data_analysis/marbled_frog/motif_review.py` |
+| Main artifacts | `artifacts/marbled_frog/motif_boxes/`, `artifacts/marbled_frog/manual_annotations/`, `artifacts/marbled_frog/motif_review/` |
 
 ## Purpose
 
@@ -44,13 +44,13 @@ This was useful, but boxes were often too rectangular, too band-dependent, or ne
 Code:
 
 ```text
-src/data_analysis/marbled_frog_motif_boxes.py
+src/data_analysis/marbled_frog/motif_boxes.py
 ```
 
 Initial outputs:
 
 ```text
-artifacts/marbled_frog_motif_boxes/
+artifacts/marbled_frog/motif_boxes/
 ```
 
 This produced prototype primary/secondary boxes for the known recordings. We iteratively adjusted:
@@ -77,13 +77,13 @@ Why:
 Code:
 
 ```text
-src/data_analysis/marbled_frog_motif_mining.py
+src/data_analysis/marbled_frog/motif_mining.py
 ```
 
 Artifacts:
 
 ```text
-artifacts/marbled_frog_motif_mining/
+artifacts/marbled_frog/motif_mining/
 ```
 
 This over-detected candidate boxes, extracted normalized spectrogram crops, clustered them, and generated cluster review grids.
@@ -109,7 +109,7 @@ We asked Claude Opus for critique. Main points:
 Implemented in:
 
 ```text
-src/data_analysis/marbled_frog_motif_boxes.py
+src/data_analysis/marbled_frog/motif_boxes.py
 ```
 
 Key upgrades:
@@ -137,19 +137,19 @@ iNat1698104: mid/rising chip 5
 Code:
 
 ```text
-src/data_analysis/export_marbled_frog_manual_annotations.py
+src/data_analysis/marbled_frog/manual_annotations.py
 ```
 
 Artifacts:
 
 ```text
-artifacts/marbled_frog_manual_motif_annotations/
+artifacts/marbled_frog/manual_annotations/
 ```
 
 This collects the current best manually inspected/current-best motif sets into a reproducible folder:
 
 ```text
-artifacts/marbled_frog_manual_motif_annotations/
+artifacts/marbled_frog/manual_annotations/
 ├── README.md
 ├── manifest.csv
 ├── plots/
@@ -184,13 +184,13 @@ iNat1698104:
 Code:
 
 ```text
-src/data_analysis/marbled_frog_motif_review.py
+src/data_analysis/marbled_frog/motif_review.py
 ```
 
 Artifacts:
 
 ```text
-artifacts/marbled_frog_motif_review/
+artifacts/marbled_frog/motif_review/
 ```
 
 This renders one review plot per `22967` train recording using a fixed detector bank:

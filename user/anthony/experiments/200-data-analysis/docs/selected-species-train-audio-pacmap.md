@@ -7,10 +7,10 @@
 | Date | 2026-05-10 |
 | Status | initial plots generated |
 | Species set | `src/data_analysis/selected_species.py` |
-| Analysis code | `src/data_analysis/selected_species_train_audio_pacmap.py` |
+| Analysis code | `src/data_analysis/soundscapes/per_species_train_pacmap.py` |
 | Input embeddings | `/mnt/data/scratch/birdclef-2026/inference/perch-v2-tf/train_audio/embeddings.parquet` |
 | Input metadata | `/mnt/data/scratch/birdclef-2026/train.csv` |
-| Output directory | `artifacts/selected_species_train_audio_pacmap/` |
+| Output directory | `artifacts/soundscapes/per_species_train_pacmap/` |
 | Projection | selected species train-audio embeddings → standardized → PCA up to 50 dims → PaCMAP |
 
 ## What was generated

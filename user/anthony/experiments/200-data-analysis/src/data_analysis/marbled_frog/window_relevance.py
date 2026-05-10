@@ -23,16 +23,12 @@ import polars as pl
 from scipy.signal import find_peaks
 from sklearn.cluster import KMeans
 
-from data_analysis.pacmap_soundscape_embeddings import (
-    embedding_columns,
-    matrix,
-    preprocess_for_pacmap,
-    run_pacmap,
-    with_coords,
+from data_analysis.common.paths import (
+    PERCH_TRAIN_AUDIO_EMBEDDINGS,
+    TRAIN_AUDIO_DIR,
+    artifact_dir,
 )
-from data_analysis.paths import PERCH_TRAIN_AUDIO_EMBEDDINGS, TRAIN_AUDIO_DIR, artifact_dir
-from data_analysis.species_frequency_perch_analysis import (
-    DEFAULT_LABEL,
+from data_analysis.common.spectrogram import (
     MEL_FMAX,
     MEL_FMIN,
     MEL_HOP_LENGTH,
@@ -40,10 +36,20 @@ from data_analysis.species_frequency_perch_analysis import (
     MEL_N_MELS,
     MEL_SAMPLE_RATE,
     read_audio_window,
+)
+from data_analysis.marbled_frog.frequency_perch import (
+    DEFAULT_LABEL,
     run as run_frequency_analysis,
 )
+from data_analysis.soundscapes.pacmap_embeddings import (
+    embedding_columns,
+    matrix,
+    preprocess_for_pacmap,
+    run_pacmap,
+    with_coords,
+)
 
-FREQUENCY_ANALYSIS_DIRNAME = f"species_frequency_perch_{DEFAULT_LABEL}"
+FREQUENCY_ANALYSIS_DIRNAME = "marbled_frog/frequency_perch"
 RELEVANT_LOGIT_THRESHOLD = 8.5
 RELEVANT_BAND_ENERGY_THRESHOLD = 0.5
 CANDIDATE_BAND = (1000, 3000)
@@ -952,7 +958,7 @@ def render_summary(
 | Date | 2026-05-10 |
 | Label | `22967` |
 | Species | Marbled White-lipped Frog / *Leptodactylus elenae* |
-| Input analysis | `artifacts/species_frequency_perch_22967/window_scores_and_spectral_features.csv` |
+| Input analysis | `artifacts/marbled_frog/frequency_perch/window_scores_and_spectral_features.csv` |
 | Output directory | `{output_dir}` |
 
 ## Heuristic label rule
@@ -1022,7 +1028,7 @@ Generated artifacts are organized by type:
 
 def run(output_dir: Path | None = None, *, seed: int = 42) -> Path:
     """Run window relevance analysis."""
-    output_dir = output_dir or artifact_dir("marbled_frog_window_relevance")
+    output_dir = output_dir or artifact_dir("marbled_frog/window_relevance")
     output_dir.mkdir(parents=True, exist_ok=True)
     plots_dir = output_dir / "plots"
     tables_dir = output_dir / "tables"

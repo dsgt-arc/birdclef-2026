@@ -19,10 +19,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 
-from data_analysis.labeled_species_training_coverage import TRAIN_SCHEMA_OVERRIDES
-from data_analysis.pacmap_soundscape_embeddings import embedding_columns, matrix, run_pacmap, with_coords
-from data_analysis.paths import PERCH_TRAIN_AUDIO_EMBEDDINGS, TAXONOMY_CSV, TRAIN_CSV, artifact_dir
-from data_analysis.selected_species import REPRESENTATIVE_LABELS
+from data_analysis.common.paths import (
+    PERCH_TRAIN_AUDIO_EMBEDDINGS,
+    TAXONOMY_CSV,
+    TRAIN_CSV,
+    TRAIN_SCHEMA_OVERRIDES,
+    artifact_dir,
+)
+from data_analysis.common.selected_species import REPRESENTATIVE_LABELS
+from data_analysis.soundscapes.pacmap_embeddings import (
+    embedding_columns,
+    matrix,
+    run_pacmap,
+    with_coords,
+)
 
 ROLE_COLORS = {
     "primary": "#1f77b4",
@@ -244,7 +254,7 @@ def run(
     max_pca_dims: int = 50,
 ) -> Path:
     """Run selected-species train-audio PaCMAP analysis."""
-    output_dir = output_dir or artifact_dir("selected_species_train_audio_pacmap")
+    output_dir = output_dir or artifact_dir("soundscapes/per_species_train_pacmap")
     output_dir.mkdir(parents=True, exist_ok=True)
     labels = labels or REPRESENTATIVE_LABELS
 
@@ -300,7 +310,7 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=None,
-        help="Output directory; defaults to artifacts/selected_species_train_audio_pacmap/.",
+        help="Output directory; defaults to artifacts/soundscapes/per_species_train_pacmap/.",
     )
     parser.add_argument(
         "--label",

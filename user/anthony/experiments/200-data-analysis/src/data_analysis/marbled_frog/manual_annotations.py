@@ -6,8 +6,8 @@ renders standardized validation plots with primary/secondary bands.
 
 Run after regenerating:
 
-    python -m data_analysis.marbled_frog_motif_boxes
-    python -m data_analysis.export_marbled_frog_manual_annotations
+    python -m data_analysis.marbled_frog.motif_boxes
+    python -m data_analysis.marbled_frog.manual_annotations
 """
 
 from __future__ import annotations
@@ -27,9 +27,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-from data_analysis.marbled_frog_motif_boxes import DISPLAY_BAND, robust_excess_spectrogram
-from data_analysis.paths import TRAIN_AUDIO_DIR, artifact_dir
-from data_analysis.species_frequency_perch_analysis import MEL_HOP_LENGTH, MEL_SAMPLE_RATE
+from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir
+from data_analysis.common.spectrogram import (
+    DISPLAY_BAND,
+    MEL_HOP_LENGTH,
+    MEL_SAMPLE_RATE,
+    robust_excess_spectrogram,
+)
 
 
 @dataclass(frozen=True)
@@ -346,14 +350,14 @@ These are **review artifacts**, not ground-truth boxes. They preserve the boxes 
 From `user/anthony/experiments/200-data-analysis`:
 
 ```bash
-python -m data_analysis.marbled_frog_motif_boxes
-python -m data_analysis.export_marbled_frog_manual_annotations
+python -m data_analysis.marbled_frog.motif_boxes
+python -m data_analysis.marbled_frog.manual_annotations
 ```
 
 Source code:
 
-- `src/data_analysis/marbled_frog_motif_boxes.py` generates the motif boxes and source plots.
-- `src/data_analysis/export_marbled_frog_manual_annotations.py` copies the curated/current-best tables and renders standardized validation plots.
+- `src/data_analysis/marbled_frog/motif_boxes.py` generates the motif boxes and source plots.
+- `src/data_analysis/marbled_frog/manual_annotations.py` copies the curated/current-best tables and renders standardized validation plots.
 
 ## Caveat
 
@@ -364,8 +368,8 @@ Use these as motif evidence / crop hints. Do not treat them as final biological 
 
 def run(output_dir: Path | None = None, *, source_dir: Path | None = None) -> Path:
     """Export manual annotations and return the output directory."""
-    source_dir = source_dir or artifact_dir("marbled_frog_motif_boxes")
-    output_dir = output_dir or artifact_dir("marbled_frog_manual_motif_annotations")
+    source_dir = source_dir or artifact_dir("marbled_frog/motif_boxes")
+    output_dir = output_dir or artifact_dir("marbled_frog/manual_annotations")
     n_rows = copy_and_combine(annotation_sets(source_dir), output_dir)
     write_readme(output_dir)
     print(f"Exported {n_rows} motif-box rows to {output_dir}")

@@ -1,7 +1,7 @@
 """Summarize BirdCLEF 2026 labeled soundscape annotations.
 
 Outputs lightweight CSV/Markdown artifacts under
-`artifacts/labeled_soundscapes/`.
+`artifacts/soundscapes/labeled/`.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import polars as pl
 
-from data_analysis.paths import (
+from data_analysis.common.paths import (
     TAXONOMY_CSV,
     TRAIN_SOUNDSCAPES_LABELS_CSV,
     artifact_dir,
@@ -172,7 +172,7 @@ def render_markdown_summary(
 
 def run(output_dir: Path | None = None) -> Path:
     """Run the labeled soundscape summary and return the output directory."""
-    output_dir = output_dir or artifact_dir("labeled_soundscapes")
+    output_dir = output_dir or artifact_dir("soundscapes/labeled")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     segments = load_segment_labels()
@@ -196,7 +196,7 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=None,
-        help="Output directory; defaults to artifacts/labeled_soundscapes/.",
+        help="Output directory; defaults to artifacts/soundscapes/labeled/.",
     )
     args = parser.parse_args()
     output_dir = run(args.output_dir)

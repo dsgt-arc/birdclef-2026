@@ -1,7 +1,7 @@
 """Count train-audio file/window coverage for labels seen in labeled soundscapes.
 
 Outputs lightweight CSV/Markdown artifacts under
-`artifacts/labeled_species_training_coverage/`.
+`artifacts/soundscapes/species_coverage/`.
 """
 
 from __future__ import annotations
@@ -12,18 +12,18 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import polars as pl
 
-from data_analysis.labeled_soundscapes import (
+from data_analysis.common.paths import (
+    PERCH_TRAIN_AUDIO_EMBEDDINGS,
+    TRAIN_CSV,
+    TRAIN_SCHEMA_OVERRIDES,
+    artifact_dir,
+)
+from data_analysis.soundscapes.labeled_soundscapes import (
     build_summaries,
     explode_segment_labels,
     load_segment_labels,
     load_taxonomy,
 )
-from data_analysis.paths import PERCH_TRAIN_AUDIO_EMBEDDINGS, TRAIN_CSV, artifact_dir
-
-TRAIN_SCHEMA_OVERRIDES = {
-    "primary_label": pl.Utf8,
-    "secondary_labels": pl.Utf8,
-}
 
 
 def load_train_audio_metadata(train_csv: Path = TRAIN_CSV) -> pl.DataFrame:
@@ -358,7 +358,7 @@ def render_summary(coverage: pl.DataFrame) -> str:
 
 def run(output_dir: Path | None = None) -> Path:
     """Run coverage analysis and return the output directory."""
-    output_dir = output_dir or artifact_dir("labeled_species_training_coverage")
+    output_dir = output_dir or artifact_dir("soundscapes/species_coverage")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     coverage = build_coverage_table()
@@ -375,7 +375,7 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=None,
-        help="Output directory; defaults to artifacts/labeled_species_training_coverage/.",
+        help="Output directory; defaults to artifacts/soundscapes/species_coverage/.",
     )
     args = parser.parse_args()
     output_dir = run(args.output_dir)

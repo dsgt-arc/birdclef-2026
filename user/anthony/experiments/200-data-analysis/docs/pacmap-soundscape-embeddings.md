@@ -6,13 +6,13 @@
 |---|---|
 | Date | 2026-05-10 |
 | Status | initial analysis complete |
-| Analysis code | `src/data_analysis/pacmap_soundscape_embeddings.py` |
+| Analysis code | `src/data_analysis/soundscapes/pacmap_embeddings.py` |
 | Input embeddings | `/mnt/data/scratch/birdclef-2026/inference/perch-v2-tf/train_soundscapes/embeddings.parquet` |
 | Label filter | `/mnt/data/scratch/birdclef-2026/train_soundscapes_labels.csv` |
 | Scope | 66 labeled soundscape files |
 | Embedding model | Perch v2 TensorFlow inference outputs |
 | Projection | standardized embeddings → PCA up to 50 dims → PaCMAP 2D |
-| Output directory | `artifacts/pacmap_soundscape_embeddings/` |
+| Output directory | `artifacts/soundscapes/pacmap/` |
 
 ### At-a-glance takeaway
 
