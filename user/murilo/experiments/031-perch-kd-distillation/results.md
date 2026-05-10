@@ -7,11 +7,16 @@ author: Murilo Gustineli
 
 # Experiment 031: Perch v2 Knowledge Distillation on v5j — Results (Phase 1)
 
-## Status: REJECT (with last-ckpt diagnostic pending)
+## Status: REJECT + codebase reproduction FAILED
 
 Phase 1 training completed 2026-05-10 AM. v5j_kd best-by-val ckpt (ep 17)
-submitted to LB → **0.890**, **−0.006 below** v5j_control's expected 0.896
-(via bit-identical-weights inheritance from exp 030 `v5j_control_v2`).
+submitted to LB → **0.890**, **−0.006 below** v5j_control's 0.896.
+Best-vs-last diagnostic submission v5j_control_last (ep 19, save_top_k=-1
+rerun) → **0.897**, NOT 0.906. Together with v5j-resubmit 0.906 (exp 019
+ep 19 ckpt re-exported through today's inference = exact reproduction),
+this proves the **training pipeline has drifted** between exp 019 and now —
+inference is clean but the model trains differently. v5j_kd_last (ep 19,
+KD) pending; LB diagnostic + comprehensive codebase-drift analysis below.
 
 Per the success matrix in [`proposal.md` § Success Criteria](proposal.md):
 **REJECT**. KD as a single-variable add on the v5j pipeline (HGNetV2-B0 +
@@ -305,6 +310,64 @@ Ordered by expected information value per LB submission:
 Phase 2 (ownership work + 4-fold) is **halted** per the proposal's REJECT
 action. Decision on next direction (any of the above 4, or pivot away from
 KD entirely) is pending session discussion.
+
+## Best-vs-last LB results (2026-05-10) — codebase reproduction FAILED
+
+### v5j_control_last LB = 0.897
+
+Submitted `2026-exp031-v5j-control-resave/best-epochepoch=19.ckpt` (the
+literal final-epoch weights from the deterministic rerun). Result:
+
+| Submission | Checkpoint | LB |
+|---|---|---:|
+| v5j-original (exp 019) | ep 19 | **0.906** |
+| v5j-resubmit diagnostic (exp 030) | exp 019 ep 19 ckpt re-exported through today's submission.py | **0.906** |
+| v5j_control (exp 030 v2) | ep 15 best-by-val | **0.896** |
+| **v5j_control_last (exp 031)** | **ep 19 from save_top_k=-1 rerun** | **0.897** |
+
+**This is alarming.** The diagnostic was supposed to disambiguate
+ckpt-selection sensitivity from codebase drift. Both possible answers had
+clean interpretations:
+
+- ep 19 LB ≈ 0.906 → ckpt-selection was the issue; codebase reproduces.
+- ep 19 LB ≈ 0.896 → codebase has drifted; v5j-original 0.906 not reachable.
+
+We landed at **0.897**, decisively in the second bucket. Combined with the
+v5j-resubmit 0.906 result (exact original ep 19 ckpt → today's inference =
+0.906), this proves:
+
+- **Inference pipeline reproduces the v5j-original 0.906 LB exactly** (verified
+  by v5j-resubmit).
+- **Training pipeline does NOT reproduce v5j-original**. Same recipe, same
+  seed, same data, different weights at every epoch (we verified ep 17/19
+  state_dict hashes match between exp 030 and exp 031, but the historical
+  exp 019 weights would have a different hash — they're a different model).
+
+The 0.009 LB gap (0.906 → 0.897) sits inside the ±0.013 single-fold seed band,
+but it's **systematic and reproducible** across exp 030 + exp 031 (4 retrains
+total all landing in 0.896-0.897), not random noise. It is genuine
+codebase drift on the training side.
+
+### Implications for exp 031 verdict
+
+- v5j_kd LB 0.890 vs v5j_control_last LB 0.897 = **−0.007** (still inside
+  REJECT, still inside seed noise but on the wrong side).
+- v5j_kd_last LB pending (kernel pushed; awaiting score). The cleanest
+  comparison is v5j_kd_last vs v5j_control_last (both at ep 19, same recipe
+  except KD).
+- The **right baseline going forward is 0.897**, not 0.896 or 0.906. v5j-original's
+  0.906 is unreachable from the current codebase + recipe + seed combination.
+
+### What this RULES OUT
+
+- *"Save_top_k=1 was the bug."* Not the bug — ep 19 is +0.001 from ep 15, inside noise.
+- *"Just need to use the right checkpoint."* Wrong checkpoint isn't the issue;
+  the WHOLE TRAINING TRAJECTORY produces different weights now.
+- *Inference-side drift.* v5j-resubmit confirmed inference reproduces exactly.
+
+The drift is somewhere in the training pipeline between the exp 019 commit
+that produced v5j-original and the current HEAD. Comprehensive root-cause
+analysis underway — see [`analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md`](../../analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md).
 
 ## Best-vs-last checkpoint diagnostic (RETRAIN REQUIRED)
 

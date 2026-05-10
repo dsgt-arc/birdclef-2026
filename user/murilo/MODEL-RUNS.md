@@ -865,14 +865,33 @@ clip embedding on the same pre-mix waveform. Backbone driven by `dist_loss`
 only (`feat.detach()` on LSEHead branch), BCE-clip cls loss unchanged from
 v5j. α_distill=1.0, single-fold seed=42, 20 epochs.
 
-| Slug | Variant | val/auroc | best ep | LB | Δ vs v5j_control_v2 (0.896) | Checkpoint |
+| Slug | Variant | val/auroc | best ep | LB | Δ vs v5j-original (0.906) | Checkpoint |
 |------|---------|----------:|--------:|----:|---:|---|
-| `hgnet-b0-sed-v5j-kd` | v5j + Perch v2 KD (best-by-val) | 0.8629 | 17 | **0.890** | **−0.006** | `031-perch-kd-distillation/.../2026-exp031-v5j-kd/best-epochepoch=17.ckpt` |
-| `v5j_control` (exp 031) | back-compat receipt (no KD) | 0.8747 | 15 | **0.896**† | 0.000† | bit-identical to exp 030 v5j_control_v2; no separate submission |
+| `hgnet-b0-sed-v5j-kd` | v5j + Perch v2 KD (best-by-val) | 0.8629 | 17 | **0.890** | **−0.016** | `031-perch-kd-distillation/.../2026-exp031-v5j-kd/best-epochepoch=17.ckpt` |
+| `v5j_control` (exp 031) | back-compat baseline (no KD) | 0.8747 | 15 | **0.896**† | −0.010 | bit-identical to exp 030 v5j_control_v2 |
+| **`hgnet-b0-sed-v5j-control-last`** | **v5j_control ep 19 (save_top_k=-1 rerun)** | 0.8728 | 19 | **0.897** | **−0.009** | `031-perch-kd-distillation/.../2026-exp031-v5j-control-resave/best-epochepoch=19.ckpt` |
+| `hgnet-b0-sed-v5j-kd-last` | v5j+KD ep 19 (save_top_k=-1 rerun) | 0.8595 | 19 | (pending) | — | `031-perch-kd-distillation/.../2026-exp031-v5j-kd-resave/best-epochepoch=19.ckpt` |
 
 † Inherited from exp 030 v5j_control_v2 (LB 0.896). All 8 offline metrics
 bit-identical to 4 dp under deterministic training (`seed_everything(42, workers=True) + Trainer(deterministic=True)`),
-so weights are bit-identical and inference is deterministic.
+so weights are bit-identical.
+
+### Codebase reproduction FAILED
+
+The 2026-05-10 best-vs-last diagnostic was meant to disambiguate
+ckpt-selection sensitivity vs codebase drift on the v5j-original 0.906 →
+v5j_control_v2 0.896 gap. Result: **codebase drift confirmed.**
+
+| Question | Answer |
+|---|---|
+| Inference pipeline reproduces v5j-original? | ✅ Yes (v5j-resubmit LB 0.906, exact reproduction of original ep 19 ckpt through today's submission.py) |
+| Was 0.906 → 0.896 a ckpt-selection artifact (ep 15 vs ep 19)? | ❌ No — ep 19 weights from today's training give LB 0.897, only +0.001 over ep 15's 0.896 |
+| Does today's training reproduce v5j-original's 0.906? | ❌ No — even with `save_top_k: -1` and the literal final epoch, today's pipeline lands at 0.897, **−0.009 below v5j-original** |
+| Direction of drift | Negative and systematic across 4 retrains in exp 030 + 031, not random seed noise |
+
+The right v5j single-fold baseline going forward is **0.897**, not 0.906.
+Comprehensive root-cause analysis at
+`analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md`.
 
 ### Verdict: REJECT (with last-ckpt diagnostic pending)
 

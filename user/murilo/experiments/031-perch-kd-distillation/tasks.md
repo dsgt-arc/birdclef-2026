@@ -260,17 +260,45 @@ plateaus, `last.ckpt` is never updated. **The diagnostic requires a
 
 #### 1.4c Apply revised verdict (after 1.4b)
 
-- [ ] 1.4c.1 Apply revised verdict using `v5j_kd_last` LB:
-  - If `v5j_kd_last` ≥ 0.910: **REJECT was wrong** — 0.890 was ckpt-selection
-    artifact. Verdict flips to CONFIRM/PARTIAL; proceed to Phase 2.
-  - If `v5j_kd_last` 0.897–0.909: PARTIAL/WEAK with ckpt-selection contribution.
-  - If `v5j_kd_last` ≤ 0.896: **REJECT stands**; KD doesn't transfer
-    on this stack regardless of ckpt selection.
-- [ ] 1.4c.2 Apply revised baseline using `v5j_control_last` LB:
-  - If 0.901–0.911: codebase reproduces v5j-original; future runs should
-    use ep 19 as the canonical submission and v5j_control baseline shifts.
-  - If ≤ 0.896: codebase has drifted; v5j_control 0.896 is the right
-    single-fold baseline going forward.
+- [x] 1.4c.2 v5j_control_last LB result: **0.897** (ep 19, save_top_k=-1 rerun)
+  - **Codebase reproduction FAILED.** Ep 19 weights from today's training
+    give LB 0.897, NOT v5j-original's 0.906. The 0.009 gap is systematic
+    (4 retrains in exp 030 + 031 all land 0.896-0.897), not seed noise.
+  - Inference pipeline is clean (v5j-resubmit confirmed 0.906 from exp 019
+    ep 19 ckpt). The drift is **training-side**.
+  - Right v5j single-fold baseline going forward = **0.897**, not 0.906.
+  - See `analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md` for
+    root-cause investigation.
+- [ ] 1.4c.1 Apply revised verdict using `v5j_kd_last` LB (kernel pushed,
+  awaiting score). Read against the corrected baseline 0.897:
+  - If `v5j_kd_last` ≥ 0.911 (0.897 + 0.014): KD lever transfers; REJECT
+    was wrong. Proceed to Phase 2.
+  - If `v5j_kd_last` 0.904–0.910: PARTIAL.
+  - If `v5j_kd_last` 0.898–0.903: WEAK.
+  - If `v5j_kd_last` ≤ 0.897: REJECT stands.
+
+#### 1.4e Codebase drift root-cause analysis (URGENT)
+
+The training-side drift means we cannot reproduce historical v5j-original
+0.906 results from current code, and likely cannot reproduce other historical
+single-fold runs either. Critical to identify the root cause before any
+future LB-targeting work.
+
+- [ ] 1.4e.1 Identify the exp 019 commit at which v5j-original was trained
+  (look at `017-mel-overhaul/checkpoints/2026-hgnet-b0-sed-v5j/` mtimes,
+  cross-reference with git log)
+- [ ] 1.4e.2 Diff key training-path files between that commit and HEAD:
+  `src/birdclef/lightning/sed_finetune.py`, `src/birdclef/data/sed.py`,
+  `src/birdclef/preprocessing/nnaudio_mel.py`, `src/birdclef/heads/sed_head.py`
+- [ ] 1.4e.3 Diff library versions: `pyproject.toml`, `uv.lock` if available
+- [ ] 1.4e.4 Diff config files: today's v5j_control.yaml vs the v5j-original
+  training config in exp 019
+- [ ] 1.4e.5 Pull v5j-original's training metrics.json (if archived) and
+  compare per-epoch val/auroc trajectory to v5j_control_resave
+- [ ] 1.4e.6 Form ranked hypothesis list, propose a single-variable
+  diagnostic experiment to confirm the cause
+- [ ] 1.4e.7 Document root cause + remediation path in
+  `analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md`
 
 #### 1.4d Documentation cleanup
 
