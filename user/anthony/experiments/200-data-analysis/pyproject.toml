@@ -3,16 +3,23 @@ name = "birdclef-200-data-analysis"
 version = "0.1.0"
 requires-python = ">=3.11,<3.13"
 dependencies = [
+    "librosa>=0.11",
     "matplotlib>=3.8",
     "numpy>=1.26",
     "pacmap>=0.8.0",
     "polars>=1.40.1",
     "scikit-learn>=1.3",
+    "scipy>=1.11",
+    "soundfile>=0.13",
 ]
 
 [project.scripts]
 birdclef-200-labeled-soundscapes = "data_analysis.labeled_soundscapes:main"
+birdclef-200-labeled-species-training-coverage = "data_analysis.labeled_species_training_coverage:main"
 birdclef-200-pacmap-soundscapes = "data_analysis.pacmap_soundscape_embeddings:main"
+birdclef-200-selected-species-train-pacmap = "data_analysis.selected_species_train_audio_pacmap:main"
+birdclef-200-species-frequency-perch = "data_analysis.species_frequency_perch_analysis:main"
+birdclef-200-marbled-frog-relevance = "data_analysis.marbled_frog_window_relevance:main"
 
 [build-system]
 requires = ["hatchling"]
