@@ -305,6 +305,44 @@ future LB-targeting work.
 - [ ] 1.4e.7 Document root cause + remediation path in
   `analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md`
 
+#### 1.4e Worktree training experiment (ground-truth codebase test) — SCAFFOLDED, AWAITING SUBMISSION
+
+After 8 static diagnostics ruled out every testable cause (init RNG, math,
+data split, libs, CUDA stack, Python, optimizer config, data files), the
+remaining cause must be in pipeline-level execution that requires real GPU
+training to manifest. The ground-truth test: retrain v5j_control using
+the v5j-era source code in today's environment.
+
+- [x] 1.4e.1 Set up persistent git worktree at v5j-era commit:
+  `/storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-v5j-era/`
+  (detached HEAD at `e420633`; accessible from compute nodes).
+- [x] 1.4e.2 Create diagnostic config with `save_top_k: -1` and unique
+  run_name `2026-exp019-v5j-diag-eracode-may10`:
+  - Worktree: `birdclef-v5j-era/user/murilo/experiments/019-perch-guided-sed/config/hgnet_b0_sed_v5j_diag_eracode.yaml`
+  - Tracked in HEAD: `user/murilo/analysis/diagnostics/v5j-codebase-drift/hgnet_b0_sed_v5j_diag_eracode.yaml`
+- [x] 1.4e.3 README documenting purpose, run command, and hash-compare
+  interpretation: `user/murilo/analysis/diagnostics/v5j-codebase-drift/README.md`
+- [ ] 1.4e.4 Submit SLURM job from worktree:
+  ```bash
+  cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-v5j-era/user/murilo/experiments/019-perch-guided-sed
+  bash sbatch/run.sh config/hgnet_b0_sed_v5j_diag_eracode.yaml
+  ```
+- [ ] 1.4e.5 After it finishes (~40 min), hash-compare ep 19 weights
+  vs v5j-original ep 19 ckpt (script in README). Three possible outcomes:
+  - **Hashes identical**: training is deterministic across May 10 vs Mar 31
+    of v5j-era code. LB will be 0.906. **HEAD codebase IS the cause** of
+    the regression. Bisect 8 PRs (exp 021/022/025/026/027/030/031) to
+    localize. No LB submission needed.
+  - **Hashes differ + val/auroc matches**: training is non-deterministic.
+    Submit ep 19 to LB to find out if 0.906 or 0.897.
+  - **Hashes differ + val/auroc shifts**: codebase + env both changed.
+    Need to dig deeper.
+- [ ] 1.4e.6 Document the outcome in
+  `analysis/notes/2026-05-10-v5j-drift-diagnostics-findings.md`.
+- [ ] 1.4e.7 If codebase IS the cause: bisect 8 PRs by retraining at each
+  midpoint commit. If codebase NOT the cause: investigate hardware/fleet
+  variance or transient unpinned dep.
+
 #### 1.4d Documentation cleanup
 
 - [ ] 1.4d.1 Update `feedback_save_top_k_does_not_preserve_last.md` if
