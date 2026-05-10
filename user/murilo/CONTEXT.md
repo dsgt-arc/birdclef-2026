@@ -3,57 +3,89 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-09 (Phase 0.2-0.4 implementation done; on
-`mg/exp031-perch-kd-distillation` branch; ready for SLURM fast-dev-run
-+ Phase 1 LB).
+**Last updated**: 2026-05-10 (Phase 0 done; Phase 1 IN FLIGHT — full
+training kicked off late 05-09 / early 05-10. Two SLURM jobs running:
+8318953 v5j_kd, 8319084 v5j_control. Resume here when both finish.)
 
 ---
 
 ## Pick up here (next session)
 
-**Phase 0 code is in.** Mixup-interaction question from last session
-resolved as **Option B with the 1× teacher trick**: `_apply_mixup` uses
-`indices = torch.randperm(B)` to shuffle within the batch; Perch is
-per-sample (no cross-batch coupling), so `perch(x[indices]) ==
-perch(x)[indices]`. Teacher target under mixup composes from one
-teacher forward — no 2× cost. See `proposal.md` § Mixup interaction.
+**Two SLURM jobs are running** (or just finished). Check status first:
 
-Train/val split question resolved as **Option A (no change)** after
-discriminator analysis: the current 4-single-sample-species
-duplicate-into-train+val is val/auroc reporting bias only (~0.002 macro),
-not train-weight contamination. Defer methodology cleanup to a dedicated
-post-031 experiment that addresses the actual load-bearing weaknesses
-(per-site stratification, fold-balance asymmetry).
+```bash
+squeue -u $USER
+ls -lt user/murilo/experiments/031-perch-kd-distillation/logs/
+```
 
-**Next concrete steps** (compute, not code):
+| Job | What | Started | Expected wall time |
+|---|---|---|---|
+| **8318953** | `v5j_kd` full training (KD on, the test) | 2026-05-09 23:37 | ~80-150 min on rtx6000 |
+| **8319084** | `v5j_control` full training (KD off, the baseline + back-compat check) | 2026-05-10 00:05 | ~80-120 min on rtx6000 |
 
-1. Run `python user/murilo/experiments/031-perch-kd-distillation/test_kd_gradient_flow.py`
-   — synthetic-batch gradient-flow check, no GPU needed. Verifies all
-   three submodules (encoder, sed_head, distill_head) get gradient when
-   KD is on, and that `perch(x[perm]) == perch(x)[perm]` for the stub.
-2. `bash sbatch/run.sh configs/v5j_kd.yaml --fast-dev-run` — real ONNX
-   path on a GPU node, verify dist_loss/cls_loss logged separately,
-   no NaN.
-3. `bash sbatch/run.sh configs/v5j_kd.yaml` — full Phase 1 training
-   (~80-120 min on rtx6000). Halt watch: `dist_loss > 0.01` by epoch 5.
-4. ONNX export → Kaggle weights upload → kernel push → LB submit.
-5. Apply success matrix vs v5j_control_v2 = 0.896 (CONFIRM ≥ 0.910).
+**When both finish** (per session-end exchange 2026-05-10 00:08):
+
+1. **Pull the W&B side-by-side** in project `birdclef-2026-exp031`. Confirm:
+   - `v5j_kd` `train/dist_loss` decayed monotonically — Tucker's published
+     floor is ~0.003 by ep 25; we're at 20 epochs so expect ~0.005-0.010 floor.
+   - `v5j_kd` `train/cls_loss` is finite throughout (no divergence).
+   - `v5j_control` `val/auroc` trajectory matches exp 030's v5j_control_v2
+     (best-by-val ep ~14-15, val/auroc plateau ~0.85). If it lands close to
+     0.851 by ep 14-15, the KD-branch additions to `sed_finetune.py` are
+     back-compat for non-KD runs (implicit verification).
+   - **Halt-watch retro**: did `train/dist_loss > 0.01` by epoch 5? If yes,
+     mel-pipeline mismatch contributed; document as a Phase 2 diagnostic
+     question. (If not, the KD path is clean.)
+2. **ONNX export both checkpoints** from `outputs/checkpoints/` dirs.
+3. **Upload to Kaggle**:
+   - `birdclef-2026-hgnet-b0-sed-v5j-kd-weights`
+   - `birdclef-2026-hgnet-b0-sed-v5j-control-weights` (back-compat receipt)
+4. **Push two kernels**, submit to LB.
+5. **Apply success matrix** on KD result vs control's actual LB number:
+   - CONFIRM if `v5j_kd` LB ≥ `v5j_control` LB + 0.014
+   - PARTIAL if +0.007 to +0.013
+   - WEAK if +0.001 to +0.006 (inside seed noise)
+   - REJECT if ≤ control LB
+
+If `v5j_control` LB diverges from exp 030's 0.896 by more than ±0.005,
+that's a **back-compat failure** and we'd need to diagnose drift in the
+KD-branch additions before trusting the KD result.
+
+### Implementation decisions (locked, don't re-litigate)
+
+- **Mixup interaction = Option B with the 1× teacher trick.**
+  `_apply_mixup(return_params=True)` returns `(indices, lam)`; per-sample
+  Perch invariance gives `perch(x[indices]) == perch(x)[indices]`, so
+  the matched target costs 1× teacher forward. Phase 1 KD restricted to
+  `mixup_mode="interpolate"` and `raw_waveform_mixup=False`; other modes
+  raise `NotImplementedError`. See `proposal.md` § Mixup interaction.
+- **Train/val split = Option A (no change).** The 4-single-sample-species
+  duplicate-into-train+val is val/auroc reporting bias only (~0.002 macro),
+  not train-weight contamination. Methodology audit deferred to a dedicated
+  post-031 experiment.
+- **Single fold for Phase 1.** ±0.013 seed noise band accepted; +0.014
+  CONFIRM threshold sits at ~1.1× the noise floor. Phase 2 = 4-fold if
+  Phase 1 confirms.
 
 ---
 
 ## Where exp 031 is
 
-**Status**: Phase 0 implementation complete; ready for fast-dev-run + Phase 1.
-Proposal: `user/murilo/experiments/031-perch-kd-distillation/proposal.md`.
+**Status**: Phase 0 implementation complete and verified; Phase 1 training
+in flight (jobs 8318953 + 8319084).
 
 | Phase | What | Status |
 |---|---|---|
-| 0.0 | Mel pipeline equivalence diagnostic | ✅ KEEP NNAUDIO + hop=313 (cosine sim 0.987 on STFT-only; libraries agree) |
-| 0.1 | Vendor + verify Perch v2 ONNX teacher | ✅ All 6 checks pass; CUDA 17 ms/batch=4 on rtx6000 |
-| 0.2 | `DistillHead` + `PerchTeacher` + KD branch in `sed_finetune.py` | ✅ DONE — Option B with 1× teacher trick |
-| 0.3 | Config `configs/v5j_kd.yaml` + train.py + sbatch wrappers | ✅ DONE |
-| 0.4 | Fast-dev-run validation | ⏭️ `test_kd_gradient_flow.py` written; SLURM fast-dev-run pending |
-| 1 | Single-fold KD training + LB submission | pending 0.4 |
+| 0.0 | Mel pipeline equivalence diagnostic | ✅ KEEP NNAUDIO + hop=313 (cosine sim 0.987 on STFT-only) |
+| 0.1 | Vendor + verify Perch v2 ONNX teacher | ✅ All 6 checks pass; CUDA 17 ms/batch=4 |
+| 0.2 | `DistillHead` + `PerchTeacher` + KD branch in `sed_finetune.py` | ✅ DONE — Option B with 1× teacher trick (commit `ede03e6`) |
+| 0.3 | Config `configs/v5j_kd.yaml` + train.py + sbatch wrappers | ✅ DONE (commit `ede03e6`) |
+| 0.4.1 | `test_kd_gradient_flow.py` (synthetic-batch local check) | ✅ ALL CHECKS PASS — backbone/head/distill_head grads > 0 in both mixup-on and mixup-off cases; row-permutation invariance exact (diff=0.0) |
+| 0.4.2 | SLURM fast-dev-run (real Perch ONNX on GPU) | ✅ PASSED (job 8318887). 5 batches: cls_loss=0.699, dist_loss=0.058, loss=0.757 (= cls + 1.0·dist ✓). Zero affinity warnings. (Earlier job 8318761 failed on ONNX path; fixed in commit `5f4b6aa`.) |
+| 0.4.3 | Add `v5j_control.yaml` for live W&B comparison + back-compat receipt | ✅ DONE (commit `fa94043`) |
+| 1.1 | `v5j_kd` SLURM training | ⏳ RUNNING (job 8318953, started 2026-05-09 23:37) |
+| 1.2 | `v5j_control` SLURM training (parallel) | ⏳ RUNNING (job 8319084, started 2026-05-10 00:05) |
+| 1.3 | ONNX export + Kaggle upload + LB submit | pending 1.1/1.2 |
 
 **Phase 1 success gate** (vs `v5j_control_v2 = 0.896` baseline, ±0.013 noise):
 - CONFIRM if LB ≥ 0.910 → KD lever works on our codebase, proceed to Phase 2 (ownership + 4-fold).
@@ -177,13 +209,15 @@ branch of `configure_optimizers`). Only matters if we revisit split LR.
 
 ## Branch / git state
 
-- **Current branch**: `mg/exp031-perch-kd-distillation`. Phase 0.2-0.4
-  implementation committed; ahead of main by 1 commit ("Implement Perch v2 KD
-  distillation branch (Phase 0.2-0.4)"). Pushed to origin.
+- **Current branch**: `mg/exp031-perch-kd-distillation`. **4 commits ahead**
+  of main, all pushed to origin:
+  - `fa94043` — Add v5j_control.yaml for live W&B comparison
+  - `5f4b6aa` — Fix exp 031 fast-dev-run: ONNX path resolution + onnxruntime warnings
+  - `ede03e6` — Implement exp 031 Perch v2 KD branch (Phase 0.2-0.4)
+  - `3bb7afc` — Update CONTEXT.md branch/git state after PR #46 merge
 - **Latest commit on main**: `24d813a` — "Scaffold exp 031: Perch v2
   knowledge distillation (Phase 0 setup) (#46)" (squash-merge of PR #46).
-- **No open PRs.** Next PR opens after Phase 1 LB receipt (or sooner if
-  we want a code-only review pass before paying compute).
+- **No open PRs.** Next PR opens after Phase 1 LB receipt.
 - **Deleted branches** (cleanup history):
   - `mg/exp030-sydorskyi-mixup` (local + remote, fully on main via squash `58dd8c2`)
   - `mg/exp030-wrapup-and-next-direction` (local + remote, fully on main via squash `24d813a`)
@@ -204,6 +238,8 @@ branch of `configure_optimizers`). Only matters if we revisit split LR.
 | 04-28 AM | v5j-resubmit LB 0.906 + deterministic-training root cause | seed=43 retrain launched |
 | 04-28 PM | seed=43 LB 0.883 → seed band ±0.013 | **exp 030 closed**; PL vs KD distinction surfaced |
 | 05-09 | Tucker notebook audit + exp 031 Phase 0 | Phase 0.0/0.1 done; PR #46 merged to main as squash `24d813a`; Phase 0.2 mixup-interaction unresolved |
+| 05-09 PM | Mixup-interaction + split methodology resolved; Phase 0.2-0.4 implemented; fast-dev-run passed | Option B with 1× teacher trick locked; Option A (no split change) locked; commits `ede03e6` `5f4b6aa` `fa94043` |
+| 05-10 AM | Phase 1 SLURM jobs kicked off | 8318953 v5j_kd + 8319084 v5j_control running in parallel; resume here next session |
 
 ---
 
@@ -212,11 +248,16 @@ branch of `configure_optimizers`). Only matters if we revisit split LR.
 | File | Purpose |
 |---|---|
 | `user/murilo/experiments/031-perch-kd-distillation/` | **Active experiment** |
-| `user/murilo/src/birdclef/lightning/sed_finetune.py` | Where Phase 0.2 changes will land |
+| `user/murilo/experiments/031-perch-kd-distillation/configs/v5j_kd.yaml` | KD training config (use_perch_distill: true) |
+| `user/murilo/experiments/031-perch-kd-distillation/configs/v5j_control.yaml` | No-KD baseline config (parallel run for W&B comparison) |
+| `user/murilo/experiments/031-perch-kd-distillation/test_kd_gradient_flow.py` | Synthetic-batch local sanity check (no GPU/ONNX needed) |
+| `user/murilo/experiments/031-perch-kd-distillation/train.py` | Training driver with KD param plumbing |
+| `user/murilo/experiments/031-perch-kd-distillation/sbatch/run.sh` | Launcher (`bash sbatch/run.sh configs/v5j_kd.yaml`) |
+| `user/murilo/experiments/031-perch-kd-distillation/logs/` | SLURM logs — most recent: `slurm_v5j_kd_8318953.log`, `slurm_v5j_control_8319084.log` |
+| `user/murilo/src/birdclef/lightning/sed_finetune.py` | DistillHead, PerchTeacher, KD branch in training_step |
 | `user/murilo/analysis/mel_pipeline_comparison.py` | Phase 0.0 mel equivalence script |
 | `user/murilo/analysis/verify_perch_teacher.py` | Phase 0.1 ONNX schema/IO verification |
-| `user/murilo/analysis/sbatch/verify_perch_teacher.sh` | sbatch wrapper (`bash` self-submits via sbatch) |
-| `vendor/kaggle/datasets/perch-v2-no-dft-onnx/` | Vendored Perch ONNX (gitignored; re-fetch instructions in `vendor/kaggle/datasets/README.md`) |
+| `vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx` | Vendored Perch teacher (413 MB, gitignored) |
 | `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/` | Tucker's notebook (vendored) |
 | `user/murilo/MODEL-RUNS.md` | All model scores |
 | `user/murilo/FINDINGS.md` | Cross-experiment history |

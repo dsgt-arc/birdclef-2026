@@ -110,66 +110,105 @@ Decisions baked in (per session discussion 2026-05-09):
 - [x] 0.3.2 Cross-checked: only KD keys + the two explicit defaults differ
   vs `v5j_control.yaml`. No incidental drift.
 
-### 0.4 Fast-dev-run validation
+### 0.4 Fast-dev-run validation ✅ DONE 2026-05-09 / 05-10
 
 - [x] 0.4.1 Wrote `test_kd_gradient_flow.py` (synthetic batch, no GPU
-  required) covering 0.2.7 checks. Run with:
-  `python user/murilo/experiments/031-perch-kd-distillation/test_kd_gradient_flow.py`
-- [ ] 0.4.2 Submit `bash sbatch/run.sh configs/v5j_kd.yaml --fast-dev-run`
-  on a GPU node to verify the real PerchTeacher (CUDA ONNX) path works
-  end-to-end with the data loader + GPU mel pipeline.
-- [ ] 0.4.3 Spot-check the resulting fast-dev-run W&B / TensorBoard logs:
-  `train/dist_loss`, `train/cls_loss`, `train/loss` all logged separately.
+  required). **Ran 2026-05-09** — all 3 sub-tests passed:
+  - Test 1 (KD on, mixup OFF): backbone grad 3.60e+00, sed_head 4.53e-01,
+    distill_head 1.39e+00 (all > 0; loss=16.25, finite).
+  - Test 2 (KD on, mixup ON, per-sample interpolate): all grads > 0
+    (loss=12.03, finite).
+  - Test 3 (row-permutation invariance): `max |perch(x[perm]) -
+    perch(x)[perm]| = 0.00e+00` (exact, not approximate).
+- [x] 0.4.2 SLURM fast-dev-run on GPU node. **Job 8318761 FAILED** with
+  `NoSuchFile` because `train.py:repo_root` was misnamed (resolved to
+  `<repo>/user/murilo/`, not the actual repo root). Fixed in commit
+  `5f4b6aa` by adding `ACTUAL_REPO_ROOT = repo_root.parent.parent` and
+  using it for ONNX path resolution. Same commit also added
+  `intra_op_num_threads=1` / `inter_op_num_threads=1` to the
+  `PerchTeacher` ORT `SessionOptions` to suppress 16+ noisy
+  `pthread_setaffinity_np` warnings on cluster nodes. **Job 8318887
+  PASSED** — 5 batches in ~4s, KD log line confirmed:
+  `Perch v2 KD enabled: backbone_dim=1024, perch_embed_dim=1536,
+  alpha_distill=1.0, onnx=<correct path>`. DistillHead 1.6M params
+  (matches `Linear(1024, 1536)`).
+- [x] 0.4.3 Confirmed 3 separate loss keys in fast-dev-run output:
+  `train/cls_loss_step=0.699`, `train/dist_loss_step=0.058`,
+  `train/loss_step=0.757` (= 0.699 + 1.0·0.058 ✓). Zero affinity warnings.
+  No NaN / Inf. cls_loss ≈ ln(2) is the right BCE baseline at random
+  init; dist_loss=0.058 will decay (Tucker's published floor ~0.003 by
+  ep 25; with 20 epochs we expect ~0.005-0.010).
+
+### 0.5 Live-comparison config (added 2026-05-09)
+
+- [x] 0.5.1 Created `configs/v5j_control.yaml` (commit `fa94043`) — same
+  encoder/head/mel/data/training/mixup/seed as v5j_kd.yaml minus the KD
+  keys (`use_perch_distill` omitted → default False). Two purposes:
+  (a) live W&B side-by-side with v5j_kd in project `birdclef-2026-exp031`,
+  (b) implicit back-compat receipt — if this run lands at LB 0.896 ± 0.005
+  (matching exp 030's v5j_control_v2), it confirms my KD-branch additions
+  to `sed_finetune.py` left the non-KD path bit-identical.
 
 ## Phase 1 — KD training run
 
-### 1.1 SLURM training
+### 1.1 SLURM training (KD + control in parallel)
 
-- [ ] 1.1.1 Submit SLURM job:
-  `sbatch sbatch/train.sbatch configs/v5j_kd.yaml`. Expect ~40-60 min
-  on rtx6000 (Tucker's compute report suggests 2× the no-KD walltime).
-- [ ] 1.1.2 Monitor `dist_loss` curve in W&B during training. Halt
-  conditions:
-  - `dist_loss` plateaus above 0.01 by epoch 5 → likely Perch teacher /
-    mel mismatch. Stop and diagnose.
-  - `cls_loss` diverges (goes above v5j-control's epoch-1 value) →
-    detach broke something. Stop and diagnose.
-- [ ] 1.1.3 After training completes, capture metrics into `results.md`:
-  - val/auroc, val/cmap, val/f1_macro at best-by-val epoch
-  - dist_loss curve (per-epoch)
-  - best-by-val epoch number
-  - walltime
-  - SLURM job ID, W&B run ID
-- [ ] 1.1.4 Tag the checkpoint path so it's locatable from the proposal.
+- [x] 1.1.1 Submitted both SLURM jobs 2026-05-09 PM / 05-10 AM:
+  - **Job 8318953**: `bash sbatch/run.sh configs/v5j_kd.yaml`
+    (started 2026-05-09 23:37, rtx6000, run name `2026-exp031-v5j-kd`)
+  - **Job 8319084**: `bash sbatch/run.sh configs/v5j_control.yaml`
+    (started 2026-05-10 00:05, rtx6000, run name `2026-exp031-v5j-control`)
+  - Expected wall time ~80-150 min for KD, ~80-120 min for control.
+- [ ] 1.1.2 Monitor in W&B project `birdclef-2026-exp031`. Halt watches:
+  - `dist_loss` plateaus above 0.01 by epoch 5 → mel/teacher mismatch.
+  - `cls_loss` diverges (above v5j-control's epoch-1 value) → detach broke.
+  - Either loss NaN → halt immediately.
+  - **Note**: KD's val/auroc lags control's at early epochs (ep 0-2: ~0.4-0.6
+    observed) — this is **expected** because backbone is being driven by
+    Perch alignment, not species. Tucker's published epoch-1 ns22_auc
+    was 0.617. Should climb steeply through ep 3-7. NOT a halt condition.
+- [ ] 1.1.3 After both runs complete, capture into `results.md`:
+  - For each: val/auroc, val/cmap, val/f1_macro at best-by-val epoch
+  - dist_loss curve (per-epoch) for KD
+  - best-by-val epoch number for both
+  - walltime, SLURM job ID, W&B run ID
+- [ ] 1.1.4 Tag both checkpoint paths so they're locatable from the proposal.
 
-### 1.2 ONNX export + Kaggle pipeline
+### 1.2 ONNX export + Kaggle pipeline (TWO models: KD + control)
 
-- [ ] 1.2.1 Export the LSEHead-only inference path to ONNX. The
-  distillation head MUST be excluded from the exported graph. Verify
-  ONNX output is `(B, 234)` non-degenerate on a fixed random mel input.
-- [ ] 1.2.2 Add `hgnet-b0-sed-v5j-kd` MODELS entry to
-  `experiments/010-submission-pipeline/scripts/upload_kaggle.py`.
-- [ ] 1.2.3 Add `hgnet-b0-sed-v5j-kd` MODEL_SLUGS entry to
+- [ ] 1.2.1 Export both LSEHead-only inference paths to ONNX (KD + control).
+  The distillation head MUST be excluded from the KD export — since
+  `distill_head` is a separate `nn.Module` attribute on `SEDFinetuneModule`
+  (not nested in encoder or sed_head), the existing
+  `experiments/010-submission-pipeline/scripts/export_efficientnet_sed.py`
+  loads only `encoder` + `sed_head` state_dicts and naturally excludes
+  it. Verify ONNX outputs are `(B, 234)` non-degenerate on a fixed
+  random mel input.
+- [ ] 1.2.2 Add MODELS entries to
+  `experiments/010-submission-pipeline/scripts/upload_kaggle.py`:
+  - `hgnet-b0-sed-v5j-kd`
+  - `hgnet-b0-sed-v5j-control` (back-compat receipt)
+- [ ] 1.2.3 Add both MODEL_SLUGS entries to
   `experiments/010-submission-pipeline/kaggle_kernel/submission.py`.
-- [ ] 1.2.4 Create `kernel-metadata-hgnet-b0-sed-v5j-kd.json` in
-  `kaggle_kernel/`.
-- [ ] 1.2.5 Upload weights:
-  `python scripts/upload_kaggle.py --model hgnet-b0-sed-v5j-kd`
-- [ ] 1.2.6 Push kernel:
-  `python scripts/upload_kaggle.py --model hgnet-b0-sed-v5j-kd --push-kernel`
-- [ ] 1.2.7 Verify kernel ran cleanly on Kaggle (no errors, submission.csv
-  produced).
+- [ ] 1.2.4 Create both `kernel-metadata-*.json` files in `kaggle_kernel/`.
+- [ ] 1.2.5 Upload both weights datasets and push both kernels.
+- [ ] 1.2.6 Verify both kernels run cleanly on Kaggle.
 
-### 1.3 LB submission + verdict
+### 1.3 LB submission + verdict (read against control's actual LB)
 
-- [ ] 1.3.1 Submit kernel from Kaggle UI. Wait for LB score (typically
-  10-30 min).
-- [ ] 1.3.2 Record LB score in `results.md`.
-- [ ] 1.3.3 Apply the success criteria matrix:
-  - LB ≥ 0.920 → CONFIRM, proceed to Phase 2
-  - LB 0.913-0.919 → PARTIAL, diagnose
-  - LB 0.907-0.912 → WEAK, diagnose
-  - LB ≤ 0.906 → REJECT, halt Phase 2
+- [ ] 1.3.1 Submit both kernels. Wait for LB scores.
+- [ ] 1.3.2 Record both LB scores in `results.md`.
+- [ ] 1.3.3 **Back-compat check**: `v5j_control` LB should land at
+  0.896 ± 0.005 (matching exp 030's v5j_control_v2). If it diverges,
+  that's a back-compat failure — diagnose drift in the KD-branch
+  additions before trusting the KD result.
+- [ ] 1.3.4 Apply the success criteria matrix using `v5j_control`'s
+  actual LB as the baseline (NOT the historical 0.896):
+  - KD LB ≥ control + 0.014 → **CONFIRM**, proceed to Phase 2
+  - KD LB control + 0.007 to control + 0.013 → **PARTIAL**, diagnose
+  - KD LB control + 0.001 to control + 0.006 → **WEAK** (inside seed
+    noise), need 4-fold to disambiguate
+  - KD LB ≤ control → **REJECT**, halt Phase 2, post-mortem
 
 ## Phase 2 — Ownership + scaling (gated on Phase 1 = CONFIRM)
 
