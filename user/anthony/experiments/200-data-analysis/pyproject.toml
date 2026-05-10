@@ -14,19 +14,6 @@ dependencies = [
     "soundfile>=0.13",
 ]
 
-[project.scripts]
-birdclef-200-labeled-soundscapes = "data_analysis.soundscapes.labeled_soundscapes:main"
-birdclef-200-species-coverage = "data_analysis.soundscapes.species_coverage:main"
-birdclef-200-pacmap-soundscapes = "data_analysis.soundscapes.pacmap_embeddings:main"
-birdclef-200-per-species-train-pacmap = "data_analysis.soundscapes.per_species_train_pacmap:main"
-birdclef-200-marbled-frog-frequency-perch = "data_analysis.marbled_frog.frequency_perch:main"
-birdclef-200-marbled-frog-window-relevance = "data_analysis.marbled_frog.window_relevance:main"
-birdclef-200-marbled-frog-motif-boxes = "data_analysis.marbled_frog.motif_boxes:main"
-birdclef-200-marbled-frog-motif-mining = "data_analysis.marbled_frog.motif_mining:main"
-birdclef-200-marbled-frog-motif-review = "data_analysis.marbled_frog.motif_review:main"
-birdclef-200-marbled-frog-manual-annotations = "data_analysis.marbled_frog.manual_annotations:main"
-birdclef-200-encode-mp3 = "data_analysis.encode_mp3_pipeline:main"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
