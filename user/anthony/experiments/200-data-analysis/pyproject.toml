@@ -14,6 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
+birdclef-200-export-marbled-frog-manual-annotations = "data_analysis.export_marbled_frog_manual_annotations:main"
 birdclef-200-labeled-soundscapes = "data_analysis.labeled_soundscapes:main"
 birdclef-200-labeled-species-training-coverage = "data_analysis.labeled_species_training_coverage:main"
 birdclef-200-pacmap-soundscapes = "data_analysis.pacmap_soundscape_embeddings:main"
@@ -21,6 +22,7 @@ birdclef-200-selected-species-train-pacmap = "data_analysis.selected_species_tra
 birdclef-200-species-frequency-perch = "data_analysis.species_frequency_perch_analysis:main"
 birdclef-200-marbled-frog-motif-boxes = "data_analysis.marbled_frog_motif_boxes:main"
 birdclef-200-marbled-frog-motif-mining = "data_analysis.marbled_frog_motif_mining:main"
+birdclef-200-marbled-frog-motif-review = "data_analysis.marbled_frog_motif_review:main"
 birdclef-200-marbled-frog-relevance = "data_analysis.marbled_frog_window_relevance:main"
 
 [build-system]

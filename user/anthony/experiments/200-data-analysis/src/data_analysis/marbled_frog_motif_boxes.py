@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import numpy as np
 import polars as pl
+from scipy.ndimage import gaussian_filter, label as label_components
 from scipy.signal import find_peaks, peak_widths
 
 from data_analysis.paths import TRAIN_AUDIO_DIR, artifact_dir
@@ -38,12 +39,18 @@ DEFAULT_START_SEC = 0.0
 DEFAULT_DURATION_SEC = 5.0
 
 PRIMARY_BAND = (600.0, 1300.0)
-SECONDARY_BAND = (1000.0, 3000.0)
+# Default/seed secondary band. Some motif families, especially iNat1697350,
+# use a broader recording-specific secondary validation band below.
+SECONDARY_BAND = (1500.0, 2300.0)
 DISPLAY_BAND = (500.0, 3000.0)
 TEMPLATE_BAND = (800.0, 2300.0)
 TEMPLATE_HALF_FRAMES = 15
 TEMPLATE_MATCH_THRESHOLD = 0.35
 TEMPLATE_MATCH_MIN_SPACING_SEC = 0.35
+MAD_DB_FLOOR = 0.5
+ROBUST_Z_CLIP = 8.0
+GAUSSIAN_SIGMA_FREQ_BINS = 1.5
+GAUSSIAN_SIGMA_TIME_FRAMES = 1.0
 
 
 @dataclass(frozen=True)
@@ -80,14 +87,101 @@ def robust_excess_spectrogram(audio: np.ndarray) -> tuple[np.ndarray, np.ndarray
     freqs_band = freqs[mask]
     med = np.median(db_band, axis=1, keepdims=True)
     mad = np.median(np.abs(db_band - med), axis=1, keepdims=True)
-    z = (db_band - med) / (1.4826 * mad + 1e-6)
-    return db_band, np.maximum(z, 0.0), freqs_band, times
+    denom = 1.4826 * np.maximum(mad, MAD_DB_FLOOR)
+    z = np.maximum((db_band - med) / denom, 0.0)
+    z = np.clip(z, 0.0, ROBUST_Z_CLIP)
+    z = gaussian_filter(z, sigma=(GAUSSIAN_SIGMA_FREQ_BINS, GAUSSIAN_SIGMA_TIME_FRAMES))
+    return db_band, z, freqs_band, times
+
+
+def component_tracks(
+    z: np.ndarray, freqs: np.ndarray, band: tuple[float, float]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return envelope, centroid, tonality, and peak-picking score for a band.
+
+    Tonality is 1 - normalized entropy of each time column. Multiplying the
+    envelope by tonality favors concentrated ridges/chips over broadband noise.
+    """
+    mask = (freqs >= band[0]) & (freqs <= band[1])
+    z_band = z[mask]
+    band_freqs = freqs[mask]
+    if z_band.size == 0:
+        zeros = np.zeros(z.shape[1], dtype=np.float32)
+        return zeros, zeros, zeros, zeros
+    envelope = smooth(z_band.mean(axis=0), n=7)
+    weights = np.maximum(z_band, 0.0)
+    sums = weights.sum(axis=0) + 1e-9
+    centroid = (weights * band_freqs[:, None]).sum(axis=0) / sums
+    probs = weights / sums[None, :]
+    entropy = -(probs * np.log(probs + 1e-9)).sum(axis=0)
+    max_entropy = np.log(max(2, z_band.shape[0]))
+    tonality = np.clip(1.0 - entropy / max_entropy, 0.0, 1.0)
+    tonality = smooth(tonality, n=5)
+    score = smooth(envelope * (0.35 + 0.65 * tonality), n=5)
+    return envelope, centroid, tonality, score
 
 
 def component_envelope(z: np.ndarray, freqs: np.ndarray, band: tuple[float, float]) -> np.ndarray:
     """Mean robust excess energy envelope for a frequency band."""
-    mask = (freqs >= band[0]) & (freqs <= band[1])
-    return smooth(z[mask].mean(axis=0), n=9)
+    return component_tracks(z, freqs, band)[0]
+
+
+def select_peaks(
+    score: np.ndarray,
+    *,
+    min_spacing_frames: int,
+    expected_count: int | None = None,
+    peak_height: float = 1.0,
+    peak_prominence: float = 0.5,
+) -> np.ndarray:
+    """Select peaks from a score track, optionally using an expected-count prior.
+
+    When expected_count is supplied, over-detect candidate peaks with loose
+    thresholds, then solve a small dynamic program to choose exactly K peaks
+    maximizing total score subject to minimum spacing.
+    """
+    peaks, _props = find_peaks(
+        score,
+        height=peak_height,
+        prominence=peak_prominence,
+        distance=max(1, min_spacing_frames // 2),
+    )
+    if expected_count is None or peaks.size <= expected_count:
+        if expected_count is None:
+            return peaks
+        return peaks[np.argsort(score[peaks])[::-1]][:expected_count][::-1]
+
+    frames = peaks.astype(int)
+    values = score[frames].astype(float)
+    n = frames.size
+    k = expected_count
+    prev = np.searchsorted(frames, frames - min_spacing_frames, side="right") - 1
+    dp = np.full((n + 1, k + 1), -np.inf, dtype=float)
+    take = np.zeros((n + 1, k + 1), dtype=bool)
+    dp[:, 0] = 0.0
+    for i in range(1, n + 1):
+        for j in range(0, k + 1):
+            best = dp[i - 1, j]
+            if j > 0:
+                prior_i = prev[i - 1] + 1
+                cand = dp[prior_i, j - 1] + values[i - 1]
+                if cand > best:
+                    best = cand
+                    take[i, j] = True
+            dp[i, j] = best
+
+    # If exact K is impossible, reconstruct the best available count <= K.
+    j = int(np.nanargmax(dp[n, : k + 1])) if not np.isfinite(dp[n, k]) else k
+    selected: list[int] = []
+    i = n
+    while i > 0 and j > 0:
+        if take[i, j]:
+            selected.append(frames[i - 1])
+            i = prev[i - 1] + 1
+            j -= 1
+        else:
+            i -= 1
+    return np.array(sorted(selected), dtype=int)
 
 
 def time_bounds_from_peak(
@@ -145,33 +239,100 @@ def pad_frequency_bounds(
     return max(band[0], f0 - lower_pad_hz), min(band[1], f1 + upper_pad_hz)
 
 
+def connected_component_box(
+    z: np.ndarray,
+    freqs: np.ndarray,
+    times: np.ndarray,
+    *,
+    peak_idx: int,
+    band: tuple[float, float],
+    left_frame: int,
+    right_frame: int,
+    min_threshold: float = 0.75,
+    frac_of_peak: float = 0.35,
+    pre_pad_sec: float = 0.02,
+    post_pad_sec: float = 0.02,
+    lower_pad_hz: float = 0.0,
+    upper_pad_hz: float = 0.0,
+) -> tuple[float, float, float, float]:
+    """Return a tight signal-derived box from the connected component at a peak."""
+    band_mask = (freqs >= band[0]) & (freqs <= band[1])
+    band_freqs = freqs[band_mask]
+    if not np.any(band_mask):
+        return float(times[left_frame]), float(times[right_frame]), band[0], band[1]
+    left_frame = max(0, int(left_frame))
+    right_frame = min(z.shape[1] - 1, int(right_frame))
+    crop = z[band_mask, left_frame : right_frame + 1]
+    if crop.size == 0:
+        return float(times[left_frame]), float(times[right_frame]), band[0], band[1]
+
+    local_peak_t = int(np.clip(peak_idx - left_frame, 0, crop.shape[1] - 1))
+    local_peak_f = int(np.argmax(crop[:, local_peak_t]))
+    peak_value = float(crop[local_peak_f, local_peak_t])
+    threshold = max(min_threshold, frac_of_peak * peak_value)
+    active = crop >= threshold
+    labels, n_labels = label_components(active)
+    chosen_label = int(labels[local_peak_f, local_peak_t])
+    if chosen_label == 0 and n_labels:
+        # If the exact ridge pixel is just below threshold, choose the component
+        # with highest total energy near the peak time.
+        label_scores = []
+        for component_id in range(1, n_labels + 1):
+            component_mask = labels == component_id
+            time_distance = np.abs(np.where(component_mask)[1] - local_peak_t).min()
+            label_scores.append((float(crop[component_mask].sum()) / (1.0 + time_distance), component_id))
+        chosen_label = max(label_scores)[1]
+    if chosen_label == 0:
+        f0, f1 = frequency_bounds(z, freqs, slice(left_frame, right_frame + 1), band, min_threshold=min_threshold)
+        return float(times[left_frame]), float(times[right_frame]), f0, f1
+
+    ff, tt = np.where(labels == chosen_label)
+    t0 = max(0.0, float(times[left_frame + tt.min()]) - pre_pad_sec)
+    t1 = float(times[left_frame + tt.max()]) + post_pad_sec
+    f0 = float(band_freqs[ff.min()])
+    f1 = float(band_freqs[ff.max()])
+    f0, f1 = pad_frequency_bounds(f0, f1, band, lower_pad_hz=lower_pad_hz, upper_pad_hz=upper_pad_hz)
+    return t0, t1, f0, f1
+
+
 def detect_motif_boxes(
     audio: np.ndarray,
     *,
     global_start_sec: float,
-    peak_height: float = 1.5,
-    peak_prominence: float = 1.0,
+    peak_height: float = 0.55,
+    peak_prominence: float = 0.20,
     min_call_spacing_sec: float = 0.35,
+    expected_count: int | None = 4,
 ) -> tuple[list[MotifBox], np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Detect primary motifs and optional secondary component boxes."""
     db_band, z, freqs, times = robust_excess_spectrogram(audio)
-    primary_env = component_envelope(z, freqs, PRIMARY_BAND)
-    secondary_env = component_envelope(z, freqs, SECONDARY_BAND)
+    primary_env, _primary_centroid, _primary_tonality, primary_score = component_tracks(z, freqs, PRIMARY_BAND)
+    secondary_env, _secondary_centroid, _secondary_tonality, secondary_score = component_tracks(z, freqs, SECONDARY_BAND)
     frame_rate = MEL_SAMPLE_RATE / MEL_HOP_LENGTH
-    peaks, props = find_peaks(
-        primary_env,
-        height=peak_height,
-        prominence=peak_prominence,
-        distance=max(1, int(min_call_spacing_sec * frame_rate)),
+    peaks = select_peaks(
+        primary_score,
+        min_spacing_frames=max(1, int(min_call_spacing_sec * frame_rate)),
+        expected_count=expected_count,
+        peak_height=peak_height,
+        peak_prominence=peak_prominence,
     )
 
     boxes: list[MotifBox] = []
     for motif_id, peak_idx in enumerate(peaks, start=1):
-        left, right, t0, t1 = time_bounds_from_peak(primary_env, times, int(peak_idx))
-        p_f0, p_f1 = pad_frequency_bounds(
-            *frequency_bounds(z, freqs, slice(left, right + 1), PRIMARY_BAND),
-            PRIMARY_BAND,
-            lower_pad_hz=140.0,
+        left, right, _t0, _t1 = time_bounds_from_peak(primary_score, times, int(peak_idx), min_threshold=0.35)
+        t0, t1, p_f0, p_f1 = connected_component_box(
+            z,
+            freqs,
+            times,
+            peak_idx=int(peak_idx),
+            band=PRIMARY_BAND,
+            left_frame=left,
+            right_frame=right,
+            min_threshold=0.45,
+            frac_of_peak=0.32,
+            pre_pad_sec=0.045,
+            post_pad_sec=0.025,
+            lower_pad_hz=70.0,
         )
         boxes.append(
             MotifBox(
@@ -182,7 +343,7 @@ def detect_motif_boxes(
                 fmin_hz=p_f0,
                 fmax_hz=p_f1,
                 peak_time_sec=global_start_sec + float(times[peak_idx]),
-                peak_score=float(primary_env[peak_idx]),
+                peak_score=float(primary_score[peak_idx]),
             )
         )
 
@@ -190,22 +351,31 @@ def detect_motif_boxes(
         pad_frames = max(1, int(0.12 * frame_rate))
         search_left = max(0, left - pad_frames)
         search_right = min(secondary_env.size - 1, right + pad_frames)
-        local = secondary_env[search_left : search_right + 1]
-        if local.size and float(local.max()) >= 0.80:
+        local = secondary_score[search_left : search_right + 1]
+        if local.size and float(local.max()) >= 0.35:
             sec_peak_idx = search_left + int(local.argmax())
-            sec_left, sec_right, st0, st1 = time_bounds_from_peak(
-                secondary_env,
+            sec_left, sec_right, _st0, _st1 = time_bounds_from_peak(
+                secondary_score,
                 times,
                 sec_peak_idx,
-                min_threshold=0.7,
+                min_threshold=0.25,
                 frac_of_peak=0.35,
-                pre_pad_sec=0.08,
-                post_pad_sec=0.04,
+                pre_pad_sec=0.05,
+                post_pad_sec=0.025,
             )
-            s_f0, s_f1 = pad_frequency_bounds(
-                *frequency_bounds(z, freqs, slice(sec_left, sec_right + 1), SECONDARY_BAND),
-                SECONDARY_BAND,
-                lower_pad_hz=250.0,
+            st0, st1, s_f0, s_f1 = connected_component_box(
+                z,
+                freqs,
+                times,
+                peak_idx=int(sec_peak_idx),
+                band=SECONDARY_BAND,
+                left_frame=sec_left,
+                right_frame=sec_right,
+                min_threshold=0.35,
+                frac_of_peak=0.32,
+                pre_pad_sec=0.035,
+                post_pad_sec=0.02,
+                lower_pad_hz=80.0,
             )
             boxes.append(
                 MotifBox(
@@ -216,11 +386,11 @@ def detect_motif_boxes(
                     fmin_hz=s_f0,
                     fmax_hz=s_f1,
                     peak_time_sec=global_start_sec + float(times[sec_peak_idx]),
-                    peak_score=float(secondary_env[sec_peak_idx]),
+                    peak_score=float(secondary_score[sec_peak_idx]),
                 )
             )
 
-    return boxes, db_band, z, freqs, times, primary_env, secondary_env
+    return boxes, db_band, z, freqs, times, primary_score, secondary_score
 
 
 def boxes_to_frame(boxes: list[MotifBox], filename: str, window_start_sec: float, window_end_sec: float) -> pl.DataFrame:
@@ -671,49 +841,25 @@ def detect_band_motif_boxes(
     *,
     band: tuple[float, float],
     component: str,
-    peak_height: float = 1.0,
-    peak_prominence: float = 0.6,
+    peak_height: float = 0.40,
+    peak_prominence: float = 0.12,
     min_call_spacing_sec: float = 0.35,
+    expected_count: int | None = None,
 ) -> list[MotifBox]:
-    """Detect tight boxes independently from a single frequency-band envelope."""
-    envelope = component_envelope(z, freqs, band)
-    frame_rate = MEL_SAMPLE_RATE / MEL_HOP_LENGTH
-    peaks, _props = find_peaks(
-        envelope,
-        height=peak_height,
-        prominence=peak_prominence,
-        distance=max(1, int(min_call_spacing_sec * frame_rate)),
+    """Detect tight boxes independently from a single frequency band."""
+    lower_pad_hz = 70.0 if component.startswith("primary") else 120.0
+    return detect_custom_band_boxes(
+        z,
+        freqs,
+        times,
+        band=band,
+        component=component,
+        peak_height=peak_height,
+        peak_prominence=peak_prominence,
+        min_call_spacing_sec=min_call_spacing_sec,
+        lower_pad_hz=lower_pad_hz,
+        expected_count=expected_count,
     )
-    boxes: list[MotifBox] = []
-    for motif_id, peak_idx in enumerate(peaks, start=1):
-        left, right, t0, t1 = time_bounds_from_peak(
-            envelope,
-            times,
-            int(peak_idx),
-            min_threshold=0.75,
-            frac_of_peak=0.50,
-            pre_pad_sec=0.04,
-            post_pad_sec=0.02,
-        )
-        lower_pad_hz = 140.0 if component.startswith("primary") else 250.0
-        f0, f1 = pad_frequency_bounds(
-            *frequency_bounds(z, freqs, slice(left, right + 1), band, min_threshold=0.55),
-            band,
-            lower_pad_hz=lower_pad_hz,
-        )
-        boxes.append(
-            MotifBox(
-                motif_id=motif_id,
-                component=component,
-                start_sec=float(t0),
-                end_sec=float(t1),
-                fmin_hz=f0,
-                fmax_hz=f1,
-                peak_time_sec=float(times[peak_idx]),
-                peak_score=float(envelope[peak_idx]),
-            )
-        )
-    return boxes
 
 
 def detect_custom_band_boxes(
@@ -730,30 +876,41 @@ def detect_custom_band_boxes(
     upper_pad_hz: float = 0.0,
     time_pre_pad_sec: float = 0.04,
     time_post_pad_sec: float = 0.02,
+    expected_count: int | None = None,
 ) -> list[MotifBox]:
-    """Detect boxes from a custom frequency-band envelope."""
-    envelope = component_envelope(z, freqs, band)
+    """Detect boxes from a custom band using score-track peaks + connected components."""
+    envelope, _centroid, _tonality, score = component_tracks(z, freqs, band)
     frame_rate = MEL_SAMPLE_RATE / MEL_HOP_LENGTH
-    peaks, _props = find_peaks(
-        envelope,
-        height=peak_height,
-        prominence=peak_prominence,
-        distance=max(1, int(min_call_spacing_sec * frame_rate)),
+    peaks = select_peaks(
+        score,
+        min_spacing_frames=max(1, int(min_call_spacing_sec * frame_rate)),
+        expected_count=expected_count,
+        peak_height=peak_height,
+        peak_prominence=peak_prominence,
     )
     boxes: list[MotifBox] = []
     for motif_id, peak_idx in enumerate(peaks, start=1):
-        left, right, t0, t1 = time_bounds_from_peak(
-            envelope,
+        left, right, _t0, _t1 = time_bounds_from_peak(
+            score,
             times,
             int(peak_idx),
-            min_threshold=0.65,
-            frac_of_peak=0.45,
+            min_threshold=max(0.25, peak_height * 0.5),
+            frac_of_peak=0.40,
             pre_pad_sec=time_pre_pad_sec,
             post_pad_sec=time_post_pad_sec,
         )
-        f0, f1 = pad_frequency_bounds(
-            *frequency_bounds(z, freqs, slice(left, right + 1), band, min_threshold=0.50),
-            band,
+        t0, t1, f0, f1 = connected_component_box(
+            z,
+            freqs,
+            times,
+            peak_idx=int(peak_idx),
+            band=band,
+            left_frame=left,
+            right_frame=right,
+            min_threshold=0.35,
+            frac_of_peak=0.30,
+            pre_pad_sec=max(0.015, time_pre_pad_sec * 0.6),
+            post_pad_sec=max(0.015, time_post_pad_sec),
             lower_pad_hz=lower_pad_hz,
             upper_pad_hz=upper_pad_hz,
         )
@@ -766,7 +923,7 @@ def detect_custom_band_boxes(
                 fmin_hz=f0,
                 fmax_hz=f1,
                 peak_time_sec=float(times[peak_idx]),
-                peak_score=float(envelope[peak_idx]),
+                peak_score=float(score[peak_idx]),
             )
         )
     return boxes
@@ -783,6 +940,7 @@ def plot_single_component_boxes(
     peak_prominence: float,
     lower_pad_hz: float = 0.0,
     upper_pad_hz: float = 0.0,
+    expected_count: int | None = None,
 ) -> None:
     """Plot custom single-component motif boxes for one recording."""
     audio, _ = librosa.load(TRAIN_AUDIO_DIR / filename, sr=MEL_SAMPLE_RATE, mono=True)
@@ -797,6 +955,7 @@ def plot_single_component_boxes(
         peak_prominence=peak_prominence,
         lower_pad_hz=lower_pad_hz,
         upper_pad_hz=upper_pad_hz,
+        expected_count=expected_count,
     )
     if boxes:
         boxes_to_frame(boxes, filename, 0.0, float(times[-1])).write_csv(table_path)
@@ -849,6 +1008,8 @@ def plot_independent_band_boxes(
     *,
     primary_band: tuple[float, float] = PRIMARY_BAND,
     secondary_band: tuple[float, float] = SECONDARY_BAND,
+    expected_primary_count: int | None = None,
+    expected_secondary_count: int | None = None,
 ) -> None:
     """Plot independent primary/secondary band-envelope boxes for one recording."""
     audio, _ = librosa.load(TRAIN_AUDIO_DIR / filename, sr=MEL_SAMPLE_RATE, mono=True)
@@ -859,6 +1020,7 @@ def plot_independent_band_boxes(
         times,
         band=primary_band,
         component="primary_independent",
+        expected_count=expected_primary_count,
     )
     secondary_boxes = detect_band_motif_boxes(
         z,
@@ -866,6 +1028,7 @@ def plot_independent_band_boxes(
         times,
         band=secondary_band,
         component="secondary_independent",
+        expected_count=expected_secondary_count,
     )
     boxes = primary_boxes + secondary_boxes
     if boxes:
@@ -957,6 +1120,9 @@ def run_template_matching(output_dir: Path, *, seed_filename: str = DEFAULT_FILE
         "22967/iNat1697350.ogg",
         plots_dir / "iNat1697350_independent_band_motif_boxes.png",
         tables_dir / "iNat1697350_independent_band_motif_boxes.csv",
+        secondary_band=(1000.0, 3000.0),
+        expected_primary_count=10,
+        expected_secondary_count=10,
     )
     plot_single_component_boxes(
         "22967/iNat1698104.ogg",
@@ -968,6 +1134,7 @@ def run_template_matching(output_dir: Path, *, seed_filename: str = DEFAULT_FILE
         peak_prominence=0.6,
         lower_pad_hz=100.0,
         upper_pad_hz=80.0,
+        expected_count=5,
     )
 
 
