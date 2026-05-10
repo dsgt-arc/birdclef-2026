@@ -870,17 +870,19 @@ v5j. α_distill=1.0, single-fold seed=42, 20 epochs.
 | `hgnet-b0-sed-v5j-kd` | v5j + Perch v2 KD (best-by-val) | 0.8629 | 17 | **0.890** | **−0.016** | `031-perch-kd-distillation/.../2026-exp031-v5j-kd/best-epochepoch=17.ckpt` |
 | `v5j_control` (exp 031) | back-compat baseline (no KD) | 0.8747 | 15 | **0.896**† | −0.010 | bit-identical to exp 030 v5j_control_v2 |
 | **`hgnet-b0-sed-v5j-control-last`** | **v5j_control ep 19 (save_top_k=-1 rerun)** | 0.8728 | 19 | **0.897** | **−0.009** | `031-perch-kd-distillation/.../2026-exp031-v5j-control-resave/best-epochepoch=19.ckpt` |
-| `hgnet-b0-sed-v5j-kd-last` | v5j+KD ep 19 (save_top_k=-1 rerun) | 0.8595 | 19 | (pending) | — | `031-perch-kd-distillation/.../2026-exp031-v5j-kd-resave/best-epochepoch=19.ckpt` |
+| **`hgnet-b0-sed-v5j-kd-last`** | **v5j+KD ep 19 (save_top_k=-1 rerun)** | 0.8595 | 19 | **0.891** | **−0.015** | `031-perch-kd-distillation/.../2026-exp031-v5j-kd-resave/best-epochepoch=19.ckpt` |
 
 † Inherited from exp 030 v5j_control_v2 (LB 0.896). All 8 offline metrics
 bit-identical to 4 dp under deterministic training (`seed_everything(42, workers=True) + Trainer(deterministic=True)`),
 so weights are bit-identical.
 
-### Codebase reproduction FAILED
+### Codebase REGRESSION on v5j reproduction
 
 The 2026-05-10 best-vs-last diagnostic was meant to disambiguate
 ckpt-selection sensitivity vs codebase drift on the v5j-original 0.906 →
-v5j_control_v2 0.896 gap. Result: **codebase drift confirmed.**
+v5j_control_v2 0.896 gap. Result: **codebase regression confirmed**, and
+**ckpt-selection is conclusively not the cause** (ep 15 = 0.896, ep 19 =
+0.897, only +0.001 difference).
 
 | Question | Answer |
 |---|---|
@@ -889,8 +891,15 @@ v5j_control_v2 0.896 gap. Result: **codebase drift confirmed.**
 | Does today's training reproduce v5j-original's 0.906? | ❌ No — even with `save_top_k: -1` and the literal final epoch, today's pipeline lands at 0.897, **−0.009 below v5j-original** |
 | Direction of drift | Negative and systematic across 4 retrains in exp 030 + 031, not random seed noise |
 
-The right v5j single-fold baseline going forward is **0.897**, not 0.906.
-Comprehensive root-cause analysis at
+**Important**: 0.906 IS the real achievable LB for the v5j recipe — proven
+by the v5j-resubmit diagnostic (the original exp 019 ep 19 checkpoint runs
+through today's submission pipeline and produces 0.906 exactly). The
+regression is **a bug to find and fix**, not a corrected baseline.
+
+The 0.906 baseline stays. We've lost the ability to reproduce it from
+scratch on the current codebase, and finding the cause is the highest
+priority before any further training-recipe experiments. Comprehensive
+root-cause analysis at
 `analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md`.
 
 ### Verdict: REJECT (with last-ckpt diagnostic pending)

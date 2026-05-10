@@ -269,13 +269,18 @@ plateaus, `last.ckpt` is never updated. **The diagnostic requires a
   - Right v5j single-fold baseline going forward = **0.897**, not 0.906.
   - See `analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md` for
     root-cause investigation.
-- [ ] 1.4c.1 Apply revised verdict using `v5j_kd_last` LB (kernel pushed,
-  awaiting score). Read against the corrected baseline 0.897:
-  - If `v5j_kd_last` ≥ 0.911 (0.897 + 0.014): KD lever transfers; REJECT
-    was wrong. Proceed to Phase 2.
-  - If `v5j_kd_last` 0.904–0.910: PARTIAL.
-  - If `v5j_kd_last` 0.898–0.903: WEAK.
-  - If `v5j_kd_last` ≤ 0.897: REJECT stands.
+- [x] 1.4c.1 v5j_kd_last LB result: **0.891** (ep 19, KD on, save_top_k=-1 rerun)
+  - vs v5j_control_last 0.897 = **−0.006** at the same epoch. Same
+    direction and magnitude as v5j_kd 0.890 vs v5j_control 0.896 (also
+    −0.006). KD verdict consistent across both ckpt-selection regimes:
+    **REJECT stands**.
+  - vs v5j-original 0.906 = −0.015. Some fraction of this is the
+    codebase regression (−0.009 in v5j_control_last), so KD-only
+    contribution to the gap is ≈−0.006 (matches the within-codebase
+    delta).
+  - Until codebase regression is fixed, can't cleanly separate "KD
+    has no effect" from "KD has a partial effect masked by regression".
+    The within-codebase REJECT is robust either way.
 
 #### 1.4e Codebase drift root-cause analysis (URGENT)
 

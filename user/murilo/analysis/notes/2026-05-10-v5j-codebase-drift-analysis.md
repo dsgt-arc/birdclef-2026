@@ -12,10 +12,12 @@ era (Mar 30 2026) and HEAD (May 10 2026)** — 8 PRs touched `sed_finetune.py`, 
 +1300 lines and structurally reorganizing `__init__`, `training_step`, and the loss
 computation. This note ranks candidate root causes and proposes diagnostic experiments.
 
-**Critical implication**: every comparison made against the historical 0.906 baseline since
-exp 030 is silently miscalibrated. The right v5j single-fold baseline today is **0.897**,
-not 0.906. Going forward, single-fold experiments should be read against this corrected
-baseline until the drift is resolved.
+**Critical implication**: 0.906 IS the real achievable LB for the v5j recipe (proven by
+v5j-resubmit: exp 019 ep 19 checkpoint → today's submission pipeline = 0.906 exactly).
+The regression is a **bug to find and fix**, not a baseline to lower. Every comparison
+made against the 0.906 baseline since exp 026 is silently contaminated by ~0.009 of
+training-side regression — but the answer is to restore reproducibility, not to
+re-baseline at 0.897.
 
 ## The smoking gun
 
@@ -274,9 +276,11 @@ HEAD to v5j-era versions and rerun. If LB recovers, library version drift confir
 
 1. **Immediate** (within this session):
    - Document this finding (this note, MODEL-RUNS.md, results.md, tasks.md). DONE.
-   - Stop comparing against 0.906 baseline. Use 0.897 as the corrected single-fold
-     v5j baseline going forward.
-   - Re-evaluate exp 031 KD verdict against 0.897: 0.890 vs 0.897 = −0.007, still REJECT.
+   - Keep 0.906 as the real v5j baseline (proven by v5j-resubmit). Treat 0.897 as a
+     known regression to fix, not a corrected baseline.
+   - Within-codebase KD-vs-control deltas are still meaningful for exp 031 verdict:
+     0.890 vs 0.896 = −0.006 (REJECT) at best-by-val, 0.891 vs 0.897 = −0.006 (REJECT)
+     at ep 19. KD verdict consistent across both regimes.
 
 2. **Near-term** (next 1-2 sessions):
    - Run diagnostics A, B, C (cheap, ~30 min total). They should localize the cause.
@@ -319,28 +323,39 @@ without resolving the drift first.
 
 ## What this means for the project
 
-This is an **infrastructure-level finding** that affects every comparison made
-since exp 026. The proper baselines are:
+This is an **infrastructure-level finding**: every comparison made since
+exp 026 has been silently contaminated by ~0.009 of training-side regression
+relative to the v5j-original baseline. The 0.906 baseline is the real
+achievable target for the recipe (verified by v5j-resubmit), but the
+training pipeline that produces it can't currently be reproduced from scratch.
 
-| Baseline | Old (incorrect) | New (corrected) |
-|---|---:|---:|
-| v5j single-fold | 0.906 | **0.897** |
-| v5j 4-fold pp2 | 0.917 | **likely lower** (need to retrain to know) |
-| Single-fold seed band | ±0.013 (per exp 030) | unchanged (intra-codebase) |
+| Baseline | Real value | Currently reproduces? |
+|---|---:|:---:|
+| v5j single-fold | 0.906 (proven by v5j-resubmit) | ❌ training falls short by ~0.009 |
+| v5j 4-fold pp2 | 0.917 (achieved) | ❌ likely also affected (needs retrain to confirm) |
+| Single-fold seed band | ±0.013 (per exp 030) | ✅ unchanged within today's codebase |
 
-Several past "WEAK" / "REJECT" verdicts may have been wrongly read against the
-inflated 0.906 baseline:
+Several past "WEAK" / "REJECT" verdicts compared training-recipe variants
+against the 0.906 baseline. Their TRUE delta-vs-recipe-as-originally-trained
+is contaminated by the ~0.009 regression. For example:
 
-- exp 030 sydorskyi mixup: read against 0.906, hit 0.892 → "null". Against 0.897,
-  it's −0.005 → still null but tighter.
-- exp 029 2025 pretrain: 0.885 → "rejected" (−0.021). Against 0.897, still −0.012.
-- The list of "22+ recipe failures" in CONTEXT.md may need recalibration once
-  the corrected baseline is established for each comparator.
+- exp 030 sydorskyi mixup hit 0.892 → vs 0.906 = −0.014 (looked like
+  meaningful regression). But part of that −0.014 is the codebase
+  regression that affects EVERY current run, not the mixup change.
+  Actual within-codebase delta vs same-codebase v5j_control = −0.004 (null).
+- exp 029 2025 pretrain hit 0.885 → vs 0.906 = −0.021. Within-codebase
+  delta vs same-codebase v5j_control = −0.012.
 
-This doesn't invalidate strategic conclusions (training-recipe levers are weak
-on this codebase) — but the SIZES of the negative deltas were overstated by
-~0.009 across the board, and a few WEAK results may shift to PARTIAL when
-re-read.
+Strategic conclusions (training-recipe levers are weak on this codebase)
+remain valid because within-codebase deltas don't change. But the
+**magnitudes were overstated** by ~0.009, and the right reading is "X
+recipe is null vs same-codebase control" rather than "X recipe is −0.014
+vs v5j-original".
+
+**Most importantly**: until reproducibility is restored, we can't run any
+experiment that aims to BEAT v5j-original 0.906 from scratch. We're 0.009
+in the hole before we start. The codebase regression is the highest-priority
+fix on the project, not a baseline to accept.
 
 ## Cross-references
 
