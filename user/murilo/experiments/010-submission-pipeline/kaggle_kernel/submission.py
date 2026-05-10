@@ -91,6 +91,10 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 031 best-vs-last diagnostic: ep 19 weights from save_top_k=-1 retrains.
+    # control slug drops "-2026-" to fit Kaggle's 50-char dataset slug limit.
+    "birdclef-2026-hgnet-b0-sed-v5j-kd-last-weights",
+    "birdclef-hgnet-b0-sed-v5j-control-last-weights",
     # Exp 031: Perch v2 knowledge distillation on v5j (Tucker recipe, Phase 1)
     "birdclef-2026-hgnet-b0-sed-v5j-kd-weights",
     # Exp 030 V3 (seed=43) diagnostic retrain — disambiguates the seed=42 EffNet ×

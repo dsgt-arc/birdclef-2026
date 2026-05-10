@@ -811,6 +811,44 @@ export_hgnet_b0_sed_v5j_kd() {
         --output-dir artifacts/weights/hgnet-b0-sed-v5j-kd/
 }
 
+export_hgnet_b0_sed_v5j_kd_last() {
+    # Best-vs-last diagnostic: v5j_kd ep 19 weights from the save_top_k=-1
+    # rerun. Tests whether the 0.890 LB on best-by-val ep 17 was a
+    # ckpt-selection artifact vs structural KD failure.
+    echo "=== Exporting Exp 031 v5j_kd LAST (ep 19) — best-vs-last diagnostic ==="
+    local CKPT="${CHECKPOINTS_BASE}/031-perch-kd-distillation/checkpoints/2026-exp031-v5j-kd-resave/best-epochepoch=19.ckpt"
+    if [ ! -f "$CKPT" ]; then
+        echo "ERROR: ep 19 checkpoint not found at $CKPT" >&2
+        echo "Has kd_resave finished training? Check squeue and the checkpoint dir." >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP031_DIR}/configs/v5j_kd_resave.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-kd-last/
+}
+
+export_hgnet_b0_sed_v5j_control_last() {
+    # Best-vs-last diagnostic: v5j_control ep 19 weights from the
+    # save_top_k=-1 rerun. Tests whether ep 19 weights recover v5j-original
+    # 0.906 LB on the new codebase, isolating ckpt-selection sensitivity
+    # from real codebase drift.
+    echo "=== Exporting Exp 031 v5j_control LAST (ep 19) — best-vs-last diagnostic ==="
+    local CKPT="${CHECKPOINTS_BASE}/031-perch-kd-distillation/checkpoints/2026-exp031-v5j-control-resave/best-epochepoch=19.ckpt"
+    if [ ! -f "$CKPT" ]; then
+        echo "ERROR: ep 19 checkpoint not found at $CKPT" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP031_DIR}/configs/v5j_control_resave.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-control-last/
+}
+
 export_hgnet_b0_sed_v5j_fmax() {
     echo "=== Exporting HGNetV2-B0 SED v5j-fmax (framewise-max only, 234 classes) ==="
     local CKPT
@@ -1249,7 +1287,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-finetune-2026|hgnet-b0-sed-v5j-ft-splitlr|\
     hgnet-b0-sed-v5j-control|hgnet-b0-sed-v5j-sydorskyi|effnetv2-b0-sed-control|effnetv2-b0-sed-sydorskyi|\
     hgnet-b0-sed-v5j-control-seed43|hgnet-b0-sed-v5j-sydorskyi-seed43|effnetv2-b0-sed-control-seed43|effnetv2-b0-sed-sydorskyi-seed43|\
-    hgnet-b0-sed-v5j-kd|\
+    hgnet-b0-sed-v5j-kd|hgnet-b0-sed-v5j-kd-last|hgnet-b0-sed-v5j-control-last|\
     hgnet-b0-sed-v5j-resubmit|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
@@ -1366,6 +1404,8 @@ case "$MODEL" in
     effnetv2-b0-sed-control-seed43)     export_effnetv2_b0_sed_control_seed43 ;;
     effnetv2-b0-sed-sydorskyi-seed43)   export_effnetv2_b0_sed_sydorskyi_seed43 ;;
     hgnet-b0-sed-v5j-kd)                export_hgnet_b0_sed_v5j_kd ;;
+    hgnet-b0-sed-v5j-kd-last)           export_hgnet_b0_sed_v5j_kd_last ;;
+    hgnet-b0-sed-v5j-control-last)      export_hgnet_b0_sed_v5j_control_last ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;
