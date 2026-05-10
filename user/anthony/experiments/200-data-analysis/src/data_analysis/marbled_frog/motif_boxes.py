@@ -60,6 +60,64 @@ class MotifBox:
     match_score: float | None = None
 
 
+@dataclass(frozen=True)
+class CuratedAnnotation:
+    """A 'current-best' motif-box set, detected and rendered under curated/."""
+
+    name: str
+    motif_family: str
+    status: str
+    notes: str
+    source_table: str  # filename within curated/tables/
+    primary_band: tuple[float, float]
+    secondary_band: tuple[float, float] | None
+    output_plot_name: str
+
+
+CURATED_ANNOTATIONS: list[CuratedAnnotation] = [
+    CuratedAnnotation(
+        name="iNat1448422_0-5s_low_click_secondary",
+        motif_family="low_click_with_secondary",
+        status="manual_current_best",
+        notes=(
+            "Four short calls in 0-5s seed window; primary around "
+            "600-1300 Hz with secondary validation band around 1500-2300 Hz."
+        ),
+        source_table="iNat1448422_0-5s_motif_boxes.csv",
+        primary_band=(600.0, 1300.0),
+        secondary_band=(1500.0, 2300.0),
+        output_plot_name="iNat1448422_0-5s_curated.png",
+    ),
+    CuratedAnnotation(
+        name="iNat1697350_independent_broad_sweep",
+        motif_family="broad_upper_sweep_with_low_tail",
+        status="manual_current_best",
+        notes=(
+            "Ten paired-looking events; independent primary lower boxes plus "
+            "broad secondary 1000-3000 Hz boxes. Treat as motif-event evidence, "
+            "not precise boxes."
+        ),
+        source_table="iNat1697350_independent_band_motif_boxes.csv",
+        primary_band=(600.0, 1300.0),
+        secondary_band=(1000.0, 3000.0),
+        output_plot_name="iNat1697350_curated.png",
+    ),
+    CuratedAnnotation(
+        name="iNat1698104_1k_1p8k_rising_chips",
+        motif_family="rising_chip_1k_1p8k",
+        status="manual_current_best",
+        notes=(
+            "Five rising chips around 1-1.8 kHz; separate motif family not "
+            "matched by the 1448422 seed template."
+        ),
+        source_table="iNat1698104_1k_1p8k_chip_boxes.csv",
+        primary_band=(1000.0, 1800.0),
+        secondary_band=None,
+        output_plot_name="iNat1698104_curated.png",
+    ),
+]
+
+
 def smooth(x: np.ndarray, n: int = 9) -> np.ndarray:
     """Moving-average smooth."""
     if n <= 1:
@@ -389,84 +447,6 @@ def boxes_to_frame(boxes: list[MotifBox], filename: str, window_start_sec: float
             for box in boxes
         ]
     )
-
-
-def plot_motif_boxes(
-    db_band: np.ndarray,
-    freqs: np.ndarray,
-    times: np.ndarray,
-    boxes: list[MotifBox],
-    output_path: Path,
-    *,
-    filename: str,
-    window_start_sec: float,
-    primary_env: np.ndarray,
-    secondary_env: np.ndarray,
-) -> None:
-    """Draw motif boxes over spectrogram with band envelopes below."""
-    fig, (ax, env_ax) = plt.subplots(
-        2,
-        1,
-        figsize=(12.0, 7.0),
-        dpi=180,
-        sharex=True,
-        gridspec_kw={"height_ratios": [4.0, 1.2]},
-    )
-    display_times = times + window_start_sec
-    librosa.display.specshow(
-        db_band,
-        x_coords=display_times,
-        y_coords=freqs,
-        x_axis="time",
-        y_axis="linear",
-        sr=MEL_SAMPLE_RATE,
-        hop_length=MEL_HOP_LENGTH,
-        ax=ax,
-        cmap="magma",
-    )
-    ax.axhspan(PRIMARY_BAND[0], PRIMARY_BAND[1], color="lime", alpha=0.08, label="primary band")
-    ax.axhspan(SECONDARY_BAND[0], SECONDARY_BAND[1], color="cyan", alpha=0.08, label="secondary band")
-
-    colors = {"primary": "lime", "secondary": "cyan"}
-    for box in boxes:
-        rect = Rectangle(
-            (box.start_sec, box.fmin_hz),
-            box.end_sec - box.start_sec,
-            box.fmax_hz - box.fmin_hz,
-            fill=False,
-            edgecolor=colors[box.component],
-            linewidth=2.0,
-            linestyle="-" if box.component == "primary" else "--",
-        )
-        ax.add_patch(rect)
-        ax.text(
-            box.start_sec,
-            box.fmax_hz + 35,
-            f"{box.motif_id}:{box.component[0]}",
-            color=colors[box.component],
-            fontsize=8,
-            weight="bold",
-        )
-
-    ax.set_ylim(DISPLAY_BAND)
-    ax.set_title(
-        f"Prototype motif boxes for {filename} {window_start_sec:.1f}-{window_start_sec + times[-1]:.1f}s\n"
-        "green=primary short call component, cyan=secondary/harmonic-like component"
-    )
-    ax.legend(loc="upper right", fontsize=8)
-
-    env_ax.plot(display_times, primary_env, color="lime", label=f"primary {PRIMARY_BAND[0]:.0f}-{PRIMARY_BAND[1]:.0f} Hz")
-    env_ax.plot(display_times, secondary_env, color="cyan", label=f"secondary {SECONDARY_BAND[0]:.0f}-{SECONDARY_BAND[1]:.0f} Hz")
-    for box in boxes:
-        if box.component == "primary":
-            env_ax.axvspan(box.start_sec, box.end_sec, color="lime", alpha=0.13)
-    env_ax.set_ylabel("robust band\nexcess")
-    env_ax.set_xlabel("Time (s)")
-    env_ax.grid(alpha=0.22)
-    env_ax.legend(loc="upper right", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(output_path)
-    plt.close(fig)
 
 
 def normalized_patch(patch: np.ndarray) -> np.ndarray:
@@ -902,91 +882,32 @@ def detect_custom_band_boxes(
     return boxes
 
 
-def plot_single_component_boxes(
-    filename: str,
-    output_path: Path,
-    table_path: Path,
-    *,
-    band: tuple[float, float],
-    component: str,
-    peak_height: float,
-    peak_prominence: float,
-    lower_pad_hz: float = 0.0,
-    upper_pad_hz: float = 0.0,
-    expected_count: int | None = None,
-) -> None:
-    """Plot custom single-component motif boxes for one recording."""
-    audio, _ = librosa.load(TRAIN_AUDIO_DIR / filename, sr=MEL_SAMPLE_RATE, mono=True)
-    db_band, z, freqs, times = robust_excess_spectrogram(audio)
-    boxes = detect_custom_band_boxes(
-        z,
-        freqs,
-        times,
-        band=band,
-        component=component,
-        peak_height=peak_height,
-        peak_prominence=peak_prominence,
-        lower_pad_hz=lower_pad_hz,
-        upper_pad_hz=upper_pad_hz,
-        expected_count=expected_count,
-    )
-    if boxes:
-        boxes_to_frame(boxes, filename, 0.0, float(times[-1])).write_csv(table_path)
-
-    width = max(10.0, min(18.0, 0.38 * float(times[-1]) + 7.0))
-    fig, ax = plt.subplots(figsize=(width, 5.8), dpi=180)
-    librosa.display.specshow(
-        db_band,
-        x_coords=times,
-        y_coords=freqs,
-        x_axis="time",
-        y_axis="linear",
+def detect_seed_window_boxes(
+    filename: str, *, start_sec: float, duration_sec: float
+) -> pl.DataFrame:
+    """Detect primary + secondary motif boxes inside a fixed window of one recording."""
+    audio, _ = librosa.load(
+        TRAIN_AUDIO_DIR / filename,
         sr=MEL_SAMPLE_RATE,
-        hop_length=MEL_HOP_LENGTH,
-        ax=ax,
-        cmap="magma",
+        mono=True,
+        offset=start_sec,
+        duration=duration_sec,
     )
-    ax.axhspan(band[0], band[1], color="yellow", alpha=0.07, label=f"{band[0]:.0f}-{band[1]:.0f} Hz envelope band")
-    for box in boxes:
-        ax.add_patch(
-            Rectangle(
-                (box.start_sec, box.fmin_hz),
-                box.end_sec - box.start_sec,
-                box.fmax_hz - box.fmin_hz,
-                fill=False,
-                edgecolor="yellow",
-                linewidth=2.0,
-            )
-        )
-        ax.text(
-            box.start_sec,
-            box.fmax_hz + 35,
-            f"{box.motif_id}",
-            color="yellow",
-            fontsize=8,
-            weight="bold",
-        )
-    ax.set_ylim(DISPLAY_BAND)
-    ax.set_title(f"Custom motif boxes for {filename}: {component}")
-    ax.legend(loc="upper right", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(output_path)
-    plt.close(fig)
+    boxes, *_ = detect_motif_boxes(audio, global_start_sec=start_sec)
+    return boxes_to_frame(boxes, filename, start_sec, start_sec + duration_sec)
 
 
-def plot_independent_band_boxes(
+def detect_independent_band_boxes_for_recording(
     filename: str,
-    output_path: Path,
-    table_path: Path,
     *,
     primary_band: tuple[float, float] = PRIMARY_BAND,
     secondary_band: tuple[float, float] = SECONDARY_BAND,
     expected_primary_count: int | None = None,
     expected_secondary_count: int | None = None,
-) -> None:
-    """Plot independent primary/secondary band-envelope boxes for one recording."""
+) -> pl.DataFrame:
+    """Detect independent primary + secondary band-envelope boxes across a full recording."""
     audio, _ = librosa.load(TRAIN_AUDIO_DIR / filename, sr=MEL_SAMPLE_RATE, mono=True)
-    db_band, z, freqs, times = robust_excess_spectrogram(audio)
+    _db_band, z, freqs, times = robust_excess_spectrogram(audio)
     primary_boxes = detect_band_motif_boxes(
         z,
         freqs,
@@ -1003,15 +924,71 @@ def plot_independent_band_boxes(
         component="secondary_independent",
         expected_count=expected_secondary_count,
     )
-    boxes = primary_boxes + secondary_boxes
-    if boxes:
-        boxes_to_frame(boxes, filename, 0.0, float(times[-1])).write_csv(table_path)
+    return boxes_to_frame(primary_boxes + secondary_boxes, filename, 0.0, float(times[-1]))
 
-    width = max(10.0, min(18.0, 0.38 * float(times[-1]) + 7.0))
-    fig, ax = plt.subplots(figsize=(width, 5.8), dpi=180)
+
+def detect_single_component_boxes_for_recording(
+    filename: str,
+    *,
+    band: tuple[float, float],
+    component: str,
+    peak_height: float,
+    peak_prominence: float,
+    lower_pad_hz: float = 0.0,
+    upper_pad_hz: float = 0.0,
+    expected_count: int | None = None,
+) -> pl.DataFrame:
+    """Detect single-band custom-component boxes across a full recording."""
+    audio, _ = librosa.load(TRAIN_AUDIO_DIR / filename, sr=MEL_SAMPLE_RATE, mono=True)
+    _db_band, z, freqs, times = robust_excess_spectrogram(audio)
+    boxes = detect_custom_band_boxes(
+        z,
+        freqs,
+        times,
+        band=band,
+        component=component,
+        peak_height=peak_height,
+        peak_prominence=peak_prominence,
+        lower_pad_hz=lower_pad_hz,
+        upper_pad_hz=upper_pad_hz,
+        expected_count=expected_count,
+    )
+    return boxes_to_frame(boxes, filename, 0.0, float(times[-1]))
+
+
+def _component_style(component: str) -> tuple[str, str, float, str]:
+    if "primary" in component or "chip" in component:
+        return "lime", "-", 2.0, "p"
+    if "secondary" in component:
+        return "cyan", "--", 1.9, "s"
+    return "white", ":", 1.2, "?"
+
+
+def render_curated_plot(item: CuratedAnnotation, table_path: Path, output_path: Path) -> None:
+    """Render a standardized primary/secondary validation-band plot for a curated set."""
+    table = pl.read_csv(table_path)
+    if table.is_empty():
+        return
+    rows = table.to_dicts()
+    filename = rows[0]["filename"]
+    window_start = float(min((row.get("window_start_sec") or 0.0) for row in rows))
+    window_end = float(max((row.get("window_end_sec") or row.get("end_sec") or 0.0) for row in rows))
+    duration = max(0.1, window_end - window_start)
+
+    audio, _ = librosa.load(
+        TRAIN_AUDIO_DIR / filename,
+        sr=MEL_SAMPLE_RATE,
+        mono=True,
+        offset=window_start,
+        duration=duration,
+    )
+    db_band, _z, freqs, times = robust_excess_spectrogram(audio)
+    display_times = times + window_start
+
+    fig, ax = plt.subplots(figsize=(12.0, 6.2), dpi=180)
     librosa.display.specshow(
         db_band,
-        x_coords=times,
+        x_coords=display_times,
         y_coords=freqs,
         x_axis="time",
         y_axis="linear",
@@ -1020,39 +997,132 @@ def plot_independent_band_boxes(
         ax=ax,
         cmap="magma",
     )
-    colors = {"primary_independent": "lime", "secondary_independent": "cyan"}
-    styles = {"primary_independent": "-", "secondary_independent": "--"}
-    for box in boxes:
+
+    ax.axhspan(
+        item.primary_band[0],
+        item.primary_band[1],
+        color="lime",
+        alpha=0.075,
+        label=f"primary validation band {item.primary_band[0]:.0f}-{item.primary_band[1]:.0f} Hz",
+    )
+    if item.secondary_band is not None:
+        ax.axhspan(
+            item.secondary_band[0],
+            item.secondary_band[1],
+            color="cyan",
+            alpha=0.07,
+            label=f"secondary validation band {item.secondary_band[0]:.0f}-{item.secondary_band[1]:.0f} Hz",
+        )
+
+    for row in rows:
+        color, linestyle, linewidth, suffix = _component_style(row.get("component") or "")
+        start_sec = float(row.get("start_sec") or 0.0)
+        end_sec = float(row.get("end_sec") or 0.0)
+        fmin_hz = float(row.get("fmin_hz") or 0.0)
+        fmax_hz = float(row.get("fmax_hz") or 0.0)
         ax.add_patch(
             Rectangle(
-                (box.start_sec, box.fmin_hz),
-                box.end_sec - box.start_sec,
-                box.fmax_hz - box.fmin_hz,
+                (start_sec, fmin_hz),
+                end_sec - start_sec,
+                fmax_hz - fmin_hz,
                 fill=False,
-                edgecolor=colors[box.component],
-                linewidth=1.8,
-                linestyle=styles[box.component],
+                edgecolor=color,
+                linewidth=linewidth,
+                linestyle=linestyle,
             )
         )
         ax.text(
-            box.start_sec,
-            box.fmax_hz + 35,
-            f"{box.motif_id}",
-            color=colors[box.component],
-            fontsize=7,
+            start_sec,
+            fmax_hz + 35,
+            f"{row.get('motif_id', '')}:{suffix}",
+            color=color,
+            fontsize=8,
             weight="bold",
         )
-    ax.axhspan(primary_band[0], primary_band[1], color="lime", alpha=0.06, label="primary envelope band")
-    ax.axhspan(secondary_band[0], secondary_band[1], color="cyan", alpha=0.06, label="secondary envelope band")
+
     ax.set_ylim(DISPLAY_BAND)
+    ax.set_xlim(window_start, window_end)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Hz")
     ax.set_title(
-        f"Independent tight band-envelope motif boxes for {filename}\n"
-        "green=primary envelope boxes, cyan=secondary envelope boxes"
+        f"Curated motif annotations: {item.name}\n"
+        f"{item.motif_family}; green=primary boxes, cyan=secondary boxes; shaded bands are validation bands"
     )
     ax.legend(loc="upper right", fontsize=8)
     fig.tight_layout()
     fig.savefig(output_path)
     plt.close(fig)
+
+
+def emit_curated(output_dir: Path) -> None:
+    """Detect, save, and render the curated current-best motif sets under output_dir/curated/.
+
+    Each curated entry has its own detector configuration (seed-window for
+    iNat1448422, independent primary/secondary bands for iNat1697350,
+    single-component chip detector for iNat1698104). Tables go under
+    curated/tables/ and standardized validation plots under curated/plots/.
+    """
+    curated_dir = output_dir / "curated"
+    plots_dir = fresh_subdir(curated_dir, "plots")
+    tables_dir = fresh_subdir(curated_dir, "tables")
+
+    detect_seed_window_boxes(
+        "22967/iNat1448422.ogg", start_sec=0.0, duration_sec=5.0
+    ).write_csv(tables_dir / "iNat1448422_0-5s_motif_boxes.csv")
+
+    detect_independent_band_boxes_for_recording(
+        "22967/iNat1697350.ogg",
+        secondary_band=(1000.0, 3000.0),
+        expected_primary_count=10,
+        expected_secondary_count=10,
+    ).write_csv(tables_dir / "iNat1697350_independent_band_motif_boxes.csv")
+
+    detect_single_component_boxes_for_recording(
+        "22967/iNat1698104.ogg",
+        band=(1000.0, 1800.0),
+        component="chip_1k_1p8k",
+        peak_height=0.7,
+        peak_prominence=0.3,
+        lower_pad_hz=100.0,
+        upper_pad_hz=80.0,
+        expected_count=5,
+    ).write_csv(tables_dir / "iNat1698104_1k_1p8k_chip_boxes.csv")
+
+    manifest_rows: list[dict[str, str]] = []
+    combined_tables: list[pl.DataFrame] = []
+    for item in CURATED_ANNOTATIONS:
+        source_table = tables_dir / item.source_table
+        plot_dst = plots_dir / item.output_plot_name
+        render_curated_plot(item, source_table, plot_dst)
+
+        manifest_rows.append(
+            {
+                "name": item.name,
+                "motif_family": item.motif_family,
+                "status": item.status,
+                "source_table": str(source_table.relative_to(output_dir)),
+                "curated_plot": str(plot_dst.relative_to(output_dir)),
+                "primary_band_hz": f"{item.primary_band[0]:.0f}-{item.primary_band[1]:.0f}",
+                "secondary_band_hz": (
+                    "" if item.secondary_band is None else f"{item.secondary_band[0]:.0f}-{item.secondary_band[1]:.0f}"
+                ),
+                "notes": item.notes,
+            }
+        )
+
+        tagged = pl.read_csv(source_table).with_columns(
+            pl.lit(item.name).alias("annotation_set"),
+            pl.lit(item.motif_family).alias("motif_family"),
+            pl.lit(item.status).alias("annotation_status"),
+            pl.lit(item.notes).alias("annotation_notes"),
+        )
+        combined_tables.append(tagged)
+
+    pl.DataFrame(manifest_rows).write_csv(curated_dir / "manifest.csv")
+    if combined_tables:
+        pl.concat(combined_tables, how="diagonal_relaxed").write_csv(
+            tables_dir / "curated_motif_boxes.csv"
+        )
 
 
 def run_template_matching(output_dir: Path, *, seed_filename: str = DEFAULT_FILENAME) -> None:
@@ -1086,79 +1156,21 @@ def run_template_matching(output_dir: Path, *, seed_filename: str = DEFAULT_FILE
         matches.write_csv(tables_dir / "all_template_match_boxes.csv")
         plot_template_match_summary_grid(matches, plots_dir / "top_template_match_grid.png")
 
-    # Recording-specific diagnostic requested during inspection: iNat1697350 has
-    # a broad/high secondary component and benefits from independent band boxes.
-    plot_independent_band_boxes(
-        "22967/iNat1697350.ogg",
-        plots_dir / "iNat1697350_independent_band_motif_boxes.png",
-        tables_dir / "iNat1697350_independent_band_motif_boxes.csv",
-        secondary_band=(1000.0, 3000.0),
-        expected_primary_count=10,
-        expected_secondary_count=10,
-    )
-    plot_single_component_boxes(
-        "22967/iNat1698104.ogg",
-        plots_dir / "iNat1698104_1k_1p8k_chip_boxes.png",
-        tables_dir / "iNat1698104_1k_1p8k_chip_boxes.csv",
-        band=(1000.0, 1800.0),
-        component="chip_1k_1p8k",
-        peak_height=1.2,
-        peak_prominence=0.6,
-        lower_pad_hz=100.0,
-        upper_pad_hz=80.0,
-        expected_count=5,
-    )
 
-
-def run(
-    output_dir: Path | None = None,
-    *,
-    filename: str = DEFAULT_FILENAME,
-    start_sec: float = DEFAULT_START_SEC,
-    duration_sec: float = DEFAULT_DURATION_SEC,
-) -> Path:
-    """Run prototype motif detection for one recording window."""
+def run(output_dir: Path | None = None, *, seed_filename: str = DEFAULT_FILENAME) -> Path:
+    """Run template matching across recordings and emit the curated motif sets."""
     output_dir = output_dir or artifact_dir("marbled_frog/motif_boxes")
-    plots_dir = fresh_subdir(output_dir, "plots")
-    tables_dir = fresh_subdir(output_dir, "tables")
-
-    audio_path = TRAIN_AUDIO_DIR / filename
-    audio, _ = librosa.load(audio_path, sr=MEL_SAMPLE_RATE, mono=True, offset=start_sec, duration=duration_sec)
-    boxes, db_band, _z, freqs, times, primary_env, secondary_env = detect_motif_boxes(
-        audio, global_start_sec=start_sec
-    )
-    stem = Path(filename).stem
-    window_label = f"{int(start_sec)}-{int(start_sec + duration_sec)}s"
-    boxes_df = boxes_to_frame(boxes, filename, start_sec, start_sec + duration_sec)
-    boxes_df.write_csv(tables_dir / f"{stem}_{window_label}_motif_boxes.csv")
-    plot_motif_boxes(
-        db_band,
-        freqs,
-        times,
-        boxes,
-        plots_dir / f"{stem}_{window_label}_motif_boxes.png",
-        filename=filename,
-        window_start_sec=start_sec,
-        primary_env=primary_env,
-        secondary_env=secondary_env,
-    )
-    run_template_matching(output_dir, seed_filename=filename)
+    run_template_matching(output_dir, seed_filename=seed_filename)
+    emit_curated(output_dir)
     return output_dir
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=None)
-    parser.add_argument("--filename", default=DEFAULT_FILENAME)
-    parser.add_argument("--start-sec", type=float, default=DEFAULT_START_SEC)
-    parser.add_argument("--duration-sec", type=float, default=DEFAULT_DURATION_SEC)
+    parser.add_argument("--seed-filename", default=DEFAULT_FILENAME)
     args = parser.parse_args()
-    output_dir = run(
-        args.output_dir,
-        filename=args.filename,
-        start_sec=args.start_sec,
-        duration_sec=args.duration_sec,
-    )
+    output_dir = run(args.output_dir, seed_filename=args.seed_filename)
     print(f"Wrote Marbled Frog motif box analysis to {output_dir}")
 
 

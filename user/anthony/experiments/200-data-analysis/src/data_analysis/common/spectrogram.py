@@ -16,8 +16,8 @@ MEL_FMIN = 50
 MEL_FMAX = 8_000
 
 # Display band used by every spectrogram visualization in the Marbled Frog
-# pipeline; kept here so motif_boxes, motif_review, motif_mining, and
-# manual_annotations can all share the same y-limit.
+# pipeline; kept here so motif_boxes, motif_review, and motif_mining all share
+# the same y-limit.
 DISPLAY_BAND = (500.0, 3000.0)
 
 # Robust excess-z spectrogram tuning; only used by `robust_excess_spectrogram`.

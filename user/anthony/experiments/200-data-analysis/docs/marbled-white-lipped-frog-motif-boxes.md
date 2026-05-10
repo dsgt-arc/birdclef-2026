@@ -8,9 +8,8 @@
 | BirdCLEF label | `22967` |
 | Species | Marbled White-lipped Frog / *Leptodactylus elenae* |
 | Main code | `src/data_analysis/marbled_frog/motif_boxes.py` |
-| Manual export code | `src/data_analysis/marbled_frog/manual_annotations.py` |
 | Review code | `src/data_analysis/marbled_frog/motif_review.py` |
-| Main artifacts | `artifacts/marbled_frog/motif_boxes/`, `artifacts/marbled_frog/manual_annotations/`, `artifacts/marbled_frog/motif_review/` |
+| Main artifacts | `artifacts/marbled_frog/motif_boxes/` (with `curated/` subset), `artifacts/marbled_frog/motif_review/` |
 
 ## Purpose
 
@@ -47,13 +46,7 @@ Code:
 src/data_analysis/marbled_frog/motif_boxes.py
 ```
 
-Initial outputs:
-
-```text
-artifacts/marbled_frog/motif_boxes/
-```
-
-This produced prototype primary/secondary boxes for the known recordings. We iteratively adjusted:
+Outputs land under `artifacts/marbled_frog/motif_boxes/{template_matches,curated}/`. The module produces prototype primary/secondary boxes per recording. We iteratively adjusted:
 
 - primary band from roughly `900-1300 Hz` down to `600-1300 Hz`,
 - secondary band for `1448422` to `1500-2300 Hz`,
@@ -132,37 +125,27 @@ iNat1697350: low primary 10, broad upper 10
 iNat1698104: mid/rising chip 5
 ```
 
-### 6. Curated manual annotation export
+### 6. Curated current-best subset
 
-Code:
-
-```text
-src/data_analysis/marbled_frog/manual_annotations.py
-```
+Code: same module — see `CURATED_ANNOTATIONS` and `emit_curated()` in `src/data_analysis/marbled_frog/motif_boxes.py`. Emitted automatically at the end of `run()`. Each curated entry has its own detector (seed-window / independent bands / single-component chip) defined inline in `emit_curated`.
 
 Artifacts:
 
 ```text
-artifacts/marbled_frog/manual_annotations/
-```
-
-This collects the current best manually inspected/current-best motif sets into a reproducible folder:
-
-```text
-artifacts/marbled_frog/manual_annotations/
-├── README.md
+artifacts/marbled_frog/motif_boxes/curated/
 ├── manifest.csv
 ├── plots/
-│   ├── iNat1448422_0-5s_manual_motif_boxes.png
-│   ├── iNat1697350_manual_motif_boxes.png
-│   └── iNat1698104_manual_motif_boxes.png
-├── source_plots/
+│   ├── iNat1448422_0-5s_curated.png
+│   ├── iNat1697350_curated.png
+│   └── iNat1698104_curated.png
 └── tables/
-    ├── manual_motif_boxes.csv
     ├── iNat1448422_0-5s_motif_boxes.csv
     ├── iNat1697350_independent_band_motif_boxes.csv
-    └── iNat1698104_1k_1p8k_chip_boxes.csv
+    ├── iNat1698104_1k_1p8k_chip_boxes.csv
+    └── curated_motif_boxes.csv
 ```
+
+Per-recording tables hold the raw detector output for that curated entry. `curated_motif_boxes.csv` is the union, tagged with `annotation_set`, `motif_family`, `annotation_status`, `annotation_notes`. Plots re-render the spectrograms with standardized primary/secondary validation bands.
 
 Current curated box counts:
 
