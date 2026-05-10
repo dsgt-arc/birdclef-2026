@@ -20,6 +20,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
+from scipy.signal import find_peaks
+from sklearn.cluster import KMeans
 
 from data_analysis.pacmap_soundscape_embeddings import (
     embedding_columns,
@@ -357,6 +359,163 @@ def plot_pacmap(coords: pl.DataFrame, output_path: Path) -> None:
     plt.close(fig)
 
 
+def plot_file_frequency_spectra(
+    filename: str,
+    output_path: Path,
+    *,
+    window_starts: list[float] | None = None,
+    window_seconds: float = 5.0,
+    fmin: float = 500.0,
+    fmax: float = 3500.0,
+) -> pl.DataFrame:
+    """Plot mean log-power spectra for several windows in a recording and return detected peaks."""
+    audio_path = TRAIN_AUDIO_DIR / filename
+    audio, _ = librosa.load(audio_path, sr=MEL_SAMPLE_RATE, mono=True)
+    duration = audio.size / MEL_SAMPLE_RATE
+    if window_starts is None:
+        window_starts = list(np.arange(0, max(duration - 0.25, 0), window_seconds))
+
+    fig, ax = plt.subplots(figsize=(10.5, 5.8), dpi=180)
+    colors = plt.cm.viridis(np.linspace(0.08, 0.92, len(window_starts)))
+    peak_rows = []
+    for color, start_sec in zip(colors, window_starts):
+        end_sec = min(start_sec + window_seconds, duration)
+        segment = audio[int(start_sec * MEL_SAMPLE_RATE) : int(end_sec * MEL_SAMPLE_RATE)]
+        if segment.size < MEL_SAMPLE_RATE:
+            continue
+        spectrum = np.abs(
+            librosa.stft(segment, n_fft=MEL_N_FFT, hop_length=MEL_HOP_LENGTH, window="hann")
+        ) ** 2
+        freqs = librosa.fft_frequencies(sr=MEL_SAMPLE_RATE, n_fft=MEL_N_FFT)
+        mask = (freqs >= fmin) & (freqs <= fmax)
+        mean_power = spectrum.mean(axis=1)
+        log_power = 10.0 * np.log10(mean_power + 1e-12)
+        smoothed = np.convolve(log_power[mask], np.ones(7) / 7.0, mode="same")
+        band_freqs = freqs[mask]
+        label = f"{int(start_sec)}-{int(end_sec)}s"
+        ax.plot(band_freqs, smoothed, color=color, linewidth=1.5, alpha=0.88, label=label)
+
+        peaks, _props = find_peaks(smoothed, prominence=3.0, distance=8)
+        if peaks.size:
+            top = peaks[np.argsort(smoothed[peaks])[-3:]][::-1]
+            for rank, peak in enumerate(top, start=1):
+                peak_rows.append(
+                    {
+                        "filename": filename,
+                        "window": label,
+                        "start_sec": float(start_sec),
+                        "end_sec": float(end_sec),
+                        "peak_rank": rank,
+                        "frequency_hz": float(band_freqs[peak]),
+                        "log_power_db": float(smoothed[peak]),
+                    }
+                )
+            strongest = top[0]
+            ax.scatter(
+                [band_freqs[strongest]],
+                [smoothed[strongest]],
+                color=color,
+                edgecolors="black",
+                linewidths=0.4,
+                s=34,
+                zorder=5,
+            )
+            ax.annotate(
+                f"{band_freqs[strongest]:.0f} Hz",
+                (band_freqs[strongest], smoothed[strongest]),
+                xytext=(4, 4),
+                textcoords="offset points",
+                fontsize=7,
+                color=color,
+            )
+
+    ax.axvspan(CANDIDATE_BAND[0], CANDIDATE_BAND[1], color="cyan", alpha=0.08, label="1-3 kHz prior")
+    for harmonic_hz in [1000, 1500, 2000, 3000]:
+        ax.axvline(harmonic_hz, color="black", linestyle=":", linewidth=0.7, alpha=0.35)
+    ax.set_title(f"Frequency spectra for {filename}\nmean log-power per 5s window")
+    ax.set_xlabel("Frequency (Hz)")
+    ax.set_ylabel("Mean log power (dB, arbitrary reference)")
+    ax.grid(alpha=0.22)
+    ax.legend(ncols=2, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+    peaks_df = pl.DataFrame(peak_rows) if peak_rows else pl.DataFrame()
+    if peak_rows:
+        peaks_df.write_csv(output_path.with_suffix(".peaks.csv"))
+    return peaks_df
+
+
+def plot_peak_frequency_summary(peaks: pl.DataFrame, output_path: Path) -> None:
+    """Summarize detected peak frequencies across recordings/windows."""
+    if peaks.is_empty():
+        return
+    top = peaks.filter(pl.col("peak_rank") <= 3).with_columns(
+        pl.col("filename").str.replace("22967/", "").str.replace(".ogg", "", literal=True).alias("recording")
+    )
+    recordings = top.select("recording").unique(maintain_order=True).to_series().to_list()
+    y_positions = {recording: idx for idx, recording in enumerate(recordings)}
+    fig, ax = plt.subplots(figsize=(10.5, max(4.5, 0.55 * len(recordings) + 1.5)), dpi=180)
+    for rank, marker, size in [(1, "o", 62), (2, "^", 46), (3, "s", 34)]:
+        df = top.filter(pl.col("peak_rank") == rank)
+        if df.is_empty():
+            continue
+        y = [y_positions[r] for r in df["recording"].to_list()]
+        ax.scatter(
+            df["frequency_hz"],
+            y,
+            s=size,
+            marker=marker,
+            alpha=0.72,
+            edgecolors="black",
+            linewidths=0.25,
+            label=f"peak rank {rank}",
+        )
+    ax.axvspan(CANDIDATE_BAND[0], CANDIDATE_BAND[1], color="cyan", alpha=0.08, label="1-3 kHz prior")
+    for guide in [1000, 1500, 2000, 3000]:
+        ax.axvline(guide, color="black", linestyle=":", linewidth=0.8, alpha=0.35)
+    ax.set_yticks(list(y_positions.values()))
+    ax.set_yticklabels(recordings)
+    ax.set_xlabel("Detected peak frequency (Hz)")
+    ax.set_ylabel("Recording")
+    ax.set_title("Marbled White-lipped Frog: detected spectral peaks by recording/window")
+    ax.grid(axis="x", alpha=0.22)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def plot_all_recording_frequency_spectra(coords: pl.DataFrame, spectra_dir: Path, plots_dir: Path, tables_dir: Path) -> None:
+    """Generate spectroscopy-style frequency plots and peak summaries for every train recording."""
+    spectra_dir.mkdir(parents=True, exist_ok=True)
+    filenames = coords.select("filename").unique().sort("filename").to_series().to_list()
+    peak_tables = []
+    for filename in filenames:
+        stem = Path(filename).stem
+        peaks = plot_file_frequency_spectra(filename, spectra_dir / f"{stem}_frequency_spectra.png")
+        if not peaks.is_empty():
+            peak_tables.append(peaks)
+    if not peak_tables:
+        return
+    all_peaks = pl.concat(peak_tables, how="diagonal_relaxed")
+    window_scores = coords.select(
+        "filename",
+        "start_sec",
+        "end_sec",
+        "relevance_label",
+        "in_pacmap_mad_z2",
+        "outside_kmeans_cluster",
+        "max_genus_logit",
+        "mel_1_3k_energy_frac",
+        "mel_centroid_hz",
+    )
+    all_peaks = all_peaks.join(window_scores, on=["filename", "start_sec", "end_sec"], how="left")
+    all_peaks.write_csv(tables_dir / "all_recording_peak_summary.csv")
+    plot_peak_frequency_summary(all_peaks, plots_dir / "peak_frequency_by_recording.png")
+
+
 def mel_db_for_window(filename: str, start_sec: float, end_sec: float) -> np.ndarray:
     """Compute a mel spectrogram in dB for display."""
     audio = read_audio_window(filename, start_sec, end_sec)
@@ -400,6 +559,309 @@ def select_fullish_windows(df: pl.DataFrame, *, n: int, descending: bool) -> pl.
             if len(rows) >= n:
                 break
     return pl.DataFrame(rows)
+
+
+def add_outside_cluster_kmeans(coords: pl.DataFrame, *, seed: int = 42) -> pl.DataFrame:
+    """Cluster points outside the PaCMAP MAD seed cluster into two visual groups."""
+    outside = coords.filter(~pl.col("in_pacmap_mad_z2"))
+    if outside.height < 2:
+        return coords.with_columns(pl.lit(None).cast(pl.Int64).alias("outside_kmeans_cluster"))
+
+    features = outside.select("pacmap_x", "pacmap_y").to_numpy()
+    n_clusters = min(2, outside.height)
+    labels = KMeans(n_clusters=n_clusters, n_init=20, random_state=seed).fit_predict(features)
+    outside_with_clusters = outside.with_columns(pl.Series("outside_kmeans_cluster", labels).cast(pl.Int64))
+    return coords.join(
+        outside_with_clusters.select(
+            "filename", "chunk_idx", "start_sec", "end_sec", "outside_kmeans_cluster"
+        ),
+        on=["filename", "chunk_idx", "start_sec", "end_sec"],
+        how="left",
+    )
+
+
+def plot_outside_kmeans_pacmap(coords: pl.DataFrame, output_path: Path) -> None:
+    """Plot only/outside-cluster emphasis with two KMeans groups colored."""
+    fig, ax = plt.subplots(figsize=(9, 7), dpi=180)
+    inside = coords.filter(pl.col("in_pacmap_mad_z2"))
+    outside = coords.filter(~pl.col("in_pacmap_mad_z2"))
+
+    ax.scatter(
+        inside["pacmap_x"],
+        inside["pacmap_y"],
+        s=36,
+        c="#d0d0d0",
+        alpha=0.45,
+        edgecolors="none",
+        label=f"inside selected cluster (n={inside.height})",
+    )
+
+    colors = {0: "#e41a1c", 1: "#377eb8"}
+    for cluster_id in sorted(outside["outside_kmeans_cluster"].drop_nulls().unique().to_list()):
+        df = outside.filter(pl.col("outside_kmeans_cluster") == cluster_id)
+        ax.scatter(
+            df["pacmap_x"],
+            df["pacmap_y"],
+            s=np.clip(df["mel_1_3k_energy_frac"].to_numpy() * 170, 45, 220),
+            c=colors.get(int(cluster_id), "#4daf4a"),
+            alpha=0.88,
+            edgecolors="black",
+            linewidths=0.45,
+            label=f"outside k-means {cluster_id} (n={df.height})",
+        )
+        for row in df.iter_rows(named=True):
+            ax.annotate(
+                f"{Path(row['filename']).stem}\n{int(row['start_sec'])}-{int(row['end_sec'])}s",
+                (row["pacmap_x"], row["pacmap_y"]),
+                xytext=(4, 3),
+                textcoords="offset points",
+                fontsize=6.5,
+                alpha=0.78,
+            )
+
+    if "pacmap_seed_centroid_x" in coords.columns:
+        cx = float(coords["pacmap_seed_centroid_x"][0])
+        cy = float(coords["pacmap_seed_centroid_y"][0])
+        radius = float(coords["pacmap_cluster_radius_z2"][0])
+        ax.add_patch(
+            plt.Circle((cx, cy), radius, fill=False, color="#555555", linestyle="--", linewidth=1.5)
+        )
+        ax.scatter([cx], [cy], marker="+", s=140, color="#555555", linewidths=2.0)
+
+    ax.set_title("Marbled White-lipped Frog: points outside selected cluster, split by 2-means")
+    ax.set_xlabel("PaCMAP 1")
+    ax.set_ylabel("PaCMAP 2")
+    ax.grid(alpha=0.22)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def plot_outside_kmeans_spectrogram_grid(
+    coords: pl.DataFrame, output_path: Path, *, max_cols: int = 4
+) -> None:
+    """Grid outside-cluster windows as mel spectrograms, grouped by KMeans cluster."""
+    outside = coords.filter(~pl.col("in_pacmap_mad_z2")).sort(
+        "outside_kmeans_cluster", "filename", "start_sec"
+    )
+    cluster_ids = sorted(outside["outside_kmeans_cluster"].drop_nulls().unique().to_list())
+    if not cluster_ids:
+        return
+
+    layout: list[tuple[int, dict]] = []
+    for cluster_id in cluster_ids:
+        df = outside.filter(pl.col("outside_kmeans_cluster") == cluster_id)
+        for row in df.iter_rows(named=True):
+            layout.append((int(cluster_id), row))
+
+    n_items = len(layout)
+    n_cols = min(max_cols, n_items)
+    n_rows = int(np.ceil(n_items / n_cols))
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(3.8 * n_cols, 3.25 * n_rows),
+        dpi=180,
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+    )
+
+    cluster_colors = {0: "#e41a1c", 1: "#377eb8"}
+    for idx, (cluster_id, row) in enumerate(layout):
+        row_idx, col_idx = divmod(idx, n_cols)
+        ax = axes[row_idx, col_idx]
+        mel_db = mel_db_for_window(row["filename"], float(row["start_sec"]), float(row["end_sec"]))
+        librosa.display.specshow(
+            mel_db,
+            sr=MEL_SAMPLE_RATE,
+            hop_length=MEL_HOP_LENGTH,
+            x_axis="time",
+            y_axis="mel",
+            fmin=MEL_FMIN,
+            fmax=MEL_FMAX,
+            ax=ax,
+            cmap="magma",
+        )
+        ax.axhspan(CANDIDATE_BAND[0], CANDIDATE_BAND[1], color="cyan", alpha=0.13)
+        color = cluster_colors.get(cluster_id, "#4daf4a")
+        for spine in ax.spines.values():
+            spine.set_edgecolor(color)
+            spine.set_linewidth(2.5)
+        ax.set_title(
+            f"k={cluster_id} | {Path(row['filename']).stem} {int(row['start_sec'])}-{int(row['end_sec'])}s\n"
+            f"{row['relevance_label'].replace('likely_', '')}; "
+            f"G={row['max_genus_logit']:.2f}, B={row['mel_1_3k_energy_frac']:.2f}",
+            fontsize=7.5,
+            color=color,
+        )
+        if col_idx != 0:
+            ax.set_ylabel("")
+
+    for idx in range(n_items, n_rows * n_cols):
+        row_idx, col_idx = divmod(idx, n_cols)
+        axes[row_idx, col_idx].axis("off")
+
+    fig.suptitle(
+        "Marbled White-lipped Frog: outside selected cluster, 2-means spectrogram grid\n"
+        "cyan band = 1-3 kHz prior; border/title color = outside k-means cluster",
+        fontsize=13,
+    )
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def best_window_per_recording(coords: pl.DataFrame) -> pl.DataFrame:
+    """Select the highest relevance-score window from each recording."""
+    rows = []
+    for filename in coords.select("filename").unique().sort("filename").to_series().to_list():
+        df = coords.filter(pl.col("filename") == filename).sort("relevance_score", descending=True)
+        # Prefer non-truncated windows when possible.
+        selected = None
+        for row in df.iter_rows(named=True):
+            if audio_duration_s(row["filename"], float(row["start_sec"]), float(row["end_sec"])) >= 4.0:
+                selected = row
+                break
+        if selected is None:
+            selected = df.row(0, named=True)
+        rows.append(selected)
+    return pl.DataFrame(rows).sort("filename")
+
+
+def plot_best_window_per_recording_grid(
+    coords: pl.DataFrame, output_path: Path, *, max_cols: int = 4
+) -> pl.DataFrame:
+    """Plot the top relevance-score window from each recording as a spectrogram grid."""
+    best = best_window_per_recording(coords)
+    n_items = best.height
+    n_cols = min(max_cols, n_items)
+    n_rows = int(np.ceil(n_items / n_cols))
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(3.9 * n_cols, 3.35 * n_rows),
+        dpi=180,
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+    )
+
+    label_colors = {"likely_relevant": "#d62728", "likely_not_relevant": "#1f77b4"}
+    for idx, row in enumerate(best.iter_rows(named=True)):
+        row_idx, col_idx = divmod(idx, n_cols)
+        ax = axes[row_idx, col_idx]
+        mel_db = mel_db_for_window(row["filename"], float(row["start_sec"]), float(row["end_sec"]))
+        librosa.display.specshow(
+            mel_db,
+            sr=MEL_SAMPLE_RATE,
+            hop_length=MEL_HOP_LENGTH,
+            x_axis="time",
+            y_axis="mel",
+            fmin=MEL_FMIN,
+            fmax=MEL_FMAX,
+            ax=ax,
+            cmap="magma",
+        )
+        ax.axhspan(CANDIDATE_BAND[0], CANDIDATE_BAND[1], color="cyan", alpha=0.13)
+        color = label_colors.get(row["relevance_label"], "#555555")
+        for spine in ax.spines.values():
+            spine.set_edgecolor(color)
+            spine.set_linewidth(2.5)
+        outside = row.get("outside_kmeans_cluster")
+        cluster_text = "inside" if row["in_pacmap_mad_z2"] else f"outside k={outside}"
+        ax.set_title(
+            f"{Path(row['filename']).stem} {int(row['start_sec'])}-{int(row['end_sec'])}s\n"
+            f"{row['relevance_label'].replace('likely_', '')}; {cluster_text}; "
+            f"score={row['relevance_score']:.2f}\n"
+            f"G={row['max_genus_logit']:.2f}, B={row['mel_1_3k_energy_frac']:.2f}",
+            fontsize=7.4,
+            color=color,
+        )
+        if col_idx != 0:
+            ax.set_ylabel("")
+
+    for idx in range(n_items, n_rows * n_cols):
+        row_idx, col_idx = divmod(idx, n_cols)
+        axes[row_idx, col_idx].axis("off")
+
+    fig.suptitle(
+        "Marbled White-lipped Frog: highest relevance-score window per recording\n"
+        "cyan band = 1-3 kHz prior; blue=scalar not-relevant, red=scalar relevant",
+        fontsize=13,
+    )
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+    return best
+
+
+def plot_inside_cluster_spectrogram_grid(
+    coords: pl.DataFrame, output_path: Path, *, max_cols: int = 4
+) -> None:
+    """Grid windows inside the selected PaCMAP MAD cluster for visual inspection."""
+    inside = coords.filter(pl.col("in_pacmap_mad_z2")).sort("filename", "start_sec")
+    if inside.is_empty():
+        return
+
+    n_items = inside.height
+    n_cols = min(max_cols, n_items)
+    n_rows = int(np.ceil(n_items / n_cols))
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(3.8 * n_cols, 3.25 * n_rows),
+        dpi=180,
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+    )
+
+    label_colors = {"likely_relevant": "#d62728", "likely_not_relevant": "#1f77b4"}
+    for idx, row in enumerate(inside.iter_rows(named=True)):
+        row_idx, col_idx = divmod(idx, n_cols)
+        ax = axes[row_idx, col_idx]
+        mel_db = mel_db_for_window(row["filename"], float(row["start_sec"]), float(row["end_sec"]))
+        librosa.display.specshow(
+            mel_db,
+            sr=MEL_SAMPLE_RATE,
+            hop_length=MEL_HOP_LENGTH,
+            x_axis="time",
+            y_axis="mel",
+            fmin=MEL_FMIN,
+            fmax=MEL_FMAX,
+            ax=ax,
+            cmap="magma",
+        )
+        ax.axhspan(CANDIDATE_BAND[0], CANDIDATE_BAND[1], color="cyan", alpha=0.13)
+        color = label_colors.get(row["relevance_label"], "#555555")
+        for spine in ax.spines.values():
+            spine.set_edgecolor(color)
+            spine.set_linewidth(2.5)
+        ax.set_title(
+            f"{Path(row['filename']).stem} {int(row['start_sec'])}-{int(row['end_sec'])}s\n"
+            f"{row['relevance_label'].replace('likely_', '')}; "
+            f"G={row['max_genus_logit']:.2f}, B={row['mel_1_3k_energy_frac']:.2f}, "
+            f"z={row['pacmap_cluster_robust_z']:.1f}",
+            fontsize=7.5,
+            color=color,
+        )
+        if col_idx != 0:
+            ax.set_ylabel("")
+
+    for idx in range(n_items, n_rows * n_cols):
+        row_idx, col_idx = divmod(idx, n_cols)
+        axes[row_idx, col_idx].axis("off")
+
+    fig.suptitle(
+        "Marbled White-lipped Frog: windows inside selected PaCMAP/MAD cluster\n"
+        "cyan band = 1-3 kHz prior; blue=scalar not-relevant, red=scalar relevant",
+        fontsize=13,
+    )
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
 
 
 def plot_spectrogram_samples(labels: pl.DataFrame, output_path: Path, n_each: int = 4) -> None:
@@ -536,10 +998,19 @@ Embedding-space membership counts:
 {robust_counts.write_csv(separator='|').strip()}
 ```
 
-## Plots
+## Artifacts
 
-- `window_relevance_pacmap.png` — Perch embedding PaCMAP of all 33 windows, colored by heuristic relevance. Dashed circle shows the seed region; gold outlines show embedding-space MAD z≤2 members.
-- `spectrogram_samples_relevant_vs_not.png` — 4 high-confidence relevant and 4 low-confidence not-relevant mel spectrograms.
+Generated artifacts are organized by type:
+
+- `plots/window_relevance_pacmap.png` — Perch embedding PaCMAP of all 33 windows, colored by heuristic relevance. Dashed circle shows the seed region; gold outlines show embedding-space MAD z≤2 members.
+- `plots/outside_cluster_kmeans_pacmap.png` — points outside the selected cluster, split into two PaCMAP-space k-means groups.
+- `plots/outside_cluster_kmeans_spectrogram_grid.png` — spectrogram grid for outside-cluster windows, max 4 columns.
+- `plots/inside_cluster_spectrogram_grid.png` — spectrogram grid for inside-cluster windows, max 4 columns.
+- `plots/best_window_per_recording_spectrogram_grid.png` — highest relevance-score window from each train recording.
+- `plots/peak_frequency_by_recording.png` — detected spectral peaks across all Marbled Frog train recordings.
+- `plots/spectrogram_samples_relevant_vs_not.png` — 4 high-confidence relevant and 4 low-confidence not-relevant mel spectrograms.
+- `spectra/*_frequency_spectra.png` — spectroscopy-style mean log-power line plots per recording.
+- `tables/*.csv` — window labels, cluster membership, peak summaries, and boundary diagnostics.
 
 ## Window labels and distances
 
@@ -553,22 +1024,38 @@ def run(output_dir: Path | None = None, *, seed: int = 42) -> Path:
     """Run window relevance analysis."""
     output_dir = output_dir or artifact_dir("marbled_frog_window_relevance")
     output_dir.mkdir(parents=True, exist_ok=True)
+    plots_dir = output_dir / "plots"
+    tables_dir = output_dir / "tables"
+    spectra_dir = output_dir / "spectra"
+    for path in [plots_dir, tables_dir, spectra_dir]:
+        path.mkdir(parents=True, exist_ok=True)
 
     labels = add_relevance_labels(load_or_build_window_scores())
     coords = add_circle_membership(build_pacmap(labels, seed=seed))
     coords, pacmap_boundary_summary = add_pacmap_mad_boundary(coords)
     coords, embedding_boundary_summary = add_embedding_mad_boundary(coords)
+    coords = add_outside_cluster_kmeans(coords, seed=seed)
     boundary_summary = pl.concat(
         [pacmap_boundary_summary, embedding_boundary_summary], how="diagonal_relaxed"
     )
 
-    labels.write_csv(output_dir / "window_relevance_labels.csv")
-    coords.write_csv(output_dir / "window_relevance_pacmap.csv")
-    boundary_summary.write_csv(output_dir / "embedding_mad_boundary_summary.csv")
-    coords.filter(pl.col("in_circle_r3_at_minus4_0")).write_csv(output_dir / "seed_circle_members.csv")
-    coords.filter(pl.col("in_embedding_mad_z2")).write_csv(output_dir / "embedding_mad_z2_members.csv")
-    plot_pacmap(coords, output_dir / "window_relevance_pacmap.png")
-    plot_spectrogram_samples(labels, output_dir / "spectrogram_samples_relevant_vs_not.png")
+    labels.write_csv(tables_dir / "window_relevance_labels.csv")
+    coords.write_csv(tables_dir / "window_relevance_pacmap.csv")
+    boundary_summary.write_csv(tables_dir / "embedding_mad_boundary_summary.csv")
+    coords.filter(pl.col("in_circle_r3_at_minus4_0")).write_csv(tables_dir / "seed_circle_members.csv")
+    coords.filter(pl.col("in_embedding_mad_z2")).write_csv(tables_dir / "embedding_mad_z2_members.csv")
+    coords.filter(pl.col("in_pacmap_mad_z2")).write_csv(tables_dir / "inside_cluster_windows.csv")
+    coords.filter(~pl.col("in_pacmap_mad_z2")).write_csv(tables_dir / "outside_cluster_kmeans_windows.csv")
+    plot_pacmap(coords, plots_dir / "window_relevance_pacmap.png")
+    plot_outside_kmeans_pacmap(coords, plots_dir / "outside_cluster_kmeans_pacmap.png")
+    plot_outside_kmeans_spectrogram_grid(coords, plots_dir / "outside_cluster_kmeans_spectrogram_grid.png")
+    plot_inside_cluster_spectrogram_grid(coords, plots_dir / "inside_cluster_spectrogram_grid.png")
+    best_windows = plot_best_window_per_recording_grid(
+        coords, plots_dir / "best_window_per_recording_spectrogram_grid.png"
+    )
+    best_windows.write_csv(tables_dir / "best_window_per_recording.csv")
+    plot_all_recording_frequency_spectra(coords, spectra_dir, plots_dir, tables_dir)
+    plot_spectrogram_samples(labels, plots_dir / "spectrogram_samples_relevant_vs_not.png")
     (output_dir / "summary.md").write_text(render_summary(labels, coords, boundary_summary, output_dir))
     return output_dir
 

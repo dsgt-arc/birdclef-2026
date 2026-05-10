@@ -15,7 +15,7 @@
 
 ## One-line takeaway
 
-For Marbled White-lipped Frog, Perch is useful mostly as a **genus-level detector**, and the best current weak relevance signal combines **max *Leptodactylus* logit**, **1-3 kHz mel-band energy**, and **embedding/PaCMAP cluster structure**.
+For Marbled White-lipped Frog, Perch is useful mostly as a **genus-level detector**, while the best current interpretation comes from combining **max *Leptodactylus* logit**, **1-3 kHz energy**, **PaCMAP/embedding structure**, and now **spectral peak patterns**.
 
 ## Why this species
 
@@ -32,9 +32,11 @@ The regular training metadata says these 8 files have primary label `22967`. Per
 
 But `train.csv` only gives file-level labels. It does not say which 5s windows contain the frog call. So every per-window relevance label here is a weak/pseudo label unless manually verified.
 
+The metadata has a `rating` column, but all 8 recordings for this species are iNaturalist examples with `rating=0.0`, which appears to mean **unrated/no quality metadata**, not necessarily bad quality.
+
 ## Step 2: Check Perch logits
 
-The direct Perch species logit for *Leptodactylus elenae* is weak. Across the 33 windows, the top mean Perch taxa are instead nearby congeners:
+The direct Perch species logit for *Leptodactylus elenae* is weak. Across the 33 windows, the top mean Perch taxa are nearby congeners:
 
 ```text
 rank|perch_label|mean_logit
@@ -70,7 +72,7 @@ broad:   1-3 kHz
 strong:  1.5-3 kHz
 ```
 
-This is not a bounding box. It is a prior for inspection/filtering.
+This is not a time-frequency bounding box. It is a prior for inspection/filtering.
 
 ## Step 4: Initial weak relevance rule
 
@@ -90,139 +92,140 @@ likely_relevant:     16 windows
 likely_not_relevant: 17 windows
 ```
 
-The relevant spectrogram samples showed repeated rising frog-like calls concentrated around the 1-3 kHz band, especially near 1-2 kHz with upper structure.
-
-## Step 5: PaCMAP revealed an obvious false-positive cluster
-
-Plotting the 33 Perch window embeddings with PaCMAP showed a clear cluster around approximately:
+Color convention in plots:
 
 ```text
-PaCMAP center ≈ (-4, 0)
-manual radius = 3
+red  = scalar likely_relevant
+blue = scalar likely_not_relevant
 ```
 
-This cluster contained several scalar-rule `likely_relevant` windows that visually look suspicious or contaminated. In other words, the scalar rule caught some false positives because high genus logit + 1-3 kHz energy alone is not enough.
+These scalar labels are only triage labels; they are not final truth.
 
-The cleanest high-confidence relevant cluster is instead the isolated `iNat1698107` group. All seven 5s windows from that file cluster tightly and have strong repeated call structure:
+## Step 5: PaCMAP shows several acoustic regimes
+
+The PaCMAP view shows one manually selected cluster around approximately:
 
 ```text
-22967/iNat1698107.ogg 0-35s
+PaCMAP seed center ≈ (-4, 0)
+manual seed radius = 3
 ```
 
-## Step 6: Use the visible cluster as a seed, then compute a robust boundary
-
-A fixed PaCMAP coordinate is not stable across recomputations, so the circle is used only as a seed-selection tool.
-
-For the current plot, the circle:
-
-```text
-center = (-4, 0)
-radius = 3
-```
-
-selects 21 windows. Its current 2D PaCMAP centroid is:
+Using the seed points, I computed a robust 2D PaCMAP/MAD boundary:
 
 ```text
 centroid ≈ (-3.83, -0.01)
+radius   ≈ 3.38  using median distance + 2 * 1.4826 * MAD
+members  = 21 windows
 ```
 
-Using the seed points, I computed a robust radius from distances:
+This selected cluster is **not a ground-truth positive or negative class**. It is a visually coherent acoustic regime. It contains both scalar-red and scalar-blue windows:
 
 ```text
-radius = median(seed distances) + 2 * 1.4826 * MAD(seed distances)
+inside selected cluster:
+  scalar likely_not_relevant: 15
+  scalar likely_relevant:      6
 ```
 
-For the current 2D PaCMAP view:
+The windows outside this selected cluster split cleanly into two k-means groups:
 
 ```text
-median distance = 1.75
-scaled MAD      = 0.81
-z=2 radius      = 3.38
-members         = 21 windows
+outside k-means cluster 0: 7 windows, all 22967/iNat1698107.ogg
+outside k-means cluster 1: 5 windows, all 22967/iNat1698105.ogg
 ```
 
-I also tried doing this in PCA-compressed embedding space. With only 33 windows and a broad seed cluster, the embedding-space MAD boundary was too loose: it included 32/33 windows. So for this tiny case, the 2D boundary is useful for visual triage, but a better future version should seed from a tighter high-confidence cluster.
+The `iNat1698107` group is the cleanest high-confidence repeated-call prototype seen so far. The `iNat1698105` group is also strongly *Leptodactylus*-like but has a different spectral emphasis.
 
-## Step 7: Estimate scalar-rule false positives/false negatives
+## Step 6: Inspect inside and outside clusters by spectrogram
 
-Treating the `(-4,0)` PaCMAP/MAD cluster as the visually suspicious/not-relevant cluster, the original scalar rule has:
+Generated inspection grids:
 
 ```text
-TP = 10  predicted relevant, outside suspicious cluster
-FP =  6  predicted relevant, inside suspicious cluster
-FN =  2  predicted not relevant, outside suspicious cluster
-TN = 15  predicted not relevant, inside suspicious cluster
+artifacts/marbled_frog_window_relevance/plots/inside_cluster_spectrogram_grid.png
+artifacts/marbled_frog_window_relevance/plots/outside_cluster_kmeans_spectrogram_grid.png
+artifacts/marbled_frog_window_relevance/plots/best_window_per_recording_spectrogram_grid.png
 ```
 
-Derived ratios:
+The best-window-per-recording grid selects the highest relevance-score window from each of the 8 train recordings, making it easier to compare the most target-like motif per source file.
+
+Inside the selected cluster, several recordings show plausible frog-like motifs but with different texture:
+
+- `iNat56387`: shape looks plausible, but the motif happens much more frequently; possible multi-individual/chorus or cadence mismatch.
+- `iNat911059`: one main motif plus a secondary motif; likely multi-component or partly harmonic structure.
+- `iNat321313`: lower-support windows concentrated near ~1 kHz.
+
+So the inside cluster is not simply false positives. It is better treated as a **mixed/candidate regime** requiring manual review.
+
+## Step 7: Spectroscopy-style peak detection across all recordings
+
+I added line-plot spectra for all 8 train recordings:
 
 ```text
-false positive rate      = 6 / 21 = 28.6%
-false discovery rate     = 6 / 16 = 37.5%
-false negative rate      = 2 / 12 = 16.7%
-precision                = 10 / 16 = 62.5%
-recall                   = 10 / 12 = 83.3%
+artifacts/marbled_frog_window_relevance/spectra/*_frequency_spectra.png
+artifacts/marbled_frog_window_relevance/tables/all_recording_peak_summary.csv
+artifacts/marbled_frog_window_relevance/plots/peak_frequency_by_recording.png
 ```
 
-This is not ground truth; it is relative to a visual cluster proxy. But it clearly says the scalar rule is too permissive.
+For each 5s window, the code computes mean log-power from 500-3500 Hz and detects the top spectral peaks.
 
-False positives under this proxy:
+Median strongest-peak frequency by recording:
 
 ```text
-22967/iNat56387.ogg     0-5s
-22967/iNat56387.ogg     5-10s
-22967/iNat911059.ogg    15-20s
-22967/iNat1448422.ogg   0-5s
-22967/iNat1697350.ogg   0-5s
-22967/iNat1697350.ogg   5-10s
+filename|n_windows|median_peak1_hz|min_peak1_hz|max_peak1_hz|mean_genus|mean_band
+22967/iNat321313.ogg|4|1000.0|937.5|1109.4|7.83|0.16
+22967/iNat1448422.ogg|4|1179.7|1109.4|2828.1|7.17|0.36
+22967/iNat56387.ogg|3|1421.9|1421.9|1421.9|8.99|0.74
+22967/iNat1698104.ogg|1|1468.8|1468.8|1468.8|7.82|0.86
+22967/iNat911059.ogg|5|1484.4|1437.5|1562.5|8.19|0.99
+22967/iNat1698107.ogg|7|1515.6|1500.0|1531.2|9.16|0.95
+22967/iNat1697350.ogg|2|1992.2|1984.4|2000.0|9.07|0.86
+22967/iNat1698105.ogg|5|2796.9|2765.6|2812.5|9.42|0.71
 ```
 
-False negatives under this proxy:
+This suggests several consistent but distinct peak families:
 
-```text
-22967/iNat1698105.ogg   0-5s
-22967/iNat1698105.ogg   20-25s
-```
+- ~1.0 kHz: low-frequency candidate/possible different acoustic regime,
+- ~1.4-1.5 kHz: central motif family, including `iNat56387`, `iNat911059`, and `iNat1698107`,
+- ~2.0 kHz: `iNat1697350`,
+- ~2.8 kHz: `iNat1698105`, a distinct high-frequency group.
+
+For `iNat911059`, the spectrum shows a dominant ~1.45-1.48 kHz component plus a weaker ~1.06-1.08 kHz component and sometimes a faint ~2.1 kHz component. The ~1.06/~2.14 pair is harmonic-like, but the dominant ridge is closer to ~1.5 kHz.
 
 ## Current best interpretation
 
-There are three levels of evidence:
+There are multiple plausible tiers/regimes rather than one binary label:
 
-### High confidence relevant
+### High-confidence relevant prototype
 
-The clean, tight `iNat1698107` cluster. These windows have strong repeated rising calls in the 1-3 kHz band and high max-*Leptodactylus* logits.
+`iNat1698107`: tight outside-cluster group with seven consecutive red windows, high max-*Leptodactylus* logits, strong 1-3 kHz energy, and stable strongest peaks around ~1.50-1.53 kHz.
 
-### Candidate relevant / needs review
+### Candidate relevant, central motif / cadence variation
 
-Windows outside the suspicious cluster that pass either logit or band-energy checks but do not belong to the clean `iNat1698107` prototype.
+`iNat56387`, `iNat911059`, and related windows: plausible frog-like motifs around ~1.4-1.5 kHz but with cadence/multi-component differences.
 
-### Likely false positive / not relevant
+### Candidate relevant, different spectral regime
 
-Windows in the `(-4,0)` cluster, especially those marked relevant by the scalar rule. These are where logit/band evidence alone likely overcalls relevance.
+`iNat1697350` around ~2.0 kHz and `iNat1698105` around ~2.8 kHz. These have strong genus logits but look spectrally distinct from the clean `iNat1698107` prototype.
+
+### Lower-confidence / needs review
+
+Windows with low genus logit, weak 1-3 kHz concentration, or peaks near ~1.0 kHz only.
 
 ## Practical next rule
 
-A better pseudo-labeling rule should be tiered:
+A better pseudo-labeling approach should be tiered:
 
 ```text
 high_confidence_relevant =
-    close to high-confidence frog-call prototype/cluster
+    close to clean prototype group, especially iNat1698107-like windows
     AND max Leptodactylus logit high
-    AND 1-3 kHz mel energy high
+    AND stable call-like spectral peak pattern
 
 candidate_relevant =
     high genus logit or good 1-3 kHz call-like structure
-    BUT not in clean prototype cluster
+    BUT cadence, motif, or peak family differs from the clean prototype
 
-likely_not_relevant =
-    in suspicious cluster or low genus/band evidence
+needs_review_or_likely_not_relevant =
+    low genus support, weak band concentration, or unclear spectrogram structure
 ```
 
-For this species, I would not train directly on the initial binary labels. I would first manually inspect:
-
-1. all 7 `iNat1698107` windows as positive anchors,
-2. the 6 scalar-rule false positives,
-3. the 2 scalar-rule false negatives,
-4. a few low-score negatives.
-
-That small review would calibrate a much better window-level training set.
+For training, I would not use the initial binary labels directly. I would manually review a small set from each discovered regime and then promote confirmed regimes into separate pseudo-label tiers.
