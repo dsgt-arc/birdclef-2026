@@ -53,7 +53,7 @@ Experiment 106 also has useful Perch loading utilities and label mapping artifac
 ## Working conventions
 
 - Do not copy large scratch parquets or audio into this experiment directory.
-- Put reusable analysis scripts in `scripts/`; notebooks can go in `notebooks/` if needed.
+- Put Python analysis code under `src/data_analysis/`; keep shell helpers in `scripts/`.
 - Put figures, small tables, and summary markdowns in `artifacts/<topic>/`.
 - Prefer `polars.scan_parquet()` / column projection for large Perch parquet files.
 - This is desktop analysis; avoid SLURM assumptions unless a sub-analysis grows into a real numbered experiment.
