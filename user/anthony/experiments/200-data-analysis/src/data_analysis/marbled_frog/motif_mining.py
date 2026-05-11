@@ -1,10 +1,10 @@
 """Motif mining for Marbled White-lipped Frog train recordings.
 
-Detects motif candidates as connected components in the robust-excess-z
-spectrogram, gated by physical event properties (duration, bandwidth, peak
-salience, area). Each motif is exactly one connected component; bounding boxes
-are the component's time-frequency extent. Crops around each component are
-normalized, embedded via PCA, and clustered with KMeans for review grids.
+Detects motif candidates as scikit-maad regions of interest (ROIs) in the
+robust-excess-z spectrogram. maad supplies double-threshold hysteresis and ROI
+selection; each surviving ROI yields one time-frequency bounding box. Crops
+around each ROI are normalized, embedded via PCA, and clustered with KMeans for
+review grids.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+import warnings
 
 import librosa
 import librosa.display
@@ -19,11 +20,14 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+warnings.filterwarnings("ignore", category=FutureWarning, module=r"maad\..*")
+
+from maad import rois, util
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import numpy as np
 import polars as pl
-from scipy.ndimage import label, zoom
+from scipy.ndimage import binary_closing, zoom
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -43,32 +47,39 @@ MAX_GRID_ITEMS = 24
 
 @dataclass(frozen=True)
 class ComponentGate:
-    """Physical-property gates applied to each connected component.
+    """Physical-property gates applied to each maad ROI.
 
     Fields:
-        z_threshold: pixel-level robust-excess-z threshold used to binarize the
-            spectrogram before connected-component labeling.
-        min_duration_sec / max_duration_sec: bbox time-extent must fall in this
-            range (filters salt-and-pepper bursts and sustained noise).
+        z_threshold: high/seed robust-excess-z threshold for maad hysteresis.
+        low_z_threshold: low/growth robust-excess-z threshold for maad hysteresis.
+        closing_freq_bins / closing_time_bins: binary-closing structuring element
+            size applied to the maad mask before ROI labelling. Time-closing helps
+            merge bright pieces of the same biological event whose valley dips
+            below the low threshold.
+        min_duration_sec / max_duration_sec: bbox time-extent range.
         min_bandwidth_hz / max_bandwidth_hz: bbox frequency-extent range.
         min_peak_z: component must contain at least one pixel this bright.
-        min_area_pixels: minimum component size in time-frequency pixels.
+        min_area_pixels: minimum ROI size in time-frequency pixels.
     """
 
-    z_threshold: float = 2.5
+    z_threshold: float = 3.2
+    low_z_threshold: float = 1.4
+    closing_freq_bins: int = 1
+    closing_time_bins: int = 3
     min_duration_sec: float = 0.03
     max_duration_sec: float = 1.5
     min_bandwidth_hz: float = 80.0
     max_bandwidth_hz: float = 2200.0
-    min_peak_z: float = 3.5
+    min_peak_z: float = 3.2
     min_area_pixels: int = 8
 
 
 @dataclass(frozen=True)
 class ComponentBox:
-    """Bounding box for a single connected component above the z threshold."""
+    """Bounding box for a single scikit-maad ROI."""
 
     motif_id: int
+    maad_label_id: int
     start_sec: float
     end_sec: float
     fmin_hz: float
@@ -93,26 +104,46 @@ def detect_components(
     *,
     gate: ComponentGate = ComponentGate(),
 ) -> list[ComponentBox]:
-    """Find motif candidates as 8-connected components above z_threshold.
+    """Find motif candidates as maad hysteresis ROIs in robust-excess-z space.
 
-    Each surviving component yields exactly one bounding box, sized to its own
-    time-frequency extent rather than to a hand-picked frequency band.
+    maad's ``create_mask`` performs double-threshold hysteresis: bright pixels
+    above ``z_threshold`` seed each ROI, then connected pixels above
+    ``low_z_threshold`` grow the box. We then apply a small binary closing in
+    time so a single call with a weak middle/tail is less likely to split into
+    multiple boxes.
     """
-    binary = z >= gate.z_threshold
-    if not binary.any():
+    if not np.any(z >= gate.z_threshold):
         return []
-    structure = np.ones((3, 3), dtype=bool)  # 8-connectivity
-    labeled, n_components = label(binary, structure=structure)
-    if n_components == 0:
+
+    im_bin = rois.create_mask(
+        z,
+        mode_bin="absolute",
+        bin_h=gate.z_threshold,
+        bin_l=gate.low_z_threshold,
+    )
+    if gate.closing_freq_bins > 1 or gate.closing_time_bins > 1:
+        structure = np.ones((gate.closing_freq_bins, gate.closing_time_bins), dtype=bool)
+        im_bin = binary_closing(im_bin.astype(bool), structure=structure)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        im_rois, rois_df = rois.select_rois(
+            im_bin.astype(bool), min_roi=gate.min_area_pixels, max_roi=None
+        )
+    if rois_df.empty:
         return []
+    rois_df = util.format_features(rois_df, times, freqs)
+
     boxes: list[ComponentBox] = []
     motif_id = 0
-    for component_idx in range(1, n_components + 1):
-        rows, cols = np.where(labeled == component_idx)
-        if rows.size < gate.min_area_pixels:
+    for row in rois_df.itertuples(index=False):
+        label_id = int(getattr(row, "labelID"))
+        rr, cc = np.where(im_rois == label_id)
+        if rr.size < gate.min_area_pixels:
             continue
-        f_lo, f_hi = int(rows.min()), int(rows.max())
-        t_lo, t_hi = int(cols.min()), int(cols.max())
+
+        f_lo, f_hi = int(rr.min()), int(rr.max())
+        t_lo, t_hi = int(cc.min()), int(cc.max())
         start_sec = float(times[t_lo])
         end_sec = float(times[t_hi])
         fmin_hz = float(freqs[f_lo])
@@ -123,7 +154,8 @@ def detect_components(
             continue
         if not (gate.min_bandwidth_hz <= bandwidth_hz <= gate.max_bandwidth_hz):
             continue
-        component_values = z[rows, cols]
+
+        component_values = z[rr, cc]
         peak_z = float(component_values.max())
         if peak_z < gate.min_peak_z:
             continue
@@ -133,16 +165,17 @@ def detect_components(
         boxes.append(
             ComponentBox(
                 motif_id=motif_id,
+                maad_label_id=label_id,
                 start_sec=start_sec,
                 end_sec=end_sec,
                 fmin_hz=fmin_hz,
                 fmax_hz=fmax_hz,
-                peak_time_sec=float(times[cols[peak_in_component]]),
-                peak_freq_hz=float(freqs[rows[peak_in_component]]),
+                peak_time_sec=float(times[cc[peak_in_component]]),
+                peak_freq_hz=float(freqs[rr[peak_in_component]]),
                 peak_z=peak_z,
                 mean_z=float(component_values.mean()),
-                area_pixels=int(rows.size),
-                fill_ratio=float(rows.size / bbox_area),
+                area_pixels=int(rr.size),
+                fill_ratio=float(rr.size / bbox_area),
             )
         )
     return boxes
@@ -170,6 +203,9 @@ def crop_patch(
     if patch.size == 0:
         return np.zeros(PATCH_SHAPE, dtype=np.float32)
     patch = patch.astype(np.float32)
+    # Remove per-frequency texture before global standardization. This helps
+    # keep PCA from clustering mostly by recording/background spectrum.
+    patch = patch - np.median(patch, axis=1, keepdims=True)
     patch = (patch - patch.mean()) / (patch.std() + 1e-6)
     scale = (PATCH_SHAPE[0] / patch.shape[0], PATCH_SHAPE[1] / patch.shape[1])
     resized = zoom(patch, scale, order=1)
@@ -219,7 +255,7 @@ def box_features(
 def generate_candidates(
     *, gate: ComponentGate = ComponentGate()
 ) -> tuple[pl.DataFrame, np.ndarray]:
-    """Detect connected-component motif candidates over all recordings."""
+    """Detect scikit-maad ROI motif candidates over all recordings."""
     rows = []
     patches = []
     for filename in recording_files():
@@ -235,6 +271,7 @@ def generate_candidates(
                     "candidate_id": len(rows) + 1,
                     "filename": filename,
                     "motif_id": box.motif_id,
+                    "maad_label_id": box.maad_label_id,
                     "start_sec": box.start_sec,
                     "end_sec": box.end_sec,
                     "duration_sec": box.end_sec - box.start_sec,
@@ -306,7 +343,7 @@ def plot_candidate_embedding(candidates: pl.DataFrame, output_path: Path) -> Non
             linewidths=0.25,
             label=f"cluster {cluster} (n={df.height})",
         )
-    ax.set_title("Marbled Frog motif candidates: PCA of normalized spectrogram crops")
+    ax.set_title("Marbled Frog motif candidates: PCA of maad ROI crops")
     ax.set_xlabel("motif PCA 1")
     ax.set_ylabel("motif PCA 2")
     ax.grid(alpha=0.22)
@@ -421,22 +458,24 @@ def run(
     (output_dir / "summary.md").write_text(
         f"""# Marbled Frog Motif Mining
 
-Each motif candidate is a single 8-connected component in the robust-excess-z
+Each motif candidate is a scikit-maad double-threshold ROI in the robust-excess-z
 spectrogram, gated on physical event properties:
 
 ```text
-z_threshold       = {gate.z_threshold}
-min/max duration  = {gate.min_duration_sec}-{gate.max_duration_sec} s
-min/max bandwidth = {gate.min_bandwidth_hz}-{gate.max_bandwidth_hz} Hz
-min peak z        = {gate.min_peak_z}
-min area (pixels) = {gate.min_area_pixels}
+high/seed z threshold = {gate.z_threshold}
+low/growth z threshold = {gate.low_z_threshold}
+closing freq x time    = {gate.closing_freq_bins} x {gate.closing_time_bins} bins
+min/max duration       = {gate.min_duration_sec}-{gate.max_duration_sec} s
+min/max bandwidth      = {gate.min_bandwidth_hz}-{gate.max_bandwidth_hz} Hz
+min peak z             = {gate.min_peak_z}
+min area (pixels)      = {gate.min_area_pixels}
 ```
 
 Candidates were extracted from {len(recording_files())} `{TARGET_LABEL}` train recordings.
 
 Artifacts:
 
-- `tables/candidates.csv` — every component box with features and cluster assignment.
+- `tables/candidates.csv` — every maad ROI box with features and cluster assignment.
 - `tables/cluster_summary.csv` — cluster-level statistics.
 - `plots/candidate_motif_pca.png` — PCA scatter of normalized spectrogram crops.
 - `clusters/cluster_XX_grid.png` — review grids for each motif cluster.
@@ -457,6 +496,9 @@ def main() -> None:
     parser.add_argument("--n-clusters", type=int, default=8)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--z-threshold", type=float, default=ComponentGate.z_threshold)
+    parser.add_argument("--low-z-threshold", type=float, default=ComponentGate.low_z_threshold)
+    parser.add_argument("--closing-freq-bins", type=int, default=ComponentGate.closing_freq_bins)
+    parser.add_argument("--closing-time-bins", type=int, default=ComponentGate.closing_time_bins)
     parser.add_argument("--min-duration-sec", type=float, default=ComponentGate.min_duration_sec)
     parser.add_argument("--max-duration-sec", type=float, default=ComponentGate.max_duration_sec)
     parser.add_argument("--min-bandwidth-hz", type=float, default=ComponentGate.min_bandwidth_hz)
@@ -466,6 +508,9 @@ def main() -> None:
     args = parser.parse_args()
     gate = ComponentGate(
         z_threshold=args.z_threshold,
+        low_z_threshold=args.low_z_threshold,
+        closing_freq_bins=args.closing_freq_bins,
+        closing_time_bins=args.closing_time_bins,
         min_duration_sec=args.min_duration_sec,
         max_duration_sec=args.max_duration_sec,
         min_bandwidth_hz=args.min_bandwidth_hz,
