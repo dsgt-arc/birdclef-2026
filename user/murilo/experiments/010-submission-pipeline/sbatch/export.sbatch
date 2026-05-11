@@ -830,6 +830,24 @@ export_hgnet_b0_sed_v5j_kd_last() {
         --output-dir artifacts/weights/hgnet-b0-sed-v5j-kd-last/
 }
 
+export_hgnet_b0_sed_v5j_eracode() {
+    # v5j-era codebase regression diagnostic: retrained v5j_control using the
+    # v5j-era source code (worktree at commit e420633) in today's environment.
+    # Offline metrics match v5j-original exactly (val/cmap 0.6429 = original
+    # 0.6429); this submission confirms whether ep 19 also recovers v5j-original
+    # LB 0.906 — proving the regression is in the HEAD codebase, not env/HW.
+    # Same checkpoint dir naming as v5j-resubmit (017-mel-overhaul).
+    echo "=== Exporting v5j-eracode (May 10 retrain w/ v5j-era code, drift diag) ==="
+    local CKPT
+    CKPT="$(_find_best_ckpt "${CHECKPOINTS_BASE}/017-mel-overhaul/checkpoints/2026-exp019-v5j-diag-eracode-may10")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_efficientnet_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP019_DIR}/config/hgnet_b0_sed_v5j.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/hgnet-b0-sed-v5j-eracode/
+}
+
 export_hgnet_b0_sed_v5j_control_last() {
     # Best-vs-last diagnostic: v5j_control ep 19 weights from the
     # save_top_k=-1 rerun. Tests whether ep 19 weights recover v5j-original
@@ -1288,6 +1306,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-control|hgnet-b0-sed-v5j-sydorskyi|effnetv2-b0-sed-control|effnetv2-b0-sed-sydorskyi|\
     hgnet-b0-sed-v5j-control-seed43|hgnet-b0-sed-v5j-sydorskyi-seed43|effnetv2-b0-sed-control-seed43|effnetv2-b0-sed-sydorskyi-seed43|\
     hgnet-b0-sed-v5j-kd|hgnet-b0-sed-v5j-kd-last|hgnet-b0-sed-v5j-control-last|\
+    hgnet-b0-sed-v5j-eracode|\
     hgnet-b0-sed-v5j-resubmit|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
@@ -1406,6 +1425,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-kd)                export_hgnet_b0_sed_v5j_kd ;;
     hgnet-b0-sed-v5j-kd-last)           export_hgnet_b0_sed_v5j_kd_last ;;
     hgnet-b0-sed-v5j-control-last)      export_hgnet_b0_sed_v5j_control_last ;;
+    hgnet-b0-sed-v5j-eracode)           export_hgnet_b0_sed_v5j_eracode ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;

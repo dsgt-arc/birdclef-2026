@@ -395,6 +395,15 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-control-last",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-control-last.json",
     },
+    # Codebase regression diagnostic: retrained v5j_control with v5j-era code
+    # (commit e420633 worktree) on today's env. Offline val/cmap matches
+    # v5j-original to 4 dp; this LB confirms whether the ~0.009 gap is in
+    # the HEAD codebase (vs env/HW). High-confidence prediction: LB ≈ 0.906.
+    "hgnet-b0-sed-v5j-eracode": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-eracode-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-eracode",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-eracode.json",
+    },
     # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "hgnet-b0-sed-v5j-fmax": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",
