@@ -209,12 +209,99 @@ def detect_events(score_tracks: pl.DataFrame, thresholds: pl.DataFrame, bank_clu
     return pl.DataFrame(rows)
 
 
-def summarize_events(events: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
+def nms_events(
+    events: pl.DataFrame,
+    *,
+    time_iou_threshold: float = 0.35,
+    peak_distance_sec: float = 0.12,
+) -> pl.DataFrame:
+    """Suppress duplicate detections within each recording/family.
+
+    Peak-picking already enforces a minimum distance, but template score tracks can
+    still produce duplicate boxes around the same event. Keep the highest-scoring
+    detection and suppress lower-scoring boxes that overlap substantially or have
+    nearly identical peak times.
+    """
+    if events.is_empty():
+        return events
+    kept_rows = []
+    for (_filename, _cluster), df in events.group_by("filename", "motif_cluster", maintain_order=True):
+        rows = sorted(df.to_dicts(), key=lambda r: float(r["score"]), reverse=True)
+        kept: list[dict] = []
+        for row in rows:
+            duplicate = False
+            for prev in kept:
+                tiou = interval_iou(row["start_sec"], row["end_sec"], prev["start_sec"], prev["end_sec"])
+                close_peak = abs(row["peak_time_sec"] - prev["peak_time_sec"]) <= peak_distance_sec
+                if tiou >= time_iou_threshold or close_peak:
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept.append(row)
+        kept_rows.extend(sorted(kept, key=lambda r: (r["filename"], r["motif_cluster"], r["peak_time_sec"])))
+    return pl.DataFrame(kept_rows).sort("filename", "motif_cluster", "peak_time_sec")
+
+
+def consolidate_events(
+    events: pl.DataFrame,
+    *,
+    merge_peak_distance_sec: float = 0.25,
+    min_time_iou: float = 0.05,
+) -> pl.DataFrame:
+    """Merge cross-family component detections into one biological-event box."""
+    if events.is_empty():
+        return pl.DataFrame()
+    rows = []
+    event_id = 0
+    for filename_key, df in events.group_by("filename", maintain_order=True):
+        filename = filename_key[0] if isinstance(filename_key, tuple) else filename_key
+        detections = sorted(df.to_dicts(), key=lambda r: float(r["peak_time_sec"]))
+        groups: list[list[dict]] = []
+        for det in detections:
+            if not groups:
+                groups.append([det])
+                continue
+            group = groups[-1]
+            g_start = min(float(x["start_sec"]) for x in group)
+            g_end = max(float(x["end_sec"]) for x in group)
+            g_peak_max = max(float(x["peak_time_sec"]) for x in group)
+            close_peak = float(det["peak_time_sec"]) - g_peak_max <= merge_peak_distance_sec
+            overlaps_group = interval_iou(g_start, g_end, float(det["start_sec"]), float(det["end_sec"])) >= min_time_iou
+            if close_peak or overlaps_group:
+                group.append(det)
+            else:
+                groups.append([det])
+        for group in groups:
+            event_id += 1
+            best = max(group, key=lambda r: float(r["score"]))
+            clusters = sorted({int(x["motif_cluster"]) for x in group})
+            rows.append(
+                {
+                    "event_id": event_id,
+                    "filename": filename,
+                    "start_sec": min(float(x["start_sec"]) for x in group),
+                    "end_sec": max(float(x["end_sec"]) for x in group),
+                    "peak_time_sec": float(best["peak_time_sec"]),
+                    "fmin_hz": min(float(x["fmin_hz"]) for x in group),
+                    "fmax_hz": max(float(x["fmax_hz"]) for x in group),
+                    "score": float(best["score"]),
+                    "best_score": float(best["score"]),
+                    "motif_cluster": int(best["motif_cluster"]),
+                    "best_motif_cluster": int(best["motif_cluster"]),
+                    "motif_clusters_present": ";".join(str(x) for x in clusters),
+                    "n_component_detections": len(group),
+                    "mean_component_score": float(np.mean([float(x["score"]) for x in group])),
+                }
+            )
+    return pl.DataFrame(rows).sort("filename", "peak_time_sec")
+
+
+def summarize_events(events: pl.DataFrame, *, cluster_col: str = "motif_cluster") -> tuple[pl.DataFrame, pl.DataFrame]:
     """Summarize event rates and inter-event intervals."""
     if events.is_empty():
         return pl.DataFrame(), pl.DataFrame()
     interval_rows = []
-    for (filename, cluster), df in events.group_by("filename", "motif_cluster", maintain_order=True):
+    for (filename, cluster), df in events.group_by("filename", cluster_col, maintain_order=True):
         df = df.sort("peak_time_sec")
         times = df["peak_time_sec"].to_numpy()
         intervals = np.diff(times)
@@ -229,12 +316,14 @@ def summarize_events(events: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
                 }
             )
     intervals = pl.DataFrame(interval_rows)
-    summary = events.group_by("motif_cluster").agg(
+    summary = events.group_by(cluster_col).agg(
         pl.len().alias("n_events"),
         pl.col("filename").n_unique().alias("n_recordings"),
         pl.col("score").median().alias("median_score"),
         pl.col("score").max().alias("max_score"),
     )
+    if cluster_col != "motif_cluster":
+        summary = summary.rename({cluster_col: "motif_cluster"})
     if not intervals.is_empty():
         interval_summary = intervals.group_by("motif_cluster").agg(
             pl.col("interval_sec").median().alias("median_inter_event_interval_sec"),
@@ -288,7 +377,52 @@ def curated_recovery(events: pl.DataFrame, curated_path: Path) -> pl.DataFrame:
     return pl.DataFrame(rows)
 
 
-def plot_curated_recovery(events: pl.DataFrame, curated_path: Path, output_dir: Path) -> None:
+def detection_stage_metrics(
+    raw_events: pl.DataFrame,
+    nms_events_df: pl.DataFrame,
+    consolidated: pl.DataFrame,
+    raw_recovery: pl.DataFrame,
+    nms_recovery: pl.DataFrame,
+    consolidated_recovery: pl.DataFrame,
+) -> pl.DataFrame:
+    """Quantify whether NMS/consolidation reduces duplicates while preserving recovery."""
+    def recovery_rate(df: pl.DataFrame) -> float:
+        return float(df["recovered"].mean()) if not df.is_empty() and "recovered" in df.columns else float("nan")
+
+    def median_components(df: pl.DataFrame) -> float:
+        return float(df["n_component_detections"].median()) if not df.is_empty() and "n_component_detections" in df.columns else float("nan")
+
+    raw_n = raw_events.height
+    nms_n = nms_events_df.height
+    cons_n = consolidated.height
+    return pl.DataFrame(
+        [
+            {
+                "stage": "raw_template_peaks",
+                "n_boxes_or_events": raw_n,
+                "reduction_vs_raw": 0.0,
+                "curated_recovery_rate": recovery_rate(raw_recovery),
+                "median_components_per_event": float("nan"),
+            },
+            {
+                "stage": "within_family_nms",
+                "n_boxes_or_events": nms_n,
+                "reduction_vs_raw": 1.0 - nms_n / raw_n if raw_n else float("nan"),
+                "curated_recovery_rate": recovery_rate(nms_recovery),
+                "median_components_per_event": float("nan"),
+            },
+            {
+                "stage": "cross_family_consolidated_events",
+                "n_boxes_or_events": cons_n,
+                "reduction_vs_raw": 1.0 - cons_n / raw_n if raw_n else float("nan"),
+                "curated_recovery_rate": recovery_rate(consolidated_recovery),
+                "median_components_per_event": median_components(consolidated),
+            },
+        ]
+    )
+
+
+def plot_curated_recovery(events: pl.DataFrame, curated_path: Path, output_dir: Path, *, suffix: str = "curated_recovery") -> None:
     """Plot curated annotation windows with matched motif-bank detections overlaid."""
     if not curated_path.exists() or events.is_empty():
         return
@@ -365,7 +499,7 @@ def plot_curated_recovery(events: pl.DataFrame, curated_path: Path, output_dir: 
             "lime dashed=curated boxes; colored solid=motif-bank template detections"
         )
         fig.tight_layout()
-        fig.savefig(output_dir / f"{Path(filename).stem}_{window_start:.1f}_{window_end:.1f}_curated_recovery.png")
+        fig.savefig(output_dir / f"{Path(filename).stem}_{window_start:.1f}_{window_end:.1f}_{suffix}.png")
         plt.close(fig)
 
 
@@ -428,29 +562,67 @@ def run(
                 )
     score_tracks = pl.DataFrame(score_rows)
     thresholds = estimate_thresholds(score_tracks, candidates, sorted(bank.keys()))
-    events = detect_events(score_tracks, thresholds, bank_clusters)
-    event_summary, intervals = summarize_events(events)
-    recovery = curated_recovery(events, curated_path)
+    raw_events = detect_events(score_tracks, thresholds, bank_clusters)
+    nms_events_df = nms_events(raw_events)
+    consolidated = consolidate_events(nms_events_df)
+
+    raw_event_summary, raw_intervals = summarize_events(raw_events)
+    nms_event_summary, nms_intervals = summarize_events(nms_events_df)
+    consolidated_summary, consolidated_intervals = summarize_events(consolidated, cluster_col="best_motif_cluster")
+
+    raw_recovery = curated_recovery(raw_events, curated_path)
+    nms_recovery = curated_recovery(nms_events_df, curated_path)
+    consolidated_recovery = curated_recovery(consolidated, curated_path)
+    stage_metrics = detection_stage_metrics(
+        raw_events,
+        nms_events_df,
+        consolidated,
+        raw_recovery,
+        nms_recovery,
+        consolidated_recovery,
+    )
 
     score_tracks.write_csv(tables_dir / "template_score_tracks.csv")
     thresholds.write_csv(tables_dir / "template_thresholds.csv")
-    events.write_csv(tables_dir / "template_match_events.csv")
-    event_summary.write_csv(tables_dir / "event_summary.csv")
-    intervals.write_csv(tables_dir / "inter_event_intervals.csv")
-    if not recovery.is_empty():
-        recovery.write_csv(tables_dir / "curated_recovery.csv")
-        recovery_summary = recovery.group_by("component").agg(
+    raw_events.write_csv(tables_dir / "template_match_events_raw.csv")
+    nms_events_df.write_csv(tables_dir / "template_match_events_nms.csv")
+    consolidated.write_csv(tables_dir / "consolidated_events.csv")
+    raw_event_summary.write_csv(tables_dir / "event_summary_raw.csv")
+    nms_event_summary.write_csv(tables_dir / "event_summary_nms.csv")
+    consolidated_summary.write_csv(tables_dir / "event_summary_consolidated.csv")
+    raw_intervals.write_csv(tables_dir / "inter_event_intervals_raw.csv")
+    nms_intervals.write_csv(tables_dir / "inter_event_intervals_nms.csv")
+    consolidated_intervals.write_csv(tables_dir / "inter_event_intervals_consolidated.csv")
+    stage_metrics.write_csv(tables_dir / "detection_stage_metrics.csv")
+
+    def write_recovery(prefix: str, recovery: pl.DataFrame) -> pl.DataFrame:
+        if recovery.is_empty():
+            return pl.DataFrame()
+        recovery.write_csv(tables_dir / f"curated_recovery_{prefix}.csv")
+        summary = recovery.group_by("component").agg(
             pl.len().alias("n_curated_boxes"),
             pl.col("recovered").sum().alias("n_recovered"),
             pl.col("recovered").mean().alias("recovery_rate"),
             pl.col("best_detection_score").median().alias("median_best_detection_score"),
         ).sort("component")
-        recovery_summary.write_csv(tables_dir / "curated_recovery_summary.csv")
-    else:
-        recovery_summary = pl.DataFrame()
+        summary.write_csv(tables_dir / f"curated_recovery_summary_{prefix}.csv")
+        return summary
 
-    plot_curated_recovery(events, curated_path, plots_dir)
-    plot_interval_histograms(intervals, plots_dir / "inter_event_interval_histograms.png")
+    raw_recovery_summary = write_recovery("raw", raw_recovery)
+    nms_recovery_summary = write_recovery("nms", nms_recovery)
+    consolidated_recovery_summary = write_recovery("consolidated", consolidated_recovery)
+
+    # Backward-compatible aliases for the recommended consolidated view.
+    consolidated.write_csv(tables_dir / "template_match_events.csv")
+    consolidated_summary.write_csv(tables_dir / "event_summary.csv")
+    consolidated_intervals.write_csv(tables_dir / "inter_event_intervals.csv")
+    if not consolidated_recovery.is_empty():
+        consolidated_recovery.write_csv(tables_dir / "curated_recovery.csv")
+        consolidated_recovery_summary.write_csv(tables_dir / "curated_recovery_summary.csv")
+
+    plot_curated_recovery(raw_events, curated_path, plots_dir, suffix="curated_recovery_raw")
+    plot_curated_recovery(consolidated, curated_path, plots_dir, suffix="curated_recovery_consolidated")
+    plot_interval_histograms(consolidated_intervals, plots_dir / "inter_event_interval_histograms.png")
 
     (output_dir / "summary.md").write_text(
         f"""# Motif-bank template calibration on focal recordings
@@ -470,24 +642,34 @@ Artifacts:
 
 - `tables/template_score_tracks.csv` — dense score tracks per recording/family.
 - `tables/template_thresholds.csv` — per-family calibration thresholds.
-- `tables/template_match_events.csv` — peak-picked motif detections.
-- `tables/event_summary.csv` — event counts and interval summaries by family.
-- `tables/inter_event_intervals.csv` — consecutive-event intervals per recording/family.
-- `tables/curated_recovery.csv` — best detection for each curated motif box.
-- `tables/curated_recovery_summary.csv` — recovery by curated component.
-- `plots/*_curated_recovery.png` — curated windows with detections overlaid.
+- `tables/template_match_events_raw.csv` — raw peak-picked motif detections.
+- `tables/template_match_events_nms.csv` — within-family NMS detections.
+- `tables/consolidated_events.csv` — cross-family merged biological-event boxes.
+- `tables/detection_stage_metrics.csv` — duplicate reduction vs. curated recovery.
+- `tables/event_summary.csv` — consolidated event counts and interval summaries by family.
+- `tables/inter_event_intervals.csv` — consecutive consolidated-event intervals.
+- `tables/curated_recovery.csv` — best consolidated event for each curated motif box.
+- `tables/curated_recovery_summary.csv` — consolidated recovery by curated component.
+- `plots/*_curated_recovery_raw.png` — curated windows with raw detections.
+- `plots/*_curated_recovery_consolidated.png` — curated windows with consolidated event boxes.
 - `plots/inter_event_interval_histograms.png` — interval distributions.
 
 Event summary:
 
 ```text
-{event_summary.write_csv(separator='|').strip() if not event_summary.is_empty() else 'none'}
+{consolidated_summary.write_csv(separator='|').strip() if not consolidated_summary.is_empty() else 'none'}
 ```
 
-Curated recovery summary:
+Detection stage metrics:
 
 ```text
-{recovery_summary.write_csv(separator='|').strip() if not recovery_summary.is_empty() else 'none'}
+{stage_metrics.write_csv(separator='|').strip()}
+```
+
+Curated recovery summary, consolidated events:
+
+```text
+{consolidated_recovery_summary.write_csv(separator='|').strip() if not consolidated_recovery_summary.is_empty() else 'none'}
 ```
 """
     )
