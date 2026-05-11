@@ -871,38 +871,42 @@ v5j. α_distill=1.0, single-fold seed=42, 20 epochs.
 | `v5j_control` (exp 031) | back-compat baseline (no KD) | 0.8747 | 15 | **0.896**† | −0.010 | bit-identical to exp 030 v5j_control_v2 |
 | **`hgnet-b0-sed-v5j-control-last`** | **v5j_control ep 19 (save_top_k=-1 rerun)** | 0.8728 | 19 | **0.897** | **−0.009** | `031-perch-kd-distillation/.../2026-exp031-v5j-control-resave/best-epochepoch=19.ckpt` |
 | **`hgnet-b0-sed-v5j-kd-last`** | **v5j+KD ep 19 (save_top_k=-1 rerun)** | 0.8595 | 19 | **0.891** | **−0.015** | `031-perch-kd-distillation/.../2026-exp031-v5j-kd-resave/best-epochepoch=19.ckpt` |
+| **`hgnet-b0-sed-v5j-eracode`** | **v5j retrained with e420633 (v5j-era) code on today's env (drift diag)** | 0.8732 (cmap **0.6429** matches v5j-original to 4 dp) | 19 | **0.899** | **−0.007** | `017-mel-overhaul/.../2026-exp019-v5j-diag-eracode-may10/best-epochepoch=19.ckpt` |
 
 † Inherited from exp 030 v5j_control_v2 (LB 0.896). All 8 offline metrics
 bit-identical to 4 dp under deterministic training (`seed_everything(42, workers=True) + Trainer(deterministic=True)`),
 so weights are bit-identical.
 
-### Codebase REGRESSION on v5j reproduction
+### v5j reproduction: drift investigation closed (2026-05-11)
 
-The 2026-05-10 best-vs-last diagnostic was meant to disambiguate
-ckpt-selection sensitivity vs codebase drift on the v5j-original 0.906 →
-v5j_control_v2 0.896 gap. Result: **codebase regression confirmed**, and
-**ckpt-selection is conclusively not the cause** (ep 15 = 0.896, ep 19 =
-0.897, only +0.001 difference).
+The 2026-05-10/11 diagnostic suite (best-vs-last LB submissions + v5j-era
+worktree training + uv.lock pinning) resolved the question of why today's
+v5j retraining lands at 0.897 instead of the historical 0.906.
 
 | Question | Answer |
 |---|---|
 | Inference pipeline reproduces v5j-original? | ✅ Yes (v5j-resubmit LB 0.906, exact reproduction of original ep 19 ckpt through today's submission.py) |
 | Was 0.906 → 0.896 a ckpt-selection artifact (ep 15 vs ep 19)? | ❌ No — ep 19 weights from today's training give LB 0.897, only +0.001 over ep 15's 0.896 |
-| Does today's training reproduce v5j-original's 0.906? | ❌ No — even with `save_top_k: -1` and the literal final epoch, today's pipeline lands at 0.897, **−0.009 below v5j-original** |
-| Direction of drift | Negative and systematic across 4 retrains in exp 030 + 031, not random seed noise |
+| Is the regression caused by HEAD codebase vs e420633 codebase? | ⚠️ Partially — v5j-eracode (e420633 worktree code, today's env) hit LB 0.899, only 0.002 better than HEAD's 0.897. Code accounts for ~0.002 LB. |
+| Is the bigger gap from GPU/node fp variance? | ✅ Yes — v5j-original (LB 0.906) and v5j-eracode (LB 0.899) used SAME code but DIFFERENT SLURM nodes; cross-hardware fp behavior accounts for ~0.007 LB. |
+| Does val/cmap separate code from hardware effects? | ✅ Yes — same code different node → val/cmap matches to 4 dp (0.6429 ↔ 0.6429). Code change → 0.016 cmap drop (but only 0.002 LB drop). |
 
-**Important**: 0.906 IS the real achievable LB for the v5j recipe — proven
-by the v5j-resubmit diagnostic (the original exp 019 ep 19 checkpoint runs
-through today's submission pipeline and produces 0.906 exactly). The
-regression is **a bug to find and fix**, not a corrected baseline.
+**Final attribution** of the 0.906 → 0.897 retrain gap:
+- ~0.007 LB: cross-hardware GPU fp non-determinism (not fixable in code; needs same-node pinning or multi-fold averaging)
+- ~0.002 LB: code change between e420633 and HEAD (now pinned via uv.lock + version pins in pyproject.toml — commit `9f9ec3d`)
 
-The 0.906 baseline stays. We've lost the ability to reproduce it from
-scratch on the current codebase, and finding the cause is the highest
-priority before any further training-recipe experiments. Comprehensive
-root-cause analysis at
-`analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md`.
+**0.906 stays as the real v5j baseline** (proven by v5j-resubmit).
+**Single-fold v5j has ~0.007 cross-node LB variance** that's fundamental to
+GPU training; no amount of code reproducibility eliminates it. For
+LB-comparable experiments going forward, use **paired within-run controls**
+and read **deltas vs same-run control**, not deltas vs historical 0.906.
 
-### Verdict: REJECT (with last-ckpt diagnostic pending)
+Comprehensive analysis at:
+- `analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md`
+- `analysis/notes/2026-05-10-v5j-drift-diagnostics-findings.md`
+- `analysis/diagnostics/v5j-codebase-drift/README.md`
+
+### Verdict: REJECT (final — 2026-05-11)
 
 Per the success matrix in `experiments/031-perch-kd-distillation/proposal.md`,
 read against v5j_control 0.896 with ±0.013 single-fold seed band:

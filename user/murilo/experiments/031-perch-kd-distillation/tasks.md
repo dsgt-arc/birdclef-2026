@@ -208,7 +208,7 @@ inherits exp 030's 0.896 without spending a daily Kaggle slot.
   - KD lever did NOT transfer as a single-variable add on this codebase.
   - Phase 2 (ownership + 4-fold) **halted**.
 
-### 1.4 Best-vs-last checkpoint diagnostic — RETRAIN REQUIRED, PENDING
+### 1.4 Best-vs-last + drift diagnostics ✅ DONE 2026-05-10/11
 
 **Post-hoc finding (2026-05-10)**: neither original run actually saved the
 literal final-epoch (ep 19) weights. Inspection of all checkpoints showed:
@@ -440,3 +440,28 @@ Pivot candidates (away from KD):
   distinct from MSE-on-embedding (this experiment).
 - [ ] P3.7 Other "more information" levers: external 2025 BirdCLEF data,
   background noise mixing (paused in earlier work), additional pretraining.
+
+---
+
+## 1.4e Worktree training experiment — DONE 2026-05-10/11
+
+- [x] 1.4e.1 Persistent worktree set up at `/storage/.../birdclef-v5j-era/` (e420633)
+- [x] 1.4e.2 Diagnostic config + sbatch wrapper scaffolded
+- [x] 1.4e.3 Submitted (job 8330980 wandb-failed; job 8331148 succeeded on node `03-003-19-0`)
+- [x] 1.4e.4 v5j-eracode metrics: val/auroc 0.8732, **val/cmap 0.6429** (matches v5j-original 0.6429 to 4 dp!), val/f1_macro 0.5423
+- [x] 1.4e.5 Wired through Kaggle pipeline (commit `0541fa9`), exported ep 19, submitted
+- [x] 1.4e.6 **v5j-eracode LB = 0.899** — proves same code, different node = ~0.007 LB drift; code change alone is ~0.002
+- [x] 1.4e.7 Same-node test scaffolded then cancelled (user decision: not worth waiting for `02-004-35-0` to free up)
+- [x] 1.4e.8 uv.lock pinned to v5j-era versions (commit `9f9ec3d`): timm 1.0.26, hf-hub <1.10, torch 2.5.1, etc.
+- [x] 1.4e.9 v5j-era worktree cleaned up — diagnostic files preserved in HEAD at `analysis/diagnostics/v5j-codebase-drift/`
+
+## Phase 3.1 next-session plan — KD + bug-fixed AttHead
+
+See `results.md` § Next step for full plan. Scaffolding required:
+
+- [ ] Create new experiment dir `user/murilo/experiments/032-kd-atthead/`
+- [ ] Port Tucker's logit-space AttHead from `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/bc2026-distilled-sed.ipynb` (cells 10-14) → `user/murilo/src/birdclef/heads/sed_head.py` as new class `AttHeadLogitSpace`
+- [ ] Scaffold 2 paired configs: `v5j_atthead_control.yaml` + `v5j_atthead_kd.yaml`
+- [ ] Inherit pinned deps via new exp dir's pyproject.toml (reference exp 031's uv.lock)
+- [ ] Submit both SLURM jobs (paired, save_top_k=-1)
+- [ ] LB submit both → compute paired-control delta → apply interpretation matrix

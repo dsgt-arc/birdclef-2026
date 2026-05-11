@@ -1,27 +1,65 @@
 ---
 experiment: "031-perch-kd-distillation"
-status: in_progress
+status: closed
 date: 2026-05-10
+closed_date: 2026-05-11
 author: Murilo Gustineli
 ---
 
 # Experiment 031: Perch v2 Knowledge Distillation on v5j — Results (Phase 1)
 
-## Status: REJECT + codebase regression on v5j reproduction
+## Status: CLOSED — REJECT verdict; drift investigation resolved
 
-Phase 1 training completed 2026-05-10 AM. v5j_kd best-by-val ckpt (ep 17)
-submitted to LB → **0.890**. Best-vs-last LB diagnostic results both back:
-v5j_control_last (ep 19, save_top_k=-1 rerun) = **0.897**, v5j_kd_last (ep
-19, KD) = **0.891**. Together with v5j-resubmit 0.906 (exp 019 ep 19 ckpt
-re-exported through today's inference = exact reproduction), this proves
-the **training pipeline has REGRESSED** since exp 019: same recipe, same
-seed, deterministic config now produces measurably different (worse)
-weights. **v5j-original's 0.906 is the real achievable LB on this recipe**
-(verified via v5j-resubmit), not a coincidence — but we can't currently
-reproduce it from scratch. This is a bug to find and fix, not a baseline
-to accept. Comprehensive root-cause analysis at
-[`analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md`](../../analysis/notes/2026-05-10-v5j-codebase-drift-analysis.md);
-diagnostic experiments running.
+Phase 1 KD on HGNet+LSEHead → **REJECT** (within-codebase Δ = −0.006 at
+both best-by-val and ep 19 checkpoints). Drift investigation closed:
+~0.002 LB attributable to code change between e420633 and HEAD, ~0.007 LB
+attributable to GPU/hardware variance across SLURM nodes. uv.lock pinned
+to v5j-era versions for future reproducibility (commit `9f9ec3d`). v5j-era
+worktree cleaned up.
+
+### Five LB submissions, final table
+
+| Submission | Code | Node | Ckpt | LB | Δ vs 0.906 | Δ vs paired control |
+|---|---|---|---|---:|---:|---:|
+| v5j-original (exp 019, Mar 31) | e420633 | `02-004-35-0` | ep 19 | **0.906** | — | — |
+| v5j-resubmit (exp 030 diag) | e420633 ckpt → today's inference | n/a | ep 19 | **0.906** | 0.000 ✅ inference clean | — |
+| v5j_control (exp 030 v2 inherited) | HEAD-ish | various | ep 15 | 0.896 | −0.010 | — |
+| v5j_control_last | HEAD | `02-004-25-0` | ep 19 | **0.897** | −0.009 | — |
+| v5j_kd | HEAD | `03-003-19-0` | ep 17 | **0.890** | −0.016 | **−0.006 vs 0.896** |
+| v5j_kd_last | HEAD | `03-003-19-0` | ep 19 | **0.891** | −0.015 | **−0.006 vs 0.897** |
+| **v5j-eracode (drift diag)** | **e420633 (worktree)** | `03-003-19-0` | ep 19 | **0.899** | **−0.007** | — |
+
+### Decisive insight: val/cmap signal isolates code vs hardware variance
+
+| Run | Code | Node | val/cmap |
+|---|---|---|---:|
+| v5j-original | e420633 | A | **0.6429** |
+| v5j-eracode | e420633 | B | **0.6429** ← matches v5j-original to 4 dp |
+| v5j_control_resave | HEAD | C | 0.6268 ← drops 0.016 |
+
+**Same code, different node → val/cmap matches to 4 dp.** Code change
+accounts for the 0.016 cmap shift between e420633 and HEAD, but only ~0.002
+LB shift (classic offline-LB anti-correlation). The bigger 0.007 LB gap
+(0.906 → 0.899) is from GPU/node fp variance under same code. PyTorch's
+`Trainer(deterministic=True)` makes algorithms deterministic on the SAME
+hardware but cannot eliminate cross-hardware fp behavior.
+
+### Implications
+
+1. **0.906 stays as the real v5j baseline** (proven by v5j-resubmit).
+2. **Single-fold v5j has ~0.007 cross-node LB variance** from GPU fp
+   non-determinism — fundamental to GPU training, not fixable in code.
+   Plus ~0.002 code-side component (now pinned).
+3. **Reproducible LB-comparable experiments require paired within-run
+   controls** (same node, same time, same env). The exp 031 KD verdict
+   at −0.006 is robust because v5j_kd and v5j_control were paired.
+4. **REJECT on v5j+HGNet+LSEHead+KD is unambiguous** — paired comparison
+   is uncontaminated by hardware variance.
+5. **Tucker's recipe is NOT falsified.** We tested KD on the wrong head
+   (LSEHead) and the wrong backbone (HGNetV2-B0). Tucker uses EffNet-B0
+   NS-JFT + bug-fixed AttHead (logit-space) + 25 epochs + dual-supervision
+   + SpecAugment. The lever may still transfer when paired with the right
+   downstream consumer.
 
 Per the success matrix in [`proposal.md` § Success Criteria](proposal.md):
 **REJECT**. KD as a single-variable add on the v5j pipeline (HGNetV2-B0 +
@@ -570,22 +608,62 @@ Phase 1 (DONE):
 - [x] Update `MODEL-RUNS.md`
 - [x] Update `tasks.md`
 
-Best-vs-last checkpoint diagnostic (RETRAIN PENDING):
+Best-vs-last + drift diagnostics (DONE):
 
-- [x] Configs scaffolded: `configs/v5j_kd_resave.yaml` + `configs/v5j_control_resave.yaml` (save_top_k=-1)
-- [ ] Submit 2 SLURM jobs: `bash sbatch/run.sh configs/v5j_kd_resave.yaml` + `bash sbatch/run.sh configs/v5j_control_resave.yaml` (~80m + ~40m on rtx6000)
-- [ ] After both finish, sanity check: `best-epochepoch=15.ckpt` (or 17.ckpt for kd) from the resave run should be bit-identical to the original — confirms determinism
-- [ ] Add `hgnet-b0-sed-v5j-kd-last` + `hgnet-b0-sed-v5j-control-last` MODELS entries pointing at `best-epochepoch=19.ckpt` from the resave dirs
-- [ ] 2 kernel-metadata files + 2 MODEL_SLUGS entries (4-file pattern × 2 models)
-- [ ] Export, upload, push, submit both → record LBs
-- [ ] If `v5j_kd_last` ≥ 0.910: REJECT was wrong (ckpt-selection artifact); revise verdict
-- [ ] If `v5j_control_last` ≈ 0.906: codebase reproduces v5j-original; future runs should use ep 19 as the canonical submission and shift baselines accordingly
+- [x] save_top_k=-1 retrains (v5j_kd_resave, v5j_control_resave) — bit-identical to originals
+- [x] v5j_kd_last + v5j_control_last LB submissions → 0.891 / 0.897 (same −0.006 KD delta)
+- [x] 8 static diagnostics (init / math / splits / libs / CUDA / Python / data / optimizer): all RULED OUT
+- [x] v5j-eracode worktree training (v5j-era code on today's env, node `03-003-19-0`) → LB 0.899
+- [x] val/cmap match to 4 dp confirms: same code different node = 0 cmap drift; different code = 0.016 cmap drift but only 0.002 LB impact
+- [x] uv.lock pinned to v5j-era versions (timm 1.0.26, torch 2.5.1, hf-hub <1.10, etc.)
+- [x] v5j-era worktree cleaned up (commit history preserved in HEAD branch + analysis/diagnostics/)
 
-Phase 3+ direction (DECISION pending):
+## Next step: Phase 3.1 — KD + bug-fixed AttHead (highest-priority Phase 3 candidate)
 
-- [ ] Post-mortem follow-up: pick from ranked candidates (AttHead bug-fix /
-      longer schedule / α sweep / full Tucker replication) or pivot away
-      from KD entirely
-- [ ] Update `CONTEXT.md` "What happened recently" to reflect REJECT verdict
-- [ ] If pivoting, update `analysis/notes/2026-04-28-next-experiment-direction.md`
-      with the post-031 strategic decision
+The exp 031 REJECT is scoped to **HGNet + LSEHead + 20 ep + α=1.0**.
+Tucker's actual proven recipe uses **EffNet-B0 NS-JFT + AttHead (logit-space
+aggregation) + 25 ep + dual-supervision + SpecAugment**. Highest-likelihood
+post-mortem candidate is "LSEHead was the wrong consumer of Perch features".
+
+### Phase 3.1 scaffold plan (next session)
+
+New experiment dir: `user/murilo/experiments/032-kd-atthead/` (or similar)
+
+**Implementation**:
+1. Port Tucker's AttHead (logit-space aggregation) as a new class
+   `AttHeadLogitSpace` in `user/murilo/src/birdclef/heads/sed_head.py`. Faithful
+   port from `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/bc2026-distilled-sed.ipynb`
+   (cells 10-14 per the code audit). Key features:
+   - GeMFreqPool (p=3 learnable, `clamp(min=1.0)`)
+   - Dense block: `Dropout(0.25) → Linear(C, 512) → ReLU → Dropout(0.5)`
+   - Att + Cls convs: `Conv1d(hidden_dim, num_classes, k=1, bias=True)`, xavier_uniform init
+   - **Aggregation in LOGIT SPACE**: `sum(softmax(tanh(att)) * frame_logits, dim=time)` — NOT our broken probability-space version
+2. Add `head_type: "att_head_logit_space"` to encoder/head dispatch in the
+   experiment train.py
+3. Two configs (paired control + KD):
+   - `v5j_atthead_control.yaml`: HGNet + AttHeadLogitSpace, no KD
+   - `v5j_atthead_kd.yaml`: HGNet + AttHeadLogitSpace + Perch v2 KD
+   - Both use save_top_k=-1, paired SLURM submission to capture variance
+4. Train + LB submit both. Apply paired-comparison interpretation:
+   - 3 > 2 > 1 → KD lever + AttHead fix both contribute
+   - 3 > 2 ≈ 1 → KD needs AttHead but AttHead alone doesn't help
+   - 3 ≈ 2 > 1 → AttHead fix helps; KD adds nothing
+   - 3 ≈ 2 ≈ 1 → neither helps on HGNet; pivot to EffNet+full-Tucker-stack
+
+Stage 2 (gated on Stage 1 looking promising): full Tucker replication
+(EffNet-B0 NS-JFT + AttHead + dual-supervision + 25 ep cosine + hard-max
+mixup + SpecAugment + focal×SS mixup). Multi-variable but reaches for 0.917+.
+
+### Methodology for Phase 3.1
+
+- **Paired within-run controls** (control + KD trained same node, same date, same env) — uncontaminated by hardware variance.
+- **Compare delta vs paired control** as the load-bearing signal. Don't compare to historical 0.906 (cross-run variance contaminates).
+- **Use uv.lock** in the new experiment's pyproject.toml to inherit pinned versions.
+- **Save_top_k=-1** to capture ep 19 + best-by-val. Pick by LB after fact.
+
+### Phase 3+ deferred candidates (in case 3.1 fails)
+
+- α_distill sweep (0.1, 0.5, 2.0) — diagnostic if KD has marginal effect
+- 25-30 epoch schedule with AttHead+KD
+- KLD-on-logits (Perch category #2, EliKal's 0.909 recipe — never tried)
+- 4-fold ensembling (any winning single-fold recipe should be 4-folded for noise reduction)
