@@ -107,6 +107,14 @@ The current motif bank is generated for all non-noise clusters as **review candi
 artifacts/marbled_frog/motif_mining_simplified/motif_bank/plots/
 ```
 
+## Related synthesis
+
+The current end-to-end synthesis, empirical findings, and load-bearing assumptions are documented in:
+
+```text
+docs/marbled-white-lipped-frog-motif-synthesis.md
+```
+
 ## Next review step
 
 Open the simplified cluster grids and motif-bank plots. For each HDBSCAN cluster, mark one of:
