@@ -59,6 +59,37 @@ print('diagnostic (May 10): ', h('/storage/project/ps-clef2026_birdclef-0/mgusti
 | Different but val/auroc matches | YES | Training is non-deterministic across runs. Submit ep 19 to LB. If 0.906, env-stable; if 0.897, env-shifted. |
 | Different and val/auroc shifts | YES | Codebase + env both changed. Need to dig deeper. |
 
+## Follow-up: same-node reproduction attempt (2026-05-10 PM)
+
+After v5j-eracode landed at LB **0.899** (NOT 0.906 despite matching v5j-original
+val/cmap to 4 dp), the working hypothesis shifted to **GPU/node fp non-determinism**
+being the remaining uncontrolled variable:
+
+- v5j-original (LB 0.906) trained on node `atl1-1-02-004-35-0`
+- v5j-eracode (LB 0.899) trained on node `atl1-1-03-003-19-0`
+- Everything else (code, config, data, seed, env stack) controlled
+
+The reproduction-attempt config + sbatch wrapper add `--nodelist=atl1-1-02-004-35-0`
+to constrain training to the v5j-original node, controlling for GPU variance.
+
+### Run
+
+```bash
+cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-v5j-era/user/murilo/experiments/019-perch-guided-sed
+bash sbatch/run_samenode_reprod.sh
+```
+
+### Interpret
+
+After training (~35 min), hash-compare ep 19 with v5j-original ep 19 (script above).
+
+| Outcome | Interpretation |
+|---|---|
+| Hash identical to v5j-original | Training is bit-deterministic on same node. LB will be 0.906. **GPU/node variance was the cause** — single-fold v5j IS reproducible if pinned to same hardware. |
+| Hash close but different | Some run-to-run drift even on same hardware (cuDNN kernel selection, plan caching). |
+| Hash very different + LB 0.906 | Training is non-deterministic but lands in similar weight space — 0.906 IS the natural floor on this node. |
+| Hash different + LB != 0.906 | Single-fold v5j has real run-to-run training variance even on same node. Multi-seed or multi-fold is required for reproducibility. |
+
 ## Cleanup
 
 After the experiment concludes and findings are documented:
