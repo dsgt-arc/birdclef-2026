@@ -28,7 +28,10 @@ ENV/
 
 # uv
 .python-version
-uv.lock
+# uv.lock is committed per-experiment for reproducibility — drift in lib
+# versions (e.g., timm 1.0.26 → 1.0.27) caused real but small training-output
+# differences in exp 031 (see analysis/notes/2026-05-10-v5j-codebase-drift-*).
+# Going forward, each active experiment's uv.lock is tracked.
 
 # IDE
 .idea/
