@@ -503,6 +503,63 @@ def plot_curated_recovery(events: pl.DataFrame, curated_path: Path, output_dir: 
         plt.close(fig)
 
 
+def plot_full_recording_events(events: pl.DataFrame, output_dir: Path) -> None:
+    """Plot each full focal recording with consolidated motif events overlaid."""
+    if events.is_empty():
+        return
+    cmap = plt.cm.tab10
+    for filename in recording_files():
+        audio, _ = librosa.load(TRAIN_AUDIO_DIR / filename, sr=MEL_SAMPLE_RATE, mono=True)
+        db_band, _z, freqs, times = robust_excess_spectrogram(audio)
+        width = max(12.0, min(24.0, 0.42 * float(times[-1]) + 6.0))
+        fig, ax = plt.subplots(figsize=(width, 6.2), dpi=180)
+        librosa.display.specshow(
+            db_band,
+            x_coords=times,
+            y_coords=freqs,
+            x_axis="time",
+            y_axis="linear",
+            sr=MEL_SAMPLE_RATE,
+            hop_length=MEL_HOP_LENGTH,
+            ax=ax,
+            cmap="magma",
+        )
+        df = events.filter(pl.col("filename") == filename).sort("peak_time_sec")
+        for row in df.iter_rows(named=True):
+            cluster = int(row["best_motif_cluster"] if "best_motif_cluster" in row else row["motif_cluster"])
+            color = cmap(cluster % 10)
+            ax.add_patch(
+                Rectangle(
+                    (row["start_sec"], row["fmin_hz"]),
+                    row["end_sec"] - row["start_sec"],
+                    row["fmax_hz"] - row["fmin_hz"],
+                    fill=False,
+                    edgecolor=color,
+                    linewidth=1.6,
+                    alpha=0.95,
+                )
+            )
+            ax.text(
+                row["peak_time_sec"],
+                min(DISPLAY_BAND[1] - 45, row["fmax_hz"] + 35),
+                f"c{cluster}\n{row['score']:.2f}",
+                color=color,
+                fontsize=6.5,
+                ha="center",
+                va="bottom",
+                weight="bold",
+            )
+        ax.set_ylim(DISPLAY_BAND)
+        ax.set_xlim(0.0, float(times[-1]))
+        ax.set_title(
+            f"Full focal recording motif-template detections: {Path(filename).stem}\n"
+            f"consolidated events: n={df.height}; colored boxes = event boxes, label = best cluster / score"
+        )
+        fig.tight_layout()
+        fig.savefig(output_dir / f"{Path(filename).stem}_full_recording_events.png")
+        plt.close(fig)
+
+
 def plot_interval_histograms(intervals: pl.DataFrame, output_path: Path) -> None:
     if intervals.is_empty():
         return
@@ -622,6 +679,7 @@ def run(
 
     plot_curated_recovery(raw_events, curated_path, plots_dir, suffix="curated_recovery_raw")
     plot_curated_recovery(consolidated, curated_path, plots_dir, suffix="curated_recovery_consolidated")
+    plot_full_recording_events(consolidated, plots_dir)
     plot_interval_histograms(consolidated_intervals, plots_dir / "inter_event_interval_histograms.png")
 
     (output_dir / "summary.md").write_text(
@@ -652,6 +710,7 @@ Artifacts:
 - `tables/curated_recovery_summary.csv` — consolidated recovery by curated component.
 - `plots/*_curated_recovery_raw.png` — curated windows with raw detections.
 - `plots/*_curated_recovery_consolidated.png` — curated windows with consolidated event boxes.
+- `plots/*_full_recording_events.png` — full focal clips with consolidated event boxes.
 - `plots/inter_event_interval_histograms.png` — interval distributions.
 
 Event summary:
