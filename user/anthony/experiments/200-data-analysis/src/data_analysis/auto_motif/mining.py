@@ -1161,9 +1161,9 @@ def _plot_full_recording_events(
 
 
 def species_output_dir(label: str) -> Path:
-    """Map a label to its artifact subdir (falls back to the label itself)."""
+    """Map a label to its auto-motif output dir (subdir falls back to label)."""
     subdir = LABEL_TO_DIR.get(label, label)
-    return ARTIFACTS_DIR / subdir / "motif_mining_auto"
+    return ARTIFACTS_DIR / "auto_motif" / subdir
 
 
 def run(

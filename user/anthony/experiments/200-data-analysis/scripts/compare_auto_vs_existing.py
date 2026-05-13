@@ -26,7 +26,7 @@ from data_analysis.auto_motif.mining import LABEL_TO_DIR
 
 DEFAULT_LABEL = "22967"
 DEFAULT_CURATED = Path("artifacts/marbled_frog/motif_boxes/curated/tables/curated_motif_boxes.csv")
-DEFAULT_AUTO = "artifacts/{species_dir}/motif_mining_auto/tables/consolidated_events.csv"
+DEFAULT_AUTO = "artifacts/auto_motif/{species_dir}/tables/consolidated_events.csv"
 DEFAULT_MANUAL = "artifacts/{species_dir}/motif_template_calibration/tables/consolidated_events.csv"
 
 

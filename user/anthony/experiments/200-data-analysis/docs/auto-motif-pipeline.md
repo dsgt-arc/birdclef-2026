@@ -9,7 +9,7 @@
 | Shared evaluators | `src/data_analysis/common/curated_eval.py` |
 | Shared plot | `src/data_analysis/common/recording_plot.py` |
 | Comparison harness | `scripts/compare_auto_vs_existing.py` |
-| Per-species output | `artifacts/<species_dir>/motif_mining_auto/` |
+| Per-species output | `artifacts/auto_motif/<species_dir>/` |
 
 ## Contents
 
@@ -265,15 +265,15 @@ sharing x) per recording, matching the manual pipeline's layout.
 python -m data_analysis.auto_motif.mining \
   --label 22967 \
   --curated artifacts/marbled_frog/motif_boxes/curated/tables/curated_motif_boxes.csv \
-  --output-dir artifacts/marbled_frog/motif_mining_auto  # optional; defaults via LABEL_TO_DIR
+  --output-dir artifacts/auto_motif/marbled_frog  # optional; defaults via LABEL_TO_DIR
 ```
 
 `LABEL_TO_DIR` (in `mining.py`) maps known labels to a species directory
-name. Unknown labels fall back to `artifacts/<label>/motif_mining_auto/`.
+name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
 
 ## Output schema
 
-`artifacts/<species_dir>/motif_mining_auto/`:
+`artifacts/auto_motif/<species_dir>/`:
 
 | Path | Schema / contents |
 |---|---|

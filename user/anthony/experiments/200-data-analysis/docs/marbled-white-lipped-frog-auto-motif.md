@@ -9,7 +9,7 @@
 | BirdCLEF label | `22967` |
 | Pipeline | `src/data_analysis/auto_motif/mining.py` (species-agnostic) |
 | Band discovery | `src/data_analysis/auto_motif/band.py` |
-| Output root | `artifacts/marbled_frog/motif_mining_auto/` |
+| Output root | `artifacts/auto_motif/marbled_frog/` (older artifacts from before the layout change still at `artifacts/marbled_frog/motif_mining_auto/`) |
 | Comparison script | `scripts/compare_auto_vs_existing.py` |
 
 ## What this is
