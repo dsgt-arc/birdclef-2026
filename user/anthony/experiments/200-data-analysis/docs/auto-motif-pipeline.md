@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Date | 2026-05-13 |
-| Status | Species-agnostic reference (Marbled Frog is the only species exercised so far) |
+| Status | Species-agnostic reference; Marbled Frog 28/33 (84.8%) consolidated curated recovery after PCEN + library-tool migration. |
 | Pipeline code | `src/data_analysis/auto_motif/mining.py` |
 | Band discovery | `src/data_analysis/auto_motif/band.py` |
 | Shared evaluators | `src/data_analysis/common/curated_eval.py` |
@@ -31,27 +31,67 @@ with ramps) need the onset-anchor mitigation enabled (default).
   (schema: `filename, start_sec, end_sec, fmin_hz, fmax_hz, component, …`).
   Not required; if absent the curated-recovery stage is skipped.
 
+## Design rationale
+
+The 2026-05-13 migration leans on four library tools instead of hand-rolled
+equivalents. Each replacement is justified independently and aggregated
+gave +9 pp Marbled Frog recovery (25/33 → 28/33).
+
+| Concern | Old (hand-rolled) | New (library) | Why |
+|---|---|---|---|
+| Per-bin time-frequency normalization | Robust-z (median + MAD + Gaussian smoothing, clipped) | `librosa.pcen` | PCEN's AGC + DRC is the well-studied perceptual normalizer; one library call replaces ~30 lines and tracks transients better than dB-MAD. |
+| ROI shape characterization | 2-D KDE on `(log dur, log bw)` keeping the dominant mode | `maad.features.shape_features` (26-D Gabor) + `centroid_features` → HDBSCAN | The KDE conflated chirps with tonal notes of similar size. 26-D shape descriptors discriminate call morphology directly. |
+| Multi-template emission per band | Post-EM PCA → HDBSCAN on patches (documented regression on Marbled Frog) | Same HDBSCAN as above, *before* EM, on shape-feature space | One source of multi-template emission instead of two parallel paths; cluster decision happens on a tighter, semantically richer feature space. |
+| Band-level periodicity prior | None | `opensoundscape.ribbit` per (recording, band), scores aggregated to `max/p95/median` | Frog/insect motifs have stable inter-call intervals; this gives a numeric band quality signal that can later filter or weight. Defaults to score-only. |
+| Recording quality pre-screen | None | `maad.features.bioacoustics_index` per file | Cheap, computed from amplitude STFT (no full spectrogram cache). Defaults to score-only; opt-in filter via `min_activity_quantile`. |
+
+Two adaptation notes followed from the PCEN swap:
+
+- **Band discovery** (`band.py`) switched from per-bin time-mean to time-p95
+  before MAD normalization. PCEN's AGC flattens long-run averages so the
+  mean is nearly constant across bins; a high time-quantile preserves bins
+  with concentrated transient activity (target calls).
+- **All downstream stages are scale-invariant**: percentile-based hysteresis,
+  patch normalization (zero-mean unit-std before NCC), envelope-relative
+  onset anchoring, and Q25/Q99.5 member-vs-background thresholds. So PCEN
+  and robust-z values flow through the same NMS/consolidation pipeline
+  unchanged. The cache variable name `z` is preserved despite holding PCEN
+  values to keep the diff small.
+
+What we explicitly *kept* hand-rolled:
+
+- **Band discovery** itself (per-recording MAD-normalized consensus +
+  hysteresis): no library equivalent surfaces the "frequency bands where
+  this species' energy is consistently concentrated".
+- **NMS + cross-family consolidation**: no library equivalent; the
+  `marbled_frog.motif_template_calibration` helpers are reused as-is.
+- **Envelope-onset peak anchoring**: a +5-box mitigation that depends on
+  band-mean envelope shape; no clean library substitute.
+- **Bimodal score-distribution split** (GMM-2 crossover → Otsu →
+  quantile fallback): works for thresholding kept-vs-rejected EM peaks;
+  no library equivalent.
+
 ## Pipeline stages
 
 ```text
-recording activity index (maad.features.bioacoustics_index over WIDEBAND)
-  → wideband PCEN spectrograms (librosa.pcen, 200-6000 Hz)
-  → per-recording time-p95 spectrum, MAD-normalized
-  → cross-recording median consensus
-  → contiguous bands via hysteresis (primary k*MAD seed,
-                                     secondary k_lower*MAD grow)
-  → optional per-recording fallback for sparse minority bands
-  → per band: opensoundscape.ribbit periodicity score (max/p95/median over clips)
-  → per band: maad hysteresis ROIs at in-band p99 (seed) / p90 (grow)
-  → per band: maad.features.shape_features (26-D Gabor) +
-              centroid_features -> HDBSCAN -> one family per non-noise cluster
-  → per (band, cluster): EM template refinement (median patch -> bimodal
-    score split -> re-anchor at band-mean envelope ONSET -> re-median;
-    stop on cosine)
-  → per family: member-vs-background threshold; peak-pick; NMS;
-                cross-family consolidation (reused from marbled_frog
-                motif_template_calibration)
-  → curated recovery + 2-panel diagnostic plots
+[0]  recording activity index (maad.features.bioacoustics_index over WIDEBAND)
+[1]  → wideband PCEN spectrograms (librosa.pcen, 200-6000 Hz)
+[2]  → per-recording time-p95 spectrum, MAD-normalized
+       → cross-recording median consensus
+       → contiguous bands via hysteresis (primary k*MAD seed,
+                                          secondary k_lower*MAD grow)
+       → optional per-recording fallback for sparse minority bands
+[3]  → per band: opensoundscape.ribbit periodicity score (max/p95/median over clips)
+[4]  → per band: maad hysteresis ROIs at in-band p99 (seed) / p90 (grow)
+[5]  → per band: maad.features.shape_features (26-D Gabor) +
+                 centroid_features → HDBSCAN → one family per non-noise cluster
+[6]  → per (band, cluster): EM template refinement (median patch → bimodal
+                 score split → re-anchor at band-mean envelope ONSET → re-median;
+                 stop on cosine)
+[7]  → per family: member-vs-background threshold; peak-pick; NMS;
+                  cross-family consolidation (reused from marbled_frog
+                  motif_template_calibration)
+[8]  → curated recovery + 2-panel diagnostic plots
 ```
 
 ### 0. Recording pre-ranking
@@ -93,7 +133,7 @@ recordings agree on (≥ `fallback_overlap_fraction` IoU) but consensus
 missed are promoted, up to `max_bands`. `auto_bands.csv` tags each band
 with `discovery_method ∈ {"consensus", "fallback_per_recording"}`.
 
-### 2b. RIBBIT periodicity scoring
+### 3. RIBBIT periodicity scoring
 
 `score_band_periodicity(files, bands, ...)` runs
 `opensoundscape.ribbit.ribbit` on each (recording, band) pair across
@@ -106,7 +146,7 @@ incidental noise bands score low.
 When `AutoConfig.ribbit_score_min` is set, bands below the threshold are
 dropped before downstream stages. Default `None` = score-only, no drop.
 
-### 3. Loose ROI proposal
+### 4. Loose ROI proposal
 
 `propose_loose_rois(cache, bands, *, config)`. For each band, scikit-maad
 `create_mask` runs hysteresis ROI detection on the in-band PCEN
@@ -115,7 +155,7 @@ spectrogram using percentile thresholds `seed_percentile` and
 have to be calibrated across species). `select_rois` extracts bounding
 boxes; loose duration/bandwidth filters keep biological-scale events.
 
-### 4. Shape-feature clustering
+### 5. Shape-feature clustering
 
 `shape_cluster_refine(loose_rois, cache, *, min_cluster_size)`. Per band,
 computes 26-D Gabor shape descriptors via `maad.features.shape_features`
@@ -134,7 +174,7 @@ shape-feature space.
 `tables/shape_features.csv` carries one row per loose ROI with all shape +
 centroid columns and the assigned cluster id (or `-1` for noise).
 
-### 5. EM template refinement
+### 6. EM template refinement
 
 `em_loop(bands, cache, refined_rois, *, config)` runs one EM pass per
 `(band_id, shape_cluster_id)` partition; `em_step` runs one E + M pass.
