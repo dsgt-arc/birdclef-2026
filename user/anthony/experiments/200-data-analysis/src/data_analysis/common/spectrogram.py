@@ -25,11 +25,18 @@ DISPLAY_BAND = (500.0, 3000.0)
 # narrows down within this.
 WIDEBAND = (200.0, 6000.0)
 
-# Robust excess-z spectrogram tuning; only used by `robust_excess_spectrogram`.
+# Robust excess-z spectrogram tuning; used by `robust_excess_spectrogram`
+# (marbled_frog manual pipeline). Auto-motif uses PCEN.
 MAD_DB_FLOOR = 0.5
 ROBUST_Z_CLIP = 8.0
 GAUSSIAN_SIGMA_FREQ_BINS = 1.5
 GAUSSIAN_SIGMA_TIME_FRAMES = 1.0
+
+# librosa.pcen defaults used by `wideband_pcen_spectrogram`. Scaling factor
+# applied to power before PCEN is the librosa convention so values land in a
+# usable dynamic range; see librosa.pcen docs.
+PCEN_POWER_SCALE = 2 ** 31
+PCEN_TIME_CONSTANT = 0.4
 
 
 def read_audio_window(filename: str, start_sec: float, end_sec: float) -> np.ndarray:
@@ -52,16 +59,50 @@ def read_audio_window(filename: str, start_sec: float, end_sec: float) -> np.nda
     return audio
 
 
-def wideband_robust_excess_spectrogram(
+def wideband_pcen_spectrogram(
     audio: np.ndarray,
     *,
     band: tuple[float, float] = WIDEBAND,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Robust excess-z spectrogram over an arbitrary frequency band.
+    """PCEN spectrogram over an arbitrary frequency band.
 
-    Same STFT/MAD/Gaussian recipe as :func:`robust_excess_spectrogram`; the band
-    is a parameter. ``robust_excess_spectrogram`` is a thin wrapper at
-    ``band=DISPLAY_BAND``.
+    Per-channel energy normalization (Wang et al. 2017) replaces the per-bin
+    MAD + Gaussian-smoothing robust-z recipe. PCEN's AGC + dynamic-range
+    compression gives a perceptually-flat representation that auto-motif's
+    downstream stages (percentile-based hysteresis, patch-normalized NCC,
+    envelope-relative onset anchor) consume scale-invariantly.
+
+    Returns the same 4-tuple as the robust-z variants — ``(db_band, s_band,
+    freqs_band, times)`` — where ``s_band`` is the PCEN spectrogram in the
+    band of interest.
+    """
+    power = (
+        np.abs(librosa.stft(audio, n_fft=MEL_N_FFT, hop_length=MEL_HOP_LENGTH, window="hann"))
+        ** 2
+    )
+    freqs = librosa.fft_frequencies(sr=MEL_SAMPLE_RATE, n_fft=MEL_N_FFT)
+    times = librosa.frames_to_time(
+        np.arange(power.shape[1]), sr=MEL_SAMPLE_RATE, hop_length=MEL_HOP_LENGTH
+    )
+    db = librosa.power_to_db(power, ref=np.max)
+    pcen = librosa.pcen(
+        power * PCEN_POWER_SCALE,
+        sr=MEL_SAMPLE_RATE,
+        hop_length=MEL_HOP_LENGTH,
+        time_constant=PCEN_TIME_CONSTANT,
+    )
+    mask = (freqs >= band[0]) & (freqs <= band[1])
+    return db[mask], pcen[mask], freqs[mask], times
+
+
+def robust_excess_spectrogram(
+    audio: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Robust excess-z spectrogram restricted to :data:`DISPLAY_BAND`.
+
+    Used by the Marbled Frog manual pipeline (motif_boxes, motif_review,
+    motif_mining, motif_template_calibration, motif_recording_diagnostics).
+    Auto-motif moved to :func:`wideband_pcen_spectrogram`.
     """
     power = (
         np.abs(librosa.stft(audio, n_fft=MEL_N_FFT, hop_length=MEL_HOP_LENGTH, window="hann"))
@@ -73,7 +114,7 @@ def wideband_robust_excess_spectrogram(
     )
     db = librosa.power_to_db(power, ref=np.max)
 
-    mask = (freqs >= band[0]) & (freqs <= band[1])
+    mask = (freqs >= DISPLAY_BAND[0]) & (freqs <= DISPLAY_BAND[1])
     db_band = db[mask]
     freqs_band = freqs[mask]
     med = np.median(db_band, axis=1, keepdims=True)
@@ -83,15 +124,3 @@ def wideband_robust_excess_spectrogram(
     z = np.clip(z, 0.0, ROBUST_Z_CLIP)
     z = gaussian_filter(z, sigma=(GAUSSIAN_SIGMA_FREQ_BINS, GAUSSIAN_SIGMA_TIME_FRAMES))
     return db_band, z, freqs_band, times
-
-
-def robust_excess_spectrogram(
-    audio: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Robust excess-z spectrogram restricted to :data:`DISPLAY_BAND`.
-
-    Thin wrapper around :func:`wideband_robust_excess_spectrogram` kept for
-    backwards compatibility with the Marbled Frog pipeline; new code should
-    prefer the wideband variant with an explicit band.
-    """
-    return wideband_robust_excess_spectrogram(audio, band=DISPLAY_BAND)

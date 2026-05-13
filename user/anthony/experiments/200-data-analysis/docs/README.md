@@ -16,6 +16,7 @@ This directory uses short Markdown files as lightweight notebooks. Each notebook
 | `marbled-white-lipped-frog-motif-boxes.md` | Motif-box extraction workflow, what we tried, current curated annotations, and next steps. |
 | `marbled-white-lipped-frog-motif-mining.md` | Candidate motif-box mining and clustering to avoid per-recording hand annotation. |
 | `marbled-white-lipped-frog-auto-motif.md` | First run of the species-agnostic `auto_motif` pipeline on Marbled Frog; A/B vs the manual pipeline and known limitations. |
+| `auto-motif-pipeline.md` | Species-agnostic reference: pipeline stages, config knobs, output schema, toggles, and reuse from the manual pipeline. |
 
 ## Consolidation note
 

@@ -34,17 +34,22 @@ class BandDiscoveryConfig:
     fallback_overlap_fraction: float = 0.5
 
 
-def per_recording_mean_spectrum(z: np.ndarray) -> np.ndarray:
-    """Time-mean of a robust-z spectrogram, normalized by its own MAD-sigma.
+def per_recording_mean_spectrum(z: np.ndarray, *, time_quantile: float = 0.95) -> np.ndarray:
+    """Per-bin high-quantile of a spectrogram, normalized by its own MAD-sigma.
+
+    Uses a high time-quantile (default p95) rather than the time-mean: PCEN's
+    AGC flattens long-running averages so the mean ends up nearly constant
+    across bands, but the high quantile preserves bins with concentrated
+    transient activity (target calls).
 
     Dividing by per-recording MAD-sigma puts every recording's spectrum on a
     comparable scale before the cross-recording median consensus.
     """
-    mean = z.mean(axis=1)
-    med = float(np.median(mean))
-    mad = float(np.median(np.abs(mean - med)))
+    summary = np.quantile(z, time_quantile, axis=1)
+    med = float(np.median(summary))
+    mad = float(np.median(np.abs(summary - med)))
     sigma = 1.4826 * max(mad, 1e-6)
-    return (mean - med) / sigma
+    return (summary - med) / sigma
 
 
 def consensus_spectrum(spectra: list[np.ndarray]) -> np.ndarray:

@@ -39,12 +39,15 @@ from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
 import polars as pl
+from maad import features as maad_features
 from maad import rois, util
-from scipy.ndimage import binary_closing, gaussian_filter1d, zoom
+from opensoundscape.audio import Audio
+from opensoundscape.ribbit import ribbit as opso_ribbit
+from opensoundscape.spectrogram import Spectrogram
+from scipy.ndimage import binary_closing
 from scipy.signal import find_peaks
 from scipy.stats import gaussian_kde
 from sklearn.cluster import HDBSCAN
-from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 
 from data_analysis.auto_motif.band import (
@@ -68,9 +71,10 @@ from data_analysis.common.paths import (
 from data_analysis.common.recording_plot import plot_recording_diagnostic
 from data_analysis.common.spectrogram import (
     MEL_HOP_LENGTH,
+    MEL_N_FFT,
     MEL_SAMPLE_RATE,
     WIDEBAND,
-    wideband_robust_excess_spectrogram,
+    wideband_pcen_spectrogram,
 )
 from data_analysis.marbled_frog.motif_bank import canonical_support, fixed_support_crop
 from data_analysis.marbled_frog.motif_recording_diagnostics import (
@@ -108,7 +112,10 @@ class AutoConfig:
     min_area_pixels: int = 6
     closing_freq_bins: int = 1
     closing_time_bins: int = 3
-    kde_mode_k_mad: float = 2.5
+    # Shape-feature clustering replaces the old (log dur, log bw) KDE filter
+    # and the EM-kept-patch sub-clustering. HDBSCAN on per-ROI 2D Gabor
+    # descriptors emits one motif family per non-noise cluster within a band.
+    shape_cluster_min_size: int = 5
     max_em_iter: int = 5
     template_change_eps: float = 0.01
     min_repetitions: int = 5
@@ -120,14 +127,46 @@ class AutoConfig:
     threshold_ceiling: float = 0.90
     fallback_quantile: float = 0.95
     anchor_onset_fraction: float = 0.30
-    # Sub-clustering EM-kept patches into multiple templates per band is
-    # plumbed end-to-end but defaults off: tighter sub-clusters re-derive
-    # higher member-vs-background thresholds, which under-fires on Marbled
-    # Frog primary calls. Enable per-species if you know a band is multi-modal.
-    subcluster_enabled: bool = False
-    subcluster_min_size: int = 6
-    subcluster_pca_components: int = 8
-    seed: int = 42
+    # RIBBIT band-level periodicity scoring (opensoundscape). Reported on
+    # auto_bands.csv as `ribbit_score_max` / `_median`. Bands are dropped
+    # only when `ribbit_score_min` is set (default: score-only, no drop).
+    ribbit_pulse_rate_hz: tuple[float, float] = (0.3, 30.0)
+    ribbit_clip_duration_sec: float = 10.0
+    ribbit_score_min: float | None = None
+    # Recording-level pre-ranking via maad.features.bioacoustics_index over
+    # WIDEBAND. Reported on recording_activity.csv. Recordings are filtered
+    # only when `min_activity_quantile` is set (default: score-only).
+    min_activity_quantile: float | None = None
+
+
+# -----------------------------------------------------------------------------
+# Recording activity pre-ranking
+# -----------------------------------------------------------------------------
+
+
+def rank_recordings_by_activity(
+    files: list[str],
+    *,
+    flim: tuple[float, float] = WIDEBAND,
+) -> pl.DataFrame:
+    """Per-recording bioacoustics index over ``flim`` (default WIDEBAND).
+
+    Uses :func:`maad.features.bioacoustics_index` on an amplitude STFT of each
+    file. Returns a DataFrame ``filename, bioacoustics_index`` sorted by index
+    descending. Cheap (no extra spectrogram in memory afterwards) so the
+    caller can use the table to skip dead recordings before
+    :func:`load_focal_z` materializes the full PCEN cache.
+    """
+    rows: list[dict] = []
+    for filename in files:
+        audio, _ = librosa.load(TRAIN_AUDIO_DIR / filename, sr=MEL_SAMPLE_RATE, mono=True)
+        amp = np.abs(
+            librosa.stft(audio, n_fft=MEL_N_FFT, hop_length=MEL_HOP_LENGTH, window="hann")
+        )
+        fn = librosa.fft_frequencies(sr=MEL_SAMPLE_RATE, n_fft=MEL_N_FFT)
+        bi = float(maad_features.bioacoustics_index(amp, fn, flim=flim))
+        rows.append({"filename": filename, "bioacoustics_index": bi})
+    return pl.DataFrame(rows).sort("bioacoustics_index", descending=True)
 
 
 # -----------------------------------------------------------------------------
@@ -140,11 +179,16 @@ def load_focal_z(
     *,
     band: tuple[float, float] = WIDEBAND,
 ) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
-    """Load every focal recording once and cache the wideband z spectrogram."""
+    """Load every focal recording once and cache the wideband PCEN spectrogram.
+
+    Returns ``(db_band, s_band, freqs_band, times)`` per file. ``s_band`` is
+    PCEN-scaled; downstream code still references it as ``z`` for legacy
+    reasons but all consumers are scale-invariant.
+    """
     cache: dict[str, tuple] = {}
     for filename in files:
         audio, _ = librosa.load(TRAIN_AUDIO_DIR / filename, sr=MEL_SAMPLE_RATE, mono=True)
-        cache[filename] = wideband_robust_excess_spectrogram(audio, band=band)
+        cache[filename] = wideband_pcen_spectrogram(audio, band=band)
     return cache
 
 
@@ -220,6 +264,71 @@ def _band_overlaps_any(
     threshold: float,
 ) -> bool:
     return any(_band_iou(cand, b) >= threshold for b in existing)
+
+
+# -----------------------------------------------------------------------------
+# RIBBIT periodicity scoring (opensoundscape)
+# -----------------------------------------------------------------------------
+
+
+def score_band_periodicity(
+    files: list[str],
+    bands: list[tuple[float, float]],
+    *,
+    pulse_rate_hz: tuple[float, float],
+    clip_duration_sec: float,
+) -> pl.DataFrame:
+    """Per-band RIBBIT score summary across focal recordings.
+
+    For each (recording, band), runs :func:`opensoundscape.ribbit.ribbit` on
+    overlapping clips and aggregates the per-clip score to (max, median, p95)
+    per band. Useful as a band-level periodicity prior: bands carrying a
+    repetitive call structure score high; incidental noise bands score low.
+    """
+    rows: list[dict] = []
+    spec_cache: dict[str, Spectrogram] = {}
+    for filename in files:
+        audio = Audio.from_file(
+            TRAIN_AUDIO_DIR / filename, sample_rate=MEL_SAMPLE_RATE
+        )
+        spec_cache[filename] = Spectrogram.from_audio(audio)
+
+    for band_id, (fmin, fmax) in enumerate(bands):
+        scores: list[float] = []
+        for spec in spec_cache.values():
+            duration = float(spec.times[-1]) if spec.times.size else 0.0
+            if duration <= 0:
+                continue
+            clip_dur = min(clip_duration_sec, duration)
+            try:
+                df = opso_ribbit(
+                    spec,
+                    signal_band=[float(fmin), float(fmax)],
+                    pulse_rate_range=[float(pulse_rate_hz[0]), float(pulse_rate_hz[1])],
+                    clip_duration=clip_dur,
+                )
+            except (ValueError, RuntimeError):
+                continue
+            if not df.empty:
+                scores.extend(df["score"].dropna().tolist())
+        if scores:
+            arr = np.asarray(scores, dtype=np.float64)
+            rows.append({
+                "band_id": band_id,
+                "ribbit_score_max": float(arr.max()),
+                "ribbit_score_p95": float(np.quantile(arr, 0.95)),
+                "ribbit_score_median": float(np.median(arr)),
+                "n_clips_scored": int(arr.size),
+            })
+        else:
+            rows.append({
+                "band_id": band_id,
+                "ribbit_score_max": float("nan"),
+                "ribbit_score_p95": float("nan"),
+                "ribbit_score_median": float("nan"),
+                "n_clips_scored": 0,
+            })
+    return pl.DataFrame(rows)
 
 
 # -----------------------------------------------------------------------------
@@ -328,62 +437,119 @@ def propose_loose_rois(
 
 
 # -----------------------------------------------------------------------------
-# KDE mode refinement (per band)
+# Shape-feature clustering (per band)
 # -----------------------------------------------------------------------------
 
 
-def kde_mode_refine(
+def _shape_features_for_band(
     rois_band: pl.DataFrame,
-    *,
-    k_mad: float,
-) -> tuple[pl.DataFrame, dict[str, float]]:
-    """Filter ROIs to the dominant (log dur, log bw) KDE mode within k_mad.
+    cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+) -> pd.DataFrame:
+    """Compute 26-D Gabor + centroid features per ROI in a band.
 
-    Returns the filtered DataFrame plus the mode estimates and bounds for
-    artifact logging.
+    Returns one row per ROI with `candidate_id` plus the maad shape/centroid
+    columns. Empty DataFrame if the input is empty.
     """
-    if rois_band.is_empty():
-        return rois_band, {}
-    log_dur = np.log10(rois_band["duration_sec"].to_numpy())
-    log_bw = np.log10(rois_band["bandwidth_hz"].to_numpy())
-    n = len(log_dur)
-    if n < 5:
-        return rois_band, {
-            "n_input": int(n),
-            "n_kept": int(n),
-            "mode_log_duration": float(np.median(log_dur)),
-            "mode_log_bandwidth": float(np.median(log_bw)),
-        }
-    pts = np.vstack([log_dur, log_bw])
-    try:
-        kde = gaussian_kde(pts)
-        densities = kde(pts)
-        mode_idx = int(np.argmax(densities))
-        mode_log_dur = float(log_dur[mode_idx])
-        mode_log_bw = float(log_bw[mode_idx])
-    except (np.linalg.LinAlgError, ValueError):
-        mode_log_dur = float(np.median(log_dur))
-        mode_log_bw = float(np.median(log_bw))
-    mad_dur = max(float(np.median(np.abs(log_dur - mode_log_dur))), 0.05)
-    mad_bw = max(float(np.median(np.abs(log_bw - mode_log_bw))), 0.05)
-    sigma_dur = 1.4826 * mad_dur
-    sigma_bw = 1.4826 * mad_bw
-    keep = (
-        (np.abs(log_dur - mode_log_dur) <= k_mad * sigma_dur)
-        & (np.abs(log_bw - mode_log_bw) <= k_mad * sigma_bw)
+    feature_frames: list[pd.DataFrame] = []
+    for filename in rois_band["filename"].unique().to_list():
+        file_rois = rois_band.filter(pl.col("filename") == filename)
+        _db, s, freqs, times = cache[filename]
+        rois_pd = pd.DataFrame(
+            {
+                "min_t": file_rois["start_sec"].to_numpy(),
+                "max_t": file_rois["end_sec"].to_numpy(),
+                "min_f": file_rois["fmin_hz"].to_numpy(),
+                "max_f": file_rois["fmax_hz"].to_numpy(),
+            }
+        )
+        # maad.features.shape_features needs pixel-coord columns
+        # (min_x/max_x/min_y/max_y) which util.format_features derives from
+        # the time/freq axes.
+        rois_pd = util.format_features(rois_pd, times, freqs)
+        shape_df, _params = maad_features.shape_features(s, resolution="low", rois=rois_pd)
+        centroid_df = maad_features.centroid_features(s, rois=rois_pd)
+        merged = pd.concat([shape_df.reset_index(drop=True), centroid_df.reset_index(drop=True)], axis=1)
+        # Drop bbox columns introduced by format_features so they don't pollute
+        # the feature matrix.
+        for col in ("min_t", "max_t", "min_f", "max_f", "min_x", "max_x", "min_y", "max_y"):
+            if col in merged.columns:
+                merged.drop(columns=col, inplace=True)
+        merged.insert(0, "candidate_id", file_rois["candidate_id"].to_list())
+        merged.insert(1, "filename", filename)
+        feature_frames.append(merged)
+    if not feature_frames:
+        return pd.DataFrame()
+    return pd.concat(feature_frames, axis=0, ignore_index=True)
+
+
+def shape_cluster_refine(
+    loose_rois: pl.DataFrame,
+    cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    *,
+    min_cluster_size: int,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Cluster loose ROIs per band by their 2D Gabor shape features.
+
+    Within each band, computes per-ROI shape features (26-D Gabor descriptors
+    via :func:`maad.features.shape_features`) plus the intensity centroid
+    (:func:`maad.features.centroid_features`), standardizes, and runs HDBSCAN.
+    Each non-noise cluster becomes a candidate motif family carried through to
+    EM. Noise (label ``-1``) ROIs are dropped.
+
+    Returns ``(refined_rois, feature_table)``:
+
+    - ``refined_rois`` is ``loose_rois`` augmented with a ``shape_cluster_id``
+      column (≥ 0) and filtered to non-noise rows.
+    - ``feature_table`` carries one row per loose ROI with the shape +
+      centroid columns and the assigned cluster (or -1 for noise) for
+      diagnostics.
+    """
+    if loose_rois.is_empty():
+        return loose_rois, pl.DataFrame()
+
+    refined_chunks: list[pl.DataFrame] = []
+    feature_chunks: list[pd.DataFrame] = []
+    for band_id in sorted(loose_rois["band_id"].unique().to_list()):
+        rois_band = loose_rois.filter(pl.col("band_id") == band_id)
+        if rois_band.height < min_cluster_size:
+            continue
+        features = _shape_features_for_band(rois_band, cache)
+        if features.empty:
+            continue
+        feature_cols = [c for c in features.columns if c not in {"candidate_id", "filename"}]
+        X = features[feature_cols].to_numpy(dtype=np.float64)
+        X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-9)
+        labels = HDBSCAN(
+            min_cluster_size=min_cluster_size,
+            allow_single_cluster=True,
+        ).fit_predict(X)
+        features = features.copy()
+        features["band_id"] = band_id
+        features["shape_cluster_id"] = labels
+        feature_chunks.append(features)
+
+        cluster_lookup = dict(zip(features["candidate_id"].tolist(), labels.tolist()))
+        cluster_series = pl.Series(
+            "shape_cluster_id",
+            [cluster_lookup.get(int(cid), -1) for cid in rois_band["candidate_id"].to_list()],
+            dtype=pl.Int64,
+        )
+        refined_chunks.append(
+            rois_band.with_columns(cluster_series).filter(pl.col("shape_cluster_id") >= 0)
+        )
+
+    refined = (
+        pl.concat(refined_chunks, how="diagonal_relaxed")
+        if refined_chunks
+        else pl.DataFrame()
     )
-    refined = rois_band.with_columns(pl.Series("_keep", keep)).filter(pl.col("_keep")).drop("_keep")
-    info = {
-        "n_input": int(n),
-        "n_kept": int(refined.height),
-        "mode_log_duration": mode_log_dur,
-        "mode_log_bandwidth": mode_log_bw,
-        "mode_duration_sec": float(10 ** mode_log_dur),
-        "mode_bandwidth_hz": float(10 ** mode_log_bw),
-        "log_duration_sigma": float(sigma_dur),
-        "log_bandwidth_sigma": float(sigma_bw),
-    }
-    return refined, info
+    if feature_chunks:
+        feature_pd = pd.concat(feature_chunks, axis=0, ignore_index=True)
+        # Build polars without pyarrow: pass records directly.
+        feature_table = pl.DataFrame(feature_pd.to_dict(orient="list"))
+    else:
+        feature_table = pl.DataFrame()
+    return refined, feature_table
 
 
 # -----------------------------------------------------------------------------
@@ -626,85 +792,46 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     return num / den
 
 
-def _subcluster_kept_patches(
-    kept: pl.DataFrame,
-    cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
-    support: dict[str, float],
-    *,
-    min_cluster_size: int,
-    pca_components: int,
-    seed: int,
-) -> tuple[list[np.ndarray], list[pl.DataFrame], np.ndarray]:
-    """Cluster EM-kept patches in PCA-reduced patch-space.
-
-    Each patch is z-normalized, stacked, flattened, and PCA-reduced to
-    ``pca_components`` dims before HDBSCAN. Returns (templates, kept_per_sub,
-    labels). If fewer than two real sub-clusters survive, returns empty lists
-    so the caller falls back to the full EM template.
-    """
-    patches: list[np.ndarray] = []
-    for row in kept.iter_rows(named=True):
-        _db, z, freqs, times = cache[row["filename"]]
-        p = _crop_at_peak(z, freqs, times, float(row["peak_time_sec"]), support)
-        p = (p - p.mean()) / (p.std() + 1e-6)
-        patches.append(p.astype(np.float32))
-    stack = np.stack(patches, axis=0)
-    flat = stack.reshape(stack.shape[0], -1).astype(np.float64)
-    n_components = min(pca_components, flat.shape[0] - 1, flat.shape[1])
-    if n_components < 2:
-        return [], [], np.full(stack.shape[0], -1, dtype=int)
-    reduced = PCA(n_components=n_components, random_state=seed).fit_transform(flat)
-    labels = HDBSCAN(
-        min_cluster_size=min_cluster_size,
-        allow_single_cluster=True,
-    ).fit_predict(reduced)
-
-    unique_labels = sorted({int(l) for l in labels if l >= 0})
-    if len(unique_labels) < 2:
-        return [], [], labels
-
-    templates: list[np.ndarray] = []
-    kept_per_sub: list[pl.DataFrame] = []
-    rows = kept.to_dicts()
-    for sub_id in unique_labels:
-        member_idx = np.where(labels == sub_id)[0]
-        if member_idx.size < min_cluster_size:
-            continue
-        sub_template = np.median(stack[member_idx], axis=0).astype(np.float32)
-        sub_template = (sub_template - sub_template.mean()) / (sub_template.std() + 1e-6)
-        templates.append(sub_template)
-        kept_per_sub.append(pl.DataFrame([rows[int(i)] for i in member_idx]))
-    return templates, kept_per_sub, labels
-
-
 def em_loop(
     bands: list[tuple[float, float]],
     cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     refined_rois: pl.DataFrame,
     *,
     config: AutoConfig,
-) -> tuple[list[dict], pl.DataFrame, pl.DataFrame]:
-    """For each band, run EM until convergence; return accepted families + trace.
+) -> tuple[list[dict], pl.DataFrame]:
+    """One EM pass per (band, shape-cluster) partition; return families + trace.
 
-    Returns ``(families, em_trace, subcluster_trace)``. After EM, each band's
-    kept patches are sub-clustered in patch-space (if ``subcluster_enabled``)
-    so multi-modal bands (e.g. primary-chirp + chip) get distinct templates.
+    Multi-template emission is now driven entirely by the shape-feature
+    clustering upstream — each non-noise ``shape_cluster_id`` within a band
+    becomes its own family with ``motif_cluster = band_id * 100 +
+    shape_cluster_id``.
     """
     families: list[dict] = []
     trace_rows: list[dict] = []
-    sub_trace_rows: list[dict] = []
-    for band_id, band in enumerate(bands):
-        if refined_rois.is_empty():
-            continue
-        rois_band = refined_rois.filter(pl.col("band_id") == band_id)
-        if rois_band.height < config.min_repetitions:
+    if refined_rois.is_empty():
+        return families, pl.DataFrame(trace_rows)
+
+    partitions = (
+        refined_rois.group_by(["band_id", "shape_cluster_id"], maintain_order=True)
+        .agg(pl.len().alias("n_rois"))
+        .sort(["band_id", "shape_cluster_id"])
+    )
+    for row in partitions.iter_rows(named=True):
+        band_id = int(row["band_id"])
+        cluster_id = int(row["shape_cluster_id"])
+        band = bands[band_id]
+        rois_part = refined_rois.filter(
+            (pl.col("band_id") == band_id) & (pl.col("shape_cluster_id") == cluster_id)
+        )
+        if rois_part.height < config.min_repetitions:
             trace_rows.append({
-                "band_id": band_id, "iter": -1, "n_kept": rois_band.height,
+                "band_id": band_id, "shape_cluster_id": cluster_id,
+                "iter": -1, "n_kept": rois_part.height,
                 "threshold": float("nan"), "method": "skipped_too_few_rois",
                 "cosine_to_prev": float("nan"),
             })
             continue
-        template, support = init_template(rois_band, cache, band)
+        template, support = init_template(rois_part, cache, band)
         prev_template = template.copy()
         last_kept: pl.DataFrame | None = None
         last_info: dict | None = None
@@ -713,7 +840,8 @@ def em_loop(
             new_template, kept, info = em_step(template, support, cache, config=config)
             cosine = _cosine(new_template, prev_template)
             trace_rows.append({
-                "band_id": band_id, "iter": iteration,
+                "band_id": band_id, "shape_cluster_id": cluster_id,
+                "iter": iteration,
                 "n_kept": info["n_kept"], "threshold": info["threshold"],
                 "method": info["method"], "cosine_to_prev": cosine,
             })
@@ -728,54 +856,26 @@ def em_loop(
             continue
         if last_kept.height < config.min_repetitions:
             trace_rows.append({
-                "band_id": band_id, "iter": -2, "n_kept": last_kept.height,
+                "band_id": band_id, "shape_cluster_id": cluster_id,
+                "iter": -2, "n_kept": last_kept.height,
                 "threshold": float("nan"), "method": "dropped_below_min_repetitions",
                 "cosine_to_prev": float("nan"),
             })
             continue
 
-        sub_templates: list[np.ndarray]
-        sub_kept_list: list[pl.DataFrame]
-        if config.subcluster_enabled and last_kept.height >= 2 * config.subcluster_min_size:
-            sub_templates, sub_kept_list, labels = _subcluster_kept_patches(
-                last_kept, cache, support,
-                min_cluster_size=config.subcluster_min_size,
-                pca_components=config.subcluster_pca_components,
-                seed=config.seed,
-            )
-            sub_trace_rows.append({
-                "band_id": band_id,
-                "n_input_patches": int(last_kept.height),
-                "n_subclusters": len(sub_templates),
-                "n_noise": int(np.sum(labels == -1)),
-                "subcluster_sizes": ";".join(str(k.height) for k in sub_kept_list),
-            })
-        else:
-            sub_templates, sub_kept_list = [], []
-            sub_trace_rows.append({
-                "band_id": band_id,
-                "n_input_patches": int(last_kept.height),
-                "n_subclusters": 0,
-                "n_noise": 0,
-                "subcluster_sizes": "",
-            })
-        if not sub_templates:
-            sub_templates = [template]
-            sub_kept_list = [last_kept]
-        for sub_id, (sub_template, sub_kept) in enumerate(zip(sub_templates, sub_kept_list)):
-            families.append({
-                "band_id": band_id,
-                "subcluster_id": sub_id,
-                "motif_cluster": band_id * 100 + sub_id,
-                "band": band,
-                "template": sub_template,
-                "support": support,
-                "kept_peaks": sub_kept,
-                "threshold": last_info["threshold"] if last_info else float("nan"),
-                "threshold_method": last_info["method"] if last_info else "unknown",
-                "converged": converged,
-            })
-    return families, pl.DataFrame(trace_rows), pl.DataFrame(sub_trace_rows)
+        families.append({
+            "band_id": band_id,
+            "shape_cluster_id": cluster_id,
+            "motif_cluster": band_id * 100 + cluster_id,
+            "band": band,
+            "template": template,
+            "support": support,
+            "kept_peaks": last_kept,
+            "threshold": last_info["threshold"] if last_info else float("nan"),
+            "threshold_method": last_info["method"] if last_info else "unknown",
+            "converged": converged,
+        })
+    return families, pl.DataFrame(trace_rows)
 
 
 # -----------------------------------------------------------------------------
@@ -923,28 +1023,45 @@ def _plot_band_consensus(consensus_df: pl.DataFrame, bands: list[tuple[float, fl
     plt.close(fig)
 
 
-def _plot_kde_modes(refined_info: list[dict], rois: pl.DataFrame, output_path: Path) -> None:
-    if rois.is_empty():
+def _plot_shape_clusters(feature_table: pl.DataFrame, output_path: Path) -> None:
+    """Per-band 2D scatter of shape features (first two SVD components).
+
+    Replaces the prior log-duration / log-bandwidth scatter. Each band gets a
+    subplot colored by shape_cluster_id (noise as gray "x").
+    """
+    if feature_table.is_empty():
         return
-    bands = sorted(rois["band_id"].unique().to_list())
+    bands = sorted(feature_table["band_id"].unique().to_list())
     n_cols = min(3, max(1, len(bands)))
     n_rows = int(np.ceil(len(bands) / n_cols))
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(4.2 * n_cols, 3.3 * n_rows), dpi=180, squeeze=False)
-    info_by_band = {item["band_id"]: item for item in refined_info}
+    meta_cols = {"candidate_id", "filename", "band_id", "shape_cluster_id"}
     for idx, band_id in enumerate(bands):
         r, c = divmod(idx, n_cols)
         ax = axes[r, c]
-        df = rois.filter(pl.col("band_id") == band_id)
-        ax.scatter(np.log10(df["duration_sec"]), np.log10(df["bandwidth_hz"]),
-                   s=12, alpha=0.55, color=f"C{band_id % 10}")
-        info = info_by_band.get(band_id)
-        if info:
-            ax.axvline(info["mode_log_duration"], color="black", linestyle="--", linewidth=0.8)
-            ax.axhline(info["mode_log_bandwidth"], color="black", linestyle="--", linewidth=0.8)
-            ax.set_title(f"band {band_id}: kept {info['n_kept']}/{info['n_input']}", fontsize=9)
-        ax.set_xlabel("log10 duration (s)")
-        ax.set_ylabel("log10 bandwidth (Hz)")
+        df = feature_table.filter(pl.col("band_id") == band_id)
+        feature_cols = [col for col in df.columns if col not in meta_cols]
+        X = df.select(feature_cols).to_numpy().astype(np.float64)
+        X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-9)
+        if X.shape[0] < 2 or X.shape[1] < 2:
+            ax.text(0.5, 0.5, "too few ROIs", ha="center", va="center", transform=ax.transAxes)
+            ax.set_axis_off()
+            continue
+        u, sv, _ = np.linalg.svd(X, full_matrices=False)
+        pc = u[:, :2] * sv[:2]
+        labels = df["shape_cluster_id"].to_numpy()
+        for cluster in sorted(set(int(x) for x in labels)):
+            mask = labels == cluster
+            if cluster < 0:
+                ax.scatter(pc[mask, 0], pc[mask, 1], s=10, alpha=0.35, color="0.6", marker="x", label="noise")
+            else:
+                ax.scatter(pc[mask, 0], pc[mask, 1], s=14, alpha=0.7, color=f"C{cluster % 10}", label=f"c{cluster}")
+        n_clusters = sum(1 for x in set(int(v) for v in labels) if x >= 0)
+        ax.set_title(f"band {band_id}: {df.height} ROIs / {n_clusters} cluster(s)", fontsize=9)
+        ax.set_xlabel("PC1")
+        ax.set_ylabel("PC2")
         ax.grid(alpha=0.25)
+        ax.legend(fontsize=7, loc="best")
     for idx in range(len(bands), n_rows * n_cols):
         r, c = divmod(idx, n_cols)
         axes[r, c].axis("off")
@@ -978,8 +1095,8 @@ def _plot_templates(families: list[dict], output_dir: Path) -> None:
     for family in families:
         template = family["template"]
         band_id = family["band_id"]
-        sub_id = int(family.get("subcluster_id", 0))
-        motif_cluster = int(family.get("motif_cluster", band_id * 100 + sub_id))
+        cluster_id = int(family.get("shape_cluster_id", 0))
+        motif_cluster = int(family.get("motif_cluster", band_id * 100 + cluster_id))
         n_kept = family["kept_peaks"].height
         support = family["support"]
         fig, ax = plt.subplots(figsize=(4.2, 3.4), dpi=180)
@@ -991,7 +1108,7 @@ def _plot_templates(families: list[dict], output_dir: Path) -> None:
         ax.set_xlabel("Time relative to peak (s)")
         ax.set_ylabel("Frequency (Hz)")
         ax.set_title(
-            f"band {band_id} sub {sub_id} (n={n_kept}, conv={family['converged']})",
+            f"band {band_id} cluster {cluster_id} (n={n_kept}, conv={family['converged']})",
             fontsize=10,
         )
         fig.tight_layout()
@@ -1070,11 +1187,44 @@ def run(
     if not files:
         raise RuntimeError(f"No focal recordings found for label {label}")
 
+    # 0. Pre-rank recordings by bioacoustic activity (filter is opt-in).
+    activity = rank_recordings_by_activity(files, flim=WIDEBAND)
+    activity.write_csv(tables_dir / "recording_activity.csv")
+    if config.min_activity_quantile is not None and not activity.is_empty():
+        threshold = float(np.quantile(activity["bioacoustics_index"].to_numpy(), config.min_activity_quantile))
+        keep = activity.filter(pl.col("bioacoustics_index") >= threshold)["filename"].to_list()
+        files = [f for f in files if f in set(keep)]
+        if not files:
+            raise RuntimeError(
+                f"All recordings dropped by min_activity_quantile={config.min_activity_quantile}"
+            )
+
     # 1. Load wideband spectrograms.
     cache = load_focal_z(files, band=WIDEBAND)
 
     # 2. Discover bands.
     bands, consensus_df, band_methods = auto_discover_bands(cache, config=config.band)
+    if not bands:
+        raise RuntimeError("Auto band discovery returned no bands; check k_band_mad / spectra")
+
+    # 2b. RIBBIT periodicity scoring per band (band-level activity prior).
+    ribbit_df = score_band_periodicity(
+        files, bands,
+        pulse_rate_hz=config.ribbit_pulse_rate_hz,
+        clip_duration_sec=config.ribbit_clip_duration_sec,
+    )
+    if config.ribbit_score_min is not None and not ribbit_df.is_empty():
+        keep_mask = ribbit_df["ribbit_score_max"].fill_nan(0.0) >= config.ribbit_score_min
+        bands = [b for b, keep in zip(bands, keep_mask.to_list()) if keep]
+        band_methods = [m for m, keep in zip(band_methods, keep_mask.to_list()) if keep]
+        ribbit_df = ribbit_df.filter(keep_mask)
+        # Reassign sequential band_ids after the drop.
+        ribbit_df = ribbit_df.with_columns(pl.int_range(0, ribbit_df.height).alias("band_id"))
+        if not bands:
+            raise RuntimeError(
+                f"All bands dropped by ribbit_score_min={config.ribbit_score_min}"
+            )
+
     bands_df = pl.DataFrame([
         {
             "band_id": i,
@@ -1085,33 +1235,25 @@ def run(
         }
         for i, (fmin, fmax) in enumerate(bands)
     ])
+    if not ribbit_df.is_empty():
+        bands_df = bands_df.join(ribbit_df, on="band_id", how="left")
     bands_df.write_csv(tables_dir / "auto_bands.csv")
     consensus_df.write_csv(tables_dir / "auto_band_consensus.csv")
     _plot_band_consensus(consensus_df, bands, plots_dir / "auto_band_consensus.png")
-    if not bands:
-        raise RuntimeError("Auto band discovery returned no bands; check k_band_mad / spectra")
 
-    # 3. Loose ROIs + KDE mode refinement (per band).
+    # 3. Loose ROIs + shape-feature clustering (per band).
     loose = propose_loose_rois(cache, bands, config=config)
     loose.write_csv(tables_dir / "loose_rois.csv")
-    refined_rows: list[pl.DataFrame] = []
-    refined_info_all: list[dict] = []
-    for band_id in range(len(bands)):
-        band_loose = loose.filter(pl.col("band_id") == band_id) if not loose.is_empty() else loose
-        refined_band, info = kde_mode_refine(band_loose, k_mad=config.kde_mode_k_mad)
-        if not refined_band.is_empty():
-            refined_rows.append(refined_band)
-        refined_info_all.append({"band_id": band_id, **info})
-    refined = pl.concat(refined_rows, how="diagonal_relaxed") if refined_rows else pl.DataFrame()
-    refined.write_csv(tables_dir / "kde_refined_rois.csv")
-    pl.DataFrame(refined_info_all).write_csv(tables_dir / "kde_modes.csv")
-    _plot_kde_modes(refined_info_all, refined, plots_dir / "kde_duration_bandwidth.png")
+    refined, feature_table = shape_cluster_refine(
+        loose, cache, min_cluster_size=config.shape_cluster_min_size,
+    )
+    if not feature_table.is_empty():
+        feature_table.write_csv(tables_dir / "shape_features.csv")
+    _plot_shape_clusters(feature_table, plots_dir / "shape_clusters.png")
 
-    # 4. EM template refinement + per-band sub-clustering.
-    families, em_trace, sub_trace = em_loop(bands, cache, refined, config=config)
+    # 4. EM template refinement, one family per (band, shape-cluster).
+    families, em_trace = em_loop(bands, cache, refined, config=config)
     em_trace.write_csv(tables_dir / "em_trace.csv")
-    if not sub_trace.is_empty():
-        sub_trace.write_csv(tables_dir / "auto_subclusters.csv")
     _plot_em_convergence(em_trace, plots_dir / "em_convergence.png")
     _plot_templates(families, plots_dir)
 
@@ -1121,7 +1263,7 @@ def run(
     family_meta = pl.DataFrame([
         {
             "band_id": f["band_id"],
-            "subcluster_id": int(f.get("subcluster_id", 0)),
+            "shape_cluster_id": int(f.get("shape_cluster_id", 0)),
             "motif_cluster": int(f["motif_cluster"]),
             "band_fmin_hz": f["band"][0],
             "band_fmax_hz": f["band"][1],
@@ -1223,11 +1365,11 @@ Accepted motif families ({len(families)}):
 
 Artifacts:
 
-- `tables/auto_bands.csv` — discovered frequency bands.
+- `tables/recording_activity.csv` — per-recording bioacoustics_index (pre-ranking).
+- `tables/auto_bands.csv` — discovered frequency bands plus RIBBIT periodicity scores.
 - `tables/auto_band_consensus.csv` — per-recording + median consensus spectra.
 - `tables/loose_rois.csv` — loose hysteresis ROIs at in-band percentile thresholds.
-- `tables/kde_refined_rois.csv` — ROIs surviving (log dur, log bw) KDE mode filter.
-- `tables/kde_modes.csv` — per-band KDE mode estimates.
+- `tables/shape_features.csv` — per-ROI 26-D Gabor shape + centroid features and HDBSCAN cluster assignment.
 - `tables/em_trace.csv` — EM iteration trace (n_kept, threshold, threshold_method, 1-cosine).
 - `tables/auto_templates_metadata.csv` — final accepted families.
 - `tables/template_score_tracks.csv` — dense score tracks per recording/family.
@@ -1240,7 +1382,7 @@ Artifacts:
 - `tables/detection_stage_metrics.csv` — raw vs NMS vs consolidated reduction + recovery.
 - `templates/family_XX_template.npz` — fixed-support templates per band.
 - `plots/auto_band_consensus.png` — band discovery visualization.
-- `plots/kde_duration_bandwidth.png` — per-band KDE mode + kept ROIs.
+- `plots/shape_clusters.png` — per-band SVD-projected scatter of shape features colored by HDBSCAN cluster.
 - `plots/em_convergence.png` — per-family 1-cosine vs iter.
 - `plots/template_family_XX.png` — final templates.
 - `plots/{{stem}}_full_recording_events.png` — full focal recordings with auto event boxes.
@@ -1257,9 +1399,8 @@ def main() -> None:
     parser.add_argument("--curated", type=Path, default=None,
                         help="Optional curated_motif_boxes.csv for recovery evaluation")
     parser.add_argument("--max-bands", type=int, default=BandDiscoveryConfig.max_bands)
-    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
-    config = AutoConfig(band=BandDiscoveryConfig(max_bands=args.max_bands), seed=args.seed)
+    config = AutoConfig(band=BandDiscoveryConfig(max_bands=args.max_bands))
     output_dir = run(
         label=args.label,
         output_dir=args.output_dir,
