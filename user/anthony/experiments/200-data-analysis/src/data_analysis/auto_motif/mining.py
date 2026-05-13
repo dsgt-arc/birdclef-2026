@@ -2,21 +2,27 @@
 
 Pipeline (single ``run()`` entry point, takes a species label):
 
-1. Load wideband robust-z spectrograms for every focal recording of the label.
+0. Pre-rank recordings by ``maad.features.bioacoustics_index`` over WIDEBAND
+   (reported only by default; opt-in filter via ``min_activity_quantile``).
+1. Load wideband PCEN spectrograms for every focal recording of the label.
 2. Auto-discover up to ``max_bands`` frequency bands via per-recording-normalized
    median consensus across recordings (``auto_motif.band``).
-3. Per band: propose loose ROIs via scikit-maad hysteresis at in-band percentile
-   thresholds (no absolute z-thresholds), then refine to the dominant
-   (log duration, log bandwidth) KDE mode.
-4. Per band: EM-style template refinement. Init from the median patch of refined
-   ROIs; E-step picks score-peaks above a bimodal split of the score
-   distribution; M-step re-medians patches anchored at the band-mean envelope
-   argmax. Stop when ``1 - cosine`` between iterations < ``template_change_eps``.
-5. Final detection: scan with all converged family templates; reuse the existing
+3. Score band-level periodicity with ``opensoundscape.ribbit`` (reported only by
+   default; opt-in filter via ``ribbit_score_min``).
+4. Per band: propose loose ROIs via scikit-maad hysteresis at in-band percentile
+   thresholds.
+5. Per band: cluster loose ROIs by 26-D ``maad.features.shape_features`` (Gabor)
+   + intensity centroid using HDBSCAN. Each non-noise cluster becomes a motif
+   family carried into EM.
+6. Per (band, shape-cluster): EM-style template refinement. Init from the median
+   patch of cluster-member ROIs; E-step picks score-peaks above a bimodal split
+   of the score distribution; M-step re-anchors each peak at the band-mean
+   envelope onset and re-medians. Stop when ``1 - cosine`` between iterations
+   < ``template_change_eps``.
+7. Final detection: scan with all converged family templates; reuse the existing
    ``motif_template_calibration`` NMS + cross-family consolidation so the output
    schema matches the manual pipeline.
-6. Emit the same 2-panel diagnostic plot per recording as
-   ``motif_recording_diagnostics``, using the auto-discovered primary band.
+8. Optional curated-box recovery eval + per-recording diagnostic plots.
 
 Assumes "most focal recordings are relatively clean" — the median consensus
 spectrum across recordings will surface the species' true frequency bands.
@@ -30,6 +36,7 @@ from pathlib import Path
 import warnings
 
 import librosa
+import librosa.display
 import matplotlib
 
 matplotlib.use("Agg")
@@ -59,12 +66,10 @@ from data_analysis.auto_motif.band import (
 from data_analysis.common.curated_eval import (
     curated_recovery,
     detection_stage_metrics,
-    interval_iou,
 )
 from data_analysis.common.paths import (
     ARTIFACTS_DIR,
     TRAIN_AUDIO_DIR,
-    artifact_dir,
     fresh_subdir,
     recording_files_for_label,
 )
@@ -78,8 +83,6 @@ from data_analysis.common.spectrogram import (
 )
 from data_analysis.marbled_frog.motif_bank import canonical_support, fixed_support_crop
 from data_analysis.marbled_frog.motif_recording_diagnostics import (
-    DEFAULT_ENVELOPE_POST_SEC,
-    DEFAULT_ENVELOPE_PRE_SEC,
     band_envelope_peaks,
     compare_peaks_to_events,
     envelope_events_from_peaks,
@@ -95,7 +98,6 @@ warnings.filterwarnings("ignore", category=FutureWarning, module=r"maad\..*")
 
 DEFAULT_LABEL = "22967"
 LABEL_TO_DIR = {"22967": "marbled_frog"}
-TEMPLATE_SHAPE = (64, 48)
 
 
 @dataclass(frozen=True)
@@ -231,18 +233,14 @@ def auto_discover_bands(
     methods = ["consensus"] * len(consensus_bands)
     bands = list(consensus_bands)
     if len(bands) < config.max_bands and config.fallback_min_recordings >= 1:
-        per_rec_bands: list[tuple[float, float]] = []
-        for spec in spectra:
-            per_rec_bands.extend(discover_bands(spec, freqs_ref, config=config))
-        for cand in per_rec_bands:
+        per_rec_band_lists = [discover_bands(spec, freqs_ref, config=config) for spec in spectra]
+        candidates = [band for lst in per_rec_band_lists for band in lst]
+        for cand in candidates:
             if _band_overlaps_any(cand, bands, config.fallback_overlap_fraction):
                 continue
             support = sum(
-                1 for spec in spectra
-                if any(
-                    _band_iou(cand, b) >= config.fallback_overlap_fraction
-                    for b in discover_bands(spec, freqs_ref, config=config)
-                )
+                1 for lst in per_rec_band_lists
+                if any(_band_iou(cand, b) >= config.fallback_overlap_fraction for b in lst)
             )
             if support >= config.fallback_min_recordings:
                 bands.append(cand)
@@ -1095,8 +1093,8 @@ def _plot_templates(families: list[dict], output_dir: Path) -> None:
     for family in families:
         template = family["template"]
         band_id = family["band_id"]
-        cluster_id = int(family.get("shape_cluster_id", 0))
-        motif_cluster = int(family.get("motif_cluster", band_id * 100 + cluster_id))
+        cluster_id = int(family["shape_cluster_id"])
+        motif_cluster = int(family["motif_cluster"])
         n_kept = family["kept_peaks"].height
         support = family["support"]
         fig, ax = plt.subplots(figsize=(4.2, 3.4), dpi=180)
@@ -1129,14 +1127,13 @@ def _plot_full_recording_events(
     for filename, (db_band, _z, freqs, times) in cache.items():
         width = max(12.0, min(24.0, 0.42 * float(times[-1]) + 6.0))
         fig, ax = plt.subplots(figsize=(width, 6.2), dpi=180)
-        import librosa.display as _ld
-        _ld.specshow(db_band, x_coords=times, y_coords=freqs,
-                     x_axis="time", y_axis="linear",
-                     sr=MEL_SAMPLE_RATE, hop_length=MEL_HOP_LENGTH,
-                     ax=ax, cmap="magma")
+        librosa.display.specshow(db_band, x_coords=times, y_coords=freqs,
+                                 x_axis="time", y_axis="linear",
+                                 sr=MEL_SAMPLE_RATE, hop_length=MEL_HOP_LENGTH,
+                                 ax=ax, cmap="magma")
         df = events.filter(pl.col("filename") == filename).sort("peak_time_sec")
         for row in df.iter_rows(named=True):
-            cluster = int(row["best_motif_cluster"] if "best_motif_cluster" in row else row["motif_cluster"])
+            cluster = int(row["best_motif_cluster"])
             color = cmap(cluster % 10)
             ax.add_patch(Rectangle(
                 (row["start_sec"], row["fmin_hz"]),
@@ -1319,31 +1316,30 @@ def run(
 
     # 8. Per-recording band-envelope-vs-template diagnostic plot
     #    (same 2-panel layout as motif_recording_diagnostics).
-    if bands:
-        primary_band = bands[0]
-        for filename, (db_band, z, freqs, times) in cache.items():
-            peak_idx, envelope, _ = band_envelope_peaks(z, freqs, times, band=primary_band)
-            peak_times = times[peak_idx]
-            env_events = envelope_events_from_peaks(filename, peak_times, envelope, times, band=primary_band)
-            peak_rows, _ev_rows, _metrics = compare_peaks_to_events(filename, peak_times, consolidated)
-            if not env_events.is_empty() and peak_rows:
-                agreement = pl.DataFrame(peak_rows).select(
-                    pl.col("envelope_peak_time_sec").alias("peak_time_sec"),
-                    "matched_template_event",
-                    "nearest_event_distance_sec",
-                    "nearest_event_id",
-                    "nearest_event_cluster",
-                    "nearest_event_score",
-                )
-                env_events = env_events.join(agreement, on="peak_time_sec", how="left")
-            plot_recording_diagnostic(
-                filename, db_band, z, freqs, times, envelope, peak_rows,
-                consolidated, env_events,
-                plots_dir / f"{Path(filename).stem}_band_envelope_vs_template_events.png",
-                band=primary_band,
-                display_ylim=WIDEBAND,
-                title_extra=f"auto bands: {', '.join(f'{a:.0f}-{b:.0f}' for a, b in bands)}",
+    primary_band = bands[0]
+    for filename, (db_band, z, freqs, times) in cache.items():
+        peak_idx, envelope, _ = band_envelope_peaks(z, freqs, times, band=primary_band)
+        peak_times = times[peak_idx]
+        env_events = envelope_events_from_peaks(filename, peak_times, envelope, times, band=primary_band)
+        peak_rows, _ev_rows, _metrics = compare_peaks_to_events(filename, peak_times, consolidated)
+        if not env_events.is_empty() and peak_rows:
+            agreement = pl.DataFrame(peak_rows).select(
+                pl.col("envelope_peak_time_sec").alias("peak_time_sec"),
+                "matched_template_event",
+                "nearest_event_distance_sec",
+                "nearest_event_id",
+                "nearest_event_cluster",
+                "nearest_event_score",
             )
+            env_events = env_events.join(agreement, on="peak_time_sec", how="left")
+        plot_recording_diagnostic(
+            filename, db_band, z, freqs, times, envelope, peak_rows,
+            consolidated, env_events,
+            plots_dir / f"{Path(filename).stem}_band_envelope_vs_template_events.png",
+            band=primary_band,
+            display_ylim=WIDEBAND,
+            title_extra=f"auto bands: {', '.join(f'{a:.0f}-{b:.0f}' for a, b in bands)}",
+        )
 
     # 9. Summary markdown.
     (output_dir / "summary.md").write_text(

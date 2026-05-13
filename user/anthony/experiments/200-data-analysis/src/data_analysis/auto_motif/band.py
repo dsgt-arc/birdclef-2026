@@ -1,16 +1,19 @@
 """Auto frequency-band discovery for the species-agnostic motif pipeline.
 
-Given the robust-z spectrograms of every focal recording for a species, we want
-to discover up to ``max_bands`` contiguous frequency bands where the species'
+Given the PCEN spectrograms of every focal recording for a species, we want to
+discover up to ``max_bands`` contiguous frequency bands where the species'
 energy is concentrated. Strategy:
 
-1. For each recording, compute the time-mean of robust z across frequency,
-   then divide by its own MAD-sigma so loud heterospecifics in one recording
-   don't dominate the consensus.
-2. Take the *median* across recordings (not the mean) — robust to a single
-   recording dominated by a non-target.
-3. Find contiguous frequency runs where the consensus exceeds
-   ``median(consensus) + k * MAD(consensus)``.
+1. For each recording, compute the per-bin time-p95 of PCEN, then divide by its
+   own MAD-sigma so loud heterospecifics in one recording don't dominate the
+   consensus. The high time-quantile (rather than time-mean) preserves bins
+   with concentrated transient activity: PCEN's AGC flattens long-running
+   averages so the mean ends up nearly constant across bins.
+2. Take the *median* across recordings — robust to a single recording
+   dominated by a non-target.
+3. Hysteresis: seed contiguous frequency runs where the consensus exceeds
+   ``median + k_band_mad * sigma``, then grow outward while it exceeds
+   ``median + k_band_mad_lower * sigma`` (clamped at adjacent runs).
 4. Pad each run, enforce a minimum width, return the top ``max_bands`` runs.
 """
 

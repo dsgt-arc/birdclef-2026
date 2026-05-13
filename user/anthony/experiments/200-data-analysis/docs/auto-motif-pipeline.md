@@ -1,17 +1,24 @@
 # Auto Motif Mining Pipeline
 
-## Header
-
 | Field | Value |
 |---|---|
 | Date | 2026-05-13 |
-| Status | Species-agnostic reference; Marbled Frog 28/33 (84.8%) consolidated curated recovery after PCEN + library-tool migration. |
+| Status | Species-agnostic reference; stable. Current Marbled Frog recovery in [Results](#results). |
 | Pipeline code | `src/data_analysis/auto_motif/mining.py` |
 | Band discovery | `src/data_analysis/auto_motif/band.py` |
 | Shared evaluators | `src/data_analysis/common/curated_eval.py` |
 | Shared plot | `src/data_analysis/common/recording_plot.py` |
 | Comparison harness | `scripts/compare_auto_vs_existing.py` |
 | Per-species output | `artifacts/<species_dir>/motif_mining_auto/` |
+
+## Contents
+
+- [Goal](#goal) · [Inputs](#inputs)
+- [Library choices](#library-choices) · [Pipeline stages](#pipeline-stages)
+- [Configuration reference](#configuration-reference) · [CLI](#cli) · [Output schema](#output-schema)
+- [Toggles and troubleshooting](#toggles-and-troubleshooting)
+- [Reuse from manual pipeline](#reuse-from-manual-pipeline)
+- [Results](#results) · [Limitations](#limitations-and-follow-ups)
 
 ## Goal
 
@@ -31,45 +38,31 @@ with ramps) need the onset-anchor mitigation enabled (default).
   (schema: `filename, start_sec, end_sec, fmin_hz, fmax_hz, component, …`).
   Not required; if absent the curated-recovery stage is skipped.
 
-## Design rationale
+## Library choices
 
-The 2026-05-13 migration leans on four library tools instead of hand-rolled
-equivalents. Each replacement is justified independently and aggregated
-gave +9 pp Marbled Frog recovery (25/33 → 28/33).
+Each library dependency is justified independently. Aggregated, the
+2026-05-13 swap delivered +9 pp Marbled Frog recovery; commit history has
+the before/after narrative.
 
-| Concern | Old (hand-rolled) | New (library) | Why |
-|---|---|---|---|
-| Per-bin time-frequency normalization | Robust-z (median + MAD + Gaussian smoothing, clipped) | `librosa.pcen` | PCEN's AGC + DRC is the well-studied perceptual normalizer; one library call replaces ~30 lines and tracks transients better than dB-MAD. |
-| ROI shape characterization | 2-D KDE on `(log dur, log bw)` keeping the dominant mode | `maad.features.shape_features` (26-D Gabor) + `centroid_features` → HDBSCAN | The KDE conflated chirps with tonal notes of similar size. 26-D shape descriptors discriminate call morphology directly. |
-| Multi-template emission per band | Post-EM PCA → HDBSCAN on patches (documented regression on Marbled Frog) | Same HDBSCAN as above, *before* EM, on shape-feature space | One source of multi-template emission instead of two parallel paths; cluster decision happens on a tighter, semantically richer feature space. |
-| Band-level periodicity prior | None | `opensoundscape.ribbit` per (recording, band), scores aggregated to `max/p95/median` | Frog/insect motifs have stable inter-call intervals; this gives a numeric band quality signal that can later filter or weight. Defaults to score-only. |
-| Recording quality pre-screen | None | `maad.features.bioacoustics_index` per file | Cheap, computed from amplitude STFT (no full spectrogram cache). Defaults to score-only; opt-in filter via `min_activity_quantile`. |
+| Tool | Used for | Why |
+|---|---|---|
+| `librosa.pcen` | Per-bin time-frequency normalization | AGC + DRC produces a perceptually-flat representation that tracks transients better than dB-MAD. |
+| `maad.features.shape_features` + `centroid_features` | 26-D Gabor ROI descriptors + intensity centroid | Discriminate call morphology directly. A prior `(log dur, log bw)` KDE conflated chirps with tonal notes of similar size. |
+| `sklearn.cluster.HDBSCAN` | Multi-template emission per band | One cluster decision per band, made on a tight feature space before EM, instead of two parallel paths (KDE pre-EM + patch sub-clustering post-EM). |
+| `opensoundscape.ribbit` | Band-level periodicity score | Frog/insect motifs have stable inter-call intervals; gives a numeric band-quality signal. Default: score-only. |
+| `maad.features.bioacoustics_index` | Per-recording activity score (pre-rank) | Cheap, amplitude-STFT only (no full spectrogram cache). Default: score-only; opt-in filter via `min_activity_quantile`. |
 
-Two adaptation notes followed from the PCEN swap:
+What is deliberately hand-rolled (no clean library equivalent surfaced):
 
-- **Band discovery** (`band.py`) switched from per-bin time-mean to time-p95
-  before MAD normalization. PCEN's AGC flattens long-run averages so the
-  mean is nearly constant across bins; a high time-quantile preserves bins
-  with concentrated transient activity (target calls).
-- **All downstream stages are scale-invariant**: percentile-based hysteresis,
-  patch normalization (zero-mean unit-std before NCC), envelope-relative
-  onset anchoring, and Q25/Q99.5 member-vs-background thresholds. So PCEN
-  and robust-z values flow through the same NMS/consolidation pipeline
-  unchanged. The cache variable name `z` is preserved despite holding PCEN
-  values to keep the diff small.
-
-What we explicitly *kept* hand-rolled:
-
-- **Band discovery** itself (per-recording MAD-normalized consensus +
-  hysteresis): no library equivalent surfaces the "frequency bands where
-  this species' energy is consistently concentrated".
-- **NMS + cross-family consolidation**: no library equivalent; the
-  `marbled_frog.motif_template_calibration` helpers are reused as-is.
-- **Envelope-onset peak anchoring**: a +5-box mitigation that depends on
-  band-mean envelope shape; no clean library substitute.
-- **Bimodal score-distribution split** (GMM-2 crossover → Otsu →
-  quantile fallback): works for thresholding kept-vs-rejected EM peaks;
-  no library equivalent.
+- **Band discovery** — per-recording MAD-normalized consensus + hysteresis
+  (`band.py`). The shape "frequency bands where this species' energy is
+  consistently concentrated" has no obvious off-the-shelf detector.
+- **Envelope-onset peak anchoring** — depends on band-mean envelope shape;
+  see `_refine_anchor_via_envelope`.
+- **Bimodal score-distribution split** — GMM-2 crossover → Otsu →
+  quantile fallback for thresholding kept-vs-rejected EM peaks.
+- **NMS + cross-family consolidation** — reuses
+  `marbled_frog.motif_template_calibration` helpers (see [Reuse](#reuse-from-manual-pipeline)).
 
 ## Pipeline stages
 
@@ -104,14 +97,13 @@ quantile before `load_focal_z` materializes their spectrograms.
 
 ### 1. Wideband spectrograms
 
-`load_focal_z(files, band=WIDEBAND)` in `mining.py` calls
-`wideband_pcen_spectrogram` from `common/spectrogram.py` — per-channel energy
-normalization (PCEN; Wang et al. 2017) via `librosa.pcen`. The AGC + dynamic-
-range compression produces a perceptually-flat representation whose downstream
-consumers (percentile-based hysteresis, patch-normalized NCC, envelope-
-relative onset anchor) are all scale-invariant. The cache holds
-`(db_band, s_band, freqs_band, times)` per recording; ``s_band`` is the PCEN
-spectrogram (still referred to in code as ``z`` for historical reasons).
+`load_focal_z(files, band=WIDEBAND)` caches
+`(db_band, s_band, freqs_band, times)` per recording via
+`common/spectrogram.wideband_pcen_spectrogram`. All downstream stages
+(percentile-based hysteresis, patch-normalized NCC, envelope-relative onset
+anchor, Q25/Q99.5 thresholds) are scale-invariant, so PCEN flows through
+the same NMS/consolidation pipeline that previously consumed robust-z. The
+cache variable name `z` is preserved despite holding PCEN values.
 
 ### 2. Band discovery
 
@@ -157,22 +149,16 @@ boxes; loose duration/bandwidth filters keep biological-scale events.
 
 ### 5. Shape-feature clustering
 
-`shape_cluster_refine(loose_rois, cache, *, min_cluster_size)`. Per band,
-computes 26-D Gabor shape descriptors via `maad.features.shape_features`
-(requires `util.format_features` to populate pixel-coord columns) plus
-intensity centroid via `maad.features.centroid_features`. The combined
-feature matrix is z-standardized and clustered with
+`shape_cluster_refine(loose_rois, cache, *, min_cluster_size)`. Per band:
+26-D Gabor shape descriptors from `maad.features.shape_features` (needs
+`util.format_features` for pixel-coord columns) + intensity centroid from
+`centroid_features`. Z-standardize the combined matrix; cluster with
 `HDBSCAN(min_cluster_size=shape_cluster_min_size, allow_single_cluster=True)`.
 
-Each non-noise cluster becomes a candidate motif family that flows through
-to EM as `motif_cluster = band_id * 100 + shape_cluster_id`. Noise ROIs
-(label `-1`) are dropped. This replaces both the old `(log dur, log bw)`
-KDE mode filter and the post-EM patch sub-clustering in a single step —
-multi-template emission per band is driven entirely by HDBSCAN on
-shape-feature space.
-
-`tables/shape_features.csv` carries one row per loose ROI with all shape +
-centroid columns and the assigned cluster id (or `-1` for noise).
+Each non-noise cluster becomes a candidate motif family flowing into EM as
+`motif_cluster = band_id * 100 + shape_cluster_id`; noise (label `-1`) is
+dropped. `tables/shape_features.csv` carries one row per loose ROI with all
+shape + centroid columns and the assigned cluster (or `-1` for noise).
 
 ### 6. EM template refinement
 
@@ -315,7 +301,9 @@ name. Unknown labels fall back to `artifacts/<label>/motif_mining_auto/`.
 | `plots/{stem}_full_recording_events.png` | Full focal recording with auto event boxes. |
 | `templates/family_XXXX_template.npz` | Fixed-support template arrays + support dict. |
 
-## Toggles and when to flip them
+## Toggles and troubleshooting
+
+### When to flip a knob
 
 - **`shape_cluster_min_size`** controls how aggressively HDBSCAN splits ROIs
   within a band. Raise (e.g. `8–12`) when bands are noisy and you want only
@@ -344,6 +332,22 @@ name. Unknown labels fall back to `artifacts/<label>/motif_mining_auto/`.
   distinct call components, but pay attention to within-band consolidation
   artifacts when bands overlap.
 
+### Debugging a new species (symptom → artifact)
+
+- **No bands discovered** → `tables/auto_band_consensus.csv`, plot
+  `auto_band_consensus.png`. Lower `band.k_band_mad` or widen `WIDEBAND`.
+- **Few/empty loose ROIs in a real band** → `tables/loose_rois.csv`. Lower
+  `seed_percentile` / `grow_percentile` or relax loose dur/bw bounds.
+- **HDBSCAN returns all noise** → `tables/shape_features.csv`, plot
+  `shape_clusters.png`. Lower `shape_cluster_min_size`.
+- **EM drops the family** → `tables/em_trace.csv`. Look for `method =
+  skipped_too_few_rois` or `dropped_below_min_repetitions`; consider
+  lowering `min_repetitions` or `threshold_floor`.
+- **Low curated recovery despite detections** → check
+  `tables/detection_stage_metrics.csv` for raw → NMS → consolidated drop.
+  Cross-family consolidation can absorb adjacent secondaries (see
+  [Limitations](#limitations-and-follow-ups)).
+
 ## Reuse from manual pipeline
 
 The auto pipeline imports and reuses (does not duplicate) these helpers
@@ -360,11 +364,14 @@ from `marbled_frog/`, all of which are species-agnostic in behavior:
 - `motif_recording_diagnostics.band_envelope_peaks` — envelope panel of the
   diagnostic plot.
 
-If a second species needs these, lift them into `common/motif_template.py`
-(currently they live under `marbled_frog/` for historical reasons but the
-implementations have no Marbled Frog-specific logic).
+These helpers live under `marbled_frog/` for historical reasons; their
+implementations have no Marbled Frog-specific logic. See
+[Limitations](#limitations-and-follow-ups) on lifting them into `common/`
+once a second species drives the need.
 
-## Marbled Frog results (sanity check)
+## Results
+
+### Marbled Frog (label 22967)
 
 After the 2026-05-13 library-tool migration (PCEN + shape_features +
 RIBBIT + bioacoustics_index): **28/33 (84.8%) consolidated curated
@@ -378,26 +385,31 @@ recovery** vs. the prior 25/33 (75.8%) baseline. Per-component:
 | secondary | 4 | 0 | 0.00 | 0.73 |
 | secondary_independent | 10 | 9 | 0.90 | 0.73 |
 
-The remaining miss is the `secondary` component: detections exist with
-score ≥ 0.73 but get cross-family-consolidated into the temporally
-adjacent primary-band event. This is a consolidation policy issue, not a
-detection failure. RIBBIT scores were uniformly low (~0.08–0.14) for
-Marbled Frog — it doesn't have a regular pulse-rate signature — so the
-score is reported but should not be used as a hard filter here.
+The `secondary` miss is a consolidation-policy artifact — see
+[Limitations](#limitations-and-follow-ups). RIBBIT scores were uniformly
+low (~0.08–0.14) for Marbled Frog (no regular pulse-rate signature), so
+the score is reported but not used as a filter.
 
 ## Limitations and follow-ups
 
-- **Frequency-IoU strictness in recovery eval**. Bands that fire on a
+- **Secondary-component consolidation.** Cross-family consolidation
+  collapses temporally adjacent secondaries into primary events (Marbled
+  Frog `secondary` = 0/4 despite per-family detections at score ≥ 0.73).
+  Worth revisiting `consolidate_peak_distance_sec` or adding a band-keep
+  override.
+- **Frequency-IoU strictness in recovery eval.** Bands that fire on a
   call's harmonic content but don't overlap the curated fundamental are
   scored as misses. Consider a harmonic-aware matcher in
   `common/curated_eval.py`.
-- **Secondary-component consolidation**. Cross-family consolidation
-  collapses temporally adjacent secondaries into primary events. Worth
-  revisiting `consolidate_peak_distance_sec` or adding a band-keep
-  override.
-- **No per-recording band addition**. Phase 4's fallback adds a band only
-  if a *majority of recordings* support it. Species with one outlier
-  recording carrying a rare component aren't yet rescued.
-- **Cache memory**. `load_focal_z` holds wideband spectrograms for every
+- **No per-recording band addition.** The fallback in stage 2 adds a band
+  only if `fallback_min_recordings` agree. A single outlier recording
+  carrying a rare component isn't yet rescued.
+- **Cache memory.** `load_focal_z` holds wideband spectrograms for every
   recording in RAM. For species with many long recordings, lazy iteration
   + on-disk caches may be needed.
+- **Helper provenance.** `canonical_support`, `fixed_support_crop`,
+  `normalize_resize_patch`, `nms_events`, `consolidate_events`,
+  `summarize_events`, `band_envelope_peaks` live under `marbled_frog/`
+  but are species-agnostic. Lift into `common/motif_template.py` once a
+  second species drives the need — don't pre-emptively touch the manual
+  pipeline.
