@@ -20,6 +20,11 @@ MEL_FMAX = 8_000
 # the same y-limit.
 DISPLAY_BAND = (500.0, 3000.0)
 
+# Wider band used by the species-agnostic auto-mining pipeline. Spans the range
+# where focal frog/insect/bird energy is typically concentrated; band discovery
+# narrows down within this.
+WIDEBAND = (200.0, 6000.0)
+
 # Robust excess-z spectrogram tuning; only used by `robust_excess_spectrogram`.
 MAD_DB_FLOOR = 0.5
 ROBUST_Z_CLIP = 8.0
@@ -47,15 +52,16 @@ def read_audio_window(filename: str, start_sec: float, end_sec: float) -> np.nda
     return audio
 
 
-def robust_excess_spectrogram(
+def wideband_robust_excess_spectrogram(
     audio: np.ndarray,
+    *,
+    band: tuple[float, float] = WIDEBAND,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Return display dB, robust excess-z spectrogram, freqs, and times.
+    """Robust excess-z spectrogram over an arbitrary frequency band.
 
-    The excess-z spectrogram is per-frequency robust z-scored using median/MAD,
-    clipped, and lightly Gaussian smoothed in time and frequency. It emphasizes
-    transient ridges over broadband noise so motif detection works on quiet
-    recordings.
+    Same STFT/MAD/Gaussian recipe as :func:`robust_excess_spectrogram`; the band
+    is a parameter. ``robust_excess_spectrogram`` is a thin wrapper at
+    ``band=DISPLAY_BAND``.
     """
     power = (
         np.abs(librosa.stft(audio, n_fft=MEL_N_FFT, hop_length=MEL_HOP_LENGTH, window="hann"))
@@ -67,7 +73,7 @@ def robust_excess_spectrogram(
     )
     db = librosa.power_to_db(power, ref=np.max)
 
-    mask = (freqs >= DISPLAY_BAND[0]) & (freqs <= DISPLAY_BAND[1])
+    mask = (freqs >= band[0]) & (freqs <= band[1])
     db_band = db[mask]
     freqs_band = freqs[mask]
     med = np.median(db_band, axis=1, keepdims=True)
@@ -77,3 +83,15 @@ def robust_excess_spectrogram(
     z = np.clip(z, 0.0, ROBUST_Z_CLIP)
     z = gaussian_filter(z, sigma=(GAUSSIAN_SIGMA_FREQ_BINS, GAUSSIAN_SIGMA_TIME_FRAMES))
     return db_band, z, freqs_band, times
+
+
+def robust_excess_spectrogram(
+    audio: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Robust excess-z spectrogram restricted to :data:`DISPLAY_BAND`.
+
+    Thin wrapper around :func:`wideband_robust_excess_spectrogram` kept for
+    backwards compatibility with the Marbled Frog pipeline; new code should
+    prefer the wideband variant with an explicit band.
+    """
+    return wideband_robust_excess_spectrogram(audio, band=DISPLAY_BAND)

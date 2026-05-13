@@ -59,3 +59,8 @@ def fresh_subdir(parent: Path, name: str) -> Path:
         shutil.rmtree(path)
     path.mkdir(parents=True)
     return path
+
+
+def recording_files_for_label(label: str) -> list[str]:
+    """Return ``"<label>/<filename>"`` paths for every focal train recording of a label."""
+    return [f"{label}/{path.name}" for path in sorted((TRAIN_AUDIO_DIR / label).glob("*.ogg"))]

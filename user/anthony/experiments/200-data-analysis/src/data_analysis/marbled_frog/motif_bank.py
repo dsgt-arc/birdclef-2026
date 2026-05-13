@@ -41,12 +41,18 @@ DEFAULT_OUTPUT = Path("artifacts/marbled_frog/motif_mining_simplified/motif_bank
 TEMPLATE_SHAPE = (64, 48)
 
 
-def canonical_support(members: pl.DataFrame) -> dict[str, float]:
+def canonical_support(
+    members: pl.DataFrame,
+    *,
+    freq_clip: tuple[float, float] = DISPLAY_BAND,
+) -> dict[str, float]:
     """Estimate fixed physical support for one motif family from member boxes.
 
     Time is anchored at each member's ``peak_time_sec``. Frequency support uses
     robust quantiles of member ROI bounds. This keeps the template extent stable
-    while still being derived from detections.
+    while still being derived from detections. ``freq_clip`` bounds the
+    discovered band; defaults to :data:`DISPLAY_BAND` so the Marbled Frog pipeline
+    is unchanged, but the auto pipeline passes a wider band.
     """
     pre = (members["peak_time_sec"] - members["start_sec"]).to_numpy()
     post = (members["end_sec"] - members["peak_time_sec"]).to_numpy()
@@ -55,12 +61,12 @@ def canonical_support(members: pl.DataFrame) -> dict[str, float]:
 
     pre_sec = float(np.clip(np.quantile(pre, 0.75), 0.04, 0.75))
     post_sec = float(np.clip(np.quantile(post, 0.75), 0.04, 0.75))
-    fmin_hz = float(np.clip(np.quantile(fmins, 0.25), DISPLAY_BAND[0], DISPLAY_BAND[1]))
-    fmax_hz = float(np.clip(np.quantile(fmaxs, 0.75), DISPLAY_BAND[0], DISPLAY_BAND[1]))
+    fmin_hz = float(np.clip(np.quantile(fmins, 0.25), freq_clip[0], freq_clip[1]))
+    fmax_hz = float(np.clip(np.quantile(fmaxs, 0.75), freq_clip[0], freq_clip[1]))
     if fmax_hz - fmin_hz < 80.0:
         center = 0.5 * (fmin_hz + fmax_hz)
-        fmin_hz = max(DISPLAY_BAND[0], center - 40.0)
-        fmax_hz = min(DISPLAY_BAND[1], center + 40.0)
+        fmin_hz = max(freq_clip[0], center - 40.0)
+        fmax_hz = min(freq_clip[1], center + 40.0)
     return {
         "template_pre_sec": pre_sec,
         "template_post_sec": post_sec,
