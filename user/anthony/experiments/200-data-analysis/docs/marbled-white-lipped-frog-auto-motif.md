@@ -147,3 +147,72 @@ The current pipeline is good enough as a no-human-input baseline for motifs
 with relatively clean focal recordings — chips and secondaries are at
 manual-quality recovery, and the diagnostic plots are immediately usable.
 Primary-style multi-component chirps need one of the above extensions.
+
+## Mitigations applied (2026-05-13)
+
+All four mitigations from "Possible next steps" were implemented and
+A/B-tested phase-by-phase. The big win was **onset anchoring** (#3) — the
+other three were either neutral or counterproductive for Marbled Frog
+specifically, but the infrastructure is in place for species where they
+might matter.
+
+### Per-component curated recovery by phase
+
+| Phase | chip | primary | primary_indep | secondary | secondary_indep | overall | precision vs manual |
+|---|---|---|---|---|---|---|---|
+| Baseline | 5/5 | 1/4 | 0/10 | 4/4 | 10/10 | 20/33 (60.6%) | 0.53 |
+| +tail-extension | 5/5 | 0/4 | 0/10 | 4/4 | 10/10 | 19/33 (57.6%) | 0.64 |
+| +onset anchor | 4/5 | 3/4 | 5/10 | 4/4 | 9/10 | 25/33 (75.8%) | 0.58 |
+| +multi-template (default off) | — | — | — | — | — | (same as +onset) | (same) |
+| +per-recording fallback | 4/5 | 3/4 | 5/10 | 4/4 | 9/10 | 25/33 (75.8%) | 0.58 |
+
+### What each phase did (or didn't do)
+
+- **Tail-extension** (`auto_motif/band.py:discover_bands` hysteresis with
+  `k_band_mad_lower = 1.0`): band 0 grew from 882–1712 Hz to 788–1774 Hz; band
+  1 from 1710–2024 to 1648–2103; band 2 from 2034–2184 to 1960–2306. Precision
+  went up because broader bands → bigger overlap → cross-family NMS suppresses
+  duplicates. But the EM-derived `template_fmin_hz` for band 0 stayed at 906
+  Hz (the actual energy is still in the upper chirp), so primary recovery
+  dipped by 1. Net: a wash for Marbled Frog. Useful for species where the
+  consensus dip is at the band edge.
+- **Onset anchor** (`_refine_anchor_via_envelope` with
+  `anchor_onset_fraction = 0.30`, propagated into `detect_with_auto_templates`):
+  the M-step crop and the final-detection peak time both use the first frame
+  whose band-mean envelope reaches 30% of its peak. This shifts peak times
+  earlier by 0.1–0.3 s on ramped calls, landing inside curated primary boxes
+  whose ground-truth peak is the chirp's leading edge. **Primary recovery
+  jumped 0/4 → 3/4 and primary_independent 0/10 → 5/10.** Single biggest win.
+- **Multi-template per band** (`em_loop` + `_subcluster_kept_patches` with
+  PCA-then-HDBSCAN, default off): with `subcluster_pca_components = 8` and
+  `subcluster_min_size = 6`, band 0 does split into 3 sub-clusters
+  (sizes 17 / 6 / 34). But each sub-template's member-vs-background threshold
+  is *higher* than the parent's (tight sub-clusters → high Q25 member scores)
+  so each sub-template fires sparsely. Net: recovery tanked to ~23% when
+  enabled. Defaulted off; the path is wired end-to-end and can be flipped on
+  per-species if a band is known multi-modal and threshold derivation is
+  adjusted (e.g. share the parent threshold across sub-templates).
+- **Per-recording band fallback** (`auto_discover_bands` runs `discover_bands`
+  on each per-recording spectrum and promotes any candidate band that ≥
+  `fallback_min_recordings = 2` recordings agree on but consensus rejected):
+  did not fire on Marbled Frog — all 3 bands were already found via the
+  median consensus, and the cap was hit. `tables/auto_bands.csv` records
+  `discovery_method` per band. Useful for species with a sparse component
+  visible in only a minority of recordings.
+
+### Remaining gap
+
+Still 1/5 chip, 1/4 primary, 5/10 primary_indep, 1/10 secondary_indep below
+manual. The remaining primary calls fall just under the
+member-vs-background threshold (~0.65) at scores ~0.60. Two paths to close
+the rest:
+
+1. **Drop the threshold floor** from 0.45 toward 0.40 and lean on the
+   final-detection NMS to filter noise instead of the threshold. Risk:
+   precision drop.
+2. **Frequency-aware curated matching**: the recovery test requires
+   `freq_iou >= 0.10` against the curated box; for primary calls whose
+   harmonic energy is in bands 1 and 2 (1648–2306 Hz) but whose curated
+   fmin/fmax is 660–1296 Hz, freq_iou is artificially low. A harmonic-aware
+   matcher would credit these detections. This is an evaluator change, not
+   a detector change.

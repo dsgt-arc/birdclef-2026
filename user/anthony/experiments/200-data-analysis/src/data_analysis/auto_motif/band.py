@@ -26,9 +26,12 @@ class BandDiscoveryConfig:
     """Parameters for auto frequency-band discovery."""
 
     k_band_mad: float = 2.0
+    k_band_mad_lower: float = 1.0
     min_band_width_hz: float = 150.0
     max_bands: int = 3
     band_pad_hz: float = 40.0
+    fallback_min_recordings: int = 2
+    fallback_overlap_fraction: float = 0.5
 
 
 def per_recording_mean_spectrum(z: np.ndarray) -> np.ndarray:
@@ -76,18 +79,39 @@ def discover_bands(
     *,
     config: BandDiscoveryConfig = BandDiscoveryConfig(),
 ) -> list[tuple[float, float]]:
-    """Return up to ``config.max_bands`` (fmin_hz, fmax_hz) intervals."""
+    """Return up to ``config.max_bands`` (fmin_hz, fmax_hz) intervals.
+
+    Hysteresis: seed each run where consensus exceeds the primary threshold
+    (``med + k_band_mad * sigma``), then grow outward while consensus exceeds
+    the secondary threshold (``med + k_band_mad_lower * sigma``). Growth is
+    clamped at the adjacent seeded run so neighbors do not merge.
+    """
     med = float(np.median(consensus))
     mad = float(np.median(np.abs(consensus - med)))
     sigma = 1.4826 * max(mad, 1e-6)
-    threshold = med + config.k_band_mad * sigma
-    mask = consensus > threshold
+    primary = med + config.k_band_mad * sigma
+    secondary = med + config.k_band_mad_lower * sigma
+    mask = consensus > primary
     runs = _contiguous_runs(mask)
 
+    n = len(consensus)
+    grown: list[tuple[int, int, float]] = []
+    for idx, (i0, i1) in enumerate(runs):
+        left_bound = 0 if idx == 0 else runs[idx - 1][1] + 1
+        right_bound = n - 1 if idx == len(runs) - 1 else runs[idx + 1][0] - 1
+        j0 = i0
+        while j0 > left_bound and consensus[j0 - 1] > secondary:
+            j0 -= 1
+        j1 = i1
+        while j1 < right_bound and consensus[j1 + 1] > secondary:
+            j1 += 1
+        peak_score = float(consensus[i0 : i1 + 1].max())
+        grown.append((j0, j1, peak_score))
+
     bands: list[tuple[float, float, float]] = []
-    for i0, i1 in runs:
-        fmin = float(freqs[i0]) - config.band_pad_hz
-        fmax = float(freqs[i1]) + config.band_pad_hz
+    for j0, j1, peak_score in grown:
+        fmin = float(freqs[j0]) - config.band_pad_hz
+        fmax = float(freqs[j1]) + config.band_pad_hz
         if fmax - fmin < config.min_band_width_hz:
             center = 0.5 * (fmin + fmax)
             half = 0.5 * config.min_band_width_hz
@@ -95,7 +119,6 @@ def discover_bands(
             fmax = center + half
         fmin = max(fmin, float(freqs[0]))
         fmax = min(fmax, float(freqs[-1]))
-        peak_score = float(consensus[i0 : i1 + 1].max())
         bands.append((fmin, fmax, peak_score))
 
     bands.sort(key=lambda x: x[2], reverse=True)

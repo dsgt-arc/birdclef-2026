@@ -43,6 +43,8 @@ from maad import rois, util
 from scipy.ndimage import binary_closing, gaussian_filter1d, zoom
 from scipy.signal import find_peaks
 from scipy.stats import gaussian_kde
+from sklearn.cluster import HDBSCAN
+from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 
 from data_analysis.auto_motif.band import (
@@ -117,6 +119,14 @@ class AutoConfig:
     threshold_floor: float = 0.45
     threshold_ceiling: float = 0.90
     fallback_quantile: float = 0.95
+    anchor_onset_fraction: float = 0.30
+    # Sub-clustering EM-kept patches into multiple templates per band is
+    # plumbed end-to-end but defaults off: tighter sub-clusters re-derive
+    # higher member-vs-background thresholds, which under-fires on Marbled
+    # Frog primary calls. Enable per-species if you know a band is multi-modal.
+    subcluster_enabled: bool = False
+    subcluster_min_size: int = 6
+    subcluster_pca_components: int = 8
     seed: int = 42
 
 
@@ -147,8 +157,17 @@ def auto_discover_bands(
     cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     *,
     config: BandDiscoveryConfig,
-) -> tuple[list[tuple[float, float]], pl.DataFrame]:
-    """Discover species bands; also return the per-recording + consensus spectra."""
+) -> tuple[list[tuple[float, float]], pl.DataFrame, list[str]]:
+    """Discover species bands. Returns (bands, consensus_df, methods).
+
+    First runs ``discover_bands`` on the median consensus across recordings.
+    Then runs it independently on each per-recording spectrum and rescues any
+    candidate band that ``fallback_min_recordings`` or more recordings agree
+    on (by ``fallback_overlap_fraction`` IoU), but the consensus rejected.
+    Promoted bands are appended after consensus bands, subject to
+    ``max_bands``. ``methods[i]`` records ``"consensus"`` or
+    ``"fallback_per_recording"`` for ``bands[i]``.
+    """
     spectra: list[np.ndarray] = []
     rows: list[dict] = []
     freqs_ref: np.ndarray | None = None
@@ -159,12 +178,48 @@ def auto_discover_bands(
         for f, v in zip(freqs, spectrum):
             rows.append({"filename": filename, "freq_hz": float(f), "z_normalized": float(v)})
     if freqs_ref is None:
-        return [], pl.DataFrame()
+        return [], pl.DataFrame(), []
     consensus = consensus_spectrum(spectra)
-    bands = discover_bands(consensus, freqs_ref, config=config)
+    consensus_bands = discover_bands(consensus, freqs_ref, config=config)
     for f, v in zip(freqs_ref, consensus):
         rows.append({"filename": "__consensus__", "freq_hz": float(f), "z_normalized": float(v)})
-    return bands, pl.DataFrame(rows)
+
+    methods = ["consensus"] * len(consensus_bands)
+    bands = list(consensus_bands)
+    if len(bands) < config.max_bands and config.fallback_min_recordings >= 1:
+        per_rec_bands: list[tuple[float, float]] = []
+        for spec in spectra:
+            per_rec_bands.extend(discover_bands(spec, freqs_ref, config=config))
+        for cand in per_rec_bands:
+            if _band_overlaps_any(cand, bands, config.fallback_overlap_fraction):
+                continue
+            support = sum(
+                1 for spec in spectra
+                if any(
+                    _band_iou(cand, b) >= config.fallback_overlap_fraction
+                    for b in discover_bands(spec, freqs_ref, config=config)
+                )
+            )
+            if support >= config.fallback_min_recordings:
+                bands.append(cand)
+                methods.append("fallback_per_recording")
+                if len(bands) >= config.max_bands:
+                    break
+    return bands, pl.DataFrame(rows), methods
+
+
+def _band_iou(a: tuple[float, float], b: tuple[float, float]) -> float:
+    inter = max(0.0, min(a[1], b[1]) - max(a[0], b[0]))
+    union = max(a[1], b[1]) - min(a[0], b[0])
+    return float(inter / union) if union > 0 else 0.0
+
+
+def _band_overlaps_any(
+    cand: tuple[float, float],
+    existing: list[tuple[float, float]],
+    threshold: float,
+) -> bool:
+    return any(_band_iou(cand, b) >= threshold for b in existing)
 
 
 # -----------------------------------------------------------------------------
@@ -471,8 +526,15 @@ def init_template(
 def _refine_anchor_via_envelope(
     z: np.ndarray, freqs: np.ndarray, times: np.ndarray,
     peak_time_sec: float, support: dict[str, float],
+    *,
+    onset_fraction: float = 0.30,
 ) -> float:
-    """Re-anchor a peak at the band-mean envelope argmax inside its support window."""
+    """Re-anchor a peak at the band-mean envelope onset inside its support window.
+
+    Onset is the first frame whose envelope value reaches
+    ``onset_fraction * max(envelope)``. Falls back to argmax if no frame
+    meets the threshold (degenerate envelope).
+    """
     band_mask = (freqs >= support["template_fmin_hz"]) & (freqs <= support["template_fmax_hz"])
     if not np.any(band_mask):
         return peak_time_sec
@@ -484,7 +546,13 @@ def _refine_anchor_via_envelope(
         return peak_time_sec
     sub_env = envelope[window]
     sub_times = times[window]
-    return float(sub_times[int(np.argmax(sub_env))])
+    peak_val = float(sub_env.max())
+    if peak_val <= 0:
+        return float(sub_times[int(np.argmax(sub_env))])
+    onset_idx = np.where(sub_env >= onset_fraction * peak_val)[0]
+    if onset_idx.size == 0:
+        return float(sub_times[int(np.argmax(sub_env))])
+    return float(sub_times[int(onset_idx[0])])
 
 
 def em_step(
@@ -520,7 +588,10 @@ def em_step(
         _db, z, freqs, times = cache[filename]
         for peak_idx in peaks:
             raw_time = float(center_times[peak_idx])
-            anchored_time = _refine_anchor_via_envelope(z, freqs, times, raw_time, support)
+            anchored_time = _refine_anchor_via_envelope(
+                z, freqs, times, raw_time, support,
+                onset_fraction=config.anchor_onset_fraction,
+            )
             rows.append(
                 {
                     "filename": filename,
@@ -555,16 +626,73 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     return num / den
 
 
+def _subcluster_kept_patches(
+    kept: pl.DataFrame,
+    cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    support: dict[str, float],
+    *,
+    min_cluster_size: int,
+    pca_components: int,
+    seed: int,
+) -> tuple[list[np.ndarray], list[pl.DataFrame], np.ndarray]:
+    """Cluster EM-kept patches in PCA-reduced patch-space.
+
+    Each patch is z-normalized, stacked, flattened, and PCA-reduced to
+    ``pca_components`` dims before HDBSCAN. Returns (templates, kept_per_sub,
+    labels). If fewer than two real sub-clusters survive, returns empty lists
+    so the caller falls back to the full EM template.
+    """
+    patches: list[np.ndarray] = []
+    for row in kept.iter_rows(named=True):
+        _db, z, freqs, times = cache[row["filename"]]
+        p = _crop_at_peak(z, freqs, times, float(row["peak_time_sec"]), support)
+        p = (p - p.mean()) / (p.std() + 1e-6)
+        patches.append(p.astype(np.float32))
+    stack = np.stack(patches, axis=0)
+    flat = stack.reshape(stack.shape[0], -1).astype(np.float64)
+    n_components = min(pca_components, flat.shape[0] - 1, flat.shape[1])
+    if n_components < 2:
+        return [], [], np.full(stack.shape[0], -1, dtype=int)
+    reduced = PCA(n_components=n_components, random_state=seed).fit_transform(flat)
+    labels = HDBSCAN(
+        min_cluster_size=min_cluster_size,
+        allow_single_cluster=True,
+    ).fit_predict(reduced)
+
+    unique_labels = sorted({int(l) for l in labels if l >= 0})
+    if len(unique_labels) < 2:
+        return [], [], labels
+
+    templates: list[np.ndarray] = []
+    kept_per_sub: list[pl.DataFrame] = []
+    rows = kept.to_dicts()
+    for sub_id in unique_labels:
+        member_idx = np.where(labels == sub_id)[0]
+        if member_idx.size < min_cluster_size:
+            continue
+        sub_template = np.median(stack[member_idx], axis=0).astype(np.float32)
+        sub_template = (sub_template - sub_template.mean()) / (sub_template.std() + 1e-6)
+        templates.append(sub_template)
+        kept_per_sub.append(pl.DataFrame([rows[int(i)] for i in member_idx]))
+    return templates, kept_per_sub, labels
+
+
 def em_loop(
     bands: list[tuple[float, float]],
     cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     refined_rois: pl.DataFrame,
     *,
     config: AutoConfig,
-) -> tuple[list[dict], pl.DataFrame]:
-    """For each band, run EM until convergence; return accepted families + trace."""
+) -> tuple[list[dict], pl.DataFrame, pl.DataFrame]:
+    """For each band, run EM until convergence; return accepted families + trace.
+
+    Returns ``(families, em_trace, subcluster_trace)``. After EM, each band's
+    kept patches are sub-clustered in patch-space (if ``subcluster_enabled``)
+    so multi-modal bands (e.g. primary-chirp + chip) get distinct templates.
+    """
     families: list[dict] = []
     trace_rows: list[dict] = []
+    sub_trace_rows: list[dict] = []
     for band_id, band in enumerate(bands):
         if refined_rois.is_empty():
             continue
@@ -605,17 +733,49 @@ def em_loop(
                 "cosine_to_prev": float("nan"),
             })
             continue
-        families.append({
-            "band_id": band_id,
-            "band": band,
-            "template": template,
-            "support": support,
-            "kept_peaks": last_kept,
-            "threshold": last_info["threshold"] if last_info else float("nan"),
-            "threshold_method": last_info["method"] if last_info else "unknown",
-            "converged": converged,
-        })
-    return families, pl.DataFrame(trace_rows)
+
+        sub_templates: list[np.ndarray]
+        sub_kept_list: list[pl.DataFrame]
+        if config.subcluster_enabled and last_kept.height >= 2 * config.subcluster_min_size:
+            sub_templates, sub_kept_list, labels = _subcluster_kept_patches(
+                last_kept, cache, support,
+                min_cluster_size=config.subcluster_min_size,
+                pca_components=config.subcluster_pca_components,
+                seed=config.seed,
+            )
+            sub_trace_rows.append({
+                "band_id": band_id,
+                "n_input_patches": int(last_kept.height),
+                "n_subclusters": len(sub_templates),
+                "n_noise": int(np.sum(labels == -1)),
+                "subcluster_sizes": ";".join(str(k.height) for k in sub_kept_list),
+            })
+        else:
+            sub_templates, sub_kept_list = [], []
+            sub_trace_rows.append({
+                "band_id": band_id,
+                "n_input_patches": int(last_kept.height),
+                "n_subclusters": 0,
+                "n_noise": 0,
+                "subcluster_sizes": "",
+            })
+        if not sub_templates:
+            sub_templates = [template]
+            sub_kept_list = [last_kept]
+        for sub_id, (sub_template, sub_kept) in enumerate(zip(sub_templates, sub_kept_list)):
+            families.append({
+                "band_id": band_id,
+                "subcluster_id": sub_id,
+                "motif_cluster": band_id * 100 + sub_id,
+                "band": band,
+                "template": sub_template,
+                "support": support,
+                "kept_peaks": sub_kept,
+                "threshold": last_info["threshold"] if last_info else float("nan"),
+                "threshold_method": last_info["method"] if last_info else "unknown",
+                "converged": converged,
+            })
+    return families, pl.DataFrame(trace_rows), pl.DataFrame(sub_trace_rows)
 
 
 # -----------------------------------------------------------------------------
@@ -654,7 +814,7 @@ def detect_with_auto_templates(
     score_rows: list[dict] = []
     event_rows: list[dict] = []
     for family in families:
-        band_id = family["band_id"]
+        motif_cluster = family["motif_cluster"]
         support = family["support"]
         template = family["template"]
 
@@ -695,18 +855,23 @@ def detect_with_auto_templates(
         for filename, (center_times, scores) in per_file_scores.items():
             for t, s in zip(center_times, scores):
                 score_rows.append({
-                    "filename": filename, "motif_cluster": band_id,
+                    "filename": filename, "motif_cluster": motif_cluster,
                     "time_sec": float(t), "score": float(s),
                     "best_template_index": 0,
                 })
             if center_times.size == 0:
                 continue
             peaks, props = find_peaks(scores, height=threshold, distance=distance, prominence=0.02)
+            _db, z, freqs, times = cache[filename]
             for peak in peaks:
-                peak_time = float(center_times[peak])
+                raw_peak_time = float(center_times[peak])
+                peak_time = _refine_anchor_via_envelope(
+                    z, freqs, times, raw_peak_time, support,
+                    onset_fraction=config.anchor_onset_fraction,
+                )
                 event_rows.append({
                     "filename": filename,
-                    "motif_cluster": band_id,
+                    "motif_cluster": motif_cluster,
                     "peak_time_sec": peak_time,
                     "start_sec": max(0.0, peak_time - float(support["template_pre_sec"])),
                     "end_sec": peak_time + float(support["template_post_sec"]),
@@ -813,6 +978,8 @@ def _plot_templates(families: list[dict], output_dir: Path) -> None:
     for family in families:
         template = family["template"]
         band_id = family["band_id"]
+        sub_id = int(family.get("subcluster_id", 0))
+        motif_cluster = int(family.get("motif_cluster", band_id * 100 + sub_id))
         n_kept = family["kept_peaks"].height
         support = family["support"]
         fig, ax = plt.subplots(figsize=(4.2, 3.4), dpi=180)
@@ -823,9 +990,12 @@ def _plot_templates(families: list[dict], output_dir: Path) -> None:
                   ])
         ax.set_xlabel("Time relative to peak (s)")
         ax.set_ylabel("Frequency (Hz)")
-        ax.set_title(f"band {band_id} template (n={n_kept}, conv={family['converged']})", fontsize=10)
+        ax.set_title(
+            f"band {band_id} sub {sub_id} (n={n_kept}, conv={family['converged']})",
+            fontsize=10,
+        )
         fig.tight_layout()
-        fig.savefig(output_dir / f"template_family_{band_id:02d}.png")
+        fig.savefig(output_dir / f"template_family_{motif_cluster:04d}.png")
         plt.close(fig)
 
 
@@ -904,9 +1074,15 @@ def run(
     cache = load_focal_z(files, band=WIDEBAND)
 
     # 2. Discover bands.
-    bands, consensus_df = auto_discover_bands(cache, config=config.band)
+    bands, consensus_df, band_methods = auto_discover_bands(cache, config=config.band)
     bands_df = pl.DataFrame([
-        {"band_id": i, "fmin_hz": float(fmin), "fmax_hz": float(fmax), "bandwidth_hz": float(fmax - fmin)}
+        {
+            "band_id": i,
+            "fmin_hz": float(fmin),
+            "fmax_hz": float(fmax),
+            "bandwidth_hz": float(fmax - fmin),
+            "discovery_method": band_methods[i] if i < len(band_methods) else "consensus",
+        }
         for i, (fmin, fmax) in enumerate(bands)
     ])
     bands_df.write_csv(tables_dir / "auto_bands.csv")
@@ -931,9 +1107,11 @@ def run(
     pl.DataFrame(refined_info_all).write_csv(tables_dir / "kde_modes.csv")
     _plot_kde_modes(refined_info_all, refined, plots_dir / "kde_duration_bandwidth.png")
 
-    # 4. EM template refinement.
-    families, em_trace = em_loop(bands, cache, refined, config=config)
+    # 4. EM template refinement + per-band sub-clustering.
+    families, em_trace, sub_trace = em_loop(bands, cache, refined, config=config)
     em_trace.write_csv(tables_dir / "em_trace.csv")
+    if not sub_trace.is_empty():
+        sub_trace.write_csv(tables_dir / "auto_subclusters.csv")
     _plot_em_convergence(em_trace, plots_dir / "em_convergence.png")
     _plot_templates(families, plots_dir)
 
@@ -943,6 +1121,8 @@ def run(
     family_meta = pl.DataFrame([
         {
             "band_id": f["band_id"],
+            "subcluster_id": int(f.get("subcluster_id", 0)),
+            "motif_cluster": int(f["motif_cluster"]),
             "band_fmin_hz": f["band"][0],
             "band_fmax_hz": f["band"][1],
             "threshold": f["threshold"],
@@ -955,7 +1135,7 @@ def run(
     family_meta.write_csv(tables_dir / "auto_templates_metadata.csv")
     for f in families:
         np.savez_compressed(
-            templates_dir / f"family_{f['band_id']:02d}_template.npz",
+            templates_dir / f"family_{int(f['motif_cluster']):04d}_template.npz",
             template=f["template"],
             **{k: np.array([v], dtype=np.float32) for k, v in f["support"].items()},
         )
