@@ -49,8 +49,8 @@ the before/after narrative.
 | `librosa.pcen` | Per-bin time-frequency normalization | AGC + DRC produces a perceptually-flat representation that tracks transients better than dB-MAD. |
 | `maad.features.shape_features` + `centroid_features` | 26-D Gabor ROI descriptors + intensity centroid | Discriminate call morphology directly. A prior `(log dur, log bw)` KDE conflated chirps with tonal notes of similar size. |
 | `sklearn.cluster.HDBSCAN` | Multi-template emission per band | One cluster decision per band, made on a tight feature space before EM, instead of two parallel paths (KDE pre-EM + patch sub-clustering post-EM). |
-| `opensoundscape.ribbit` | Band-level periodicity score | Frog/insect motifs have stable inter-call intervals; gives a numeric band-quality signal. Default: score-only. |
-| `maad.features.bioacoustics_index` | Per-recording activity score (pre-rank) | Cheap, amplitude-STFT only (no full spectrogram cache). Default: score-only; opt-in filter via `min_activity_quantile`. |
+| `opensoundscape.ribbit` | Band-level periodicity score (opt-in) | Frog/insect motifs have stable inter-call intervals; runs only when `ribbit_score_min` is set, dropping bands below the threshold. |
+| `maad.features.bioacoustics_index` | Per-recording activity score (opt-in pre-rank) | Cheap amplitude-STFT recording filter; runs only when `min_activity_quantile` is set. |
 
 What is deliberately hand-rolled (no clean library equivalent surfaced):
 
@@ -59,41 +59,45 @@ What is deliberately hand-rolled (no clean library equivalent surfaced):
   consistently concentrated" has no obvious off-the-shelf detector.
 - **Envelope-onset peak anchoring** — depends on band-mean envelope shape;
   see `_refine_anchor_via_envelope`.
-- **Bimodal score-distribution split** — GMM-2 crossover → Otsu →
-  quantile fallback for thresholding kept-vs-rejected EM peaks.
+- **EM score thresholding** — fixed quantile (default p95) of the score
+  distribution, clipped to `[threshold_floor, threshold_ceiling]`. Prior
+  bimodal-split machinery (KDE valley check, GMM-2 crossover, Otsu) never
+  fired on real data and was removed.
 - **NMS + cross-family consolidation** — reuses
   `marbled_frog.motif_template_calibration` helpers (see [Reuse](#reuse-from-manual-pipeline)).
 
 ## Pipeline stages
 
 ```text
-[0]  recording activity index (maad.features.bioacoustics_index over WIDEBAND)
+[0]  (opt-in) recording activity index (maad.features.bioacoustics_index over WIDEBAND)
 [1]  → wideband PCEN spectrograms (librosa.pcen, 200-6000 Hz)
 [2]  → per-recording time-p95 spectrum, MAD-normalized
        → cross-recording median consensus
        → contiguous bands via hysteresis (primary k*MAD seed,
                                           secondary k_lower*MAD grow)
-       → optional per-recording fallback for sparse minority bands
-[3]  → per band: opensoundscape.ribbit periodicity score (max/p95/median over clips)
+[3]  → (opt-in) per band: opensoundscape.ribbit periodicity score
+                drops bands below `ribbit_score_min`
 [4]  → per band: maad hysteresis ROIs at in-band p99 (seed) / p90 (grow)
 [5]  → per band: maad.features.shape_features (26-D Gabor) +
                  centroid_features → HDBSCAN → one family per non-noise cluster
-[6]  → per (band, cluster): EM template refinement (median patch → bimodal
-                 score split → re-anchor at band-mean envelope ONSET → re-median;
-                 stop on cosine)
+[6]  → per (band, cluster): EM template refinement (median patch → p95
+                 quantile score split → re-anchor at band-mean envelope ONSET
+                 → re-median; stop on cosine)
 [7]  → per family: member-vs-background threshold; peak-pick; NMS;
                   cross-family consolidation (reused from marbled_frog
                   motif_template_calibration)
-[8]  → curated recovery + 2-panel diagnostic plots
+[8]  → curated recovery + 2-panel diagnostic plot per recording
 ```
 
-### 0. Recording pre-ranking
+### 0. Recording pre-ranking (opt-in)
 
+When `AutoConfig.min_activity_quantile` is set,
 `rank_recordings_by_activity(files, flim=WIDEBAND)` computes
 `maad.features.bioacoustics_index` per focal recording on an amplitude STFT
-over `WIDEBAND`. Writes `tables/recording_activity.csv` and (when
-`AutoConfig.min_activity_quantile` is set) drops recordings below the
-quantile before `load_focal_z` materializes their spectrograms.
+over `WIDEBAND`, writes `tables/recording_activity.csv`, and drops
+recordings below the quantile before `load_focal_z` materializes their
+spectrograms. Otherwise this stage is skipped entirely (no compute, no
+table).
 
 ### 1. Wideband spectrograms
 
@@ -117,26 +121,18 @@ concentrated transient activity.) The median across recordings forms the
 consensus spectrum. Contiguous runs above `med + k_band_mad * sigma` seed
 each band; each seed then grows outward (hysteresis) while consensus
 exceeds `med + k_band_mad_lower * sigma`, clamped at the adjacent run so
-neighbors do not merge.
+neighbors do not merge. The top `max_bands` runs (by peak score) are
+returned.
 
-After the consensus pass, the same procedure is applied independently to
-each per-recording spectrum. Candidate bands that ≥ `fallback_min_recordings`
-recordings agree on (≥ `fallback_overlap_fraction` IoU) but consensus
-missed are promoted, up to `max_bands`. `auto_bands.csv` tags each band
-with `discovery_method ∈ {"consensus", "fallback_per_recording"}`.
+### 3. RIBBIT periodicity scoring (opt-in)
 
-### 3. RIBBIT periodicity scoring
-
-`score_band_periodicity(files, bands, ...)` runs
-`opensoundscape.ribbit.ribbit` on each (recording, band) pair across
-overlapping clips of `ribbit_clip_duration_sec`. The per-clip RIBBIT score
-(power inside `ribbit_pulse_rate_hz` Hz of the band-envelope spectrum)
-is aggregated to `(max, p95, median)` per band and appended to
-`auto_bands.csv`. Bands carrying repetitive call structure score high;
-incidental noise bands score low.
-
-When `AutoConfig.ribbit_score_min` is set, bands below the threshold are
-dropped before downstream stages. Default `None` = score-only, no drop.
+When `AutoConfig.ribbit_score_min` is set, `score_band_periodicity(files,
+bands, ...)` runs `opensoundscape.ribbit.ribbit` on each (recording, band)
+pair across overlapping clips of `ribbit_clip_duration_sec`. The per-clip
+RIBBIT score (power inside `ribbit_pulse_rate_hz` Hz of the band-envelope
+spectrum) is aggregated to `(max, p95, median)` per band, appended to
+`auto_bands.csv`, and used to drop bands below the threshold. Otherwise
+this stage is skipped entirely.
 
 ### 4. Loose ROI proposal
 
@@ -172,8 +168,8 @@ shape + centroid columns and the assigned cluster (or `-1` for noise).
   discovered band.
 - **E-step**: cross-correlate the template against the in-band PCEN
   spectrogram across every recording (`_score_track`). Peak-pick at
-  `bimodal_split` of the kept-score distribution (GMM(2) crossover → Otsu
-  → `fallback_quantile` if unimodal), with peak distance
+  `quantile_threshold(scores, quantile=em_threshold_quantile)`, clipped to
+  `[threshold_floor, threshold_ceiling]`, with peak distance
   `max(0.12, 0.60 * template_duration_sec)`.
 - **M-step**: each kept peak is re-anchored at the *first* frame whose
   band-mean envelope exceeds `anchor_onset_fraction * max(envelope)` inside
@@ -184,7 +180,8 @@ shape + centroid columns and the assigned cluster (or `-1` for noise).
   kept peaks.
 
 `em_trace.csv` records per-iteration `band_id, shape_cluster_id, n_kept,
-threshold, method, cosine_to_prev`.
+threshold, method, cosine_to_prev`. With the bimodal-split machinery
+removed, `method` is always `quantile` (or `empty` for degenerate cases).
 
 ### 7. Final detection + NMS + consolidation
 
@@ -212,7 +209,9 @@ raw / NMS / consolidated stages.
 
 `common.recording_plot.plot_recording_diagnostic` produces a 2-panel plot
 (wideband spectrogram with cluster-colored event boxes + envelope panel
-sharing x) per recording, matching the manual pipeline's layout.
+sharing x) per recording, matching the manual pipeline's layout. The
+envelope panel uses the discovered band with the most refined ROIs so the
+trace reflects the densest call activity instead of the highest-peak band.
 
 ## Configuration reference
 
@@ -225,8 +224,6 @@ sharing x) per recording, matching the manual pipeline's layout.
 | `min_band_width_hz` | `150.0` | ~10 FFT bins at sr=32k, nfft=2048 |
 | `max_bands` | `3` | Matches observed primary / secondary / chip structure |
 | `band_pad_hz` | `40.0` | One FFT bin each side |
-| `fallback_min_recordings` | `2` | Need ≥2 recordings agreeing to promote a non-consensus band |
-| `fallback_overlap_fraction` | `0.5` | IoU threshold for "same band" across recordings |
 
 ### `AutoConfig` (`auto_motif/mining.py`)
 
@@ -252,12 +249,12 @@ sharing x) per recording, matching the manual pipeline's layout.
 | `consolidate_min_time_iou` | `0.05` | Same as manual pipeline |
 | `threshold_floor` | `0.45` | Lower clip on member-vs-bg threshold |
 | `threshold_ceiling` | `0.90` | Upper clip on member-vs-bg threshold |
-| `fallback_quantile` | `0.95` | EM bimodal-split fallback when unimodal |
+| `em_threshold_quantile` | `0.95` | Quantile of EM score distribution used as the kept-peak threshold |
 | `anchor_onset_fraction` | `0.30` | First envelope frame ≥ 30% of peak; aligns peak_time with curated leading-edge |
-| `ribbit_pulse_rate_hz` | `(0.3, 30.0)` | Pulse-rate window for `opensoundscape.ribbit` |
-| `ribbit_clip_duration_sec` | `10.0` | RIBBIT analysis clip length per recording |
-| `ribbit_score_min` | `None` | Drop bands below score (None = report only) |
-| `min_activity_quantile` | `None` | Drop recordings below BI quantile (None = report only) |
+| `ribbit_pulse_rate_hz` | `(0.3, 30.0)` | Pulse-rate window for `opensoundscape.ribbit` (only used when `ribbit_score_min` is set) |
+| `ribbit_clip_duration_sec` | `10.0` | RIBBIT analysis clip length per recording (only used when `ribbit_score_min` is set) |
+| `ribbit_score_min` | `None` | Opt-in band filter; setting it enables RIBBIT scoring + drop |
+| `min_activity_quantile` | `None` | Opt-in recording filter; setting it enables bioacoustics_index pre-rank + drop |
 
 ## CLI
 
@@ -278,8 +275,8 @@ name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
 | Path | Schema / contents |
 |---|---|
 | `summary.md` | Auto-generated run summary; lists tables/plots/templates with discovered bands. |
-| `tables/recording_activity.csv` | `filename, bioacoustics_index` from `maad.features.bioacoustics_index` (pre-ranking). |
-| `tables/auto_bands.csv` | `band_id, fmin_hz, fmax_hz, bandwidth_hz, discovery_method, ribbit_score_max, ribbit_score_p95, ribbit_score_median, n_clips_scored`. |
+| `tables/recording_activity.csv` | `filename, bioacoustics_index` (only when `min_activity_quantile` is set). |
+| `tables/auto_bands.csv` | `band_id, fmin_hz, fmax_hz, bandwidth_hz` plus `ribbit_score_max, ribbit_score_p95, ribbit_score_median, n_clips_scored` when `ribbit_score_min` is set. |
 | `tables/auto_band_consensus.csv` | `filename, freq_hz, z_normalized`; `filename == "__consensus__"` is the median row. |
 | `tables/loose_rois.csv` | Per-band hysteresis ROIs (loose dur/bw filter). |
 | `tables/shape_features.csv` | Per-ROI 26-D Gabor shape + centroid features and HDBSCAN cluster (-1 = noise). |
@@ -298,7 +295,6 @@ name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
 | `plots/em_convergence.png` | Per-family `1 - cosine` vs iter. |
 | `plots/template_family_XXXX.png` | Final template per `motif_cluster` (band*100 + shape_cluster). |
 | `plots/{stem}_band_envelope_vs_template_events.png` | 2-panel diagnostic per recording. |
-| `plots/{stem}_full_recording_events.png` | Full focal recording with auto event boxes. |
 | `templates/family_XXXX_template.npz` | Fixed-support template arrays + support dict. |
 
 ## Toggles and troubleshooting
@@ -309,21 +305,22 @@ name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
   within a band. Raise (e.g. `8–12`) when bands are noisy and you want only
   large, coherent clusters surviving. Lower (e.g. `3–4`) for species with
   small but distinct call modes.
-- **`ribbit_score_min`** — set a numeric threshold (e.g. `0.05`) to drop
-  bands that don't carry periodic structure. Default `None` reports scores
-  without filtering — inspect `auto_bands.csv` first to pick a threshold.
-- **`min_activity_quantile`** — set (e.g. `0.25`) to drop the bottom 25% of
-  recordings by `bioacoustics_index` before caching their PCEN spectrograms.
-  Default `None` reports scores only.
+- **`ribbit_score_min`** — set a numeric threshold (e.g. `0.05`) to enable
+  RIBBIT band-level scoring and drop bands below it. Leave at `None` to
+  skip the stage entirely (saves a per-(file,band) OpenSoundscape pass).
+- **`min_activity_quantile`** — set (e.g. `0.25`) to enable
+  bioacoustics_index pre-ranking and drop the bottom 25% of recordings.
+  Leave at `None` to skip the stage entirely.
 - **`anchor_onset_fraction` (default `0.30`)**: lower (e.g. `0.10–0.20`) for
   species where curated peak_time is the *very* leading edge of a call;
   higher (e.g. `0.40–0.50`) for impulsive calls where onset ≈ argmax.
 - **`threshold_floor`**: drop to `0.40` if recall is the bottleneck and the
   remaining curated boxes score in the 0.55–0.65 range. Expect a precision
   hit.
-- **`fallback_min_recordings`**: lower to `1` (effectively "any one
-  recording") for very rare components; raise to `3+` when you have many
-  recordings and want stricter agreement.
+- **`em_threshold_quantile`**: lower (e.g. `0.90`) to keep more EM-stage
+  candidate peaks per iteration; raise (e.g. `0.98`) for stricter
+  template-member selection. The clipped value is bounded by
+  `[threshold_floor, threshold_ceiling]`.
 - **`band.k_band_mad_lower`**: tune the secondary hysteresis threshold. The
   default `1.0` extends bands by ~1 FFT bin until consensus falls below
   `med + 1*MAD`. Lower it (e.g. `0.5`) to extend further; raise (e.g. `1.5`)
@@ -401,9 +398,10 @@ the score is reported but not used as a filter.
   call's harmonic content but don't overlap the curated fundamental are
   scored as misses. Consider a harmonic-aware matcher in
   `common/curated_eval.py`.
-- **No per-recording band addition.** The fallback in stage 2 adds a band
-  only if `fallback_min_recordings` agree. A single outlier recording
-  carrying a rare component isn't yet rescued.
+- **Consensus-only band discovery.** A rare component visible in only one
+  recording will not survive the cross-recording median. A per-recording
+  fallback was tried and removed (it never fired on Marbled Frog); reintroduce
+  if a new species needs it.
 - **Cache memory.** `load_focal_z` holds wideband spectrograms for every
   recording in RAM. For species with many long recordings, lazy iteration
   + on-disk caches may be needed.

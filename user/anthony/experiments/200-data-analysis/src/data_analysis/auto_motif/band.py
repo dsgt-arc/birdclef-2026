@@ -33,8 +33,6 @@ class BandDiscoveryConfig:
     min_band_width_hz: float = 150.0
     max_bands: int = 3
     band_pad_hz: float = 40.0
-    fallback_min_recordings: int = 2
-    fallback_overlap_fraction: float = 0.5
 
 
 def per_recording_mean_spectrum(z: np.ndarray, *, time_quantile: float = 0.95) -> np.ndarray:

@@ -2,23 +2,25 @@
 
 Pipeline (single ``run()`` entry point, takes a species label):
 
-0. Pre-rank recordings by ``maad.features.bioacoustics_index`` over WIDEBAND
-   (reported only by default; opt-in filter via ``min_activity_quantile``).
+0. (Opt-in, via ``min_activity_quantile``) pre-rank recordings by
+   ``maad.features.bioacoustics_index`` over WIDEBAND and drop the bottom
+   quantile before caching their spectrograms.
 1. Load wideband PCEN spectrograms for every focal recording of the label.
 2. Auto-discover up to ``max_bands`` frequency bands via per-recording-normalized
    median consensus across recordings (``auto_motif.band``).
-3. Score band-level periodicity with ``opensoundscape.ribbit`` (reported only by
-   default; opt-in filter via ``ribbit_score_min``).
+3. (Opt-in, via ``ribbit_score_min``) score band-level periodicity with
+   ``opensoundscape.ribbit`` and drop bands below the threshold.
 4. Per band: propose loose ROIs via scikit-maad hysteresis at in-band percentile
    thresholds.
 5. Per band: cluster loose ROIs by 26-D ``maad.features.shape_features`` (Gabor)
    + intensity centroid using HDBSCAN. Each non-noise cluster becomes a motif
    family carried into EM.
 6. Per (band, shape-cluster): EM-style template refinement. Init from the median
-   patch of cluster-member ROIs; E-step picks score-peaks above a bimodal split
-   of the score distribution; M-step re-anchors each peak at the band-mean
-   envelope onset and re-medians. Stop when ``1 - cosine`` between iterations
-   < ``template_change_eps``.
+   patch of cluster-member ROIs; E-step picks score-peaks above the
+   ``em_threshold_quantile`` of the score distribution (clipped to
+   ``[threshold_floor, threshold_ceiling]``); M-step re-anchors each peak at
+   the band-mean envelope onset and re-medians. Stop when ``1 - cosine``
+   between iterations < ``template_change_eps``.
 7. Final detection: scan with all converged family templates; reuse the existing
    ``motif_template_calibration`` NMS + cross-family consolidation so the output
    schema matches the manual pipeline.
@@ -36,13 +38,11 @@ from pathlib import Path
 import warnings
 
 import librosa
-import librosa.display
 import matplotlib
 
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -53,9 +53,7 @@ from opensoundscape.ribbit import ribbit as opso_ribbit
 from opensoundscape.spectrogram import Spectrogram
 from scipy.ndimage import binary_closing
 from scipy.signal import find_peaks
-from scipy.stats import gaussian_kde
 from sklearn.cluster import HDBSCAN
-from sklearn.mixture import GaussianMixture
 
 from data_analysis.auto_motif.band import (
     BandDiscoveryConfig,
@@ -127,17 +125,17 @@ class AutoConfig:
     consolidate_min_time_iou: float = 0.05
     threshold_floor: float = 0.45
     threshold_ceiling: float = 0.90
-    fallback_quantile: float = 0.95
+    em_threshold_quantile: float = 0.95
     anchor_onset_fraction: float = 0.30
-    # RIBBIT band-level periodicity scoring (opensoundscape). Reported on
-    # auto_bands.csv as `ribbit_score_max` / `_median`. Bands are dropped
-    # only when `ribbit_score_min` is set (default: score-only, no drop).
+    # RIBBIT band-level periodicity scoring (opensoundscape). Only runs when
+    # `ribbit_score_min` is set; bands below the threshold are dropped and the
+    # scores are joined onto auto_bands.csv.
     ribbit_pulse_rate_hz: tuple[float, float] = (0.3, 30.0)
     ribbit_clip_duration_sec: float = 10.0
     ribbit_score_min: float | None = None
     # Recording-level pre-ranking via maad.features.bioacoustics_index over
-    # WIDEBAND. Reported on recording_activity.csv. Recordings are filtered
-    # only when `min_activity_quantile` is set (default: score-only).
+    # WIDEBAND. Only runs when `min_activity_quantile` is set; recordings
+    # below the quantile are dropped before the PCEN cache is built.
     min_activity_quantile: float | None = None
 
 
@@ -203,16 +201,12 @@ def auto_discover_bands(
     cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     *,
     config: BandDiscoveryConfig,
-) -> tuple[list[tuple[float, float]], pl.DataFrame, list[str]]:
-    """Discover species bands. Returns (bands, consensus_df, methods).
+) -> tuple[list[tuple[float, float]], pl.DataFrame]:
+    """Discover species bands from the median consensus across recordings.
 
-    First runs ``discover_bands`` on the median consensus across recordings.
-    Then runs it independently on each per-recording spectrum and rescues any
-    candidate band that ``fallback_min_recordings`` or more recordings agree
-    on (by ``fallback_overlap_fraction`` IoU), but the consensus rejected.
-    Promoted bands are appended after consensus bands, subject to
-    ``max_bands``. ``methods[i]`` records ``"consensus"`` or
-    ``"fallback_per_recording"`` for ``bands[i]``.
+    Returns ``(bands, consensus_df)``. ``consensus_df`` has one row per
+    (filename, freq_hz) plus a single ``__consensus__`` row per freq carrying
+    the cross-recording median.
     """
     spectra: list[np.ndarray] = []
     rows: list[dict] = []
@@ -224,44 +218,12 @@ def auto_discover_bands(
         for f, v in zip(freqs, spectrum):
             rows.append({"filename": filename, "freq_hz": float(f), "z_normalized": float(v)})
     if freqs_ref is None:
-        return [], pl.DataFrame(), []
+        return [], pl.DataFrame()
     consensus = consensus_spectrum(spectra)
-    consensus_bands = discover_bands(consensus, freqs_ref, config=config)
+    bands = discover_bands(consensus, freqs_ref, config=config)
     for f, v in zip(freqs_ref, consensus):
         rows.append({"filename": "__consensus__", "freq_hz": float(f), "z_normalized": float(v)})
-
-    methods = ["consensus"] * len(consensus_bands)
-    bands = list(consensus_bands)
-    if len(bands) < config.max_bands and config.fallback_min_recordings >= 1:
-        per_rec_band_lists = [discover_bands(spec, freqs_ref, config=config) for spec in spectra]
-        candidates = [band for lst in per_rec_band_lists for band in lst]
-        for cand in candidates:
-            if _band_overlaps_any(cand, bands, config.fallback_overlap_fraction):
-                continue
-            support = sum(
-                1 for lst in per_rec_band_lists
-                if any(_band_iou(cand, b) >= config.fallback_overlap_fraction for b in lst)
-            )
-            if support >= config.fallback_min_recordings:
-                bands.append(cand)
-                methods.append("fallback_per_recording")
-                if len(bands) >= config.max_bands:
-                    break
-    return bands, pl.DataFrame(rows), methods
-
-
-def _band_iou(a: tuple[float, float], b: tuple[float, float]) -> float:
-    inter = max(0.0, min(a[1], b[1]) - max(a[0], b[0]))
-    union = max(a[1], b[1]) - min(a[0], b[0])
-    return float(inter / union) if union > 0 else 0.0
-
-
-def _band_overlaps_any(
-    cand: tuple[float, float],
-    existing: list[tuple[float, float]],
-    threshold: float,
-) -> bool:
-    return any(_band_iou(cand, b) >= threshold for b in existing)
+    return bands, pl.DataFrame(rows)
 
 
 # -----------------------------------------------------------------------------
@@ -551,80 +513,23 @@ def shape_cluster_refine(
 
 
 # -----------------------------------------------------------------------------
-# Score-distribution thresholding (bimodal split with fallbacks)
+# Score-distribution thresholding
 # -----------------------------------------------------------------------------
 
 
-def _is_bimodal(scores: np.ndarray) -> bool:
-    """Cheap KDE-valley check: True if there is a clear dip between two modes."""
-    if scores.size < 30:
-        return False
-    try:
-        kde = gaussian_kde(scores)
-    except (np.linalg.LinAlgError, ValueError):
-        return False
-    grid = np.linspace(float(scores.min()), float(scores.max()), 200)
-    densities = kde(grid)
-    peaks, _ = find_peaks(densities)
-    if peaks.size < 2:
-        return False
-    top_two = peaks[np.argsort(densities[peaks])[-2:]]
-    lo, hi = sorted(top_two)
-    valley = float(densities[lo:hi].min())
-    peak = float(densities[top_two].min())
-    return valley < 0.7 * peak
-
-
-def bimodal_split(
+def quantile_threshold(
     scores: np.ndarray,
     *,
-    fallback_quantile: float = 0.95,
-    floor: float = 0.45,
-    ceiling: float = 0.90,
+    quantile: float,
+    floor: float,
+    ceiling: float,
 ) -> tuple[float, str]:
-    """Return (threshold, method) splitting a score distribution into bg/fg."""
+    """Return (threshold, method) at a fixed quantile, clipped to [floor, ceiling]."""
     finite = scores[np.isfinite(scores)]
     if finite.size == 0:
-        return floor, "fallback_empty"
-    if _is_bimodal(finite):
-        try:
-            gmm = GaussianMixture(n_components=2, random_state=0).fit(finite.reshape(-1, 1))
-            means = gmm.means_.flatten()
-            lo_idx = int(np.argmin(means))
-            hi_idx = 1 - lo_idx
-            grid = np.linspace(float(finite.min()), float(finite.max()), 400)
-            lo_density = gmm.weights_[lo_idx] * np.exp(
-                -0.5 * ((grid - means[lo_idx]) ** 2) / gmm.covariances_[lo_idx].flatten()[0]
-            )
-            hi_density = gmm.weights_[hi_idx] * np.exp(
-                -0.5 * ((grid - means[hi_idx]) ** 2) / gmm.covariances_[hi_idx].flatten()[0]
-            )
-            crossover_idx = int(np.argmin(np.abs(lo_density - hi_density)))
-            thr = float(grid[crossover_idx])
-            return float(np.clip(thr, floor, ceiling)), "gmm2_crossover"
-        except (np.linalg.LinAlgError, ValueError):
-            pass
-        hist, edges = np.histogram(finite, bins=64)
-        total = hist.sum()
-        if total > 0:
-            cum_weight = np.cumsum(hist)
-            cum_value = np.cumsum(hist * 0.5 * (edges[:-1] + edges[1:]))
-            mean_total = cum_value[-1] / total
-            best_var, best_thr = -1.0, float(np.median(finite))
-            for i in range(1, len(hist)):
-                w0 = cum_weight[i - 1] / total
-                w1 = 1.0 - w0
-                if w0 == 0 or w1 == 0:
-                    continue
-                m0 = cum_value[i - 1] / cum_weight[i - 1]
-                m1 = (cum_value[-1] - cum_value[i - 1]) / (total - cum_weight[i - 1])
-                between = w0 * w1 * (m0 - m1) ** 2
-                if between > best_var:
-                    best_var = between
-                    best_thr = float(edges[i])
-            return float(np.clip(best_thr, floor, ceiling)), "otsu"
-    thr = float(np.quantile(finite, fallback_quantile))
-    return float(np.clip(thr, floor, ceiling)), "fallback_quantile"
+        return floor, "empty"
+    thr = float(np.quantile(finite, quantile))
+    return float(np.clip(thr, floor, ceiling)), "quantile"
 
 
 # -----------------------------------------------------------------------------
@@ -737,9 +642,9 @@ def em_step(
         per_file_tracks[filename] = (center_times, scores)
         all_scores.extend(scores.tolist())
 
-    threshold, method = bimodal_split(
+    threshold, method = quantile_threshold(
         np.asarray(all_scores, dtype=np.float64),
-        fallback_quantile=config.fallback_quantile,
+        quantile=config.em_threshold_quantile,
         floor=config.threshold_floor,
         ceiling=config.threshold_ceiling,
     )
@@ -1114,47 +1019,6 @@ def _plot_templates(families: list[dict], output_dir: Path) -> None:
         plt.close(fig)
 
 
-def _plot_full_recording_events(
-    events: pl.DataFrame,
-    cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
-    bands: list[tuple[float, float]],
-    display_ylim: tuple[float, float],
-    output_dir: Path,
-) -> None:
-    if events.is_empty():
-        return
-    cmap = plt.cm.tab10
-    for filename, (db_band, _z, freqs, times) in cache.items():
-        width = max(12.0, min(24.0, 0.42 * float(times[-1]) + 6.0))
-        fig, ax = plt.subplots(figsize=(width, 6.2), dpi=180)
-        librosa.display.specshow(db_band, x_coords=times, y_coords=freqs,
-                                 x_axis="time", y_axis="linear",
-                                 sr=MEL_SAMPLE_RATE, hop_length=MEL_HOP_LENGTH,
-                                 ax=ax, cmap="magma")
-        df = events.filter(pl.col("filename") == filename).sort("peak_time_sec")
-        for row in df.iter_rows(named=True):
-            cluster = int(row["best_motif_cluster"])
-            color = cmap(cluster % 10)
-            ax.add_patch(Rectangle(
-                (row["start_sec"], row["fmin_hz"]),
-                row["end_sec"] - row["start_sec"],
-                row["fmax_hz"] - row["fmin_hz"],
-                fill=False, edgecolor=color, linewidth=1.6, alpha=0.95,
-            ))
-            ax.text(row["peak_time_sec"], min(display_ylim[1] - 45, row["fmax_hz"] + 35),
-                    f"b{cluster}\n{row['score']:.2f}",
-                    color=color, fontsize=6.5, ha="center", va="bottom", weight="bold")
-        ax.set_ylim(display_ylim)
-        ax.set_xlim(0.0, float(times[-1]))
-        ax.set_title(
-            f"Auto motif events: {Path(filename).stem}\n"
-            f"n={df.height} consolidated events; b#=auto band id"
-        )
-        fig.tight_layout()
-        fig.savefig(output_dir / f"{Path(filename).stem}_full_recording_events.png")
-        plt.close(fig)
-
-
 # -----------------------------------------------------------------------------
 # Driver
 # -----------------------------------------------------------------------------
@@ -1184,43 +1048,44 @@ def run(
     if not files:
         raise RuntimeError(f"No focal recordings found for label {label}")
 
-    # 0. Pre-rank recordings by bioacoustic activity (filter is opt-in).
-    activity = rank_recordings_by_activity(files, flim=WIDEBAND)
-    activity.write_csv(tables_dir / "recording_activity.csv")
-    if config.min_activity_quantile is not None and not activity.is_empty():
-        threshold = float(np.quantile(activity["bioacoustics_index"].to_numpy(), config.min_activity_quantile))
-        keep = activity.filter(pl.col("bioacoustics_index") >= threshold)["filename"].to_list()
-        files = [f for f in files if f in set(keep)]
-        if not files:
-            raise RuntimeError(
-                f"All recordings dropped by min_activity_quantile={config.min_activity_quantile}"
-            )
+    # 0. Pre-rank recordings by bioacoustic activity (opt-in).
+    if config.min_activity_quantile is not None:
+        activity = rank_recordings_by_activity(files, flim=WIDEBAND)
+        activity.write_csv(tables_dir / "recording_activity.csv")
+        if not activity.is_empty():
+            threshold = float(np.quantile(activity["bioacoustics_index"].to_numpy(), config.min_activity_quantile))
+            keep = activity.filter(pl.col("bioacoustics_index") >= threshold)["filename"].to_list()
+            files = [f for f in files if f in set(keep)]
+            if not files:
+                raise RuntimeError(
+                    f"All recordings dropped by min_activity_quantile={config.min_activity_quantile}"
+                )
 
     # 1. Load wideband spectrograms.
     cache = load_focal_z(files, band=WIDEBAND)
 
     # 2. Discover bands.
-    bands, consensus_df, band_methods = auto_discover_bands(cache, config=config.band)
+    bands, consensus_df = auto_discover_bands(cache, config=config.band)
     if not bands:
         raise RuntimeError("Auto band discovery returned no bands; check k_band_mad / spectra")
 
-    # 2b. RIBBIT periodicity scoring per band (band-level activity prior).
-    ribbit_df = score_band_periodicity(
-        files, bands,
-        pulse_rate_hz=config.ribbit_pulse_rate_hz,
-        clip_duration_sec=config.ribbit_clip_duration_sec,
-    )
-    if config.ribbit_score_min is not None and not ribbit_df.is_empty():
-        keep_mask = ribbit_df["ribbit_score_max"].fill_nan(0.0) >= config.ribbit_score_min
-        bands = [b for b, keep in zip(bands, keep_mask.to_list()) if keep]
-        band_methods = [m for m, keep in zip(band_methods, keep_mask.to_list()) if keep]
-        ribbit_df = ribbit_df.filter(keep_mask)
-        # Reassign sequential band_ids after the drop.
-        ribbit_df = ribbit_df.with_columns(pl.int_range(0, ribbit_df.height).alias("band_id"))
-        if not bands:
-            raise RuntimeError(
-                f"All bands dropped by ribbit_score_min={config.ribbit_score_min}"
-            )
+    # 2b. RIBBIT periodicity scoring per band (opt-in).
+    ribbit_df = pl.DataFrame()
+    if config.ribbit_score_min is not None:
+        ribbit_df = score_band_periodicity(
+            files, bands,
+            pulse_rate_hz=config.ribbit_pulse_rate_hz,
+            clip_duration_sec=config.ribbit_clip_duration_sec,
+        )
+        if not ribbit_df.is_empty():
+            keep_mask = ribbit_df["ribbit_score_max"].fill_nan(0.0) >= config.ribbit_score_min
+            bands = [b for b, keep in zip(bands, keep_mask.to_list()) if keep]
+            ribbit_df = ribbit_df.filter(keep_mask)
+            ribbit_df = ribbit_df.with_columns(pl.int_range(0, ribbit_df.height).alias("band_id"))
+            if not bands:
+                raise RuntimeError(
+                    f"All bands dropped by ribbit_score_min={config.ribbit_score_min}"
+                )
 
     bands_df = pl.DataFrame([
         {
@@ -1228,7 +1093,6 @@ def run(
             "fmin_hz": float(fmin),
             "fmax_hz": float(fmax),
             "bandwidth_hz": float(fmax - fmin),
-            "discovery_method": band_methods[i] if i < len(band_methods) else "consensus",
         }
         for i, (fmin, fmax) in enumerate(bands)
     ])
@@ -1311,12 +1175,17 @@ def run(
             ).sort("component")
             cons_summary.write_csv(tables_dir / "curated_recovery_summary.csv")
 
-    # 7. Per-recording full-recording event plot.
-    _plot_full_recording_events(consolidated, cache, bands, WIDEBAND, plots_dir)
-
-    # 8. Per-recording band-envelope-vs-template diagnostic plot
-    #    (same 2-panel layout as motif_recording_diagnostics).
-    primary_band = bands[0]
+    # 7. Per-recording band-envelope-vs-template diagnostic plot
+    #    (same 2-panel layout as motif_recording_diagnostics). Envelope band is
+    #    the discovered band carrying the most refined ROIs, so the trace
+    #    reflects the densest call activity instead of the highest-peak band.
+    band_counts = (
+        refined.group_by("band_id").len().sort("len", descending=True)
+        if not refined.is_empty()
+        else pl.DataFrame()
+    )
+    diag_band_id = int(band_counts["band_id"][0]) if not band_counts.is_empty() else 0
+    primary_band = bands[diag_band_id]
     for filename, (db_band, z, freqs, times) in cache.items():
         peak_idx, envelope, _ = band_envelope_peaks(z, freqs, times, band=primary_band)
         peak_times = times[peak_idx]
@@ -1361,8 +1230,8 @@ Accepted motif families ({len(families)}):
 
 Artifacts:
 
-- `tables/recording_activity.csv` — per-recording bioacoustics_index (pre-ranking).
-- `tables/auto_bands.csv` — discovered frequency bands plus RIBBIT periodicity scores.
+- `tables/recording_activity.csv` — per-recording bioacoustics_index (only when `min_activity_quantile` is set).
+- `tables/auto_bands.csv` — discovered frequency bands; RIBBIT scores joined when `ribbit_score_min` is set.
 - `tables/auto_band_consensus.csv` — per-recording + median consensus spectra.
 - `tables/loose_rois.csv` — loose hysteresis ROIs at in-band percentile thresholds.
 - `tables/shape_features.csv` — per-ROI 26-D Gabor shape + centroid features and HDBSCAN cluster assignment.
@@ -1381,8 +1250,7 @@ Artifacts:
 - `plots/shape_clusters.png` — per-band SVD-projected scatter of shape features colored by HDBSCAN cluster.
 - `plots/em_convergence.png` — per-family 1-cosine vs iter.
 - `plots/template_family_XX.png` — final templates.
-- `plots/{{stem}}_full_recording_events.png` — full focal recordings with auto event boxes.
-- `plots/{{stem}}_band_envelope_vs_template_events.png` — 2-panel diagnostic (same layout as motif_recording_diagnostics).
+- `plots/{{stem}}_band_envelope_vs_template_events.png` — 2-panel diagnostic (full spectrogram + band envelope).
 """
     )
     return output_dir

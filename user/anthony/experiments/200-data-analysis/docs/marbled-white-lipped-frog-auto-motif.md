@@ -192,13 +192,12 @@ might matter.
   enabled. Defaulted off; the path is wired end-to-end and can be flipped on
   per-species if a band is known multi-modal and threshold derivation is
   adjusted (e.g. share the parent threshold across sub-templates).
-- **Per-recording band fallback** (`auto_discover_bands` runs `discover_bands`
-  on each per-recording spectrum and promotes any candidate band that ≥
-  `fallback_min_recordings = 2` recordings agree on but consensus rejected):
-  did not fire on Marbled Frog — all 3 bands were already found via the
-  median consensus, and the cap was hit. `tables/auto_bands.csv` records
-  `discovery_method` per band. Useful for species with a sparse component
-  visible in only a minority of recordings.
+- **Per-recording band fallback** (run `discover_bands` on each per-recording
+  spectrum and promote candidate bands agreed on by ≥ N recordings that the
+  consensus rejected): never fired on Marbled Frog — all 3 bands were already
+  found via the median consensus. The fallback path has since been removed
+  to keep band discovery to a single consensus pass; reintroduce if a future
+  species has a sparse component visible in only a minority of recordings.
 
 ### Remaining gap
 

@@ -22,12 +22,13 @@ import numpy as np
 import polars as pl
 
 from data_analysis.common.curated_eval import curated_recovery
+from data_analysis.common.paths import ARTIFACTS_DIR
 from data_analysis.auto_motif.mining import LABEL_TO_DIR
 
 DEFAULT_LABEL = "22967"
-DEFAULT_CURATED = Path("artifacts/marbled_frog/motif_boxes/curated/tables/curated_motif_boxes.csv")
-DEFAULT_AUTO = "artifacts/auto_motif/{species_dir}/tables/consolidated_events.csv"
-DEFAULT_MANUAL = "artifacts/{species_dir}/motif_template_calibration/tables/consolidated_events.csv"
+DEFAULT_CURATED = ARTIFACTS_DIR / "marbled_frog/motif_boxes/curated/tables/curated_motif_boxes.csv"
+DEFAULT_AUTO_TMPL = "auto_motif/{species_dir}/tables/consolidated_events.csv"
+DEFAULT_MANUAL_TMPL = "{species_dir}/motif_template_calibration/tables/consolidated_events.csv"
 
 
 def _agreement(auto: pl.DataFrame, manual: pl.DataFrame, tolerance: float) -> pl.DataFrame:
@@ -85,8 +86,8 @@ def main() -> None:
     args = parser.parse_args()
 
     species_dir = LABEL_TO_DIR.get(args.label, args.label)
-    auto_path = args.auto or Path(DEFAULT_AUTO.format(species_dir=species_dir))
-    manual_path = args.manual or Path(DEFAULT_MANUAL.format(species_dir=species_dir))
+    auto_path = args.auto or ARTIFACTS_DIR / DEFAULT_AUTO_TMPL.format(species_dir=species_dir)
+    manual_path = args.manual or ARTIFACTS_DIR / DEFAULT_MANUAL_TMPL.format(species_dir=species_dir)
     auto = pl.read_csv(auto_path)
     manual = pl.read_csv(manual_path)
 
