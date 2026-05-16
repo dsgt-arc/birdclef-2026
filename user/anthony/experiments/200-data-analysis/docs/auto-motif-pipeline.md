@@ -151,6 +151,14 @@ extension, capped at `max_bands`, is returned. This is a robust-core +
 recall-extension design (median for precision, exemplar weighting for
 recall); see [Library choices](#library-choices).
 
+> **Structural assumption.** A per-frequency-bin cross-recording consensus
+> is an LTAS-style statistic: it only concentrates for **narrowband,
+> frequency-stable, stereotyped** signals. Broadband energy lights every
+> bin (nothing stands out); an FM sweep's energy at any fixed bin is brief
+> and shifts between renditions (the per-bin median stays low everywhere).
+> Such species yield *zero* bands and the run fails — see the genericity
+> bullet in [Limitations](#limitations-and-follow-ups).
+
 ### 3. RIBBIT periodicity scoring (opt-in)
 
 When `AutoConfig.ribbit_score_min` is set, `score_band_periodicity(files,
@@ -466,6 +474,31 @@ score is reported but not used as a filter.
 
 ## Limitations and follow-ups
 
+- **Band discovery is structurally blind to broadband / FM-sweep calls.**
+  Batch over the 41 soundscape∩train species (`min_focal=8`, 2026-05-16):
+  **24 ok / 17 failed, every failure the identical** `Auto band discovery
+  returned no bands` (no crashes). Failures cluster on broadband / harmonic
+  / frequency-sweeping callers — parrots & macaws, galliforms, ducks, rich
+  oscine songsters (`hyamac1`, `orwpar`, `bufpar`, `chacha1`, `bafcur1`,
+  `redjun`, `wfwduc1`, `thlwre1`, `sibtan2`, `fusfly1`, `rufhor2`,
+  `plcjay1`, …); successes are narrowband/tonal repeaters — pulse-train
+  frogs, nightjars, tinamou, dove. Spans all taxa and all `n_focal`
+  (10→315), so **not** a small-sample artifact. Root cause is the stage-2
+  primitive (per-bin median consensus, see the structural-assumption note
+  in [§2](#2-band-discovery)), *not* a tunable threshold — do **not** just
+  lower `k_band_mad`. Note the rest of the pipeline (loose ROIs → 2D Gabor
+  shape clustering → EM template → 2D spectrogram-correlation detection) is
+  already shape-agnostic; **only the stage-2 band gate** is narrowband. The
+  literature-grounded fix is to replace/relax that gate with a 2D
+  image-domain ROI segmentation (`maad.rois.create_mask` /
+  `select_rois` / `rois_2d`) or matched-filter spectrogram cross-correlation
+  (`maad.rois.template_matching`, the Mellinger–Clark detector) rather than
+  invent an FM detector; opensoundscape's own answer for arbitrary call
+  structure is learned embeddings/CNNs (`opensoundscape.CNN`, BirdNET/Perch
+  — Perch embeddings already exist for this dataset). Manifest:
+  `artifacts/auto_motif/_batch/manifest.csv` (gitignored); per-species
+  status JSONs under `artifacts/auto_motif/_batch/status/` (delete one to
+  force a resumable re-run).
 - **Reported recovery is recall, not precision.** The curated boxes are 33
   hand-picked exemplars in only 3 of 8 focal recordings — not an
   exhaustive annotation. `curated recovery ≈ 0.96` means "of the selected
