@@ -29,6 +29,22 @@ from data_analysis.common.spectrogram import (
 )
 
 
+def _by(
+    frame: pl.DataFrame, col: str, value: object, *, sort: str | None = None
+) -> pl.DataFrame:
+    """Equality-filter ``frame`` on ``col``, tolerating an empty/schemaless frame.
+
+    Empty diagnostic inputs (a recording with no envelope peaks, a species with
+    no detections) arrive as a 0-column polars frame, where ``pl.col(col)``
+    raises ``ColumnNotFoundError``. Return the (empty) frame untouched in that
+    case so the caller's ``iter_rows`` loops simply no-op.
+    """
+    if col not in frame.columns:
+        return frame
+    out = frame.filter(pl.col(col) == value)
+    return out.sort(sort) if sort and sort in out.columns else out
+
+
 def plot_recording_diagnostic(
     filename: str,
     db_band: np.ndarray,
@@ -77,7 +93,7 @@ def plot_recording_diagnostic(
         band[0], band[1], color="white", alpha=0.08,
         label=f"diagnostic band {band[0]:.0f}-{band[1]:.0f} Hz",
     )
-    env_df = envelope_events.filter(pl.col("filename") == filename).sort("peak_time_sec")
+    env_df = _by(envelope_events, "filename", filename, sort="peak_time_sec")
     for row in env_df.iter_rows(named=True):
         matched = any(
             abs(float(row["peak_time_sec"]) - float(p["envelope_peak_time_sec"])) < 1e-6
@@ -96,7 +112,7 @@ def plot_recording_diagnostic(
                 alpha=0.85,
             )
         )
-    df = events.filter(pl.col("filename") == filename).sort("peak_time_sec")
+    df = _by(events, "filename", filename, sort="peak_time_sec")
     for row in df.iter_rows(named=True):
         cluster = int(row["best_motif_cluster"])
         color = cmap(cluster % 10)
@@ -170,8 +186,8 @@ def plot_motif_activation_diagnostic(
     background_scores = (
         np.asarray([] if background_scores is None else background_scores, dtype=float)
     )
-    st = score_tracks.filter(pl.col("motif_cluster") == motif_cluster)
-    ev = events.filter(pl.col("motif_cluster") == motif_cluster)
+    st = _by(score_tracks, "motif_cluster", motif_cluster)
+    ev = _by(events, "motif_cluster", motif_cluster)
     files = sorted(cache.keys())
     n = len(files)
 
@@ -239,7 +255,7 @@ def plot_motif_activation_diagnostic(
             ax=ax_spec, cmap="magma",
         )
         ax_spec.axhspan(fmin, fmax, color="white", alpha=0.08)
-        det = ev.filter(pl.col("filename") == filename).sort("peak_time_sec")
+        det = _by(ev, "filename", filename, sort="peak_time_sec")
         n_det_total += det.height
         for row in det.iter_rows(named=True):
             ax_spec.add_patch(
@@ -257,7 +273,7 @@ def plot_motif_activation_diagnostic(
         ax_spec.set_ylim(ylim)
         ax_spec.set_ylabel(f"{Path(filename).stem}\nHz", fontsize=8)
 
-        trk = st.filter(pl.col("filename") == filename).sort("time_sec")
+        trk = _by(st, "filename", filename, sort="time_sec")
         if trk.height:
             ax_score.fill_between(
                 trk["time_sec"], score_ylim[0], trk["score"],
