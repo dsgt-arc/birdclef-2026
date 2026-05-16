@@ -26,12 +26,19 @@ import numpy as np
 
 @dataclass(frozen=True)
 class BandDiscoveryConfig:
-    """Parameters for auto frequency-band discovery."""
+    """Parameters for auto frequency-band discovery.
+
+    Discovery is a robust core + recall extension: ``core_bands`` bands from
+    the median consensus (high precision; the dominant chip/primary complex),
+    then exemplar-weighted bands in frequency territory the core never covered
+    (the sparse / frequency-jittered components), up to ``max_bands`` total.
+    """
 
     k_band_mad: float = 2.0
     k_band_mad_lower: float = 1.0
     min_band_width_hz: float = 150.0
-    max_bands: int = 3
+    core_bands: int = 3
+    max_bands: int = 5
     band_pad_hz: float = 40.0
 
 
@@ -60,6 +67,61 @@ def consensus_spectrum(spectra: list[np.ndarray]) -> np.ndarray:
     """
     stack = np.stack(spectra, axis=0)
     return np.median(stack, axis=0)
+
+
+def exemplar_weights(
+    spectra: list[np.ndarray], freqs: np.ndarray, anchor: tuple[float, float]
+) -> np.ndarray:
+    """Per-recording weights from peak salience in the species' anchor band.
+
+    The anchor is the species' undisputed dominant band (top-ranked run of the
+    plain median consensus): it is present in every recording, so its
+    per-recording strength is a robust, species-agnostic proxy for "how cleanly
+    does this recording express the target species". Recordings strong in the
+    anchor get more say in defining the subtler bands; marginal/noisy ones are
+    downweighted. No tuned constant -- the weight is the species' own signal.
+    Falls back to uniform if every recording is silent in the anchor.
+    """
+    lo, hi = anchor
+    mask = (freqs >= lo) & (freqs <= hi)
+    w = np.array([max(float(s[mask].max()), 0.0) for s in spectra], dtype=float)
+    total = float(w.sum())
+    return w / total if total > 0 else np.full(len(w), 1.0 / len(w))
+
+
+def weighted_consensus(spectra: list[np.ndarray], weights: np.ndarray) -> np.ndarray:
+    """Exemplar-weighted mean across recordings (weights sum to 1)."""
+    return np.tensordot(weights, np.stack(spectra, axis=0), axes=(0, 0))
+
+
+def _intervals_overlap(a: tuple[float, float], b: tuple[float, float]) -> bool:
+    return not (a[1] < b[0] or b[1] < a[0])
+
+
+def merge_overlapping_bands(
+    bands: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    """Union overlapping frequency intervals; touching-but-disjoint kept apart.
+
+    The exemplar-weighted consensus often resolves a single broadband motif
+    into several overlapping runs; collapse those into one band while leaving
+    genuinely separate components (e.g. a secondary's low vs high lobe) apart.
+    """
+    out: list[tuple[float, float]] = []
+    for lo, hi in sorted(bands):
+        if out and lo <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], hi))
+        else:
+            out.append((lo, hi))
+    return out
+
+
+def bands_outside(
+    candidates: list[tuple[float, float]], covered: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    """Candidate bands that overlap none of the already-``covered`` bands."""
+    return [c for c in candidates
+            if not any(_intervals_overlap(c, b) for b in covered)]
 
 
 def _contiguous_runs(mask: np.ndarray) -> list[tuple[int, int]]:

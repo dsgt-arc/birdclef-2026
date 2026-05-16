@@ -33,7 +33,7 @@ spectrum across recordings will surface the species' true frequency bands.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import warnings
 
@@ -57,9 +57,13 @@ from sklearn.cluster import HDBSCAN
 
 from data_analysis.auto_motif.band import (
     BandDiscoveryConfig,
+    bands_outside,
     consensus_spectrum,
     discover_bands,
+    exemplar_weights,
+    merge_overlapping_bands,
     per_recording_mean_spectrum,
+    weighted_consensus,
 )
 from data_analysis.common.curated_eval import (
     curated_recovery,
@@ -202,11 +206,15 @@ def auto_discover_bands(
     *,
     config: BandDiscoveryConfig,
 ) -> tuple[list[tuple[float, float]], pl.DataFrame]:
-    """Discover species bands from the median consensus across recordings.
+    """Discover species bands: robust median core + exemplar-weighted recall.
 
-    Returns ``(bands, consensus_df)``. ``consensus_df`` has one row per
-    (filename, freq_hz) plus a single ``__consensus__`` row per freq carrying
-    the cross-recording median.
+    ``core_bands`` bands come from the per-bin median consensus (high
+    precision; the dominant chip/primary complex). The exemplar-weighted
+    consensus (recordings strong in the core's anchor band weigh more) then
+    contributes bands in frequency territory the core never covered, up to
+    ``max_bands`` total. Returns ``(bands, consensus_df)``; ``consensus_df``
+    has one row per (filename, freq_hz) plus a single ``__consensus__`` row
+    per freq carrying the consensus that surfaced the extension bands.
     """
     spectra: list[np.ndarray] = []
     rows: list[dict] = []
@@ -220,7 +228,24 @@ def auto_discover_bands(
     if freqs_ref is None:
         return [], pl.DataFrame()
     consensus = consensus_spectrum(spectra)
-    bands = discover_bands(consensus, freqs_ref, config=config)
+    # Robust core: conventional median-consensus discovery. High precision
+    # (the dominant chip/primary complex) but drops sparse / frequency-
+    # jittered bands.
+    core = discover_bands(
+        consensus, freqs_ref, config=replace(config, max_bands=config.core_bands)
+    )
+    if core:
+        # Recall extension: the exemplar-weighted consensus (recordings strong
+        # in the core's anchor band weigh more) surfaces the bands the median
+        # dropped; keep only those the core never covered, then cap the total.
+        weights = exemplar_weights(spectra, freqs_ref, core[0])
+        consensus = weighted_consensus(spectra, weights)
+        w_bands = merge_overlapping_bands(
+            discover_bands(consensus, freqs_ref, config=config)
+        )
+        bands = (core + bands_outside(w_bands, core))[: config.max_bands]
+    else:
+        bands = discover_bands(consensus, freqs_ref, config=config)
     for f, v in zip(freqs_ref, consensus):
         rows.append({"filename": "__consensus__", "freq_hz": float(f), "z_normalized": float(v)})
     return bands, pl.DataFrame(rows)

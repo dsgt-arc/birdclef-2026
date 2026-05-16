@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Date | 2026-05-13 |
+| Date | 2026-05-15 |
 | Status | Species-agnostic reference; stable. Current Marbled Frog recovery in [Results](#results). |
 | Pipeline code | `src/data_analysis/auto_motif/mining.py` |
 | Band discovery | `src/data_analysis/auto_motif/band.py` |
@@ -54,9 +54,16 @@ the before/after narrative.
 
 What is deliberately hand-rolled (no clean library equivalent surfaced):
 
-- **Band discovery** — per-recording MAD-normalized consensus + hysteresis
-  (`band.py`). The shape "frequency bands where this species' energy is
-  consistently concentrated" has no obvious off-the-shelf detector.
+- **Band discovery** — a *robust core + recall extension* (`band.py`): the
+  per-recording MAD-normalized **median** consensus + hysteresis gives the
+  high-precision dominant bands; an **exemplar-weighted** consensus then
+  recovers the sparse / frequency-jittered bands the median washes out.
+  This is the literature's robust-estimator-core + recall-extension pattern
+  (a Long-Term-Average-Spectrum variant under a multiple-instance framing,
+  with confidence/exemplar weighting); no single off-the-shelf detector
+  produces "frequency bands where this species' energy recurs across
+  recordings", so the composition is hand-rolled. No tuned constant — the
+  exemplar weight is the species' own dominant-band strength.
 - **Envelope-onset peak anchoring** — depends on band-mean envelope shape;
   see `_refine_anchor_via_envelope`.
 - **EM score thresholding** — fixed quantile (default p95) of the score
@@ -72,9 +79,11 @@ What is deliberately hand-rolled (no clean library equivalent surfaced):
 [0]  (opt-in) recording activity index (maad.features.bioacoustics_index over WIDEBAND)
 [1]  → wideband PCEN spectrograms (librosa.pcen, 200-6000 Hz)
 [2]  → per-recording time-p95 spectrum, MAD-normalized
-       → cross-recording median consensus
-       → contiguous bands via hysteresis (primary k*MAD seed,
-                                          secondary k_lower*MAD grow)
+       → robust CORE: median consensus → hysteresis bands (top core_bands)
+       → RECALL EXTENSION: exemplar-weighted consensus (weight = each
+         recording's strength in the core's anchor band) → hysteresis
+         bands, merged, kept only where the core had no coverage
+       → core + extension, capped at max_bands
 [3]  → (opt-in) per band: opensoundscape.ribbit periodicity score
                 drops bands below `ribbit_score_min`
 [4]  → per band: maad hysteresis ROIs at in-band p99 (seed) / p90 (grow)
@@ -117,12 +126,28 @@ delegating to `discover_bands` in `band.py`.
 For each recording, the per-frequency-bin time-p95 of PCEN is normalized by
 its own MAD-sigma. (Time-mean was used with robust-z but PCEN's AGC
 flattens long-running averages — the high time-quantile preserves bins with
-concentrated transient activity.) The median across recordings forms the
-consensus spectrum. Contiguous runs above `med + k_band_mad * sigma` seed
-each band; each seed then grows outward (hysteresis) while consensus
-exceeds `med + k_band_mad_lower * sigma`, clamped at the adjacent run so
-neighbors do not merge. The top `max_bands` runs (by peak score) are
-returned.
+concentrated transient activity.)
+
+**Robust core.** The *median* across recordings forms the consensus
+spectrum. Contiguous runs above `med + k_band_mad * sigma` seed each band;
+each seed grows outward (hysteresis) while consensus exceeds
+`med + k_band_mad_lower * sigma`, clamped at the adjacent run so neighbors
+do not merge. The top `core_bands` runs by peak score are the high-precision
+core (the dominant chip/primary complex). The median is robust to a single
+recording dominated by a heterospecific, but it *washes out* a real motif
+whose energy peak jitters in frequency across recordings: at any single bin
+that motif is a minority, so the per-bin median drops it.
+
+**Recall extension.** Each recording is weighted by its own peak salience in
+the core's top (anchor) band — the species' undisputed dominant signal, so
+clean exemplars define the subtler bands and marginal/noisy recordings are
+downweighted (no tuned constant; `exemplar_weights`). Band discovery is
+re-run on this `weighted_consensus`; the resulting runs are merged
+(`merge_overlapping_bands`) and only those that overlap *no* core band are
+kept (`bands_outside`) — genuinely new frequency territory. Core +
+extension, capped at `max_bands`, is returned. This is a robust-core +
+recall-extension design (median for precision, exemplar weighting for
+recall); see [Library choices](#library-choices).
 
 ### 3. RIBBIT periodicity scoring (opt-in)
 
@@ -222,7 +247,8 @@ trace reflects the densest call activity instead of the highest-peak band.
 | `k_band_mad` | `2.0` | Primary threshold: `med + 2*MAD` ≈ p98 of consensus |
 | `k_band_mad_lower` | `1.0` | Secondary (hysteresis) threshold for grow phase |
 | `min_band_width_hz` | `150.0` | ~10 FFT bins at sr=32k, nfft=2048 |
-| `max_bands` | `3` | Matches observed primary / secondary / chip structure |
+| `core_bands` | `3` | Robust median-consensus core size (the conventional high-precision setting; the chip/primary complex) |
+| `max_bands` | `5` | Core + exemplar-weighted recall-extension bands, total |
 | `band_pad_hz` | `40.0` | One FFT bin each side |
 
 ### `AutoConfig` (`auto_motif/mining.py`)
@@ -277,7 +303,7 @@ name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
 | `summary.md` | Auto-generated run summary; lists tables/plots/templates with discovered bands. |
 | `tables/recording_activity.csv` | `filename, bioacoustics_index` (only when `min_activity_quantile` is set). |
 | `tables/auto_bands.csv` | `band_id, fmin_hz, fmax_hz, bandwidth_hz` plus `ribbit_score_max, ribbit_score_p95, ribbit_score_median, n_clips_scored` when `ribbit_score_min` is set. |
-| `tables/auto_band_consensus.csv` | `filename, freq_hz, z_normalized`; `filename == "__consensus__"` is the median row. |
+| `tables/auto_band_consensus.csv` | `filename, freq_hz, z_normalized`; `filename == "__consensus__"` is the consensus that surfaced the extension bands (exemplar-weighted when a core was found, else median). |
 | `tables/loose_rois.csv` | Per-band hysteresis ROIs (loose dur/bw filter). |
 | `tables/shape_features.csv` | Per-ROI 26-D Gabor shape + centroid features and HDBSCAN cluster (-1 = noise). |
 | `tables/em_trace.csv` | `band_id, shape_cluster_id, iter, n_kept, threshold, method, cosine_to_prev`. |
@@ -325,9 +351,13 @@ name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
   default `1.0` extends bands by ~1 FFT bin until consensus falls below
   `med + 1*MAD`. Lower it (e.g. `0.5`) to extend further; raise (e.g. `1.5`)
   to keep bands tight.
-- **`band.max_bands`**: raise above `3` for species with more than three
-  distinct call components, but pay attention to within-band consolidation
-  artifacts when bands overlap.
+- **`band.core_bands`** (default `3`): the conservative median-consensus
+  core size. Raise only if a species' high-precision dominant structure has
+  more than three components; the recall extension already covers the rest.
+- **`band.max_bands`** (default `5`): total bands after the
+  exemplar-weighted recall extension. Raise for species with many distinct
+  call components, but watch within-band consolidation artifacts when
+  extension bands overlap the core.
 
 ### Debugging a new species (symptom → artifact)
 
@@ -370,38 +400,50 @@ once a second species drives the need.
 
 ### Marbled Frog (label 22967)
 
-After the 2026-05-13 library-tool migration (PCEN + shape_features +
-RIBBIT + bioacoustics_index): **28/33 (84.8%) consolidated curated
-recovery** vs. the prior 25/33 (75.8%) baseline. Per-component:
+After the 2026-05-15 robust-core + exemplar-weighted recall extension to
+band discovery: **~0.96 mean per-component curated recovery**, up from the
+~0.78 median-only baseline. Per-component (representative run; downstream
+HDBSCAN/EM give minor run-to-run variance, band discovery is
+deterministic):
 
-| Component | Curated | Recovered | Rate | Median best score |
+| Component | Curated | Recovered | Rate | Manual |
 |---|---|---|---|---|
-| chip_1k_1p8k | 5 | 5 | 1.00 | 0.80 |
-| primary | 4 | 4 | 1.00 | 0.73 |
-| primary_independent | 10 | 10 | 1.00 | 0.64 |
-| secondary | 4 | 0 | 0.00 | 0.73 |
-| secondary_independent | 10 | 9 | 0.90 | 0.73 |
+| chip_1k_1p8k | 5 | 4 | 0.80 | 1.00 |
+| primary | 4 | 4 | 1.00 | 1.00 |
+| primary_independent | 10 | 10 | 1.00 | 1.00 |
+| secondary | 4 | 4 | 1.00 | 1.00 |
+| secondary_independent | 10 | 10 | 1.00 | 1.00 |
 
-The `secondary` miss is a consolidation-policy artifact — see
-[Limitations](#limitations-and-follow-ups). RIBBIT scores were uniformly
-low (~0.08–0.14) for Marbled Frog (no regular pulse-rate signature), so
-the score is reported but not used as a filter.
+Discovered bands: 3 median-core chip/primary bands `(1351–1602)
+(1132–1352) (866–1212)` Hz + 2 exemplar-weighted secondary bands
+`(1839–1989) (2382–2743)` Hz (the secondary's low and high lobes). The
+prior diagnosis that `secondary = 0/4` was a consolidation-policy artifact
+was **wrong**: it was a band-discovery failure — the cross-recording
+*median* washed out the secondary because its energy peak jitters in
+frequency between recordings. Exemplar-weighted recall extension recovers
+it (0/4 → 4/4, 9/10 → 10/10) while the median core preserves the PCEN
+primary gain (precision unchanged at ~0.61 on *fewer* events). The only
+remaining gap vs. manual is one chip box. RIBBIT scores were uniformly low
+(~0.08–0.14) for Marbled Frog (no regular pulse-rate signature), so the
+score is reported but not used as a filter.
 
 ## Limitations and follow-ups
 
-- **Secondary-component consolidation.** Cross-family consolidation
-  collapses temporally adjacent secondaries into primary events (Marbled
-  Frog `secondary` = 0/4 despite per-family detections at score ≥ 0.73).
-  Worth revisiting `consolidate_peak_distance_sec` or adding a band-keep
-  override.
 - **Frequency-IoU strictness in recovery eval.** Bands that fire on a
   call's harmonic content but don't overlap the curated fundamental are
   scored as misses. Consider a harmonic-aware matcher in
   `common/curated_eval.py`.
-- **Consensus-only band discovery.** A rare component visible in only one
-  recording will not survive the cross-recording median. A per-recording
-  fallback was tried and removed (it never fired on Marbled Frog); reintroduce
-  if a new species needs it.
+- **Exemplar weight = anchor-band strength.** A clean primary-call
+  exemplar is assumed to also express the subtler components. True for
+  Marbled Frog (the high-weight recordings carry strong secondary energy
+  too) but not guaranteed in general; a species whose secondary appears
+  only in recordings *weak* in the primary would be downweighted. SNR- or
+  classifier-confidence-based exemplar weights are the fallback if a future
+  species breaks this assumption.
+- **Single anchor band.** The recall extension weights by the *one*
+  top-ranked core band. Fine when the dominant call is unambiguous;
+  revisit (e.g. multi-anchor weighting) if a species has two co-dominant
+  call types in disjoint bands.
 - **Cache memory.** `load_focal_z` holds wideband spectrograms for every
   recording in RAM. For species with many long recordings, lazy iteration
   + on-disk caches may be needed.
