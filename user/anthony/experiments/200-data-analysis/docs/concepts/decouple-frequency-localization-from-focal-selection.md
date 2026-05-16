@@ -159,6 +159,42 @@ narrowband.
   gated behind an opt-in `AutoConfig` toggle so the validated frog path
   stays default until parity is shown.
 
+## v1 result (2026-05-16)
+
+Minimal toggle implemented: `AutoConfig.band_free` / `--band-free` takes
+WIDEBAND as one band, reusing all downstream stages (commit `dac1e89`).
+A/B (band-free vs band-gate):
+
+| species | band-gate | band-free |
+|---|---|---|
+| `22967` Marbled Frog (narrowband, **multi-motif**) | 5 fam, curated rec **0.97**, d′3.75 | 1 fam, rec **0.36**, d′1.28 |
+| `23158` Pale-legged Weeping Frog (gate: **0 bands, hard fail**) | — | **1 fam, d′3.14, AUC0.98** |
+| `hyamac1` Hyacinth Macaw (gate: **0 bands, hard fail**) | — | **1 fam, d′4.01, AUC0.99** |
+
+**Confirmed:** Hypothesis 1 directionally holds — band-free + EM +
+`member_bg` recovers strong, well-separated motifs for FM/broadband
+species the gate hard-failed. Segmentation + selection mechanically work.
+
+**Falsified:** Hypothesis 2 in the *minimal* form — band-free regresses
+multi-motif narrowband species. Mechanism (evidenced, not assumed): the
+band-gate's 5 families came from 5 *bands* (~1 shape-cluster each); the
+frequency split was carrying the multi-motif separation. Band-free puts
+all 1006 ROIs in one band; HDBSCAN over Gabor shape features finds only
+**2** clusters (≈0 noise) → 1 family. The frog's chip/primary/secondary
+are **shape-similar but frequency-distinct**; centroid-frequency as 1 of
+26 Gabor features is too weak a prior to split them.
+
+**Refined next lever:** "frequency as a soft *centroid feature*" is
+empirically too weak. It must be a stronger *stratifying* prior without
+reverting to a hard gate. Candidates: (a) over-segment — frequency-
+stratified clustering (cluster within coarse overlapping freq strata) or
+up-weight the centroid feature / lower `shape_cluster_min_size` — then
+let job-2 (template-fit-across-focal recurrence + `member_bg`) keep the
+good clusters rather than trusting one global HDBSCAN; (b) per-frequency
+adaptive ROI thresholding (the global wideband percentile lets loud
+broadband drown faint narrowband). This keeps job-1 band-free while
+restoring multi-motif resolution.
+
 ## Notes
 
 **Reuse map.** Unchanged: `maad.rois.create_mask`/`select_rois`,
