@@ -111,14 +111,18 @@ class AutoConfig:
     """All knobs for the auto pipeline. Defaults are species-independent."""
 
     band: BandDiscoveryConfig = field(default_factory=BandDiscoveryConfig)
-    # Band-free mode: skip the per-bin consensus band gate entirely and run
-    # the (already shape-agnostic) ROI/shape-cluster/EM stages over the whole
-    # WIDEBAND. Frequency survives only as a soft clustering feature
-    # (centroid in shape_features), never a hard gate that can return zero
-    # bands. Lets the pipeline mine broadband / FM-sweep motifs the
-    # narrowband consensus is structurally blind to. Opt-in for A/B; the
-    # band-gate path stays default until parity is shown.
-    band_free: bool = False
+    # Detection front-end. "consensus" (default, validated on the narrowband
+    # Marbled Frog): per-bin cross-recording band gate + in-band intensity
+    # ROIs. "free": no gate, intensity ROIs over WIDEBAND. "gabor": no gate,
+    # oriented 2D-Gabor-filterbank energy ROIs over WIDEBAND — FM-sweep /
+    # broadband-aware job-1 the narrowband consensus is structurally blind
+    # to. Non-consensus modes are opt-in for A/B; default unchanged.
+    band_mode: str = "consensus"
+    # maad shape preset for the "gabor" front-end. "med" = 4 orientations
+    # (vs "low"'s 2) so horizontal / vertical / diagonal energy is
+    # separable — needed to resolve FM sweeps. A library preset, not a
+    # hand-tuned constant.
+    gabor_resolution: str = "med"
     seed_percentile: float = 0.99
     grow_percentile: float = 0.90
     loose_min_duration_sec: float = 0.02
@@ -333,28 +337,27 @@ def score_band_periodicity(
 # -----------------------------------------------------------------------------
 
 
-def _propose_band_rois(
-    filename: str,
-    z: np.ndarray,
+def _rois_from_mask(
+    im_bin: np.ndarray,
+    stat_map: np.ndarray,
     freqs: np.ndarray,
     times: np.ndarray,
-    band: tuple[float, float],
-    band_id: int,
     *,
+    filename: str,
+    band_id: int,
+    band: tuple[float, float],
+    seed_thr: float,
+    grow_thr: float,
     config: AutoConfig,
     candidate_offset: int,
 ) -> list[dict]:
-    """Hysteresis ROIs in a single band, using per-recording in-band percentiles."""
-    band_mask = (freqs >= band[0]) & (freqs <= band[1])
-    if not np.any(band_mask):
-        return []
-    z_band = z[band_mask]
-    freqs_band = freqs[band_mask]
-    seed_thr = float(np.quantile(z_band, config.seed_percentile))
-    grow_thr = float(np.quantile(z_band, config.grow_percentile))
-    if seed_thr <= grow_thr:
-        seed_thr = grow_thr + 1e-3
-    im_bin = rois.create_mask(z_band, mode_bin="absolute", bin_h=seed_thr, bin_l=grow_thr)
+    """Connected-component ROIs from a binary mask, scored by ``stat_map``.
+
+    Shared by every ROI proposer: the proposer decides *what* to threshold
+    (in-band PCEN intensity, or the band-free oriented-Gabor energy map) and
+    hands the binary mask plus the score map here for closing, labelling,
+    geometry filtering, and the common loose-ROI row schema.
+    """
     if config.closing_freq_bins > 1 or config.closing_time_bins > 1:
         im_bin = binary_closing(
             im_bin.astype(bool),
@@ -363,7 +366,7 @@ def _propose_band_rois(
     im_rois, rois_df = rois.select_rois(im_bin.astype(bool), min_roi=config.min_area_pixels)
     if rois_df.empty:
         return []
-    rois_df = util.format_features(rois_df, times, freqs_band)
+    rois_df = util.format_features(rois_df, times, freqs)
 
     rows: list[dict] = []
     for roi_row in rois_df.itertuples(index=False):
@@ -375,15 +378,15 @@ def _propose_band_rois(
         t_lo, t_hi = int(cc.min()), int(cc.max())
         start_sec = float(times[t_lo])
         end_sec = float(times[t_hi])
-        fmin_hz = float(freqs_band[f_lo])
-        fmax_hz = float(freqs_band[f_hi])
+        fmin_hz = float(freqs[f_lo])
+        fmax_hz = float(freqs[f_hi])
         duration = end_sec - start_sec
         bw = fmax_hz - fmin_hz
         if not (config.loose_min_duration_sec <= duration <= config.loose_max_duration_sec):
             continue
         if not (config.loose_min_bandwidth_hz <= bw <= config.loose_max_bandwidth_hz):
             continue
-        values = z_band[rr, cc]
+        values = stat_map[rr, cc]
         peak_idx = int(np.argmax(values))
         bbox_area = (f_hi - f_lo + 1) * (t_hi - t_lo + 1)
         candidate_id = candidate_offset + len(rows) + 1
@@ -403,7 +406,7 @@ def _propose_band_rois(
                 "fmax_hz": fmax_hz,
                 "bandwidth_hz": bw,
                 "peak_time_sec": float(times[cc[peak_idx]]),
-                "peak_freq_hz": float(freqs_band[rr[peak_idx]]),
+                "peak_freq_hz": float(freqs[rr[peak_idx]]),
                 "peak_z": float(values.max()),
                 "mean_z": float(values.mean()),
                 "area_pixels": int(rr.size),
@@ -411,6 +414,42 @@ def _propose_band_rois(
             }
         )
     return rows
+
+
+def _hysteresis_thresholds(score: np.ndarray, config: AutoConfig) -> tuple[float, float]:
+    """Data-derived double thresholds: percentiles of the score map itself."""
+    seed_thr = float(np.quantile(score, config.seed_percentile))
+    grow_thr = float(np.quantile(score, config.grow_percentile))
+    if seed_thr <= grow_thr:
+        seed_thr = grow_thr + 1e-3
+    return seed_thr, grow_thr
+
+
+def _propose_band_rois(
+    filename: str,
+    z: np.ndarray,
+    freqs: np.ndarray,
+    times: np.ndarray,
+    band: tuple[float, float],
+    band_id: int,
+    *,
+    config: AutoConfig,
+    candidate_offset: int,
+) -> list[dict]:
+    """Hysteresis ROIs in a single band, using per-recording in-band percentiles."""
+    band_mask = (freqs >= band[0]) & (freqs <= band[1])
+    if not np.any(band_mask):
+        return []
+    z_band = z[band_mask]
+    freqs_band = freqs[band_mask]
+    seed_thr, grow_thr = _hysteresis_thresholds(z_band, config)
+    im_bin = rois.create_mask(z_band, mode_bin="absolute", bin_h=seed_thr, bin_l=grow_thr)
+    return _rois_from_mask(
+        im_bin, z_band, freqs_band, times,
+        filename=filename, band_id=band_id, band=band,
+        seed_thr=seed_thr, grow_thr=grow_thr,
+        config=config, candidate_offset=candidate_offset,
+    )
 
 
 def propose_loose_rois(
@@ -430,6 +469,49 @@ def propose_loose_rois(
             )
             rows.extend(band_rows)
             offset += len(band_rows)
+    return pl.DataFrame(rows) if rows else pl.DataFrame()
+
+
+def propose_gabor_rois(
+    cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    *,
+    config: AutoConfig,
+) -> pl.DataFrame:
+    """Band-free ROI proposal from an oriented 2D-Gabor-filterbank energy map.
+
+    A bank of 2D Gabor kernels (maad ``filter_bank_2d_nodc`` at the
+    ``gabor_resolution`` preset — multiple scales x orientations) is applied
+    to each PCEN spectrogram (``filter_multires``); the per-pixel max
+    magnitude across kernels is an orientation-tuned energy map where tones
+    (horizontal), broadband bursts (vertical) *and FM sweeps* (diagonal) all
+    respond, regardless of frequency band. Hysteresis-thresholding that map
+    yields ROIs the narrowband intensity gate is structurally blind to. One
+    notional band (WIDEBAND); downstream shape clustering / EM / focal
+    template-fit selection are unchanged.
+    """
+    preset = maad_features.opt_shape_presets(config.gabor_resolution)
+    _params, kernels = maad_features.filter_bank_2d_nodc(
+        preset["frequency"], preset["ntheta"], preset["bandwidth"], preset["gamma"],
+    )
+    npyr = int(preset["npyr"])
+    rows: list[dict] = []
+    offset = 0
+    for filename, (_db, s, freqs, times) in cache.items():
+        filtered = maad_features.filter_multires(s, kernels, npyr)
+        resp = np.max(
+            np.abs(np.stack([np.asarray(m, dtype=float) for m in filtered], axis=0)),
+            axis=0,
+        )
+        seed_thr, grow_thr = _hysteresis_thresholds(resp, config)
+        im_bin = rois.create_mask(resp, mode_bin="absolute", bin_h=seed_thr, bin_l=grow_thr)
+        band_rows = _rois_from_mask(
+            im_bin, resp, freqs, times,
+            filename=filename, band_id=0, band=WIDEBAND,
+            seed_thr=seed_thr, grow_thr=grow_thr,
+            config=config, candidate_offset=offset,
+        )
+        rows.extend(band_rows)
+        offset += len(band_rows)
     return pl.DataFrame(rows) if rows else pl.DataFrame()
 
 
@@ -1107,10 +1189,10 @@ def run(
     curated_path: Path | None = None,
 ) -> Path:
     config = config or AutoConfig()
-    if config.band_free:
+    if config.band_mode != "consensus":
         # No sub-band, so don't cap ROI bandwidth below the analysis band —
         # that ceiling was sized for narrow per-band ROIs and would silently
-        # filter the very broadband calls this mode targets.
+        # filter the very broadband calls these modes target.
         config = replace(config, loose_max_bandwidth_hz=WIDEBAND[1] - WIDEBAND[0])
     output_dir = output_dir or species_output_dir(label)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1140,7 +1222,7 @@ def run(
 
     # 2. Discover bands (or, band-free, take the whole WIDEBAND as one band
     #    and let the shape-cluster/EM stages do the work).
-    if config.band_free:
+    if config.band_mode != "consensus":
         bands = [WIDEBAND]
         consensus_df = pl.DataFrame()
     else:
@@ -1183,7 +1265,10 @@ def run(
         _plot_band_consensus(consensus_df, bands, plots_dir / "auto_band_consensus.png")
 
     # 3. Loose ROIs + shape-feature clustering (per band).
-    loose = propose_loose_rois(cache, bands, config=config)
+    if config.band_mode == "gabor":
+        loose = propose_gabor_rois(cache, config=config)
+    else:
+        loose = propose_loose_rois(cache, bands, config=config)
     loose.write_csv(tables_dir / "loose_rois.csv")
     refined, feature_table = shape_cluster_refine(
         loose, cache, min_cluster_size=config.shape_cluster_min_size,
@@ -1377,12 +1462,14 @@ def main() -> None:
     parser.add_argument("--curated", type=Path, default=None,
                         help="Optional curated_motif_boxes.csv for recovery evaluation")
     parser.add_argument("--max-bands", type=int, default=BandDiscoveryConfig.max_bands)
-    parser.add_argument("--band-free", action="store_true",
-                        help="Skip the band-consensus gate; mine over the whole WIDEBAND")
+    parser.add_argument("--band-mode", choices=["consensus", "free", "gabor"],
+                        default="consensus",
+                        help="consensus: band gate (default). free: no gate, "
+                             "intensity ROIs. gabor: no gate, oriented-Gabor ROIs.")
     args = parser.parse_args()
     config = AutoConfig(
         band=BandDiscoveryConfig(max_bands=args.max_bands),
-        band_free=args.band_free,
+        band_mode=args.band_mode,
     )
     output_dir = run(
         label=args.label,
