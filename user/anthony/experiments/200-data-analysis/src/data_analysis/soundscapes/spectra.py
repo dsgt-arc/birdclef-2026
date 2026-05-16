@@ -28,9 +28,7 @@ import numpy as np
 import polars as pl
 
 from data_analysis.common.paths import (
-    TAXONOMY_CSV,
     TRAIN_SOUNDSCAPES_DIR,
-    TRAIN_SOUNDSCAPES_LABELS_CSV,
     artifact_dir,
 )
 from data_analysis.soundscapes.labeled_soundscapes import (

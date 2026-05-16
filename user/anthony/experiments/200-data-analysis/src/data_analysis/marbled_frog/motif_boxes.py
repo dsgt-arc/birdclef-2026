@@ -22,13 +22,12 @@ from matplotlib.patches import Rectangle
 import numpy as np
 import polars as pl
 from scipy.ndimage import label as label_components
-from scipy.signal import find_peaks, peak_widths
+from scipy.signal import find_peaks
 
 from data_analysis.common.paths import TRAIN_AUDIO_DIR, artifact_dir, fresh_subdir
 from data_analysis.common.spectrogram import (
     DISPLAY_BAND,
     MEL_HOP_LENGTH,
-    MEL_N_FFT,
     MEL_SAMPLE_RATE,
     robust_excess_spectrogram,
 )

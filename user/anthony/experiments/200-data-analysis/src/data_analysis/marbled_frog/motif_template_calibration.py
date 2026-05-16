@@ -584,8 +584,8 @@ def run(
         summary.write_csv(tables_dir / f"curated_recovery_summary_{prefix}.csv")
         return summary
 
-    raw_recovery_summary = write_recovery("raw", raw_recovery)
-    nms_recovery_summary = write_recovery("nms", nms_recovery)
+    write_recovery("raw", raw_recovery)  # side effect: writes summary CSV
+    write_recovery("nms", nms_recovery)  # side effect: writes summary CSV
     consolidated_recovery_summary = write_recovery("consolidated", consolidated_recovery)
 
     # Backward-compatible aliases for the recommended consolidated view.
