@@ -1,6 +1,7 @@
 # Concept: Decouple frequency localization from focal-species selection
 
-**Status**: developing
+**Status**: archived (explored v1/v2/v3, concluded negative — the
+decoupling premise is structurally flawed; see v3 result)
 **Created**: 2026-05-16
 **Updated**: 2026-05-16
 
@@ -227,6 +228,79 @@ reproducibility but is *not* preferred. **Consensus remains the
 production default** — it is the only mode that does not regress the
 validated Marbled Frog; band-free/gabor are opt-in experiments. No prior
 implementation is downweighted in favor of Gabor (the data forbids it).
+
+## v3 result (2026-05-16): freq-stratified clustering explored — regresses the decisive test; decoupling premise is structurally flawed
+
+Implemented lever A — `cluster_mode="freq_stratified"` (commit `1039b3c`):
+in non-consensus modes the single WIDEBAND band is sub-divided into
+data-derived frequency strata (loose-ROI centre-freq density valleys),
+which become the bands for the existing per-band HDBSCAN + EM, so
+consensus's per-band separation is reproduced *without a hard gate*.
+
+The strata smoothing scale is **one median call-width**, not an
+n-adaptive statistical rule. This was forced empirically: Scott KDE,
+GMM+BIC, HDBSCAN-1D, Hartigan's dip test, and a morphology-scaled KDE
+were each tried and **all over-segment the broadband macaw at n≈20k** —
+its centre-freq density genuinely ripples at the narrowband frog's mode
+spacing, so any n-adaptive rule manufactures spurious strata. (Every
+fixed bandwidth is itself a tuned constant; the call-width scale is the
+one physically-motivated, data-derived choice — two motifs closer than a
+call's own frequency extent cannot be separated by *any* horizontal
+split.)
+
+A/B (band-free detector held fixed; only the clustering differs):
+
+| species | free+global | free+gabor | free+strat |
+|---|---|---|---|
+| `22967` frog (regression test) | 0.36 rec, 1 fam, d′1.28 | 0.00 rec | **0.00 rec**, 5 fam, d′9.74† |
+| `hyamac1` (gate hard-failed) | **d′4.01**, 1 fam | d′3.45 | d′3.44, 8 fam |
+| `23158` (gate hard-failed) | **d′3.14**, 1 fam | 0 fam | d′2.90, 6 fam |
+| `nacnig1` narrowband bird | d′2.85, 2 fam | d′2.67 | d′2.98, 8 fam (consensus: **d′3.49**) |
+
+†a degenerate 7-peak overfit shard (AUC=1.0), not quality.
+
+**Verified mechanism (not an eval artifact).** On the frog reference file
+(8 curated calls at 1.1–3.8 s) the stratified run emits only **2
+consolidated events, at 4.0 s and 14.2 s** — genuinely no temporal
+overlap with any curated call (`time_iou=0` is correct). The
+data-derived stratum boundaries (200 / **1789** / 3843 / 4978 / 6000 Hz)
+**bisect the frog's coherent motif** (primary ~680–1300 Hz, secondary
+~1500–2140 Hz): the [200,1789] stratum template has 107 peaks but
+**d′0.046** (clipping off the secondary destroyed its distinctiveness),
+and the [1789,3843] strata are tiny 5–7-peak overfit shards. The single
+recoverable motif band-free captures as one 56-peak family is shredded
+into one garbage template + two shards that detect almost nothing.
+
+**The cross-stratum merge (the "+ merge" half of this concept) is moot.**
+It would re-group per-stratum templates that are *already degraded* by
+motif-incoherent freq-clipping; re-merging a garbage template and overfit
+shards cannot reconstruct the destroyed time-frequency gestalt. The
+failure is "coherent motif bisected into bad pieces," not "good motif
+over-split into similar pieces" — the merge addresses the wrong problem.
+
+**This falsifies the v1/v2 "recommended direction" and the concept's core
+premise.** The premise was that frequency localization and focal
+selection are *separable* — that re-deriving frequency localization from a
+different statistic, freed of the recurrence consensus, would mine
+broadband/FM motifs while preserving the narrowband ones. The data shows
+they are **not separable**: the consensus band split worked for the frog
+(0.97) *specifically because* per-bin cross-recording recurrence
+consensus aligns bands to the actual repeated call structure. A
+horizontal partition derived from anything else (centre-freq KDE here;
+oriented-Gabor energy in v2) shreds coherent motifs. The only frequency
+localizer that aligns to motif identity *is* the recurrence consensus —
+the very statistic that is structurally blind to broadband/FM. They are
+the same mechanism; you cannot decouple them.
+
+**Status: archived (explored, concluded negative).** Consensus remains
+the production default — it is the only mode that does not regress the
+validated Marbled Frog (free/gabor/strat all leave it ≤0.36 vs 0.97).
+`cluster_mode` stays in the code for reproducibility, default `global`,
+not preferred. The forward implication — that motif-mining is
+intrinsically a narrowband-tonal method and broadband/FM species should
+be routed to learned embeddings (Perch/BirdNET, already in the project)
+rather than to a patched miner — is flagged as an **open
+research-direction question for the user**, not adopted here.
 
 ## Notes
 

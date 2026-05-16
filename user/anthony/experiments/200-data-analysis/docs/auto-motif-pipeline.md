@@ -296,6 +296,7 @@ spot-check.
 | `band` | `BandDiscoveryConfig()` | Nested band-discovery config |
 | `band_mode` | `"consensus"` | Detection front-end: `consensus` (default, validated). `free`/`gabor` are opt-in experiments — both regress multi-motif narrowband species; see [Limitations](#limitations-and-follow-ups) |
 | `gabor_resolution` | `"med"` | maad shape preset for `band_mode="gabor"` (4 orientations); library preset, not hand-tuned |
+| `cluster_mode` | `"global"` | Clustering partition: `global` (default). `freq_stratified` (non-consensus modes only) sub-divides WIDEBAND into data-derived centre-freq strata — explored and **rejected**: regresses the frog test to 0.0 (boundaries bisect coherent motifs); see [Limitations](#limitations-and-follow-ups) |
 | `seed_percentile` | `0.99` | In-band PCEN p99 hysteresis seed |
 | `grow_percentile` | `0.90` | In-band PCEN p90 hysteresis grow |
 | `loose_min_duration_sec` | `0.02` | Loose; shape clustering narrows |
@@ -502,11 +503,27 @@ score is reported but not used as a filter.
   (clustering collapse — one global HDBSCAN over one band collapses
   shape-similar/frequency-distinct motifs), not job-1 (detection)**;
   swapping the detector (intensity→Gabor) does *not* help and Gabor is in
-  fact the worst mode (under-detects short narrowband calls). The
-  indicated lever is **frequency-stratified soft clustering**, not a new
-  detector. `consensus` therefore **remains the production default** (only
-  mode that does not regress the validated frog); `free`/`gabor` are
-  opt-in, not preferred. Manifest:
+  fact the worst mode (under-detects short narrowband calls).
+  Frequency-stratified clustering (`cluster_mode="freq_stratified"`) was
+  then implemented and A/B'd (2026-05-16) as the indicated job-2 lever —
+  and **also rejected**: it regresses the frog test *below* band-free
+  (recovery 0.0 vs 0.36; a degenerate 7-peak d′9.74 shard, not quality)
+  and beats band-free on no probe species. Verified mechanism: the
+  data-derived strata boundaries **bisect coherent motifs** (the frog's
+  680–2140 Hz call is cut at 1789 Hz into a d′0.046 garbage template +
+  overfit shards). **Structural conclusion: frequency localization and
+  focal selection are *not* separable.** The consensus band split works
+  for the frog *because* per-bin cross-recording recurrence aligns bands
+  to the actual repeated call; any horizontal partition from a different
+  statistic (centre-freq KDE, oriented-Gabor energy) shreds coherent
+  motifs. The only motif-aligned frequency localizer *is* the recurrence
+  consensus that is blind to broadband/FM — the same mechanism, not
+  decouplable. `consensus` therefore **remains the production default**
+  (only mode that does not regress the validated frog); `free`/`gabor`/
+  `freq_stratified` are explored-and-rejected toggles kept for
+  reproducibility, not preferred. The open question is now a
+  research-direction one (route broadband/FM species to learned
+  embeddings rather than patch the miner), not a tuning one. Manifest:
   `artifacts/auto_motif/_batch/manifest.csv` (gitignored); per-species
   status JSONs under `artifacts/auto_motif/_batch/status/` (delete one to
   force a resumable re-run).
