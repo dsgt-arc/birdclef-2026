@@ -111,6 +111,14 @@ class AutoConfig:
     """All knobs for the auto pipeline. Defaults are species-independent."""
 
     band: BandDiscoveryConfig = field(default_factory=BandDiscoveryConfig)
+    # Band-free mode: skip the per-bin consensus band gate entirely and run
+    # the (already shape-agnostic) ROI/shape-cluster/EM stages over the whole
+    # WIDEBAND. Frequency survives only as a soft clustering feature
+    # (centroid in shape_features), never a hard gate that can return zero
+    # bands. Lets the pipeline mine broadband / FM-sweep motifs the
+    # narrowband consensus is structurally blind to. Opt-in for A/B; the
+    # band-gate path stays default until parity is shown.
+    band_free: bool = False
     seed_percentile: float = 0.99
     grow_percentile: float = 0.90
     loose_min_duration_sec: float = 0.02
@@ -1099,6 +1107,11 @@ def run(
     curated_path: Path | None = None,
 ) -> Path:
     config = config or AutoConfig()
+    if config.band_free:
+        # No sub-band, so don't cap ROI bandwidth below the analysis band —
+        # that ceiling was sized for narrow per-band ROIs and would silently
+        # filter the very broadband calls this mode targets.
+        config = replace(config, loose_max_bandwidth_hz=WIDEBAND[1] - WIDEBAND[0])
     output_dir = output_dir or species_output_dir(label)
     output_dir.mkdir(parents=True, exist_ok=True)
     tables_dir = fresh_subdir(output_dir, "tables")
@@ -1125,10 +1138,15 @@ def run(
     # 1. Load wideband spectrograms.
     cache = load_focal_z(files, band=WIDEBAND)
 
-    # 2. Discover bands.
-    bands, consensus_df = auto_discover_bands(cache, config=config.band)
-    if not bands:
-        raise RuntimeError("Auto band discovery returned no bands; check k_band_mad / spectra")
+    # 2. Discover bands (or, band-free, take the whole WIDEBAND as one band
+    #    and let the shape-cluster/EM stages do the work).
+    if config.band_free:
+        bands = [WIDEBAND]
+        consensus_df = pl.DataFrame()
+    else:
+        bands, consensus_df = auto_discover_bands(cache, config=config.band)
+        if not bands:
+            raise RuntimeError("Auto band discovery returned no bands; check k_band_mad / spectra")
 
     # 2b. RIBBIT periodicity scoring per band (opt-in).
     ribbit_df = pl.DataFrame()
@@ -1160,8 +1178,9 @@ def run(
     if not ribbit_df.is_empty():
         bands_df = bands_df.join(ribbit_df, on="band_id", how="left")
     bands_df.write_csv(tables_dir / "auto_bands.csv")
-    consensus_df.write_csv(tables_dir / "auto_band_consensus.csv")
-    _plot_band_consensus(consensus_df, bands, plots_dir / "auto_band_consensus.png")
+    if not consensus_df.is_empty():
+        consensus_df.write_csv(tables_dir / "auto_band_consensus.csv")
+        _plot_band_consensus(consensus_df, bands, plots_dir / "auto_band_consensus.png")
 
     # 3. Loose ROIs + shape-feature clustering (per band).
     loose = propose_loose_rois(cache, bands, config=config)
@@ -1358,8 +1377,13 @@ def main() -> None:
     parser.add_argument("--curated", type=Path, default=None,
                         help="Optional curated_motif_boxes.csv for recovery evaluation")
     parser.add_argument("--max-bands", type=int, default=BandDiscoveryConfig.max_bands)
+    parser.add_argument("--band-free", action="store_true",
+                        help="Skip the band-consensus gate; mine over the whole WIDEBAND")
     args = parser.parse_args()
-    config = AutoConfig(band=BandDiscoveryConfig(max_bands=args.max_bands))
+    config = AutoConfig(
+        band=BandDiscoveryConfig(max_bands=args.max_bands),
+        band_free=args.band_free,
+    )
     output_dir = run(
         label=args.label,
         output_dir=args.output_dir,
