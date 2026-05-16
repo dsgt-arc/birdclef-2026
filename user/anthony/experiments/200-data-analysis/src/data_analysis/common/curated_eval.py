@@ -35,7 +35,21 @@ def curated_recovery(events: pl.DataFrame, curated_path: Path) -> pl.DataFrame:
             if best is None or score > best[0]:
                 best = (score, time_iou, freq_iou, peak_inside, det)
         if best is None:
-            rows.append({"curated_row_id": idx, **cur, "recovered": False})
+            # Keep the schema stable so an all-miss frame (0 recovery) still
+            # carries the best_* columns the recovery summary aggregates.
+            rows.append(
+                {
+                    "curated_row_id": idx,
+                    **cur,
+                    "recovered": False,
+                    "best_motif_cluster": None,
+                    "best_detection_peak_time_sec": None,
+                    "best_detection_score": None,
+                    "best_time_iou": None,
+                    "best_freq_iou": None,
+                    "best_peak_inside_curated": None,
+                }
+            )
         else:
             _score, time_iou, freq_iou, peak_inside, det = best
             recovered = bool((peak_inside or time_iou >= 0.20) and freq_iou >= 0.10)
