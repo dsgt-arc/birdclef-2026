@@ -26,13 +26,26 @@ fails (zero bands).
 The proposal: **separate the two axes.** Do *band-free* 2D ROI
 segmentation with `maad.rois` across all recordings (job 1 becomes
 image-domain segmentation that handles any call shape), describe every
-ROI with shape features, and re-implement focal-species selection (job 2)
-as **recurrence of ROI *shape clusters* across the species' recordings**
-rather than recurrence of frequency bins. Recurrent shape clusters are
-the focal motif families; refine each with the existing EM stage; detect
-with `maad.rois.template_matching`. The narrowband assumption is removed;
-focal-species specificity is preserved by moving it to a shape-invariant
-axis.
+ROI with shape features, and cluster them with **frequency as a soft
+prior, not a gate** — frequency centroid/extent is a clustering *feature*
+(`maad.features.centroid_features`), optionally via a multi-resolution
+filterbank (`maad.features.filter_multires`); it informs grouping but can
+never return "zero bands" and abort. Re-implement focal-species selection
+(job 2) as **how well a cluster's template applies across the focal
+training set**: keep clusters whose template recurs well over the
+species' focal recordings; refine each with the existing EM stage; detect
+with `maad.rois.template_matching`.
+
+**Why job 2 is largely free.** Focal `train_audio/<label>/` recordings
+are *species-curated* — the labeled species is by construction the one
+thing common across the set. The focal prior is therefore **intrinsic to
+the data**, not something to reconstruct with a background corpus. A
+heterospecific appears in *some* recordings idiosyncratically; the focal
+species recurs across *most* of them, so a "template fits broadly across
+the focal set" criterion (the existing `member_bg`/recurrence machinery
+on the shape axis) selects it without an explicit negative set. The
+narrowband assumption is removed; focal specificity is preserved by the
+data curation plus shape-axis recurrence.
 
 ## Motivation
 
@@ -82,16 +95,18 @@ narrowband.
 
 ## Open Questions
 
-- **The crux: focal-species selection without a frequency prior.**
-  Band-free segmentation across a soundscape returns ROIs for *every*
-  sound. What makes a shape cluster "the focal species"? Candidates:
-  (a) shape clusters that recur across many of the species' recordings;
-  (b) *discriminative* recurrence — recur in this species' recordings
-  more than in a background/other-species corpus (TF-IDF-like, or the
-  existing member-vs-background screen lifted to the shape axis);
-  (c) a Perch-embedding focal prior. A co-occurring background species
-  present across many focal recordings would falsely recur under (a)
-  alone — (b)/(c) are the mitigation.
+- **Focal selection is largely given by the data; the residual is
+  systematic co-occurrence.** Because the focal set is species-curated,
+  v1 selection = "template fits broadly across the focal recordings"
+  (within-focal recurrence) — no background corpus needed. The honest
+  residual: focal recordings are species-*primary*, not species-*pure*.
+  A heterospecific that co-occurs *systematically* across many of this
+  species' recordings (shared habitat/soundscape) would also fit broadly
+  and survive. That tail (rarer than generic background) is the only case
+  needing a cross-species discriminative check — a *discriminative*
+  recurrence (this-species vs other-species corpus, TF-IDF-like) or a
+  Perch-embedding focal prior. Defer to v2; quantify the contamination
+  first.
 - **Shape-descriptor invariance.** Do Gabor `shape_features` place
   FM sweeps of differing rate/extent/onset in one cluster, or fragment
   them? Need time/frequency-translation invariance but contour-shape
@@ -121,11 +136,13 @@ narrowband.
    (22967) curated recovery stays ≥ 0.90 — i.e., shape-axis recurrence is
    at least as focal-specific as frequency-axis recurrence for narrowband
    species.
-3. **Discriminative recurrence controls heterospecifics.** Selecting
-   shape clusters by *discriminative* recurrence (this-species vs a
-   background corpus) yields higher member-vs-background d′ than raw
-   per-cluster frequency-of-occurrence — i.e., the false-focal-cluster
-   risk is controllable without a frequency prior.
+3. **Within-focal template-fit suffices for selection.** Selecting shape
+   clusters purely by template-fit/recurrence across the *focal set* (no
+   background corpus) recovers the species' motif, and the residual
+   contamination — fraction of selected clusters that are heterospecific
+   (audited on Marbled Frog vs its curated boxes, and spot-checked on a
+   few recovered FM species) — is small (target < ~15%), confirming the
+   species-curation prior carries job 2.
 
 ## Connections
 
@@ -156,11 +173,15 @@ focal selector.
 **Alternatives considered.**
 - *Lower `k_band_mad`* — rejected: a tuned-constant hack that still
   doesn't address FM/broadband per-bin washout.
-- *Naive `create_mask` on the wideband spectrogram, no consensus* —
-  rejected: removes the narrowband assumption but **loses focal-species
-  selection** (mines every heterospecific). This is the self-correction
-  to the first-pass "just swap stage 2 to maad.rois" idea; the consensus
-  is doing real work and must be replaced, not deleted.
+- *Naive `create_mask` on the wideband spectrogram, no selection at all*
+  — rejected: keeping *every* ROI mines heterospecifics. But the
+  selection that replaces the consensus need not be a background-corpus
+  discriminator: because the focal set is species-curated,
+  within-focal-set template-fit/recurrence is sufficient for v1. (This
+  refines the earlier over-cautious "naive band-free loses focal
+  specificity" — it loses it only if you also drop the recurrence/fit
+  selector; the curated focal set, not the per-bin consensus, is what
+  supplies the prior.)
 - *Full learned-embedding (Perch) detector* — strong focal prior but
   heavier and less interpretable than the shape-cluster path; keep as a
   fallback or as the discriminative-recurrence signal in (c).
