@@ -53,6 +53,7 @@ from opensoundscape.ribbit import ribbit as opso_ribbit
 from opensoundscape.spectrogram import Spectrogram
 from scipy.ndimage import binary_closing
 from scipy.signal import find_peaks
+from scipy.stats import gaussian_kde
 from sklearn.cluster import HDBSCAN
 from sklearn.metrics import roc_auc_score
 
@@ -123,6 +124,15 @@ class AutoConfig:
     # separable — needed to resolve FM sweeps. A library preset, not a
     # hand-tuned constant.
     gabor_resolution: str = "med"
+    # Clustering partition. "global" (default): one HDBSCAN over each
+    # detection band's 26-D shape features. "freq_stratified": in
+    # non-consensus modes, sub-divide the single WIDEBAND band into
+    # data-derived frequency strata (KDE modes of the loose-ROI centre
+    # frequencies) so frequency-distinct but shape-similar motifs cannot
+    # merge — restoring, without a hard gate, the separation the consensus
+    # band split provided. No-op under band_mode="consensus" (real bands
+    # already stratify). Opt-in for A/B; default unchanged.
+    cluster_mode: str = "global"
     seed_percentile: float = 0.99
     grow_percentile: float = 0.90
     loose_min_duration_sec: float = 0.02
@@ -513,6 +523,137 @@ def propose_gabor_rois(
         rows.extend(band_rows)
         offset += len(band_rows)
     return pl.DataFrame(rows) if rows else pl.DataFrame()
+
+
+# -----------------------------------------------------------------------------
+# Data-derived frequency strata (lever A: decouple freq localization from
+# focal selection without a hard band gate)
+# -----------------------------------------------------------------------------
+
+
+def _roi_center_freq(loose_rois: pl.DataFrame) -> np.ndarray:
+    cf = ((loose_rois["fmin_hz"] + loose_rois["fmax_hz"]) / 2.0).to_numpy()
+    return cf[np.isfinite(cf)]
+
+
+def _merge_thin_strata(
+    strata: list[tuple[float, float]],
+    cf: np.ndarray,
+    min_rois_per_stratum: int,
+) -> list[tuple[float, float]]:
+    """Greedily absorb any stratum with < min ROIs into its smaller neighbor.
+
+    A stratum holding fewer ROIs than the HDBSCAN minimum cluster size cannot
+    yield a cluster, so merging it into an adjacent stratum (rather than
+    leaving a dead band or introducing a density-threshold constant) keeps
+    the split fully data-derived. Repeats until every stratum clears the
+    minimum or only one stratum remains.
+    """
+    strata = sorted(strata)
+    while len(strata) > 1:
+        counts = [
+            int(np.sum((cf >= lo) & (cf <= hi)))
+            if k == len(strata) - 1
+            else int(np.sum((cf >= lo) & (cf < hi)))
+            for k, (lo, hi) in enumerate(strata)
+        ]
+        thinnest = int(np.argmin(counts))
+        if counts[thinnest] >= min_rois_per_stratum:
+            break
+        if thinnest == 0:
+            other = 1
+        elif thinnest == len(strata) - 1:
+            other = thinnest - 1
+        else:
+            other = (
+                thinnest - 1
+                if counts[thinnest - 1] <= counts[thinnest + 1]
+                else thinnest + 1
+            )
+        lo = min(strata[thinnest][0], strata[other][0])
+        hi = max(strata[thinnest][1], strata[other][1])
+        keep = [s for k, s in enumerate(strata) if k not in (thinnest, other)]
+        keep.append((lo, hi))
+        strata = sorted(keep)
+    return strata
+
+
+def _derive_freq_strata(
+    loose_rois: pl.DataFrame,
+    *,
+    min_rois_per_stratum: int,
+) -> list[tuple[float, float]]:
+    """Data-derived frequency strata from the loose-ROI centre-freq density.
+
+    Band-free detection collapses every motif into one WIDEBAND band, so a
+    single global HDBSCAN over the 26-D Gabor shape features merges
+    frequency-distinct but shape-similar motifs (the consensus band split
+    used to keep them apart). This restores that separation *without a hard
+    gate*.
+
+    The KDE smoothing scale is the **median ROI bandwidth** — the typical
+    frequency extent of one call of this species, not an n-adaptive
+    statistical rule. Rationale: a horizontal band split at frequency *f*
+    only separates two motifs if their ROIs do not both straddle *f*; ROIs
+    are ~one call-width wide, so two motifs whose centre frequencies differ
+    by less than a call-width cannot be separated by *any* split and must
+    not seed a stratum boundary. Smoothing the centre-freq density at that
+    physical scale encodes exactly this, and (unlike Scott / Silverman / dip)
+    does not shrink with n — empirically every n-adaptive rule manufactures
+    spurious strata for the broadband macaw (n≈20k) because its centre-freq
+    density genuinely ripples at the narrowband frog's mode spacing. Over-
+    segmentation of broadband callers is intended to be absorbed downstream
+    (event consolidation; see the cross-stratum merge), not prevented here.
+    A unimodal distribution at this scale yields one WIDEBAND stratum and is
+    bit-for-bit plain band-free.
+    """
+    if loose_rois.is_empty():
+        return [WIDEBAND]
+    cf = _roi_center_freq(loose_rois)
+    if cf.size < 2 * min_rois_per_stratum or np.ptp(cf) < 1e-6:
+        return [WIDEBAND]
+    bw = loose_rois["bandwidth_hz"].to_numpy()
+    median_call_bw = float(np.median(bw[np.isfinite(bw)]))
+    if median_call_bw <= 0.0:
+        return [WIDEBAND]
+    try:
+        # gaussian_kde scales the kernel σ by bw_method·std(cf); set the
+        # factor so the absolute smoothing σ equals one median call-width.
+        kde = gaussian_kde(cf, bw_method=median_call_bw / cf.std())
+    except (np.linalg.LinAlgError, ZeroDivisionError):
+        return [WIDEBAND]
+    grid = np.linspace(WIDEBAND[0], WIDEBAND[1], 512)
+    dens = kde(grid)
+    valley_idx, _ = find_peaks(-dens)
+    if valley_idx.size == 0:
+        return [WIDEBAND]  # unimodal at the call-width scale -> band-free
+    edges = [WIDEBAND[0], *sorted(float(grid[i]) for i in valley_idx), WIDEBAND[1]]
+    strata = list(zip(edges[:-1], edges[1:]))
+    return _merge_thin_strata(strata, cf, min_rois_per_stratum)
+
+
+def _assign_stratum_band_id(
+    loose_rois: pl.DataFrame,
+    strata: list[tuple[float, float]],
+) -> pl.DataFrame:
+    """Relabel ``band_id`` (and band bounds) by which stratum a ROI's centre
+    frequency falls in, so the existing per-band HDBSCAN / EM run unchanged.
+    """
+    cf = ((loose_rois["fmin_hz"] + loose_rois["fmax_hz"]) / 2.0).to_numpy()
+    band_id = np.zeros(cf.size, dtype=np.int64)
+    band_lo = np.full(cf.size, strata[0][0], dtype=np.float64)
+    band_hi = np.full(cf.size, strata[-1][1], dtype=np.float64)
+    for k, (lo, hi) in enumerate(strata):
+        upper = (cf <= hi) if k == len(strata) - 1 else (cf < hi)
+        sel = (cf >= lo) & upper
+        band_id[sel] = k
+        band_lo[sel] = lo
+        band_hi[sel] = hi
+    return loose_rois.with_columns(
+        pl.Series("band_id", band_id, dtype=pl.Int64),
+        pl.Series("band_fmin_hz", band_lo, dtype=pl.Float64),
+        pl.Series("band_fmax_hz", band_hi, dtype=pl.Float64),
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -1269,6 +1410,26 @@ def run(
         loose = propose_gabor_rois(cache, config=config)
     else:
         loose = propose_loose_rois(cache, bands, config=config)
+    # Lever A: in non-consensus modes the single WIDEBAND band is sub-divided
+    # into data-derived frequency strata so the per-band HDBSCAN below cannot
+    # merge frequency-distinct, shape-similar motifs. The strata become the
+    # bands for every downstream stage (clustering, EM, template freq-clip),
+    # so consensus's per-band separation is reproduced without a hard gate.
+    if config.band_mode != "consensus" and config.cluster_mode == "freq_stratified":
+        bands = _derive_freq_strata(
+            loose, min_rois_per_stratum=config.shape_cluster_min_size
+        )
+        loose = _assign_stratum_band_id(loose, bands)
+        bands_df = pl.DataFrame([
+            {
+                "band_id": i,
+                "fmin_hz": float(fmin),
+                "fmax_hz": float(fmax),
+                "bandwidth_hz": float(fmax - fmin),
+            }
+            for i, (fmin, fmax) in enumerate(bands)
+        ])
+        bands_df.write_csv(tables_dir / "auto_bands.csv")
     loose.write_csv(tables_dir / "loose_rois.csv")
     refined, feature_table = shape_cluster_refine(
         loose, cache, min_cluster_size=config.shape_cluster_min_size,
@@ -1466,10 +1627,16 @@ def main() -> None:
                         default="consensus",
                         help="consensus: band gate (default). free: no gate, "
                              "intensity ROIs. gabor: no gate, oriented-Gabor ROIs.")
+    parser.add_argument("--cluster-mode", choices=["global", "freq_stratified"],
+                        default="global",
+                        help="global: one HDBSCAN per detection band (default). "
+                             "freq_stratified: data-derived freq strata from "
+                             "ROI centre-freq KDE (non-consensus modes only).")
     args = parser.parse_args()
     config = AutoConfig(
         band=BandDiscoveryConfig(max_bands=args.max_bands),
         band_mode=args.band_mode,
+        cluster_mode=args.cluster_mode,
     )
     output_dir = run(
         label=args.label,
