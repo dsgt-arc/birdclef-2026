@@ -243,14 +243,30 @@ trace reflects the densest call activity instead of the highest-peak band.
 ### 8b. Per-motif activation diagnostic
 
 `common.recording_plot.plot_motif_activation_diagnostic` produces one
-figure per template family (`plots/motif_activation_XXXX.png`). Each focal
-recording is a two-panel block: the spectrogram zoomed to the family's
-template band with a green box around every detected activation (the
-per-family NMS events), and the dense template score track below with the
-family's detection threshold (red dashed) and detected peaks marked. The
-score y-range is shared across recordings for comparability. Recordings
-where the family never fires are still shown (flat track) so misses /
-band-vs-call mismatches are visible per template, not just per recording.
+figure per template family (`plots/motif_activation_XXXX.png`). The top
+panel is a **label-free template-quality screen**: histograms of the
+template's EM-member score-track values vs background values, with the
+detection threshold and the **member-vs-background separation** (`d'` and
+ROC-`AUC`). Below it, each focal recording is a two-panel block: the
+spectrogram zoomed to the family's template band with a green box around
+every detected activation (the per-family NMS events), and the dense
+template score track with the detection threshold (red dashed) and
+detected peaks marked. Score y-range is shared across recordings for
+comparability; recordings where the family never fires are still shown
+(flat track) so misses / band-vs-call mismatches are visible per template.
+
+The separation (`_score_separation` in `mining.py`) is computed from the
+member/background arrays already collected to derive the detection
+threshold, and persisted to `auto_templates_metadata.csv`
+(`member_bg_dprime`, `member_bg_auc`, `n_member_scores`,
+`n_background_scores`). **Necessary-not-sufficient:** members are the
+template's own EM picks (optimistically biased) and background is
+contaminated by any real calls EM missed (deflates the score). A *low*
+value definitively flags a non-discriminative template; a *high* value
+proves internal self-consistency, not that the picks are real calls.
+Complement it with score margin, cross-template corroboration
+(`consolidated_events.n_component_detections`), periodicity, and human
+spot-check.
 
 ## Configuration reference
 
@@ -321,7 +337,7 @@ name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
 | `tables/loose_rois.csv` | Per-band hysteresis ROIs (loose dur/bw filter). |
 | `tables/shape_features.csv` | Per-ROI 26-D Gabor shape + centroid features and HDBSCAN cluster (-1 = noise). |
 | `tables/em_trace.csv` | `band_id, shape_cluster_id, iter, n_kept, threshold, method, cosine_to_prev`. |
-| `tables/auto_templates_metadata.csv` | One row per accepted family: band/shape-cluster IDs, threshold (EM), support, etc. |
+| `tables/auto_templates_metadata.csv` | One row per accepted family: band/shape-cluster IDs, threshold (EM), support, `member_bg_dprime`, `member_bg_auc`, `n_member_scores`, `n_background_scores`. |
 | `tables/template_score_tracks.csv` | Dense (filename, motif_cluster, time, score). |
 | `tables/template_match_events_raw.csv` | Raw peak-pick detections per family. |
 | `tables/template_match_events_nms.csv` | Within-family NMS survivors. |
@@ -385,6 +401,12 @@ name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
 - **EM drops the family** → `tables/em_trace.csv`. Look for `method =
   skipped_too_few_rois` or `dropped_below_min_repetitions`; consider
   lowering `min_repetitions` or `threshold_floor`.
+- **Detections look spurious / "motif isn't good"** → `member_bg_dprime` /
+  `member_bg_auc` in `auto_templates_metadata.csv` and the top panel of
+  `plots/motif_activation_XXXX.png`. Low values (overlapping member/
+  background histograms) = non-discriminative template. Cross-check the
+  per-detection score margin and `consolidated_events.n_component_detections`
+  (corroboration across bands).
 - **Low curated recovery despite detections** → check
   `tables/detection_stage_metrics.csv` for raw → NMS → consolidated drop.
   Cross-family consolidation can absorb adjacent secondaries (see
@@ -444,6 +466,16 @@ score is reported but not used as a filter.
 
 ## Limitations and follow-ups
 
+- **Reported recovery is recall, not precision.** The curated boxes are 33
+  hand-picked exemplars in only 3 of 8 focal recordings — not an
+  exhaustive annotation. `curated recovery ≈ 0.96` means "of the selected
+  example calls, ~96% were recovered"; it says nothing about how many of
+  the ~200+ detections per family are spurious. There is no labeled
+  not-a-call set, so true precision is **unmeasured**. The
+  `member_bg_dprime`/`auc` separation is a label-free template-quality
+  *screen* (necessary-not-sufficient, see [8b](#8b-per-motif-activation-diagnostic)),
+  not a precision measure. A small *exhaustive* annotation of 1–2
+  recordings is the only way to get a true precision anchor.
 - **Frequency-IoU strictness in recovery eval.** Bands that fire on a
   call's harmonic content but don't overlap the curated fundamental are
   scored as misses. Consider a harmonic-aware matcher in

@@ -54,6 +54,7 @@ from opensoundscape.spectrogram import Spectrogram
 from scipy.ndimage import binary_closing
 from scipy.signal import find_peaks
 from sklearn.cluster import HDBSCAN
+from sklearn.metrics import roc_auc_score
 
 from data_analysis.auto_motif.band import (
     BandDiscoveryConfig,
@@ -835,6 +836,31 @@ def _member_vs_background_threshold(
     return float(np.clip(raw, floor, ceiling)), "members_q25_or_bg_q995"
 
 
+def _score_separation(
+    member: np.ndarray, background: np.ndarray
+) -> tuple[float, float]:
+    """d-prime and ROC-AUC of EM-member vs background score-track values.
+
+    Label-free template-quality screen. Low values mean the template does not
+    separate its own accepted instances from noise (non-discriminative ->
+    detections unreliable). High values are necessary-not-sufficient: members
+    are the template's own EM picks (optimistically biased) and background is
+    contaminated by any real calls EM missed (deflates the score). Returns
+    ``(nan, nan)`` if either side is empty.
+    """
+    if member.size == 0 or background.size == 0:
+        return float("nan"), float("nan")
+    pooled_var = 0.5 * (float(member.var()) + float(background.var()))
+    dprime = (
+        (float(member.mean()) - float(background.mean())) / np.sqrt(pooled_var)
+        if pooled_var > 1e-12
+        else float("nan")
+    )
+    labels = np.concatenate([np.ones(member.size), np.zeros(background.size)])
+    scores = np.concatenate([member, background])
+    return float(dprime), float(roc_auc_score(labels, scores))
+
+
 def detect_with_auto_templates(
     families: list[dict],
     cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
@@ -880,6 +906,13 @@ def detect_with_auto_templates(
         )
         family["threshold"] = threshold
         family["threshold_method"] = threshold_method
+        member_arr = np.asarray(member_score_list, dtype=float)
+        background_arr = np.asarray(background_score_list, dtype=float)
+        family["member_bg_dprime"], family["member_bg_auc"] = _score_separation(
+            member_arr, background_arr
+        )
+        family["member_scores"] = member_arr
+        family["background_scores"] = background_arr
         dt = MEL_HOP_LENGTH / MEL_SAMPLE_RATE
         min_spacing = max(0.12, 0.60 * float(support["template_duration_sec"]))
         distance = max(1, int(round(min_spacing / dt)))
@@ -1163,7 +1196,8 @@ def run(
             **f["support"],
         } for f in families
     ])
-    family_meta.write_csv(tables_dir / "auto_templates_metadata.csv")
+    # auto_templates_metadata.csv is written after detection so it can carry
+    # the member-vs-background separation (a detection-stage quantity).
     for f in families:
         np.savez_compressed(
             templates_dir / f"family_{int(f['motif_cluster']):04d}_template.npz",
@@ -1175,6 +1209,19 @@ def run(
     score_tracks, raw_events, nms, consolidated = detect_with_auto_templates(
         families, cache, config=config,
     )
+    family_meta = family_meta.join(
+        pl.DataFrame([
+            {
+                "motif_cluster": int(f["motif_cluster"]),
+                "member_bg_dprime": f["member_bg_dprime"],
+                "member_bg_auc": f["member_bg_auc"],
+                "n_member_scores": int(f["member_scores"].size),
+                "n_background_scores": int(f["background_scores"].size),
+            } for f in families
+        ]),
+        on="motif_cluster", how="left",
+    )
+    family_meta.write_csv(tables_dir / "auto_templates_metadata.csv")
     score_tracks.write_csv(tables_dir / "template_score_tracks.csv")
     raw_events.write_csv(tables_dir / "template_match_events_raw.csv")
     nms.write_csv(tables_dir / "template_match_events_nms.csv")
@@ -1249,6 +1296,10 @@ def run(
             score_tracks,
             nms,
             plots_dir / f"motif_activation_{int(family['motif_cluster']):04d}.png",
+            member_scores=family["member_scores"],
+            background_scores=family["background_scores"],
+            dprime=float(family["member_bg_dprime"]),
+            auc=float(family["member_bg_auc"]),
             title_extra=f"band {family['band_id']} "
             f"({family['band'][0]:.0f}-{family['band'][1]:.0f} Hz)",
         )
