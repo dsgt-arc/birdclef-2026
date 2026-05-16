@@ -294,6 +294,8 @@ spot-check.
 | Knob | Default | Rationale |
 |---|---|---|
 | `band` | `BandDiscoveryConfig()` | Nested band-discovery config |
+| `band_mode` | `"consensus"` | Detection front-end: `consensus` (default, validated). `free`/`gabor` are opt-in experiments — both regress multi-motif narrowband species; see [Limitations](#limitations-and-follow-ups) |
+| `gabor_resolution` | `"med"` | maad shape preset for `band_mode="gabor"` (4 orientations); library preset, not hand-tuned |
 | `seed_percentile` | `0.99` | In-band PCEN p99 hysteresis seed |
 | `grow_percentile` | `0.90` | In-band PCEN p90 hysteresis grow |
 | `loose_min_duration_sec` | `0.02` | Loose; shape clustering narrows |
@@ -489,13 +491,22 @@ score is reported but not used as a filter.
   lower `k_band_mad`. Note the rest of the pipeline (loose ROIs → 2D Gabor
   shape clustering → EM template → 2D spectrogram-correlation detection) is
   already shape-agnostic; **only the stage-2 band gate** is narrowband. The
-  literature-grounded fix is to replace/relax that gate with a 2D
-  image-domain ROI segmentation (`maad.rois.create_mask` /
-  `select_rois` / `rois_2d`) or matched-filter spectrogram cross-correlation
-  (`maad.rois.template_matching`, the Mellinger–Clark detector) rather than
-  invent an FM detector; opensoundscape's own answer for arbitrary call
-  structure is learned embeddings/CNNs (`opensoundscape.CNN`, BirdNET/Perch
-  — Perch embeddings already exist for this dataset). Manifest:
+  `AutoConfig.band_mode` (`consensus` default / `free` / `gabor`) is the
+  experimental toggle for this. **Empirical result (2026-05-16 A/B, see
+  the [concept doc](concepts/decouple-frequency-localization-from-focal-selection.md)):**
+  removing the gate (`free` = band-free intensity) *does* recover
+  FM/broadband species the gate hard-failed (`hyamac1` d′4.0, `23158`
+  d′3.1) but both `free` and an oriented-Gabor detector front-end
+  (`gabor`) **regress multi-motif narrowband species** (Marbled Frog
+  0.97→0.36/0.00). The decisive finding: the bottleneck is **job-2
+  (clustering collapse — one global HDBSCAN over one band collapses
+  shape-similar/frequency-distinct motifs), not job-1 (detection)**;
+  swapping the detector (intensity→Gabor) does *not* help and Gabor is in
+  fact the worst mode (under-detects short narrowband calls). The
+  indicated lever is **frequency-stratified soft clustering**, not a new
+  detector. `consensus` therefore **remains the production default** (only
+  mode that does not regress the validated frog); `free`/`gabor` are
+  opt-in, not preferred. Manifest:
   `artifacts/auto_motif/_batch/manifest.csv` (gitignored); per-species
   status JSONs under `artifacts/auto_motif/_batch/status/` (delete one to
   force a resumable re-run).

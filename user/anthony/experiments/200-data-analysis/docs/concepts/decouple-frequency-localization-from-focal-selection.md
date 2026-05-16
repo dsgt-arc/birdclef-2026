@@ -195,6 +195,39 @@ adaptive ROI thresholding (the global wideband percentile lets loud
 broadband drown faint narrowband). This keeps job-1 band-free while
 restoring multi-motif resolution.
 
+## v2 result (2026-05-16): Gabor front-end explored — not better
+
+Pivoted to test an FM-aware *detector* (job-1): `band_mode="gabor"` —
+band-free ROIs from a maad oriented 2D-Gabor-filterbank energy map
+(`filter_bank_2d_nodc`/`filter_multires`), commits `022684f`/`e10961c`.
+A/B vs band-gate and band-free intensity:
+
+| species | band-gate | band-free (intensity) | gabor |
+|---|---|---|---|
+| `22967` frog (regression gate) | **0.97**, 5 fam | 0.36, 1 fam | **0.00**, 1 fam |
+| `nacnig1` narrowband bird | 5 fam, d′→3.49 | — | 1 fam, d′2.67 |
+| `23158` (gate hard-failed) | — | **d′3.14** | **0 families (hard fail)** |
+| `hyamac1` (gate hard-failed) | — | **d′4.01** | d′3.45 |
+
+**Conclusion: the Gabor detector is the *worst* of the three.** It
+under-detects short/narrowband calls (frog 0.00; `23158` yields no
+families where band-free gets d′3.14) and even on the broadband macaw
+band-free intensity beats it (4.01 > 3.45). The conceptual case for B
+(structure-matched, faint-call sensitivity) didn't survive data: these
+calls are loud enough that intensity already catches them, and the maad
+preset under-responds to short narrowband chips. **Decisive finding: the
+bottleneck across *both* non-consensus modes is job-2 (clustering
+collapse — one global HDBSCAN over one band collapses multi-motif
+species), not job-1 (detection). Swapping the detector cannot fix it.**
+
+**Recommended direction (unchanged from the v1 lever): frequency-
+stratified soft clustering (A).** Gabor is recorded as an
+explored-and-rejected branch; the toggle stays in the code for
+reproducibility but is *not* preferred. **Consensus remains the
+production default** — it is the only mode that does not regress the
+validated Marbled Frog; band-free/gabor are opt-in experiments. No prior
+implementation is downweighted in favor of Gabor (the data forbids it).
+
 ## Notes
 
 **Reuse map.** Unchanged: `maad.rois.create_mask`/`select_rois`,
