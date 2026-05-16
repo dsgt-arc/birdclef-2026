@@ -96,6 +96,8 @@ What is deliberately hand-rolled (no clean library equivalent surfaced):
                   cross-family consolidation (reused from marbled_frog
                   motif_template_calibration)
 [8]  → curated recovery + 2-panel diagnostic plot per recording
+[8b] → per-motif-family activation diagnostic (detection boxes + score
+       track across all recordings, one figure per template)
 ```
 
 ### 0. Recording pre-ranking (opt-in)
@@ -238,6 +240,18 @@ sharing x) per recording, matching the manual pipeline's layout. The
 envelope panel uses the discovered band with the most refined ROIs so the
 trace reflects the densest call activity instead of the highest-peak band.
 
+### 8b. Per-motif activation diagnostic
+
+`common.recording_plot.plot_motif_activation_diagnostic` produces one
+figure per template family (`plots/motif_activation_XXXX.png`). Each focal
+recording is a two-panel block: the spectrogram zoomed to the family's
+template band with a green box around every detected activation (the
+per-family NMS events), and the dense template score track below with the
+family's detection threshold (red dashed) and detected peaks marked. The
+score y-range is shared across recordings for comparability. Recordings
+where the family never fires are still shown (flat track) so misses /
+band-vs-call mismatches are visible per template, not just per recording.
+
 ## Configuration reference
 
 ### `BandDiscoveryConfig` (`auto_motif/band.py`)
@@ -320,6 +334,7 @@ name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
 | `plots/shape_clusters.png` | Per-band SVD-projected scatter of shape features colored by HDBSCAN cluster. |
 | `plots/em_convergence.png` | Per-family `1 - cosine` vs iter. |
 | `plots/template_family_XXXX.png` | Final template per `motif_cluster` (band*100 + shape_cluster). |
+| `plots/motif_activation_XXXX.png` | Per-family activation diagnostic: detection boxes + score track across all recordings. |
 | `plots/{stem}_band_envelope_vs_template_events.png` | 2-panel diagnostic per recording. |
 | `templates/family_XXXX_template.npz` | Fixed-support template arrays + support dict. |
 

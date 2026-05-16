@@ -75,7 +75,10 @@ from data_analysis.common.paths import (
     fresh_subdir,
     recording_files_for_label,
 )
-from data_analysis.common.recording_plot import plot_recording_diagnostic
+from data_analysis.common.recording_plot import (
+    plot_motif_activation_diagnostic,
+    plot_recording_diagnostic,
+)
 from data_analysis.common.spectrogram import (
     MEL_HOP_LENGTH,
     MEL_N_FFT,
@@ -1235,6 +1238,21 @@ def run(
             title_extra=f"auto bands: {', '.join(f'{a:.0f}-{b:.0f}' for a, b in bands)}",
         )
 
+    # 8b. Per-motif-family activation diagnostic: one figure per template,
+    #     boxing every detected activation across recordings + score track.
+    for family in families:
+        plot_motif_activation_diagnostic(
+            int(family["motif_cluster"]),
+            family["support"],
+            float(family["threshold"]),
+            cache,
+            score_tracks,
+            nms,
+            plots_dir / f"motif_activation_{int(family['motif_cluster']):04d}.png",
+            title_extra=f"band {family['band_id']} "
+            f"({family['band'][0]:.0f}-{family['band'][1]:.0f} Hz)",
+        )
+
     # 9. Summary markdown.
     (output_dir / "summary.md").write_text(
         f"""# Auto motif mining: {label}
@@ -1275,6 +1293,7 @@ Artifacts:
 - `plots/shape_clusters.png` — per-band SVD-projected scatter of shape features colored by HDBSCAN cluster.
 - `plots/em_convergence.png` — per-family 1-cosine vs iter.
 - `plots/template_family_XX.png` — final templates.
+- `plots/motif_activation_XXXX.png` — per-family activation diagnostic (detection boxes + score track across recordings).
 - `plots/{{stem}}_band_envelope_vs_template_events.png` — 2-panel diagnostic (full spectrogram + band envelope).
 """
     )
