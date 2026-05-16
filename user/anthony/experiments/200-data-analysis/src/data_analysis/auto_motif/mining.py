@@ -55,6 +55,7 @@ from scipy.ndimage import binary_closing
 from scipy.signal import find_peaks
 from scipy.stats import gaussian_kde
 from sklearn.cluster import HDBSCAN
+from sklearn.decomposition import PCA
 from sklearn.metrics import roc_auc_score
 
 from data_analysis.auto_motif.band import (
@@ -124,14 +125,20 @@ class AutoConfig:
     # separable — needed to resolve FM sweeps. A library preset, not a
     # hand-tuned constant.
     gabor_resolution: str = "med"
-    # Clustering partition. "global" (default): one HDBSCAN over each
-    # detection band's 26-D shape features. "freq_stratified": in
-    # non-consensus modes, sub-divide the single WIDEBAND band into
-    # data-derived frequency strata (KDE modes of the loose-ROI centre
-    # frequencies) so frequency-distinct but shape-similar motifs cannot
-    # merge — restoring, without a hard gate, the separation the consensus
-    # band split provided. No-op under band_mode="consensus" (real bands
-    # already stratify). Opt-in for A/B; default unchanged.
+    # Clustering representation / partition (all non-consensus opt-ins;
+    # default unchanged). "global": one HDBSCAN over each detection band's
+    # 26-D maad Gabor *shape* features — frequency-translation-invariant by
+    # construction, so shape-similar/frequency-distinct motifs collapse.
+    # "freq_stratified": data-derived centre-freq strata (explored, rejected
+    # — boundaries bisect coherent motifs). "patch": cluster ROIs on their
+    # canonical PCEN patch placed at *absolute* frequency over the full
+    # WIDEBAND canvas (PCA-reduced), single global HDBSCAN, full-gestalt
+    # templates — no horizontal partition, no freq-clip. "gabor_stack": same
+    # canonical full-band crop but of the oriented 2D-Gabor energy response
+    # (keeps FM/broadband orientation selectivity *and* absolute frequency).
+    # patch/gabor_stack test whether absolute-frequency gestalt clustering
+    # separates the harmonics the shape features collapse, without the
+    # structurally-doomed horizontal partition.
     cluster_mode: str = "global"
     seed_percentile: float = 0.99
     grow_percentile: float = 0.90
@@ -702,17 +709,88 @@ def _shape_features_for_band(
     return pd.concat(feature_frames, axis=0, ignore_index=True)
 
 
+def _canonical_patch_features(
+    rois_band: pl.DataFrame,
+    cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    *,
+    kind: str,
+    config: AutoConfig,
+) -> pd.DataFrame:
+    """Per-ROI canonical full-band patch, absolute frequency preserved.
+
+    ``kind="patch"`` crops the PCEN spectrogram; ``kind="gabor_stack"`` crops
+    the oriented 2D-Gabor energy response (FM/broadband orientation
+    selectivity, *with* its frequency axis kept). Every ROI is cropped over
+    the **full WIDEBAND** frequency range with one common, data-derived time
+    window, so the flattened patch encodes the call's absolute
+    time-frequency gestalt — exactly the information the
+    frequency-translation-invariant maad shape descriptors discard, and the
+    reason ``global`` collapses the frog's shape-similar harmonics. A narrow
+    per-ROI freq window would re-introduce that invariance, so the band is
+    forced to WIDEBAND (not the ROI-quantile clip). PCA-reduced for HDBSCAN.
+    """
+    if rois_band.is_empty():
+        return pd.DataFrame()
+    support = dict(canonical_support(rois_band, freq_clip=WIDEBAND))
+    support["template_fmin_hz"] = float(WIDEBAND[0])
+    support["template_fmax_hz"] = float(WIDEBAND[1])
+    kernels = None
+    if kind == "gabor_stack":
+        preset = maad_features.opt_shape_presets(config.gabor_resolution)
+        _params, kernels = maad_features.filter_bank_2d_nodc(
+            preset["frequency"], preset["ntheta"], preset["bandwidth"], preset["gamma"],
+        )
+        npyr = int(preset["npyr"])
+    rows: list[np.ndarray] = []
+    ids: list[int] = []
+    files: list[str] = []
+    for filename in rois_band["filename"].unique().to_list():
+        file_rois = rois_band.filter(pl.col("filename") == filename)
+        _db, s, freqs, times = cache[filename]
+        if kind == "gabor_stack":
+            filtered = maad_features.filter_multires(s, kernels, npyr)
+            grid = np.max(
+                np.abs(np.stack([np.asarray(m, dtype=float) for m in filtered], axis=0)),
+                axis=0,
+            )
+        else:
+            grid = s
+        for row in file_rois.iter_rows(named=True):
+            patch = fixed_support_crop(
+                grid, freqs, times,
+                peak_time_sec=float(row["peak_time_sec"]), support=support,
+            )
+            rows.append(patch.reshape(-1).astype(np.float32))
+            ids.append(int(row["candidate_id"]))
+            files.append(filename)
+    if not rows:
+        return pd.DataFrame()
+    X = np.vstack(rows)
+    X = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-9)
+    n_comp = int(min(50, X.shape[0] - 1, X.shape[1]))
+    if n_comp >= 2:
+        X = PCA(n_components=n_comp, random_state=0).fit_transform(X)
+    out = pd.DataFrame(X, columns=[f"patch_pc{i}" for i in range(X.shape[1])])
+    out.insert(0, "candidate_id", ids)
+    out.insert(1, "filename", files)
+    return out
+
+
 def shape_cluster_refine(
     loose_rois: pl.DataFrame,
     cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     *,
     min_cluster_size: int,
+    config: AutoConfig,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """Cluster loose ROIs per band by their 2D Gabor shape features.
+    """Cluster loose ROIs per band by a per-ROI feature representation.
 
-    Within each band, computes per-ROI shape features (26-D Gabor descriptors
-    via :func:`maad.features.shape_features`) plus the intensity centroid
-    (:func:`maad.features.centroid_features`), standardizes, and runs HDBSCAN.
+    The representation is selected by ``config.cluster_mode``: the default
+    ``global`` uses the 26-D maad Gabor shape descriptors +
+    :func:`maad.features.centroid_features` (frequency-translation-invariant);
+    ``patch``/``gabor_stack`` use absolute-frequency canonical full-band
+    patches (see :func:`_canonical_patch_features`). Features are
+    standardized and clustered with HDBSCAN.
     Each non-noise cluster becomes a candidate motif family carried through to
     EM. Noise (label ``-1``) ROIs are dropped.
 
@@ -733,7 +811,12 @@ def shape_cluster_refine(
         rois_band = loose_rois.filter(pl.col("band_id") == band_id)
         if rois_band.height < min_cluster_size:
             continue
-        features = _shape_features_for_band(rois_band, cache)
+        if config.cluster_mode in ("patch", "gabor_stack"):
+            features = _canonical_patch_features(
+                rois_band, cache, kind=config.cluster_mode, config=config
+            )
+        else:
+            features = _shape_features_for_band(rois_band, cache)
         if features.empty:
             continue
         feature_cols = [c for c in features.columns if c not in {"candidate_id", "filename"}]
@@ -1432,7 +1515,7 @@ def run(
         bands_df.write_csv(tables_dir / "auto_bands.csv")
     loose.write_csv(tables_dir / "loose_rois.csv")
     refined, feature_table = shape_cluster_refine(
-        loose, cache, min_cluster_size=config.shape_cluster_min_size,
+        loose, cache, min_cluster_size=config.shape_cluster_min_size, config=config,
     )
     if not feature_table.is_empty():
         feature_table.write_csv(tables_dir / "shape_features.csv")
@@ -1627,11 +1710,15 @@ def main() -> None:
                         default="consensus",
                         help="consensus: band gate (default). free: no gate, "
                              "intensity ROIs. gabor: no gate, oriented-Gabor ROIs.")
-    parser.add_argument("--cluster-mode", choices=["global", "freq_stratified"],
-                        default="global",
-                        help="global: one HDBSCAN per detection band (default). "
-                             "freq_stratified: data-derived freq strata from "
-                             "ROI centre-freq KDE (non-consensus modes only).")
+    parser.add_argument(
+        "--cluster-mode",
+        choices=["global", "freq_stratified", "patch", "gabor_stack"],
+        default="global",
+        help="global: HDBSCAN on freq-invariant maad shape features "
+             "(default). freq_stratified: data-derived centre-freq strata "
+             "(rejected). patch/gabor_stack: HDBSCAN on absolute-frequency "
+             "canonical full-band patches (raw PCEN / oriented-Gabor energy) "
+             "— non-consensus modes only.")
     args = parser.parse_args()
     config = AutoConfig(
         band=BandDiscoveryConfig(max_bands=args.max_bands),
