@@ -437,6 +437,17 @@ anchor remains a small *exhaustive* manual annotation on 2–3 broadband
 species — still the open follow-up, now better motivated (it would
 calibrate exactly the d′→recovery link this validation showed is weak).
 
+**Operationalized.** This exact conservative routing across all 41
+soundscape∩train species is materialized — no recompute, pure join over
+the on-disk batch artifacts — by
+`python -m data_analysis.auto_motif.production_manifest`
+→ `artifacts/auto_motif/_production_manifest.csv` (gitignored;
+regenerable). It is the canonical per-species routing table: 24
+`consensus`, 17 `consensus_blind`→`free+global` with `gabor_stack` carried
+as the *non-auto-selected* alternative, and the independent Perch-emb AUC
+column so the one un-corroborated production row (`74113`) is visible in
+the manifest itself rather than only here.
+
 ## Notes
 
 **Reuse map.** Unchanged: `maad.rois.create_mask`/`select_rois`,

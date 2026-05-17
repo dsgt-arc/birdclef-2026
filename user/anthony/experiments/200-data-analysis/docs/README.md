@@ -26,6 +26,15 @@ This directory uses short Markdown files as lightweight notebooks. Each notebook
 |---|---|---|
 | `concepts/decouple-frequency-localization-from-focal-selection.md` | Mining motifs for the broadband/FM species the per-bin band-consensus gate is structurally blind to (~41% of soundscape∩train species). | Archived — canonical v1–v4 record. Decoupling premise falsified (v3); **v4** = the constructive resolution (recurrence-breadth gate + band-free clustering; n=17, Perch-embedding-corroborated qualitatively; the d′ ranking / per-species mode selector is *not* independently validated). |
 
+## Production routing
+
+`python -m data_analysis.auto_motif.production_manifest` consolidates the
+already-materialized batch artifacts (no recompute) into
+`artifacts/auto_motif/_production_manifest.csv` — the canonical per-species
+routing table for the full 41-species soundscape∩train subset (24 `consensus`,
+17 `consensus_blind`→`free+global`, `gabor_stack` opportunistic). Rationale and
+the conservative-routing argument: concept doc §v4 + "v4 validation".
+
 ## Consolidation note
 
 The Marbled White-lipped Frog files are intentionally split into:
