@@ -155,6 +155,14 @@ class AutoConfig:
     shape_cluster_min_size: int = 5
     max_em_iter: int = 5
     template_change_eps: float = 0.01
+    # Cross-recording recurrence floor. A motif family must be supported by
+    # >= this many *distinct recordings* both before EM (cluster membership)
+    # and after EM (kept peaks) -- enforcing the pipeline's recurrence premise
+    # at the family level, not merely an ROI count. This is the same breadth
+    # floor the post-hoc breadth-gated quality screen applies; making it a
+    # pipeline invariant drops within-recording shards before they cost an EM
+    # + detection pass (e.g. patch/gabor_stack on broadband species fragment
+    # into hundreds of single-recording micro-clusters otherwise).
     min_repetitions: int = 5
     nms_time_iou: float = 0.35
     nms_peak_distance_sec: float = 0.12
@@ -1051,6 +1059,19 @@ def em_loop(
     clustering upstream — each non-noise ``shape_cluster_id`` within a band
     becomes its own family with ``motif_cluster = band_id * 100 +
     shape_cluster_id``.
+
+    A cross-recording **recurrence-breadth gate** is applied with the same
+    ``config.min_repetitions`` floor both *before* EM (cluster member ROIs
+    must span ≥ ``min_repetitions`` distinct recordings) and *after* EM
+    (kept peaks must likewise span ≥ ``min_repetitions`` distinct
+    recordings). This enforces the pipeline's recurrence premise at the
+    family level rather than as a raw ROI count: a cluster of many ROIs
+    confined to one or two recordings is a within-recording shard, not a
+    recurrent motif, and is skipped before it costs an EM + detection pass.
+    It is the structural in-pipeline form of the post-hoc breadth-gated
+    quality screen, and is what keeps patch/gabor_stack tractable on
+    broadband species (which otherwise fragment into hundreds of
+    single-recording micro-clusters).
     """
     families: list[dict] = []
     trace_rows: list[dict] = []
@@ -1069,11 +1090,13 @@ def em_loop(
         rois_part = refined_rois.filter(
             (pl.col("band_id") == band_id) & (pl.col("shape_cluster_id") == cluster_id)
         )
-        if rois_part.height < config.min_repetitions:
+        n_recordings = rois_part["filename"].n_unique()
+        if n_recordings < config.min_repetitions:
             trace_rows.append({
                 "band_id": band_id, "shape_cluster_id": cluster_id,
-                "iter": -1, "n_kept": rois_part.height,
-                "threshold": float("nan"), "method": "skipped_too_few_rois",
+                "iter": -1, "n_kept": n_recordings,
+                "threshold": float("nan"),
+                "method": "skipped_below_min_recordings",
                 "cosine_to_prev": float("nan"),
             })
             continue
@@ -1100,11 +1123,13 @@ def em_loop(
             prev_template = template.copy()
         if last_kept is None or last_kept.is_empty():
             continue
-        if last_kept.height < config.min_repetitions:
+        kept_recordings = last_kept["filename"].n_unique()
+        if kept_recordings < config.min_repetitions:
             trace_rows.append({
                 "band_id": band_id, "shape_cluster_id": cluster_id,
-                "iter": -2, "n_kept": last_kept.height,
-                "threshold": float("nan"), "method": "dropped_below_min_repetitions",
+                "iter": -2, "n_kept": kept_recordings,
+                "threshold": float("nan"),
+                "method": "dropped_below_min_recordings",
                 "cosine_to_prev": float("nan"),
             })
             continue

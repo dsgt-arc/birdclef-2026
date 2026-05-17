@@ -410,8 +410,11 @@ name. Unknown labels fall back to `artifacts/auto_motif/<label>/`.
 - **HDBSCAN returns all noise** → `tables/shape_features.csv`, plot
   `shape_clusters.png`. Lower `shape_cluster_min_size`.
 - **EM drops the family** → `tables/em_trace.csv`. Look for `method =
-  skipped_too_few_rois` or `dropped_below_min_repetitions`; consider
-  lowering `min_repetitions` or `threshold_floor`.
+  skipped_below_min_recordings` (cluster ROIs span < `min_repetitions`
+  distinct recordings — a within-recording shard) or
+  `dropped_below_min_recordings` (EM-kept peaks collapsed below that
+  recording-breadth floor); consider lowering `min_repetitions` or
+  `threshold_floor`.
 - **Detections look spurious / "motif isn't good"** → `member_bg_dprime` /
   `member_bg_auc` in `auto_templates_metadata.csv` and the top panel of
   `plots/motif_activation_XXXX.png`. Low values (overlapping member/
