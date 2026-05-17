@@ -35,6 +35,11 @@ routing table for the full 41-species soundscape∩train subset (24 `consensus`,
 17 `consensus_blind`→`free+global`, `gabor_stack` opportunistic). Rationale and
 the conservative-routing argument: concept doc §v4 + "v4 validation".
 
+`python -m data_analysis.auto_motif.cofire_fragmentation` is the label-free
+fragmentation guardrail — `frac_distinct` per species (co-firing collapse, no
+labels/Perch) flags where a mode's family richness is spurious
+over-segmentation. Rationale: concept doc §v4 "v4 validation, strand 2".
+
 ## Consolidation note
 
 The Marbled White-lipped Frog files are intentionally split into:

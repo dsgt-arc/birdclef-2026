@@ -47,6 +47,9 @@ import numpy as np  # noqa: E402
 import polars as pl  # noqa: E402
 
 from data_analysis.auto_motif.batch import AUTO_MOTIF_DIR, _species_dir  # noqa: E402
+from data_analysis.auto_motif.cofire_fragmentation import (  # noqa: E402
+    cofire_collapse,
+)
 from data_analysis.common.paths import TRAIN_AUDIO_DIR  # noqa: E402
 from data_analysis.common.spectrogram import (  # noqa: E402
     WIDEBAND,
@@ -68,7 +71,6 @@ GABOR_PROBE = ("fusfly1", "_gabor_stack")
 
 N_RECORDINGS = 4          # density-stratified recordings per species
 STRIP_SEC = 12.0          # seconds per spectrogram strip row
-GABOR_PER_CLUSTER = 4     # detections sampled per gabor_stack motif cluster
 
 
 def _events(tag: str, label: str) -> pl.DataFrame:
@@ -222,24 +224,57 @@ def _build_production(label: str, tag: str, max_render_sec: float) -> tuple:
 
 
 def _build_gabor_probe(label: str, tag: str) -> pl.DataFrame:
+    """Collapsed-effective-group view of the gabor_stack opportunistic leg.
+
+    The label-free co-firing test (:mod:`cofire_fragmentation`) already
+    answers "is the family richness real?" structurally for most species; the
+    residual human question on a *flagged* (collapsing) species is only
+    whether the few co-firing groups are distinct coherent calls. So instead
+    of N hard-to-compare raw-cluster montages, render ONE montage: rows =
+    effective groups, columns = one top-score exemplar per member family
+    (within-row consistency ⇒ the fragments are the same call; across-row
+    difference ⇒ the groups are genuinely distinct).
+    """
     ev = _events(tag, label)
+    r = cofire_collapse(ev)
+    counts = dict(ev.group_by("motif_cluster").len().iter_rows())
     sp_dir = CURATION_DIR / f"{label}_gabor_stack_probe"
     sp_dir.mkdir(parents=True, exist_ok=True)
+    groups = r["groups"]
+    max_cols = max(min(len(g), 6) for g in groups)
+    png = sp_dir / "effective_groups.png"
+    rel_png = str(png.relative_to(AUTO_MOTIF_DIR.parents[1]))
+
+    fig, axes = plt.subplots(
+        len(groups), max_cols,
+        figsize=(2.4 * max_cols, 2.4 * len(groups)), squeeze=False,
+    )
     rows = []
-    for cid, grp in ev.group_by("motif_cluster"):
-        cluster = cid[0] if isinstance(cid, tuple) else cid
-        top = grp.sort("score", descending=True).head(GABOR_PER_CLUSTER)
-        fig, axes = plt.subplots(
-            1, top.height, figsize=(2.6 * top.height, 2.6), squeeze=False
-        )
-        for j, row in enumerate(top.to_dicts()):
+    for gi, members in enumerate(groups):
+        for j in range(max_cols):
+            ax = axes[gi][j]
+            ax.set_ylim(WIDEBAND)
+            ax.tick_params(labelsize=6)
+            if j >= len(members):
+                ax.axis("off")
+                continue
+            c = members[j]
+            top = (
+                ev.filter(pl.col("motif_cluster") == c)
+                .sort("score", descending=True)
+                .head(1)
+                .to_dicts()
+            )
+            if not top:
+                ax.axis("off")
+                continue
+            row = top[0]
             pad = 0.25
             a, _ = librosa.load(
                 TRAIN_AUDIO_DIR / row["filename"], sr=32_000, mono=True,
                 offset=max(0.0, row["start_sec"] - pad),
                 duration=(row["end_sec"] - row["start_sec"]) + 2 * pad,
             )
-            ax = axes[0][j]
             if a.size:
                 _, s, freqs, times = wideband_pcen_spectrogram(a, band=WIDEBAND)
                 ax.pcolormesh(
@@ -247,29 +282,34 @@ def _build_gabor_probe(label: str, tag: str) -> pl.DataFrame:
                     vmin=np.percentile(s, 5), vmax=np.percentile(s, 99),
                     shading="nearest", cmap="magma",
                 )
-            ax.set_ylim(WIDEBAND)
-            ax.set_title(
-                f'{Path(row["filename"]).stem}\n{row["score"]:.3f}',
-                fontsize=7,
-            )
-            ax.tick_params(labelsize=6)
-        png = sp_dir / f"cluster_{cluster}.png"
-        fig.suptitle(f"{label} gabor_stack motif_cluster {cluster} "
-                     f"(n={grp.height})", fontsize=9)
-        fig.tight_layout()
-        fig.savefig(png, dpi=110)
-        plt.close(fig)
+            ax.set_title(f"fam {c}\n{row['score']:.2f}", fontsize=7)
+        axes[gi][0].set_ylabel(
+            f"group {gi + 1}\n{len(members)} fam", fontsize=8
+        )
         rows.append(
             dict(
-                species=label, motif_cluster=cluster, n_det=grp.height,
-                mean_score=round(float(grp["score"].mean()), 4),
-                montage=str(png.relative_to(AUTO_MOTIF_DIR.parents[1])),
-                coherent="",          # annotator: Y / P / N
-                duplicate_of_cluster="",
+                species=label, effective_group=gi + 1,
+                n_member_families=len(members),
+                member_families=",".join(str(c) for c in members),
+                n_det=sum(counts.get(c, 0) for c in members),
+                frac_distinct=r["frac_distinct"],
+                montage=rel_png,
+                coherent="",                 # annotator: Y / P / N
+                distinct_from_other_groups="",  # annotator: Y / N
                 notes="",
             )
         )
-    return pl.DataFrame(rows).sort("n_det", descending=True)
+    fig.suptitle(
+        f"{label} gabor_stack: {r['n_families']} families → "
+        f"{r['effective_groups']} co-firing groups "
+        f"(frac_distinct={r['frac_distinct']}, eps={r['eps_sec']}s). "
+        f"rows=groups, cols=one exemplar per member family",
+        fontsize=10,
+    )
+    fig.tight_layout()
+    fig.savefig(png, dpi=110)
+    plt.close(fig)
+    return pl.DataFrame(rows)
 
 
 _README = """\
@@ -300,13 +340,17 @@ Open `<species>/<recording>.png` and the audio at `audio_abspath`
    and set `n_missed`. If `fully_rendered` is false, recall counts only
    within the rendered window (noted per row).
 
-## fusfly1 gabor_stack probe (secondary)
+## fusfly1 gabor_stack probe (secondary, mostly answered structurally)
 
-`fusfly1_gabor_stack_probe/` + `gabor_stack_cluster_sheet.csv`: per
-motif-cluster montage (top detections). Per cluster set `coherent` to
-`Y`/`P`/`N` (is it one repeated call type?) and `duplicate_of_cluster` if it
-is the same call as another cluster. This tests whether gabor_stack's family
-richness is real structure or fragmentation.
+"Is gabor_stack's family richness real or fragmentation?" is answered
+label-free by the co-firing test (`cofire_fragmentation`): 6/12 rich species
+show *zero* collapse (genuine richness); fusfly1 is the worst case (11
+families → 3 co-firing groups, frac_distinct 0.27). So the only residual
+human check is on that flagged species: in
+`fusfly1_gabor_stack_probe/effective_groups.png` (rows = co-firing groups,
+one exemplar per member family) + `gabor_stack_group_sheet.csv`, per group
+set `coherent` = `Y`/`P`/`N` (is the group one repeated call type — i.e. were
+the fragments correctly merged?) and `distinct_from_other_groups` = `Y`/`N`.
 
 ## After annotation
 
@@ -347,7 +391,7 @@ def main() -> None:
         label, tag = GABOR_PROBE
         logger.info("scaffolding gabor_stack probe %s (%s)", label, tag)
         g = _build_gabor_probe(label, tag)
-        g.write_csv(CURATION_DIR / "gabor_stack_cluster_sheet.csv")
+        g.write_csv(CURATION_DIR / "gabor_stack_group_sheet.csv")
 
     (CURATION_DIR / "README.md").write_text(_README)
 

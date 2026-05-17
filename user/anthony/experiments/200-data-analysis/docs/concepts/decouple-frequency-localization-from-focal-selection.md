@@ -6,7 +6,9 @@
 the consensus-blind broadband/FM boundary (n=17; independently
 corroborated by Perch-embedding separation). Calibrated limit: the
 `member_bg` d′ ranking and the per-species mode selector are **not**
-independently validated — qualitative win only; see "v4 validation".
+independently validated — qualitative win only; see "v4 validation"
+(strand 2 adds a label-free co-firing fragmentation guardrail:
+`gabor_stack` richness is usually genuine, fusfly1 is a worst-case outlier).
 **Created**: 2026-05-16
 **Updated**: 2026-05-17
 
@@ -447,6 +449,46 @@ regenerable). It is the canonical per-species routing table: 24
 as the *non-auto-selected* alternative, and the independent Perch-emb AUC
 column so the one un-corroborated production row (`74113`) is visible in
 the manifest itself rather than only here.
+
+### v4 validation, strand 2 (2026-05-17): co-firing fragmentation — the `gabor_stack` richness is *usually real*, with a label-free guardrail
+
+While scaffolding the manual anchor, the `gabor_stack` opportunistic leg got
+a second, **fully label-free** structural test (no curation, no Perch, no
+template introspection): if a detector over-segments one recurring call into
+several "families", those families re-detect the *same call instants* —
+within a recording their detections are temporally coincident. Genuinely
+distinct call types are not. Method (one established-technique mapping, no
+tuned constants): coincidence window `eps` = corpus **median detection
+duration** for that (species, mode) — the natural single-event timescale,
+data-derived; pairwise co-fire `C[A,B]` = fraction of A's detections within
+`eps` of some B detection in the *same recording*; symmetrise, then collapse
+families by average-linkage agglomeration on `1 − S` cut at the
+**majority-coincidence** boundary (co-fire ≥ 0.5 → two families merge iff most
+of one's detections land on the other's calls). `frac_distinct =
+effective_groups / n_families`. Module:
+`data_analysis.auto_motif.cofire_fragmentation` →
+`artifacts/auto_motif/_gabor_stack/_cofire_fragmentation.csv`.
+
+**Self-correction (it matters here).** The first species probed (`fusfly1`,
+11 families → **3** effective groups, `frac_distinct` 0.27) looked like
+"`gabor_stack` richness is fragmentation." Generalising across all 12
+gabor_stack-rich species **refutes that blanket claim** — the same n=1 trap
+as the earlier "Gabor cracks the boundary". Median `frac_distinct` ≈ **0.90**;
+**6/12 collapse to zero** (`hyamac1, chacha1, wfwduc1, plcjay1, orwpar,
+sibtan2` — every family its own co-firing group, richness genuine); only
+**3/12 collapse ≥2:1** (`fusfly1` 0.27 — the worst case / an outlier —,
+`thlwre1` 0.40, `redjun` 0.50); the rest mild. The opportunistic leg's
+multi-motif richness is *usually real*; `fusfly1` is not representative.
+
+**What this changes (and does not).** It does **not** revive auto-selecting
+`gabor_stack` — fragmentation risk is species-specific and has no obvious
+a-priori predictor (`fusfly1` 0.27 vs `orwpar` 1.0), so per-species trust is
+still unwarranted; the v4-validation conclusion (default robust `free+global`,
+`gabor_stack` opportunistic) stands. The constructive gain: `frac_distinct`
+is the **cheap label-free per-species guardrail the breadth-gated selector
+lacked** — it flags exactly the species where a mode's family count is
+spurious over-segmentation (`fusfly1/thlwre1/redjun`) with zero labels and
+zero Perch. Generic over any `(band_mode, cluster_mode)`, not gabor-specific.
 
 ## Notes
 
