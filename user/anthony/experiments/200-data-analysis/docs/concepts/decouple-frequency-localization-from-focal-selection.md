@@ -490,6 +490,61 @@ lacked** — it flags exactly the species where a mode's family count is
 spurious over-segmentation (`fusfly1/thlwre1/redjun`) with zero labels and
 zero Perch. Generic over any `(band_mode, cluster_mode)`, not gabor-specific.
 
+### v4 validation, strand 3 (2026-05-17): label-based extrinsic (soundscape) — the first ground-truth test, calibrated
+
+Strands 1–2 are label-free proxies and the manual anchor is still unlabeled,
+so nothing yet tested the templates against *truth*. `train_soundscapes_labels.csv`
+is exactly that: 66 files, weakly-labeled 5 s windows, 2 annotator passes
+(positive = pass **union**), and all 41 production species occur in it.
+
+**Method (no re-mining).** Drive the *real* production detector primitives
+(`_score_track` → `find_peaks` at the same `min_spacing`/prominence →
+`_refine_anchor_via_envelope` → per-species `nms_events`/`consolidate_events`
+at `AutoConfig` defaults) over each soundscape. The *only* substitution vs.
+the in-miner detector: on a held-out soundscape the EM member/background
+scores do not exist, so each family's **committed persisted threshold** is
+used — which is precisely the production operating point under test. Two
+metrics, deliberately separated: threshold-free **ROC/PR-AUC** (template
+discriminability — trust) vs. **precision/recall/F1 at the committed
+threshold** (focal→soundscape operating-point transfer). Module:
+`data_analysis.auto_motif.soundscape_eval` →
+`artifacts/auto_motif/_soundscape_eval/production/`.
+
+**Self-correction (the discipline again).** The pre-gate headline (median
+ROC-AUC 0.596, "11 separable") was inflated by single-positive species whose
+AUC is pure sampling noise — the same n=1 trap as strands 1–2. With a
+small-sample floor (n_pos ≥ 10 positive windows) only **22/41** species are
+adequately supported by this label set; the other 19 are reported but are
+*not* evidence either way.
+
+**Calibrated result (supported species only).** Median threshold-free
+ROC-AUC **0.672**. **8/22 genuinely separable** on real soundscapes
+(`hyamac1, 65380, redjun, litnig1, 22973, bufpar, 22967, chvcon1` — note
+`22967`, the narrowband species the whole pipeline was originally validated
+on, lands here, an instrument sanity check). **7/22 at chance** — templates
+do *not* transfer (`23158, 25092, undtin1, chacha1, 43435, 326272, orwpar`).
+The committed-threshold operating point **fails decisively**: precision ≈
+prevalence, recall ≈ 1.0 — the focal-calibrated thresholds fire on ~everything
+in soundscapes. The lone well-supported high-prevalence species `65380`
+(n_pos = 333) is the only usable operating point (precision 0.49, ROC 0.86,
+PR 0.79).
+
+**What this changes (and does not).** This is the long-flagged "quantitative
+claims not independently validated" gap, now *partially* closed with truth:
+the boundary-resolution does yield genuinely separable motifs for a
+meaningful fraction of supported species, but **not uniformly**, and the
+production thresholds are **miscalibrated for soundscape deployment** (a
+known, expected focal→soundscape domain shift — a threshold problem, not
+necessarily a template problem, exactly the reason the two metrics are kept
+apart). It neither vindicates nor refutes the pipeline wholesale; it *bounds*
+the claim. The recording-sampled manual anchor remains the instrument for
+precision — this label set is too sparse per-species for most. Driver note:
+deliberately **not Luigi** (66 files ≪ the >~1k-file scale where sharded
+fan-out earns its weight); a `spawn`-context process pool with the bank
+loaded once per worker, a per-file status/parquet cache for resumability —
+and `spawn` makes the fork-after-threadpool BLAS deadlock structurally
+impossible (the thread caps demote to a pure anti-oversubscription setting).
+
 ## Notes
 
 **Reuse map.** Unchanged: `maad.rois.create_mask`/`select_rois`,

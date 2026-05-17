@@ -17,6 +17,7 @@ This directory uses short Markdown files as lightweight notebooks. Each notebook
 | `marbled-white-lipped-frog-motif-mining.md` | Candidate motif-box mining and clustering to avoid per-recording hand annotation. |
 | `marbled-white-lipped-frog-auto-motif.md` | First run of the species-agnostic `auto_motif` pipeline on Marbled Frog; A/B vs the manual pipeline and known limitations. |
 | `auto-motif-pipeline.md` | Species-agnostic reference: pipeline stages, config knobs (incl. the recurrence-breadth gate, `band_mode`/`cluster_mode`), output schema, and the band-discovery genericity-boundary resolution. |
+| `auto-motif-soundscape-efficacy.md` | Label-based extrinsic validation: production templates vs. `train_soundscapes_labels.csv`. Threshold-free ROC/PR-AUC + committed-threshold transfer, support-gated and calibrated. |
 
 ## Concepts
 
@@ -39,6 +40,13 @@ the conservative-routing argument: concept doc §v4 + "v4 validation".
 fragmentation guardrail — `frac_distinct` per species (co-firing collapse, no
 labels/Perch) flags where a mode's family richness is spurious
 over-segmentation. Rationale: concept doc §v4 "v4 validation, strand 2".
+
+`python -m data_analysis.auto_motif.soundscape_eval` is the label-based
+extrinsic validation — drives the real production detector over the 66
+labeled soundscapes and scores each species threshold-free (ROC/PR-AUC) and
+at the committed threshold. Calibrated finding (support-gated): see
+`auto-motif-soundscape-efficacy.md` and concept doc §v4 "v4 validation,
+strand 3".
 
 ## Consolidation note
 
