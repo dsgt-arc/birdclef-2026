@@ -16,7 +16,15 @@ This directory uses short Markdown files as lightweight notebooks. Each notebook
 | `marbled-white-lipped-frog-motif-boxes.md` | Motif-box extraction workflow, what we tried, current curated annotations, and next steps. |
 | `marbled-white-lipped-frog-motif-mining.md` | Candidate motif-box mining and clustering to avoid per-recording hand annotation. |
 | `marbled-white-lipped-frog-auto-motif.md` | First run of the species-agnostic `auto_motif` pipeline on Marbled Frog; A/B vs the manual pipeline and known limitations. |
-| `auto-motif-pipeline.md` | Species-agnostic reference: pipeline stages, config knobs, output schema, toggles, and reuse from the manual pipeline. |
+| `auto-motif-pipeline.md` | Species-agnostic reference: pipeline stages, config knobs (incl. the recurrence-breadth gate, `band_mode`/`cluster_mode`), output schema, and the band-discovery genericity-boundary resolution. |
+
+## Concepts
+
+`concepts/` holds research-idea documents (project convention).
+
+| Concept | Idea | Status |
+|---|---|---|
+| `concepts/decouple-frequency-localization-from-focal-selection.md` | Mining motifs for the broadband/FM species the per-bin band-consensus gate is structurally blind to (~41% of soundscape∩train species). | Archived — canonical v1–v4 record. Decoupling premise falsified (v3); **v4** = the constructive resolution (recurrence-breadth gate + band-free clustering; n=17, Perch-embedding-corroborated qualitatively; the d′ ranking / per-species mode selector is *not* independently validated). |
 
 ## Consolidation note
 
