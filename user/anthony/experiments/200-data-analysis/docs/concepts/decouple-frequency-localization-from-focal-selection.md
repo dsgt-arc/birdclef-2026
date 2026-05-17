@@ -1,9 +1,12 @@
 # Concept: Decouple frequency localization from focal-species selection
 
-**Status**: archived (explored v1/v2/v3, concluded negative — the
-decoupling premise is structurally flawed; see v3 result)
+**Status**: archived — the *decoupling* premise is structurally flawed
+(v3). v4 records the **constructive resolution** that emerged: a
+cross-recording **recurrence-breadth gate** + band-free clustering + a
+breadth-gated mode selector give a robust, honest route for the
+consensus-blind broadband/FM boundary (validated at n=17).
 **Created**: 2026-05-16
-**Updated**: 2026-05-16
+**Updated**: 2026-05-17
 
 ## Idea
 
@@ -301,6 +304,91 @@ intrinsically a narrowband-tonal method and broadband/FM species should
 be routed to learned embeddings (Perch/BirdNET, already in the project)
 rather than to a patched miner — is flagged as an **open
 research-direction question for the user**, not adopted here.
+
+## v4 result (2026-05-17): recurrence-breadth gate + band-free clustering — the constructive resolution; n=17 generalization
+
+v3 closed the *decoupling* idea but left a real question: if the only
+motif-aligned localizer **is** cross-recording recurrence, then make
+recurrence an **explicit gate** and skip horizontal partitioning
+entirely. That is what v4 does, and it works.
+
+**The methodological fix (commit `0c1c84c`).** `em_loop`'s family gate
+was a raw ROI-count floor (`rois_part.height < min_repetitions`). A
+cluster of many ROIs confined to one or two recordings still got a full
+EM + detection pass and became a "family". Replaced both the pre-EM and
+post-EM guards with a **distinct-recording breadth floor**
+(`filename.n_unique() < config.min_repetitions`) — the correct reading of
+the pipeline's recurrence premise and the same floor the post-hoc
+`member_bg` screen uses, now a pipeline invariant. Not a tuned constant.
+
+**It exposed an artifact and corrected an over-claim.** Pre-gate, the
+absolute-frequency `cluster_mode="gabor_stack"` "recovered" the Marbled
+Frog at 0.879 — initially read as vindicating an oriented-Gabor
+clustering representation. The breadth gate revealed this was an
+**EM-rescue artifact, not clustering**: gabor_stack's frog clustering is
+21 fragments, max breadth **4/8** recordings, median **1**, *zero* spanning
+≥5 (vs `consensus`/`global` = 5 clusters at `[8,8,6,6,3]`). EM's
+`_score_track` slides *any* seed over all recordings; the loud
+stereotyped frog is recoverable from almost any per-recording shard, so
+post-detection event breadth (7–8 rec) ≫ seed-cluster breadth (≤4). The
+representation never found recurrence; EM did. The gate does **not**
+regress the validated default (consensus frog stays **0.97**; 5→4
+families, the dropped one a marginal 3-recording cluster, zero recovery
+loss).
+
+**Fair 4-species A/B (all modes re-run under the gate).**
+
+| species | type | consensus | free+global | patch | gabor_stack |
+|---|---|---|---|---|---|
+| `22967` frog | narrowband | **0.97** (d′2.42) | 0.364 (d′1.28) | FAIL | FAIL |
+| `nacnig1` nightjar | narrowband | d′3.49, 5 fam | d′2.69 | FAIL | FAIL |
+| `hyamac1` macaw | broadband (gate-blind) | — | d′4.01 | d′4.47 | **d′5.53** |
+| `23158` weeping frog | broadband (gate-blind) | — | **d′3.14** | FAIL | d′1.77 |
+
+Single-datapoint "gabor_stack cracks the boundary" was over-claimed:
+across 4 species it wins once, loses 23158 to free+global, FAILs both
+narrowband species.
+
+**n=17 generalization** (mode-aware Luigi batch, commit `86191a4`;
+`free+global` and `gabor_stack` over all 17 consensus-blind species;
+summary `artifacts/auto_motif/_gabor_stack/_gen17_summary.csv`):
+
+- **`free+global`: 17/17 ok, *uniformly* `nfam=1`**, d′ 2.05–4.01
+  (median 3.13). A 100%-robust, never-FAILs **floor** — but coarse: one
+  recurrent template per species, no multi-motif decomposition.
+- **`gabor_stack`: 13/17 ok, 4 FAIL** (74113 Highland [mammal], 555146
+  Chaco Tree Frog, 24279 Lesser Snouted Tree Frog, bafcur1 Bare-faced
+  Curassow — all narrowband/tonal-leaning, the same per-recording
+  fragmentation as the frog/nightjar). When it works it is *richer*
+  (`nfam` median 3, up to **11** for fusfly1) and often *higher* d′ on
+  the genuinely broadband oscine songsters / macaws / parrots
+  (hyamac1 5.53, bufpar 4.35, chacha1 3.78, rufhor2 3.39); d′ 1.77–5.53,
+  median 3.24.
+- Breadth-gated selector pick is ≈ even (free+global ~9 / gabor_stack
+  ~8, several near-ties); critically, all 4 gabor_stack FAILs leave
+  free+global as the *only* surviving mode.
+
+**Honest conclusion.** Neither band-free mode dominates — they are
+**complementary**, the species-conditional outcome anticipated. The
+breadth gate makes a 3-way production routing safe and honest:
+
+1. Narrowband with a band-consensus → `consensus`/`global` (validated,
+   frog 0.97). [the 24 originally-OK species]
+2. Consensus-blind (broadband/FM) → **default `free+global`** (robust
+   floor, never fails), with the **breadth-gated selector** automatically
+   preferring `gabor_stack` where it both succeeds *and* its gated d′
+   beats free+global (richer multi-motif on the true broadband callers).
+   A gabor_stack FAIL is a clean FAIL → selector falls back to
+   free+global with zero risk — that safety is *because* of the gate.
+
+**Caveat (stated, not buried).** None of the 17 have curated boxes
+(only the frog does). All n=17 d′ are **label-free quality screens** plus
+family-richness — strongly suggestive of the mode ordering, but not
+verified recovery. The one labeled anchor (narrowband frog) validates
+`consensus` at 0.97; the broadband ordering is corroborated by the screen
++ EM-kept breadth + family structure, not by ground truth. Verifying the
+broadband recovery (Perch-embedding agreement or a few curated boxes)
+remains open.
 
 ## Notes
 

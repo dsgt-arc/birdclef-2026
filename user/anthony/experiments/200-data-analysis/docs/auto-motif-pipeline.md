@@ -211,8 +211,12 @@ shape + centroid columns and the assigned cluster (or `-1` for noise).
   the support window (`_refine_anchor_via_envelope`). Re-median the patches
   to form the new template.
 - Stop when `1 − cosine(new, prev) < template_change_eps` after at least one
-  iteration, or after `max_em_iter`. Drop families with `< min_repetitions`
-  kept peaks.
+  iteration, or after `max_em_iter`. A family is gated on **cross-recording
+  recurrence breadth** both before EM (cluster ROIs must span ≥
+  `min_repetitions` distinct recordings) and after EM (kept peaks likewise) —
+  see the `min_repetitions` row in [Configuration](#configuration); a
+  many-ROI cluster confined to one or two recordings is a within-recording
+  shard, skipped before it costs an EM + detection pass.
 
 `em_trace.csv` records per-iteration `band_id, shape_cluster_id, n_kept,
 threshold, method, cosine_to_prev`. With the bimodal-split machinery
@@ -294,9 +298,9 @@ spot-check.
 | Knob | Default | Rationale |
 |---|---|---|
 | `band` | `BandDiscoveryConfig()` | Nested band-discovery config |
-| `band_mode` | `"consensus"` | Detection front-end: `consensus` (default, validated). `free`/`gabor` are opt-in experiments — both regress multi-motif narrowband species; see [Limitations](#limitations-and-follow-ups) |
-| `gabor_resolution` | `"med"` | maad shape preset for `band_mode="gabor"` (4 orientations); library preset, not hand-tuned |
-| `cluster_mode` | `"global"` | Clustering partition: `global` (default). `freq_stratified` (non-consensus modes only) sub-divides WIDEBAND into data-derived centre-freq strata — explored and **rejected**: regresses the frog test to 0.0 (boundaries bisect coherent motifs); see [Limitations](#limitations-and-follow-ups) |
+| `band_mode` | `"consensus"` | Detection front-end: `consensus` (default, validated, frog 0.97). `free` (band-free, WIDEBAND) is the route for the consensus-blind broadband/FM boundary; `gabor` is explored-and-rejected. See [Limitations](#limitations-and-follow-ups) |
+| `gabor_resolution` | `"med"` | maad shape preset for `band_mode="gabor"`/`cluster_mode="gabor_stack"`; library preset, not hand-tuned |
+| `cluster_mode` | `"global"` | Per-ROI representation for HDBSCAN: `global` (default; freq-invariant 26-D maad shape). With `band_mode=free`, `global` (= "free+global") is the robust broadband floor (n=17: 17/17 ok, 1 family each); `gabor_stack` (absolute-freq oriented-Gabor patch) is a complementary higher-reward specialist (n=17: 13/17 ok, richer multi-motif, FAILs narrowband-leaning species). `patch` (raw-PCEN patch) and `freq_stratified` are explored-and-rejected. See [Limitations](#limitations-and-follow-ups) |
 | `seed_percentile` | `0.99` | In-band PCEN p99 hysteresis seed |
 | `grow_percentile` | `0.90` | In-band PCEN p90 hysteresis grow |
 | `loose_min_duration_sec` | `0.02` | Loose; shape clustering narrows |
@@ -309,7 +313,7 @@ spot-check.
 | `shape_cluster_min_size` | `5` | HDBSCAN `min_cluster_size` on shape features |
 | `max_em_iter` | `5` | EM usually converges in 2-3 |
 | `template_change_eps` | `0.01` | Cosine > 0.99 |
-| `min_repetitions` | `5` | Drop families below this kept-peak count |
+| `min_repetitions` | `5` | **Cross-recording recurrence-breadth gate**: a family's ROIs (pre-EM) and EM-kept peaks (post-EM) must each span ≥ this many *distinct recordings*, not a raw ROI/peak count. Enforces the recurrence premise at the family level; drops within-recording shards before they cost an EM+detection pass |
 | `nms_time_iou` | `0.35` | Same as manual pipeline |
 | `nms_peak_distance_sec` | `0.12` | Same as manual pipeline |
 | `consolidate_peak_distance_sec` | `0.25` | Same as manual pipeline |
@@ -521,15 +525,33 @@ score is reported but not used as a filter.
   statistic (centre-freq KDE, oriented-Gabor energy) shreds coherent
   motifs. The only motif-aligned frequency localizer *is* the recurrence
   consensus that is blind to broadband/FM — the same mechanism, not
-  decouplable. `consensus` therefore **remains the production default**
-  (only mode that does not regress the validated frog); `free`/`gabor`/
-  `freq_stratified` are explored-and-rejected toggles kept for
-  reproducibility, not preferred. The open question is now a
-  research-direction one (route broadband/FM species to learned
-  embeddings rather than patch the miner), not a tuning one. Manifest:
-  `artifacts/auto_motif/_batch/manifest.csv` (gitignored); per-species
-  status JSONs under `artifacts/auto_motif/_batch/status/` (delete one to
-  force a resumable re-run).
+  decouplable. **`consensus` remains the validated default for the 24
+  narrowband species** (frog 0.97). **v4 (2026-05-17) found a working
+  in-miner route for the consensus-blind boundary** — *not* by decoupling
+  but by making cross-recording recurrence an explicit **breadth gate**
+  (the `min_repetitions` rows above; commit `0c1c84c`) and skipping
+  horizontal partitioning. The gate also exposed that an earlier
+  `gabor_stack` "frog 0.879" was an EM-rescue artifact (per-recording
+  clustering, not recurrence) and does not regress consensus (frog 0.97
+  held). Generalized over all 17 consensus-blind species (mode-aware
+  Luigi batch, commit `86191a4`): **`free` + `cluster_mode=global` is a
+  100%-robust but coarse floor (17/17 ok, 1 family each)**; **`gabor_stack`
+  is a complementary higher-reward specialist (13/17 ok, richer
+  multi-motif + often higher d′ on true broadband callers, FAILs the
+  narrowband-leaning ~4)**. Production routing is 3-way: consensus
+  (narrowband) → else `free`+`global` default, with the breadth-gated
+  selector auto-preferring `gabor_stack` where it succeeds *and* beats
+  free+global (a gabor_stack FAIL → clean fallback to free+global,
+  *because* of the gate). All 17 d′ are **label-free quality screens**
+  (only the frog has curated boxes) — strongly suggestive, not verified
+  recovery; verifying broadband recovery is the open follow-up. `gabor`
+  and `freq_stratified` stay explored-and-rejected. Full record + tables:
+  the [concept doc](concepts/decouple-frequency-localization-from-focal-selection.md)
+  §v4; summary `artifacts/auto_motif/_gabor_stack/_gen17_summary.csv`.
+  Consensus manifest: `artifacts/auto_motif/_batch/manifest.csv`
+  (gitignored); per-species status JSONs under
+  `artifacts/auto_motif/_batch/status/` (delete one to force a resumable
+  re-run); mode-tagged batches under `artifacts/auto_motif/<mode>/_batch/`.
 - **Reported recovery is recall, not precision.** The curated boxes are 33
   hand-picked exemplars in only 3 of 8 focal recordings — not an
   exhaustive annotation. `curated recovery ≈ 0.96` means "of the selected
