@@ -1,10 +1,12 @@
 # Concept: Decouple frequency localization from focal-species selection
 
 **Status**: archived — the *decoupling* premise is structurally flawed
-(v3). v4 records the **constructive resolution** that emerged: a
-cross-recording **recurrence-breadth gate** + band-free clustering + a
-breadth-gated mode selector give a robust, honest route for the
-consensus-blind broadband/FM boundary (validated at n=17).
+(v3). v4 = the **constructive resolution**: a cross-recording
+**recurrence-breadth gate** + band-free clustering recover real motifs on
+the consensus-blind broadband/FM boundary (n=17; independently
+corroborated by Perch-embedding separation). Calibrated limit: the
+`member_bg` d′ ranking and the per-species mode selector are **not**
+independently validated — qualitative win only; see "v4 validation".
 **Created**: 2026-05-16
 **Updated**: 2026-05-17
 
@@ -389,6 +391,51 @@ verified recovery. The one labeled anchor (narrowband frog) validates
 + EM-kept breadth + family structure, not by ground truth. Verifying the
 broadband recovery (Perch-embedding agreement or a few curated boxes)
 remains open.
+
+### v4 validation (2026-05-17): Perch-embedding corroboration — qualitative win confirmed, quantitative d′ ranking is *not* validated
+
+Perch v2's iNat2024 class set lacks these species — the exp-106
+`direct_map` is a genus proxy, several mappings nonsense (`wfwduc1`
+White-faced Whistling Duck → *Dendrohyrax arboreus* tree hyrax; `74113`
+→ *Boselaphus tragocamelus* Indian antelope). So a Perch *logit* "does
+Perch hear species X" check is unsound here. Pivoted to a **label-free
+Perch-embedding separation**: a window is *member* if it overlaps a mined
+NMS detection; score = cosine to the member centroid in Perch's 1536-d
+embedding (a representation the auto-miner never used); report d′/AUC
+member-vs-background. Artifact:
+`artifacts/auto_motif/_gabor_stack/_perch_emb_validation.csv`.
+
+1. **The mined motifs are genuinely recurrent acoustic objects
+   (confirmed).** On almost all consensus-blind broadband species the
+   detection windows are clearly separable in Perch's *independent*
+   embedding (AUC mostly **0.70–0.93**). The qualitative v4 result —
+   band-free + breadth gate cracks the boundary — is independently
+   corroborated, not an artifact of the pipeline's own (circular,
+   template-fit) `member_bg` d′.
+2. **The `member_bg` d′ is only a *weak* quality proxy (sobering).**
+   Spearman(pipeline d′, Perch-emb d′/AUC) = **0.42 / 0.44** (p≈0.02, n=30
+   mode×species) — significant but ~18% of rank variance. Per-species
+   `free+global`-vs-`gabor_stack` ordering agrees with the independent
+   Perch-emb verdict only **7/13 ≈ chance**. **The breadth-gated
+   selector's per-species mode pick is therefore NOT independently
+   validated** — d′ is a coarse necessary-not-sufficient screen, not a
+   reliable arbiter between two succeeding modes.
+3. **A concrete false positive the screen admitted:** `74113` (the
+   mammal) passes pipeline `free+global` d′=2.42 ("ok") but Perch-emb
+   AUC=**0.431** (≈chance) — *and* its Perch mapping was nonsense. Two
+   independent signals say that "motif" is not a coherent recurrent call.
+
+**Calibrated conclusion.** The boundary *is* cracked in a real,
+independently-supported sense (band-free clustering + recurrence-breadth
+gate recovers genuine motifs on the consensus-blind species). But trust
+stops at the qualitative level: the d′ magnitude and the per-species mode
+choice are **not** independently validated. Production routing should
+default to the robust `free+global` (17/17, never FAILs) and treat
+`gabor_stack` as opportunistic; do **not** promote a per-species
+d′-driven mode switch without a stronger anchor. The only true recovery
+anchor remains a small *exhaustive* manual annotation on 2–3 broadband
+species — still the open follow-up, now better motivated (it would
+calibrate exactly the d′→recovery link this validation showed is weak).
 
 ## Notes
 

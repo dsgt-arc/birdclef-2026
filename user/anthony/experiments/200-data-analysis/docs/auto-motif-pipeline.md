@@ -543,9 +543,19 @@ score is reported but not used as a filter.
   selector auto-preferring `gabor_stack` where it succeeds *and* beats
   free+global (a gabor_stack FAIL → clean fallback to free+global,
   *because* of the gate). All 17 d′ are **label-free quality screens**
-  (only the frog has curated boxes) — strongly suggestive, not verified
-  recovery; verifying broadband recovery is the open follow-up. `gabor`
-  and `freq_stratified` stay explored-and-rejected. Full record + tables:
+  (only the frog has curated boxes). **Perch-embedding validation
+  (2026-05-17)**: mined detection windows are separable in Perch's
+  independent embedding (AUC ~0.70–0.93) → the recovered motifs are
+  *genuine* recurrent objects (qualitative win independently corroborated).
+  But pipeline d′ only weakly predicts that separation (Spearman ~0.43)
+  and the per-species `free+global`↔`gabor_stack` selector pick agrees
+  with it only ≈ chance (7/13) — so **the quantitative d′ ranking /
+  per-species mode switch is NOT independently validated** (one concrete
+  false positive: `74113` passes d′2.42 but is chance-level in Perch
+  space). Default to robust `free+global`; treat `gabor_stack` as
+  opportunistic; a small exhaustive manual annotation on 2–3 broadband
+  species remains the only true recovery anchor (open follow-up).
+  `gabor` and `freq_stratified` stay explored-and-rejected. Full record + tables:
   the [concept doc](concepts/decouple-frequency-localization-from-focal-selection.md)
   §v4; summary `artifacts/auto_motif/_gabor_stack/_gen17_summary.csv`.
   Consensus manifest: `artifacts/auto_motif/_batch/manifest.csv`
