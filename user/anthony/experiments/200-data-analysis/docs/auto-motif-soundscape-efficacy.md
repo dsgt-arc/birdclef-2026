@@ -61,6 +61,46 @@ Full per-species table, headline, and the underpowered list:
 scientific record: `concepts/decouple-frequency-localization-from-focal-selection.md`
 § "v4 validation, strand 3".
 
+## Can the operating point be fixed before deployment? — window-level CFAR, falsified
+
+The strand-3 reading ("good template, miscalibrated cut") invites a
+label-free fix: re-derive the threshold from the deployment recording's own
+background (CFAR) instead of the frozen focal value. `--rescore cfar`
+implements this at the **5 s-window** unit with **no focal floor** — per
+species, fire iff the window-max score clears `Q99.5` of that species'
+corpus-pooled scored-window distribution (`0.995` is the pipeline's own
+committed false-alarm design, not a new constant). `max_score` is untouched,
+so ROC/PR-AUC stay **byte-identical** — a clean operating-point-only A/B.
+
+It does **not** work, and the failure is informative:
+
+| operating point | caught (recall) | false alarms | precision |
+|---|---|---|---|
+| committed (focal/floor) | 1260 (71.4 %) | 18 976 | 0.062 |
+| window-CFAR `Q0.995` | 22 (1.2 %) | 140 | 0.136 |
+
+A probe first reframed strand 3: the committed cut is **67/87 families
+pinned at the 0.45 clamp floor** — a floor + frame-vs-window granularity
+artifact, not a learned focal cut that fails to transfer. CFAR then fails for
+a deeper reason: every species has 792 corpus windows, so `Q0.995` fires
+**exactly 4 windows/species** (the `0.5 %` budget was a *per-frame* rate,
+~10³× too tight at the window unit), and — fundamentally — the optimal cut is
+**prevalence-dependent** (pool = `(1−π)·bg + π·target`, π 45 %→1 %): high-π
+species self-mask (`65380/22973/22967` → P 1.0, R ~0.015), low-π separable
+species starve (`litnig1/chvcon1/trsowl` → P 0, R 0). No fixed unsupervised
+quantile works across that range — *neither end of the label-free spectrum
+knows π, which is label information*.
+
+Constructively, the A/B proves the separable templates are **operable**:
+even at the too-tight cut, F1 rose for `hyamac1`(ROC 0.96) 0.09→0.29,
+`bufpar`(0.79) 0.08→0.22, `redjun`(0.82) 0.09→0.12. The bottleneck is
+operating-point *selection*, which must be **supervised** — a per-species
+threshold/isotonic fit on the soundscape labels under grouped leave-site-out
+CV, restricted to the ~8 ROC ≥ 0.75 species. The 7 at-chance species stay a
+mining problem. A/B artifacts:
+`../artifacts/auto_motif/_soundscape_eval/production__cfar/_summary.md`;
+record: concept doc § "v4 validation, strand 4".
+
 ## Caveats
 
 - Soundscape labels are weak presence over 5 s and multi-label; templates
@@ -77,11 +117,12 @@ scientific record: `concepts/decouple-frequency-localization-from-focal-selectio
 ```bash
 python -m data_analysis.auto_motif.soundscape_eval --bank production
 python -m data_analysis.auto_motif.soundscape_eval --bank gabor_stack   # the unvalidated selector's alternative
+python -m data_analysis.auto_motif.soundscape_eval --rescore cfar       # window-level CFAR A/B (strand 4); -> production__cfar/
 python -m data_analysis.auto_motif.soundscape_eval --files <file.ogg>    # targeted re-score; aggregation always spans the full cache
 ```
 
 Resumable: a file with a status JSON is skipped; delete
-`_soundscape_eval/<bank>/status/<file>.json` to force one to re-run. Driver
+`_soundscape_eval/<bank[__rescore]>/status/<file>.json` to force one to re-run. Driver
 is a `spawn`-context process pool (bank loaded once per worker) — **not**
 Luigi: 66 files is far below the >~1k-file scale where sharded fan-out earns
 its weight, and `spawn` makes the fork-after-threadpool BLAS deadlock

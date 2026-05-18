@@ -62,6 +62,21 @@ CLI::
     python -m data_analysis.auto_motif.soundscape_eval --files BC2026_Train_0039_S22_20211231_201500.ogg
     python -m data_analysis.auto_motif.soundscape_eval                       # full production bank
     python -m data_analysis.auto_motif.soundscape_eval --bank gabor_stack    # the unvalidated selector's alt
+    python -m data_analysis.auto_motif.soundscape_eval --rescore cfar        # window-level CFAR operating point
+
+The ``--rescore cfar`` run is the operating-point fix. A probe showed the
+committed cut is dominated by the ``[0.45, 0.90]`` focal clamp (67/87
+thresholds pinned at the 0.45 floor), so the failure is the floor plus a
+frame-vs-window granularity mismatch — not a score shift the focal recipe
+can be re-pointed at. ``cfar`` therefore calibrates at the **5 s-window**
+unit (the competition/label grid) with **no focal floor**: per species, fire
+a window iff its window-max score clears ``Q99.5`` of that species'
+corpus-pooled scored-window distribution (label-free background estimate;
+0.995 is the pipeline's own committed false-alarm design, re-expressed at
+window granularity). ``max_score`` is untouched so ROC/PR-AUC are
+byte-identical to the baseline; only ``fired`` (hence precision/recall)
+moves. Writes to a parallel ``<bank>__cfar/`` tree, leaving the
+committed-cut baseline intact for a clean A/B.
 """
 
 from __future__ import annotations
@@ -204,6 +219,27 @@ def load_bank(bank: str, min_focal: int) -> dict[str, list[dict]]:
 # -----------------------------------------------------------------------------
 
 
+# Window-level CFAR design point. The committed cut is dominated by the
+# ``[threshold_floor, threshold_ceiling]`` clamp (a probe showed 67/87 focal
+# thresholds pinned at the 0.45 floor), so the precision collapse is not a
+# score domain-shift the in-miner recipe can be re-pointed at — it is the
+# *floor* plus a frame-vs-window granularity mismatch (a per-frame quantile,
+# max-pooled to 5 s windows over a whole recording, floods the window-level
+# false-alarm rate). ``cfar`` therefore calibrates at the **5 s-window**
+# unit — exactly the competition/label grid — with **no focal floor**: fire a
+# (window, species) iff its window-max matched-filter score exceeds the
+# pipeline's own design false-alarm tail of the per-species *background*
+# window-score distribution. Background is estimated label-free by pooling
+# every scored window across the corpus per species: a 60 s soundscape has
+# only ~12 windows, so a *per-recording* Q99.5 is degenerate (≈ the max),
+# whereas the pooled window-score distribution is overwhelmingly
+# target-absent (most species 1–5 % prevalent) and statistically stable. The
+# quantile is not a tuned constant: 0.995 is the pipeline's own committed
+# false-alarm design (``q995_bg`` in ``mining._member_vs_background_threshold``),
+# re-expressed at the window granularity instead of per frame.
+CFAR_BACKGROUND_QUANTILE = 0.995
+
+
 def _detect_family(
     z: np.ndarray,
     freqs: np.ndarray,
@@ -214,7 +250,9 @@ def _detect_family(
 
     Replicates :func:`mining.detect_with_auto_templates` peak-picking exactly
     (same ``min_spacing``/``distance``, ``prominence=0.02``, envelope anchor),
-    but with the committed persisted threshold instead of an EM re-derivation.
+    at the committed persisted threshold. Only the ``none`` baseline consumes
+    the event rows; ``cfar`` decides ``fired`` at window granularity in
+    :func:`_aggregate` and never reaches this peak/NMS path.
     """
     support, template = fam["support"], fam["template"]
     ct, sc = _score_track(z, freqs, times, template, support)
@@ -253,12 +291,16 @@ def _detect_family(
 
 
 def score_file(
-    filename: str, bank: dict[str, list[dict]], config: AutoConfig
+    filename: str,
+    bank: dict[str, list[dict]],
+    config: AutoConfig,
+    rescore: str,
 ) -> pl.DataFrame:
     """Score one soundscape against every species' bank.
 
     Returns one row per (5 s window, species) with the threshold-free
-    ``max_score`` and the committed-threshold ``fired`` flag.
+    ``max_score`` and the operating-point ``fired`` flag (committed cut for
+    ``rescore="none"``, per-recording CFAR cut for ``rescore="cfar"``).
     """
     audio, _ = librosa.load(
         str(TRAIN_SOUNDSCAPES_DIR / filename),
@@ -286,8 +328,11 @@ def score_file(
             for r in ev:
                 raw_rows.append({"filename": filename, **r})
 
+        # ``cfar`` decides ``fired`` at window granularity, corpus-pooled, in
+        # :func:`_aggregate`; the focal-cut event/NMS pipeline below is the
+        # ``none`` baseline only (and is irrelevant at the 5 s-window unit).
         fired = np.zeros(n_windows, dtype=bool)
-        if raw_rows:
+        if rescore == "none" and raw_rows:
             nms = nms_events(
                 pl.DataFrame(raw_rows),
                 time_iou_threshold=config.nms_time_iou,
@@ -315,6 +360,7 @@ def score_file(
                     "win_start_s": float(w * WINDOW_SEC),
                     "species": label,
                     "max_score": float(win_max[w]) if win_seen[w] else 0.0,
+                    "seen": bool(win_seen[w]),
                     "fired": bool(fired[w]),
                 }
             )
@@ -428,7 +474,7 @@ def compute_metrics(
 MIN_POS_SUPPORT = 10
 
 
-def render_summary(metrics: pl.DataFrame, bank: str) -> str:
+def render_summary(metrics: pl.DataFrame, bank: str, rescore: str) -> str:
     valid = metrics.filter(pl.col("roc_auc").is_not_null())
     sup = valid.filter(pl.col("n_pos") >= MIN_POS_SUPPORT)
     underpowered = valid.filter(pl.col("n_pos") < MIN_POS_SUPPORT)
@@ -445,7 +491,38 @@ def render_summary(metrics: pl.DataFrame, bank: str) -> str:
     )
     with pl.Config(tbl_rows=-1, fmt_str_lengths=40, tbl_width_chars=200):
         table = str(metrics)
-    return f"""# Auto-motif soundscape efficacy ({bank} bank)
+    if rescore == "cfar":
+        title = (
+            f"Auto-motif soundscape efficacy ({bank} bank, "
+            "window-level CFAR)"
+        )
+        op_para = (
+            "`roc_auc`/`pr_auc` are threshold-free and **byte-identical to "
+            "the committed-cut baseline** (CFAR moves only the operating "
+            "point, never the score). `precision`/`recall`/`f1` are at the "
+            "**window-level CFAR cut**: per species, fire a 5 s window iff "
+            "its window-max score clears `Q99.5` of that species' "
+            "corpus-pooled scored-window distribution — no focal floor, "
+            "label-free, the pipeline's own 0.5 % false-alarm design "
+            "re-expressed at the competition's window grid. Compare to the `"
+            + bank
+            + "` baseline: precision recovering at unchanged AUC = the floor/"
+            "granularity fix landing. Read with the support floor and the "
+            "self-masking caveat (high-prevalence species violate "
+            "pool≈background, so their cut is conservative by construction — "
+            "an asymmetry to report, not a defect)."
+        )
+    else:
+        title = f"Auto-motif soundscape efficacy ({bank} bank)"
+        op_para = (
+            "`roc_auc`/`pr_auc` are threshold-free (template discriminability "
+            "— trust these, within the support caveat). "
+            "`precision`/`recall`/`f1` are at the **committed** per-family "
+            "threshold (focal→soundscape operating-point transfer; low here "
+            "with high AUC = good template, miscalibrated cut, not a template "
+            "failure)."
+        )
+    return f"""# {title}
 
 Label-based extrinsic validation against `train_soundscapes_labels.csv`
 (66 files, labeled 5 s windows, annotator-pass **union** as positive).
@@ -465,11 +542,7 @@ is reported, but is *not* evidence for or against the template.
 - Underpowered (n_pos < {MIN_POS_SUPPORT}, AUC not interpretable):
   {up}
 
-`roc_auc`/`pr_auc` are threshold-free (template discriminability — trust
-these, within the support caveat). `precision`/`recall`/`f1` are at the
-**committed** per-family threshold (focal→soundscape operating-point
-transfer; low here with high AUC = good template, miscalibrated cut, not a
-template failure).
+{op_para}
 
 ```text
 {table}
@@ -482,8 +555,13 @@ template failure).
 # -----------------------------------------------------------------------------
 
 
-def _bank_dir(bank: str) -> Path:
-    return EVAL_DIR / bank
+def _bank_dir(bank: str, rescore: str) -> Path:
+    """Output root. ``rescore="none"`` keeps the original ``<bank>/`` path
+    (the committed-cut baseline stays byte-for-byte); ``cfar`` writes to a
+    parallel ``<bank>__cfar/`` tree so status/cache/summary never collide and
+    the two runs are a clean A/B.
+    """
+    return EVAL_DIR / (bank if rescore == "none" else f"{bank}__{rescore}")
 
 
 def labeled_filenames() -> list[str]:
@@ -508,19 +586,19 @@ def _worker_init(bank: str, min_focal: int) -> None:
     _WORKER_CONFIG = AutoConfig()
 
 
-def _score_one(filename: str, bank: str) -> dict:
+def _score_one(filename: str, bank: str, rescore: str) -> dict:
     """Score one soundscape with the worker-resident bank; persist the cache.
 
     Returns (and writes) the per-file status record; one bad file is captured
     here and never aborts the pool.
     """
-    bdir = _bank_dir(bank)
+    bdir = _bank_dir(bank, rescore)
     (bdir / "status").mkdir(parents=True, exist_ok=True)
     (bdir / "per_file").mkdir(parents=True, exist_ok=True)
-    rec: dict = {"filename": filename, "bank": bank}
+    rec: dict = {"filename": filename, "bank": bank, "rescore": rescore}
     try:
         assert _WORKER_BANK is not None and _WORKER_CONFIG is not None
-        df = score_file(filename, _WORKER_BANK, _WORKER_CONFIG)
+        df = score_file(filename, _WORKER_BANK, _WORKER_CONFIG, rescore)
         out_parquet = bdir / "per_file" / f"{filename}.parquet"
         df.write_parquet(out_parquet)
         rec.update(
@@ -542,9 +620,45 @@ def _score_one(filename: str, bank: str) -> dict:
     return rec
 
 
-def _aggregate(bank: str) -> Path:
+def _cfar_window_fired(window_scores: pl.DataFrame) -> pl.DataFrame:
+    """Window-level CFAR operating point (label-free, no focal floor).
+
+    Per species, the background window-score level is ``Q99.5`` of that
+    species' *corpus-pooled scored-window* distribution (sparse targets ⇒ the
+    pool is overwhelmingly target-absent); a (window, species) fires iff its
+    window-max score clears that level. ``max_score`` is untouched, so the
+    threshold-free ROC/PR are byte-identical to the baseline — this changes
+    only the operating point. Caveat surfaced, not buried: high-prevalence
+    species violate the "pool ≈ background" assumption (CFAR self-masking),
+    so their cut is conservative — that asymmetry is a result, not a bug.
+    """
+    if window_scores.is_empty():
+        return window_scores
+    thr = (
+        window_scores.filter(pl.col("seen"))
+        .group_by("species")
+        .agg(
+            pl.col("max_score")
+            .quantile(CFAR_BACKGROUND_QUANTILE, interpolation="linear")
+            .alias("_cfar_thr")
+        )
+    )
+    return (
+        window_scores.join(thr, on="species", how="left")
+        .with_columns(
+            (
+                pl.col("seen")
+                & pl.col("_cfar_thr").is_not_null()
+                & (pl.col("max_score") >= pl.col("_cfar_thr"))
+            ).alias("fired")
+        )
+        .drop("_cfar_thr")
+    )
+
+
+def _aggregate(bank: str, rescore: str) -> Path:
     """Join every cached per-file score against the labels; write metrics."""
-    bdir = _bank_dir(bank)
+    bdir = _bank_dir(bank, rescore)
     statuses = [
         json.loads(p.read_text())
         for p in sorted((bdir / "status").glob("*.json"))
@@ -553,26 +667,36 @@ def _aggregate(bank: str) -> Path:
     ok = [s for s in statuses if s.get("status") == "ok"]
     frames = [pl.read_parquet(AUTO_MOTIF_DIR / s["parquet"]) for s in ok]
     window_scores = pl.concat(frames) if frames else pl.DataFrame()
+    if rescore == "cfar":
+        # The cfar fired flag is a corpus-level decision (per-recording window
+        # counts are too small for a stable Q99.5); the per-file parquet
+        # carried a placeholder. Decide it here, once, over the full pool.
+        window_scores = _cfar_window_fired(window_scores)
     window_scores.write_parquet(bdir / "_window_scores.parquet")
     metrics = compute_metrics(window_scores, reconciled_labels())
     out = bdir / "_metrics_per_species.csv"
     metrics.write_csv(out)
-    (bdir / "_summary.md").write_text(render_summary(metrics, bank))
+    (bdir / "_summary.md").write_text(render_summary(metrics, bank, rescore))
     logger.info("%d/%d files ok; wrote %s", len(ok), len(statuses), out)
     return out
 
 
 def run_eval(
-    bank: str, min_focal: int, files: list[str], workers: int
+    bank: str,
+    min_focal: int,
+    files: list[str],
+    workers: int,
+    rescore: str,
 ) -> None:
     """Score `files` (skipping any already cached), then aggregate.
 
     Resumable: a file whose status JSON exists is not re-scored — delete
-    ``<bank>/status/<file>.json`` to force one file to re-run. Aggregation
-    always recomputes over *every* cached file (cheap), so it reflects the
-    full corpus even after a targeted ``--files`` re-score.
+    ``<bank[__rescore]>/status/<file>.json`` to force one file to re-run.
+    Aggregation always recomputes over *every* cached file (cheap), so it
+    reflects the full corpus even after a targeted ``--files`` re-score. The
+    ``cfar`` run is a separate tree, so it never invalidates the baseline.
     """
-    bdir = _bank_dir(bank)
+    bdir = _bank_dir(bank, rescore)
     (bdir / "status").mkdir(parents=True, exist_ok=True)
     (bdir / "per_file").mkdir(parents=True, exist_ok=True)
     todo = [
@@ -596,13 +720,15 @@ def run_eval(
             initializer=_worker_init,
             initargs=(bank, min_focal),
         ) as ex:
-            futs = {ex.submit(_score_one, fn, bank): fn for fn in todo}
+            futs = {
+                ex.submit(_score_one, fn, bank, rescore): fn for fn in todo
+            }
             for i, fut in enumerate(as_completed(futs), 1):
                 rec = fut.result()
                 logger.info(
                     "[%d/%d] %s %s", i, len(todo), rec["filename"], rec["status"]
                 )
-    _aggregate(bank)
+    _aggregate(bank, rescore)
 
 
 def main() -> None:
@@ -620,6 +746,17 @@ def main() -> None:
         help="comma-separated soundscape filenames; default = all 66 labeled",
     )
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument(
+        "--rescore",
+        default="none",
+        choices=["none", "cfar"],
+        help=(
+            "operating point. 'none' = frozen committed focal cut (the "
+            "baseline under test). 'cfar' = window-level CFAR: per species, "
+            "Q99.5 of the corpus-pooled scored-window score distribution, no "
+            "focal floor; writes to a parallel <bank>__cfar/ tree."
+        ),
+    )
     parser.add_argument(
         "--list",
         action="store_true",
@@ -641,7 +778,7 @@ def main() -> None:
         if args.files
         else labeled_filenames()
     )
-    run_eval(args.bank, args.min_focal, files, args.workers)
+    run_eval(args.bank, args.min_focal, files, args.workers, args.rescore)
 
 
 if __name__ == "__main__":

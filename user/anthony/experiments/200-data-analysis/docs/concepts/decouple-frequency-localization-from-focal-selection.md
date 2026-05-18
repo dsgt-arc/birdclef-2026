@@ -545,6 +545,77 @@ loaded once per worker, a per-file status/parquet cache for resumability —
 and `spawn` makes the fork-after-threadpool BLAS deadlock structurally
 impossible (the thread caps demote to a pure anti-oversubscription setting).
 
+### v4 validation, strand 4 (2026-05-18): the operating-point fix is *not* label-free — CFAR falsified, calibration must be supervised
+
+Strand 3 read the precision collapse as "good template, miscalibrated
+focal→soundscape threshold — a threshold problem, not a template problem."
+The natural label-free fix is CFAR: re-derive the cut from the deployment
+recording's own background instead of the frozen focal value. This strand
+ran it as a clean A/B (`--rescore cfar`,
+`artifacts/auto_motif/_soundscape_eval/production__cfar/`) and **falsifies
+the label-free fix**, which sharpens — not contradicts — strand 3.
+
+**Reframe before the test (a probe, the discipline again).** Strand 3's
+"focal-calibrated threshold that fails to transfer" is itself only partly
+true: a probe showed the committed cut is dominated by the `[0.45, 0.90]`
+clamp — **67/87 families are pinned exactly at the 0.45 floor**, i.e. there
+is no *learned* focal cut for most families, just the clamp. The collapse is
+a **floor + frame-vs-window-granularity** artifact, not a score domain-shift
+the in-miner recipe can be re-pointed at. So `cfar` was designed at the
+**5 s-window** unit (the competition/label grid) with **no focal floor**:
+per species, fire iff the window-max score clears `Q99.5` of that species'
+corpus-pooled scored-window distribution (`0.995` = the pipeline's *own*
+committed false-alarm design, not a new tuned constant). `max_score` is
+untouched, so ROC/PR-AUC are **byte-identical** to strand 3 — a clean
+operating-point-only test.
+
+**Result.** Committed cut: 1260/1765 caught (recall 71.4 %), 18 976 false
+alarms, precision 0.062. Window-CFAR: **22 caught (recall 1.2 %)**, 140 FP,
+precision 0.136. Mechanism, airtight: every species has 792 scored windows
+in the corpus, so `Q0.995` fires **exactly 4 windows/species** — the
+pipeline's `0.5 %` false-alarm budget was a *per-frame* rate (~10⁵ frames →
+permissive); at the window unit (~792) the identical quantile is
+catastrophically tight regardless of template quality.
+
+**Why it fails — three nested reasons.** (1) *Granularity rescaling*: P_fa
+is a rate per unit; the unit shrank ~10³×, so the same quantile means
+something else. (2) *Prevalence-dependence — the fundamental one*: the
+pooled per-species window distribution is a mixture
+`(1−π)·background + π·target` with π spanning **45 % (`65380`) → ~1 %**. CFAR
+estimates background as a high quantile of that mixture; at high π the
+quantile lands *inside the target mode* (self-masking: `65380/22973/22967`
+→ precision 1.0, recall ~0.015), at low π the pool is background but a fixed
+top-0.5 % over 792 windows can't hold a separable-but-imperfect template's
+true positives against corpus-global background spikes (`litnig1`(ROC 0.80),
+`chvcon1`, `trsowl` → P 0, R 0). The committed/floor cut fails for the
+**mirror** reason (prevalence-blind, erring loose). *Both ends of the
+label-free spectrum fail because neither knows π — and π is exactly the
+label information CFAR exists to avoid needing.* (3) *ROC ceiling*:
+operating-point choice only slides along the curve; median supported ROC
+0.672 means most species have no good point at any cut.
+
+**Constructive (what the A/B proves, not just refutes).** The separable
+templates are demonstrably **operable**: even at the too-tight CFAR cut,
+high-ROC species' F1 *rose* — `hyamac1`(ROC 0.96) 0.09→**0.29**,
+`bufpar`(0.79) 0.08→**0.22**, `redjun`(0.82) 0.09→**0.12**; high-π separable
+species hit precision 1.0. The ROC curves are real and a usable point
+*exists* for the ≥0.75 subset — the bottleneck is purely **operating-point
+selection**, which this strand proves cannot be done label-free across this
+prevalence range.
+
+**What this changes.** Strand 3's "threshold problem, not template problem"
+is sharpened to: a **prevalence-blind threshold problem, unfixable without
+labels**. The fix is therefore *supervised* — a per-species threshold (or
+isotonic/Platt) fit on the held-out soundscape labels under **grouped
+leave-site-out CV** (the site code in the filename; 66 files, weak labels,
+unseen test sites → leakage- and overfit-careful), restricted to the ~8
+species with ROC ≥ 0.75 where the A/B proves a usable point exists. The 7
+at-chance species (`23158, chacha1, 25092, undtin1, 326272, orwpar, 43435`:
+P 0/R 0 here too) stay a **mining** problem — no operating point exists at
+ROC ≈ 0.5; that is strand 5 / future work, not a calibration knob. Net: this
+closes "can the operating point be fixed before deployment?" with a firm
+*not unsupervised* — and bounds where supervised calibration can pay off.
+
 ## Notes
 
 **Reuse map.** Unchanged: `maad.rois.create_mask`/`select_rois`,
