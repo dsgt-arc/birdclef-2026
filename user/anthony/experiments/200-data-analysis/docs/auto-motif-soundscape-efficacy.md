@@ -101,6 +101,38 @@ mining problem. A/B artifacts:
 `../artifacts/auto_motif/_soundscape_eval/production__cfar/_summary.md`;
 record: concept doc § "v4 validation, strand 4".
 
+## Why the at-chance species fail — D1 (strand 5)
+
+Strand 3 left *why* the 7 at-chance species are at chance open, and strand 4
+showed it is **not** a calibration knob. `data_analysis.auto_motif.focal_specificity`
+closes it label-free: the focal analog of the soundscape ROC — the exact
+production matched-filter over focal audio of a species vs. other species
+(the focal folder is curation truth, so no labels needed). `auc_vs_class`
+(target focal vs. **same-class** other species' focal) is decisive — a clean
+self-vs-congener separability is *necessary* for soundscape recovery.
+
+- Instrument validated: the hand-curated frog `22967` is the most
+  focally-specific species (`auc_vs_class` 0.87); all 3 controls transfer.
+- **4/7 at-chance are a mining failure** (`auc_vs_class` 0.37–0.47, several
+  *below* 0.5 — the template prefers other species' clean focal audio):
+  `326272, 25092, undtin1, 43435`. The top confusers are a **fixed
+  cross-taxon attractor set** (antbird, jay, macaw, a mammal) shared by a
+  frog, a tinamou and a monkey — the mined "motif" is a generic
+  broadband-energy detector, not a species call. 3 of the 4 ran the
+  **validated consensus route** with healthy `member_bg` d′ — so d′ is here
+  *actively misleading*, and the boundary reaches beyond the band-free patch.
+- **2/7 are genuine recoverable domain shift** (`chacha1` 0.70, `23158`
+  0.74 — focal-specific, lost only in-field). `23158` is now coherent across
+  all strands.
+
+No threshold/calibration/domain trick recovers the mining-failure majority;
+the constructive path is the concept's deferred **v2 discriminative
+recurrence** (cross-species/TF-IDF negative or a Perch-embedding focal
+prior), now strongly motivated and quantified. Canonical record + the
+honest asymmetry (low `auc_vs_class` is decisive, high is necessary-not-
+sufficient): concept doc § "v4 validation, strand 5"; artifact
+`../artifacts/auto_motif/_focal_specificity/_summary.md`.
+
 ## Caveats
 
 - Soundscape labels are weak presence over 5 s and multi-label; templates
@@ -119,6 +151,8 @@ python -m data_analysis.auto_motif.soundscape_eval --bank production
 python -m data_analysis.auto_motif.soundscape_eval --bank gabor_stack   # the unvalidated selector's alternative
 python -m data_analysis.auto_motif.soundscape_eval --rescore cfar       # window-level CFAR A/B (strand 4); -> production__cfar/
 python -m data_analysis.auto_motif.soundscape_eval --files <file.ogg>    # targeted re-score; aggregation always spans the full cache
+python -m data_analysis.auto_motif.focal_specificity                     # D1 strand-5: why the at-chance species fail (label-free)
+python -m data_analysis.auto_motif.focal_specificity --targets all       # every production species
 ```
 
 Resumable: a file with a status JSON is skipped; delete

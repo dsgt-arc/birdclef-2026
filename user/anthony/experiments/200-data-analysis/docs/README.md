@@ -25,7 +25,8 @@ This directory uses short Markdown files as lightweight notebooks. Each notebook
 
 | Concept | Idea | Status |
 |---|---|---|
-| `concepts/decouple-frequency-localization-from-focal-selection.md` | Mining motifs for the broadband/FM species the per-bin band-consensus gate is structurally blind to (~41% of soundscape∩train species). | Archived — canonical v1–v4 record. Decoupling premise falsified (v3); **v4** = the constructive resolution (recurrence-breadth gate + band-free clustering; n=17, Perch-embedding-corroborated qualitatively; the d′ ranking / per-species mode selector is *not* independently validated). |
+| `concepts/decouple-frequency-localization-from-focal-selection.md` | Mining motifs for the broadband/FM species the per-bin band-consensus gate is structurally blind to (~41% of soundscape∩train species). | Archived — canonical v1–v4 record + 5 validation strands. Decoupling premise falsified (v3); **v4** = the constructive resolution (recurrence-breadth gate + band-free clustering; n=17, Perch-embedding-corroborated qualitatively; the d′ ranking / per-species mode selector is *not* independently validated). **Strand 5** (label-free, D1): the strand-3 at-chance species are a *mining* failure (a non-specific broadband-energy detector, `auc_vs_class` ≤ 0.47, fixed cross-taxon attractor set) — not calibration, not domain shift — and it reaches the validated consensus route; 2/7 are genuine recoverable domain-shift. |
+| `concepts/contrastive-matched-filter-exemplar-mining.md` | Constructive successor to strand 5: select the canonical template by a discriminative contrast — recurs within-species **and** far from a cross-species focal corpus (D1's negative) — computed on the existing 2-D matched filter; exemplar, not synthetic median. | Developing — design specified + two adversarial PI reviews; the matrix-profile *algorithm* rejected (mSTAMP's per-bin z-norm destroys the cross-band discriminant), re-grounded on the production `_score_track` z-NCC. Falsification: attractor re-mine + `22967` non-regression + strand-3 ground truth. Tracking: issue #49. |
 
 ## Production routing
 
@@ -40,6 +41,15 @@ the conservative-routing argument: concept doc §v4 + "v4 validation".
 fragmentation guardrail — `frac_distinct` per species (co-firing collapse, no
 labels/Perch) flags where a mode's family richness is spurious
 over-segmentation. Rationale: concept doc §v4 "v4 validation, strand 2".
+
+`python -m data_analysis.auto_motif.focal_specificity` is the label-free
+D1 probe (concept doc §v4 "strand 5"): the focal analog of the soundscape
+ROC — the exact production matched-filter over focal audio of a species vs.
+other species (folder = curation truth). `auc_vs_class` (vs same-class
+focal) adjudicates the strand-3 at-chance species into a *mining* failure
+(non-specific energy detector → discriminative mining / learned embedding)
+vs. recoverable focal→soundscape domain shift. →
+`artifacts/auto_motif/_focal_specificity/`.
 
 `python -m data_analysis.auto_motif.soundscape_eval` is the label-based
 extrinsic validation — drives the real production detector over the 66

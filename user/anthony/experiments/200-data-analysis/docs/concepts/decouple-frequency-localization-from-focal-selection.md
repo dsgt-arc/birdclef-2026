@@ -8,9 +8,12 @@ corroborated by Perch-embedding separation). Calibrated limit: the
 `member_bg` d′ ranking and the per-species mode selector are **not**
 independently validated — qualitative win only; see "v4 validation"
 (strand 2 adds a label-free co-firing fragmentation guardrail:
-`gabor_stack` richness is usually genuine, fusfly1 is a worst-case outlier).
+`gabor_stack` richness is usually genuine, fusfly1 is a worst-case outlier;
+strand 5 closes the at-chance question label-free — the ROC ≈ 0.5 species are
+a **mining** failure, a non-specific energy detector, *not* calibration, and
+it reaches the validated consensus route).
 **Created**: 2026-05-16
-**Updated**: 2026-05-17
+**Updated**: 2026-05-18
 
 ## Idea
 
@@ -166,6 +169,9 @@ narrowband.
   batch (reusing `data_analysis.auto_motif.batch` and the manifest),
   gated behind an opt-in `AutoConfig` toggle so the validated frog path
   stays default until parity is shown.
+- **Continued in**: `concepts/contrastive-matched-filter-exemplar-mining.md`
+  — the constructive successor: strand 5's deferred "v2 discriminative
+  recurrence" specified as contrastive matched-filter exemplar selection.
 
 ## v1 result (2026-05-16)
 
@@ -615,6 +621,99 @@ P 0/R 0 here too) stay a **mining** problem — no operating point exists at
 ROC ≈ 0.5; that is strand 5 / future work, not a calibration knob. Net: this
 closes "can the operating point be fixed before deployment?" with a firm
 *not unsupervised* — and bounds where supervised calibration can pay off.
+
+### v4 validation, strand 5 (2026-05-18): the at-chance failure is *mining*, not calibration — a non-specific energy detector, confirmed label-free
+
+Strand 4 split the supported species into a calibration problem (ROC ≥ 0.75,
+supervised fix) and a **mining** problem (the 7 at-chance species, ROC ≈ 0.5),
+and deferred the latter to "strand 5". The open question: *why* are they at
+chance? Every label-free screen — pipeline `member_bg` d′ **and** the
+independent Perch-emb AUC (strand 1) — rates them indistinguishable from the
+separable ones, so the failure was invisible to every proxy tried. Two
+mechanisms were conflated: **H_guild** (the focal set is species-*curated*, so
+a template can look specific *there* while keying on a motif guild-mates also
+produce — a *mining* failure, no threshold/calibration recovers it) vs.
+**H_domain/H_template** (species-specific on clean focal, lost only to the
+focal→soundscape domain shift — a *representation* problem, recoverable by
+domain adaptation / an exemplar bank).
+
+**The D1 probe (commit pending, `data_analysis.auto_motif.focal_specificity`).**
+The focal analog of strand 3, needing **no labels** because the focal *folder*
+is curation truth: the *exact* production matched-filter (same `load_bank` →
+`_score_track` OR-over-families = max, the threshold-free score strand 3
+trusts) over focal recordings, scored as a ROC AUC of "is this the target's
+own focal recording" — `auc_vs_class` (vs **same-class** other species'
+focal = the H_guild test) and `auc_vs_all`. Pool = every production species'
+focal audio, per-species cap = the corpus median `n_focal` (=109, data-derived,
+no tuned K), even stride-subsample (deterministic, no RNG). Asymmetry honored
+throughout: a *low* `auc_vs_class` is **decisive for H_guild** (failing the
+clean-audio necessary condition cannot be undone in noisy soundscapes); a
+*high* one is **necessary, not sufficient** (clears only the mining charge).
+Artifact: `artifacts/auto_motif/_focal_specificity/`.
+
+**Instrument validated first.** The three controls behave: the hand-curated
+Marbled Frog `22967` is the *most* focally-specific species in the run
+(`auc_vs_class` **0.87**, the instrument sanity check passes), `hyamac1` 0.82
+(ss-ROC 0.96), `65380` 0.74 (ss-ROC 0.86) — focal specificity tracks
+soundscape transfer for the known-good species.
+
+**4/7 at-chance: a decisive mining failure (`auc_vs_class` 0.37–0.47).**
+`326272` 0.37, `25092` 0.43, `undtin1` 0.47, `43435` 0.47 — **several below
+0.5**: the template scores *higher* on other species' clean focal audio than
+on the target's own. No threshold or domain trick recovers this.
+
+**Self-correction — it is sharper than "congener confusion."** `auc_vs_all ≈
+auc_vs_class` everywhere (not subtle congener-tuning), and the top confusers
+are a **fixed cross-taxon attractor set** — `magant1` (antbird), `purjay1`
+(jay), `hyamac1` (macaw), `74113` (a *mammal*), `strher2` (heron) — the
+*same* attractors for a frog (`326272`), a tinamou (`undtin1`), and a monkey
+(`43435`). The mined "motif" is not a species call: it is a **generic
+broadband-energy/structure matcher** that ranks recordings by loudness/
+broadbandness, which a stable set of loud callers wins regardless of taxon.
+H_guild is the right family; the precise reading is "non-specific energy
+detector," broader than guild-keyed.
+
+**It implicates the *validated* consensus route, and re-grades the d′
+screen.** 3 of these 4 (`25092, 326272, undtin1`) ran the **validated
+narrowband consensus** route — 2–3 families, healthy `member_bg` d′ 2.2–2.4 —
+and produced generic energy detectors. So strand 1's "d′ is a *weak* proxy"
+understates it: for the acoustically-non-stereotyped species d′ is **actively
+misleading** (confident d′, zero species-specificity), and the boundary is
+**not confined to the consensus-blind patch**. Cross-strand coherence:
+`74113` — strand 1's confirmed false-recurrent (Perch-emb 0.43, nonsense
+mapping) — is now independently shown to be a generic *attractor* other
+species' templates fire on; three independent angles, one verdict.
+
+**2/7 are genuine H_domain/H_template (recoverable territory).** `chacha1`
+0.70 and `23158` 0.74 *are* focal-specific but collapse in-field (ss-ROC
+0.38 / 0.50). `23158` is now coherent across all strands (Perch-emb 0.81,
+focal-spec 0.74, fails only in-field = pure domain shift) — the band-free
+route *did* mine a real object there. These are the domain-adaptation /
+exemplar-bank candidates — but per the asymmetry D1 only clears the mining
+charge; recovery itself is unproven (strand-3 focal-vs-soundscape-gap
+follow-up). `orwpar` 0.62 is partial/weak H_guild.
+
+**What this changes.** The at-chance failure is overwhelmingly a **mining**
+failure, not calibration (strand 4) or domain shift: for the majority the
+template is a non-specific energy detector, unfixable by *any* operating
+point or domain trick. The constructive path is the concept's **deferred v2
+discriminative recurrence** — a cross-species/TF-IDF ROI-cluster negative, or
+a Perch-embedding focal prior — now strongly motivated and *quantified*
+(scoped: GitHub issue #49; design + the corrected vehicle in
+`concepts/contrastive-matched-filter-exemplar-mining.md` — a contrastive
+2-D matched-filter exemplar selection, *not* a matrix-profile algorithm):
+the
+"systematic co-occurrence residual" the Open Questions deferred to v2 is
+**not a rare tail**; it is the dominant at-chance mechanism and it is generic
+(loud-broadband attractors), not congener-specific. **What it does not
+change:** controls transfer, `22967` validated, 2 species are genuine
+recoverable domain-shift, and `23158`'s coherence shows band-free mining can
+find a real object — the pipeline is *bounded*, not refuted. **Caveats
+(surfaced):** Mammalia's same-class pool is small (`43435` n_class_neg=53/3
+species — lower-powered, though `auc_vs_all` 0.48 over n=3098 corroborates);
+n=7 at-chance is small, so the generalizable claim is the *structural* one
+(consensus route yields generic templates for non-stereotyped callers; a
+fixed cross-taxon attractor set), not the per-species ordering.
 
 ## Notes
 
