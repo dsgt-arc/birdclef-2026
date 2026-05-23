@@ -59,7 +59,13 @@ sys.path.insert(0, str(repo_root / "src"))
 from birdclef.data.sed import SEDDataModule  # noqa: E402
 from birdclef.data.soundscape import build_full_species_list  # noqa: E402
 from birdclef.encoders.efficientnet import EfficientNetEncoder  # noqa: E402
-from birdclef.heads.sed_head import AttBlockV2, AttHead, AttHeadMultiContext, LSEHead  # noqa: E402
+from birdclef.heads.sed_head import (  # noqa: E402
+    AttBlockV2,
+    AttHead,
+    AttHeadLogitSpace,
+    AttHeadMultiContext,
+    LSEHead,
+)
 from birdclef.lightning.sed_finetune import SEDFinetuneModule  # noqa: E402
 from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram  # noqa: E402
 
@@ -227,6 +233,7 @@ def main():
     logger.info(f"Building SED head: {head_type}...")
     head_cls = {
         "att_head": AttHead,
+        "att_head_logit_space": AttHeadLogitSpace,
         "att_head_multi_context": AttHeadMultiContext,
         "att_block_v2": AttBlockV2,
         "lse_head": LSEHead,

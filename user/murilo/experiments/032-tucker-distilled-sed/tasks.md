@@ -21,15 +21,11 @@ Read these BEFORE starting any task. Implementation tasks reference them by shor
 
 Each task lists the **reference** for the verbatim code, and a **test** that gates the next task.
 
-### 0.1 Port `AttHeadLogitSpace` to `src/birdclef/heads/sed_head.py`
-- [ ] 0.1.1 Add `class AttHeadLogitSpace(nn.Module)` mirroring Tucker's `BirdSEDModel` SED branch (forward+loss audit § "Tucker's attention head"; notebook cell 10).
-  - `GeMFreqPool(p_init=3.0)` with `p.clamp(min=1.0)`
-  - Dense block: `Dropout(0.25) → Linear(C, 512) → ReLU(inplace=True) → Dropout(0.5)`
-  - Two `Conv1d(512, num_classes, k=1, bias=True)` with `xavier_uniform_` init, bias=0
-  - **Aggregation in LOGIT space**: `clip_logits = sum(softmax(tanh(att(x)), dim=-1) * cls(x), dim=time)`
-- [ ] 0.1.2 Wire `head_type: "att_head_logit_space"` into encoder/head dispatch in `train.py` (and `SEDFinetuneModule` if needed).
-- [ ] 0.1.3 Unit test: forward(`(B=4, C=1280, F=8, T=10)`) produces `clip_logits=(4, 234)` and `frame_logits=(4, 234, 10)`; gradients flow through both convs; xavier init produces zero-mean weight tensors.
-- **Test gate**: unit test passes locally.
+### 0.1 Port `AttHeadLogitSpace` to `src/birdclef/heads/sed_head.py` — DONE
+- [x] 0.1.1 `AttHeadLogitSpace` + `GeMFreqPool` added to `src/birdclef/heads/sed_head.py`. Verbatim port of Tucker's notebook cells 10/14: GeMFreqPool with `p.clamp(min=1.0)`, Dropout(0.25)→Linear→ReLU(inplace)→Dropout(0.5), two `Conv1d(hidden, num_classes, k=1)` with xavier_uniform init and zero bias, aggregation in logit space (`sum(softmax(tanh(att)) * cla, dim=time)`).
+- [x] 0.1.2 Dispatch wired in `train.py`: `head_type: "att_head_logit_space" → AttHeadLogitSpace`. Constructor signature compatible with existing `head_kwargs` dict (dropout=0.5 default reproduces Tucker's exact Dropout(0.25)→Dropout(0.5) sequence).
+- [x] 0.1.3 Unit test at `user/murilo/tests/032-tucker-distilled-sed/test_att_head_logit_space.py` covers: forward shapes, manual-formula equality (no sigmoid roundtrip), gradient flow through both convs, gradient through frame-max supervision (att not in this graph), xavier zero-mean init, zero bias init, GeMFreqPool p-clamp, output shape, p learnable, finite output on edge-case inputs, train/eval mode both work. **14/14 tests pass** (verified pre-existing failures in `tests/016-sed-architecture/` are unrelated — `SEDFinetuneModule.training_step` tuple-unpacking drift, not from this task).
+- **Test gate**: ✅ PASSED.
 
 ### 0.2 Swap backbone HGNetV2-B0 → `tf_efficientnet_b0.ns_jft_in1k`
 - [ ] 0.2.1 Confirm `EfficientNetEncoder` in `src/birdclef/encoders/` supports the NS-JFT timm name (or add a thin wrapper).
