@@ -3,26 +3,57 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-11 (Exp 031 CLOSED — REJECT verdict, drift
-investigation resolved, uv.lock pinned. Next: scaffold exp 032 — KD on
-bug-fixed AttHead, Tucker-faithful logit-space aggregation.)
+**Last updated**: 2026-05-22 (strategic direction set after processing
+3 Kaggle discussion threads + 2 competitor notebooks. Decision: Track A
+= full Tucker replication first, Track B = own-teacher PL second.
+See `notes/2026-05-22-strategic-direction-tracks-A-B.md` for full
+discussion + rationale.)
+
+**Competition deadline**: 2026-06-03 (~12 days from this update).
 
 ---
 
-## Pick up here (next session)
+## Pick up here (next session) — UPDATED 2026-05-22
 
-**Exp 031 fully closed.** Pinned env via uv.lock. v5j-era worktree cleaned
-up. All 7 LB submissions in. Drift investigation resolved: ~0.007 LB
-hardware-side, ~0.002 LB code-side, 0.906 stays as real baseline.
+**Strategic direction set.** After processing the May-21 Kaggle discussion
+state (3 thread captures + competitor notebook vendoring + extensive
+discussion), the next experiment scope has expanded:
 
-**Next experiment: 032 — KD + bug-fixed AttHead** (highest-priority Phase 3
-candidate per exp 031 post-mortem). Tucker's recipe pairs KD with a
-specific AttHead variant (logit-space aggregation) that we never tested
-correctly. Our 7 prior AttHead experiments had a bug (probability-space
-aggregation with sigmoid+inverse-sigmoid roundtrip — `feedback_atthead_aggregation_domain.md`).
-This is a SINGLE-VARIABLE add of KD on top of the bug-fixed head.
+- **Track A (PRIMARY, high-confidence)**: full Tucker distilled-SED replication.
+  Known ceiling 0.917 single / 0.93+ with 5-fold + PP. Full code reference
+  at `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/`. Exp 031
+  already has 70% (DistillHead, PerchTeacher, KD branch). Remaining work
+  is well-scoped (head swap, dual-sup, mixup, SpecAugment, schedule, 5-fold).
+- **Track A stretch (parallel/sequential)**: Sydorskyi-yoink + own head + 2026
+  fine-tune (Ali Ozan path). Higher ceiling (0.941) but methodology-only
+  (no code reference); start day 4-5 if Tucker pipeline is stable.
+- **Track B (final layer)**: own-teacher PL on unlabeled SS. +0.007 to +0.013
+  LB lift on top of Track A. Antoine's simple protocol (no confidence filter).
+
+**The exp 032 scope expands** from the previously-scoped "single-variable
+AttHead+KD-on-HGNet" test to the full Tucker stack replication. See
+`notes/2026-05-22-strategic-direction-tracks-A-B.md` § Concrete next-session
+starting point for the full implementation order.
+
+**Read these first when resuming:**
+1. `notes/2026-05-22-strategic-direction-tracks-A-B.md` — strategic decision + code-reference audit
+2. `notes/kaggle-discussion-best-single-model-lb.md` — full threaded competitor discussion (2026-05-21 capture)
+3. `notes/kaggle-discussion-non-perch-limit.md` — Antoine's full PL/XC-pretrain trajectory
+4. `notes/2026-05-21-nina2025-eos6-protossm-stack-analysis.md` — what we are NOT chasing as lead path
+5. `analysis/notes/2026-05-09-tucker-distilled-sed-code-audit.md` — Tucker's code audit (unchanged from before)
+6. `experiments/031-perch-kd-distillation/results.md` — exp 031 REJECT post-mortem (still valid)
 
 ### Scaffold steps (in order)
+
+> **NOTE 2026-05-22**: scope expanded from single-variable AttHead+KD test
+> to full Tucker recipe replication (Track A primary). Steps 1-5 below are
+> still the right starting commands; configs/training-loop differ from the
+> original scope. See `notes/2026-05-22-strategic-direction-tracks-A-B.md`
+> § Concrete next-session starting point for the **full Tucker
+> replication implementation order** (10 sub-steps including backbone
+> swap, dual-supervision, hard-max waveform mixup, SpecAugment, 25 ep
+> cosine, 90/10 batch composition, focal×SS mixup, 5-fold, site/hour
+> priors + Gaussian smoothing).
 
 1. **Create new experiment directory**:
    ```bash
