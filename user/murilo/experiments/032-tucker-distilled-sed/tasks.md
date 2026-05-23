@@ -1,5 +1,30 @@
 # Tasks — Exp 032 Tucker distilled-SED replication
 
+## Tests
+
+Pytests live in `user/murilo/tests/032-tucker-distilled-sed/` (mirroring the experiment dir name under the shared tests/ tree, matching the existing `tests/016-sed-architecture/` convention).
+
+Run them with the interactive venv:
+
+```bash
+~/clef/birdclef-2026/.venv/bin/python -m pytest user/murilo/tests/032-tucker-distilled-sed/ -v
+```
+
+| Test file | Task | Coverage |
+|---|---|---|
+| [`test_att_head_logit_space.py`](../../tests/032-tucker-distilled-sed/test_att_head_logit_space.py) | 0.1 | AttHeadLogitSpace + GeMFreqPool (14 tests) |
+| [`test_efficientnet_encoder_post_head.py`](../../tests/032-tucker-distilled-sed/test_efficientnet_encoder_post_head.py) | 0.2 | EfficientNetEncoder `use_post_head` flag (11 tests) |
+| _planned_ `test_dual_supervision_loss.py` | 0.3 | dual-supervision loss + inference blend |
+| _planned_ `test_tucker_mixup.py` | 0.4 | waveform mixup with `MIXUP_HARD=True` + focal×SS mixup |
+| _planned_ `test_specaugment.py` | 0.5 | 1 freq × 10 + 2 time × 10 masking |
+| _planned_ `test_warmup_cosine_schedule.py` | 0.6 | LinearLR(2ep) → CosineAnnealingLR(23ep) |
+| _planned_ `test_mixsamp_sampler.py` | 0.7 | MixSamp 90/10 batch composition |
+| _planned_ `test_fold_construction.py` | 0.8 | StratifiedKFold focal + GroupKFold SS + upsampling |
+
+The shared `user/murilo/tests/pytest.ini` configures the runner for this layout (`testpaths = .`, `python_files = test_*.py`).
+
+---
+
 ## Reference materials
 
 Read these BEFORE starting any task. Implementation tasks reference them by short name.
