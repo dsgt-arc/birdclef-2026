@@ -121,6 +121,12 @@ weights/
 vendor/kaggle/datasets/*
 !vendor/kaggle/datasets/README.md
 
+# Vendored Kaggle notebooks — convention is to track only .ipynb +
+# kernel-metadata.json. .py extractions are session-local analysis
+# artifacts (regenerable from the .ipynb by walking cells); ignore by
+# default. Use `git add -f` if you genuinely want to track one.
+vendor/kaggle/notebooks/**/*.py
+
 # Wandb
 wandb/
 
