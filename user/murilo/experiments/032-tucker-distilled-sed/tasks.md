@@ -27,11 +27,13 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
 - [x] 0.1.3 Unit test at `user/murilo/tests/032-tucker-distilled-sed/test_att_head_logit_space.py` covers: forward shapes, manual-formula equality (no sigmoid roundtrip), gradient flow through both convs, gradient through frame-max supervision (att not in this graph), xavier zero-mean init, zero bias init, GeMFreqPool p-clamp, output shape, p learnable, finite output on edge-case inputs, train/eval mode both work. **14/14 tests pass** (verified pre-existing failures in `tests/016-sed-architecture/` are unrelated — `SEDFinetuneModule.training_step` tuple-unpacking drift, not from this task).
 - **Test gate**: ✅ PASSED.
 
-### 0.2 Swap backbone HGNetV2-B0 → `tf_efficientnet_b0.ns_jft_in1k`
-- [ ] 0.2.1 Confirm `EfficientNetEncoder` in `src/birdclef/encoders/` supports the NS-JFT timm name (or add a thin wrapper).
-- [ ] 0.2.2 Verify backbone output shape: input `(B, 1, 256, 313)` (5s @ 32kHz, n_mels=256, hop=512) → output `(B, 1280, H', W')` for downstream AttHead.
-- [ ] 0.2.3 Test pretrained-weight load doesn't crash on `in_chans=1, num_classes=0, global_pool=""`.
-- **Test gate**: instantiation succeeds; forward on random batch returns expected shape.
+### 0.2 Swap backbone HGNetV2-B0 → `tf_efficientnet_b0.ns_jft_in1k` — DONE
+- [x] 0.2.1 `EfficientNetEncoder` extended with a `use_post_head: bool = False` flag. Default behavior unchanged (features_only mode, last-stage output). When True, switches to Tucker's mode: `num_classes=0, global_pool=""` exposing the post-conv_head 1280-d feature map for EffNet-B0. **This was load-bearing**: features_only=True stops BEFORE conv_head and gives only 320-d, NOT the 1280-d Tucker's `BirdSEDModel` operates on. Wired through `train.py` via `config["encoder"]["use_post_head"]`.
+- [x] 0.2.2 Verified output shape on (B, 1, 256, 313) input: Tucker mode produces (B, 1280, 8, 10), spatial dims unchanged between modes (only channel dim differs). End-to-end: encoder.forward_features → AttHeadLogitSpace → (B, 234) clip + (B, 234, 10) frame.
+- [x] 0.2.3 Pretrained=True load verified for `tf_efficientnet_b0.ns_jft_in1k` in Tucker mode (`drop_path_rate=0.1, in_chans=1, num_classes=0, global_pool=""`). Forward produces finite output. HF Hub download succeeds.
+- [x] **Existing tests** (`tests/016-sed-architecture/`, default-mode encoder usage) unchanged — same 19 pre-existing test_sed_v3.py failures (`SEDFinetuneModule.training_step` tuple-unpacking drift, NOT from this task).
+- [x] **New unit tests** at `user/murilo/tests/032-tucker-distilled-sed/test_efficientnet_encoder_post_head.py` — 11 tests cover: default mode unchanged for EffNet-B0 (320-d) + HGNet (1024-d), Tucker mode gives 1280-d, forward returns single tensor (not list), output is 4D, pooled forward still works, end-to-end with AttHeadLogitSpace, gradient flow from BCE loss reaches both encoder and head, spatial dims match across modes (only channel dim differs), drop_path_rate propagates. **11/11 pass**.
+- **Test gate**: ✅ PASSED.
 
 ### 0.3 Add dual-supervision loss + inference blend
 - [ ] 0.3.1 In `SEDFinetuneModule`: replace clipwise-only BCE with `0.5 · BCE(clip_logits) + 0.5 · BCE(frame_max_logits)` (forward+loss audit § "Tucker's loss"; notebook cell 14).
