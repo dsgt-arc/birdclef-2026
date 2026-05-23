@@ -12,7 +12,7 @@
 1. **Split construction is mixed**: focal uses `StratifiedKFold(n_splits=5)` on `primary_label`; soundscape uses `GroupKFold(n_splits=5)` on `filename`. All 66 SS files participate (no S22 holdout) — S22 is masked out only in the validation metric (`non_s22_macro`).
 2. **Per-sample loss weights (`wt`, `mk`, `sw`) are mostly inert.** The dataset returns `ones` for `wt` and `mk` in every code path. `sw` is `SOURCE_WEIGHTS["focal"|"sc"|"focal_missing"] ∈ {1.0, 1.0, 0.0}`. **Effective loss is plain per-sample mean BCE over 234 classes, with missing-focal samples zeroed out**.
 3. **Rare-species upsampling** copies focal rows so any species with `< MIN_SAMPLE=20` exemplars is replicated up to 20. Upsampling happens *after* fold assignment, so duplicates stay in the same fold as the original (no leak).
-4. **Soundscape window labels** are built by matching `(filename, start_sec)` tuples against `train_soundscapes_labels.csv`. Most SS windows end up with `Y_SC[i] == zeros`; those still enter training as effectively all-negative supervision (subtle, may be load-bearing or harmful — we should think about this).
+4. **Soundscape window labels** are built by matching `(filename, start_sec)` tuples against `train_soundscapes_labels.csv`. **Only 66 of 10,658 SS files have any labels** — the other 10,592 files (× 12 windows = 127,104 windows) never enter Tucker's pipeline at all; his pre-built cache only covers labeled files. Within the 66 labeled files × 12 windows = 792 cached SS windows, 739 are labeled and **53 are all-zero**. The all-zero rows sit *between* annotated windows in otherwise-labeled files — closer to "true negative" than "missed positive."
 5. **MixUp Beta(0.4, 0.4) is symmetric — no `lam = max(lam, 1-lam)` trick.** Different from the Sydorskyi/Yuriy convention we've sometimes assumed. `MIXUP_HARD=True` then takes `max(lb1, lb2)` regardless of `lam`.
 6. **The notebook has TWO real bugs**:
    - **Mel-size mismatch between training and inference**: training uses `N_MELS=256`, the SEDExportWrapper hardcodes `INF_N_MELS=128` for ONNX tracing, but cell 20's inference path also uses `INF_N_MELS=256`. The publicly-uploaded fold ONNXes likely embed 128-mel shapes; the published training code produces 256-mel models. Tucker's actual 0.917 LB must come from a different end-to-end path.
@@ -94,8 +94,23 @@ for i, row in sc_cache_meta.iterrows():
 ```
 
 - `Y_SC[i]` is multi-hot for SS window `i`, populated only if `(filename, start_sec)` matches a row in `train_soundscapes_labels.csv`.
-- `labeled_sc_mask = Y_SC.sum(axis=1) > 0` — convenience flag, but **NOT used to filter training data**. ALL sc_cache_meta windows (labeled or not) go into the training ScDS via `build_active_datasets`, where unlabeled rows contribute as **all-negative** supervision across all 234 species.
-- Implication: most SS training samples have `lb = zeros(234)`. BCE on logits against an all-zero target pushes all logits down. **This may be a non-trivial source of negative-class signal — or a subtle confounder if there are actually birds calling in those unlabeled windows.**
+- `labeled_sc_mask = Y_SC.sum(axis=1) > 0` — convenience flag, but **NOT used to filter training data**. ALL `sc_cache_meta` windows (labeled or not) go into the training ScDS via `build_active_datasets`; unlabeled rows contribute as **all-negative** supervision across all 234 species.
+
+**Actual scope of the "all-zero" population** (verified against `train_soundscapes_labels.csv` on 2026-05-23):
+
+| Quantity | Count |
+|---|---:|
+| Total `train_soundscapes/*.ogg` files on disk | 10,658 |
+| Files with ANY labels in `train_soundscapes_labels.csv` | 66 |
+| Files with NO labels (excluded from Tucker's cache entirely) | 10,592 |
+| Unique labeled `(filename, start_sec)` windows | 739 |
+| Cached SS windows in Tucker's pipeline (66 × 12) | 792 |
+| **All-zero windows within labeled files (792 − 739)** | **53** |
+| Unlabeled-file windows NOT in Tucker's pipeline (10,592 × 12) | 127,104 |
+
+So the "all-zero label" issue is small: **53 windows out of 792 (~6.7%) of the SS training pool**, or ~0.7% of total training samples at MixSamp's 10% SC batch share. And these 53 windows sit *between* annotated windows in otherwise-labeled files — so they're much closer to "annotator reviewed and chose not to mark anything" (true negative) than to "missed positive" in randomly-unlabeled audio.
+
+The 127,104 unlabeled-file windows are the **Track B unlabeled pool** (own-teacher pseudo-labels per Antoine/Boredom/chenwenqiang_001). Not used in Tucker's recipe.
 
 ---
 
@@ -487,7 +502,7 @@ torch.backends.cudnn.benchmark = True
 |---|---|
 | Tucker's actual site/hour prior code | Not in the public notebook; would need to ask or use the EoS.6 implementation as a stand-in |
 | Whether the publicly-shared fold ONNXes in `bc2026-distilled-sed-public` were exported at 128 mels or 256 mels | Would need to download that dataset and inspect ONNX input shapes |
-| How Tucker handles the all-zero-label SS windows during training (just plain BCE? Or some masking?) | Code is unambiguous: plain BCE. The implication (~thousands of SS windows training as all-negative across 234 species) is a real recipe property to consider. |
+| How Tucker handles the all-zero-label SS windows during training (just plain BCE? Or some masking?) | Code is unambiguous: plain BCE. After verifying actual counts (53 zero-label windows out of 792 SS cache, ~0.7% of training samples), this is a small effect on a population that's likely true-negative, not "thousands of missed positives." Default to matching Tucker. |
 | Whether his discussion-reported 0.917 LB used the 5-tap Gaussian smoothing in logit space (cell 24) or a different pipeline | Discussion text and code disagree on details; we should treat the public notebook code as our reference and accept that our LB might differ |
 | MIN_SAMPLE choice (20 vs 10 vs 50) sensitivity | Not ablated by Tucker |
 | Whether ALPHA_DISTILL = 1.0 is the right scale for our codebase's BCE magnitude | Tucker reports cls_loss ≈ 0.032 vs dist_loss ≈ 0.003 at convergence — but our v5j's cls_loss at convergence is ~0.016, smaller. May need to retune. |
@@ -502,7 +517,7 @@ What this audit changes about our previously-scoped Track A:
 
 1. **Fold construction code**: don't just port the model — port the StratifiedKFold(focal) + GroupKFold(SS) + rare-species upsampling pattern. This is methodologically different from our v5j single-fold-with-CSV approach.
 2. **Sampler implementation**: MixSamp (90/10 batch share) is non-trivial to bolt onto Lightning. We'd write a custom `BatchSampler` or use a `ConcatDataset` with a `WeightedRandomSampler`-driven equivalent.
-3. **All-zero-label SS handling**: explicit decision needed. Tucker trains on them as all-negative; we could (a) match (simplest), (b) filter them out (cleaner but lower data volume), or (c) use them only for the distillation branch (no cls loss). Default to (a) for fidelity.
+3. **All-zero-label SS handling**: explicit decision. Tucker trains on them as all-negative. With the actual count now verified (53 windows ≈ 0.7% of training samples at 10% SC share, sitting between annotated windows in otherwise-labeled files), the "missed positive" concern is weak. **Default to (a) match Tucker** — the data is cheap, the signal is plausibly clean, and the implementation overhead of filtering or branch-separating these few rows isn't worth it.
 4. **Inference in logit space, single sigmoid at end**: simpler than what our submission.py does and likely more numerically stable for the smoothing step.
 5. **Fix the ONNX export bug**: use `N_MELS=256` consistently and either set dummy correctly or mark mel/time as dynamic axes.
 6. **Don't inherit the looser determinism**: keep `Trainer(deterministic=True)` and our paired-control methodology.
