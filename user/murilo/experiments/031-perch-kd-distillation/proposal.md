@@ -251,6 +251,55 @@ Perch export to Phase 2.
     4 SLURM jobs + 4 ONNX exports + 4 Kaggle uploads + 1 LB submission
     of the ensemble.
 
+### Mixup interaction (resolved 2026-05-09): Option B with the 1× teacher trick
+
+Phase 1 uses **Option B**: KD on, mixup unchanged from v5j (spec-domain,
+interpolated targets), and the teacher target under mixup is composed as
+`lam·perch(x) + (1-lam)·perch(x)[indices]` using the same `(lam, indices)`
+the input mix uses. Critically, `_apply_mixup` uses
+`indices = torch.randperm(B)` to shuffle within the batch, and Perch is
+per-sample (no cross-batch BN/attention), so
+**`perch(x[indices]) == perch(x)[indices]`** — the matched target costs
+**zero extra teacher forwards**. We pay 1× teacher per step regardless of
+whether mixup fires.
+
+Why not the alternatives:
+- **Option A** (KD on, teacher embeds one pre-mix wav): incoherent
+  supervision under mixup — student sees mel_mix, target is `perch(w1)`.
+  dist_loss floor would be artificially high.
+- **Option C** (KD on, mixup off): NOT single-variable vs the
+  `v5j_control_v2 = 0.896` baseline — turns off mixup at the same time as
+  adding KD, contaminating the comparison.
+- **Option D** (KD on + waveform mixup like Tucker): two-variable change.
+  We tested Sydorskyi waveform mixup on HGNet in exp 030 (v5j_sydorskyi_v2
+  = 0.892, null vs 0.896 inside ±0.013); Tucker's recipe is structurally
+  similar (max(y1, y2) targets, p=0.5, slightly different `lam`
+  distribution). Re-running it here doesn't produce new information.
+  Phase 3+ candidate if Phase 1 rejects.
+
+Implementation: `_apply_mixup` accepts `return_params=True` and returns
+`(x, labels, loss_weight, indices, lam)` for `mixup_mode="interpolate"`
+only. Other modes raise `NotImplementedError` for KD.
+
+### Train/val split (resolved 2026-05-09): Option A (no change)
+
+Current focal split duplicates 4 single-sample species into both train
+and val (`user/murilo/src/birdclef/data/sed.py:_split_focal_dataframe`).
+Discriminator analysis showed this is **val/auroc reporting bias only**
+(those species' val AUC ≈ 1.0 by construction, ~0.002 macro inflation),
+**not** train-weight contamination — the train DataLoader is bit-identical
+either way. The mechanism by which the duplication could affect LB is via
+best-by-val checkpoint selection only, and that mechanism is constrained
+(roughly constant offset across epochs once memorization saturates).
+
+The change costs 1 retrain + 1 LB slot to validate, doesn't address the
+actual val-LB anti-correlation problem (which is dominated by focal/SS
+domain shift, not 4-species reporting bias), and risks shifting B_new
+in an uncertain direction. Defer methodology cleanup to a dedicated
+post-031 experiment that addresses the actual load-bearing weaknesses
+(per-site stratification, soundscape val proportion, fold-balance
+asymmetry — see exp 021 `fold_assignments.json`).
+
 ### Variables
 
 - **Independent**: presence/absence of the Perch v2 embedding KD branch

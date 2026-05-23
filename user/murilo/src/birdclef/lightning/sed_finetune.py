@@ -78,6 +78,74 @@ class AsymmetricLoss(nn.Module):
         return (pos_loss + neg_loss).sum(dim=-1).mean()
 
 
+class DistillHead(nn.Module):
+    """GAP+Linear projection of backbone features to a teacher embedding dimension.
+
+    Direct port of Tucker Arrants's bc2026-distilled-sed notebook (cell 10):
+    averages the backbone feature map over both freq and time, then projects
+    to the teacher's clip-embedding dim via a single Linear. Discarded at
+    inference — only the SED branch ships.
+    """
+
+    def __init__(self, backbone_dim: int, embed_dim: int = 1536):
+        super().__init__()
+        self.proj = nn.Linear(backbone_dim, embed_dim)
+
+    def forward(self, feature_map: torch.Tensor) -> torch.Tensor:
+        # feature_map: (B, C, F, T) -> GAP -> (B, C) -> Linear -> (B, embed_dim)
+        gap = feature_map.mean(dim=[2, 3])
+        return self.proj(gap)
+
+
+class PerchTeacher:
+    """Frozen Perch v2 ONNX teacher. Plain Python wrapper (NOT nn.Module) so that
+    Lightning does not try to move the ONNX session across devices.
+
+    The session is bound to its own execution provider (CUDA when available);
+    `embed()` handles host<->device transfer of the input/output tensors.
+
+    Per-sample inference: there is no cross-batch coupling (no BN, no batch
+    attention), so `embed(x[indices]) == embed(x)[indices]` — this is what
+    lets the KD branch compose mixup-matched targets with a single forward.
+
+    Output index 0 is the (B, 1536) clip embedding — the load-bearing target.
+    Indices 1-3 (spatial embedding, internal mel, classifier logits) are
+    available but unused in Phase 1.
+    """
+
+    def __init__(self, onnx_path: str, device: str = "cuda"):
+        import onnxruntime as ort  # local import to avoid hard dep at module load
+
+        if device == "cuda":
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        else:
+            providers = ["CPUExecutionProvider"]
+
+        # Explicit thread count avoids the `pthread_setaffinity_np` warnings
+        # ONNX Runtime emits on cluster nodes where it can't pin threads to
+        # specific cores. With CUDAExecutionProvider doing the compute, CPU
+        # intra-op threading doesn't matter for performance.
+        sess_options = ort.SessionOptions()
+        sess_options.intra_op_num_threads = 1
+        sess_options.inter_op_num_threads = 1
+
+        self.session = ort.InferenceSession(
+            str(onnx_path), sess_options=sess_options, providers=providers
+        )
+        self.input_name = self.session.get_inputs()[0].name
+        # Output[0] is the 1536-d clip embedding per the schema in
+        # phase0_perch_teacher_schema.md.
+        self._embed_idx = 0
+
+    @torch.no_grad()
+    def embed(self, waveforms_5s: torch.Tensor) -> torch.Tensor:
+        """Embed (B, 160000) waveforms -> (B, 1536) float32 on the input device."""
+        device = waveforms_5s.device
+        wav_np = waveforms_5s.detach().cpu().float().numpy()
+        results = self.session.run(None, {self.input_name: wav_np})
+        return torch.from_numpy(results[self._embed_idx]).float().to(device)
+
+
 class SEDFinetuneModule(pl.LightningModule):
     """SED fine-tuning module with attention-based temporal pooling.
 
@@ -167,6 +235,10 @@ class SEDFinetuneModule(pl.LightningModule):
         dual_validation: bool = False,
         max_trick: bool = False,
         max_trick_factor: int = 3,
+        use_perch_distill: bool = False,
+        perch_onnx_path: str | None = None,
+        perch_embed_dim: int = 1536,
+        alpha_distill: float = 1.0,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform"])
@@ -182,6 +254,42 @@ class SEDFinetuneModule(pl.LightningModule):
         if loss_type == "asl":
             self.asl_loss = AsymmetricLoss(
                 gamma_neg=asl_gamma_neg, gamma_pos=asl_gamma_pos, clip=asl_clip
+            )
+
+        # --- Perch v2 KD branch (exp 031, Tucker recipe) ---
+        # When use_perch_distill=True, the backbone is forced to match Perch's
+        # 1536-d clip embedding (MSE), and the SED head trains on detached
+        # features so cls and dist losses don't fight over the backbone.
+        # Phase 1 only supports mixup_mode="interpolate" because the KD target
+        # composition under mixup uses the same (lam, indices) the input mix
+        # uses — and additive/average_max don't have a per-sample lam.
+        if use_perch_distill:
+            if perch_onnx_path is None:
+                raise ValueError("use_perch_distill=True requires perch_onnx_path.")
+            if mixup_prob > 0 and mixup_mode != "interpolate":
+                raise NotImplementedError(
+                    f"KD requires mixup_mode='interpolate' when mixup is on, "
+                    f"got mixup_mode={mixup_mode!r}, mixup_prob={mixup_prob}."
+                )
+            if waveform_mixup:
+                raise NotImplementedError(
+                    "KD with raw_waveform_mixup=True is a Phase 3+ candidate "
+                    "(would require waveform-domain target composition, not in scope for Phase 1)."
+                )
+            backbone_dim = getattr(encoder, "embed_dim", None)
+            if backbone_dim is None:
+                raise ValueError(
+                    "use_perch_distill=True requires encoder.embed_dim attribute "
+                    "(present on EfficientNetEncoder/HGNet wrappers)."
+                )
+            self.distill_head = DistillHead(backbone_dim, perch_embed_dim)
+            # PerchTeacher is a plain Python object (not nn.Module) — Lightning
+            # leaves it alone, ONNX session manages its own device placement.
+            self.perch_teacher = PerchTeacher(perch_onnx_path)
+            logger.info(
+                f"Perch v2 KD enabled: backbone_dim={backbone_dim}, "
+                f"perch_embed_dim={perch_embed_dim}, alpha_distill={alpha_distill}, "
+                f"onnx={perch_onnx_path}"
             )
 
         # --- Metrics (same as LoRAFinetuneModule) ---
@@ -299,6 +407,7 @@ class SEDFinetuneModule(pl.LightningModule):
         x: torch.Tensor,
         labels: torch.Tensor,
         loss_weight: torch.Tensor | None = None,
+        return_params: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Apply mixup augmentation on input tensor (mel spectrogram or raw waveform).
 
@@ -324,15 +433,32 @@ class SEDFinetuneModule(pl.LightningModule):
 
         Works on both spectrograms (B, 1, F, T) and raw waveforms (B, N),
         except "average_max" which requires waveform domain.
+
+        Args:
+            return_params: When True, also return (indices, lam) so callers
+                (e.g. the KD branch) can compose matching teacher targets
+                from the *same* batch permutation. Only supported for
+                "interpolate" mode in Phase 1 — additive/average_max raise.
         """
         indices = torch.randperm(x.size(0), device=x.device)
 
         if self.hparams.mixup_mode == "additive":
+            if return_params:
+                raise NotImplementedError(
+                    "mixup_mode='additive' is not supported with return_params "
+                    "(KD path). Phase 1 KD requires mixup_mode='interpolate'."
+                )
             # Additive mixing: x1 + x2 with max labels (BirdCLEF winner approach)
             x = x + x[indices]
             labels = torch.maximum(labels, labels[indices])
             # loss_weight unchanged — CE uses primary_idx from the first sample
+            lam = None
         elif self.hparams.mixup_mode == "average_max":
+            if return_params:
+                raise NotImplementedError(
+                    "mixup_mode='average_max' is not supported with return_params "
+                    "(KD path). Phase 1 KD requires mixup_mode='interpolate'."
+                )
             # Sydorskyi 2025 2nd place faithful: (w1+w2)/2 + peak-normalize, max targets.
             # Peak-normalize is meaningful only in waveform domain.
             if x.dim() != 2:
@@ -345,6 +471,7 @@ class SEDFinetuneModule(pl.LightningModule):
             x = x / (x.abs().amax(dim=-1, keepdim=True) + 1e-6)
             labels = torch.maximum(labels, labels[indices])
             # loss_weight unchanged
+            lam = None
         elif self.hparams.mixup_per_sample:
             beta_dist = torch.distributions.Beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha)
             lam = beta_dist.sample(sample_shape=(x.size(0),)).to(x.device)
@@ -371,6 +498,9 @@ class SEDFinetuneModule(pl.LightningModule):
         theta = self.hparams.mixup_theta
         if theta < 1.0:
             labels = torch.where(labels >= theta, torch.ones_like(labels), labels)
+
+        if return_params:
+            return x, labels, loss_weight, indices, lam
         return x, labels, loss_weight
 
     def _apply_manifold_mixup(
@@ -546,12 +676,21 @@ class SEDFinetuneModule(pl.LightningModule):
             ):
                 x = self._apply_time_stretch(x)
 
+        # KD-on flag (Phase 1, exp 031). Set once per step; consumed below.
+        do_kd = self.hparams.use_perch_distill
+        distill_loss = None  # set inside the KD branch when KD is on
+
         # --- Max trick (Salman 2025): split long window into K segments ---
         # Dataset returns (B, K*segment_samples) waveform for K segments.
         # Split, compute mel per segment, forward each, take max logits.
         # Gradient flows only through the segment with strongest prediction.
         K = self.hparams.max_trick_factor if self.hparams.max_trick else 1
         if self.hparams.max_trick and self.mel_transform is not None:
+            if do_kd:
+                raise NotImplementedError(
+                    "KD with max_trick is a Phase 3+ candidate (would need per-segment "
+                    "teacher embeddings + max-pooled target composition)."
+                )
             B = x.size(0)
             segment_samples = x.size(1) // K  # e.g., 480000/3 = 160000 (5s)
 
@@ -600,7 +739,53 @@ class SEDFinetuneModule(pl.LightningModule):
                 and random.random() < self.hparams.manifold_mixup_prob
             )
 
-            if not use_manifold:
+            if do_kd:
+                # --- Perch v2 KD branch (Tucker recipe, exp 031) ---
+                # Guards in __init__ ensure: mixup_mode='interpolate',
+                # raw_waveform_mixup=False. mel_transform must be set
+                # (KD operates on raw waveforms before mel).
+                if use_manifold:
+                    raise NotImplementedError("KD with manifold_mixup is a Phase 3+ candidate.")
+                if self.mel_transform is None:
+                    raise RuntimeError(
+                        "KD requires mel_transform != None (raw waveforms in batch). "
+                        "Set mel.gpu: true in config."
+                    )
+
+                # 1. Teacher forward on raw pre-mixup waveform — 1× ONNX call.
+                #    Perch is per-sample (no cross-batch coupling), so
+                #    perch(x[indices]) == perch(x)[indices] and the
+                #    mixup-matched target costs zero extra teacher forwards.
+                perch_emb = self.perch_teacher.embed(x)  # (B, perch_embed_dim)
+
+                # 2. Compute mel on GPU.
+                with self._mel_grad_context(), torch.amp.autocast("cuda", enabled=False):
+                    mel = self.mel_transform(x.float())
+
+                # 3. Spec-domain mixup with param capture (interpolate-only).
+                if do_mixup:
+                    mel, labels, loss_weight, indices, lam = self._apply_mixup(
+                        mel, labels, loss_weight, return_params=True
+                    )
+                    # Compose teacher target with the same (lam, indices) as
+                    # the input mix. Per-sample lam: (B,) -> (B, 1) for
+                    # broadcast against (B, embed_dim). Scalar lam: float.
+                    if isinstance(lam, torch.Tensor):
+                        emb_lam = lam[:, None]
+                    else:
+                        emb_lam = float(lam)
+                    perch_emb_target = emb_lam * perch_emb + (1 - emb_lam) * perch_emb[indices]
+                else:
+                    perch_emb_target = perch_emb
+
+                # 4. Explicit forward_features so we can branch grad flow.
+                features = self.encoder.forward_features(mel)
+                distill_emb = self.distill_head(features)  # grad -> backbone
+                distill_loss = F.mse_loss(distill_emb, perch_emb_target)
+                features_for_head = features.detach()  # cls: no grad to backbone
+                clipwise_logits, framewise_logits = self.sed_head(features_for_head)
+
+            elif not use_manifold:
                 if self.mel_transform is not None and self.hparams.waveform_mixup:
                     # Waveform mixup mode: mixup on raw waveforms, then mel on GPU
                     if do_mixup:
@@ -634,9 +819,17 @@ class SEDFinetuneModule(pl.LightningModule):
                 )
                 clipwise_logits, framewise_logits = self.sed_head(features)
 
-        loss = self._compute_chunked_loss(
+        cls_loss = self._compute_chunked_loss(
             clipwise_logits, framewise_logits, labels, primary_idx, loss_weight
         )
+
+        if do_kd:
+            # distill_loss is set in the KD branch above; total loss = cls + α·dist.
+            loss = cls_loss + self.hparams.alpha_distill * distill_loss
+            self.log("train/cls_loss", cls_loss, on_step=True, on_epoch=True, prog_bar=True)
+            self.log("train/dist_loss", distill_loss, on_step=True, on_epoch=True, prog_bar=True)
+        else:
+            loss = cls_loss
 
         # Blended probabilities for metrics (handles multi-chunk automatically)
         probs = self._blended_probs(clipwise_logits, framewise_logits)

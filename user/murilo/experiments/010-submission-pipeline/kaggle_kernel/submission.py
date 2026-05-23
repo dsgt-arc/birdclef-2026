@@ -91,6 +91,17 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Codebase regression diagnostic: v5j-era code (commit e420633) retrained
+    # v5j_control on today's env. Tests whether HEAD codebase IS the cause of
+    # the 0.906→0.897 LB regression. Offline val/cmap matches v5j-original
+    # exactly; LB confirms.
+    "birdclef-2026-hgnet-b0-sed-v5j-eracode-weights",
+    # Exp 031 best-vs-last diagnostic: ep 19 weights from save_top_k=-1 retrains.
+    # control slug drops "-2026-" to fit Kaggle's 50-char dataset slug limit.
+    "birdclef-2026-hgnet-b0-sed-v5j-kd-last-weights",
+    "birdclef-hgnet-b0-sed-v5j-control-last-weights",
+    # Exp 031: Perch v2 knowledge distillation on v5j (Tucker recipe, Phase 1)
+    "birdclef-2026-hgnet-b0-sed-v5j-kd-weights",
     # Exp 030 V3 (seed=43) diagnostic retrain — disambiguates the seed=42 EffNet ×
     # Sydorskyi +0.008 LB asymmetry from seed noise. Slugs drop "-2026-" prefix to
     # fit Kaggle's 50-char dataset slug limit.

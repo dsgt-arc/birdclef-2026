@@ -1,0 +1,16 @@
+{
+  "id": "murilogustineli/birdclef-2026-hgnet-b0-sed-v5j-control-last",
+  "title": "BirdCLEF 2026 HGNet-B0 SED v5j Control Last",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-deps",
+    "murilogustineli/birdclef-hgnet-b0-sed-v5j-control-last-weights"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}

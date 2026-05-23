@@ -374,6 +374,36 @@ MODELS = {
         "weights_dir": "artifacts/weights/effnetv2-b0-sed-sydorskyi-seed43",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-effnetv2-b0-sed-sydorskyi-seed43.json",
     },
+    # Exp 031: Perch v2 knowledge distillation on v5j (Tucker recipe, Phase 1)
+    "hgnet-b0-sed-v5j-kd": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-kd-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-kd",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-kd.json",
+    },
+    # Exp 031 best-vs-last diagnostic: ep 19 weights from save_top_k=-1 retrain
+    # (v5j_kd_resave / v5j_control_resave). Tests whether the 0.890 LB on best-by-val
+    # ep 17 was a ckpt-selection artifact, and whether ep 19 weights recover
+    # v5j-original 0.906 on the new codebase. control slug drops "-2026-" to fit
+    # Kaggle's 50-char dataset slug limit.
+    "hgnet-b0-sed-v5j-kd-last": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-kd-last-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-kd-last",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-kd-last.json",
+    },
+    "hgnet-b0-sed-v5j-control-last": {
+        "slug": "birdclef-hgnet-b0-sed-v5j-control-last-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-control-last",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-control-last.json",
+    },
+    # Codebase regression diagnostic: retrained v5j_control with v5j-era code
+    # (commit e420633 worktree) on today's env. Offline val/cmap matches
+    # v5j-original to 4 dp; this LB confirms whether the ~0.009 gap is in
+    # the HEAD codebase (vs env/HW). High-confidence prediction: LB ≈ 0.906.
+    "hgnet-b0-sed-v5j-eracode": {
+        "slug": "birdclef-2026-hgnet-b0-sed-v5j-eracode-weights",
+        "weights_dir": "artifacts/weights/hgnet-b0-sed-v5j-eracode",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v5j-eracode.json",
+    },
     # Exp 021 Phase F: v5j blend ablations (same checkpoint, different blend)
     "hgnet-b0-sed-v5j-fmax": {
         "slug": "birdclef-2026-hgnet-b0-sed-v5j-fmax-weights",
