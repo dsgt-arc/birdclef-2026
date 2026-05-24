@@ -16,7 +16,7 @@ Run them with the interactive venv:
 | [`test_efficientnet_encoder_post_head.py`](../../tests/032-tucker-distilled-sed/test_efficientnet_encoder_post_head.py) | 0.2 | EfficientNetEncoder `use_post_head` flag (11 tests) |
 | [`test_dual_supervision_loss.py`](../../tests/032-tucker-distilled-sed/test_dual_supervision_loss.py) | 0.3 | DistilledSEDFinetuneModule: dual-supervision loss + inference blend + KD branch + audit-validation tests (22 tests) |
 | [`test_tucker_mixup.py`](../../tests/032-tucker-distilled-sed/test_tucker_mixup.py) | 0.4 | FocalDS + ScDS + apply_aug: waveform mixup, hard-max labels, focal×SS mixup, augmentation, rate verification (18 tests) |
-| _planned_ `test_specaugment.py` | 0.5 | 1 freq × 10 + 2 time × 10 masking |
+| [`test_specaugment.py`](../../tests/032-tucker-distilled-sed/test_specaugment.py) | 0.5 | SpecAugment: defaults match Tucker, masking actually zeroes rows/cols, integration with DistilledSEDFinetuneModule (12 tests) |
 | _planned_ `test_warmup_cosine_schedule.py` | 0.6 | LinearLR(2ep) → CosineAnnealingLR(23ep) |
 | _planned_ `test_mixsamp_sampler.py` | 0.7 | MixSamp 90/10 batch composition |
 | _planned_ `test_fold_construction.py` | 0.8 | StratifiedKFold focal + GroupKFold SS + upsampling |
@@ -87,10 +87,25 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
   - **Audit-validation `test_mixup_rates_match_audit_2_3`**: 1000-sample empirical rates over the default config produce **~50% focal-focal, ~25% focal-SC, ~25% no-mixup**, matching audit § 2.3 exactly (±5% tolerance).
 - **Test gate**: ✅ PASSED.
 
-### 0.5 Add SpecAugment
-- [ ] 0.5.1 New module wrapping `torchaudio.transforms.FrequencyMasking(freq_mask_param=10)` + `TimeMasking(time_mask_param=10)`. Apply 1× freq mask + 2× time mask in sequence (dataset+inference audit § 1.0 / notebook cell 10).
-- [ ] 0.5.2 Apply AFTER per-sample mel normalization (per Tucker's order). Both at training only.
-- **Test gate**: visual mel-spec output shows expected masked regions on a sample batch.
+### 0.5 Add SpecAugment — DONE
+- [x] 0.5.1 New module `src/birdclef/preprocessing/spec_augment.py` with class `SpecAugment` — verbatim port of Tucker's cell 10. Wraps `torchaudio.transforms.FrequencyMasking(freq_mask_param=10)` + `TimeMasking(time_mask_param=10)`. Applies `num_freq_masks=1` freq masks then `num_time_masks=2` time masks in sequence. All four params are configurable; defaults match Tucker exactly.
+- [x] 0.5.2 Applied AFTER per-sample mel normalization in `DistilledSEDFinetuneModule._compute_mel`, training only — the LightningModule guards via `if training and self.spec_augment is not None`. (torchaudio's masking modules don't honor `self.training` themselves; the eval-mode skip is the caller's responsibility.)
+- [x] **Wired through `train.py`** via `config["spec_augment"]` block (`enabled`, `freq_mask_param`, `time_mask_param`, `num_freq_masks`, `num_time_masks` — defaults match Tucker). Logs the active config on construction.
+- [x] **Tests** at [`test_specaugment.py`](../../tests/032-tucker-distilled-sed/test_specaugment.py) — 12 tests, all pass:
+  - Defaults match Tucker exactly (freq=10, time=10, n_freq=1, n_time=2)
+  - Output shape and dtype preserved
+  - Output is finite
+  - `num_freq_masks=0 + num_time_masks=0` is identity transform
+  - Freq mask zeroes some freq rows (full-row zero detection on constant input)
+  - Time mask zeroes some time columns (same approach)
+  - Combined 1 freq + 2 time masks zero both axes over 20-batch sample
+  - Mask width never exceeds `param` (verified over 50 samples with param=20)
+  - End-to-end through `DistilledSEDFinetuneModule._compute_mel`: training=True applies SpecAugment; training=False skips it
+  - `spec_augment=None` → identity even at training=True
+  - Stochastic (different calls produce different masks)
+  - `.to(device)` works (submodules registered as nn.Modules)
+- **Visual gate**: replaced the "visual mel-spec" check with programmatic verification that masked rows/cols are exactly zero (more reliable + reproducible than visual inspection). The combined-masking test runs 20 random batches and asserts both axes get masked.
+- **Test gate**: ✅ PASSED.
 
 ### 0.6 Switch schedule OneCycle → 25 ep cosine + 2 ep warmup
 - [ ] 0.6.1 Replace OneCycleLR with `SequentialLR([LinearLR(start_factor=1/25, total_iters=warmup_steps), CosineAnnealingLR(T_max=total_steps - warmup_steps, eta_min=1e-6)], milestones=[warmup_steps])`. Verify warmup_steps = nst × 2, total_steps = nst × 25.

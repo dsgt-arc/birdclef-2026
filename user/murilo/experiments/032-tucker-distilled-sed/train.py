@@ -68,6 +68,7 @@ from birdclef.heads.sed_head import (  # noqa: E402
 )
 from birdclef.lightning.distilled_sed_finetune import DistilledSEDFinetuneModule  # noqa: E402
 from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram  # noqa: E402
+from birdclef.preprocessing.spec_augment import SpecAugment  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -359,9 +360,23 @@ def main():
         else:
             logger.info("GPU mel + spectrogram mixup: mel on GPU, then mixup")
 
-    # SpecAugment module is constructed by config later (task 0.5). For now,
-    # leave it None so the LightningModule wires without it.
-    spec_augment_module = None
+    # SpecAugment (task 0.5): Tucker's notebook cell 10 applies
+    # 1 freq mask (param=10) + 2 time masks (param=10) after per-sample
+    # mel normalization, training only. Config block `spec_augment`
+    # under top-level config controls it. Default: enabled with Tucker's
+    # exact params.
+    sa_cfg = config.get("spec_augment", {}) or {}
+    if sa_cfg.get("enabled", True):
+        spec_augment_module = SpecAugment(
+            freq_mask_param=sa_cfg.get("freq_mask_param", 10),
+            time_mask_param=sa_cfg.get("time_mask_param", 10),
+            num_freq_masks=sa_cfg.get("num_freq_masks", 1),
+            num_time_masks=sa_cfg.get("num_time_masks", 2),
+        )
+        logger.info(f"SpecAugment enabled: {spec_augment_module.extra_repr()}")
+    else:
+        spec_augment_module = None
+        logger.info("SpecAugment disabled (config.spec_augment.enabled=false)")
 
     pl_module = DistilledSEDFinetuneModule(
         encoder=encoder,
