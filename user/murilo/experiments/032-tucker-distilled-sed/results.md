@@ -87,9 +87,47 @@ This is the core paradox: a model that scores 0.89 macro AUC on the same val
 data Tucker uses cannot score 0.52 on the LB if our inference + LB mapping
 are correct.
 
+## Phase D update (2026-05-24 EOD): mel mismatch CONFIRMED + fix landed
+
+`scripts/diag_mel_pipeline.py` on a real soundscape (5s @ 32 kHz) confirms
+the leading hypothesis numerically:
+
+| Comparison | max\|d\| | Pearson r | Status |
+|---|---:|---:|---|
+| TUCKER vs OURS-KERNEL (compute_mel_tucker) | 4.77e-07 | 1.000000 | ✅ match |
+| TUCKER vs OURS-TRAINING (NNAudio amp2db) | **3.20** | 0.9356 | ❌ mismatch |
+| OURS-TRAINING vs OURS-KERNEL | **3.20** | 0.9356 | ❌ mismatch |
+
+Kernel is Tucker-faithful to machine epsilon. **Training is not.** The
+model was trained on a distribution max|d| = 3.20 away from what the kernel
+feeds it at inference — sufficient to explain the LB collapse.
+
+### Fix (commit pending): TuckerMelSpectrogram
+
+- NEW `user/murilo/src/birdclef/preprocessing/tucker_mel.py` — verbatim
+  port of Tucker's `MelSpecTransform` (torchaudio MelSpec + AmplitudeToDB(80),
+  zero internal normalization).
+- `train.py` dispatches on `mel.type == "tucker"` → instantiates `TuckerMelSpectrogram`.
+- `DistilledSEDFinetuneModule._compute_mel.per_sample_mel_norm=True` (unchanged)
+  applies the single z-score on top. Combined pipeline matches Tucker's
+  training pipeline to atol=1e-5 (verified by 12 unit tests).
+- Both configs `distilled_sed_{control,kd}.yaml` updated: `mel.type: "tucker"`,
+  `norm_type` removed. `power: 2.0` made explicit.
+- `test_diverges_from_nnaudio_amplitude_to_db` regression guard locks the
+  fix in place — any accidental revert to the broken NNAudio path fails CI.
+
+**Tests: 163/163 pass** (was 151 + 12 new).
+
+Next step: retrain paired control + KD with the new mel pipeline. Expected
+outcome on retrain: offline val/cmap macro AUC remains similar (~0.89 at
+ep 6, matches Tucker), **AND** end-to-end inference on
+`train_soundscapes_labels.csv` now also reads ~0.89 macro AUROC (D.5
+validation). If both hold, LB submission should land in Tucker's published
+0.910–0.917 band.
+
 ## Analysis: leading hypothesis
 
-### 🚨 Mel-pipeline mismatch between training and inference (HIGHEST-LIKELIHOOD)
+### 🚨 Mel-pipeline mismatch between training and inference (HIGHEST-LIKELIHOOD) — CONFIRMED 2026-05-24 EOD
 
 Tucker's reference pipeline (verified against
 `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/bc2026-distilled-sed.py` lines 400–407, 947–949, 1240–1246):

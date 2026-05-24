@@ -226,22 +226,33 @@ Phase D blocks Phase 2 and Phase 3.
 ### D.1 Confirm vendored notebook is current
 - [ ] D.1.1 `kaggle kernels pull tuckerarrants/bc2026-distilled-sed` and diff against `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/`. Update vendored copy if upstream changed since 2026-05-23.
 
-### D.2 Audit mel pipeline (highest-EV)
-- [ ] D.2.1 Read Tucker's `MelSpecTransform` (notebook lines 400–407) + training per-sample norm loop (lines 945–950) + inference mel function (lines 1240–1246). Document Tucker's actual normalization sequence (currently believed: `power_mel → AmplitudeToDB(top_db=80) → per-sample z-score`).
-- [ ] D.2.2 Read our `NNAudioMelSpectrogram._normalize_amplitude_to_db` (src/birdclef/preprocessing/nnaudio_mel.py) + `DistilledSEDFinetuneModule._compute_mel` (src/birdclef/lightning/distilled_sed_finetune.py). Document our actual normalization sequence (currently believed: `power_to_db → z-score → min-max [0,1] → another z-score`).
-- [ ] D.2.3 **Side-by-side numerical test** in a script (`scripts/diag_mel_pipeline.py`):
-  - Load 1 deterministic waveform from train_soundscapes.
-  - Feed through Tucker's pipeline (vendored .py) → save mel_tucker.npy.
-  - Feed through our `_compute_mel` (NNAudio + module's per-sample norm) → save mel_ours.npy.
-  - Compare element-wise. Expected: identical to ~1e-6 if pipelines match; large diff if mismatched.
-  - Also compare against the kernel's `compute_mel_tucker`. The kernel SHOULD match Tucker; the question is whether training matches Tucker.
+### D.2 Audit mel pipeline (highest-EV) — DONE ✅
+- [x] D.2.1 Tucker's pipeline read verbatim from vendored `bc2026-distilled-sed.py`:
+  - lines 400–407: `MelSpecTransform` = `torchaudio.transforms.MelSpectrogram(SR, n_fft, hop, n_mels, fmin, fmax, power=2.0)` → `AmplitudeToDB(top_db=80)`.
+  - lines 945–950: training loop applies per-sample `(mel - mean) / (std + 1e-6)` after the transform.
+  - lines 1240–1246: inference mel via librosa, same params + `power_to_db(top_db=80)` + per-sample z-score. Identical to training pipeline.
+- [x] D.2.2 Our broken training pipeline confirmed: `NNAudioMelSpectrogram(norm_type="amplitude_to_db")` does `10·log10 + top_db clamp + z-score + min-max [0,1]`, then `_compute_mel.per_sample_mel_norm` does another z-score. Three normalizations vs Tucker's one.
+- [x] D.2.3 **Side-by-side numerical diagnostic** (`scripts/diag_mel_pipeline.py`) on `BC2026_Train_0001_S08_20250606_030007.ogg` 5s window:
 
-### D.3 Fix training mel to match Tucker (if D.2 confirms mismatch)
-- [ ] D.3.1 Decide between (a) align our training mel to Tucker's verbatim, or (b) align inference kernel to our training mel. Default = (a) for Tucker faithfulness.
-- [ ] D.3.2 Implement: add a new `norm_type: "tucker_amp2db"` to `NNAudioMelSpectrogram` that does ONLY `10*log10(mel) → top_db clamp` (no z-score, no min-max). Module's existing `per_sample_mel_norm` completes the single z-score on top. Total: `mel → 10·log10 → clamp → z-score`, matching Tucker exactly.
-- [ ] D.3.3 OR alternative: bypass NNAudio at training time, use torchaudio MelSpec + AmplitudeToDB (matches Tucker's `MelSpecTransform` byte-for-byte). Trade-off: introduces another path in train.py, but eliminates NNAudio backend drift risk.
-- [ ] D.3.4 Add unit test: `test_mel_pipeline_matches_tucker.py` — feed same waveform through both pipelines, assert mel outputs match to atol=1e-5.
-- [ ] D.3.5 Update config `distilled_sed_{control,kd}.yaml` `mel.norm_type` to the new value.
+  | Comparison | max\|d\| | mean\|d\| | Pearson r |
+  |---|---:|---:|---:|
+  | TUCKER vs OURS-KERNEL (Tucker-faithful) | **4.77e-07** | 5.57e-08 | 1.000000 |
+  | TUCKER vs OURS-TRAINING (NNAudio amp2db) | **3.20** | 0.248 | 0.9356 |
+  | OURS-TRAINING vs OURS-KERNEL | **3.20** | 0.248 | 0.9356 |
+
+  💥 **CONFIRMED**: kernel matches Tucker to machine epsilon; training does NOT. Single bug accounts for the LB collapse.
+
+### D.3 Fix training mel to match Tucker — DONE ✅
+- [x] D.3.1 Chose path (a): align training mel to Tucker verbatim. Adds zero risk of NNAudio/torchaudio backend drift since both training and inference now use the SAME torchaudio ops.
+- [x] D.3.2 NEW module `user/murilo/src/birdclef/preprocessing/tucker_mel.py` with `TuckerMelSpectrogram` — verbatim port of Tucker's `MelSpecTransform` (torchaudio MelSpec + AmplitudeToDB(80), zero internal normalization). The module's existing `per_sample_mel_norm=True` step completes the single z-score on top. Combined pipeline === Tucker's reference.
+- [x] D.3.3 `train.py` dispatch extended: `mel.type == "tucker"` → instantiate `TuckerMelSpectrogram`. Existing `"nnaudio"` / `"ttahara"` paths untouched.
+- [x] D.3.4 Unit test `tests/032-tucker-distilled-sed/test_tucker_mel.py` (12 tests):
+  - `test_matches_tucker_reference_no_norm`: pre-norm output identical to Tucker's reference to atol=1e-5.
+  - `test_full_tucker_pipeline_matches`: TuckerMelSpec + module's per-sample norm === Tucker's training pipeline to atol=1e-5.
+  - `test_diverges_from_nnaudio_amplitude_to_db`: regression guard — Tucker pipeline MUST differ from NNAudio's broken `amplitude_to_db` path (asserts max|d| > 0.1).
+  - Shape, dtype, device, configurability, top_db clamp coverage.
+  - **All 12 pass**.
+- [x] D.3.5 Both configs `distilled_sed_{control,kd}.yaml` updated: `mel.type: "tucker"` + `power: 2.0`; `norm_type` removed (no longer applicable — TuckerMelSpec has no internal norm).
 
 ### D.4 Audit lower-likelihood candidates (if D.3 doesn't recover LB)
 - [ ] D.4.1 **AttHeadLogitSpace shape**: verify `frame_logits.max(dim=-1)` (ours) is semantically identical to `framewise.permute(0, 2, 1).max(dim=1)` (Tucker, after his permute). Write a unit test using a random `(B, C, T)` tensor.

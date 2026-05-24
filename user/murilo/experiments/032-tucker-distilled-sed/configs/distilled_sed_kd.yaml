@@ -38,14 +38,17 @@ sed_head:
   gem_p: 3.0
 
 mel:
-  type: "nnaudio"
+  # Tucker-faithful mel: TuckerMelSpectrogram (torchaudio MelSpec +
+  # AmplitudeToDB(80), no internal norm). See distilled_sed_control.yaml
+  # for the full rationale (Phase D § D.2 diagnostic).
+  type: "tucker"
   n_fft: 2048
   hop_length: 512
   n_mels: 256
   fmin: 20
   fmax: 16000
   top_db: 80.0
-  norm_type: "amplitude_to_db"
+  power: 2.0
   gpu: true
 
 spec_augment:

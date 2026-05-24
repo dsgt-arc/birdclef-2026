@@ -347,6 +347,30 @@ def main():
                 target_shape=tuple(mel_cfg.get("target_shape", [256, 256])),
                 out_channels=config["encoder"].get("in_chans", 1),
             )
+        elif mel_type == "tucker":
+            # Tucker-faithful mel: torchaudio MelSpectrogram + AmplitudeToDB(80),
+            # NO internal normalization (per-sample z-score handled by the
+            # module's per_sample_mel_norm step). Mirrors Tucker's
+            # `MelSpecTransform` from bc2026-distilled-sed.ipynb cells 10/14.
+            # See Phase D § D.2 diagnostic in
+            # experiments/032-tucker-distilled-sed/scripts/diag_mel_pipeline.py
+            # for the side-by-side that motivated this dispatch path.
+            from birdclef.preprocessing.tucker_mel import TuckerMelSpectrogram
+
+            gpu_mel_transform = TuckerMelSpectrogram(
+                sample_rate=sample_rate,
+                n_fft=mel_cfg.get("n_fft", 2048),
+                hop_length=mel_cfg.get("hop_length", 512),
+                n_mels=mel_cfg.get("n_mels", 256),
+                fmin=mel_cfg.get("fmin", 20),
+                fmax=mel_cfg.get("fmax", 16000),
+                top_db=mel_cfg.get("top_db", 80.0),
+                power=mel_cfg.get("power", 2.0),
+            )
+            logger.info(
+                "GPU mel: TuckerMelSpectrogram (torchaudio MelSpec + "
+                "AmplitudeToDB(80), no internal norm; per-sample z-score via module)"
+            )
         else:
             gpu_mel_transform = NNAudioMelSpectrogram(
                 sample_rate=sample_rate,
