@@ -15,7 +15,7 @@ Run them with the interactive venv:
 | [`test_att_head_logit_space.py`](../../tests/032-tucker-distilled-sed/test_att_head_logit_space.py) | 0.1 | AttHeadLogitSpace + GeMFreqPool (14 tests) |
 | [`test_efficientnet_encoder_post_head.py`](../../tests/032-tucker-distilled-sed/test_efficientnet_encoder_post_head.py) | 0.2 | EfficientNetEncoder `use_post_head` flag (11 tests) |
 | [`test_dual_supervision_loss.py`](../../tests/032-tucker-distilled-sed/test_dual_supervision_loss.py) | 0.3 | DistilledSEDFinetuneModule: dual-supervision loss + inference blend + KD branch + audit-validation tests (22 tests) |
-| _planned_ `test_tucker_mixup.py` | 0.4 | waveform mixup with `MIXUP_HARD=True` + focal×SS mixup |
+| [`test_tucker_mixup.py`](../../tests/032-tucker-distilled-sed/test_tucker_mixup.py) | 0.4 | FocalDS + ScDS + apply_aug: waveform mixup, hard-max labels, focal×SS mixup, augmentation, rate verification (18 tests) |
 | _planned_ `test_specaugment.py` | 0.5 | 1 freq × 10 + 2 time × 10 masking |
 | _planned_ `test_warmup_cosine_schedule.py` | 0.6 | LinearLR(2ep) → CosineAnnealingLR(23ep) |
 | _planned_ `test_mixsamp_sampler.py` | 0.7 | MixSamp 90/10 batch composition |
@@ -71,11 +71,21 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
   - `clip_grad_norm_(1.0)` deferred to Lightning's `Trainer(gradient_clip_val=1.0)` config (task 0.6 verifies).
 - **Test gate**: ✅ PASSED.
 
-### 0.4 Port Tucker mixup recipe
-- [ ] 0.4.1 In `src/birdclef/data/sed.py` (or whatever owns the dataset class): replace v5j's spec-mixup with waveform mixup. `lam = Beta(0.4, 0.4)`, `MIXUP_HARD=True → lb = max(lb1, lb2)`, p=0.5 per sample. (dataset+inference audit § 2.3.)
-- [ ] 0.4.2 Add focal × labeled-SS mixup: with p=0.5 (only if focal-focal mixup didn't fire), blend with a random labeled SS window from the same training fold. `lb = max(lb_focal, lb_sc)`. (dataset+inference audit § 2.3 step 3.)
-- [ ] 0.4.3 Add `apply_aug`: gain jitter ±6 dB (p=0.5) + SNR-controlled Gaussian noise (10–30 dB, p=0.5). Time shift comes from the random crop offset, NOT `apply_aug`. (dataset+inference audit § 2.4.)
-- **Test gate**: 100-sample dataset iteration produces expected mixup rate (~50% focal-focal, ~25% focal-SC, ~25% none).
+### 0.4 Port Tucker mixup recipe — DONE
+- [x] 0.4.1 **New file** `src/birdclef/data/distilled_sed_dataset.py` (per reproducibility argument: separate from `data/sed.py` to keep exp 030/031 paths bit-identical). Contains `FocalDS`, `ScDS`, and `apply_aug`. `FocalDS` implements Tucker's 3-path logic: focal-focal mixup → focal-SS mixup → no-mixup. Waveform mixup with `lam = Beta(mixup_alpha, mixup_alpha)`, `mixup_hard=True → lb = max(lb1, lb2)`, default `mixup_prob=0.5, mixup_alpha=0.4`.
+- [x] 0.4.2 Focal × labeled-SS mixup wired into `FocalDS`: only reached when focal-focal didn't fire; `focal_sc_mixup_prob=0.5` default; eligible SS pool filtered to `fold != fold_k` per audit § 2.3 step 3. `MIXUP_HARD=True → lb = max(lb_focal, lb_sc)`.
+- [x] 0.4.3 `apply_aug` implements gain jitter (±6 dB, p=0.5) + SNR-controlled Gaussian noise (10–30 dB, p=0.5). **No time-shift** — time variation comes from the random crop offset in `_load_focal_chunk` per audit § 2.4 (cell 12 only has gain + noise; the markdown's "three augmentations" claim is incorrect).
+- [x] **Tests** at [`test_tucker_mixup.py`](../../tests/032-tucker-distilled-sed/test_tucker_mixup.py) — 18 tests, all pass:
+  - `apply_aug`: p=0 no-op; p=1 modifies; gain range respected (±6 dB tested over 200 samples); SNR range respected (10–30 dB tested with sinusoid signal).
+  - `FocalDS`: returns 5-tuple `(wav, lb, wt, mk, src)` matching Tucker's signature; wt/mk all ones per audit § 4; no-mixup label matches primary.
+  - Mixup paths: `mixup_prob=1.0 → 100% focal-focal`; both probs=0 → 100% no-mixup; `focal_sc_mixup_prob=1.0, mixup_prob=0 → 100% focal-SC`.
+  - `MIXUP_HARD=True → max(lb1, lb2)`: avg positives per label = ~1.95 over 50 samples (theoretical 1.95 with 20 rows in df).
+  - `MIXUP_HARD=False`: λ-weighted soft labels produce values in (0, 1).
+  - Beta(0.4, 0.4) distribution: λ values empirically have mean ≈ 0.5 and > 30% extremes in [0, 0.1] ∪ [0.9, 1.0] (bimodal as expected).
+  - SS pool fold filtering: when all SS rows are in `fold_k`, focal-SS path never fires.
+  - `ScDS`: no mixup; label returned as-is from `Y_SC[i]`; shape-mismatch validation raises.
+  - **Audit-validation `test_mixup_rates_match_audit_2_3`**: 1000-sample empirical rates over the default config produce **~50% focal-focal, ~25% focal-SC, ~25% no-mixup**, matching audit § 2.3 exactly (±5% tolerance).
+- **Test gate**: ✅ PASSED.
 
 ### 0.5 Add SpecAugment
 - [ ] 0.5.1 New module wrapping `torchaudio.transforms.FrequencyMasking(freq_mask_param=10)` + `TimeMasking(time_mask_param=10)`. Apply 1× freq mask + 2× time mask in sequence (dataset+inference audit § 1.0 / notebook cell 10).
