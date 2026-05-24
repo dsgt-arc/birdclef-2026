@@ -261,10 +261,16 @@ Phase D blocks Phase 2 and Phase 3.
 - [ ] D.4.4 **ONNX wrapper output**: feed the same mel through PyTorch wrapper and ONNX session; max diff should already be < 5e-2 (verified at export time), but re-verify under inference conditions.
 - [ ] D.4.5 **Species mapping**: confirm the `species_mapping_2026_234.json` we used is identity 234→234 (exp 030/031 used the same file at LB 0.897, so this is almost certainly OK).
 
-### D.5 End-to-end validation before any retraining
-- [ ] D.5.1 Add `scripts/validate_end_to_end.py`: load a checkpoint, run inference on `train_soundscapes/` files using the EXACT same audio loading + mel + ONNX path as the Kaggle kernel, compute macro AUROC against `train_soundscapes_labels.csv`. If this matches the offline val macro AUC to 2 dp, the pipeline is end-to-end consistent.
-- [ ] D.5.2 Run D.5.1 against the current `last.ckpt` (LB 0.522). Expected: macro AUROC ≈ 0.52 if the mismatch hypothesis is right.
-- [ ] D.5.3 Bake D.5.1 into the workflow: run before every LB submission going forward.
+### D.5 End-to-end validation before any retraining — SCAFFOLDED ✅
+- [x] D.5.1 NEW `scripts/validate_end_to_end.py` + `sbatch/validate_end_to_end.sh`.
+  - Loads a checkpoint into `DistilledSEDFinetuneModule`.
+  - Builds the same val fold (StratifiedKFold focal + GroupKFold SS) the training side uses.
+  - Runs the **kernel inference path** end-to-end on the val SS windows: `kernel_load_audio_chunk` → `compute_mel_tucker` → encoder.forward_features → AttHeadLogitSpace → per-window LOGIT-space blend (0.5/0.5) → 5-tap Gauss smooth → single sigmoid.
+  - Computes Tucker macro AUC + AP (skip-empty) against the same `Y_SC` matrix `DistilledSEDDataModule` builds for training.
+  - Optional `--training-side-auroc <X>` flag prints PASS/FAIL based on absolute gap vs `--tolerance` (default 0.02).
+  - Optional `--output <tsv>` writes per-class metrics for offline inspection.
+- [ ] D.5.2 Run D.5.1 against the Phase 1 `last.ckpt` (LB 0.522) as a sanity check. Predicted: end-to-end AUC ≈ 0.52 (matches LB), while training-side `val/auroc` was ~0.89 → confirms the script detects the very gap that motivated Phase D.
+- [ ] D.5.3 Bake D.5.1 into workflow: run before every LB submission going forward. Decision rule: if end-to-end AUC is within 0.02 of training-side `val/auroc`, pipeline is consistent → LB-safe. Otherwise → diagnose mismatch before submitting.
 
 ### D.6 Retrain after fix
 - [ ] D.6.1 Resubmit paired training with the fixed mel pipeline. Same configs, same data, same seed=42, single fold 0.
