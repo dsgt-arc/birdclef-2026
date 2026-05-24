@@ -66,7 +66,7 @@ from birdclef.heads.sed_head import (  # noqa: E402
     AttHeadMultiContext,
     LSEHead,
 )
-from birdclef.lightning.sed_finetune import SEDFinetuneModule  # noqa: E402
+from birdclef.lightning.distilled_sed_finetune import DistilledSEDFinetuneModule  # noqa: E402
 from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
@@ -359,44 +359,29 @@ def main():
         else:
             logger.info("GPU mel + spectrogram mixup: mel on GPU, then mixup")
 
-    pl_module = SEDFinetuneModule(
+    # SpecAugment module is constructed by config later (task 0.5). For now,
+    # leave it None so the LightningModule wires without it.
+    spec_augment_module = None
+
+    pl_module = DistilledSEDFinetuneModule(
         encoder=encoder,
         sed_head=sed_head,
         num_classes=num_classes,
+        mel_transform=gpu_mel_transform,
+        spec_augment=spec_augment_module,
         lr=training_cfg["lr"],
-        head_lr=training_cfg["head_lr"],
         weight_decay=training_cfg["weight_decay"],
         max_epochs=training_cfg["max_epochs"],
         warmup_epochs=training_cfg["warmup_epochs"],
-        threshold=training_cfg["threshold"],
-        clipwise_weight=training_cfg["clipwise_weight"],
-        framewise_weight=training_cfg["framewise_weight"],
-        blend_clip=training_cfg["blend_clip"],
-        blend_frame=training_cfg["blend_frame"],
-        mixup_prob=training_cfg.get("mixup_prob", 0.5),
-        mixup_alpha=training_cfg.get("mixup_alpha", 0.5),
-        mixup_warmup_epochs=training_cfg.get("mixup_warmup_epochs", 0),
-        mixup_theta=training_cfg.get("mixup_theta", 1.0),
-        mixup_per_sample=training_cfg.get("mixup_per_sample", False),
-        mixup_mode=training_cfg.get("mixup_mode", "interpolate"),
-        loss_type=training_cfg.get("loss_type", "soft_ce"),
-        label_smoothing=training_cfg.get("label_smoothing", 0.0),
-        asl_gamma_neg=training_cfg.get("asl_gamma_neg", 4.0),
-        asl_gamma_pos=training_cfg.get("asl_gamma_pos", 0.0),
-        asl_clip=training_cfg.get("asl_clip", 0.05),
-        mel_transform=gpu_mel_transform,
-        waveform_mixup=waveform_mixup,
-        waveform_noise=training_cfg.get("waveform_noise", False),
-        waveform_time_stretch=training_cfg.get("waveform_time_stretch", False),
-        manifold_mixup=training_cfg.get("manifold_mixup", False),
-        manifold_mixup_prob=training_cfg.get("manifold_mixup_prob", 0.5),
-        scheduler_type=training_cfg.get("scheduler_type", "cosine"),
-        onecycle_div_factor=training_cfg.get("onecycle_div_factor", 25.0),
-        onecycle_final_div_factor=training_cfg.get("onecycle_final_div_factor", 4.0),
-        dual_validation=config["data"].get("dual_validation", False),
-        max_trick=training_cfg.get("max_trick", False),
-        max_trick_factor=training_cfg.get("max_trick_factor", 3),
-        # --- Perch v2 KD branch (exp 031) ---
+        warmup_start_factor=training_cfg.get("warmup_start_factor", 1.0 / 25),
+        eta_min=training_cfg.get("eta_min", 1e-6),
+        clipwise_weight=training_cfg.get("clipwise_weight", 0.5),
+        framewise_weight=training_cfg.get("framewise_weight", 0.5),
+        blend_clip=training_cfg.get("blend_clip", 0.5),
+        blend_frame=training_cfg.get("blend_frame", 0.5),
+        threshold=training_cfg.get("threshold", 0.5),
+        per_sample_mel_norm=training_cfg.get("per_sample_mel_norm", True),
+        # --- Perch v2 KD branch (exp 031 wiring, exp 032 recipe) ---
         use_perch_distill=training_cfg.get("use_perch_distill", False),
         perch_onnx_path=(
             str(ACTUAL_REPO_ROOT / training_cfg["perch_onnx_path"])

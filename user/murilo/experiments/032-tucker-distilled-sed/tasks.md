@@ -14,7 +14,7 @@ Run them with the interactive venv:
 |---|---|---|
 | [`test_att_head_logit_space.py`](../../tests/032-tucker-distilled-sed/test_att_head_logit_space.py) | 0.1 | AttHeadLogitSpace + GeMFreqPool (14 tests) |
 | [`test_efficientnet_encoder_post_head.py`](../../tests/032-tucker-distilled-sed/test_efficientnet_encoder_post_head.py) | 0.2 | EfficientNetEncoder `use_post_head` flag (11 tests) |
-| _planned_ `test_dual_supervision_loss.py` | 0.3 | dual-supervision loss + inference blend |
+| [`test_dual_supervision_loss.py`](../../tests/032-tucker-distilled-sed/test_dual_supervision_loss.py) | 0.3 | DistilledSEDFinetuneModule: dual-supervision loss + inference blend + KD branch + audit-validation tests (22 tests) |
 | _planned_ `test_tucker_mixup.py` | 0.4 | waveform mixup with `MIXUP_HARD=True` + focal×SS mixup |
 | _planned_ `test_specaugment.py` | 0.5 | 1 freq × 10 + 2 time × 10 masking |
 | _planned_ `test_warmup_cosine_schedule.py` | 0.6 | LinearLR(2ep) → CosineAnnealingLR(23ep) |
@@ -60,11 +60,16 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
 - [x] **New unit tests** at `user/murilo/tests/032-tucker-distilled-sed/test_efficientnet_encoder_post_head.py` — 11 tests cover: default mode unchanged for EffNet-B0 (320-d) + HGNet (1024-d), Tucker mode gives 1280-d, forward returns single tensor (not list), output is 4D, pooled forward still works, end-to-end with AttHeadLogitSpace, gradient flow from BCE loss reaches both encoder and head, spatial dims match across modes (only channel dim differs), drop_path_rate propagates. **11/11 pass**.
 - **Test gate**: ✅ PASSED.
 
-### 0.3 Add dual-supervision loss + inference blend
-- [ ] 0.3.1 In `SEDFinetuneModule`: replace clipwise-only BCE with `0.5 · BCE(clip_logits) + 0.5 · BCE(frame_max_logits)` (forward+loss audit § "Tucker's loss"; notebook cell 14).
-- [ ] 0.3.2 At inference (validation_step + `submission.py`): blend `0.5 · sigmoid(clip) + 0.5 · sigmoid(frame_max)` per-window — **but** for submission, blend in LOGIT space then single sigmoid at the end (dataset+inference audit § 7.3).
-- [ ] 0.3.3 Unit test: BCE values finite, gradient flows to both `cla` and `att` convs.
-- **Test gate**: training_step runs one fast-dev-run step on CPU without NaN/Inf.
+### 0.3 Add dual-supervision loss + inference blend — DONE
+- [x] 0.3.1 **New module** `src/birdclef/lightning/distilled_sed_finetune.py` with class `DistilledSEDFinetuneModule` (per user pushback on reproducibility: separate module rather than modifying `SEDFinetuneModule` in-place). Implements dual-supervision loss `clipwise_weight · BCE(clip_logits) + framewise_weight · BCE(frame_max_logits)` with default weights 0.5/0.5 matching Tucker's notebook cell 14. Verified equivalent to Tucker's exact formula (`bce = 0.5*bce_clip + 0.5*bce_frame; ps = (bce * wt * mk).sum(1) / (mk.sum(1) + 1e-8); cls_loss = (ps * sw).mean()`) when `wt=mk=ones, sw=ones` — direct fp comparison gives diff 1.19e-07. Module also imports `DistillHead` and `PerchTeacher` from `sed_finetune.py` (leaf utility classes; safe to share).
+- [x] 0.3.2 **Inference blend in module**: `_blended_probs` returns `blend_clip · σ(clip) + blend_frame · σ(frame_max)` in probability space, used by validation_step + predict_step. Matches Tucker's `_predict_from_waveforms` cell 14. **Submission-side logit-space blending across folds** lives in `submission.py` (deferred to task 1.3.3 per dataset+inference audit § 7.3) — not in this module.
+- [x] 0.3.3 Unit tests at [`test_dual_supervision_loss.py`](../../tests/032-tucker-distilled-sed/test_dual_supervision_loss.py) — 22 tests covering: training_step no-NaN, loss equals Tucker's formula, weights respected (synthetic logits), blend equals 0.5·σ(clip)+0.5·σ(frame_max), blend weights respected, gradient flow through both head convs, gradient flow to encoder when KD off, KD loss includes distill term, KD backbone gradient ONLY from distill branch (cls detached), KD backbone gradient present with α=1, configure_optimizers builds SequentialLR with per-step interval, LR curve correctness, fall-back when no warmup room, validation_step runs, per-sample mel norm produces ~zero mean unit std, **audit-validation tests**: exact formula match to cell 14, teacher waveform cropping (160000 samples; verifies center-crop on too-long and right-pad on too-short), inference blend bounded in [0,1], cls branch uses detached features when KD on, full loss equals cls + α · dist. **22/22 pass**.
+- [x] **Existing tests**: `tests/016-sed-architecture/` unchanged (same 19 pre-existing failures unrelated to this task). `test_att_head_logit_space.py` (task 0.1) + `test_efficientnet_encoder_post_head.py` (task 0.2) still pass.
+- **Train.py wiring**: `train.py` imports `DistilledSEDFinetuneModule` and constructs it with the Tucker-specific arg list (no soft_ce/ce/asl, no manifold_mixup, no multi-context).
+- **Known deviations** (documented in module docstring):
+  - `focal_missing` source weight (sw=0.0) not handled — our pipeline guarantees no missing cache files, so this is a no-op.
+  - `clip_grad_norm_(1.0)` deferred to Lightning's `Trainer(gradient_clip_val=1.0)` config (task 0.6 verifies).
+- **Test gate**: ✅ PASSED.
 
 ### 0.4 Port Tucker mixup recipe
 - [ ] 0.4.1 In `src/birdclef/data/sed.py` (or whatever owns the dataset class): replace v5j's spec-mixup with waveform mixup. `lam = Beta(0.4, 0.4)`, `MIXUP_HARD=True → lb = max(lb1, lb2)`, p=0.5 per sample. (dataset+inference audit § 2.3.)
