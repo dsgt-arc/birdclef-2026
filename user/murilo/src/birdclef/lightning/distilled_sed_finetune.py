@@ -157,19 +157,17 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
             )
 
         # --- Metrics ---
+        # Tucker-style: skip 0-positive classes from macro AUROC / AP.
+        # Replaces torchmetrics.MultilabelAUROC / MultilabelAveragePrecision
+        # which both return 0.0 (not NaN) for 0-positive classes and drag the
+        # macro average down. On exp 032's val fold (168 SS windows, 205 of
+        # 234 classes with 0 positives) this drops val/auroc from 0.89 → 0.11.
+        # See `src/birdclef/metrics/tucker_macro.py` + `scripts/diag_val_auroc.py`.
+        from birdclef.metrics import TuckerMacroAP, TuckerMacroAUC
+
         for split in ("train", "val", "test"):
-            setattr(
-                self,
-                f"{split}_cmap",
-                torchmetrics.AveragePrecision(
-                    task="multilabel", num_labels=num_classes, average="macro"
-                ),
-            )
-            setattr(
-                self,
-                f"{split}_auroc",
-                torchmetrics.AUROC(task="multilabel", num_labels=num_classes, average="macro"),
-            )
+            setattr(self, f"{split}_cmap", TuckerMacroAP(num_labels=num_classes))
+            setattr(self, f"{split}_auroc", TuckerMacroAUC(num_labels=num_classes))
             setattr(
                 self,
                 f"{split}_f1_macro",
@@ -372,6 +370,10 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
     def on_validation_epoch_end(self):
         self.log("val/cmap", self.val_cmap.compute(), prog_bar=True)
         self.log("val/auroc", self.val_auroc.compute(), prog_bar=True)
+        # Transparency: how many of num_classes classes had ≥1 positive in this
+        # val pool. With Tucker's small SS-only val (168 windows), this is
+        # ~30-50 / 234 — the rest are skipped by TuckerMacroAUC/AP.
+        self.log("val/n_evaluable", float(self.val_auroc.n_evaluable()), prog_bar=False)
         self.log("val/f1_macro", self.val_f1_macro.compute(), prog_bar=True)
         self.log("val/f1_micro", self.val_f1_micro.compute(), prog_bar=False)
         self.log("val/top1_acc", self.val_top1.compute(), prog_bar=True)
