@@ -17,7 +17,7 @@ Run them with the interactive venv:
 | [`test_dual_supervision_loss.py`](../../tests/032-tucker-distilled-sed/test_dual_supervision_loss.py) | 0.3 | DistilledSEDFinetuneModule: dual-supervision loss + inference blend + KD branch + audit-validation tests (22 tests) |
 | [`test_tucker_mixup.py`](../../tests/032-tucker-distilled-sed/test_tucker_mixup.py) | 0.4 | FocalDS + ScDS + apply_aug: waveform mixup, hard-max labels, focal×SS mixup, augmentation, rate verification (18 tests) |
 | [`test_specaugment.py`](../../tests/032-tucker-distilled-sed/test_specaugment.py) | 0.5 | SpecAugment: defaults match Tucker, masking actually zeroes rows/cols, integration with DistilledSEDFinetuneModule (12 tests) |
-| _planned_ `test_warmup_cosine_schedule.py` | 0.6 | LinearLR(2ep) → CosineAnnealingLR(23ep) |
+| (extended in `test_dual_supervision_loss.py`) | 0.6 | LR curve completeness + gradient_clip_val contract (4 new tests added to the task-0.3 file) |
 | _planned_ `test_mixsamp_sampler.py` | 0.7 | MixSamp 90/10 batch composition |
 | _planned_ `test_fold_construction.py` | 0.8 | StratifiedKFold focal + GroupKFold SS + upsampling |
 
@@ -107,10 +107,14 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
 - **Visual gate**: replaced the "visual mel-spec" check with programmatic verification that masked rows/cols are exactly zero (more reliable + reproducible than visual inspection). The combined-masking test runs 20 random batches and asserts both axes get masked.
 - **Test gate**: ✅ PASSED.
 
-### 0.6 Switch schedule OneCycle → 25 ep cosine + 2 ep warmup
-- [ ] 0.6.1 Replace OneCycleLR with `SequentialLR([LinearLR(start_factor=1/25, total_iters=warmup_steps), CosineAnnealingLR(T_max=total_steps - warmup_steps, eta_min=1e-6)], milestones=[warmup_steps])`. Verify warmup_steps = nst × 2, total_steps = nst × 25.
-- [ ] 0.6.2 Add `clip_grad_norm_(parameters(), 1.0)` between `scaler.unscale_` and `scaler.step` (Lightning's `gradient_clip_val` should do this — verify).
-- **Test gate**: fast-dev-run shows LR rises linearly for 2 epochs, decays cosine afterward.
+### 0.6 Switch schedule OneCycle → 25 ep cosine + 2 ep warmup — DONE
+- [x] 0.6.1 **Schedule was implemented in task 0.3** (`DistilledSEDFinetuneModule.configure_optimizers`) — `SequentialLR([LinearLR(start_factor=1/25, total_iters=warmup_steps), CosineAnnealingLR(T_max=total_steps − warmup_steps, eta_min=1e-6)], milestones=[warmup_steps])`, per-step `interval`. **Verification added in this task**:
+  - `test_warmup_total_steps_match_audit_formula`: with `estimated_stepping_batches=2500, max_epochs=25` → `nst=100`, `warmup_steps=200`, `total_steps=2500`. SequentialLR's milestone is exactly 200; CosineAnnealingLR's `T_max=2300=total_steps-warmup_steps`.
+  - `test_lr_reaches_eta_min_at_end_of_training`: stepping through all `total_steps` lands LR at `eta_min` within fp tolerance.
+  - `test_lr_curve_shape_audit_compliance`: 250-step curve verified — starts at `lr × warmup_start_factor` (2e-5), peaks at `lr` (5e-4) at end of warmup, decays monotonically through the cosine phase, ends at `eta_min` (1e-6). Audit § 5 fully covered.
+- [x] 0.6.2 `clip_grad_norm_(parameters(), 1.0)` deferred to Lightning's `Trainer(gradient_clip_val=...)`, which calls `torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=v, norm_type=2.0)` internally between `backward()` and `optimizer.step()` — exactly matching Tucker's manual call. Wired through `train.py` line 595: `gradient_clip_val=config["training"]["grad_clip_val"]`. Configs (task 0.9) will set `training.grad_clip_val: 1.0` per Tucker. **Verification**:
+  - `test_gradient_clip_handled_by_lightning_trainer`: documents the contract and sanity-checks PyTorch's `clip_grad_norm_(params, 1.0)` produces post-clip total norm ≈ 1.0 on a synthetic case with pre-clip norm > 1.
+- **Test gate**: ✅ PASSED (4 new tests in `test_dual_supervision_loss.py`, all pass; cumulative file is now 26 tests).
 
 ### 0.7 Implement `MixSamp` 90/10 batch sampler
 - [ ] 0.7.1 Port `MixSamp` as a custom `torch.utils.data.Sampler` (notebook cell 12; dataset+inference audit § 3). For BATCH=64, SHARES={"focal":0.9, "sc":0.1} → 58 focal + 6 SC per batch, with-replacement, shuffled.

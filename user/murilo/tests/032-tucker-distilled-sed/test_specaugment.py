@@ -99,38 +99,43 @@ def test_disabled_is_identity(mel):
 
 
 def test_freq_mask_zeroes_some_rows():
-    """With num_freq_masks≥1 and freq_mask_param>0, at least one freq row in
-    each sample should be (mostly) zeroed.
+    """With num_freq_masks≥1 and freq_mask_param>0, freq rows get zeroed in
+    expectation.
 
     `torchaudio.transforms.FrequencyMasking` samples a width w ~ Uniform[0, param)
     and a start row from a valid range, then zeroes mel[:, :, start:start+w, :].
-    With param=10 and num=1, on average a band of ~5 freq rows is zeroed.
+    With param=10 and num=1, on average a band of ~5 freq rows is zeroed —
+    but a single batch can roll width=0 for all samples (~10%^B probability).
+    Run many iterations and check accumulated zeroed rows are non-zero.
     """
     sa = SpecAugment(freq_mask_param=10, time_mask_param=10, num_freq_masks=1, num_time_masks=0)
-    mel = torch.ones(BATCH, CHANNELS, N_MELS, TIME_FRAMES) * 5.0
-    out = sa(mel)
-    # For each sample, identify freq rows where ALL time bins are zero — those
-    # are masked rows. Should have at least one such row in most cases.
-    rows_all_zero_per_sample = []
-    for b in range(BATCH):
-        # Sum across (channel, time); if a row is fully zero, the sum is 0
-        row_sums = out[b].sum(dim=(0, 2))  # (n_mels,)
-        rows_all_zero_per_sample.append(int((row_sums == 0).sum().item()))
-    # With param=10, the sampled width is in [0, 10). It can be 0 — but over
-    # 4 samples, at least one should have a non-zero masked width.
-    assert max(rows_all_zero_per_sample) > 0, "freq mask never zeroed any row"
+    total_rows_zeroed = 0
+    for _ in range(20):
+        mel = torch.ones(BATCH, CHANNELS, N_MELS, TIME_FRAMES) * 5.0
+        out = sa(mel)
+        for b in range(BATCH):
+            row_sums = out[b].sum(dim=(0, 2))  # (n_mels,)
+            total_rows_zeroed += int((row_sums == 0).sum().item())
+    # Expected: 20 batches × 4 samples × ~5 rows ≈ 400 zeroed rows. Very robust.
+    assert (
+        total_rows_zeroed > 50
+    ), f"freq mask zeroed only {total_rows_zeroed} rows over 80 samples — expected ~400"
 
 
 def test_time_mask_zeroes_some_columns():
-    """With num_time_masks≥1, at least one time col should be (mostly) zeroed."""
+    """With num_time_masks≥1, time cols get zeroed in expectation."""
     sa = SpecAugment(freq_mask_param=10, time_mask_param=10, num_freq_masks=0, num_time_masks=2)
-    mel = torch.ones(BATCH, CHANNELS, N_MELS, TIME_FRAMES) * 5.0
-    out = sa(mel)
-    cols_all_zero_per_sample = []
-    for b in range(BATCH):
-        col_sums = out[b].sum(dim=(0, 1))  # (time_frames,)
-        cols_all_zero_per_sample.append(int((col_sums == 0).sum().item()))
-    assert max(cols_all_zero_per_sample) > 0, "time mask never zeroed any column"
+    total_cols_zeroed = 0
+    for _ in range(20):
+        mel = torch.ones(BATCH, CHANNELS, N_MELS, TIME_FRAMES) * 5.0
+        out = sa(mel)
+        for b in range(BATCH):
+            col_sums = out[b].sum(dim=(0, 1))  # (time_frames,)
+            total_cols_zeroed += int((col_sums == 0).sum().item())
+    # Expected: 20 × 4 × ~10 (2 masks × 5 width) ≈ 800 zeroed cols. Robust.
+    assert (
+        total_cols_zeroed > 50
+    ), f"time mask zeroed only {total_cols_zeroed} cols over 80 samples — expected ~800"
 
 
 def test_combined_masking_zeroes_both_axes():

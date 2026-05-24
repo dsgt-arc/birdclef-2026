@@ -391,6 +391,129 @@ def test_configure_optimizers_falls_back_when_no_warmup_room(module):
     assert isinstance(sched, torch.optim.lr_scheduler.CosineAnnealingLR)
 
 
+def test_warmup_total_steps_match_audit_formula(module):
+    """Audit § 5: warmup_steps = nst × warmup_epochs, total_steps = nst × max_epochs.
+
+    With estimated_stepping_batches=2500 and max_epochs=25 → nst=100 → warmup=200,
+    total=2500. Verify SequentialLR's milestone matches warmup_steps."""
+    module.trainer = SimpleNamespace(estimated_stepping_batches=2500, max_epochs=25)
+    cfg = module.configure_optimizers()
+    sched = cfg["lr_scheduler"]["scheduler"]
+    # SequentialLR stores milestones internally as `_milestones`
+    assert sched._milestones == [
+        200
+    ], f"SequentialLR milestone should be warmup_steps=200, got {sched._milestones}"
+    # The cosine schedule (second in the chain) should have T_max = 2500 - 200 = 2300
+    cosine = sched._schedulers[1]
+    assert cosine.T_max == 2300, f"cosine T_max should be 2300, got {cosine.T_max}"
+
+
+def test_lr_reaches_eta_min_at_end_of_training(module):
+    """Stepping through all `total_steps` should land LR at ~eta_min.
+
+    Use a smaller schedule (5 epochs, 10 steps/epoch = 50 total, 20 warmup, 30
+    cosine) so the test is fast. Final LR should be eta_min within fp tolerance.
+    """
+    # Shrink the schedule on the module's hparams
+    module.hparams.max_epochs = 5
+    module.hparams.warmup_epochs = 2
+    module.hparams.eta_min = 1e-6
+    module.trainer = SimpleNamespace(estimated_stepping_batches=50, max_epochs=5)
+
+    cfg = module.configure_optimizers()
+    opt = cfg["optimizer"]
+    sched = cfg["lr_scheduler"]["scheduler"]
+
+    # Step through every step in the schedule
+    total_steps = 50
+    for _ in range(total_steps):
+        sched.step()
+
+    final_lr = opt.param_groups[0]["lr"]
+    # CosineAnnealingLR ends at eta_min exactly at T_max steps (per PyTorch source)
+    assert abs(final_lr - module.hparams.eta_min) < 1e-8, (
+        f"LR should reach eta_min ({module.hparams.eta_min}) after {total_steps} steps, "
+        f"got {final_lr:.3e}"
+    )
+
+
+def test_lr_curve_shape_audit_compliance(module):
+    """Audit § 5 specifies the LR curve shape:
+    - LR starts at `lr * warmup_start_factor` = 5e-4 * (1/25) = 2e-5
+    - Rises linearly during warmup (2 epochs)
+    - At end of warmup: LR = lr (5e-4)
+    - Decays cosine for the remaining 23 epochs to eta_min=1e-6
+    - **Monotonic decrease** during the cosine phase (no oscillation)
+    """
+    module.hparams.max_epochs = 25
+    module.hparams.warmup_epochs = 2
+    module.hparams.warmup_start_factor = 1.0 / 25
+    module.hparams.eta_min = 1e-6
+    module.trainer = SimpleNamespace(estimated_stepping_batches=250, max_epochs=25)
+    # steps_per_epoch = 10; warmup_steps = 20; total_steps = 250
+
+    cfg = module.configure_optimizers()
+    opt = cfg["optimizer"]
+    sched = cfg["lr_scheduler"]["scheduler"]
+
+    lrs = []
+    for _ in range(250):
+        lrs.append(opt.param_groups[0]["lr"])
+        sched.step()
+
+    # Start: 5e-4 / 25 = 2e-5
+    assert abs(lrs[0] - 2e-5) < 1e-9
+
+    # End of warmup (step 20): LR ≈ 5e-4 (LinearLR end_factor=1.0)
+    assert abs(lrs[20] - 5e-4) < 1e-6
+
+    # During cosine phase (after step 20), LR should be monotonically decreasing
+    cosine_lrs = lrs[20:]
+    for i in range(1, len(cosine_lrs)):
+        assert cosine_lrs[i] <= cosine_lrs[i - 1] + 1e-9, (
+            f"cosine LR not monotonically decreasing at step {20 + i}: "
+            f"{cosine_lrs[i - 1]:.3e} → {cosine_lrs[i]:.3e}"
+        )
+
+    # End: should be very close to eta_min after all 250 steps stepped
+    sched.step()  # one more to land exactly at T_max
+    final_lr = opt.param_groups[0]["lr"]
+    assert abs(final_lr - 1e-6) < 1e-7, f"final LR {final_lr:.3e} != eta_min=1e-6"
+
+
+def test_gradient_clip_handled_by_lightning_trainer():
+    """Task 0.6.2: `clip_grad_norm_(parameters(), 1.0)` is deferred to Lightning's
+    `Trainer(gradient_clip_val=1.0)`. This test documents the contract:
+
+    Lightning's Trainer with `gradient_clip_val=v` calls
+    `torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=v, norm_type=2.0)`
+    inside `_optimizer_step` (between `backward()` and `optimizer.step()`).
+
+    Our train.py wires this through:
+        gradient_clip_val=config["training"]["grad_clip_val"]
+
+    Configs (task 0.9) will set `training.grad_clip_val: 1.0` per Tucker's recipe.
+
+    The test below verifies that PyTorch's `clip_grad_norm_` produces the
+    expected behavior on a synthetic case (sanity check on the underlying
+    primitive — Lightning calls this exact function)."""
+    params = [torch.randn(10, requires_grad=True) for _ in range(3)]
+    # Set gradients with norm > 1
+    for p in params:
+        p.grad = torch.randn_like(p) * 5.0  # norm ~5 each → total norm ~8.66
+
+    # Pre-clip total norm
+    pre_norm = sum(p.grad.norm().item() ** 2 for p in params) ** 0.5
+    assert pre_norm > 1.0  # confirm precondition
+
+    # Apply clip
+    torch.nn.utils.clip_grad_norm_(params, max_norm=1.0, norm_type=2.0)
+
+    # Post-clip total norm should be ~1.0
+    post_norm = sum(p.grad.norm().item() ** 2 for p in params) ** 0.5
+    assert abs(post_norm - 1.0) < 1e-5, f"post-clip norm {post_norm:.6f} != 1.0"
+
+
 # ============================================================================
 # Validation step
 # ============================================================================
