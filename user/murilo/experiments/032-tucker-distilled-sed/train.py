@@ -56,7 +56,10 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger  # noqa: E4
 repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root / "src"))
 
-from birdclef.data.sed import SEDDataModule  # noqa: E402
+from birdclef.data.distilled_sed_datamodule import (  # noqa: E402
+    DistilledSEDDataModule,
+    build_sc_cache_meta,
+)
 from birdclef.data.soundscape import build_full_species_list  # noqa: E402
 from birdclef.encoders.efficientnet import EfficientNetEncoder  # noqa: E402
 from birdclef.heads.sed_head import (  # noqa: E402
@@ -436,9 +439,11 @@ def main():
     # Build data module
     # ========================================================================
 
-    # When mel runs on GPU, all datasets return raw waveforms (no CPU mel).
-    train_transform = None if gpu_mel_transform is not None else audio_transform
-    eval_transform = None if gpu_mel_transform is not None else audio_transform
+    # DistilledSEDDataModule always returns raw waveforms — the LightningModule
+    # computes mel on GPU via mel_transform. The legacy audio_transform handling
+    # is unused here. (Retained `audio_transform` build above for backward-
+    # compatible config keys; reference suppressed via `_ = audio_transform`.)
+    _ = audio_transform
 
     # Fold-based CV: override test settings, load fold assignments
     fold_id = args.fold
@@ -454,24 +459,63 @@ def main():
         config["data"]["soundscape_test_files"] = 0
         logger.info(f"Fold mode: fold_id={fold_id}, assignments={fold_assignments_path}")
 
-    data_module = SEDDataModule(
-        data_dir=str(data_dir),
-        taxonomy_csv=str(taxonomy_csv),
+    # ------------------------------------------------------------------
+    # DistilledSEDDataModule (task 0.8): load focal + SS data, build folds.
+    # ------------------------------------------------------------------
+    import pandas as pd
+
+    focal_df = pd.read_csv(data_dir / "train.csv")
+    sc_labels_df = pd.read_csv(data_dir / "train_soundscapes_labels.csv")
+    labeled_sc_files = sorted(sc_labels_df["filename"].unique().tolist())
+    sc_df = build_sc_cache_meta(labeled_sc_files)
+    species_to_idx = {s: i for i, s in enumerate(species_list)}
+
+    window_samples = int(window_duration * sample_rate)
+    data_cfg = config["data"]
+    # Tucker's mixup defaults are configured under config["mixup"] for clarity;
+    # all task-0.4 FocalDS kwargs flow through here.
+    mixup_cfg = config.get("mixup", {}) or {}
+    focal_ds_kwargs = {
+        "mixup_prob": mixup_cfg.get("focal_focal_prob", 0.5),
+        "mixup_alpha": mixup_cfg.get("alpha", 0.4),
+        "mixup_hard": mixup_cfg.get("hard", True),
+        "focal_sc_mixup_prob": mixup_cfg.get("focal_sc_prob", 0.5),
+        "focal_sc_mixup_alpha": mixup_cfg.get("focal_sc_alpha", 0.4),
+        "aug_prob": mixup_cfg.get("aug_prob", 0.5),
+    }
+    # Audio dirs: focal lives at data_dir/train_audio, SS at data_dir/train_soundscapes.
+    focal_audio_dir = data_dir / "train_audio"
+    sc_audio_dir = data_dir / "train_soundscapes"
+    from birdclef.data.distilled_sed_dataset import _default_audio_loader as _audio_loader
+
+    def _focal_loader(path, n_samples, start=0, sr=sample_rate):
+        return _audio_loader(focal_audio_dir / path, n_samples, start, sr)
+
+    def _sc_loader(path, n_samples, start=0, sr=sample_rate):
+        return _audio_loader(sc_audio_dir / path, n_samples, start, sr)
+
+    data_module = DistilledSEDDataModule(
+        focal_df=focal_df,
+        sc_df=sc_df,
+        sc_labels_df=sc_labels_df,
+        species_to_idx=species_to_idx,
+        num_classes=num_classes,
+        fold_k=fold_id if fold_id is not None else 0,
+        n_folds=data_cfg.get("n_folds", 5),
+        focal_seed=data_cfg.get("seed", 42),
+        min_sample=data_cfg.get("min_sample", 20),
+        window_samples=window_samples,
         sample_rate=sample_rate,
-        window_duration=window_duration,
-        batch_size=config["data"]["batch_size"],
-        num_workers=config["data"]["num_workers"],
-        val_fraction=config["data"].get("val_fraction", 0.1),
-        test_fraction=config["data"].get("test_fraction", 0.1),
-        soundscape_val_files=config["data"].get("soundscape_val_files", 8),
-        soundscape_test_files=config["data"].get("soundscape_test_files", 8),
-        seed=config["data"].get("seed", 42),
-        transform=train_transform,
-        eval_transform=eval_transform,
-        fold_id=fold_id,
-        fold_assignments_path=str(fold_assignments_path) if fold_assignments_path else None,
-        dual_validation=config["data"].get("dual_validation", False),
-        rms_sampling=training_cfg.get("rms_sampling", False),
+        batch_size=data_cfg["batch_size"],
+        focal_share=data_cfg.get("focal_share", 0.9),
+        sc_share=data_cfg.get("sc_share", 0.1),
+        steps_per_epoch=data_cfg.get("steps_per_epoch"),
+        num_workers=data_cfg.get("num_workers", 0),
+        focal_audio_loader=_focal_loader,
+        sc_audio_loader=_sc_loader,
+        focal_ds_kwargs=focal_ds_kwargs,
+        seed_epoch_shift=data_cfg.get("seed_epoch_shift", True),
+        base_seed=data_cfg.get("base_seed", 42),
     )
 
     # ========================================================================
@@ -628,18 +672,11 @@ def main():
     # Test
     # ========================================================================
 
+    # DistilledSEDDataModule does not expose a test_dataloader — Phase 1
+    # uses the val fold (held-out SS) as its LB-style metric, and there's no
+    # separate test set in the Tucker recipe. Skip the test stage entirely.
     test_results = None
-    has_test = data_module.test_dataset is not None
-    if not has_test:
-        logger.info("No test set (test_fraction=0) — skipping test phase")
-    elif not args.fast_dev_run and checkpoint_callback.best_model_path:
-        logger.info(f"Testing: {checkpoint_callback.best_model_path}")
-        test_results = trainer.test(
-            pl_module, datamodule=data_module, ckpt_path=checkpoint_callback.best_model_path
-        )
-    elif args.fast_dev_run:
-        logger.info("Fast dev run — running test step")
-        test_results = trainer.test(pl_module, datamodule=data_module)
+    logger.info("Skipping test phase (DistilledSEDDataModule has no test split)")
 
     # ========================================================================
     # Save results

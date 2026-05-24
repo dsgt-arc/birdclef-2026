@@ -19,7 +19,7 @@ Run them with the interactive venv:
 | [`test_specaugment.py`](../../tests/032-tucker-distilled-sed/test_specaugment.py) | 0.5 | SpecAugment: defaults match Tucker, masking actually zeroes rows/cols, integration with DistilledSEDFinetuneModule (12 tests) |
 | (extended in `test_dual_supervision_loss.py`) | 0.6 | LR curve completeness + gradient_clip_val contract (4 new tests added to the task-0.3 file) |
 | [`test_mixsamp_sampler.py`](../../tests/032-tucker-distilled-sed/test_mixsamp_sampler.py) | 0.7 | MixSamp batch composition, with-replacement sampling, edge cases (14 tests) |
-| _planned_ `test_fold_construction.py` | 0.8 | StratifiedKFold focal + GroupKFold SS + upsampling |
+| [`test_fold_construction.py`](../../tests/032-tucker-distilled-sed/test_fold_construction.py) | 0.8 | Focal StratifiedKFold + GroupKFold SS + label-matrix + DistilledSEDDataModule end-to-end (20 tests) |
 
 The shared `user/murilo/tests/pytest.ini` configures the runner for this layout (`testpaths = .`, `python_files = test_*.py`).
 
@@ -134,13 +134,21 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
   - **End-to-end with `DataLoader` + `ConcatDataset`**: integration test confirms the sampler works as `batch_sampler=` argument and produces the expected per-source counts at retrieval time.
 - **Test gate**: ✅ PASSED. Fast-dev-run with composition logging is part of task 1.1 (Phase 1 fast-dev-run); the unit-test integration test already exercises the DataLoader path.
 
-### 0.8 5-fold construction (Phase 1 = fold 0 only)
-- [ ] 0.8.1 Focal `StratifiedKFold(n_splits=5, shuffle=True, random_state=42)` on `primary_label` with `drop_duplicates("original_idx")` (dataset+inference audit § 1.1).
-- [ ] 0.8.2 Soundscape `GroupKFold(n_splits=5)` on `filename` — all 66 labeled files participate (dataset+inference audit § 1.2).
-- [ ] 0.8.3 Rare-species upsampling: `MIN_SAMPLE=20`, applied AFTER fold assignment so duplicates stay in their original's fold (dataset+inference audit § 1.3).
-- [ ] 0.8.4 All-zero-label SS handling: **match Tucker (include them as all-negative training samples)** per the dataset+inference audit § 12 default. 53 windows ≈ 0.7% of training samples; sit between annotated windows in otherwise-labeled files.
-- [ ] 0.8.5 Phase 1 trains fold 0 only; Phase 2 extends to {0,1,2,3,4} if Phase 1 passes the gate.
-- **Test gate**: fold assignment matches a known reference (focal duplicates share original's fold; no SS-window leak across folds).
+### 0.8 5-fold construction (Phase 1 = fold 0 only) — DONE
+- [x] 0.8.1 `build_focal_folds` in new file `src/birdclef/data/distilled_sed_datamodule.py`. Adds `original_idx` (range(N)), runs `StratifiedKFold(n_splits=5, shuffle=True, random_state=42)` on `primary_label` via `drop_duplicates("original_idx")` first, merges fold column back. Tested: balanced class distribution per fold, seed reproducibility, error handling for existing `fold`/`original_idx` columns.
+- [x] 0.8.2 `build_sc_folds` uses `GroupKFold(n_splits=5)` on filename — all 12 windows of any file share a fold. `build_sc_cache_meta` enumerates 12 × 5s windows per labeled file (66 files × 12 = 792 rows per audit § 1.4). All labeled SS files participate (S22 included).
+- [x] 0.8.3 Rare-species upsampling: `MIN_SAMPLE=20` (configurable), applied AFTER `merge` of fold column so duplicates inherit source's fold. Tested: `(original_idx, fold)` consistency = no cross-fold leak after upsampling (`leaks = df.groupby("original_idx")["fold"].nunique()`; all == 1).
+- [x] 0.8.4 `build_sc_label_matrix` builds Y_SC by matching `(filename, start_sec)` against `train_soundscapes_labels.csv`. Unmatched rows → all-zero (53 windows of the 792 per audit § 1.4 — included as all-negative training samples, matching Tucker's default). Tested: matched rows produce correct multi-hot labels; unmatched rows all-zero; multiple label-CSV rows with same `(filename, start_sec)` are unioned; unknown species silently skipped.
+- [x] 0.8.5 **`DistilledSEDDataModule`** wraps everything: setup() builds folds + Y_SC; `train_dataloader()` returns `ConcatDataset([FocalDS, ScDS])` with `MixSamp(90/10)`; `val_dataloader()` returns ScDS on val fold only (no focal validation, matching Tucker's `_predict_from_waveforms` on labeled SS). Phase 1 trains `fold_k=0` only; Phase 2 will sweep {0,1,2,3,4}.
+- [x] **Task 0.7.2 deferred wiring**: `DistilledSEDDataModule` uses `batch_sampler=MixSamp(...)` with `num_workers=0`. Per-epoch seed shift (`seed=base_seed + current_epoch`) implemented in `train_dataloader()` — Lightning calls it once per epoch when `reload_dataloaders_every_n_epochs` is set; otherwise the seed stays fixed (acceptable for fast-dev-run; production configs will enable reload).
+- [x] **train.py wired**: replaced `SEDDataModule` with `DistilledSEDDataModule`. Loads `train.csv` + `train_soundscapes_labels.csv` from `data_dir`, builds `sc_df` via `build_sc_cache_meta`, constructs `species_to_idx` from species list, and forwards mixup/augmentation params from `config["mixup"]`. Audio loaders resolve paths against `data_dir/train_audio` (focal) and `data_dir/train_soundscapes` (SS). Test stage skipped (Tucker's recipe has no separate test set; val fold's labeled SS is the LB-style metric).
+- [x] **Tests** at [`test_fold_construction.py`](../../tests/032-tucker-distilled-sed/test_fold_construction.py) — 20 tests, all pass:
+  - Focal folds: balanced class distribution per fold, original_idx range, upsampling preserves fold, no cross-fold leak (verified via `groupby("original_idx")["fold"].nunique() == 1`), seed reproducibility, error handling for misformatted inputs.
+  - SS cache: 12 windows × 60s file structure; audit § 1.4 count match (66 → 792).
+  - SS folds: all windows of any file share a fold; all 5 folds populated.
+  - Label matrix: correct multi-hot for matched (filename, start_sec); all-zero for unmatched; multi-row union; unknown species skipped.
+  - DataModule: setup() populates folds + Y_SC; explicit steps_per_epoch honored; train DataLoader batch composition = MixSamp output (16 = 14 focal + 2 sc with shares=0.9/0.1); val DataLoader uses ONLY val-fold rows; no file leak between train and val; changing fold_k swaps held-out files.
+- **Test gate**: ✅ PASSED.
 
 ### 0.9 Write paired configs
 - [ ] 0.9.1 `configs/tucker_control.yaml` — full Tucker recipe, `use_perch_distill: false`, `save_top_k: -1`, fold 0 only.
