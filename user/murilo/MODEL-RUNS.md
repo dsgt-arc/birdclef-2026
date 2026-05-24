@@ -945,6 +945,58 @@ Two pending submissions:
 - `v5j_kd_last`: tests "0.890 was ckpt-selection artifact" vs "KD doesn't transfer"
 - `v5j_control_last`: tests "ep 19 weights recover 0.906 on new codebase" (isolates ckpt-selection from codebase drift)
 
+## Experiment 032: Tucker distilled-SED Full Replication — REJECTED (catastrophic) — pipeline compromised
+
+Faithful port of `tuckerarrants/bc2026-distilled-sed`: EffNet-B0 NS-JFT
+(use_post_head=True, 1280-d) + AttHeadLogitSpace (LOGIT-space aggregation) +
+dual-supervision (0.5·BCE clip + 0.5·BCE frame_max) + Perch v2 embedding-MSE KD
+(feat.detach() on cls; α=1.0) + waveform mixup hard-max (Beta(0.4,0.4)) +
+focal×SS mixup + SpecAugment (1×freq×10 + 2×time×10) + 25 ep AdamW + 2 ep
+warmup + cosine + 90/10 focal/SS MixSamp + StratifiedKFold focal +
+GroupKFold SS. Fold 0, seed=42.
+
+| Slug | Variant | Tucker val macro AUC (fold 0) | LB | Δ paired ctrl | Δ vs v5j_control_last 0.897 | Checkpoint |
+|------|---------|----------:|---:|---:|---:|---|
+| `distilled-sed-control` | Tucker recipe, KD OFF (last.ckpt, ep 24) | 0.8928 | **0.522** | — | **−0.375** | `032-tucker-distilled-sed/.../2026-exp032-distilled-sed-control/last.ckpt` |
+| `distilled-sed-kd` | Tucker recipe + Perch v2 KD ON (last.ckpt, ep 24) | TBD (KD ranker rerun) | **0.513** | **−0.009** | **−0.384** | `032-tucker-distilled-sed/.../2026-exp032-distilled-sed-kd/last.ckpt` |
+
+### Verdict: REJECTED but unreadable (pipeline broken, not hypothesis falsified)
+
+Both runs collapsed to barely-above-random LB despite offline Tucker macro AUC
+tracking Tucker's published 0.91 trajectory exactly (control ep 6 = 0.889 vs
+Tucker's ~0.91 — matches to 4 dp). The paired Δ (−0.009) is within seed noise
+and is uninformative because the control itself is broken.
+
+### Leading hypothesis (HIGH-likelihood, blocking)
+
+**Training/inference mel-pipeline mismatch.**
+
+- Tucker: `power_mel → AmplitudeToDB(top_db=80) → per-sample (mel - mean) / (std + eps)`. One normalization pass at both training AND inference.
+- Our training: NNAudio `norm_type="amplitude_to_db"` does `power_to_db → z-score → min-max [0,1]`, THEN the module's `per_sample_mel_norm` does another z-score. **Three normalization passes**.
+- Our inference (`compute_mel_tucker` in submission.py): single z-score after AmplitudeToDB — matches Tucker but NOT our training distribution.
+
+Model trained on triple-normalized features sees single-normalized features at
+inference → output is near-random. Single bug sufficient to explain LB 0.522
+given a model that scores macro AUC 0.89 on its own training-distribution val.
+
+### Next steps (see `experiments/032-tucker-distilled-sed/tasks.md` Phase D)
+
+1. Side-by-side numerical test of our mel pipeline vs Tucker's (`scripts/diag_mel_pipeline.py`).
+2. Fix training mel to match Tucker's single-pass normalization (add `norm_type: "tucker_amp2db"` to NNAudioMelSpectrogram).
+3. Add end-to-end validation script (`scripts/validate_end_to_end.py`) — load ckpt, run kernel inference path on `train_soundscapes/`, compute macro AUC against labels, compare against offline val. Make this a pre-flight check before every LB submission.
+4. Retrain paired control + KD with fixed mel.
+5. Re-export + re-submit. Phase 2 (5-fold) and Phase 3 (KD diagnosis) BLOCKED until end-to-end validation passes AND retrained control LB ≥ 0.900.
+
+### Methodology lesson
+
+**Offline val/cmap/auroc cannot detect training-inference distribution
+mismatch** because the offline val uses the training pipeline. End-to-end
+validation against soundscape labels using the inference kernel's full path
+must be a pre-flight check, not an after-the-fact diagnostic.
+
+See `experiments/032-tucker-distilled-sed/results.md` for full LB table,
+hypothesis ranking, and audit checklist.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

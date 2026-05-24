@@ -178,39 +178,96 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
 
 ---
 
-## Phase 1 — Paired single-fold training + LB
+## Phase 1 — Paired single-fold training + LB — DONE (REJECT, blocked on Phase D audit)
 
-### 1.1 Fast-dev-run gradient check
-- [ ] 1.1.1 `bash sbatch/run.sh configs/distilled_sed_kd.yaml --fast-dev-run` → 1 batch forward+backward, confirm gradients flow through both cls head and dist head, dist_loss is finite, no NaN/Inf.
-- [ ] 1.1.2 Repeat for `distilled_sed_control.yaml` with `use_perch_distill: false`.
-- **Gate**: both fast-dev-runs succeed cleanly.
+### 1.1 Fast-dev-run gradient check — DONE
+- [x] 1.1.1 fast-dev-run KD config (job 9087739, PASSED — see CONTEXT.md 2026-05-24).
+- [x] 1.1.2 fast-dev-run control config (job 9087357, PASSED).
+- **Gate**: ✅ both passed cleanly.
 
-### 1.2 Submit paired SLURM jobs
-- [ ] 1.2.1 `bash sbatch/run.sh configs/distilled_sed_control.yaml` — KD off.
-- [ ] 1.2.2 `bash sbatch/run.sh configs/distilled_sed_kd.yaml` — KD on.
-- [ ] 1.2.3 Verify both land on `gpu-rtx6000` (control hardware variance). If they land on different nodes, log the disparity — exp 031 showed ~0.007 LB cross-node variance.
-- [ ] 1.2.4 Monitor halt conditions per `proposal.md` § Halt-watch: `dist_loss` plateaus >0.01 by ep 5 → halt; either loss NaN → halt.
+### 1.2 Submit paired SLURM jobs — DONE
+- [x] 1.2.1 control submitted (job 9088255). Completed 02:54 EDT, walltime 3h45m. All 25 epochs saved.
+- [x] 1.2.2 KD submitted (job 9088258). Completed 03:35 EDT, walltime 4h27m. All 25 epochs saved.
+- [x] 1.2.3 Both on `gpu-rtx6000`, distinct nodes (atl1-1-03-006-17-0 vs ...21-0). Cross-node variance ~0.007 expected.
+- [x] 1.2.4 No halt conditions tripped. No NaN. `dist_loss` reached Tucker's 0.003 floor by ep 25.
 
-### 1.3 ONNX export + Kaggle pipeline
-- [ ] 1.3.1 Export each fold's best-by-macro checkpoint to ONNX. **Fix the export wrapper bug**: use N_MELS=256 consistently OR mark mel/time axes as dynamic in `dynamic_axes` (dataset+inference audit § 7.2).
-- [ ] 1.3.2 Upload weights datasets to Kaggle (`distilled_sed_control` + `distilled_sed_kd` slugs).
-- [ ] 1.3.3 Add MODEL_SLUGS entries in `submission.py`. Implement inference in **logit space** (per-window `0.5·clip + 0.5·frame_max`, fold-mean, 5-tap Gaussian smooth, single sigmoid).
-- [ ] 1.3.4 Push paired Kaggle kernels.
+### 1.3 ONNX export + Kaggle pipeline — DONE
+- [x] 1.3.1 New `experiments/010-submission-pipeline/scripts/export_distilled_sed.py` — exports pre-blended logits, dynamic mel+time axes (fixes audit § 7.2). last.ckpt (ep 24) for both control + KD.
+- [x] 1.3.2 Datasets uploaded: `birdclef-2026-distilled-sed-{control,kd}-weights`.
+- [x] 1.3.3 `submission.py` extended with `compute_mel_tucker` + `predict_soundscape_tucker` (LOGIT-space per-window blend → 5-tap Gauss smooth → single sigmoid).
+- [x] 1.3.4 Both kernels pushed; both ran cleanly on Kaggle (no errors).
 
-### 1.4 LB submissions + decision matrix
-- [ ] 1.4.1 Submit both kernels to LB.
-- [ ] 1.4.2 Compute paired Δ (distilled_sed_kd − distilled_sed_control).
-- [ ] 1.4.3 Apply success matrix (`proposal.md` § Falsifiable):
-  - **CONFIRM**: Δ ≥ +0.014 → Phase 2 (5-fold)
-  - **PARTIAL**: Δ +0.007 to +0.013 → Phase 2 with caveats
-  - **WEAK**: Δ +0.001 to +0.006 → 4-fold to disambiguate or accept noise
-  - **REJECT**: Δ ≤ 0 → Phase 3 diagnosis
-- [ ] 1.4.4 Also read `distilled_sed_control` LB vs v5j_control_last 0.897 to isolate recipe-vs-KD attribution.
-- [ ] 1.4.5 Update `results.md` with paired-table + verdict + post-mortem.
+### 1.4 LB submissions + verdict — DONE (REJECT, but verdict on implementation not hypothesis)
+- [x] 1.4.1 Both kernels submitted to LB.
+- [x] 1.4.2 Paired Δ = −0.009 (KD slightly worse than control, within noise).
+- [x] 1.4.3 Decision matrix → **REJECT** by the literal threshold (Δ ≤ 0), but the verdict is uninformative because the control itself is broken (collapsed to LB 0.522, far below the secondary baseline of 0.897).
+- [x] 1.4.4 Secondary read: `distilled_sed_control` LB 0.522 vs v5j_control_last 0.897 = **−0.375**. Recipe alone catastrophically regressed → "investigate before reading the KD delta" gate triggered.
+- [x] 1.4.5 Results table + verdict written to `results.md`.
+
+### Phase 1 LB summary
+
+| Run | LB | Δ paired ctrl | Δ vs v5j_control_last 0.897 | Δ vs target 0.910 |
+|---|---:|---:|---:|---:|
+| distilled_sed_control (last.ckpt) | **0.522** | — | **−0.375** | **−0.388** |
+| distilled_sed_kd (last.ckpt) | **0.513** | **−0.009** | **−0.384** | **−0.397** |
 
 ---
 
-## Phase 2 — 5-fold ensemble (only if Phase 1 CONFIRM or PARTIAL)
+## Phase D — COMPREHENSIVE AUDIT (NEW, BLOCKING)
+
+**Why this phase exists**: Phase 1 LB collapsed to ~0.52 (near-random) on BOTH
+control and KD. Offline Tucker macro AUC tracked Tucker's published trajectory
+to 4 dp (control ep 6 = 0.889, Tucker's = 0.91). This means the model IS
+learning something on the training distribution but predicts garbage on the
+LB. **Strong leading hypothesis**: training/inference mel-pipeline mismatch.
+
+Phase D blocks Phase 2 and Phase 3.
+
+### D.1 Confirm vendored notebook is current
+- [ ] D.1.1 `kaggle kernels pull tuckerarrants/bc2026-distilled-sed` and diff against `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/`. Update vendored copy if upstream changed since 2026-05-23.
+
+### D.2 Audit mel pipeline (highest-EV)
+- [ ] D.2.1 Read Tucker's `MelSpecTransform` (notebook lines 400–407) + training per-sample norm loop (lines 945–950) + inference mel function (lines 1240–1246). Document Tucker's actual normalization sequence (currently believed: `power_mel → AmplitudeToDB(top_db=80) → per-sample z-score`).
+- [ ] D.2.2 Read our `NNAudioMelSpectrogram._normalize_amplitude_to_db` (src/birdclef/preprocessing/nnaudio_mel.py) + `DistilledSEDFinetuneModule._compute_mel` (src/birdclef/lightning/distilled_sed_finetune.py). Document our actual normalization sequence (currently believed: `power_to_db → z-score → min-max [0,1] → another z-score`).
+- [ ] D.2.3 **Side-by-side numerical test** in a script (`scripts/diag_mel_pipeline.py`):
+  - Load 1 deterministic waveform from train_soundscapes.
+  - Feed through Tucker's pipeline (vendored .py) → save mel_tucker.npy.
+  - Feed through our `_compute_mel` (NNAudio + module's per-sample norm) → save mel_ours.npy.
+  - Compare element-wise. Expected: identical to ~1e-6 if pipelines match; large diff if mismatched.
+  - Also compare against the kernel's `compute_mel_tucker`. The kernel SHOULD match Tucker; the question is whether training matches Tucker.
+
+### D.3 Fix training mel to match Tucker (if D.2 confirms mismatch)
+- [ ] D.3.1 Decide between (a) align our training mel to Tucker's verbatim, or (b) align inference kernel to our training mel. Default = (a) for Tucker faithfulness.
+- [ ] D.3.2 Implement: add a new `norm_type: "tucker_amp2db"` to `NNAudioMelSpectrogram` that does ONLY `10*log10(mel) → top_db clamp` (no z-score, no min-max). Module's existing `per_sample_mel_norm` completes the single z-score on top. Total: `mel → 10·log10 → clamp → z-score`, matching Tucker exactly.
+- [ ] D.3.3 OR alternative: bypass NNAudio at training time, use torchaudio MelSpec + AmplitudeToDB (matches Tucker's `MelSpecTransform` byte-for-byte). Trade-off: introduces another path in train.py, but eliminates NNAudio backend drift risk.
+- [ ] D.3.4 Add unit test: `test_mel_pipeline_matches_tucker.py` — feed same waveform through both pipelines, assert mel outputs match to atol=1e-5.
+- [ ] D.3.5 Update config `distilled_sed_{control,kd}.yaml` `mel.norm_type` to the new value.
+
+### D.4 Audit lower-likelihood candidates (if D.3 doesn't recover LB)
+- [ ] D.4.1 **AttHeadLogitSpace shape**: verify `frame_logits.max(dim=-1)` (ours) is semantically identical to `framewise.permute(0, 2, 1).max(dim=1)` (Tucker, after his permute). Write a unit test using a random `(B, C, T)` tensor.
+- [ ] D.4.2 **NNAudio vs torchaudio MelSpec drift**: compare the raw mel power outputs (BEFORE any normalization) between NNAudio and torchaudio on the same waveform. Expected: small drift due to mel filterbank differences (slaney vs htk).
+- [ ] D.4.3 **Audio loading**: compare `submission.py:load_audio_chunk` output (sample-level) against `librosa.load(file, sr=32000, offset=t, duration=5.0)` (Tucker's training side). Confirm sample-by-sample agreement.
+- [ ] D.4.4 **ONNX wrapper output**: feed the same mel through PyTorch wrapper and ONNX session; max diff should already be < 5e-2 (verified at export time), but re-verify under inference conditions.
+- [ ] D.4.5 **Species mapping**: confirm the `species_mapping_2026_234.json` we used is identity 234→234 (exp 030/031 used the same file at LB 0.897, so this is almost certainly OK).
+
+### D.5 End-to-end validation before any retraining
+- [ ] D.5.1 Add `scripts/validate_end_to_end.py`: load a checkpoint, run inference on `train_soundscapes/` files using the EXACT same audio loading + mel + ONNX path as the Kaggle kernel, compute macro AUROC against `train_soundscapes_labels.csv`. If this matches the offline val macro AUC to 2 dp, the pipeline is end-to-end consistent.
+- [ ] D.5.2 Run D.5.1 against the current `last.ckpt` (LB 0.522). Expected: macro AUROC ≈ 0.52 if the mismatch hypothesis is right.
+- [ ] D.5.3 Bake D.5.1 into the workflow: run before every LB submission going forward.
+
+### D.6 Retrain after fix
+- [ ] D.6.1 Resubmit paired training with the fixed mel pipeline. Same configs, same data, same seed=42, single fold 0.
+- [ ] D.6.2 Run D.5.1 on the retrained checkpoint. Expected: offline ≈ Tucker's 0.91 trajectory AND end-to-end inference matches.
+- [ ] D.6.3 Re-export ONNX, re-submit to LB. Expected: control LB ≥ 0.90, KD LB at control + paired Δ.
+
+### Phase D gate
+Phase 2 (5-fold) and Phase 3 (diagnosis) DO NOT begin until:
+- D.5.1 passes (end-to-end macro AUROC matches offline val to 2 dp), AND
+- Retrained control LB ≥ 0.900 (matches v5j_control_last baseline).
+
+---
+
+## Phase 2 — 5-fold ensemble (deferred until Phase D + retrain CONFIRM/PARTIAL)
 
 - [ ] 2.1 Extend training to folds {1, 2, 3, 4}.
 - [ ] 2.2 Add OOF inference + per-class macro AUC reporting.
@@ -219,7 +276,7 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
 
 ---
 
-## Phase 3 — Diagnosis (only if Phase 1 REJECT)
+## Phase 3 — KD-recipe diagnosis (deferred; only meaningful if retrained CONTROL approaches Tucker's 0.91 single-fold)
 
 Ranked by EV per LB submission:
 
@@ -232,7 +289,7 @@ Ranked by EV per LB submission:
 
 ## Closeout
 
-- [ ] C.1 Update `experiments/032-tucker-distilled-sed/results.md` with final table + verdict.
-- [ ] C.2 Update `user/murilo/MODEL-RUNS.md` with LB numbers.
-- [ ] C.3 Update `user/murilo/CONTEXT.md` "Pick up here" with the next direction.
-- [ ] C.4 PR #51 ready for merge.
+- [x] C.1 Update `experiments/032-tucker-distilled-sed/results.md` with Phase 1 LB table + REJECT verdict + leading hypothesis.
+- [x] C.2 Update `user/murilo/MODEL-RUNS.md` with the Phase 1 LB numbers.
+- [ ] C.3 Update `user/murilo/CONTEXT.md` "Pick up here" — next session = Phase D audit (D.1 → D.6).
+- [ ] C.4 PR #51 ready for merge (currently 19+ commits ahead of main; will rebase after Phase D + retrain).

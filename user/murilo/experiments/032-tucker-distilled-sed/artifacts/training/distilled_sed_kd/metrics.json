@@ -1,0 +1,60 @@
+{
+  "auroc": 0.11332889646291733,
+  "cmap": 0.0896240845322609,
+  "f1_macro": 0.06270834803581238,
+  "f1_micro": 0.7178571224212646,
+  "top1_accuracy": 0.8193548321723938,
+  "top5_accuracy": 0.896774172782898,
+  "loss": 0.02916526235640049,
+  "metrics_source": "val",
+  "architecture": "sed",
+  "encoder_type": "efficientnet",
+  "encoder_model": "tf_efficientnet_b0.ns_jft_in1k",
+  "embed_dim": null,
+  "sed_head": {
+    "hidden_dim": 512,
+    "dropout": 0.5,
+    "gem_p": 3.0
+  },
+  "mel": {
+    "n_fft": 2048,
+    "n_mels": 256,
+    "hop_length": 512,
+    "fmax": 16000,
+    "sample_rate": 32000
+  },
+  "dataset": "birdclef-2026",
+  "num_classes": 234,
+  "best_val_score": 0.09237702935934067,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/best-epochepoch=11.ckpt",
+  "stopped_epoch": 25,
+  "training": {
+    "max_epochs": 25,
+    "lr": 0.0005,
+    "head_lr": 0.0005,
+    "weight_decay": 0.0001,
+    "warmup_epochs": 2,
+    "batch_size": 64,
+    "num_workers": 0,
+    "precision": "16-mixed",
+    "early_stopping_patience": 999,
+    "grad_clip_val": 1.0,
+    "accumulate_grad_batches": 1,
+    "clipwise_weight": 0.5,
+    "framewise_weight": 0.5,
+    "blend_clip": 0.5,
+    "blend_frame": 0.5,
+    "mixup_prob": 0.5,
+    "mixup_alpha": 0.5,
+    "mixup_mode": "interpolate",
+    "loss_type": "bce",
+    "window_duration": 5.0,
+    "sample_rate": 32000
+  },
+  "compute": {
+    "gpu": "0",
+    "slurm_job_id": 9088258,
+    "node": "atl1-1-03-006-21-0",
+    "cpus_per_task": "8"
+  }
+}

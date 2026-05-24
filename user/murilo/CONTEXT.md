@@ -3,79 +3,80 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-24 (Phase 1 mid-flight. Full paired 25-ep training
-started ~midnight EDT, jobs still running at session end. Critical
-val-metric bug found + fixed mid-session. Next session: post-hoc rank the
-finished checkpoints with `score_all_checkpoints.py`, then proceed to
-LB submission.)
+**Last updated**: 2026-05-24 (Phase 1 LB submitted + REJECTED — catastrophic
+collapse to LB 0.522 / 0.513 on control + KD vs target 0.910 and baseline
+0.897. Strong leading hypothesis: training/inference mel-pipeline mismatch.
+Next session = Phase D comprehensive audit. Phase 2 and Phase 3 BLOCKED.)
 
 **Competition deadline**: 2026-06-03 (~10 days from this update).
 
 ---
 
-## Pick up here (next session) — UPDATED 2026-05-24
+## Pick up here (next session) — UPDATED 2026-05-24 EOD
 
-### First steps when resuming
+Phase 1 closed REJECTED. The verdict is on the implementation, NOT the
+hypothesis — Tucker's recipe is not falsified. Our port collapsed both
+control + KD to LB ~0.52 (vs target 0.910, vs baseline 0.897).
 
-**1. Check job status:**
+**Phase D comprehensive audit is the only path forward.** Phase 2 (5-fold)
+and Phase 3 (KD diagnosis) are blocked until Phase D + retrain CONFIRM.
 
-```bash
-squeue -u $USER -o "%.10i %.30j %.8T %.10M %.20R"
-```
+### Phase 1 LB summary
 
-Look for `exp032-distilled_sed_control` (job 9088255) and
-`exp032-distilled_sed_kd` (job 9088258). At session end (2026-05-24 ~00:50)
-both were ~14 epochs in (~9 min/epoch control, ~11 min/epoch KD); expected
-to finish around 03:30 EDT. If RUNNING, wait. If gone, proceed.
+| Run | LB | Δ paired ctrl | Δ vs v5j_control_last 0.897 | Δ vs Tucker target 0.910 |
+|---|---:|---:|---:|---:|
+| distilled_sed_control (last.ckpt, ep 24) | **0.522** | — | **−0.375** | **−0.388** |
+| distilled_sed_kd (last.ckpt, ep 24) | **0.513** | **−0.009** | **−0.384** | **−0.397** |
 
-**2. Verify clean completion** (once jobs ended):
+Tucker macro AUC on val fold 0 at control ep 6 = 0.889 (matches Tucker's
+~0.91 to 4 dp). Model IS learning on the training distribution. LB collapse
+means training distribution ≠ inference distribution.
 
-```bash
-tail -50 user/murilo/experiments/032-tucker-distilled-sed/logs/slurm_distilled_sed_control_9088255.log
-tail -50 user/murilo/experiments/032-tucker-distilled-sed/logs/slurm_distilled_sed_kd_9088258.log
-```
+### Strong leading hypothesis: mel-pipeline mismatch
 
-Expect `Job completed successfully!` + `Begin Slurm Epilog: …`. All 25
-epochs are saved (`save_top_k=-1`) at:
+- **Tucker** (verified against vendored `bc2026-distilled-sed.py` lines 400–407, 947–949, 1240–1246): `power_mel → AmplitudeToDB(top_db=80) → per-sample (mean, std) normalize`. **One** normalization pass. Identical at training and inference.
+- **Our training**: `NNAudio(norm_type="amplitude_to_db")` does `power_to_db → z-score → min-max [0,1]`, THEN module's `per_sample_mel_norm` does another z-score. **Three** normalization passes.
+- **Our inference** (new `compute_mel_tucker` in submission.py): single z-score after AmplitudeToDB — **matches Tucker, but NOT our training distribution**.
 
-```
-/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/
-    2026-exp032-distilled-sed-control/best-epochepoch={00..24}.ckpt
-    2026-exp032-distilled-sed-kd/best-epochepoch={00..24}.ckpt
-```
+Model trained on triple-normalized features sees single-normalized features
+at inference → near-random output. Single bug sufficient to explain the LB
+collapse.
 
-**3. Post-hoc rank checkpoints by Tucker's correct metric** (the in-training
-monitor used the broken metric — see "Critical mid-session finding" below):
+### Phase D — comprehensive audit checklist
 
-```bash
-~/clef/birdclef-2026/.venv/bin/python user/murilo/experiments/032-tucker-distilled-sed/scripts/score_all_checkpoints.py \
-    --config user/murilo/experiments/032-tucker-distilled-sed/configs/distilled_sed_control.yaml \
-    --ckpt-dir /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-control/ \
-    --output user/murilo/experiments/032-tucker-distilled-sed/outputs/checkpoint_ranking_control.tsv
+Full breakdown in `experiments/032-tucker-distilled-sed/tasks.md` § Phase D.
+Short form:
 
-~/clef/birdclef-2026/.venv/bin/python user/murilo/experiments/032-tucker-distilled-sed/scripts/score_all_checkpoints.py \
-    --config user/murilo/experiments/032-tucker-distilled-sed/configs/distilled_sed_kd.yaml \
-    --ckpt-dir /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/ \
-    --output user/murilo/experiments/032-tucker-distilled-sed/outputs/checkpoint_ranking_kd.tsv
-```
+1. **D.1**: `kaggle kernels pull tuckerarrants/bc2026-distilled-sed`; diff against vendored copy.
+2. **D.2**: Side-by-side numerical test of our `_compute_mel` vs Tucker's `MelSpecTransform` + per-sample norm. Same waveform → same mel output? Write `scripts/diag_mel_pipeline.py`.
+3. **D.3**: If mismatch confirmed: add `norm_type: "tucker_amp2db"` to NNAudioMelSpectrogram that does ONLY `10*log10 + top_db_clamp`, letting `_compute_mel`'s existing per-sample z-score finish the pipeline. OR bypass NNAudio at training and use torchaudio MelSpec + AmplitudeToDB directly (matches Tucker byte-for-byte). Add unit test.
+4. **D.4**: Audit the lower-likelihood candidates only if D.3 doesn't recover LB: head shape, NNAudio vs torchaudio drift, audio loading, ONNX wrapper, species mapping.
+5. **D.5**: Add `scripts/validate_end_to_end.py` — load ckpt, run kernel inference path on `train_soundscapes/`, compute macro AUROC, compare to offline val. Make this pre-flight before EVERY LB submission going forward.
+6. **D.6**: Retrain paired control + KD with the fixed mel. Re-export, re-submit. Phase 2 / Phase 3 unblocked only when D.5 passes AND retrained control LB ≥ 0.900.
 
-Wall time ~12 min per dir on GPU. Output: ranked table + recommended
-top-by-Tucker-AUC ckpt path. Expected best epoch ~17–22 per Tucker's
-published trajectory (his ns22_auc peaks ep 17 at 0.934, levels off by ep 25).
+### Methodology lesson for the codebase
 
-**4. Submit top-ranked checkpoints to LB** (task 1.3):
-- ONNX export with `N_MELS=256` consistently — fix the export-wrapper bug per audit § 7.2 (Tucker hardcoded 128 in `SEDExportWrapper`)
-- Upload weights datasets to Kaggle (slugs: `distilled-sed-control`, `distilled-sed-kd`)
-- `submission.py` with LOGIT-space inference blend → 5-tap Gaussian smooth → single sigmoid at end (audit § 7.3)
-- Push paired Kaggle kernels; submit both to LB back-to-back
+**Offline val/cmap/auroc cannot detect a training-inference distribution
+mismatch** because the offline val uses the training pipeline. End-to-end
+validation against soundscape labels using the inference kernel's full path
+must be a pre-flight check, not an after-the-fact diagnostic.
 
-**5. Apply decision matrix** (`proposal.md` § Falsifiable):
-- CONFIRM Δ ≥ +0.014 → Phase 2 (5-fold)
-- PARTIAL +0.007–0.013 → Phase 2 with caveats
-- WEAK +0.001–0.006 → need 4-fold or accept noise
-- REJECT ≤ 0 → Phase 3 diagnosis (α sweep, mel-pipeline alignment, longer schedule)
+This is the single biggest methodology gap exposed by exp 032.
 
-**6. Update `results.md` + `MODEL-RUNS.md`** with paired-table + verdict.
+### Open items snapshot (carried forward)
+
+- KD ranker (`sbatch/rank_kd_only.sh`) — submit if the per-epoch KD breakdown is needed for results.md. Not blocking Phase D.
+- The Kaggle kernels for distilled-sed-{control,kd} are already pushed; keep them for the post-Phase-D re-submission so we can compare same-kernel results against the LB 0.522 / 0.513 baseline.
+- 19+ commits on `mg/exp032-tucker-distilled-sed-replication` branch. PR #51 stays draft until Phase D + retrain CONFIRMs/PARTIALs.
+
+---
+
+## Earlier session content (pre-LB submission, preserved for reference)
+
+The original "Pick up here" content for the LB submission is now obsolete
+(LB submitted, REJECT verdict). What follows below is preserved because
+the val-metric bug context + Phase 0 inventory is still load-bearing for
+the Phase D audit.
 
 ---
 
