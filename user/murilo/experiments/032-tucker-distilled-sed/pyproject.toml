@@ -43,6 +43,7 @@ dependencies = [
 
     # GPU monitoring
     "nvidia-ml-py>=12.0.0",
+    "matplotlib>=3.7.0",  # for gpu_monitor.save_plot() → outputs/gpu_check/*.png
 
     # Utilities
     "pyyaml>=6.0",
