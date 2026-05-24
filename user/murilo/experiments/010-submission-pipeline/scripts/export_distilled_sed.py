@@ -75,6 +75,7 @@ def main() -> None:
     from birdclef.heads.sed_head import AttHeadLogitSpace
     from birdclef.lightning.distilled_sed_finetune import DistilledSEDFinetuneModule
     from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
+    from birdclef.preprocessing.tucker_mel import TuckerMelSpectrogram
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
@@ -119,26 +120,47 @@ def main() -> None:
 
     # Build module with use_perch_distill=False so the distill_head doesn't exist;
     # KD checkpoints' distill_head.* keys will land in `unexpected` under strict=False.
-    # DistilledSEDFinetuneModule requires non-None mel_transform; we build one to
-    # match training params so its state-dict keys load cleanly. The mel transform
-    # is NOT used at export (kernel computes mel CPU-side via compute_mel_tucker).
+    # DistilledSEDFinetuneModule requires non-None mel_transform; we build one
+    # that MATCHES the training-time mel transform so its state-dict keys load
+    # cleanly. The mel transform is NOT used at export (kernel computes mel
+    # CPU-side via compute_mel_tucker).
     training_cfg = cfg["training"]
     mel_cfg_train = cfg["mel"]
     sample_rate_train = cfg["data"]["sample_rate"]
     window_duration_train = cfg["data"]["window_duration"]
-    target_frames_train = int(
-        window_duration_train * sample_rate_train / mel_cfg_train["hop_length"]
-    )
-    stub_mel_transform = NNAudioMelSpectrogram(
-        sample_rate=sample_rate_train,
-        n_mels=mel_cfg_train["n_mels"],
-        target_frames=target_frames_train,
-        n_fft=mel_cfg_train.get("n_fft"),
-        hop_length=mel_cfg_train["hop_length"],
-        fmax=mel_cfg_train.get("fmax"),
-        norm_type=mel_cfg_train.get("norm_type", "audioset"),
-        top_db=mel_cfg_train.get("top_db", 80.0),
-    )
+    mel_type_train = mel_cfg_train.get("type", "nnaudio")
+    if mel_type_train == "tucker":
+        # Post-Phase-D path: TuckerMelSpectrogram (torchaudio MelSpec + AmplitudeToDB).
+        stub_mel_transform = TuckerMelSpectrogram(
+            sample_rate=sample_rate_train,
+            n_fft=mel_cfg_train.get("n_fft", 2048),
+            hop_length=mel_cfg_train.get("hop_length", 512),
+            n_mels=mel_cfg_train.get("n_mels", 256),
+            fmin=mel_cfg_train.get("fmin", 20),
+            fmax=mel_cfg_train.get("fmax", 16000),
+            top_db=mel_cfg_train.get("top_db", 80.0),
+            power=mel_cfg_train.get("power", 2.0),
+        )
+        logger.info("Mel transform (stub for ckpt load): TuckerMelSpectrogram")
+    else:
+        # Legacy path: NNAudioMelSpectrogram. Phase 1 checkpoints used this.
+        target_frames_train = int(
+            window_duration_train * sample_rate_train / mel_cfg_train["hop_length"]
+        )
+        stub_mel_transform = NNAudioMelSpectrogram(
+            sample_rate=sample_rate_train,
+            n_mels=mel_cfg_train["n_mels"],
+            target_frames=target_frames_train,
+            n_fft=mel_cfg_train.get("n_fft"),
+            hop_length=mel_cfg_train["hop_length"],
+            fmax=mel_cfg_train.get("fmax"),
+            norm_type=mel_cfg_train.get("norm_type", "audioset"),
+            top_db=mel_cfg_train.get("top_db", 80.0),
+        )
+        logger.info(
+            f"Mel transform (stub for ckpt load): NNAudioMelSpectrogram"
+            f"(norm_type={mel_cfg_train.get('norm_type', 'audioset')!r})"
+        )
     module = DistilledSEDFinetuneModule(
         encoder=encoder,
         sed_head=sed_head,
