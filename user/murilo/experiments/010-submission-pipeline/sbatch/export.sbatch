@@ -997,6 +997,7 @@ EXP027_DIR="$(dirname "$EXPERIMENT_DIR")/027-model-training-fixes"
 EXP029_DIR="$(dirname "$EXPERIMENT_DIR")/029-2025-pretrain"
 EXP030_DIR="$(dirname "$EXPERIMENT_DIR")/030-sydorskyi-mixup"
 EXP031_DIR="$(dirname "$EXPERIMENT_DIR")/031-perch-kd-distillation"
+EXP032_DIR="$(dirname "$EXPERIMENT_DIR")/032-tucker-distilled-sed"
 
 export_hgnet_b2_sed_v6h() {
     echo "=== Exporting HGNetV2-B2 SED v6h (AttHead + BCE, 234 classes) ==="
@@ -1249,6 +1250,43 @@ export_hgnet_b0_sed_v10b_exp027() {
         --output-dir artifacts/weights/hgnet-b0-sed-v10b-exp027/
 }
 
+# ============================================================================
+# Exp 032: Tucker distilled-SED full replication (paired control / KD)
+# Uses dedicated export_distilled_sed.py (AttHeadLogitSpace + logit-space output).
+# Submits last.ckpt (epoch 24) per the "submit last" decision after the offline
+# ranker on val fold 0 showed noisy results (n_evaluable=29 → small variance).
+# ============================================================================
+
+export_distilled_sed_control() {
+    echo "=== Exporting Exp 032 distilled-SED CONTROL (Tucker recipe, KD off, last.ckpt) ==="
+    local CKPT="${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-control/last.ckpt"
+    if [ ! -f "$CKPT" ]; then
+        echo "ERROR: last.ckpt not found at $CKPT" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_distilled_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP032_DIR}/configs/distilled_sed_control.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/distilled-sed-control/
+}
+
+export_distilled_sed_kd() {
+    echo "=== Exporting Exp 032 distilled-SED KD (Tucker recipe + Perch v2 KD, last.ckpt) ==="
+    local CKPT="${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/last.ckpt"
+    if [ ! -f "$CKPT" ]; then
+        echo "ERROR: last.ckpt not found at $CKPT" >&2
+        exit 1
+    fi
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_distilled_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP032_DIR}/configs/distilled_sed_kd.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/distilled-sed-kd/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -1308,6 +1346,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-kd|hgnet-b0-sed-v5j-kd-last|hgnet-b0-sed-v5j-control-last|\
     hgnet-b0-sed-v5j-eracode|\
     hgnet-b0-sed-v5j-resubmit|\
+    distilled-sed-control|distilled-sed-kd|all-032-distilled-sed|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1426,6 +1465,13 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-kd-last)           export_hgnet_b0_sed_v5j_kd_last ;;
     hgnet-b0-sed-v5j-control-last)      export_hgnet_b0_sed_v5j_control_last ;;
     hgnet-b0-sed-v5j-eracode)           export_hgnet_b0_sed_v5j_eracode ;;
+    distilled-sed-control)              export_distilled_sed_control ;;
+    distilled-sed-kd)                   export_distilled_sed_kd ;;
+    all-032-distilled-sed)
+        export_distilled_sed_control
+        echo ""
+        export_distilled_sed_kd
+        ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;

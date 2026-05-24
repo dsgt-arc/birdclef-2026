@@ -556,6 +556,20 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v10b-exp027",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v10b-exp027.json",
     },
+    # Exp 032: Tucker distilled-SED full replication (paired control / KD)
+    # last.ckpt (epoch 24) per "submit last" decision after noisy ranker on
+    # ep 1. ONNX outputs pre-blended LOGITS; kernel handles logit-space
+    # Gaussian smoothing + final sigmoid (no TTA, no priors — Tucker faithful).
+    "distilled-sed-control": {
+        "slug": "birdclef-2026-distilled-sed-control-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-control",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-control.json",
+    },
+    "distilled-sed-kd": {
+        "slug": "birdclef-2026-distilled-sed-kd-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd.json",
+    },
 }
 
 

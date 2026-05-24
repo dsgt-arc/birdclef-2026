@@ -91,6 +91,13 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 032: Tucker distilled-SED full replication (last.ckpt, single fold).
+    # EffNet-B0 NS-JFT + AttHeadLogitSpace + Perch v2 KD + 25 ep cosine.
+    # ONNX outputs pre-blended LOGITS; kernel does per-window inference →
+    # 5-tap Gaussian smooth in LOGIT space → single sigmoid at end.
+    # Routed by mel_config["type"] == "tucker_mel" + "output_type" == "tucker_logits".
+    "birdclef-2026-distilled-sed-kd-weights",
+    "birdclef-2026-distilled-sed-control-weights",
     # Codebase regression diagnostic: v5j-era code (commit e420633) retrained
     # v5j_control on today's env. Tests whether HEAD codebase IS the cause of
     # the 0.906→0.897 LB regression. Offline val/cmap matches v5j-original
@@ -471,6 +478,57 @@ def compute_mel_ttahara(audio, mel_cfg):
     return result
 
 
+def compute_mel_tucker(audio, mel_cfg):
+    """Compute Tucker distilled-SED mel (exp 032, audit § 7.1).
+
+    Pipeline (matches `MelSpecTransform` in `bc2026-distilled-sed.ipynb` cell 10):
+        torchaudio MelSpectrogram (n_fft=2048, hop=512, n_mels=256,
+            fmin=20, fmax=16000, power=2.0)
+        → AmplitudeToDB(top_db=80)
+        → per-sample (mel - mean) / (std + 1e-6)
+
+    Returns (1, 1, n_mels, target_frames) float32. Tucker's training transform
+    uses torchaudio (not librosa); we match that for numerical alignment.
+    """
+    import torch
+    import torchaudio
+
+    sr = mel_cfg["sr"]
+    wave = torch.from_numpy(audio).float().unsqueeze(0)  # (1, samples)
+
+    mel_transform = torchaudio.transforms.MelSpectrogram(
+        sample_rate=sr,
+        n_fft=mel_cfg.get("n_fft", 2048),
+        hop_length=mel_cfg.get("hop_length", 512),
+        n_mels=mel_cfg.get("n_mels", 256),
+        f_min=mel_cfg.get("fmin", 20),
+        f_max=mel_cfg.get("fmax", 16000),
+        power=mel_cfg.get("power", 2.0),
+    )
+    db_transform = torchaudio.transforms.AmplitudeToDB(
+        stype="power", top_db=mel_cfg.get("top_db", 80.0)
+    )
+
+    mel = mel_transform(wave)  # (1, n_mels, T)
+    mel = db_transform(mel)  # (1, n_mels, T)
+
+    # Per-sample mean/std normalization (Tucker cell 14 inner loop)
+    mean = mel.mean()
+    std = mel.std().clamp(min=1e-6)
+    mel = (mel - mean) / std
+
+    # Pad/trim to target_frames
+    target_frames = mel_cfg.get("target_frames", 313)
+    T = mel.shape[-1]
+    if T > target_frames:
+        start = (T - target_frames) // 2
+        mel = mel[..., start : start + target_frames]
+    elif T < target_frames:
+        mel = torch.nn.functional.pad(mel, (0, target_frames - T))
+
+    return mel.unsqueeze(0).numpy().astype(np.float32)  # (1, 1, n_mels, target_frames)
+
+
 def compute_mel_kaldi_fbank(audio, mel_cfg):
     """Compute Kaldi fbank features for EAT.
 
@@ -658,7 +716,9 @@ def compute_mel(audio, mel_cfg):
     """Dispatch to model-specific mel computation."""
     mel_type = mel_cfg.get("type", "mel")
     norm_type = mel_cfg.get("norm_type", "audioset")
-    if mel_type == "ttahara":
+    if mel_type == "tucker_mel":
+        return compute_mel_tucker(audio, mel_cfg)
+    elif mel_type == "ttahara":
         return compute_mel_ttahara(audio, mel_cfg)
     elif mel_type == "kaldi_fbank":
         return compute_mel_kaldi_fbank(audio, mel_cfg)
@@ -1260,6 +1320,92 @@ def predict_soundscape(
     return predictions
 
 
+def predict_soundscape_tucker(
+    session, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
+):
+    """Tucker distilled-SED inference (exp 032, audit § 7.3).
+
+    Per audit § 7.3 (Tucker's `bc2026-distilled-sed` cell 24): everything stays
+    in LOGIT space until the very end.
+
+        Per 5s window:
+            mel = compute_mel_tucker(audio[start:start+5s])
+            blended_logits = ONNX(mel)  # ← already 0.5·clip + 0.5·frame_max, exported wrapper
+        Stack 12 windows → (12, 234) logits
+        Gaussian-smooth across windows in LOGIT space ([0.1, 0.2, 0.4, 0.2, 0.1], sums to 1)
+        Sigmoid once at the end → (12, 234) probs
+        Map to 234 BirdCLEF-2026 columns
+
+    No TTA, no temperature, no TopN, no metadata priors in Phase 1 — matches
+    Tucker's published recipe verbatim. The shared post-processing pipeline is
+    DELIBERATELY skipped here so the LB read isolates the Tucker recipe lift.
+    Site/hour priors layered on top in a separate Phase 2 kernel if Phase 1 lands.
+    `taxa_mapping`, `metadata_priors` accepted only to match the dispatch signature.
+    """
+    del taxa_mapping, metadata_priors  # unused, intentional
+
+    sr = mel_cfg["sr"]
+    segment_duration = 5.0
+    soundscape_id = Path(audio_path).stem
+
+    species_2026 = species_mapping["birdclef2026_species"]
+    idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
+
+    info = sf.info(audio_path)
+    total_duration = info.frames / info.samplerate
+
+    # Per-window ONNX inference; collect blended logits (LOGIT space)
+    window_logits = []
+    segment_times = []
+    segment_start_s = 0.0
+    input_name = session.get_inputs()[0].name
+
+    while segment_start_s < total_duration:
+        audio = load_audio_chunk(audio_path, sr, segment_start_s, segment_duration)
+        mel = compute_mel(audio, mel_cfg)  # (1, 1, n_mels, T)
+        out = session.run(None, {input_name: mel})[0]  # (1, 234) — pre-blended logits
+        window_logits.append(out.flatten())
+        segment_times.append(int(segment_start_s + segment_duration))
+        segment_start_s += segment_duration
+
+    if not window_logits:
+        return []
+
+    logits_matrix = np.stack(window_logits)  # (n_windows, 234)
+
+    # 5-tap Gaussian smoothing across windows in LOGIT space
+    if mel_cfg.get("gaussian_smooth_logit_space", True) and logits_matrix.shape[0] >= 3:
+        kernel = np.array(
+            mel_cfg.get("gaussian_kernel", [0.1, 0.2, 0.4, 0.2, 0.1]), dtype=np.float32
+        )
+        kernel = kernel / kernel.sum()  # safety: re-normalize in case kernel cfg drifts
+        # mode='same' returns same length; boundaries use zero-padding by default.
+        # Tucker's reference uses scipy.ndimage.convolve1d(mode='nearest') (audit § 7.4).
+        # We approximate by padding with edge values:
+        pad = len(kernel) // 2
+        padded = np.pad(logits_matrix, ((pad, pad), (0, 0)), mode="edge")
+        smoothed = np.zeros_like(logits_matrix)
+        for c in range(logits_matrix.shape[1]):
+            smoothed[:, c] = np.convolve(padded[:, c], kernel, mode="valid")
+        logits_matrix = smoothed
+
+    # Single sigmoid at the end (LOGIT → prob)
+    probs_matrix = sigmoid(logits_matrix)
+
+    # Map model probs → 234 BirdCLEF-2026 species columns
+    predictions = []
+    for i, end_time in enumerate(segment_times):
+        row_id = f"{soundscape_id}_{end_time}"
+        row = {"row_id": row_id}
+        for sp in species_2026:
+            row[sp] = 0.0
+        for idx_str, name_2026 in idx_map.items():
+            row[name_2026] = float(probs_matrix[i, int(idx_str)])
+        predictions.append(row)
+
+    return predictions
+
+
 def predict_soundscape_ensemble(
     sessions, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
 ):
@@ -1471,8 +1617,14 @@ def main():
     print(f"Processing {len(audio_files)} soundscapes from {test_dir}")
 
     # Choose inference strategy
+    use_tucker = mel_cfg.get("type") == "tucker_mel"
     use_fullsignal = mel_cfg.get("architecture") == "sed" and mel_type == "mel"
-    if is_ensemble:
+    if use_tucker:
+        print(
+            "Using Tucker distilled-SED inference (per-window LOGIT-space blend "
+            "→ 5-tap Gauss smooth → single sigmoid at end). No TTA / no priors."
+        )
+    elif is_ensemble:
         print(
             f"Using {len(sessions)}-fold ensemble inference (compute mel once, run {len(sessions)} models)"
         )
@@ -1485,7 +1637,16 @@ def main():
     all_predictions = []
     for i, audio_path in enumerate(audio_files):
         t0 = time.time()
-        if is_ensemble:
+        if use_tucker:
+            preds = predict_soundscape_tucker(
+                session,
+                str(audio_path),
+                mel_cfg,
+                species_mapping,
+                taxa_mapping=taxa_mapping,
+                metadata_priors=metadata_priors,
+            )
+        elif is_ensemble:
             preds = predict_soundscape_ensemble(
                 sessions,
                 str(audio_path),
