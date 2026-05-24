@@ -30,8 +30,8 @@ This file will be filled in as each phase completes.
 
 | Run | Code | Node | Ckpt | LB | Δ vs paired ctrl | Δ vs v5j_control_last 0.897 |
 |---|---|---|---|---:|---:|---:|
-| tucker_control | HEAD | TBD | best-by-macro | TBD | — | TBD |
-| tucker_kd | HEAD | TBD | best-by-macro | TBD | TBD | TBD |
+| distilled_sed_control | HEAD | TBD | best-by-macro | TBD | — | TBD |
+| distilled_sed_kd | HEAD | TBD | best-by-macro | TBD | TBD | TBD |
 
 ### Qualitative
 
@@ -44,18 +44,18 @@ This file will be filled in as each phase completes.
 ### Confounders
 
 - Single fold — ±0.013 seed band on v5j HGNet; EffNet variance unknown
-- Multi-variable port — paired Δ isolates KD branch within new stack, but tucker_control vs v5j_control_last 0.897 conflates backbone + head + loss + mixup + SpecAugment + schedule + sampler
+- Multi-variable port — paired Δ isolates KD branch within new stack, but distilled_sed_control vs v5j_control_last 0.897 conflates backbone + head + loss + mixup + SpecAugment + schedule + sampler
 
 ## Artifacts
 
 | Type | Location |
 |---|---|
-| Configs | `configs/tucker_{control,kd}.yaml` |
+| Configs | `configs/distilled_sed_{control,kd}.yaml` |
 | Logs | `logs/` |
 | W&B | project `birdclef-2026-exp032` (TBD) |
 | TensorBoard | `outputs/tensorboard/` |
 | Checkpoints | `/storage/project/.../032-tucker-distilled-sed/checkpoints/` (TBD) |
-| Metrics JSON | `artifacts/training/{tucker_control,tucker_kd}/metrics.json` |
+| Metrics JSON | `artifacts/training/{distilled_sed_control,distilled_sed_kd}/metrics.json` |
 | Code | branch `mg/exp032-tucker-distilled-sed-replication`, PR #51 |
 
 ## Next Steps

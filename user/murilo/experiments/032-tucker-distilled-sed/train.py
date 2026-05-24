@@ -14,19 +14,19 @@ Faithful port of tuckerarrants/bc2026-distilled-sed:
 - MixSamp 90/10 focal/SS batch composition
 - 5-fold (StratifiedKFold focal + GroupKFold SS)
 
-Configs (planned):
-- configs/tucker_control.yaml — KD off (back-compat receipt for the new
+Configs:
+- configs/distilled_sed_control.yaml — KD off (back-compat receipt for the new
   pipeline; isolates KD lever from recipe changes)
-- configs/tucker_kd.yaml      — KD on (the test)
+- configs/distilled_sed_kd.yaml      — KD on (the test)
 
 Both submitted as paired SLURM jobs with their own slugs; read deltas
 vs paired control, NOT vs historical 0.906 (cross-run hardware variance
 ~0.007 LB per exp 031 drift investigation).
 
 Usage:
-    python train.py --config configs/tucker_kd.yaml
+    python train.py --config configs/distilled_sed_kd.yaml
     # fast-dev-run gradient-flow check:
-    python train.py --config configs/tucker_kd.yaml --fast-dev-run
+    python train.py --config configs/distilled_sed_kd.yaml --fast-dev-run
 """
 
 import argparse

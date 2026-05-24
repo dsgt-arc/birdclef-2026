@@ -4,17 +4,17 @@
 # Usage:
 #   cd user/murilo/experiments/032-tucker-distilled-sed
 #
-#   # tucker control (KD off):
-#   bash sbatch/run.sh configs/tucker_control.yaml
+#   # control (KD off):
+#   bash sbatch/run.sh configs/distilled_sed_control.yaml
 #
-#   # tucker KD (the test):
-#   bash sbatch/run.sh configs/tucker_kd.yaml
+#   # KD (the test):
+#   bash sbatch/run.sh configs/distilled_sed_kd.yaml
 #
 #   # fast-dev-run gradient-flow check:
-#   bash sbatch/run.sh configs/tucker_kd.yaml --fast-dev-run
+#   bash sbatch/run.sh configs/distilled_sed_kd.yaml --fast-dev-run
 #
 #   # dry-run preview without submitting:
-#   bash sbatch/run.sh configs/tucker_kd.yaml --dry-run
+#   bash sbatch/run.sh configs/distilled_sed_kd.yaml --dry-run
 
 set -eu
 

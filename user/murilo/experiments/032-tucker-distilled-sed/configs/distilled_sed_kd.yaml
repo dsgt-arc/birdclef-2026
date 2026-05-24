@@ -1,8 +1,8 @@
-# Experiment 032 — tucker_kd: full Tucker distilled-SED recipe with Perch v2
-# KD branch ENABLED.
+# Experiment 032 — distilled_sed_kd: full Tucker distilled-SED recipe with
+# Perch v2 KD branch ENABLED.
 #
-# Identical to tucker_control.yaml except:
-#   - run_name: 2026-exp032-tucker-kd
+# Identical to distilled_sed_control.yaml except:
+#   - run_name: 2026-exp032-distilled-sed-kd
 #   - training.use_perch_distill: true
 #   - training.perch_onnx_path: vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx
 #
@@ -16,12 +16,12 @@
 #   - Loss = (0.5·BCE(clip) + 0.5·BCE(frame_max)) + alpha_distill · MSE(distill_emb, perch_emb).
 #
 # Tucker quantifies the KD lift at ~+0.02 LB (audit § Tucker's loss). Our
-# Phase 1 pairs this against tucker_control (same job batch / same partition /
-# same hardware window) so the Δ is isolated from cross-run variance.
+# Phase 1 pairs this against distilled_sed_control (same job batch / same
+# partition / same hardware window) so the Δ is isolated from cross-run variance.
 #
 # Reference: proposal.md § Falsifiable; tasks.md § 0.9.
 
-run_name: "2026-exp032-tucker-kd"
+run_name: "2026-exp032-distilled-sed-kd"
 
 encoder:
   type: "efficientnet"

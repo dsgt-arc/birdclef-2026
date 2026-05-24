@@ -151,7 +151,7 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
 - **Test gate**: ✅ PASSED.
 
 ### 0.9 Write paired configs — DONE
-- [x] 0.9.1 [`configs/tucker_control.yaml`](configs/tucker_control.yaml) — full Tucker recipe, `use_perch_distill: false`, `save_top_k: -1`, fold 0 only. Encodes all the audit-load-bearing hyperparameters:
+- [x] 0.9.1 [`configs/distilled_sed_control.yaml`](configs/distilled_sed_control.yaml) — full Tucker recipe, `use_perch_distill: false`, `save_top_k: -1`, fold 0 only. Encodes all the audit-load-bearing hyperparameters:
   - **Backbone**: `tf_efficientnet_b0.ns_jft_in1k`, `use_post_head: true` (1280-d), `drop_path_rate: 0.1`
   - **Head**: `att_head_logit_space`, `hidden_dim: 512`, `dropout: 0.5`, `gem_p: 3.0`
   - **Mel** (audit § 7.1): `n_fft: 2048, hop: 512, n_mels: 256, fmin: 20, fmax: 16000, top_db: 80`
@@ -162,7 +162,7 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
   - **Loss + blend**: 50/50 dual-supervision and inference blend
   - **Save**: `save_top_k: -1` (avoids the exp 031 best-vs-last pitfall per [`feedback_save_top_k_does_not_preserve_last`](../../../.claude/projects/-storage-project-ps-clef2026-birdclef-0-mgustineli3-birdclef-2026/memory/feedback_save_top_k_does_not_preserve_last.md))
   - **Early stopping**: disabled (`patience: 999`) — Tucker trains full 25 ep
-- [x] 0.9.2 [`configs/tucker_kd.yaml`](configs/tucker_kd.yaml) — bit-identical to control except for: `run_name`, `training.use_perch_distill: true`, `training.perch_onnx_path: "vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx"`. `alpha_distill: 1.0`, `perch_embed_dim: 1536`.
+- [x] 0.9.2 [`configs/distilled_sed_kd.yaml`](configs/distilled_sed_kd.yaml) — bit-identical to control except for: `run_name`, `training.use_perch_distill: true`, `training.perch_onnx_path: "vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx"`. `alpha_distill: 1.0`, `perch_embed_dim: 1536`.
 - [x] 0.9.3 Both configs inherit the pinned deps via `032-tucker-distilled-sed/pyproject.toml` (torch 2.5.1, timm 1.0.26, hf-hub 1.9.2, nnAudio 0.3.4, onnxruntime-gpu 1.26.0).
 - [x] **Tests** at [`test_configs.py`](../../tests/032-tucker-distilled-sed/test_configs.py) — 25 tests, all pass:
   - Backbone, head, mel, SpecAugment, mixup, schedule, data, loss/blend, KD — each load-bearing audit value is asserted.
@@ -173,7 +173,7 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
 
 ### 0.10 Update sbatch + train.py for new head/sampler dispatch
 - [ ] 0.10.1 In `train.py`: dispatch `head_type: "att_head_logit_space"` to instantiate `AttHeadLogitSpace`.
-- [ ] 0.10.2 Update sbatch wrappers' default config name (already done — defaults to `tucker_kd.yaml`).
+- [ ] 0.10.2 Update sbatch wrappers' default config name (already done — defaults to `distilled_sed_kd.yaml`).
 - [ ] 0.10.3 `sbatch/_job.sh` should still work as-is; verify it picks up the renamed config.
 
 ---
@@ -181,31 +181,31 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
 ## Phase 1 — Paired single-fold training + LB
 
 ### 1.1 Fast-dev-run gradient check
-- [ ] 1.1.1 `bash sbatch/run.sh configs/tucker_kd.yaml --fast-dev-run` → 1 batch forward+backward, confirm gradients flow through both cls head and dist head, dist_loss is finite, no NaN/Inf.
-- [ ] 1.1.2 Repeat for `tucker_control.yaml` with `use_perch_distill: false`.
+- [ ] 1.1.1 `bash sbatch/run.sh configs/distilled_sed_kd.yaml --fast-dev-run` → 1 batch forward+backward, confirm gradients flow through both cls head and dist head, dist_loss is finite, no NaN/Inf.
+- [ ] 1.1.2 Repeat for `distilled_sed_control.yaml` with `use_perch_distill: false`.
 - **Gate**: both fast-dev-runs succeed cleanly.
 
 ### 1.2 Submit paired SLURM jobs
-- [ ] 1.2.1 `bash sbatch/run.sh configs/tucker_control.yaml` — KD off.
-- [ ] 1.2.2 `bash sbatch/run.sh configs/tucker_kd.yaml` — KD on.
+- [ ] 1.2.1 `bash sbatch/run.sh configs/distilled_sed_control.yaml` — KD off.
+- [ ] 1.2.2 `bash sbatch/run.sh configs/distilled_sed_kd.yaml` — KD on.
 - [ ] 1.2.3 Verify both land on `gpu-rtx6000` (control hardware variance). If they land on different nodes, log the disparity — exp 031 showed ~0.007 LB cross-node variance.
 - [ ] 1.2.4 Monitor halt conditions per `proposal.md` § Halt-watch: `dist_loss` plateaus >0.01 by ep 5 → halt; either loss NaN → halt.
 
 ### 1.3 ONNX export + Kaggle pipeline
 - [ ] 1.3.1 Export each fold's best-by-macro checkpoint to ONNX. **Fix the export wrapper bug**: use N_MELS=256 consistently OR mark mel/time axes as dynamic in `dynamic_axes` (dataset+inference audit § 7.2).
-- [ ] 1.3.2 Upload weights datasets to Kaggle (`tucker_control` + `tucker_kd` slugs).
+- [ ] 1.3.2 Upload weights datasets to Kaggle (`distilled_sed_control` + `distilled_sed_kd` slugs).
 - [ ] 1.3.3 Add MODEL_SLUGS entries in `submission.py`. Implement inference in **logit space** (per-window `0.5·clip + 0.5·frame_max`, fold-mean, 5-tap Gaussian smooth, single sigmoid).
 - [ ] 1.3.4 Push paired Kaggle kernels.
 
 ### 1.4 LB submissions + decision matrix
 - [ ] 1.4.1 Submit both kernels to LB.
-- [ ] 1.4.2 Compute paired Δ (tucker_kd − tucker_control).
+- [ ] 1.4.2 Compute paired Δ (distilled_sed_kd − distilled_sed_control).
 - [ ] 1.4.3 Apply success matrix (`proposal.md` § Falsifiable):
   - **CONFIRM**: Δ ≥ +0.014 → Phase 2 (5-fold)
   - **PARTIAL**: Δ +0.007 to +0.013 → Phase 2 with caveats
   - **WEAK**: Δ +0.001 to +0.006 → 4-fold to disambiguate or accept noise
   - **REJECT**: Δ ≤ 0 → Phase 3 diagnosis
-- [ ] 1.4.4 Also read `tucker_control` LB vs v5j_control_last 0.897 to isolate recipe-vs-KD attribution.
+- [ ] 1.4.4 Also read `distilled_sed_control` LB vs v5j_control_last 0.897 to isolate recipe-vs-KD attribution.
 - [ ] 1.4.5 Update `results.md` with paired-table + verdict + post-mortem.
 
 ---

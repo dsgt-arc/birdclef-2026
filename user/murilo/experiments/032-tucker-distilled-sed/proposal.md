@@ -5,11 +5,15 @@ date: 2026-05-23
 author: Murilo Gustineli
 ---
 
-# Proposal: Full Tucker distilled-SED replication
+# Proposal: Distilled-SED full replication
 
 **Status**: approved (2026-05-23)
 **Created**: 2026-05-23
 **Author**: Murilo Gustineli
+
+## Provenance
+
+This experiment is our faithful port of Tucker Arrants's `bc2026-distilled-sed` Kaggle notebook (vendored byte-identical at `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/`). Throughout this experiment, "Tucker's recipe" / "Tucker's value" / "audit § Tucker's …" refer to that source. Run artifacts (configs, run_names, Kaggle slugs) use recipe-descriptive names (`distilled_sed_control` / `distilled_sed_kd`) rather than the author's name; the exp directory name (`032-tucker-distilled-sed/`) and the audit notes retain "tucker" as internal provenance markers.
 
 ## Reference materials (read before implementing)
 
@@ -36,16 +40,16 @@ Mechanism: exp 031 already showed KD alone on v5j (HGNet+LSEHead) doesn't transf
 
 Read against **same-codebase paired control** (Tucker recipe with KD off, same SLURM job batch). Per exp 031 drift investigation: cross-run LB has ~0.007 hardware variance + ~0.002 code variance, so paired-within-codebase is the only reliable methodology. **Do NOT read against v5j-original 0.906.**
 
-| Bucket | Paired Δ (tucker_kd vs tucker_control) | LB band for tucker_kd |
+| Bucket | Paired Δ (distilled_sed_kd vs distilled_sed_control) | LB band for distilled_sed_kd |
 |---|---|---|
 | **CONFIRM** | ≥ +0.014 | LB ≥ control + 0.014 |
 | **PARTIAL** | +0.007 to +0.013 | Lift detectable, smaller than Tucker's +0.020 |
 | **WEAK** | +0.001 to +0.006 | Inside ±0.013 single-fold seed band — needs 4-fold to disambiguate |
 | **REJECT** | ≤ 0.000 | KD doesn't transfer even on bug-fixed AttHead + full stack → diagnose stack-vs-codebase |
 
-Secondary read: **tucker_control LB vs v5j_control_last 0.897** (exp 031). This isolates the recipe lift independent of KD:
+Secondary read: **distilled_sed_control LB vs v5j_control_last 0.897** (exp 031). This isolates the recipe lift independent of KD:
 
-| tucker_control LB vs v5j_control_last 0.897 | Reading |
+| distilled_sed_control LB vs v5j_control_last 0.897 | Reading |
 |---|---|
 | ≥ 0.910 | Recipe alone (backbone + AttHead + dual-supervision + mixup + SpecAugment + schedule + MixSamp) is the lever |
 | 0.900 – 0.909 | Recipe helps modestly; KD branch is the remaining variable |
@@ -88,8 +92,8 @@ Phase 1 is **single-fold paired control + KD** at the full Tucker recipe to test
 
 End-to-end faithful port of `tuckerarrants/bc2026-distilled-sed` (verbatim notebook in `vendor/`). Two paired SLURM jobs:
 
-- **`tucker_control.yaml`**: KD off, everything else faithful Tucker
-- **`tucker_kd.yaml`**: KD on, otherwise identical to control
+- **`distilled_sed_control.yaml`**: KD off, everything else faithful Tucker
+- **`distilled_sed_kd.yaml`**: KD on, otherwise identical to control
 
 Both submitted at the same time on the same partition. Their LB delta is the KD branch's contribution within the full Tucker stack.
 
@@ -118,7 +122,7 @@ Both submitted at the same time on the same partition. Their LB delta is the KD 
 See `tasks.md` for the full ordered checklist. Top-level phases:
 
 1. **Phase 0 — port** (no SLURM yet): AttHeadLogitSpace, backbone swap, dual-supervision loss, Tucker mixup, SpecAugment, schedule swap, MixSamp, 5-fold construction. Unit-test each.
-2. **Phase 1 — paired single-fold** (fold 0 only): fast-dev-run gradient check, then full 25-ep paired SLURM (tucker_control + tucker_kd), LB submission. Apply success matrix.
+2. **Phase 1 — paired single-fold** (fold 0 only): fast-dev-run gradient check, then full 25-ep paired SLURM (distilled_sed_control + distilled_sed_kd), LB submission. Apply success matrix.
 3. **Phase 2 — if Phase 1 passes** (CONFIRM or PARTIAL): extend to full 5-fold, ensemble at inference, optionally port site/hour priors from EoS.6.
 4. **Phase 3 — if Phase 1 fails**: diagnose stack-vs-codebase. Possible candidates: ALPHA_DISTILL sweep, mel-pipeline alignment with Perch, longer schedule.
 
@@ -126,7 +130,7 @@ See `tasks.md` for the full ordered checklist. Top-level phases:
 
 - **Independent (between paired runs)**: `use_perch_distill` (False vs True)
 - **Independent (between exp 031 and exp 032)**: backbone, head, loss, mixup, SpecAugment, schedule, sampler, fold construction — all changed at once. Intentional multi-variable.
-- **Dependent**: paired LB Δ; tucker_control LB vs v5j_control_last 0.897; offline val/cmap; dist_loss floor (sanity).
+- **Dependent**: paired LB Δ; distilled_sed_control LB vs v5j_control_last 0.897; offline val/cmap; dist_loss floor (sanity).
 - **Controlled (within paired runs)**: same seed, same data, same code commit, same SLURM partition, same wall-clock window, paired sbatch submissions.
 
 ## Evaluation
@@ -142,13 +146,13 @@ See `tasks.md` for the full ordered checklist. Top-level phases:
 
 ### Baseline
 
-- **Paired control**: tucker_control LB (TBD, same job batch as tucker_kd)
+- **Paired control**: distilled_sed_control LB (TBD, same job batch as distilled_sed_kd)
 - **Secondary baseline**: v5j_control_last LB 0.897 (exp 031, ep 19, save_top_k=-1)
 - **Optimistic target**: Tucker's 0.917 LB (his 5-fold + smoothing). Phase 1 = single fold so we expect to land below this; target 0.910–0.916 single-fold band.
 
 ### Success Criteria
 
-See § Falsifiable above. Two thresholds — paired Δ and tucker_control LB — both read together.
+See § Falsifiable above. Two thresholds — paired Δ and distilled_sed_control LB — both read together.
 
 ## Limitations
 

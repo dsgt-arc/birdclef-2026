@@ -1,4 +1,4 @@
-"""Tests for `tucker_control.yaml` and `tucker_kd.yaml` (exp 032 task 0.9).
+"""Tests for `distilled_sed_control.yaml` and `distilled_sed_kd.yaml` (exp 032 task 0.9).
 
 Locks in audit compliance: every hyperparameter value that's load-bearing
 per the 2026-05-09 + 2026-05-23 audits is asserted here. Drift in the configs
@@ -37,13 +37,13 @@ CONFIGS_DIR = (
 
 @pytest.fixture(scope="module")
 def control_cfg():
-    with open(CONFIGS_DIR / "tucker_control.yaml") as f:
+    with open(CONFIGS_DIR / "distilled_sed_control.yaml") as f:
         return yaml.safe_load(f)
 
 
 @pytest.fixture(scope="module")
 def kd_cfg():
-    with open(CONFIGS_DIR / "tucker_kd.yaml") as f:
+    with open(CONFIGS_DIR / "distilled_sed_kd.yaml") as f:
         return yaml.safe_load(f)
 
 
@@ -230,12 +230,12 @@ def test_per_sample_mel_norm_enabled(control_cfg, kd_cfg):
 
 
 def test_control_has_kd_off(control_cfg):
-    """tucker_control.yaml: KD must be disabled."""
+    """distilled_sed_control.yaml: KD must be disabled."""
     assert control_cfg["training"]["use_perch_distill"] is False
 
 
 def test_kd_has_kd_on(kd_cfg):
-    """tucker_kd.yaml: KD must be enabled."""
+    """distilled_sed_kd.yaml: KD must be enabled."""
     assert kd_cfg["training"]["use_perch_distill"] is True
 
 
@@ -249,7 +249,7 @@ def test_kd_perch_params(kd_cfg):
 
 
 def test_perch_onnx_file_exists(kd_cfg):
-    """The Perch ONNX file referenced by tucker_kd.yaml exists on disk."""
+    """The Perch ONNX file referenced by distilled_sed_kd.yaml exists on disk."""
     # test_configs.py is at <repo>/user/murilo/tests/032-tucker-distilled-sed/
     # → 5 parents up = repo root
     repo_root = Path(__file__).parents[4]

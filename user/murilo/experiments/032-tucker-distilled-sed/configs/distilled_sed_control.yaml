@@ -1,5 +1,5 @@
-# Experiment 032 — tucker_control: full Tucker distilled-SED recipe with
-# KD branch DISABLED. Paired-control for tucker_kd.yaml.
+# Experiment 032 — distilled_sed_control: full Tucker distilled-SED recipe
+# with KD branch DISABLED. Paired-control for distilled_sed_kd.yaml.
 #
 # Tucker recipe components active here (per audit § 5):
 #   - EffNet-B0 NS-JFT backbone with use_post_head=True (1280-d features)
@@ -16,17 +16,17 @@
 #   - Rare-species upsampling (MIN_SAMPLE=20) AFTER fold assignment
 #   - grad_clip_val=1.0 via Lightning Trainer (audit § 5)
 #
-# DISABLED here (the only difference from tucker_kd.yaml):
+# DISABLED here (the only difference from distilled_sed_kd.yaml):
 #   - use_perch_distill: false → no DistillHead, no PerchTeacher, no MSE term;
 #     backbone trained directly by cls loss (no feature.detach()).
 #
-# Read against the paired tucker_kd LB. Per exp 031 drift investigation:
+# Read against the paired distilled_sed_kd LB. Per exp 031 drift investigation:
 # use within-codebase paired Δ as the load-bearing signal (do NOT compare to
 # historical v5j 0.906 — cross-run hardware variance is ~0.007 LB).
 #
 # Reference: proposal.md § Falsifiable; tasks.md § 0.9.
 
-run_name: "2026-exp032-tucker-control"
+run_name: "2026-exp032-distilled-sed-control"
 
 encoder:
   type: "efficientnet"

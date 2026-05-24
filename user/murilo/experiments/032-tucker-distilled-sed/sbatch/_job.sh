@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=exp032-tucker
+#SBATCH --job-name=exp032-dsed
 #SBATCH --account=paceship-clef2026_birdclef
 # --partition is set by run.sh (default: gpu-rtx6000,gpu-v100; override with --gpu)
 #SBATCH --gres=gpu:1
@@ -17,16 +17,16 @@
 #
 # Usage:
 #   cd user/murilo/experiments/032-tucker-distilled-sed
-#   # tucker control (KD off):
-#   bash sbatch/run.sh configs/tucker_control.yaml
-#   # tucker KD (the test):
-#   bash sbatch/run.sh configs/tucker_kd.yaml
+#   # control (KD off):
+#   bash sbatch/run.sh configs/distilled_sed_control.yaml
+#   # KD (the test):
+#   bash sbatch/run.sh configs/distilled_sed_kd.yaml
 #   # fast-dev-run gradient-flow check:
-#   bash sbatch/run.sh configs/tucker_kd.yaml --fast-dev-run
+#   bash sbatch/run.sh configs/distilled_sed_kd.yaml --fast-dev-run
 
 set -eu
 
-CONFIG="${CONFIG:-configs/tucker_kd.yaml}"
+CONFIG="${CONFIG:-configs/distilled_sed_kd.yaml}"
 PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 GPU_CHECK="${GPU_CHECK:-0}"
