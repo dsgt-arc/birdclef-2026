@@ -18,7 +18,7 @@ Run them with the interactive venv:
 | [`test_tucker_mixup.py`](../../tests/032-tucker-distilled-sed/test_tucker_mixup.py) | 0.4 | FocalDS + ScDS + apply_aug: waveform mixup, hard-max labels, focal×SS mixup, augmentation, rate verification (18 tests) |
 | [`test_specaugment.py`](../../tests/032-tucker-distilled-sed/test_specaugment.py) | 0.5 | SpecAugment: defaults match Tucker, masking actually zeroes rows/cols, integration with DistilledSEDFinetuneModule (12 tests) |
 | (extended in `test_dual_supervision_loss.py`) | 0.6 | LR curve completeness + gradient_clip_val contract (4 new tests added to the task-0.3 file) |
-| _planned_ `test_mixsamp_sampler.py` | 0.7 | MixSamp 90/10 batch composition |
+| [`test_mixsamp_sampler.py`](../../tests/032-tucker-distilled-sed/test_mixsamp_sampler.py) | 0.7 | MixSamp batch composition, with-replacement sampling, edge cases (14 tests) |
 | _planned_ `test_fold_construction.py` | 0.8 | StratifiedKFold focal + GroupKFold SS + upsampling |
 
 The shared `user/murilo/tests/pytest.ini` configures the runner for this layout (`testpaths = .`, `python_files = test_*.py`).
@@ -116,11 +116,23 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
   - `test_gradient_clip_handled_by_lightning_trainer`: documents the contract and sanity-checks PyTorch's `clip_grad_norm_(params, 1.0)` produces post-clip total norm ≈ 1.0 on a synthetic case with pre-clip norm > 1.
 - **Test gate**: ✅ PASSED (4 new tests in `test_dual_supervision_loss.py`, all pass; cumulative file is now 26 tests).
 
-### 0.7 Implement `MixSamp` 90/10 batch sampler
-- [ ] 0.7.1 Port `MixSamp` as a custom `torch.utils.data.Sampler` (notebook cell 12; dataset+inference audit § 3). For BATCH=64, SHARES={"focal":0.9, "sc":0.1} → 58 focal + 6 SC per batch, with-replacement, shuffled.
-- [ ] 0.7.2 Wire into `SEDDataModule` so train_dataloader uses `batch_sampler=MixSamp(...)`. Set `num_workers=0` initially to match Tucker (can revisit later).
-- [ ] 0.7.3 Unit test: 100 batches → confirm ~58 focal + ~6 SC composition; seed shift per epoch.
-- **Test gate**: unit test passes; one fast-dev-run epoch completes with expected batch composition logged.
+### 0.7 Implement `MixSamp` 90/10 batch sampler — DONE
+- [x] 0.7.1 `MixSamp` added to `src/birdclef/data/distilled_sed_dataset.py` (alongside FocalDS / ScDS — same module). Verbatim port of Tucker's notebook cell 12. For `bs=64, shares={"focal":0.9, "sc":0.1}` → per_src=[58, 6]. With-replacement uniform sampling per source via `rng.integers(0, size, size=n)`, indices translated by per-source offsets so they index correctly into a `ConcatDataset`, then in-batch shuffled with `rng.shuffle`. Tucker's rounding-remainder logic preserved (largest source gets the difference when `bs * share` doesn't round cleanly). `share=0.0` exactly opts a source out (the `max(1, ...)` floor applies only to nonzero shares).
+- [x] 0.7.2 **Wiring deferred to task 0.8** — the actual DataModule that uses `MixSamp` needs the fold-construction infrastructure (focal df + sc df + Y_SC + sc_mixup_sources pool) that task 0.8 builds. `MixSamp` itself is ready to be wired with `batch_sampler=MixSamp(...)`, `num_workers=0`.
+- [x] 0.7.3 **Tests** at [`test_mixsamp_sampler.py`](../../tests/032-tucker-distilled-sed/test_mixsamp_sampler.py) — 14 tests, all pass:
+  - **Audit § 3 verification**: `bs=64, shares={"focal":0.9, "sc":0.1}` → exactly 58 focal + 6 SC per batch over 10 batches
+  - Offsets translate correctly (multi-source case with 3 sources)
+  - Rounding-remainder distribution: batch size always exactly `bs` regardless of share fractions
+  - `share=0.0` explicitly opts source out (zero indices from that source)
+  - Small nonzero share gets floor-of-1
+  - `__len__` equals `nst`; same seed reproduces; different seeds diverge (Tucker uses `seed=42+ep` per epoch)
+  - In-batch shuffle: indices from different sources are interleaved, not contiguous
+  - With-replacement: small pool (size=10) + large batch (50) produces duplicates
+  - Empirical rate matches share exactly over 100 batches (focal: 58/64, sc: 6/64)
+  - Zero-sized source skipped (relevant for empty SS pool when held out)
+  - Invalid inputs raise ValueError (mismatched lengths, bs<=0, nst<0)
+  - **End-to-end with `DataLoader` + `ConcatDataset`**: integration test confirms the sampler works as `batch_sampler=` argument and produces the expected per-source counts at retrieval time.
+- **Test gate**: ✅ PASSED. Fast-dev-run with composition logging is part of task 1.1 (Phase 1 fast-dev-run); the unit-test integration test already exercises the DataLoader path.
 
 ### 0.8 5-fold construction (Phase 1 = fold 0 only)
 - [ ] 0.8.1 Focal `StratifiedKFold(n_splits=5, shuffle=True, random_state=42)` on `primary_label` with `drop_duplicates("original_idx")` (dataset+inference audit § 1.1).

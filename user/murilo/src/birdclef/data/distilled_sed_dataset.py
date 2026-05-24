@@ -21,6 +21,11 @@ Verbatim port of `tuckerarrants/bc2026-distilled-sed` cells 12 + 7:
   (10–30 dB, p=0.5). Time-shift comes from the random crop offset at load
   time, NOT from this function.
 
+- `MixSamp`: batch sampler that composes batches from multiple data sources
+  with per-source shares. For Tucker's `{"focal": 0.9, "sc": 0.1}, bs=64`
+  defaults: 58 focal + 6 SC samples per batch. Used with `ConcatDataset` of
+  `[FocalDS, ScDS]` in that order.
+
 Kept separate from `data/sed.py` (per the reproducibility argument for the
 LightningModule: bit-identical preservation of exp 030/031 paths).
 
@@ -43,13 +48,13 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 
 logger = logging.getLogger(__name__)
 
@@ -457,4 +462,126 @@ class ScDS(Dataset):
             torch.ones(self.num_classes, dtype=torch.float32),
             torch.ones(self.num_classes, dtype=torch.float32),
             "sc",
+        )
+
+
+# ============================================================================
+# MixSamp — multi-source batch sampler (Tucker cell 12)
+# ============================================================================
+
+
+class MixSamp(Sampler[list[int]]):
+    """Batch sampler that composes each batch from multiple data sources with
+    configurable per-source shares. Verbatim port of `tuckerarrants/bc2026-
+    distilled-sed` cell 12.
+
+    Designed to be used with `torch.utils.data.ConcatDataset` containing N
+    underlying datasets concatenated in order. Each batch is built by sampling
+    `per_src[i]` indices from source `i` (with replacement, uniform over its
+    range), translating them by the source's offset within the concat, and
+    shuffling the combined batch.
+
+    For Tucker's defaults (`shares={"focal": 0.9, "sc": 0.1}, bs=64`), this
+    yields **58 focal + 6 SC** indices per batch (per audit § 3 verification).
+
+    Args:
+        sizes: List of per-source dataset sizes, in the order they appear in
+            the concat dataset. e.g. `[len(focal_ds), len(sc_ds)]`.
+        names: List of per-source names, same order as `sizes`. Used to look up
+            shares.
+        shares: Per-source share dict (`name → fraction`). Fractions that don't
+            match a key default to 0.0. The shares need not sum to 1.0; the
+            sampler rounds each to an integer count, then distributes any
+            rounding remainder to the largest-count source.
+        bs: Batch size (total indices per batch).
+        nst: Number of steps per epoch (batches yielded by `__iter__`).
+        seed: RNG seed. **Subsequent epochs should rebuild the sampler with a
+            shifted seed** (Tucker's training loop uses `seed=42 + ep`) so the
+            batch composition varies — this Sampler doesn't auto-shift.
+
+    Notes:
+        - Sampling is with-replacement per source. Each draw is uniform on
+          `[0, sizes[i])`, then translated by `offsets[i] = sum(sizes[:i])`
+          so the index points into the concat dataset.
+        - `__len__` returns `nst` (number of batches). The DataLoader uses this
+          to size the epoch.
+        - Tucker's `nst = max(100, sum(sizes) // bs)`. We don't impose that
+          floor here — the caller sets `nst` explicitly (typically in the
+          DataModule's `train_dataloader` setup).
+        - Sources with `n=0` or `size=0` are skipped without raising — useful
+          when disabling a source via `shares` (e.g. `shares["sc"]=0.0`).
+
+    Reference:
+    - analysis/notes/2026-05-23-tucker-dataset-and-inference-audit.md (§ 3)
+    - vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/bc2026-distilled-sed.ipynb (cell 12)
+    """
+
+    def __init__(
+        self,
+        sizes: list[int],
+        names: list[str],
+        shares: dict[str, float],
+        bs: int,
+        nst: int,
+        seed: int = 0,
+    ):
+        if len(sizes) != len(names):
+            raise ValueError(f"sizes ({len(sizes)}) and names ({len(names)}) must have same length")
+        if bs <= 0:
+            raise ValueError(f"bs must be > 0, got {bs}")
+        if nst < 0:
+            raise ValueError(f"nst must be >= 0, got {nst}")
+
+        self.sizes = list(sizes)
+        self.names = list(names)
+        self.shares = dict(shares)
+        self.bs = int(bs)
+        self.nst = int(nst)
+        self.seed = int(seed)
+        self.rng = np.random.default_rng(seed)
+
+        # Per-source batch counts. Round each share × bs to nearest int (with
+        # a floor of 1 for any source that has ANY share > 0). Then distribute
+        # any rounding remainder to the largest source.
+        per_src = [max(1, int(round(bs * shares.get(n, 0.0)))) for n in names]
+        # If a share is exactly 0 the user is opting that source out — keep 0
+        # (override the max(1, ...) floor for the explicit-zero case).
+        per_src = [
+            0 if shares.get(n, 0.0) == 0.0 else c for n, c in zip(names, per_src, strict=False)
+        ]
+
+        total = sum(per_src)
+        if total != bs:
+            # Distribute the rounding remainder to the source with the largest
+            # current count. With `0 == 0`, this also handles the case where
+            # all shares rounded to 0 (rare; caller responsibility).
+            idx = int(np.argmax(per_src)) if per_src else 0
+            per_src[idx] += bs - total
+        self.per_src = per_src
+
+        # Offsets into the concat dataset's linear index space:
+        # `concat[offset_i + j]` is the j-th sample of source i.
+        self.offsets = [0]
+        for s in self.sizes[:-1]:
+            self.offsets.append(self.offsets[-1] + s)
+
+    def __len__(self) -> int:
+        return self.nst
+
+    def __iter__(self) -> Iterator[list[int]]:
+        for _ in range(self.nst):
+            batch: list[int] = []
+            for off, size, n in zip(self.offsets, self.sizes, self.per_src, strict=False):
+                if n <= 0 or size <= 0:
+                    continue
+                idxs = self.rng.integers(0, size, size=n)
+                batch.extend([off + int(i) for i in idxs])
+            self.rng.shuffle(batch)
+            yield batch
+
+    def extra_repr(self) -> str:
+        per_src_str = ", ".join(f"{n}={c}" for n, c in zip(self.names, self.per_src, strict=False))
+        return (
+            f"sizes={self.sizes}, shares={self.shares}, bs={self.bs}, "
+            f"nst={self.nst}, per_src=[{per_src_str}], seed={self.seed}"
         )
