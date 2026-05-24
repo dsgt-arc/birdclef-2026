@@ -150,10 +150,26 @@ Each task lists the **reference** for the verbatim code, and a **test** that gat
   - DataModule: setup() populates folds + Y_SC; explicit steps_per_epoch honored; train DataLoader batch composition = MixSamp output (16 = 14 focal + 2 sc with shares=0.9/0.1); val DataLoader uses ONLY val-fold rows; no file leak between train and val; changing fold_k swaps held-out files.
 - **Test gate**: ✅ PASSED.
 
-### 0.9 Write paired configs
-- [ ] 0.9.1 `configs/tucker_control.yaml` — full Tucker recipe, `use_perch_distill: false`, `save_top_k: -1`, fold 0 only.
-- [ ] 0.9.2 `configs/tucker_kd.yaml` — same as control + `use_perch_distill: true, alpha_distill: 1.0, perch_embed_dim: 1536, perch_onnx_path: vendor/kaggle/datasets/tuckerarrants/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx`.
-- [ ] 0.9.3 Both inherit pinned deps via `032-tucker-distilled-sed/pyproject.toml`.
+### 0.9 Write paired configs — DONE
+- [x] 0.9.1 [`configs/tucker_control.yaml`](configs/tucker_control.yaml) — full Tucker recipe, `use_perch_distill: false`, `save_top_k: -1`, fold 0 only. Encodes all the audit-load-bearing hyperparameters:
+  - **Backbone**: `tf_efficientnet_b0.ns_jft_in1k`, `use_post_head: true` (1280-d), `drop_path_rate: 0.1`
+  - **Head**: `att_head_logit_space`, `hidden_dim: 512`, `dropout: 0.5`, `gem_p: 3.0`
+  - **Mel** (audit § 7.1): `n_fft: 2048, hop: 512, n_mels: 256, fmin: 20, fmax: 16000, top_db: 80`
+  - **SpecAugment** (audit § 2.4): `freq_p: 10, time_p: 10, n_freq: 1, n_time: 2`
+  - **Mixup** (audit § 2.3): `focal_focal_prob: 0.5, alpha: 0.4, hard: true, focal_sc_prob: 0.5, aug_prob: 0.5`
+  - **Schedule** (audit § 5): `lr: 5e-4, wd: 1e-4, max_epochs: 25, warmup: 2 ep, warmup_start_factor: 1/25, eta_min: 1e-6, grad_clip: 1.0`
+  - **Data**: `bs: 64, focal_share: 0.9, sc_share: 0.1, n_folds: 5, min_sample: 20, seed: 42`
+  - **Loss + blend**: 50/50 dual-supervision and inference blend
+  - **Save**: `save_top_k: -1` (avoids the exp 031 best-vs-last pitfall per [`feedback_save_top_k_does_not_preserve_last`](../../../.claude/projects/-storage-project-ps-clef2026-birdclef-0-mgustineli3-birdclef-2026/memory/feedback_save_top_k_does_not_preserve_last.md))
+  - **Early stopping**: disabled (`patience: 999`) — Tucker trains full 25 ep
+- [x] 0.9.2 [`configs/tucker_kd.yaml`](configs/tucker_kd.yaml) — bit-identical to control except for: `run_name`, `training.use_perch_distill: true`, `training.perch_onnx_path: "vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx"`. `alpha_distill: 1.0`, `perch_embed_dim: 1536`.
+- [x] 0.9.3 Both configs inherit the pinned deps via `032-tucker-distilled-sed/pyproject.toml` (torch 2.5.1, timm 1.0.26, hf-hub 1.9.2, nnAudio 0.3.4, onnxruntime-gpu 1.26.0).
+- [x] **Tests** at [`test_configs.py`](../../tests/032-tucker-distilled-sed/test_configs.py) — 25 tests, all pass:
+  - Backbone, head, mel, SpecAugment, mixup, schedule, data, loss/blend, KD — each load-bearing audit value is asserted.
+  - **Paired-control invariant** (`test_paired_invariant_only_kd_keys_differ`): control vs kd diverge ONLY on `run_name`, `training.use_perch_distill`, `training.perch_onnx_path`. Any other drift is a methodology violation and fails this test.
+  - `test_perch_onnx_file_exists`: the referenced ONNX file actually exists at the resolved repo-relative path.
+  - `test_save_top_k_minus_one`: locks in the every-epoch save policy.
+- **Test gate**: ✅ PASSED. Full 032 suite: 140/140 tests pass (was 115 + 25 new).
 
 ### 0.10 Update sbatch + train.py for new head/sampler dispatch
 - [ ] 0.10.1 In `train.py`: dispatch `head_type: "att_head_logit_space"` to instantiate `AttHeadLogitSpace`.

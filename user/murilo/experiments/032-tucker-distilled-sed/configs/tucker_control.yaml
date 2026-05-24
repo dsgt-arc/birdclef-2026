@@ -1,0 +1,144 @@
+# Experiment 032 — tucker_control: full Tucker distilled-SED recipe with
+# KD branch DISABLED. Paired-control for tucker_kd.yaml.
+#
+# Tucker recipe components active here (per audit § 5):
+#   - EffNet-B0 NS-JFT backbone with use_post_head=True (1280-d features)
+#   - AttHeadLogitSpace (logit-space aggregation; xavier init; fixed dropout)
+#   - Dual-supervision loss: 0.5·BCE(clip) + 0.5·BCE(frame_max)
+#   - Inference blend: 0.5·σ(clip) + 0.5·σ(frame_max) per-window
+#   - Waveform mixup at the dataset level: Beta(0.4, 0.4), MIXUP_HARD=True
+#   - Focal × labeled-SS mixup (p=0.5)
+#   - SpecAugment: 1 freq×10 + 2 time×10, training-only, post per-sample norm
+#   - apply_aug: gain jitter ±6 dB + SNR-controlled noise 10–30 dB (p=0.5 each)
+#   - AdamW(lr=5e-4, wd=1e-4) + LinearLR(2 ep, start_factor=1/25) → CosineAnnealingLR(23 ep, eta_min=1e-6)
+#   - 5-fold (StratifiedKFold focal + GroupKFold SS); Phase 1 trains fold 0 only
+#   - MixSamp 90/10 focal/SS batch composition
+#   - Rare-species upsampling (MIN_SAMPLE=20) AFTER fold assignment
+#   - grad_clip_val=1.0 via Lightning Trainer (audit § 5)
+#
+# DISABLED here (the only difference from tucker_kd.yaml):
+#   - use_perch_distill: false → no DistillHead, no PerchTeacher, no MSE term;
+#     backbone trained directly by cls loss (no feature.detach()).
+#
+# Read against the paired tucker_kd LB. Per exp 031 drift investigation:
+# use within-codebase paired Δ as the load-bearing signal (do NOT compare to
+# historical v5j 0.906 — cross-run hardware variance is ~0.007 LB).
+#
+# Reference: proposal.md § Falsifiable; tasks.md § 0.9.
+
+run_name: "2026-exp032-tucker-control"
+
+encoder:
+  type: "efficientnet"
+  model_name: "tf_efficientnet_b0.ns_jft_in1k"  # Tucker's backbone (NS-JFT, not EffNetV2)
+  pretrained: true
+  use_post_head: true     # Tucker mode: keep conv_head → 1280-d features (not 320-d via features_only)
+  drop_path_rate: 0.1     # Tucker's value
+  in_chans: 1
+
+sed_head:
+  type: "att_head_logit_space"   # AttHeadLogitSpace (task 0.1)
+  hidden_dim: 512                 # Tucker's
+  dropout: 0.5                    # produces Tucker's Dropout(0.25) → Dropout(0.5) sequence
+  gem_p: 3.0                      # Tucker's initial p for GeMFreqPool (with clamp(min=1.0))
+
+mel:
+  # Tucker's mel params (audit § 7.1). NNAudio used as the GPU mel transform
+  # (functionally equivalent to Tucker's torchaudio MelSpectrogram per audit).
+  type: "nnaudio"
+  n_fft: 2048
+  hop_length: 512        # Tucker's
+  n_mels: 256            # Tucker's (audit § 7.1 + § 7.2 — must match training side, NOT 128)
+  fmin: 20               # Tucker's
+  fmax: 16000            # Tucker's
+  top_db: 80.0           # Tucker's AmplitudeToDB(top_db=80)
+  norm_type: "amplitude_to_db"
+  gpu: true              # Tucker computes mel on GPU; per-sample mean/std norm handled in LightningModule
+
+spec_augment:
+  enabled: true
+  freq_mask_param: 10    # Tucker's FREQ_MASK_PARAM
+  time_mask_param: 10    # Tucker's TIME_MASK_PARAM
+  num_freq_masks: 1      # Tucker's NUM_FREQ_MASKS
+  num_time_masks: 2      # Tucker's NUM_TIME_MASKS
+
+mixup:
+  # Tucker's mixup defaults from cells 4 + 12 (audit § 2.3).
+  focal_focal_prob: 0.5   # MIXUP_PROB
+  alpha: 0.4              # MIXUP_ALPHA
+  hard: true              # MIXUP_HARD → max labels
+  focal_sc_prob: 0.5      # FOCAL_SC_MIXUP_PROB (only reached when focal-focal didn't fire)
+  focal_sc_alpha: 0.4     # FOCAL_SC_MIXUP_ALPHA
+  aug_prob: 0.5           # AUG_PROB — gain jitter + noise firing probability
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 5.0    # Tucker: 5s clips
+  batch_size: 64          # Tucker's BATCH (16 in DEBUG; we use 64 for production)
+  num_workers: 0          # Tucker's default; revisit if I/O-bound
+
+  # DistilledSEDDataModule controls (task 0.8):
+  n_folds: 5
+  seed: 42                # focal StratifiedKFold random_state
+  min_sample: 20          # Tucker's MIN_SAMPLE — rare-species upsampling threshold
+  focal_share: 0.9        # MixSamp SHARES["focal"] (90% focal per batch = 58/64)
+  sc_share: 0.1           # MixSamp SHARES["sc"] (10% SC per batch = 6/64)
+  steps_per_epoch: null   # auto: max(100, total_train / batch_size) — Tucker's formula
+  base_seed: 42           # MixSamp base seed
+  seed_epoch_shift: true  # Tucker uses seed=42+ep — relies on Lightning reload_dataloaders_every_n_epochs=1
+
+  # Legacy SEDDataModule keys (unused by DistilledSEDDataModule but train.py
+  # still references some of these for non-data-loading code paths):
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 0
+  soundscape_test_files: 0
+
+training:
+  max_epochs: 25                   # Tucker's
+  lr: 5.0e-4                       # Tucker's
+  head_lr: 5.0e-4                  # unused by DistilledSEDFinetuneModule (single param group); legacy
+  weight_decay: 1.0e-4             # Tucker's
+  warmup_epochs: 2                 # Tucker's
+  warmup_start_factor: 0.04        # Tucker's 1/25
+  eta_min: 1.0e-6                  # Tucker's
+  threshold: 0.5
+  grad_clip_val: 1.0               # Tucker (audit § 5; Lightning Trainer applies clip_grad_norm_)
+  precision: "16-mixed"            # Tucker uses autocast + GradScaler
+  accumulate_grad_batches: 1
+  per_sample_mel_norm: true        # Tucker's per-sample (mean, std) on mel before SpecAugment
+
+  # Dual-supervision loss weights (Tucker: 50/50)
+  clipwise_weight: 0.5
+  framewise_weight: 0.5
+
+  # Inference blend (Tucker: 50/50 in probability space)
+  blend_clip: 0.5
+  blend_frame: 0.5
+
+  # --- Perch v2 KD branch — DISABLED for control ---
+  use_perch_distill: false
+  perch_embed_dim: 1536
+  alpha_distill: 1.0
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/cmap"            # multilabel AP — closest to Tucker's "macro AUC"
+    mode: "max"
+    save_top_k: -1                  # ALL epochs (per `feedback_save_top_k_does_not_preserve_last`)
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+    every_n_epochs: 1
+  early_stopping:
+    monitor: "val/cmap"
+    mode: "max"
+    patience: 999                   # disabled — Tucker trains full 25 epochs
+    min_delta: 0.0
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp032"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50
