@@ -224,7 +224,18 @@ def score_one(
     output so we can show the gap relative to Tucker's metric in the report.
     """
     state = torch.load(ckpt_path, map_location=device, weights_only=False)
-    module.load_state_dict(state["state_dict"], strict=True)
+    # strict=False: KD-trained checkpoints carry extra `distill_head.proj.*`
+    # keys, but the ranker builds the module with use_perch_distill=False
+    # (the distill head isn't part of the inference forward). Surface any
+    # unexpected-key set that ISN'T just the distill head, so a real schema
+    # drift would still fail loudly.
+    missing, unexpected = module.load_state_dict(state["state_dict"], strict=False)
+    unexpected_non_distill = [k for k in unexpected if not k.startswith("distill_head.")]
+    if missing or unexpected_non_distill:
+        raise RuntimeError(
+            f"Unexpected schema drift in {ckpt_path.name}: "
+            f"missing={missing}, unexpected_non_distill={unexpected_non_distill}"
+        )
     module.to(device)
     module.eval()
 
