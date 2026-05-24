@@ -151,7 +151,7 @@ EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 RUN_NAME="$(basename "$CONFIG" .yaml)"
 
 echo "=============================================="
-echo "Experiment 030: Sydorskyi MixUp"
+echo "Experiment 032: Tucker Distilled-SED Replication"
 echo "=============================================="
 echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
