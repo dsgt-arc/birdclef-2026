@@ -581,6 +581,28 @@ MODELS = {
         "weights_dir": "artifacts/weights/distilled-sed-kd-hgnet",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-hgnet.json",
     },
+    # Phase 2.A individual-fold diagnostics (folds 1-4; fold 0 is `distilled-sed-kd`).
+    # Characterize per-fold LB variance + offline↔LB correlation across folds.
+    "distilled-sed-kd-fold1": {
+        "slug": "birdclef-2026-distilled-sed-kd-fold1-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-fold1",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-fold1.json",
+    },
+    "distilled-sed-kd-fold2": {
+        "slug": "birdclef-2026-distilled-sed-kd-fold2-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-fold2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-fold2.json",
+    },
+    "distilled-sed-kd-fold3": {
+        "slug": "birdclef-2026-distilled-sed-kd-fold3-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-fold3",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-fold3.json",
+    },
+    "distilled-sed-kd-fold4": {
+        "slug": "birdclef-2026-distilled-sed-kd-fold4-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-fold4",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-fold4.json",
+    },
 }
 
 

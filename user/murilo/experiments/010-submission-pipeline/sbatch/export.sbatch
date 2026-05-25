@@ -1368,6 +1368,38 @@ export_distilled_sed_kd_hgnet() {
     fi
 }
 
+export_distilled_sed_kd_single_fold() {
+    # Phase 2.A diagnostic: export a single fold of the 5-fold KD ensemble
+    # for standalone LB submission. Characterizes per-fold LB variance and
+    # the offline↔LB correlation across folds (offline val/auroc range
+    # 0.908-0.931 → expected LB band ~0.88-0.93 at single-fold).
+    # Fold 0 is already exported as `distilled-sed-kd` (Phase D, LB 0.906);
+    # this helper is for folds 1-4.
+    local FOLD="$1"
+    if [ -z "$FOLD" ] || ! [[ "$FOLD" =~ ^[1-4]$ ]]; then
+        echo "ERROR: export_distilled_sed_kd_single_fold requires fold in [1, 4], got '${FOLD}'" >&2
+        exit 1
+    fi
+    echo "=== Exporting Exp 032 distilled-SED KD fold ${FOLD} (Phase 2.A single-fold diagnostic) ==="
+    local CKPT
+    CKPT="$(find_last_ckpt "${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/fold${FOLD}")"
+    echo "Using checkpoint: $CKPT"
+    local OUTPUT_DIR="artifacts/weights/distilled-sed-kd-fold${FOLD}"
+    python scripts/export_distilled_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP032_DIR}/configs/distilled_sed_kd.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir "${OUTPUT_DIR}/"
+
+    # Copy the 234-class identity species_mapping (kernel needs it).
+    local MAPPING_2026="artifacts/weights/species_mapping_2026_234.json"
+    if [ -f "$MAPPING_2026" ]; then
+        cp "$MAPPING_2026" "${OUTPUT_DIR}/species_mapping.json"
+    elif [ -f "artifacts/weights/distilled-sed-kd/species_mapping.json" ]; then
+        cp "artifacts/weights/distilled-sed-kd/species_mapping.json" "${OUTPUT_DIR}/species_mapping.json"
+    fi
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -1429,6 +1461,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-resubmit|\
     distilled-sed-control|distilled-sed-kd|all-032-distilled-sed|\
     distilled-sed-kd-5fold|distilled-sed-kd-hgnet|\
+    distilled-sed-kd-fold1|distilled-sed-kd-fold2|distilled-sed-kd-fold3|distilled-sed-kd-fold4|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1551,6 +1584,10 @@ case "$MODEL" in
     distilled-sed-kd)                   export_distilled_sed_kd ;;
     distilled-sed-kd-5fold)             export_distilled_sed_kd_5fold ;;
     distilled-sed-kd-hgnet)             export_distilled_sed_kd_hgnet ;;
+    distilled-sed-kd-fold1)             export_distilled_sed_kd_single_fold 1 ;;
+    distilled-sed-kd-fold2)             export_distilled_sed_kd_single_fold 2 ;;
+    distilled-sed-kd-fold3)             export_distilled_sed_kd_single_fold 3 ;;
+    distilled-sed-kd-fold4)             export_distilled_sed_kd_single_fold 4 ;;
     all-032-distilled-sed)
         export_distilled_sed_control
         echo ""
