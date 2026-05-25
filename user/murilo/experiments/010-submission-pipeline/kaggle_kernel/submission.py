@@ -94,6 +94,13 @@ MODEL_SLUGS = [
     # Exp 032 Phase 2: 5-fold KD ensemble + HGNet backbone ablation
     "birdclef-2026-distilled-sed-kd-5fold-weights",
     "birdclef-2026-distilled-sed-kd-hgnet-weights",
+    # Exp 032 Phase 2.A individual-fold diagnostics (folds 1-4; fold 0 is `distilled-sed-kd`).
+    # Single-fold ckpts; route through `predict_soundscape_tucker` (single-model path)
+    # via mel_config["type"] == "tucker_mel" + "output_type" == "tucker_logits".
+    "birdclef-2026-distilled-sed-kd-fold1-weights",
+    "birdclef-2026-distilled-sed-kd-fold2-weights",
+    "birdclef-2026-distilled-sed-kd-fold3-weights",
+    "birdclef-2026-distilled-sed-kd-fold4-weights",
     # Exp 032 Phase D: single-fold KD + control (Tucker-faithful mel)
     # EffNet-B0 NS-JFT + AttHeadLogitSpace + Perch v2 KD + 25 ep cosine.
     # ONNX outputs pre-blended LOGITS; kernel does per-window inference →
