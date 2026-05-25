@@ -1,11 +1,11 @@
 {
-  "auroc": 0.11332889646291733,
-  "cmap": 0.0896240845322609,
-  "f1_macro": 0.06270834803581238,
-  "f1_micro": 0.7178571224212646,
-  "top1_accuracy": 0.8193548321723938,
-  "top5_accuracy": 0.896774172782898,
-  "loss": 0.02916526235640049,
+  "auroc": 0.9079357385635376,
+  "cmap": 0.6915209889411926,
+  "f1_macro": 0.0661468654870987,
+  "f1_micro": 0.7320144176483154,
+  "top1_accuracy": 0.8709677457809448,
+  "top5_accuracy": 0.9032257795333862,
+  "loss": 0.03069225326180458,
   "metrics_source": "val",
   "architecture": "sed",
   "encoder_type": "efficientnet",
@@ -25,8 +25,8 @@
   },
   "dataset": "birdclef-2026",
   "num_classes": 234,
-  "best_val_score": 0.09237702935934067,
-  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/best-epochepoch=11.ckpt",
+  "best_val_score": 0.7088686227798462,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/best-epochepoch=10-v1.ckpt",
   "stopped_epoch": 25,
   "training": {
     "max_epochs": 25,
@@ -53,8 +53,8 @@
   },
   "compute": {
     "gpu": "0",
-    "slurm_job_id": 9088258,
-    "node": "atl1-1-03-006-21-0",
+    "slurm_job_id": 9136232,
+    "node": "atl1-1-03-006-1-0",
     "cpus_per_task": "8"
   }
 }

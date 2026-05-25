@@ -955,10 +955,30 @@ focal×SS mixup + SpecAugment (1×freq×10 + 2×time×10) + 25 ep AdamW + 2 ep
 warmup + cosine + 90/10 focal/SS MixSamp + StratifiedKFold focal +
 GroupKFold SS. Fold 0, seed=42.
 
+### Phase 1 (broken mel pipeline) — REJECTED
+
 | Slug | Variant | Tucker val macro AUC (fold 0) | LB | Δ paired ctrl | Δ vs v5j_control_last 0.897 | Checkpoint |
 |------|---------|----------:|---:|---:|---:|---|
-| `distilled-sed-control` | Tucker recipe, KD OFF (last.ckpt, ep 24) | 0.8928 | **0.522** | — | **−0.375** | `032-tucker-distilled-sed/.../2026-exp032-distilled-sed-control/last.ckpt` |
-| `distilled-sed-kd` | Tucker recipe + Perch v2 KD ON (last.ckpt, ep 24) | TBD (KD ranker rerun) | **0.513** | **−0.009** | **−0.384** | `032-tucker-distilled-sed/.../2026-exp032-distilled-sed-kd/last.ckpt` |
+| `distilled-sed-control` (Phase 1, broken) | Tucker recipe, KD OFF (last.ckpt, ep 24) | 0.893 (post-hoc) | **0.522** | — | **−0.375** | job 9088255 |
+| `distilled-sed-kd` (Phase 1, broken) | Tucker recipe + Perch v2 KD ON (last.ckpt, ep 24) | TBD (rerun) | **0.513** | **−0.009** | **−0.384** | job 9088258 |
+
+### Phase D retrain (Tucker-faithful mel via TuckerMelSpectrogram) — LB PENDING
+
+After D.2 confirmed our training mel diverged from Tucker's by max\|d\| = 3.20 (Pearson r = 0.9356), D.3 landed `TuckerMelSpectrogram` (verbatim port of Tucker's `MelSpecTransform`). Configs flipped `mel.type: "nnaudio"` → `"tucker"`. Training and Kaggle inference now share the SAME torchaudio code paths — they cannot drift apart. Verified by 12 unit tests including the regression guard `test_diverges_from_nnaudio_amplitude_to_db`.
+
+| Slug | Variant | val/auroc (Tucker macro AUC) | val/cmap (Tucker macro AP) | best_val_score | LB |
+|------|---------|----------:|----------:|----------:|---:|
+| `distilled-sed-control` (Phase D, ep 24 last) | Tucker recipe, KD OFF, mel fix | **0.887** | 0.645 | 0.659 | TBD |
+| `distilled-sed-kd` (Phase D, ep 24 last) | Tucker recipe + Perch v2 KD ON, mel fix | **0.908** | 0.692 | 0.709 | TBD |
+| **paired Δ (KD − control), on val fold 0** | — | **+0.021** | **+0.047** | +0.050 | — |
+
+Both runs land in Tucker's published single-fold band (~0.91 macro). Paired Δ on val/auroc (+0.021) is consistent with Tucker's published +0.020 LB lift — the first internally-consistent signal that the KD branch transfers in our codebase.
+
+Translation to LB pending Phase D § D.6.2 (end-to-end validation via `scripts/validate_end_to_end.py`) and § D.6.3 (re-export + Kaggle re-submit). Do NOT submit to LB until end-to-end validation PASSes — that's the gating check that catches any residual train/inference mismatch.
+
+Retrain jobs: 9136231 (control, walltime 3h39m, node atl1-1-03-007-11-0) + 9136232 (KD, walltime 4h26m, atl1-1-03-006-1-0). W&B: `dsgt-arc/birdclef-2026-exp032/g5rblf6o` (control) + `0w29iaut` (KD).
+
+Checkpoints (Phase D retrains): `/storage/project/.../checkpoints/2026-exp032-distilled-sed-{control,kd}/last.ckpt`. Phase D `last.ckpt` overwrites Phase 1; Phase 1 epoch-best checkpoints carry the `-v1` suffix, Phase D ones don't.
 
 ### Verdict: REJECTED but unreadable (pipeline broken, not hypothesis falsified)
 

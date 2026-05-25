@@ -272,10 +272,20 @@ Phase D blocks Phase 2 and Phase 3.
 - [ ] D.5.2 Run D.5.1 against the Phase 1 `last.ckpt` (LB 0.522) as a sanity check. Predicted: end-to-end AUC ≈ 0.52 (matches LB), while training-side `val/auroc` was ~0.89 → confirms the script detects the very gap that motivated Phase D.
 - [ ] D.5.3 Bake D.5.1 into workflow: run before every LB submission going forward. Decision rule: if end-to-end AUC is within 0.02 of training-side `val/auroc`, pipeline is consistent → LB-safe. Otherwise → diagnose mismatch before submitting.
 
-### D.6 Retrain after fix
-- [ ] D.6.1 Resubmit paired training with the fixed mel pipeline. Same configs, same data, same seed=42, single fold 0.
-- [ ] D.6.2 Run D.5.1 on the retrained checkpoint. Expected: offline ≈ Tucker's 0.91 trajectory AND end-to-end inference matches.
-- [ ] D.6.3 Re-export ONNX, re-submit to LB. Expected: control LB ≥ 0.90, KD LB at control + paired Δ.
+### D.6 Retrain after fix — paired training DONE (jobs 9136231 + 9136232)
+- [x] D.6.1 Resubmitted paired training with `mel.type: "tucker"`. Same configs (minus the mel block update), same data, same seed=42, single fold 0. Both completed cleanly.
+- [ ] D.6.2 Run D.5.1 on the retrained `last.ckpt` for both runs. Expected: offline `val/auroc` (0.887 / 0.908) ≈ end-to-end Tucker AUC via `validate_end_to_end.py` to within 0.02. **GATING THE LB SUBMISSION** — do not submit until this passes.
+- [ ] D.6.3 Re-export ONNX (no code changes needed — `export_distilled_sed.py` already dispatches on `mel.type`), re-upload weights, re-submit to LB.
+
+### Phase D retrain offline summary (training-side, on val fold 0)
+
+| Run | walltime | val/auroc (Tucker macro AUC) | val/cmap (Tucker macro AP) | best_val_score |
+|---|---:|---:|---:|---:|
+| distilled_sed_control (last, ep 24) | 3h39m | **0.887** | 0.645 | 0.659 |
+| distilled_sed_kd (last, ep 24) | 4h26m | **0.908** | 0.692 | 0.709 |
+| paired Δ (KD − control) | — | **+0.021** | **+0.047** | +0.050 |
+
+Both numbers land near Tucker's published single-fold target (~0.91 macro). The paired Δ on val/auroc (+0.021) is consistent with Tucker's published +0.020 LB lift — the first signal that the KD branch transfers in our codebase. **Translation to LB pending D.6.2 + D.6.3.**
 
 ### Phase D gate
 Phase 2 (5-fold) and Phase 3 (diagnosis) DO NOT begin until:

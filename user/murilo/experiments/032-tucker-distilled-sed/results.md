@@ -87,6 +87,43 @@ This is the core paradox: a model that scores 0.89 macro AUC on the same val
 data Tucker uses cannot score 0.52 on the LB if our inference + LB mapping
 are correct.
 
+## Phase D update (2026-05-24 night): retrain offline metrics — strong recovery
+
+Both runs retrained successfully with `mel.type: "tucker"` (jobs 9136231 control + 9136232 KD; walltime 3h39m + 4h26m on gpu-rtx6000 nodes 11-0 + 1-0). W&B runs: `g5rblf6o` (control) + `0w29iaut` (KD), project `birdclef-2026-exp032`.
+
+| Run | val/auroc (Tucker macro AUC) | val/cmap (Tucker macro AP) | best ckpt val/cmap | Δ vs Phase 1 broken trajectory |
+|---|---:|---:|---:|---|
+| distilled_sed_control (retrain, ep 24) | **0.887** | 0.645 | 0.659 (top-ranked epoch) | Phase 1 W&B showed 0.111 (broken metric); post-hoc TuckerAUC was 0.893 on a triple-normalized val that LB never saw. |
+| distilled_sed_kd (retrain, ep 24) | **0.908** | 0.692 | 0.709 | Phase 1 W&B showed 0.111; same caveat. |
+| **paired Δ (KD − control)** | **+0.021** | **+0.047** | +0.050 | — |
+
+**Critical caveat**: these offline numbers are computed on val fold 0 SS windows using the training pipeline (which now matches the inference pipeline post-D.3). They are *consistent* with Tucker's published 0.91 single-fold band (his ns22_macro peaks ~0.93; ours macro 0.887 / 0.908). They are NOT a guarantee that LB will be similar — that requires D.5 end-to-end validation to confirm pipeline consistency, then LB submission to read.
+
+The paired Δ matches Tucker's published +0.020 LB lift directionally on val/auroc. This is the first internally-consistent signal that the KD branch adds value in our codebase.
+
+### What the retrain log + metrics confirm
+
+- ✅ TuckerMacroAUC + TuckerMacroAP are now logging correctly (no more 0.11 dragging from 0-positive classes).
+- ✅ Training loss + dist_loss are healthy: control reached val/loss 0.0399, KD reached val/loss 0.0307 + `dist_loss` 0.003 (Tucker's published floor).
+- ✅ No NaN or instability anywhere across 25 epochs.
+- ✅ `last.ckpt` saved for both. All 25 best-by-cmap checkpoints saved (save_top_k=25 effective).
+
+### Diagnostic — phase 1 broken val vs phase D fixed val
+
+This table reframes what we know now about offline metrics across the two runs:
+
+|  | Phase 1 (broken mel + broken metric) | Phase D retrain (fixed) |
+|---|---|---|
+| Training mel pipeline | NNAudio `amplitude_to_db` (3 norm passes) | TuckerMelSpec + per-sample z-score (1 norm pass) |
+| Inference mel pipeline (`compute_mel_tucker`) | torchaudio + AmpToDB + z-score (Tucker-faithful) | Same as Phase 1 (still Tucker-faithful) |
+| Train vs inference distribution diff | max\|d\| = 3.20 (z-scored) | predicted < 1e-5 (same code paths) |
+| W&B `val/auroc` (during training) | 0.111 (broken MultilabelAUROC) | 0.887 / 0.908 (TuckerMacroAUC) |
+| Post-hoc Tucker AUC on val | 0.889 (matched Tucker reference) | 0.887 / 0.908 (matches W&B) |
+| Mean of val/cmap (train metric) | 0.058 (broken MultilabelAP) | 0.645 / 0.692 (TuckerMacroAP) |
+| LB | 0.522 / 0.513 | **TBD — needs D.5 then re-submit** |
+
+The Phase 1 post-hoc Tucker AUC was 0.889 (control ep 6), measured on the broken-normalized val set. The Phase D Tucker AUC is 0.887, measured on the Tucker-normalized val. The fact that these match closely is consistent with the model "learning to predict labels equally well on either input distribution" — the bug was never in label-learning capacity, it was in train↔inference distribution drift.
+
 ## Phase D update (2026-05-24 EOD): mel mismatch CONFIRMED + fix landed
 
 `scripts/diag_mel_pipeline.py` on a real soundscape (5s @ 32 kHz) confirms
