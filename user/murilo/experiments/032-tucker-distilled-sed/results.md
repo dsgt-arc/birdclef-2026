@@ -101,6 +101,21 @@ Both runs retrained successfully with `mel.type: "tucker"` (jobs 9136231 control
 
 The paired Δ matches Tucker's published +0.020 LB lift directionally on val/auroc. This is the first internally-consistent signal that the KD branch adds value in our codebase.
 
+### D.5 end-to-end validation PASSED (2026-05-24 night)
+
+Jobs 9156567 (control) + 9156568 (KD) ran `validate_end_to_end.py` against the Phase D `last-v2.ckpt` files. Each took ~1m walltime.
+
+| Run | Training-side val/auroc | End-to-end val/auroc | Gap | Status |
+|---|---:|---:|---:|---|
+| control | 0.887 | 0.898 | 0.011 | ✅ PASS (< 0.02 tol) |
+| kd | 0.908 | 0.912 | 0.004 | ✅ PASS (< 0.02 tol) |
+
+**End-to-end is slightly HIGHER than training-side for both**, because the kernel path applies 5-tap Gaussian smoothing across the 12 windows per file in LOGIT space (audit § 7.3), and that acts as a temporal denoiser. Tucker's discussion thread notes the same effect (~+0.004 lift from this smoothing trick).
+
+**Pipeline is now confirmed end-to-end consistent. LB submission is safe.**
+
+For comparison: had we run validate_end_to_end on the Phase 1 broken checkpoints, training-side would have been ~0.89 and end-to-end would have been ~0.52 (matching LB). Gap ~0.37 → FAIL. The pre-flight check would have caught that bug before we burned the LB submission slot.
+
 ### What the retrain log + metrics confirm
 
 - ✅ TuckerMacroAUC + TuckerMacroAP are now logging correctly (no more 0.11 dragging from 0-positive classes).

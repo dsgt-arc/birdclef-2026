@@ -272,10 +272,29 @@ Phase D blocks Phase 2 and Phase 3.
 - [ ] D.5.2 Run D.5.1 against the Phase 1 `last.ckpt` (LB 0.522) as a sanity check. Predicted: end-to-end AUC ≈ 0.52 (matches LB), while training-side `val/auroc` was ~0.89 → confirms the script detects the very gap that motivated Phase D.
 - [ ] D.5.3 Bake D.5.1 into workflow: run before every LB submission going forward. Decision rule: if end-to-end AUC is within 0.02 of training-side `val/auroc`, pipeline is consistent → LB-safe. Otherwise → diagnose mismatch before submitting.
 
-### D.6 Retrain after fix — paired training DONE (jobs 9136231 + 9136232)
+### D.6 Retrain after fix — paired training + validation DONE (jobs 9136231 + 9136232 + 9156567 + 9156568)
 - [x] D.6.1 Resubmitted paired training with `mel.type: "tucker"`. Same configs (minus the mel block update), same data, same seed=42, single fold 0. Both completed cleanly.
-- [ ] D.6.2 Run D.5.1 on the retrained `last.ckpt` for both runs. Expected: offline `val/auroc` (0.887 / 0.908) ≈ end-to-end Tucker AUC via `validate_end_to_end.py` to within 0.02. **GATING THE LB SUBMISSION** — do not submit until this passes.
-- [ ] D.6.3 Re-export ONNX (no code changes needed — `export_distilled_sed.py` already dispatches on `mel.type`), re-upload weights, re-submit to LB.
+- [x] D.6.2 D.5.1 end-to-end validation PASSED for both runs (jobs 9156567 + 9156568):
+
+  | Run | Training-side val/auroc | End-to-end val/auroc | Gap | Status |
+  |---|---:|---:|---:|---|
+  | control (last-v2.ckpt) | 0.887 | 0.898 | 0.011 | ✅ PASS (< 0.02 tol) |
+  | kd (last-v2.ckpt) | 0.908 | 0.912 | 0.004 | ✅ PASS (< 0.02 tol) |
+
+  End-to-end is slightly HIGHER than training-side because the kernel path adds 5-tap Gaussian smoothing across the 12 windows-per-file in LOGIT space, which acts as a temporal denoiser (matches Tucker's published "+0.004 from MengYe smoothing trick"). Pipeline is end-to-end consistent. **LB submission is safe.**
+
+- [ ] D.6.3 Re-export ONNX (export.sbatch fix commit `cffd725` makes `find_last_ckpt` auto-pick `last-v2.ckpt`), re-upload weights v2 to Kaggle, re-push kernels, submit both to LB.
+
+### D.5/D.6 checkpoint book-keeping note (post-mortem)
+
+After 3 runs in the same checkpoint directory, Lightning's `save_last: true`
+ended up with `last.ckpt` (May 23 fast-dev-run) + `last-v1.ckpt` (Phase 1 broken-mel)
++ `last-v2.ckpt` (Phase D retrain). Phase D commit `cffd725` updated
+`export_distilled_sed_{control,kd}` to use the existing `find_last_ckpt`
+helper (newest-mtime) instead of hardcoded `last.ckpt`. Future retrains in
+the same dir → `last-v3.ckpt` etc. → picked automatically. Same fix is
+implicit in `sbatch/validate_end_to_end.sh` since that script takes
+`CKPT=` explicitly.
 
 ### Phase D retrain offline summary (training-side, on val fold 0)
 
