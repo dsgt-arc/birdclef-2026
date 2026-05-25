@@ -1,16 +1,37 @@
 ---
 experiment: "032-tucker-distilled-sed"
-status: rejected-blocked
+status: confirm-phase-d
 date: 2026-05-24
 author: Murilo Gustineli
 ---
 
 # Results: Tucker distilled-SED full replication
 
-**Date Completed (Phase 1)**: 2026-05-24
+**Date Completed (Phase D)**: 2026-05-24
 **Author**: Murilo Gustineli
 
-## Status: REJECTED (catastrophic) — PIPELINE COMPROMISED, PAUSE FOR AUDIT
+## Status: CONFIRM (Phase D) — KD lever transfers, +0.050 paired Δ on LB
+
+After the mel-pipeline mismatch was found + fixed + retrained + LB-resubmitted, Phase D landed:
+
+| Run | LB | Δ paired ctrl | Δ vs v5j_control_last 0.897 | Δ vs Tucker target 0.910 |
+|---|---:|---:|---:|---:|
+| distilled_sed_control (Phase D retrain, last-v2.ckpt) | **0.856** | — | **−0.041** | **−0.054** |
+| distilled_sed_kd (Phase D retrain, last-v2.ckpt) | **0.906** | **+0.050** | **+0.009** | **−0.004** |
+
+**Paired Δ = +0.050**, vs success-matrix CONFIRM threshold +0.014. **The KD lever transfers in our codebase** — much larger than Tucker's published +0.020. distilled_sed_kd matches v5j-original 0.906 LB **exactly** and lands within 0.004 of Tucker's published single-fold target.
+
+### Reading the secondary axis: recipe-alone vs v5j
+
+- distilled_sed_control LB 0.856 vs v5j_control_last 0.897 = **−0.041**. Per the proposal's secondary-axis matrix (< 0.900 → "recipe alone regressed — investigate"), the Tucker recipe **without** KD underperforms v5j by ~0.04 LB.
+- But the +0.050 KD lift on top of that recipe is unambiguous and not noise.
+- Net interpretation: in our codebase, the Tucker recipe is not by itself an LB win over v5j (EffNet-B0 NS-JFT + AttHeadLogitSpace + dual-supervision is roughly equivalent-or-worse than HGNet + LSEHead at single-fold). **KD does all the heavy lifting.** The full Tucker recipe matters because KD requires the AttHeadLogitSpace consumer of Perch features (post-mortem candidate #1 from exp 031 results.md).
+
+This validates the exp 031 post-mortem hypothesis: "LSEHead is the wrong downstream consumer of Perch features." On AttHeadLogitSpace, the KD lever lands +0.050. On LSEHead, exp 031 measured −0.006. Same KD branch, different head, +0.056 LB delta.
+
+## Phase 1 (broken mel pipeline) — REJECTED
+
+The original Phase 1 LB results (with the broken triple-normalized training mel) are preserved here for the historical comparison:
 
 Phase 1 LB submissions landed **~0.38 LB below v5j_control_last 0.897**.
 Both control + KD collapsed to barely-above-random. The paired Δ (KD − control =

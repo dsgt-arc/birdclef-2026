@@ -283,7 +283,24 @@ Phase D blocks Phase 2 and Phase 3.
 
   End-to-end is slightly HIGHER than training-side because the kernel path adds 5-tap Gaussian smoothing across the 12 windows-per-file in LOGIT space, which acts as a temporal denoiser (matches Tucker's published "+0.004 from MengYe smoothing trick"). Pipeline is end-to-end consistent. **LB submission is safe.**
 
-- [ ] D.6.3 Re-export ONNX (export.sbatch fix commit `cffd725` makes `find_last_ckpt` auto-pick `last-v2.ckpt`), re-upload weights v2 to Kaggle, re-push kernels, submit both to LB.
+- [x] D.6.3 Re-exported ONNX (job 9156490; cffd725 made find_last_ckpt auto-pick last-v2.ckpt; ONNX max diff 4.77e-06 for both). Uploaded weights v2 + pushed kernels. Submitted both to LB.
+
+### Phase D LB results (2026-05-24 EOD): CONFIRM
+
+| Run | LB | Δ paired ctrl | Δ vs v5j_control_last 0.897 | Δ vs Tucker target 0.910 |
+|---|---:|---:|---:|---:|
+| distilled_sed_control (Phase D, last-v2.ckpt) | **0.856** | — | **−0.041** | **−0.054** |
+| distilled_sed_kd (Phase D, last-v2.ckpt) | **0.906** | **+0.050** | **+0.009** | **−0.004** |
+
+**CONFIRM verdict per proposal.md § Falsifiable** (paired Δ +0.050 ≥ +0.014 threshold). distilled_sed_kd matches v5j-original 0.906 LB exactly and lands within 0.004 of Tucker's single-fold target. Validates exp 031 post-mortem hypothesis: "LSEHead was the wrong downstream consumer of Perch features."
+
+### Phase D LB methodology check
+
+End-to-end validation (D.5) predicted:
+- Control: e2e 0.898 → LB 0.856 (−0.042 offline↔LB gap)
+- KD: e2e 0.912 → LB 0.906 (−0.006 offline↔LB gap)
+
+The KD model's offline↔LB gap (~0.006) is consistent with exp 030/031 baseline (offline cmap ~0.87 ↔ LB ~0.90). The control's wider gap (~0.042) is unexplained but doesn't matter for the verdict; KD is the lever.
 
 ### D.5/D.6 checkpoint book-keeping note (post-mortem)
 

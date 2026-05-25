@@ -962,19 +962,26 @@ GroupKFold SS. Fold 0, seed=42.
 | `distilled-sed-control` (Phase 1, broken) | Tucker recipe, KD OFF (last.ckpt, ep 24) | 0.893 (post-hoc) | **0.522** | — | **−0.375** | job 9088255 |
 | `distilled-sed-kd` (Phase 1, broken) | Tucker recipe + Perch v2 KD ON (last.ckpt, ep 24) | TBD (rerun) | **0.513** | **−0.009** | **−0.384** | job 9088258 |
 
-### Phase D retrain (Tucker-faithful mel via TuckerMelSpectrogram) — LB PENDING
+### Phase D retrain (Tucker-faithful mel via TuckerMelSpectrogram) — CONFIRM ✅
 
 After D.2 confirmed our training mel diverged from Tucker's by max\|d\| = 3.20 (Pearson r = 0.9356), D.3 landed `TuckerMelSpectrogram` (verbatim port of Tucker's `MelSpecTransform`). Configs flipped `mel.type: "nnaudio"` → `"tucker"`. Training and Kaggle inference now share the SAME torchaudio code paths — they cannot drift apart. Verified by 12 unit tests including the regression guard `test_diverges_from_nnaudio_amplitude_to_db`.
 
-| Slug | Variant | val/auroc (Tucker macro AUC) | val/cmap (Tucker macro AP) | best_val_score | LB |
-|------|---------|----------:|----------:|----------:|---:|
-| `distilled-sed-control` (Phase D, ep 24 last) | Tucker recipe, KD OFF, mel fix | **0.887** | 0.645 | 0.659 | TBD |
-| `distilled-sed-kd` (Phase D, ep 24 last) | Tucker recipe + Perch v2 KD ON, mel fix | **0.908** | 0.692 | 0.709 | TBD |
-| **paired Δ (KD − control), on val fold 0** | — | **+0.021** | **+0.047** | +0.050 | — |
+| Slug | Variant | val/auroc (Tucker macro AUC) | val/cmap (Tucker macro AP) | best_val_score | LB | Δ paired |
+|------|---------|----------:|----------:|----------:|---:|---:|
+| `distilled-sed-control` (Phase D, ep 24 last-v2.ckpt) | Tucker recipe, KD OFF, mel fix | 0.887 | 0.645 | 0.659 | **0.856** | — |
+| `distilled-sed-kd` (Phase D, ep 24 last-v2.ckpt) | Tucker recipe + Perch v2 KD ON, mel fix | 0.908 | 0.692 | 0.709 | **0.906** | **+0.050** |
+| paired Δ (KD − control) | — | +0.021 | +0.047 | +0.050 | **+0.050 LB** | — |
 
-Both runs land in Tucker's published single-fold band (~0.91 macro). Paired Δ on val/auroc (+0.021) is consistent with Tucker's published +0.020 LB lift — the first internally-consistent signal that the KD branch transfers in our codebase.
+**Verdict: CONFIRM** per proposal's success matrix (+0.050 ≥ +0.014 threshold).
+- `distilled-sed-kd` matches v5j-original 0.906 LB **exactly**, lands within 0.004 of Tucker's published single-fold target.
+- The KD lever transfers in our codebase. The full Tucker recipe matters because KD requires the AttHeadLogitSpace consumer of Perch features — same KD branch on LSEHead (exp 031) got Δ = −0.006; on AttHeadLogitSpace it gets Δ = +0.050 (+0.056 LB swing from head choice).
+- This validates exp 031 post-mortem hypothesis #1: "LSEHead was the wrong downstream consumer of Perch features."
 
-Translation to LB pending Phase D § D.6.2 (end-to-end validation via `scripts/validate_end_to_end.py`) and § D.6.3 (re-export + Kaggle re-submit). Do NOT submit to LB until end-to-end validation PASSes — that's the gating check that catches any residual train/inference mismatch.
+Recipe alone (control 0.856 vs v5j_control_last 0.897 = −0.041) is **NOT** an LB win over v5j by itself. KD does all the heavy lifting on this stack.
+
+End-to-end validation (D.5) predicted both LBs:
+- Control: e2e 0.898 → LB 0.856 (−0.042 offline↔LB gap)
+- KD: e2e 0.912 → LB 0.906 (−0.006 offline↔LB gap, normal exp 030/031 range)
 
 Retrain jobs: 9136231 (control, walltime 3h39m, node atl1-1-03-007-11-0) + 9136232 (KD, walltime 4h26m, atl1-1-03-006-1-0). W&B: `dsgt-arc/birdclef-2026-exp032/g5rblf6o` (control) + `0w29iaut` (KD).
 
