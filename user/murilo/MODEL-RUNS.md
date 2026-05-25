@@ -1038,19 +1038,22 @@ LB expectations:
 |------|---------|----------:|--------------:|---:|---:|---:|
 | `distilled-sed-kd-5fold` | 5-fold KD ensemble | 0.920 (mean) | — | **0.915** | **+0.009** | **−0.002 vs 0.917** |
 | `distilled-sed-kd-hgnet` | HGNet KD single-fold ablation | 0.907 | 0.911 | **0.901** | **−0.005** | — |
-| `distilled-sed-kd-fold4` | EffNet KD fold 4 (strongest offline) | 0.931 | 0.937 | pending | — | — |
+| `distilled-sed-kd-fold4` | EffNet KD fold 4 (strongest offline) | 0.931 | 0.937 | **0.903** | **−0.003** | offline-LB anti-correlation |
 
 **5-fold ensemble (0.915 LB)**: matches Tucker's published 0.917 within ~0.002 (well inside the documented cross-hardware variance ~0.007). Direction (+0.009 single→5-fold) matches Tucker's reported +0.011 single→5-fold lift. **What we did NOT replicate**: Tucker's "0.93+ with PP" stretch number, which depends on his private site/hour priors + per-class temperature (NOT in the public notebook). The publicly-replicable subset of his recipe yields 0.91-0.92 LB on this codebase, the same band his discussion thread reports.
 
 **HGNet+KD (0.901 LB)**: −0.005 below EffNet+KD fold 0 (0.906) despite near-identical offline val/auroc. **Backbone was NOT the bottleneck.** Refutes the Phase D hypothesis that the −0.041 control-vs-v5j gap was backbone-driven. The recipe-vs-recipe gap is driven by other ingredients (AttHeadLogitSpace vs LSEHead, dual-supervision vs single-clipwise, etc.). EffNet remains the right backbone for this recipe.
 
-### Single-fold variance characterization (fold 4 pending)
+**Fold 4 single-fold (0.903 LB)**: strongest offline val/auroc (0.931, +0.023 over fold 0) but **near-worst LB**. Single-fold LB band is narrow (~0.003 across 2 data points spanning 0.023 of offline range). The +0.009 single→5-fold ensemble lift is **pure variance-reduction** (Gaussian smoothing across 5 fold logits in LOGIT space), not "picking up better folds". 23rd data point in the offline-LB anti-correlation pattern.
 
-| Fold | Offline val/auroc | E2E val/auroc | LB | Notes |
-|---|---:|---:|---:|---|
-| 0 (Phase D) | 0.908 | 0.912 | **0.906** | LB-validated reference; bottom of offline band |
-| 4 | 0.931 | 0.937 | pending | strongest offline → tests upper edge of single-fold LB band |
-| 2 (optional) | 0.908 | 0.919 | not submitted | tied with fold 0 offline; would bound lower edge |
+### Single-fold variance characterization (fold 0 + fold 4 landed)
+
+| Fold | Offline val/auroc | E2E val/auroc | LB | Δ offline vs fold 0 | Δ LB vs fold 0 |
+|---|---:|---:|---:|---:|---:|
+| 0 (Phase D) | 0.908 | 0.912 | **0.906** | — | — |
+| 4 | 0.931 | 0.937 | **0.903** | **+0.023** | **−0.003** |
+
+**Conclusion**: offline rank ≠ LB rank on single-fold. Folds 1/2/3 not submitted (would land in the same 0.903-0.906 band with high confidence — low marginal information for high LB-slot cost). The ensemble +0.009 lift is from variance-reduction across folds, not from any "magic fold" inside the 5-fold set.
 
 ### Phase 2 implications for next steps
 

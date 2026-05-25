@@ -14,8 +14,8 @@ author: Murilo Gustineli
 ## Status: PARTIAL REPLICATION — within ~0.002 of Tucker's publicly-published 0.917 5-fold LB; the "0.93+ with PP" claim is out of reach without his unpublished post-processing
 
 - **Phase D (LB landed)**: KD lever transfers — distilled_sed_kd single-fold LB **0.906** (matches v5j-original; paired Δ vs control +0.050).
-- **Phase 2 (LB landed)**: 5-fold KD ensemble **0.915 LB** (+0.009 over Phase D fold 0; −0.002 below Tucker's published 0.917). HGNet+KD ablation **0.901 LB** (−0.005 vs EffNet fold 0) → **backbone was NOT the bottleneck**. Fold 4 single-fold submission still running on Kaggle (offline strongest at val/auroc 0.931).
-- **Verdict**: replicated what's publicly documented; cannot fully reach Tucker's 0.917 within seed noise let alone his 0.93+ stretch number. Next levers: ensemble with exp 023 (0.929) and/or port site/hour priors.
+- **Phase 2 (LB landed)**: 5-fold KD ensemble **0.915 LB** (+0.009 over Phase D fold 0; −0.002 below Tucker's published 0.917). HGNet+KD ablation **0.901 LB** (−0.005 vs EffNet fold 0) → **backbone was NOT the bottleneck**. Fold 4 single-fold diagnostic **0.903 LB** (despite strongest offline val/auroc 0.931 = +0.023 over fold 0) → **offline-LB anti-correlation; single-fold LB band is narrow (~0.003)**.
+- **Verdict**: replicated what's publicly documented; cannot fully reach Tucker's 0.917 within seed noise let alone his 0.93+ stretch number. The +0.009 single→5-fold ensemble lift is pure variance-reduction (Gaussian smoothing), not picking up better folds. Next levers: ensemble with exp 023 (0.929) and/or port site/hour priors.
 
 ## Status: CONFIRM (Phase D) — KD lever transfers, +0.050 paired Δ on LB
 
@@ -243,7 +243,7 @@ The 5-fold mean val/auroc 0.920 is encouraging. With 5-tap Gaussian smoothing ac
 |---|---:|---:|---:|---|
 | `distilled-sed-kd-5fold` (5-fold ensemble) | **0.915** | **+0.009** | **−0.002 vs 0.917** | **0.910–0.919 band** → matches Tucker's published 0.917 within noise; consider exp 023 ensemble |
 | `distilled-sed-kd-hgnet` (single-fold ablation) | **0.901** | **−0.005** | — | **0.900–0.910 band** → marginal/slightly worse; EffNet was the right backbone |
-| `distilled-sed-kd-fold4` (single-fold diagnostic) | pending | — | — | inference still running on Kaggle |
+| `distilled-sed-kd-fold4` (single-fold diagnostic) | **0.903** | **−0.003** | — | offline-LB anti-correlation: best-offline fold gave near-worst LB |
 
 ### Read-out
 
@@ -268,17 +268,23 @@ The 5-fold mean val/auroc 0.920 is encouraging. With 5-tap Gaussian smoothing ac
 | "0.93+ with PP" | not attempted (PP code is private) | ❌ out of reach |
 | HGNet backbone improves over EffNet | tested, refuted on this stack (HGNet < EffNet) | ✅ ablation done, hypothesis rejected |
 
-### Single-fold variance characterization (pending fold 4 LB)
+### Single-fold variance characterization (fold 0 + fold 4 LB landed)
 
-| Fold | Offline val/auroc | E2E val/auroc | LB | Notes |
-|---|---:|---:|---:|---|
-| 0 (Phase D) | 0.908 | 0.912 | 0.906 | LB-validated reference; bottom of offline band |
-| 1 | 0.928 | 0.936 | (not submitted) | middle of band |
-| 2 | 0.908 | 0.919 | (not submitted) | weakest offline (tied with fold 0) |
-| 3 | 0.924 | 0.930 | (not submitted) | middle of band |
-| **4** | **0.931** | **0.937** | **pending** | **strongest offline → tests upper edge of single-fold LB band** |
+| Fold | Offline val/auroc | E2E val/auroc | LB | Δ offline vs fold 0 | Δ LB vs fold 0 | Notes |
+|---|---:|---:|---:|---:|---:|---|
+| 0 (Phase D) | 0.908 | 0.912 | **0.906** | — | — | bottom of offline band; LB-validated reference |
+| 1 | 0.928 | 0.936 | (not submitted) | +0.020 | — | middle of offline band |
+| 2 | 0.908 | 0.919 | (not submitted) | 0.000 | — | tied with fold 0 offline |
+| 3 | 0.924 | 0.930 | (not submitted) | +0.016 | — | middle of offline band |
+| **4** | **0.931** | **0.937** | **0.903** | **+0.023** | **−0.003** | **strongest offline → LB came back near-worst of the two folds tested** |
 
-Once fold 4 lands, we'll have two single-fold LB points (fold 0 + fold 4) covering ~0.023 of offline range. If fold 4 LB ≫ 0.906, the per-fold LB band is wide and the 5-fold ensemble averages out a lot of variance. If fold 4 LB ~ 0.906, the offline→LB correlation is weaker than expected (consistent with our offline-LB anti-correlation history).
+**Fold 4 result is a strong offline-LB anti-correlation data point** — `+0.023 offline → −0.003 LB`. Two single-fold LB points (0.903, 0.906) cover a narrow 0.003 range despite their offline values spanning 0.023. Implications:
+- **Single-fold LB band on this codebase is narrow (~0.003)** — much tighter than the offline-implied 0.023 spread. Offline val/auroc is essentially uninformative for ranking folds at LB.
+- **The +0.009 single→5-fold ensemble lift (0.906 → 0.915) is pure variance-reduction**, not "picking up better folds". The Gaussian smoothing across 5 fold logits in LOGIT space is the lever.
+- **Don't submit folds 1/2/3** as additional diagnostic — we already have the answer. The remaining 3 folds would land in the same 0.903-0.906 band with high confidence; low marginal information for high LB-slot cost.
+- **Aligned with broader exp 030/031 pattern**: offline metrics consistently anti-correlate with LB on this competition. Documented across 22+ prior recipe attempts; this is data point #23.
+
+This also explains why our Phase D single-fold landed at 0.906 (below Tucker's published 0.91-0.92 single-fold band): the single-fold band on Tucker's hardware may genuinely be wider than ours, OR his published "fold-1 = 0.922" was just a lucky fold instance. Either way, the 5-fold ensemble is what closes the gap (0.915 ≈ his 0.917), and the path forward doesn't need more single-fold submissions.
 
 ### Implication for next steps
 

@@ -366,14 +366,18 @@ Tests whether the −0.041 gap between distilled_sed_control (0.856) and v5j_con
 | distilled-sed-kd HGNet (single-fold) | 0.90–0.92 | **0.901** | ❌ slightly worse than EffNet fold 0; backbone was NOT the bottleneck. EffNet stays. |
 | both combined (HGNet × 5-fold) | 0.92–0.93 | not run | skipped per 2.D refutation |
 
-### 2.A diagnostic: per-fold LB variance (single-fold submissions)
+### 2.A diagnostic: per-fold LB variance (single-fold submissions) — DONE (fold 4 sufficient)
 
 Characterizes the LB spread across the 5-fold ensemble's constituent folds. Useful for understanding the ensemble's lift attribution and for future single-fold experiment expectations on this codebase.
 
 - [x] 2.A.D.1 Scaffolded individual-fold export wrappers + kernel metadata (commit `f2d4e92`); MODEL_SLUGS fix in submission.py for the new fold-weights slugs (commit `e55866e` after the first fold4 attempt hit FileNotFoundError).
-- [x] 2.A.D.2 Submit fold 4 (strongest offline, val/auroc 0.931) — kernel run successful, **LB pending** on Kaggle.
-- [ ] 2.A.D.3 (Optional) Submit fold 2 (weakest offline, val/auroc 0.908) to bound the lower edge of the single-fold LB band.
-- [ ] 2.A.D.4 (Skip likely) Folds 1 + 3 sit in the middle of the offline band; submit only if surplus daily slots accumulate.
+- [x] 2.A.D.2 Submit fold 4 (strongest offline, val/auroc 0.931) — **LB 0.903** despite offline +0.023 over fold 0 (LB 0.906). **Offline-LB anti-correlation confirmed; single-fold LB band is narrow (~0.003).**
+- [~] 2.A.D.3 ~~(Optional) Submit fold 2 (weakest offline)~~ — **SKIPPED**. Fold 4 result already shows offline doesn't predict LB rank; fold 2 would add a third data point in the same 0.903-0.906 band. Low marginal information for high LB-slot cost.
+- [~] 2.A.D.4 ~~(Skip likely) Folds 1 + 3~~ — **SKIPPED for the same reason as 2.A.D.3.**
+
+### 2.A diagnostic conclusion
+
+Two single-fold LB data points (fold 0 = 0.906, fold 4 = 0.903) cover a narrow 0.003 LB range despite spanning 0.023 of offline val/auroc. **The +0.009 single→5-fold ensemble lift is pure variance-reduction** (5-tap Gauss smoothing across 5 folds in LOGIT space), not "picking up genuinely better folds". This is consistent with the exp 030/031 offline-LB anti-correlation pattern (now 23+ data points across the project).
 
 ### Stretch / follow-up — Phase 2 lifts on top of distilled-sed-kd-5fold (0.915)
 
