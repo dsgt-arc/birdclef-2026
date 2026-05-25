@@ -1,6 +1,6 @@
 ---
 experiment: "032-tucker-distilled-sed"
-status: phase-2-training-done
+status: phase-2-partial-replication
 date: 2026-05-25
 author: Murilo Gustineli
 ---
@@ -8,13 +8,14 @@ author: Murilo Gustineli
 # Results: Tucker distilled-SED full replication
 
 **Date Completed (Phase D)**: 2026-05-24
-**Date Updated (Phase 2 training)**: 2026-05-25
+**Date Updated (Phase 2 LB)**: 2026-05-25
 **Author**: Murilo Gustineli
 
-## Status: Phase D CONFIRM (LB landed) + Phase 2 training DONE (LB pending)
+## Status: PARTIAL REPLICATION — within ~0.002 of Tucker's publicly-published 0.917 5-fold LB; the "0.93+ with PP" claim is out of reach without his unpublished post-processing
 
-- **Phase D (LB confirmed)**: KD lever transfers — distilled_sed_kd single-fold LB **0.906** (matches v5j-original; paired Δ vs control +0.050).
-- **Phase 2 (training done, LB pending)**: 5-fold KD ensemble (folds 1–4 retrained, fold 0 from Phase D) + HGNet+KD single-fold ablation. All 5 ckpts D.5-validated end-to-end. Awaiting ONNX export + Kaggle push + LB submission.
+- **Phase D (LB landed)**: KD lever transfers — distilled_sed_kd single-fold LB **0.906** (matches v5j-original; paired Δ vs control +0.050).
+- **Phase 2 (LB landed)**: 5-fold KD ensemble **0.915 LB** (+0.009 over Phase D fold 0; −0.002 below Tucker's published 0.917). HGNet+KD ablation **0.901 LB** (−0.005 vs EffNet fold 0) → **backbone was NOT the bottleneck**. Fold 4 single-fold submission still running on Kaggle (offline strongest at val/auroc 0.931).
+- **Verdict**: replicated what's publicly documented; cannot fully reach Tucker's 0.917 within seed noise let alone his 0.93+ stretch number. Next levers: ensemble with exp 023 (0.929) and/or port site/hour priors.
 
 ## Status: CONFIRM (Phase D) — KD lever transfers, +0.050 paired Δ on LB
 
@@ -235,6 +236,58 @@ Re-running jobs 9178859-62 with `FOLD=N` produced the corrected PASS table above
 | `distilled-sed-kd-hgnet` (single-fold, fold 0) | **0.90-0.92** | If LB > 0.910, backbone was a real bottleneck → pivot to HGNet for future training; if ~ 0.906, EffNet was fine |
 
 The 5-fold mean val/auroc 0.920 is encouraging. With 5-tap Gaussian smoothing across folds in LOGIT space, the ensemble's effective resolution-per-window improves AND the per-fold noise averages out. Tucker's 0.917 LB came from exactly this stack at 5-fold.
+
+## Phase 2 LB results (2026-05-25 PM): PARTIAL REPLICATION
+
+| Submission | LB | Δ vs Phase D fold 0 (0.906) | Δ vs Tucker target | Decision-matrix bucket |
+|---|---:|---:|---:|---|
+| `distilled-sed-kd-5fold` (5-fold ensemble) | **0.915** | **+0.009** | **−0.002 vs 0.917** | **0.910–0.919 band** → matches Tucker's published 0.917 within noise; consider exp 023 ensemble |
+| `distilled-sed-kd-hgnet` (single-fold ablation) | **0.901** | **−0.005** | — | **0.900–0.910 band** → marginal/slightly worse; EffNet was the right backbone |
+| `distilled-sed-kd-fold4` (single-fold diagnostic) | pending | — | — | inference still running on Kaggle |
+
+### Read-out
+
+**5-fold ensemble: replicates Tucker's publicly-quantified pipeline within ±0.002 LB.**
+- +0.009 single→5-fold lift matches Tucker's published +0.011 directionally.
+- 0.002 gap to Tucker's 0.917 is well inside the documented cross-hardware variance (~0.007 LB on the same training code; exp 031 drift investigation).
+- **What we did NOT replicate**: Tucker's "0.93+ with PP" stretch claim, which depends on his private post-processing (site/hour priors + per-class temperature; NOT in the public notebook).
+- Bottom line: the publicly-replicable subset of his recipe yields 0.91–0.92 LB on this codebase, the same band his discussion thread reports.
+
+**HGNet+KD: backbone was NOT the bottleneck.**
+- HGNet (0.901) underperforms EffNet fold 0 (0.906) by −0.005 on LB despite near-identical offline val/auroc (0.907 vs 0.908).
+- Refutes the Phase D hypothesis that the −0.041 control-vs-v5j gap was backbone-driven.
+- Implication: the recipe-vs-recipe gap (Tucker recipe control 0.856 vs v5j_control 0.897) is driven by other ingredients — `AttHeadLogitSpace` vs LSEHead, dual-supervision vs single-clipwise, etc. NOT the EffNet→HGNet swap.
+
+### What was actually replicated
+
+| Tucker's published claim | Our result | Status |
+|---|---|---|
+| Single-fold KD lift ≈ +0.020 LB over no-KD | +0.050 paired Δ on Tucker recipe (Phase D) | ✅ exceeded |
+| Single-fold LB band ~0.91 | distilled-sed-kd fold 0 LB 0.906 | ✅ in band (lower end) |
+| 5-fold + smoothing LB 0.917 | distilled-sed-kd-5fold LB 0.915 | ⚠️ within ~0.002 (likely cross-hardware noise) |
+| "0.93+ with PP" | not attempted (PP code is private) | ❌ out of reach |
+| HGNet backbone improves over EffNet | tested, refuted on this stack (HGNet < EffNet) | ✅ ablation done, hypothesis rejected |
+
+### Single-fold variance characterization (pending fold 4 LB)
+
+| Fold | Offline val/auroc | E2E val/auroc | LB | Notes |
+|---|---:|---:|---:|---|
+| 0 (Phase D) | 0.908 | 0.912 | 0.906 | LB-validated reference; bottom of offline band |
+| 1 | 0.928 | 0.936 | (not submitted) | middle of band |
+| 2 | 0.908 | 0.919 | (not submitted) | weakest offline (tied with fold 0) |
+| 3 | 0.924 | 0.930 | (not submitted) | middle of band |
+| **4** | **0.931** | **0.937** | **pending** | **strongest offline → tests upper edge of single-fold LB band** |
+
+Once fold 4 lands, we'll have two single-fold LB points (fold 0 + fold 4) covering ~0.023 of offline range. If fold 4 LB ≫ 0.906, the per-fold LB band is wide and the 5-fold ensemble averages out a lot of variance. If fold 4 LB ~ 0.906, the offline→LB correlation is weaker than expected (consistent with our offline-LB anti-correlation history).
+
+### Implication for next steps
+
+The recipe is replicated; the path to higher LB is no longer "fix the recipe":
+1. **Ensemble distilled-sed-kd-5fold (0.915) with exp 023 perch-sed-ensemble-mlp-only (0.929)** — highest-EV move. Two strong, decorrelated stacks (Tucker SED + Perch probes) average to a higher number than either alone. Estimated band: 0.93–0.94.
+2. **Port site/hour priors (EoS.6 style) onto distilled-sed-kd-5fold** — exp 021 priors lifted v5j-4fold by +0.004; similar lift here would land 0.918–0.920.
+3. **Accept the publicly-replicable limit** of this recipe and pivot LB-lift effort to other levers (Sydorskyi-yoink, MixIT-based PL, etc.).
+
+LB submission slots are precious near deadline (2026-06-03, 9 days out); options 1 and 2 are the highest-EV with what's already built.
 
 ## Phase D update (2026-05-24 EOD): mel mismatch CONFIRMED + fix landed
 

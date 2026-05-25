@@ -330,58 +330,56 @@ Phase 2 (5-fold) and Phase 3 (diagnosis) DO NOT begin until:
 
 ---
 
-## Phase 2 — 5-fold ensemble + HGNet ablation (Phase D LB CONFIRMed; scaffolded 2026-05-24)
+## Phase 2 — 5-fold ensemble + HGNet ablation — DONE (PARTIAL REPLICATION verdict, 2026-05-25)
 
-Per CONFIRM verdict (paired Δ +0.050 LB), Phase 2 extends to:
-- (A) 5-fold KD ensemble (Tucker's published 0.917 LB is 5-fold + smoothing)
-- (D) HGNet backbone ablation (test whether the −0.041 control-vs-v5j gap is backbone-driven)
+Per Phase D CONFIRM verdict (paired Δ +0.050 LB), Phase 2 extended to:
+- (A) 5-fold KD ensemble (Tucker's published 0.917 LB is 5-fold + smoothing) — **LANDED 0.915 LB**
+- (D) HGNet backbone ablation — **LANDED 0.901 LB** (refutes backbone-bottleneck hypothesis)
 
 Skip control's 5-fold (control underperforms; not worth the compute).
 
-### 2.A 5-fold KD training (folds 1-4) + ensemble
+### 2.A 5-fold KD training (folds 1-4) + ensemble — DONE
 
 - [x] 2.A.0 Vestigial `fold_assignments.json` check removed from train.py — `--fold N` now works directly with DistilledSEDDataModule's inline fold construction.
 - [x] 2.A.1 `export_distilled_sed_kd_5fold` scaffolded in `sbatch/export.sbatch`. Auto-handles asymmetric layout: fold 0 = top-level `last-v2.ckpt` (LB-validated, 0.906); folds 1-4 = `fold{N}/last*.ckpt` (newest mtime).
 - [x] 2.A.2 `predict_soundscape_tucker_ensemble` added to `submission.py`. Per-window LOGIT-space fold mean → 5-tap Gauss smooth in LOGIT space → single sigmoid. Routed by `use_tucker AND is_ensemble` (kernel detects via `model_fold*.onnx` glob).
 - [x] 2.A.3 `distilled-sed-kd-5fold` slug added to `MODEL_SLUGS` + `upload_kaggle.py` MODELS + kernel metadata JSON.
-- [ ] 2.A.4 Submit folds 1-4 KD training jobs (4 × ~4.5h SLURM, ideally in parallel on `gpu-rtx6000`):
-  ```bash
-  cd user/murilo/experiments/032-tucker-distilled-sed
-  bash sbatch/run.sh configs/distilled_sed_kd.yaml --fold 1
-  bash sbatch/run.sh configs/distilled_sed_kd.yaml --fold 2
-  bash sbatch/run.sh configs/distilled_sed_kd.yaml --fold 3
-  bash sbatch/run.sh configs/distilled_sed_kd.yaml --fold 4
-  ```
-- [ ] 2.A.5 After all 4 folds finish, run end-to-end validation on each fold ckpt (D.5 pattern) and verify all PASS before LB.
-- [ ] 2.A.6 Export 5-fold ensemble: `cd user/murilo/experiments/010-submission-pipeline && bash sbatch/run.sh export --model distilled-sed-kd-5fold`.
-- [ ] 2.A.7 Upload + push kernel + LB submit. Expected: 0.910–0.920 LB (Tucker reports 0.917 5-fold + smoothing; +0.011 lift from single→5-fold on v5j).
+- [x] 2.A.4 Submitted folds 1-4 KD training jobs (jobs 9158704/9158705/9158706/9159168, all completed cleanly in ~4h22m walltime).
+- [x] 2.A.5 D.5 end-to-end validation on each fold ckpt — **ALL PASS** ✅ (gaps +0.004 to +0.011 in expected direction; jobs 9178859-62 after the `--fold` CLI patch).
+- [x] 2.A.6 Exported 5-fold ensemble (job 9178942, walltime 1m52s; `artifacts/weights/distilled-sed-kd-5fold/` with 5 × 19M ONNX + shared metadata).
+- [x] 2.A.7 Upload + push kernel + LB submit — **LB 0.915** (Tucker target 0.917; within −0.002 = cross-hardware noise).
 
-### 2.D HGNet+KD backbone ablation (Phase D follow-up)
+### 2.D HGNet+KD backbone ablation — DONE
 
 Tests whether the −0.041 gap between distilled_sed_control (0.856) and v5j_control_last (0.897) is backbone-driven. Same Tucker recipe + KD + AttHeadLogitSpace + TuckerMel; only `encoder.model_name` swapped from `tf_efficientnet_b0.ns_jft_in1k` → `hgnetv2_b0.ssld_stage2_ft_in1k` (v5j's choice) and `use_post_head: true` → `false` (HGNet features_only → 1024-d last-stage).
 
 - [x] 2.D.0 New config `configs/distilled_sed_kd_hgnet.yaml`.
 - [x] 2.D.1 `export_distilled_sed_kd_hgnet` scaffolded. `distilled-sed-kd-hgnet` slug + MODELS entry + kernel metadata added.
-- [ ] 2.D.2 Submit training:
-  ```bash
-  cd user/murilo/experiments/032-tucker-distilled-sed
-  bash sbatch/run.sh configs/distilled_sed_kd_hgnet.yaml
-  ```
-  ~4.5h walltime. Can run alongside 2.A.4.
-- [ ] 2.D.3 Export + validate + LB submit.
+- [x] 2.D.2 Submitted training (job 9158713, walltime 4h18m, completed cleanly).
+- [x] 2.D.3 Exported (job 9178943) + D.5 validated (PASS, gap +0.004) + LB submitted — **LB 0.901** (−0.005 vs EffNet fold 0 0.906; backbone hypothesis REFUTED).
 
-### Expected outcomes (predictions)
+### Outcomes vs predictions
 
-| Setup | Predicted LB | Reading |
-|---|---|---|
-| distilled-sed-kd 5-fold | 0.910–0.920 | matches Tucker 0.917 if recipe is fully working at 5-fold scale |
-| distilled-sed-kd HGNet (single-fold) | 0.90–0.92 | if HGNet > EffNet for KD, lift up to +0.015 over 0.906 |
-| both combined (HGNet × 5-fold) | 0.92–0.93 | only if 2.D shows HGNet > EffNet; bigger experiment |
+| Setup | Predicted LB | Actual LB | Reading |
+|---|---|---:|---|
+| distilled-sed-kd 5-fold | 0.910–0.920 | **0.915** | ✅ middle of band; matches Tucker's 0.917 within ~0.002 cross-hardware noise |
+| distilled-sed-kd HGNet (single-fold) | 0.90–0.92 | **0.901** | ❌ slightly worse than EffNet fold 0; backbone was NOT the bottleneck. EffNet stays. |
+| both combined (HGNet × 5-fold) | 0.92–0.93 | not run | skipped per 2.D refutation |
 
-### Stretch (deferred until 2.A.4 LB lands)
+### 2.A diagnostic: per-fold LB variance (single-fold submissions)
 
-- [ ] 2.4 If 5-fold LB ≥ 0.92 single-recipe → consider porting site/hour priors from EoS.6 stack (`vendor/kaggle/notebooks/birdclef-2026/birdclef-2026-eos-6-bz/`). Tucker's "0.93+ with PP" comment suggests +0.005–0.015 from priors.
-- [ ] 2.5 Add distilled-sed-kd 5-fold to exp 023's Perch + SED ensemble. Could push the ensemble above 0.929.
+Characterizes the LB spread across the 5-fold ensemble's constituent folds. Useful for understanding the ensemble's lift attribution and for future single-fold experiment expectations on this codebase.
+
+- [x] 2.A.D.1 Scaffolded individual-fold export wrappers + kernel metadata (commit `f2d4e92`); MODEL_SLUGS fix in submission.py for the new fold-weights slugs (commit `e55866e` after the first fold4 attempt hit FileNotFoundError).
+- [x] 2.A.D.2 Submit fold 4 (strongest offline, val/auroc 0.931) — kernel run successful, **LB pending** on Kaggle.
+- [ ] 2.A.D.3 (Optional) Submit fold 2 (weakest offline, val/auroc 0.908) to bound the lower edge of the single-fold LB band.
+- [ ] 2.A.D.4 (Skip likely) Folds 1 + 3 sit in the middle of the offline band; submit only if surplus daily slots accumulate.
+
+### Stretch / follow-up — Phase 2 lifts on top of distilled-sed-kd-5fold (0.915)
+
+- [ ] 2.4 **Ensemble with exp 023 perch-sed-ensemble-mlp-only (0.929 LB)** — HIGHEST EV. Two decorrelated stacks (Tucker SED + Perch probes). Estimated landing: 0.93–0.94.
+- [ ] 2.5 **Port site/hour priors (EoS.6 style) onto distilled-sed-kd-5fold** — exp 021 priors gave +0.004 on v5j-4fold. Similar lift here lands ~0.918-0.920. Likely the path Tucker took for his "0.93+ with PP" claim.
+- [ ] 2.6 (Deprioritized) Replace exp 023's SED component (v5j-4fold-pp2, 0.917 LB) with distilled-sed-kd-5fold (0.915 LB) — basically the same LB, so unlikely to lift the ensemble significantly. Mention only if Tucker SED brings meaningfully different errors than v5j.
 
 ---
 
