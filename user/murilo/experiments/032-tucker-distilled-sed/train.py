@@ -171,8 +171,8 @@ def main():
         "--fold",
         type=int,
         default=None,
-        choices=[0, 1, 2, 3],
-        help="Fold ID for cross-validation (0-3). Uses fold_assignments.json.",
+        choices=[0, 1, 2, 3, 4],
+        help="Fold ID for cross-validation (0-4, 5-fold Tucker recipe). Overrides data.fold_k.",
     )
     args = parser.parse_args()
 
