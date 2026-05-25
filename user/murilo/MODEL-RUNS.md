@@ -945,7 +945,7 @@ Two pending submissions:
 - `v5j_kd_last`: tests "0.890 was ckpt-selection artifact" vs "KD doesn't transfer"
 - `v5j_control_last`: tests "ep 19 weights recover 0.906 on new codebase" (isolates ckpt-selection from codebase drift)
 
-## Experiment 032: Tucker distilled-SED Full Replication — REJECTED (catastrophic) — pipeline compromised
+## Experiment 032: Tucker distilled-SED Full Replication — Phase D CONFIRM (+0.050 LB), Phase 2 5-fold ensemble + HGNet ablation
 
 Faithful port of `tuckerarrants/bc2026-distilled-sed`: EffNet-B0 NS-JFT
 (use_post_head=True, 1280-d) + AttHeadLogitSpace (LOGIT-space aggregation) +
@@ -987,7 +987,52 @@ Retrain jobs: 9136231 (control, walltime 3h39m, node atl1-1-03-007-11-0) + 91362
 
 Checkpoints (Phase D retrains): `/storage/project/.../checkpoints/2026-exp032-distilled-sed-{control,kd}/last.ckpt`. Phase D `last.ckpt` overwrites Phase 1; Phase 1 epoch-best checkpoints carry the `-v1` suffix, Phase D ones don't.
 
-### Verdict: REJECTED but unreadable (pipeline broken, not hypothesis falsified)
+### Phase 2: 5-fold KD ensemble (folds 1–4) + HGNet KD backbone ablation — TRAINING DONE, LB PENDING
+
+Extends the Phase D CONFIRM verdict in two directions:
+- **2.A 5-fold KD ensemble**: train folds 1–4 alongside the existing Phase D fold 0 (LB 0.906). Tucker's published 0.917 LB = 5-fold + 5-tap Gaussian smoothing. Inference: per-fold blended logits → LOGIT-space fold mean → 5-tap Gauss smooth → single sigmoid.
+- **2.D HGNet+KD ablation**: single-fold (fold 0) backbone swap `tf_efficientnet_b0.ns_jft_in1k` → `hgnetv2_b0.ssld_stage2_ft_in1k` (v5j's backbone) with `use_post_head: true → false`. Tests whether the −0.041 Phase D control-vs-v5j gap is backbone-driven. Same Tucker recipe + KD otherwise.
+
+All 5 runs trained 25 ep + 2 ep warmup + cosine, AdamW lr=5e-4 wd=1e-4, fp16, grad_clip=1.0, BCE dual-supervision 50/50, blend 50/50, Beta(0.4,0.4) hard-max mixup, SpecAugment, 90/10 focal/SS MixSamp, seed=42, `save_top_k: -1`. Configs: `distilled_sed_kd.yaml` (folds 1-4) + `distilled_sed_kd_hgnet.yaml` (HGNet).
+
+| Slug | Backbone | Fold | val/auroc (last) | val/cmap (last) | val/top1 | val/top5 | best val/cmap | Best Ep | Walltime | SLURM | W&B |
+|------|----------|------|-----------------:|----------------:|---------:|---------:|--------------:|--------:|----------|------:|-----|
+| `distilled-sed-kd-fold1` | EffNet-B0 NS-JFT | 1 | **0.9281** | 0.6654 | 0.8029 | 0.9197 | 0.6777 | 11 | 4h22m | 9158704 | `pmbh` |
+| `distilled-sed-kd-fold2` | EffNet-B0 NS-JFT | 2 | 0.9079 | 0.6092 | 0.8082 | 0.9658 | 0.6237 | 21 | 4h22m | 9158705 | `hoqe` |
+| `distilled-sed-kd-fold3` | EffNet-B0 NS-JFT | 3 | 0.9236 | 0.6927 | 0.7919 | 0.9396 | 0.6954 | ~24 | 4h22m | 9158706 | `bpuk` |
+| **`distilled-sed-kd-fold4`** | EffNet-B0 NS-JFT | 4 | **0.9310** | **0.7295** | **0.9013** | **0.9737** | 0.7335 | 21 | 4h22m | 9159168 | `lwy9` |
+| `distilled-sed-kd-hgnet` | HGNetV2-B0 SSLD | 0 | 0.9069 | 0.6706 | 0.7613 | 0.9097 | 0.6963 | ~17 | 4h19m | 9158713 | `hyu0` |
+
+Phase D fold 0 (for reference, on LB 0.906): val/auroc 0.908, val/cmap 0.692.
+
+5-fold KD val/auroc set: {0.908 (fold 0), 0.9281, 0.9079, 0.9236, 0.9310}, mean **0.920**.
+
+Fold 0 originally landed at the **bottom** of the 5-fold band — explains why Phase D's single-fold LB 0.906 sits at the low end of Tucker's published single-fold trajectory (~0.91-0.92). Fold 4 is the strongest individual fold; fold 2 the weakest.
+
+### D.5 end-to-end validation (pre-flight before LB submission) — ALL PASS ✅
+
+Each ckpt's training-side `val/auroc` compared against `validate_end_to_end.py` macro AUC (kernel inference path: `kernel_load_audio_chunk → compute_mel_tucker → encoder → AttHeadLogitSpace → LOGIT-space blend → 5-tap Gauss smooth → single sigmoid` on the same val SS fold). Gate: |gap| ≤ 0.02.
+
+| Slug | Training-side val/auroc | E2E val/auroc | Gap | Status | n_evaluable | Val windows |
+|------|----------------------:|--------------:|----:|--------|------------:|------------:|
+| `distilled-sed-kd-fold0` (Phase D) | 0.908 | 0.912 | +0.004 | ✅ PASS | — | 156 |
+| `distilled-sed-kd-fold1` | 0.9281 | 0.9361 | +0.008 | ✅ PASS | 31 | 156 |
+| `distilled-sed-kd-fold2` | 0.9079 | 0.9190 | +0.011 | ✅ PASS | 39 | 156 |
+| `distilled-sed-kd-fold3` | 0.9236 | 0.9302 | +0.007 | ✅ PASS | 41 | 156 |
+| `distilled-sed-kd-fold4` | 0.9310 | 0.9366 | +0.006 | ✅ PASS | 45 | 156 |
+| `distilled-sed-kd-hgnet` | 0.9069 | 0.9108 | +0.004 | ✅ PASS | 29 | 156 |
+
+E2E is uniformly slightly higher than training-side because the kernel path applies 5-tap Gaussian smoothing across the 12 windows per file in LOGIT space (acts as a temporal denoiser; matches Tucker's published "+0.004 from MengYe smoothing trick"). Pipeline is end-to-end consistent across all 5 new checkpoints. **LB submission is safe.**
+
+D.5 jobs: 9178659-63 first round (FAIL — fold_k hardcoded to 0; script bug, not model bug; ckpts were being eval'd against own training data → 0.995); 9178859-62 re-run with `--fold N` patch (PASS as above). HGNet's first-round PASS valid (trained + eval'd on fold 0).
+
+Checkpoints (Phase 2): top-level `2026-exp032-distilled-sed-kd/last-v2.ckpt` (Phase D fold 0, LB 0.906) + `2026-exp032-distilled-sed-kd/fold{1,2,3,4}/last.ckpt` (Phase 2.A folds 1-4) + `2026-exp032-distilled-sed-kd-hgnet/last.ckpt` (Phase 2.D HGNet).
+
+LB expectations:
+- 5-fold ensemble: target 0.910–0.920 (matches Tucker's published 0.917). 5-fold mean val/auroc 0.920 + 5-tap smoothing across folds in logit space should land in this band.
+- HGNet+KD single-fold: 0.90-0.92 if HGNet > EffNet for KD; otherwise marginal. Val metrics ≈ Phase D fold 0 EffNet (HGNet val/auroc 0.907 vs EffNet 0.908) → predicting LB also flat near 0.906.
+
+### Verdict: Phase 1 REJECTED (pipeline broken — historical, now resolved)
 
 Both runs collapsed to barely-above-random LB despite offline Tucker macro AUC
 tracking Tucker's published 0.91 trajectory exactly (control ep 6 = 0.889 vs

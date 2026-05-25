@@ -98,6 +98,9 @@ EXTRA_ARGS=""
 if [ -n "${TRAIN_AUROC}" ]; then
     EXTRA_ARGS="--training-side-auroc ${TRAIN_AUROC}"
 fi
+if [ -n "${FOLD:-}" ]; then
+    EXTRA_ARGS="${EXTRA_ARGS} --fold ${FOLD}"
+fi
 
 echo "=============================================="
 echo "Running end-to-end validation..."

@@ -1,14 +1,20 @@
 ---
 experiment: "032-tucker-distilled-sed"
-status: confirm-phase-d
-date: 2026-05-24
+status: phase-2-training-done
+date: 2026-05-25
 author: Murilo Gustineli
 ---
 
 # Results: Tucker distilled-SED full replication
 
 **Date Completed (Phase D)**: 2026-05-24
+**Date Updated (Phase 2 training)**: 2026-05-25
 **Author**: Murilo Gustineli
+
+## Status: Phase D CONFIRM (LB landed) + Phase 2 training DONE (LB pending)
+
+- **Phase D (LB confirmed)**: KD lever transfers — distilled_sed_kd single-fold LB **0.906** (matches v5j-original; paired Δ vs control +0.050).
+- **Phase 2 (training done, LB pending)**: 5-fold KD ensemble (folds 1–4 retrained, fold 0 from Phase D) + HGNet+KD single-fold ablation. All 5 ckpts D.5-validated end-to-end. Awaiting ONNX export + Kaggle push + LB submission.
 
 ## Status: CONFIRM (Phase D) — KD lever transfers, +0.050 paired Δ on LB
 
@@ -159,6 +165,76 @@ This table reframes what we know now about offline metrics across the two runs:
 | LB | 0.522 / 0.513 | **TBD — needs D.5 then re-submit** |
 
 The Phase 1 post-hoc Tucker AUC was 0.889 (control ep 6), measured on the broken-normalized val set. The Phase D Tucker AUC is 0.887, measured on the Tucker-normalized val. The fact that these match closely is consistent with the model "learning to predict labels equally well on either input distribution" — the bug was never in label-learning capacity, it was in train↔inference distribution drift.
+
+## Phase 2 (2026-05-25 EOD): 5-fold KD ensemble + HGNet+KD ablation — TRAINING DONE, LB PENDING
+
+Per Phase D CONFIRM verdict, Phase 2 extends in two directions:
+- **2.A 5-fold KD ensemble**: train folds 1-4 alongside Phase D fold 0 (LB 0.906). Tucker's published 0.917 LB = 5-fold + 5-tap Gaussian smoothing across windows.
+- **2.D HGNet+KD ablation**: single-fold (fold 0) backbone swap `tf_efficientnet_b0.ns_jft_in1k` → `hgnetv2_b0.ssld_stage2_ft_in1k` (v5j's backbone) with `use_post_head: true → false`. Tests whether the −0.041 Phase D control-vs-v5j gap is backbone-driven.
+
+All 5 runs trained 25 ep + 2 ep warmup + cosine, AdamW lr=5e-4 wd=1e-4, fp16, grad_clip=1.0, BCE dual-supervision 50/50, blend 50/50, Beta(0.4,0.4) hard-max mixup, SpecAugment, 90/10 focal/SS MixSamp, seed=42, `save_top_k: -1`. Configs: `distilled_sed_kd.yaml` (folds 1-4 with `train.py --fold N`) + `distilled_sed_kd_hgnet.yaml` (HGNet).
+
+### Phase 2 training offline metrics (val on each ckpt's held-out fold)
+
+| Slug | Backbone | Fold | val/auroc (last ep24) | val/cmap (last) | val/top1 | val/top5 | best val/cmap | Best Ep | Walltime | SLURM |
+|------|----------|------|---------------------:|----------------:|---------:|---------:|--------------:|--------:|----------|------:|
+| `distilled-sed-kd-fold1` | EffNet-B0 NS-JFT | 1 | **0.9281** | 0.6654 | 0.8029 | 0.9197 | 0.6777 (ep11) | 11 | 4h22m | 9158704 |
+| `distilled-sed-kd-fold2` | EffNet-B0 NS-JFT | 2 | 0.9079 | 0.6092 | 0.8082 | 0.9658 | 0.6237 (ep21) | 21 | 4h22m | 9158705 |
+| `distilled-sed-kd-fold3` | EffNet-B0 NS-JFT | 3 | 0.9236 | 0.6927 | 0.7919 | 0.9396 | 0.6954 | ~24 | 4h22m | 9158706 |
+| **`distilled-sed-kd-fold4`** | EffNet-B0 NS-JFT | 4 | **0.9310** | **0.7295** | **0.9013** | **0.9737** | 0.7335 (ep21) | 21 | 4h22m | 9159168 |
+| `distilled-sed-kd-hgnet` | HGNetV2-B0 SSLD | 0 | 0.9069 | 0.6706 | 0.7613 | 0.9097 | 0.6963 | ~17 | 4h19m | 9158713 |
+
+Phase D fold 0 reference (LB 0.906): val/auroc 0.908, val/cmap 0.692.
+
+**5-fold KD val/auroc set**: {0.908 (fold 0), 0.9281, 0.9079, 0.9236, 0.9310}, mean **0.920**, std 0.011.
+
+Read-outs:
+- **Fold 0 was the bottom of the 5-fold band** (0.908 vs mean 0.920) — explains why Phase D single-fold LB 0.906 sits at the low end of Tucker's published single-fold trajectory (~0.91-0.92). Fold 4 is the strongest individual fold (0.931); fold 2 the weakest (0.908).
+- **HGNet+KD val/auroc (0.907) ≈ Phase D EffNet+KD fold 0 (0.908)** — no obvious backbone advantage at the offline-metric level. Both `val/cmap` and `val/top1` are similar between HGNet and EffNet fold 0. LB will say whether the backbone matters for soundscape generalization.
+
+W&B run IDs: `pmbh` (fold1) · `hoqe` (fold2) · `bpuk` (fold3) · `lwy9` (fold4) · `hyu0` (HGNet), all in `dsgt-arc/birdclef-2026-exp032`.
+
+### D.5 end-to-end validation — ALL PASS ✅ (pre-flight before LB submission)
+
+Each Phase 2 ckpt evaluated via `validate_end_to_end.py` (kernel inference path: `kernel_load_audio_chunk → compute_mel_tucker → encoder → AttHeadLogitSpace → LOGIT-space blend → 5-tap Gauss smooth → single sigmoid` on the same per-fold val SS pool). Gate: |training-side val/auroc − e2e val/auroc| ≤ 0.02.
+
+| Slug | Training-side val/auroc | E2E val/auroc | Gap | Status | n_evaluable | Val windows |
+|------|----------------------:|--------------:|----:|--------|------------:|------------:|
+| `distilled-sed-kd-fold0` (Phase D) | 0.908 | 0.912 | +0.004 | ✅ PASS | — | 156 |
+| `distilled-sed-kd-fold1` | 0.9281 | 0.9361 | +0.008 | ✅ PASS | 31 | 156 |
+| `distilled-sed-kd-fold2` | 0.9079 | 0.9190 | +0.011 | ✅ PASS | 39 | 156 |
+| `distilled-sed-kd-fold3` | 0.9236 | 0.9302 | +0.007 | ✅ PASS | 41 | 156 |
+| `distilled-sed-kd-fold4` | 0.9310 | 0.9366 | +0.006 | ✅ PASS | 45 | 156 |
+| `distilled-sed-kd-hgnet` | 0.9069 | 0.9108 | +0.004 | ✅ PASS | 29 | 156 |
+
+E2E is uniformly slightly **higher** than training-side — the kernel path adds 5-tap Gaussian smoothing across the 12 windows per file in LOGIT space, which acts as a temporal denoiser. Matches Tucker's "+0.004 from MengYe smoothing trick" pattern (also seen in Phase D). **Pipeline is end-to-end consistent across all 5 new ckpts. LB submission is safe.**
+
+Per-fold n_evaluable varies (29-45 classes with positives in that fold's val pool) — fold 4 has the most coverage (which may explain why it trained highest), fold 0 the least.
+
+### D.5 methodology bug + fix (2026-05-25)
+
+The first D.5 run on the 4 EffNet fold ckpts (jobs 9178659-62) showed e2e AUC ≈ **0.995** for all four — gap +0.066 to +0.090, all marked FAIL. Root cause: `validate_end_to_end.py` only read `fold_k` from the YAML config (which defaults to 0). The `--fold N` argparse override that `train.py` accepts was never wired into the validation script. So for ckpts trained with `--fold 1/2/3/4`, the script loaded **fold 0's** val pool — which was *training data* for those models → measuring memorization, not generalization. HGNet (job 9178663) PASSED on the first round because it was trained on fold 0, so the val pool matched correctly.
+
+Fix:
+- `scripts/validate_end_to_end.py`: added `--fold N` CLI arg that overrides `cfg["data"]["fold_k"]` (with the same `[0, 4]` guard as `train.py`).
+- `sbatch/validate_end_to_end.sh`: added `FOLD` env var forwarding (`FOLD=N → --fold N`).
+
+Re-running jobs 9178859-62 with `FOLD=N` produced the corrected PASS table above. **Training was never broken** — only the validation script was. This is consistent with the training-side val/auroc values being sensible held-out numbers (0.91-0.93 range); had training been evaluated on its own data, those would already have been ~0.995 in the W&B/`metrics.json`.
+
+### Phase 2 checkpoints
+
+- Top-level `last-v2.ckpt` at `2026-exp032-distilled-sed-kd/last-v2.ckpt` — Phase D KD fold 0 (LB 0.906).
+- `2026-exp032-distilled-sed-kd/fold{1,2,3,4}/last.ckpt` — Phase 2.A folds 1-4 (last epoch 24, save_top_k=-1).
+- `2026-exp032-distilled-sed-kd-hgnet/last.ckpt` — Phase 2.D HGNet+KD single-fold (last epoch 24).
+
+### LB expectations (predictions)
+
+| Submission | Predicted LB | Decision (per § Phase 2 matrix) |
+|---|---|---|
+| `distilled-sed-kd-5fold` (5 folds, logit-space mean + 5-tap smoothing) | **0.910–0.920** | Matches Tucker's 0.917 if recipe works at 5-fold scale; consider ensembling with exp 023 (0.929) for further lift |
+| `distilled-sed-kd-hgnet` (single-fold, fold 0) | **0.90-0.92** | If LB > 0.910, backbone was a real bottleneck → pivot to HGNet for future training; if ~ 0.906, EffNet was fine |
+
+The 5-fold mean val/auroc 0.920 is encouraging. With 5-tap Gaussian smoothing across folds in LOGIT space, the ensemble's effective resolution-per-window improves AND the per-fold noise averages out. Tucker's 0.917 LB came from exactly this stack at 5-fold.
 
 ## Phase D update (2026-05-24 EOD): mel mismatch CONFIRMED + fix landed
 

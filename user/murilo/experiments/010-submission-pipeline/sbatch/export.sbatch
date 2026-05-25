@@ -1351,11 +1351,21 @@ export_distilled_sed_kd_hgnet() {
     local CKPT
     CKPT="$(find_last_ckpt "${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd-hgnet")"
     echo "Using checkpoint: $CKPT"
+    local OUTPUT_DIR="artifacts/weights/distilled-sed-kd-hgnet"
     python scripts/export_distilled_sed.py \
         --checkpoint "$CKPT" \
         --config "${EXP032_DIR}/configs/distilled_sed_kd_hgnet.yaml" \
         --train-csv "$TAXONOMY_CSV_2026" \
-        --output-dir artifacts/weights/distilled-sed-kd-hgnet/
+        --output-dir "${OUTPUT_DIR}/"
+
+    # Copy the 234-class identity species_mapping (kernel needs it for the
+    # output column ordering). Same file used by all distilled-sed-kd variants.
+    local MAPPING_2026="artifacts/weights/species_mapping_2026_234.json"
+    if [ -f "$MAPPING_2026" ]; then
+        cp "$MAPPING_2026" "${OUTPUT_DIR}/species_mapping.json"
+    elif [ -f "artifacts/weights/distilled-sed-kd/species_mapping.json" ]; then
+        cp "artifacts/weights/distilled-sed-kd/species_mapping.json" "${OUTPUT_DIR}/species_mapping.json"
+    fi
 }
 
 export_convnext_2026_soundscape() {

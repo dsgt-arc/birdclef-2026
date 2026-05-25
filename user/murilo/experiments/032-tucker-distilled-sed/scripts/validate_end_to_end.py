@@ -450,12 +450,25 @@ def main() -> None:
         help="Acceptable absolute gap between training-side and end-to-end "
         "val/auroc (default: 0.02). Outside this, FAIL.",
     )
+    parser.add_argument(
+        "--fold",
+        type=int,
+        default=None,
+        help="Override data.fold_k from the config. Required when evaluating "
+        "a 5-fold ckpt trained with `train.py --fold N` (Phase 2.A 5-fold KD).",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
+
+    if args.fold is not None:
+        if not 0 <= args.fold < 5:
+            raise ValueError(f"--fold must be in [0, 4], got {args.fold}")
+        cfg["data"]["fold_k"] = args.fold
+        logger.info(f"Override: data.fold_k = {args.fold} (from --fold CLI)")
 
     data_dir = Path(cfg["data"]["data_dir"])
     sample_rate = cfg["data"]["sample_rate"]
