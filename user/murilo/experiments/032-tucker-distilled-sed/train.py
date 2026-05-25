@@ -469,19 +469,16 @@ def main():
     # compatible config keys; reference suppressed via `_ = audio_transform`.)
     _ = audio_transform
 
-    # Fold-based CV: override test settings, load fold assignments
+    # Fold-based CV: --fold N overrides `data.fold_k` and adds /fold{N} to
+    # the checkpoint dir + W&B run name. DistilledSEDDataModule builds folds
+    # inline via StratifiedKFold(seed=42) + GroupKFold, so no external
+    # fold_assignments.json is needed (the file requirement was vestigial
+    # copy-paste from exp 019/021's split-file pattern).
     fold_id = args.fold
-    fold_assignments_path = None
     if fold_id is not None:
-        fold_assignments_path = Path(__file__).parent / "fold_assignments.json"
-        if not fold_assignments_path.exists():
-            raise FileNotFoundError(
-                f"fold_assignments.json not found at {fold_assignments_path}. "
-                "Run: python generate_folds.py"
-            )
-        config["data"]["test_fraction"] = 0.0
-        config["data"]["soundscape_test_files"] = 0
-        logger.info(f"Fold mode: fold_id={fold_id}, assignments={fold_assignments_path}")
+        if not 0 <= fold_id < 5:
+            raise ValueError(f"--fold must be in [0, 4], got {fold_id}")
+        logger.info(f"Fold mode: fold_id={fold_id} (inline-built via DistilledSEDDataModule)")
 
     # ------------------------------------------------------------------
     # DistilledSEDDataModule (task 0.8): load focal + SS data, build folds.

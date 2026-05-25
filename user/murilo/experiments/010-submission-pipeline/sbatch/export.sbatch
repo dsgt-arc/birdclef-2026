@@ -1285,6 +1285,79 @@ export_distilled_sed_kd() {
         --output-dir artifacts/weights/distilled-sed-kd/
 }
 
+export_distilled_sed_kd_5fold() {
+    # 5-fold ensemble — fold 0 uses the LB-validated last-v2.ckpt at the
+    # top level (from the Phase D retrain that scored LB 0.906); folds 1-4
+    # use fold{N}/last*.ckpt (newest mtime) from --fold N submissions.
+    # Tucker inference: per-fold blended logits -> mean across folds in
+    # LOGIT space -> 5-tap Gauss smooth -> single sigmoid (audit sec 7.3).
+    echo "=== Exporting Exp 032 distilled-SED KD 5-fold ensemble ==="
+    local OUTPUT_DIR="artifacts/weights/distilled-sed-kd-5fold"
+    local BASE_CKPT_DIR="${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd"
+    mkdir -p "$OUTPUT_DIR"
+
+    for FOLD in 0 1 2 3 4; do
+        local CKPT
+        if [ "$FOLD" = "0" ]; then
+            # Fold 0: LB-validated last-v2.ckpt at top level
+            CKPT="$(find_last_ckpt "$BASE_CKPT_DIR")"
+        else
+            local FOLD_DIR="$BASE_CKPT_DIR/fold${FOLD}"
+            if [ ! -d "$FOLD_DIR" ]; then
+                echo "ERROR: fold ${FOLD} dir not found at $FOLD_DIR" >&2
+                echo "Did you submit `bash sbatch/run.sh configs/distilled_sed_kd.yaml --fold ${FOLD}`?" >&2
+                exit 1
+            fi
+            CKPT="$(find_last_ckpt "$FOLD_DIR")"
+        fi
+        echo ""
+        echo "--- Fold ${FOLD}: $CKPT ---"
+        python scripts/export_distilled_sed.py \
+            --checkpoint "$CKPT" \
+            --config "${EXP032_DIR}/configs/distilled_sed_kd.yaml" \
+            --train-csv "$TAXONOMY_CSV_2026" \
+            --output-dir "${OUTPUT_DIR}/fold${FOLD}/"
+    done
+
+    # Shared artifacts at the top level (species_list + mel_config from fold 0;
+    # species_mapping from the 234-class identity map exp 030/031 use).
+    cp "${OUTPUT_DIR}/fold0/species_list.json" "${OUTPUT_DIR}/"
+    cp "${OUTPUT_DIR}/fold0/mel_config.json" "${OUTPUT_DIR}/"
+    local MAPPING_2026="artifacts/weights/species_mapping_2026_234.json"
+    if [ -f "$MAPPING_2026" ]; then
+        cp "$MAPPING_2026" "${OUTPUT_DIR}/species_mapping.json"
+    elif [ -f "artifacts/weights/distilled-sed-kd/species_mapping.json" ]; then
+        cp "artifacts/weights/distilled-sed-kd/species_mapping.json" "${OUTPUT_DIR}/species_mapping.json"
+    fi
+
+    # Per-fold ONNX at the top level (the kernel detects ensemble mode via
+    # `model_fold*.onnx` glob)
+    for FOLD in 0 1 2 3 4; do
+        cp "${OUTPUT_DIR}/fold${FOLD}/model.onnx" "${OUTPUT_DIR}/model_fold${FOLD}.onnx"
+    done
+
+    echo ""
+    echo "5-fold ensemble exported to ${OUTPUT_DIR}/"
+    ls -lh "${OUTPUT_DIR}"/model_fold*.onnx
+}
+
+export_distilled_sed_kd_hgnet() {
+    # Phase 2.D ablation: distilled-SED KD with HGNetV2-B0 backbone
+    # (v5j's choice) instead of EffNet-B0 NS-JFT. Tests whether the
+    # +0.041 control-vs-v5j gap was driven by backbone choice. Same
+    # recipe otherwise: AttHeadLogitSpace + dual-supervision + Perch v2
+    # KD + TuckerMel + waveform mixup + SpecAugment + 25ep cosine.
+    echo "=== Exporting Exp 032 distilled-SED KD HGNet variant (Phase 2.D ablation) ==="
+    local CKPT
+    CKPT="$(find_last_ckpt "${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd-hgnet")"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_distilled_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP032_DIR}/configs/distilled_sed_kd_hgnet.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir artifacts/weights/distilled-sed-kd-hgnet/
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -1345,6 +1418,7 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-eracode|\
     hgnet-b0-sed-v5j-resubmit|\
     distilled-sed-control|distilled-sed-kd|all-032-distilled-sed|\
+    distilled-sed-kd-5fold|distilled-sed-kd-hgnet|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1465,6 +1539,8 @@ case "$MODEL" in
     hgnet-b0-sed-v5j-eracode)           export_hgnet_b0_sed_v5j_eracode ;;
     distilled-sed-control)              export_distilled_sed_control ;;
     distilled-sed-kd)                   export_distilled_sed_kd ;;
+    distilled-sed-kd-5fold)             export_distilled_sed_kd_5fold ;;
+    distilled-sed-kd-hgnet)             export_distilled_sed_kd_hgnet ;;
     all-032-distilled-sed)
         export_distilled_sed_control
         echo ""

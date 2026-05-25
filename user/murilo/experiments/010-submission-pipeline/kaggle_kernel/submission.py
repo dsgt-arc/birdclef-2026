@@ -91,11 +91,15 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
-    # Exp 032: Tucker distilled-SED full replication (last.ckpt, single fold).
+    # Exp 032 Phase 2: 5-fold KD ensemble + HGNet backbone ablation
+    "birdclef-2026-distilled-sed-kd-5fold-weights",
+    "birdclef-2026-distilled-sed-kd-hgnet-weights",
+    # Exp 032 Phase D: single-fold KD + control (Tucker-faithful mel)
     # EffNet-B0 NS-JFT + AttHeadLogitSpace + Perch v2 KD + 25 ep cosine.
     # ONNX outputs pre-blended LOGITS; kernel does per-window inference →
     # 5-tap Gaussian smooth in LOGIT space → single sigmoid at end.
     # Routed by mel_config["type"] == "tucker_mel" + "output_type" == "tucker_logits".
+    # 5-fold variant uses `predict_soundscape_tucker_ensemble` (logit-space fold mean).
     "birdclef-2026-distilled-sed-kd-weights",
     "birdclef-2026-distilled-sed-control-weights",
     # Codebase regression diagnostic: v5j-era code (commit e420633) retrained
@@ -1406,6 +1410,86 @@ def predict_soundscape_tucker(
     return predictions
 
 
+def predict_soundscape_tucker_ensemble(
+    sessions, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
+):
+    """Tucker 5-fold ensemble inference (audit § 7.3 cell 24, verbatim).
+
+    For each 5s window, for each fold session, run ONNX → blended logits
+    (LOGIT space, pre-blended via our export wrapper). Average across folds
+    in LOGIT space → stack 12 windows per file → 5-tap Gauss smooth in
+    LOGIT space → single sigmoid.
+
+    Matches Tucker's cell 24 verbatim except the per-window clip+frame_max
+    blend is already baked into the ONNX (single output, 0.5/0.5).
+
+    No TTA, no temperature, no TopN, no priors — same Tucker-faithful
+    inference as `predict_soundscape_tucker` (single-fold). Site/hour
+    priors can be layered on top later if needed.
+    """
+    del taxa_mapping, metadata_priors  # unused, intentional
+
+    sr = mel_cfg["sr"]
+    segment_duration = 5.0
+    soundscape_id = Path(audio_path).stem
+
+    species_2026 = species_mapping["birdclef2026_species"]
+    idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
+
+    info = sf.info(audio_path)
+    total_duration = info.frames / info.samplerate
+
+    n_folds = len(sessions)
+    input_name = sessions[0].get_inputs()[0].name
+
+    window_logits = []
+    segment_times = []
+    segment_start_s = 0.0
+
+    while segment_start_s < total_duration:
+        audio = load_audio_chunk(audio_path, sr, segment_start_s, segment_duration)
+        mel = compute_mel(audio, mel_cfg)  # (1, 1, n_mels, T)
+        fold_logits_sum = None
+        for sess in sessions:
+            out = sess.run(None, {input_name: mel})[0].flatten().astype(np.float32)
+            fold_logits_sum = out if fold_logits_sum is None else fold_logits_sum + out
+        window_logits.append(fold_logits_sum / n_folds)  # logit-space mean
+        segment_times.append(int(segment_start_s + segment_duration))
+        segment_start_s += segment_duration
+
+    if not window_logits:
+        return []
+
+    logits_matrix = np.stack(window_logits)  # (n_windows, 234)
+
+    # 5-tap Gaussian smoothing across windows in LOGIT space (same as single-fold path)
+    if mel_cfg.get("gaussian_smooth_logit_space", True) and logits_matrix.shape[0] >= 3:
+        kernel = np.array(
+            mel_cfg.get("gaussian_kernel", [0.1, 0.2, 0.4, 0.2, 0.1]), dtype=np.float32
+        )
+        kernel = kernel / kernel.sum()
+        pad = len(kernel) // 2
+        padded = np.pad(logits_matrix, ((pad, pad), (0, 0)), mode="edge")
+        smoothed = np.zeros_like(logits_matrix)
+        for c in range(logits_matrix.shape[1]):
+            smoothed[:, c] = np.convolve(padded[:, c], kernel, mode="valid")
+        logits_matrix = smoothed
+
+    probs_matrix = sigmoid(logits_matrix)
+
+    predictions = []
+    for i, end_time in enumerate(segment_times):
+        row_id = f"{soundscape_id}_{end_time}"
+        row = {"row_id": row_id}
+        for sp in species_2026:
+            row[sp] = 0.0
+        for idx_str, name_2026 in idx_map.items():
+            row[name_2026] = float(probs_matrix[i, int(idx_str)])
+        predictions.append(row)
+
+    return predictions
+
+
 def predict_soundscape_ensemble(
     sessions, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
 ):
@@ -1618,8 +1702,15 @@ def main():
 
     # Choose inference strategy
     use_tucker = mel_cfg.get("type") == "tucker_mel"
+    use_tucker_ensemble = use_tucker and is_ensemble
     use_fullsignal = mel_cfg.get("architecture") == "sed" and mel_type == "mel"
-    if use_tucker:
+    if use_tucker_ensemble:
+        print(
+            f"Using Tucker {len(sessions)}-fold ensemble inference (per-window "
+            "LOGIT-space fold mean → 5-tap Gauss smooth → single sigmoid). "
+            "No TTA / no priors."
+        )
+    elif use_tucker:
         print(
             "Using Tucker distilled-SED inference (per-window LOGIT-space blend "
             "→ 5-tap Gauss smooth → single sigmoid at end). No TTA / no priors."
@@ -1637,7 +1728,16 @@ def main():
     all_predictions = []
     for i, audio_path in enumerate(audio_files):
         t0 = time.time()
-        if use_tucker:
+        if use_tucker_ensemble:
+            preds = predict_soundscape_tucker_ensemble(
+                sessions,
+                str(audio_path),
+                mel_cfg,
+                species_mapping,
+                taxa_mapping=taxa_mapping,
+                metadata_priors=metadata_priors,
+            )
+        elif use_tucker:
             preds = predict_soundscape_tucker(
                 session,
                 str(audio_path),

@@ -570,6 +570,17 @@ MODELS = {
         "weights_dir": "artifacts/weights/distilled-sed-kd",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd.json",
     },
+    # Exp 032 Phase 2: 5-fold ensemble (KD) + HGNet backbone ablation
+    "distilled-sed-kd-5fold": {
+        "slug": "birdclef-2026-distilled-sed-kd-5fold-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-5fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-5fold.json",
+    },
+    "distilled-sed-kd-hgnet": {
+        "slug": "birdclef-2026-distilled-sed-kd-hgnet-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-hgnet",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-hgnet.json",
+    },
 }
 
 
