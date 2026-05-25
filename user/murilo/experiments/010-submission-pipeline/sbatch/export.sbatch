@@ -1258,12 +1258,12 @@ export_hgnet_b0_sed_v10b_exp027() {
 # ============================================================================
 
 export_distilled_sed_control() {
-    echo "=== Exporting Exp 032 distilled-SED CONTROL (Tucker recipe, KD off, last.ckpt) ==="
-    local CKPT="${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-control/last.ckpt"
-    if [ ! -f "$CKPT" ]; then
-        echo "ERROR: last.ckpt not found at $CKPT" >&2
-        exit 1
-    fi
+    # Auto-pick the most recent last*.ckpt. Phase 1 produced last.ckpt + last-v1.ckpt
+    # (broken NNAudio mel); Phase D retrain produced last-v2.ckpt (Tucker mel fix).
+    # `find_last_ckpt` returns the newest by mtime so future retrains land cleanly.
+    echo "=== Exporting Exp 032 distilled-SED CONTROL (Tucker recipe, KD off) ==="
+    local CKPT
+    CKPT="$(find_last_ckpt "${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-control")"
     echo "Using checkpoint: $CKPT"
     python scripts/export_distilled_sed.py \
         --checkpoint "$CKPT" \
@@ -1273,12 +1273,10 @@ export_distilled_sed_control() {
 }
 
 export_distilled_sed_kd() {
-    echo "=== Exporting Exp 032 distilled-SED KD (Tucker recipe + Perch v2 KD, last.ckpt) ==="
-    local CKPT="${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/last.ckpt"
-    if [ ! -f "$CKPT" ]; then
-        echo "ERROR: last.ckpt not found at $CKPT" >&2
-        exit 1
-    fi
+    # Same auto-pick rationale as control.
+    echo "=== Exporting Exp 032 distilled-SED KD (Tucker recipe + Perch v2 KD) ==="
+    local CKPT
+    CKPT="$(find_last_ckpt "${CHECKPOINTS_BASE}/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd")"
     echo "Using checkpoint: $CKPT"
     python scripts/export_distilled_sed.py \
         --checkpoint "$CKPT" \
