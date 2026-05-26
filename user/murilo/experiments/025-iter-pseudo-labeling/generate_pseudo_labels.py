@@ -282,9 +282,13 @@ def main():
 
     version = cfg["version"]
     output_dir = SHARED / cfg["output_dir"].replace("shared/", "")
+    # Pure-SED configs (e.g., exp 033 pl_gen_v2.yaml) omit `perch:` to disable
+    # Tier C fallback. Tier C species end up with 0 labels (effectively Tier D).
+    use_perch = "perch" in cfg
     print(f"=== Generating pseudo-labels: {version} ===")
     print(f"  Config: {config_path}")
     print(f"  Output: {output_dir}")
+    print(f"  Perch tier C: {'enabled' if use_perch else 'DISABLED (pure-SED)'}")
 
     # Load competition metadata
     sample_sub = pd.read_csv(DATA / "sample_submission.csv")
@@ -313,15 +317,19 @@ def main():
 
     # We need sed_max_raw (before temp/power) for tier assignment
     # Recompute tiers now that we have sed_max_raw
-    # Load Perch for tier assignment
-    perch_source = SHARED / cfg["perch"]["source_path"].replace("shared/", "")
-    perch_df = pd.read_parquet(perch_source)
-    perch_df = perch_df.sort_values(["filename", "chunk_idx"]).reset_index(drop=True)
-    perch_meta_cols = ["filename", "chunk_idx", "site", "hour_utc"]
-    perch_sp = [c for c in perch_df.columns if c not in perch_meta_cols]
-    perch_raw = perch_df[perch_sp].values.astype(np.float32)
-
-    tiers = assign_tiers(species_cols, sed_max_raw, perch_raw, unlabeled_mask, cfg)
+    if use_perch:
+        # Load Perch for tier assignment
+        perch_source = SHARED / cfg["perch"]["source_path"].replace("shared/", "")
+        perch_df = pd.read_parquet(perch_source)
+        perch_df = perch_df.sort_values(["filename", "chunk_idx"]).reset_index(drop=True)
+        perch_meta_cols = ["filename", "chunk_idx", "site", "hour_utc"]
+        perch_sp = [c for c in perch_df.columns if c not in perch_meta_cols]
+        perch_raw = perch_df[perch_sp].values.astype(np.float32)
+        tiers = assign_tiers(species_cols, sed_max_raw, perch_raw, unlabeled_mask, cfg)
+    else:
+        # Pure-SED: assign_tiers doesn't actually read perch_raw_probs (only uses
+        # sed_max_probs + sc_labels + tier_d), so passing None is safe.
+        tiers = assign_tiers(species_cols, sed_max_raw, None, unlabeled_mask, cfg)
 
     # Print tier summary
     tier_counts = {}
@@ -334,11 +342,20 @@ def main():
     # Re-generate SED labels with correct tier mask
     sed_labels, _ = generate_sed_labels(meta_df, species_cols, unlabeled_mask, tiers, cfg)
 
-    del perch_df, perch_raw
-    # --- Generate Perch labels ---
-    perch_labels, perch_stats, perch_skipped = generate_perch_labels(
-        meta_df, species_cols, unlabeled_mask, tiers, cfg
-    )
+    # --- Generate Perch labels (optional — pure-SED configs skip this) ---
+    if use_perch:
+        del perch_df, perch_raw
+        perch_labels, perch_stats, perch_skipped = generate_perch_labels(
+            meta_df, species_cols, unlabeled_mask, tiers, cfg
+        )
+    else:
+        # Tier C species get 0 (effectively Tier D). Merging logic below
+        # writes perch_labels[:, i] for tier C — all zeros is a no-op since
+        # `merged` is pre-zeroed.
+        perch_labels = np.zeros((len(meta_df), len(species_cols)), dtype=np.float32)
+        perch_stats = []
+        perch_skipped = []
+        print("\n--- Perch Pseudo-Labels: SKIPPED (pure-SED mode) ---")
 
     # --- Merge ---
     print("\n--- Merging ---")
@@ -386,16 +403,17 @@ def main():
     sed_df.to_parquet(output_dir / "sed_pseudo_labels.parquet", index=False)
     print(f"  Saved sed_pseudo_labels.parquet ({sed_df.shape})")
 
-    # Perch pseudo-labels
-    perch_out_df = pd.concat(
-        [
-            meta_df[["filename", "chunk_idx"]],
-            pd.DataFrame(perch_labels, columns=species_cols),
-        ],
-        axis=1,
-    )
-    perch_out_df.to_parquet(output_dir / "perch_pseudo_labels.parquet", index=False)
-    print(f"  Saved perch_pseudo_labels.parquet ({perch_out_df.shape})")
+    # Perch pseudo-labels (skip when pure-SED — file would just be all zeros)
+    if use_perch:
+        perch_out_df = pd.concat(
+            [
+                meta_df[["filename", "chunk_idx"]],
+                pd.DataFrame(perch_labels, columns=species_cols),
+            ],
+            axis=1,
+        )
+        perch_out_df.to_parquet(output_dir / "perch_pseudo_labels.parquet", index=False)
+        print(f"  Saved perch_pseudo_labels.parquet ({perch_out_df.shape})")
 
     # Merged pseudo-labels
     merged_df = pd.concat(
@@ -423,15 +441,6 @@ def main():
             "pseudo_labels_above_0.5": int((sed_labels[unlabeled_mask] > 0.5).sum()),
             "species_covered_above_0.5": int((sed_labels[unlabeled_mask].max(axis=0) > 0.5).sum()),
         },
-        "perch": {
-            "z_threshold": cfg["perch"]["z_threshold"],
-            "min_std": cfg["perch"]["min_std"],
-            "power_transform": cfg["perch"]["power_transform"],
-            "active_species": len(perch_stats),
-            "skipped_species": len(perch_skipped),
-            "pseudo_labels_above_0.5": int((perch_labels[unlabeled_mask] > 0.5).sum()),
-            "per_species": perch_stats,
-        },
         "merged": {
             "pseudo_labels_above_0.5": int((merged_unlabeled > 0.5).sum()),
             "pseudo_labels_above_0.3": int((merged_unlabeled > 0.3).sum()),
@@ -439,6 +448,16 @@ def main():
             "mean_labels_per_segment_above_0.5": float((merged_unlabeled > 0.5).sum(axis=1).mean()),
         },
     }
+    if use_perch:
+        stats["perch"] = {
+            "z_threshold": cfg["perch"]["z_threshold"],
+            "min_std": cfg["perch"]["min_std"],
+            "power_transform": cfg["perch"]["power_transform"],
+            "active_species": len(perch_stats),
+            "skipped_species": len(perch_skipped),
+            "pseudo_labels_above_0.5": int((perch_labels[unlabeled_mask] > 0.5).sum()),
+            "per_species": perch_stats,
+        }
     with open(output_dir / "stats.json", "w") as f:
         json.dump(stats, f, indent=2)
     print("  Saved stats.json")
