@@ -556,6 +556,53 @@ MODELS = {
         "weights_dir": "artifacts/weights/hgnet-b0-sed-v10b-exp027",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-hgnet-b0-sed-v10b-exp027.json",
     },
+    # Exp 032: Tucker distilled-SED full replication (paired control / KD)
+    # last.ckpt (epoch 24) per "submit last" decision after noisy ranker on
+    # ep 1. ONNX outputs pre-blended LOGITS; kernel handles logit-space
+    # Gaussian smoothing + final sigmoid (no TTA, no priors — Tucker faithful).
+    "distilled-sed-control": {
+        "slug": "birdclef-2026-distilled-sed-control-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-control",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-control.json",
+    },
+    "distilled-sed-kd": {
+        "slug": "birdclef-2026-distilled-sed-kd-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd.json",
+    },
+    # Exp 032 Phase 2: 5-fold ensemble (KD) + HGNet backbone ablation
+    "distilled-sed-kd-5fold": {
+        "slug": "birdclef-2026-distilled-sed-kd-5fold-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-5fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-5fold.json",
+    },
+    "distilled-sed-kd-hgnet": {
+        "slug": "birdclef-2026-distilled-sed-kd-hgnet-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-hgnet",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-hgnet.json",
+    },
+    # Phase 2.A individual-fold diagnostics (folds 1-4; fold 0 is `distilled-sed-kd`).
+    # Characterize per-fold LB variance + offline↔LB correlation across folds.
+    "distilled-sed-kd-fold1": {
+        "slug": "birdclef-2026-distilled-sed-kd-fold1-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-fold1",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-fold1.json",
+    },
+    "distilled-sed-kd-fold2": {
+        "slug": "birdclef-2026-distilled-sed-kd-fold2-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-fold2",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-fold2.json",
+    },
+    "distilled-sed-kd-fold3": {
+        "slug": "birdclef-2026-distilled-sed-kd-fold3-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-fold3",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-fold3.json",
+    },
+    "distilled-sed-kd-fold4": {
+        "slug": "birdclef-2026-distilled-sed-kd-fold4-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-kd-fold4",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-fold4.json",
+    },
 }
 
 

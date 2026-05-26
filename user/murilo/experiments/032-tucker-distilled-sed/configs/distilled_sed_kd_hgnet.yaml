@@ -1,0 +1,134 @@
+# Experiment 032 Phase 2.D — distilled_sed_kd_hgnet: HGNet+KD backbone ablation.
+#
+# Identical to distilled_sed_kd.yaml except for the backbone choice:
+#   encoder.model_name: tf_efficientnet_b0.ns_jft_in1k → hgnetv2_b0.ssld_stage2_ft_in1k
+#   encoder.use_post_head: true → false (HGNet's features_only mode → 1024-d
+#     last-stage, matching v5j's recipe)
+#
+# Background: Phase D LB landed control 0.856 / kd 0.906. Recipe alone (control)
+# underperforms v5j_control_last 0.897 by 0.041 LB. The two candidate causes
+# are (a) backbone (EffNet-B0 NS-JFT vs HGNet-V2-B0 ssld) and (b) other recipe
+# components vs v5j's. This config holds everything else constant and swaps the
+# backbone to test (a) directly.
+#
+# Expected outcomes:
+# - HGNet+KD LB > 0.906: backbone was the bottleneck; HGNet is the right
+#   downstream consumer of Perch features (consistent with exp 031 post-mortem
+#   that LSEHead was wrong; here AttHeadLogitSpace on HGNet may be even better).
+# - HGNet+KD LB ≈ 0.906: backbone choice doesn't matter much; EffNet was fine.
+# - HGNet+KD LB < 0.906: EffNet was actively better; recipe is stuck at ~0.906.
+#
+# Cost: ~4.5h training (1 GPU, gpu-rtx6000). Submit alongside the 5-fold
+# folds 1-4 training jobs for compute parallelism.
+
+run_name: "2026-exp032-distilled-sed-kd-hgnet"
+
+encoder:
+  type: "efficientnet"                          # generic timm wrapper; works for HGNet
+  model_name: "hgnetv2_b0.ssld_stage2_ft_in1k"  # v5j's backbone choice
+  pretrained: true
+  use_post_head: false                          # HGNet features_only → 1024-d last-stage
+  drop_path_rate: 0.1
+  in_chans: 1
+
+sed_head:
+  type: "att_head_logit_space"   # Same as distilled_sed_kd; in_channels auto-set from encoder
+  hidden_dim: 512                # Tucker's value
+  dropout: 0.5                   # Tucker's exact Dropout(0.25)→Dropout(0.5)
+  gem_p: 3.0
+
+mel:
+  # Tucker-faithful mel: TuckerMelSpectrogram (no internal norm; per-sample
+  # z-score handled by module). Same as distilled_sed_kd.
+  type: "tucker"
+  n_fft: 2048
+  hop_length: 512
+  n_mels: 256
+  fmin: 20
+  fmax: 16000
+  top_db: 80.0
+  power: 2.0
+  gpu: true
+
+spec_augment:
+  enabled: true
+  freq_mask_param: 10
+  time_mask_param: 10
+  num_freq_masks: 1
+  num_time_masks: 2
+
+mixup:
+  focal_focal_prob: 0.5
+  alpha: 0.4
+  hard: true
+  focal_sc_prob: 0.5
+  focal_sc_alpha: 0.4
+  aug_prob: 0.5
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 5.0
+  batch_size: 64
+  num_workers: 0
+
+  n_folds: 5
+  seed: 42
+  min_sample: 20
+  focal_share: 0.9
+  sc_share: 0.1
+  steps_per_epoch: null
+  base_seed: 42
+  seed_epoch_shift: true
+
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 0
+  soundscape_test_files: 0
+
+training:
+  max_epochs: 25
+  lr: 5.0e-4
+  head_lr: 5.0e-4
+  weight_decay: 1.0e-4
+  warmup_epochs: 2
+  warmup_start_factor: 0.04
+  eta_min: 1.0e-6
+  threshold: 0.5
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+  per_sample_mel_norm: true
+
+  clipwise_weight: 0.5
+  framewise_weight: 0.5
+
+  blend_clip: 0.5
+  blend_frame: 0.5
+
+  # KD branch — ENABLED (same as distilled_sed_kd)
+  use_perch_distill: true
+  perch_onnx_path: "vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx"
+  perch_embed_dim: 1536
+  alpha_distill: 1.0
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/cmap"
+    mode: "max"
+    save_top_k: -1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+    every_n_epochs: 1
+  early_stopping:
+    monitor: "val/cmap"
+    mode: "max"
+    patience: 999
+    min_delta: 0.0
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp032"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

@@ -1,6 +1,21 @@
 """Sound Event Detection (SED) heads with attention-based temporal pooling.
 
-Three head variants:
+Four head variants:
+
+AttHeadLogitSpace (exp 032, Tucker recipe):
+  Verbatim port of tuckerarrants/bc2026-distilled-sed BirdSEDModel SED branch
+  (cells 10-14). Key distinction from AttHead: aggregates clipwise predictions
+  in LOGIT space, not probability space (no sigmoid roundtrip). Avoids the
+  saturation issue documented in `feedback_atthead_aggregation_domain.md`
+  which we suspect drove the 7 AttHead regressions in exps 020/021.
+  backbone features (B, C, F, T)
+    → GeMFreqPool(p=3, clamp(min=1.0)) → (B, C, T)
+    → Dropout(dropout/2) + Linear + ReLU(inplace) + Dropout(dropout) → (B, hidden, T)
+    → cls Conv1d (xavier init) → framewise logits (B, num_classes, T)
+    → att Conv1d (xavier init) → softmax(tanh(.)) → att weights (B, num_classes, T)
+    → clipwise_logits = sum(att_weights * framewise_logits, dim=time)
+  Ref: analysis/notes/2026-05-09-tucker-distilled-sed-code-audit.md,
+       analysis/notes/2026-05-23-tucker-dataset-and-inference-audit.md
 
 AttHead (v9a+, exp 021 Phase F):
   Competition-standard attention head matching Nikita (1st BirdCLEF 2025) and
@@ -76,6 +91,138 @@ class GeM(nn.Module):
         """Pool frequency dimension: (B, C, F, T) → (B, C, T)."""
         x_clamped = x.clamp(min=self.eps)
         return x_clamped.pow(self.p).mean(dim=-2).pow(1.0 / self.p)
+
+
+class GeMFreqPool(nn.Module):
+    """Generalized Mean Pooling over frequency, Tucker variant.
+
+    Identical to GeM in math except `p` is clamped to >= 1.0 inside the forward
+    pass — preventing pathological values when the learnable parameter drifts
+    below 1.0 during training (which would invert the pooling, biasing toward
+    minima instead of maxima).
+
+    From `tuckerarrants/bc2026-distilled-sed` cell 10 (notebook is the source).
+    Kept as a separate class from `GeM` so its semantics are explicit and the
+    existing AttHead / LSEHead / AttBlockV2 behavior stays unchanged.
+
+    Args:
+        p: Initial power parameter (default: 3.0).
+        eps: Small constant for numerical stability.
+    """
+
+    def __init__(self, p: float = 3.0, eps: float = 1e-6):
+        super().__init__()
+        self.p = nn.Parameter(torch.tensor(p, dtype=torch.float32))
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Pool frequency dimension: (B, C, F, T) → (B, C, T)."""
+        p = self.p.clamp(min=1.0)
+        x = x.clamp(min=self.eps).pow(p)
+        x = x.mean(dim=-2)
+        return x.pow(1.0 / p)
+
+
+class AttHeadLogitSpace(nn.Module):
+    """SED attention head with logit-space clipwise aggregation (Tucker recipe).
+
+    Verbatim port of `tuckerarrants/bc2026-distilled-sed` `BirdSEDModel` SED
+    branch (notebook cells 10-14). Key distinction from `AttHead`: aggregates
+    clipwise predictions in LOGIT space, not probability space — there's no
+    sigmoid → mean → inverse-sigmoid roundtrip. This avoids the saturation
+    issue documented in `feedback_atthead_aggregation_domain.md`, which we
+    suspect drove the 7 AttHead regressions in exps 020/021.
+
+    Architecture:
+        backbone features (B, C, F, T)
+        → GeMFreqPool(p_init=3.0, clamp(min=1.0)) → (B, C, T)
+        → Dropout(dropout/2) → Linear(C, hidden) → ReLU(inplace=True)
+          → Dropout(dropout) → (B, hidden, T)
+        → att = Conv1d(hidden, num_classes, k=1, xavier init): (B, num_classes, T)
+        → cla = Conv1d(hidden, num_classes, k=1, xavier init): (B, num_classes, T)
+        → att_weights = softmax(tanh(att), dim=time)
+        → clipwise_logits = sum(att_weights * cla, dim=time)
+
+    The default `dropout=0.5` reproduces Tucker's exact dropout sequence
+    (Dropout(0.25) → Linear → ReLU → Dropout(0.5)). Override if ablating.
+
+    Convs are initialized with `xavier_uniform_` (zero-mean, unit-fan-in/out
+    variance) and biases zeroed. This matches Tucker's explicit init.
+
+    Returns:
+        clipwise_logits: (B, num_classes) — sum of attention-weighted per-frame
+            logits. BCE on this against multi-hot labels. Gradient flows cleanly
+            through the linear sum (no saturation at sigmoid boundaries).
+        framewise_logits: (B, num_classes, T) — raw per-frame logits. Used for
+            dual supervision in training (BCE on framewise.max(dim=time)) and
+            blended with clipwise at inference (0.5·σ(clip) + 0.5·σ(frame_max)).
+
+    Reference:
+    - analysis/notes/2026-05-09-tucker-distilled-sed-code-audit.md
+    - analysis/notes/2026-05-23-tucker-dataset-and-inference-audit.md
+    - vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/bc2026-distilled-sed.ipynb (cells 10, 14)
+    - feedback memory: feedback_atthead_aggregation_domain.md
+
+    Args:
+        in_channels: Number of input channels from backbone (e.g. 1280 for
+            EffNet-B0).
+        num_classes: Number of output classes (e.g. 234).
+        hidden_dim: Hidden bottleneck dimension (default: 512, Tucker's value).
+        dropout: Post-Linear dropout rate (default: 0.5 → pre-dropout is 0.25,
+            matching Tucker exactly).
+        gem_p: Initial GeMFreqPool power parameter (default: 3.0).
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        num_classes: int,
+        hidden_dim: int = 512,
+        dropout: float = 0.5,
+        gem_p: float = 3.0,
+    ):
+        super().__init__()
+        self.gem = GeMFreqPool(p=gem_p)
+        self.dense = nn.Sequential(
+            nn.Dropout(dropout / 2),
+            nn.Linear(in_channels, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+        )
+        self.att = nn.Conv1d(hidden_dim, num_classes, kernel_size=1, bias=True)
+        self.cla = nn.Conv1d(hidden_dim, num_classes, kernel_size=1, bias=True)
+        nn.init.xavier_uniform_(self.att.weight)
+        nn.init.xavier_uniform_(self.cla.weight)
+        self.att.bias.data.fill_(0.0)
+        self.cla.bias.data.fill_(0.0)
+
+    def forward(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass from backbone features to dual logits.
+
+        Args:
+            features: (B, C, F, T) feature map from backbone.
+
+        Returns:
+            clipwise_logits: (B, num_classes) — logit-space attention-weighted sum.
+            framewise_logits: (B, num_classes, T) — per-frame raw logits.
+        """
+        # GeM pool frequency: (B, C, F, T) → (B, C, T)
+        x = self.gem(features)
+
+        # Dense projection: (B, C, T) → (B, hidden, T)
+        x = x.permute(0, 2, 1)  # (B, T, C)
+        x = self.dense(x)  # (B, T, hidden)
+        x = x.permute(0, 2, 1)  # (B, hidden, T)
+
+        # Attention and class logits via two parallel 1x1 convs
+        att_raw = torch.tanh(self.att(x))  # (B, num_classes, T)
+        att_weights = torch.softmax(att_raw, dim=-1)  # softmax over time
+        framewise_logits = self.cla(x)  # (B, num_classes, T)
+
+        # Clipwise: attention-weighted sum in LOGIT space (no sigmoid roundtrip)
+        clipwise_logits = (att_weights * framewise_logits).sum(dim=-1)  # (B, num_classes)
+
+        return clipwise_logits, framewise_logits
 
 
 class AttHead(nn.Module):

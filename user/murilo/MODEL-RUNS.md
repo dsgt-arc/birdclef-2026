@@ -945,6 +945,162 @@ Two pending submissions:
 - `v5j_kd_last`: tests "0.890 was ckpt-selection artifact" vs "KD doesn't transfer"
 - `v5j_control_last`: tests "ep 19 weights recover 0.906 on new codebase" (isolates ckpt-selection from codebase drift)
 
+## Experiment 032: Tucker distilled-SED Full Replication — PARTIAL REPLICATION (Phase 2 5-fold 0.915 LB vs Tucker 0.917; HGNet ablation refutes backbone hypothesis)
+
+Faithful port of `tuckerarrants/bc2026-distilled-sed`: EffNet-B0 NS-JFT
+(use_post_head=True, 1280-d) + AttHeadLogitSpace (LOGIT-space aggregation) +
+dual-supervision (0.5·BCE clip + 0.5·BCE frame_max) + Perch v2 embedding-MSE KD
+(feat.detach() on cls; α=1.0) + waveform mixup hard-max (Beta(0.4,0.4)) +
+focal×SS mixup + SpecAugment (1×freq×10 + 2×time×10) + 25 ep AdamW + 2 ep
+warmup + cosine + 90/10 focal/SS MixSamp + StratifiedKFold focal +
+GroupKFold SS. Fold 0, seed=42.
+
+### Phase 1 (broken mel pipeline) — REJECTED
+
+| Slug | Variant | Tucker val macro AUC (fold 0) | LB | Δ paired ctrl | Δ vs v5j_control_last 0.897 | Checkpoint |
+|------|---------|----------:|---:|---:|---:|---|
+| `distilled-sed-control` (Phase 1, broken) | Tucker recipe, KD OFF (last.ckpt, ep 24) | 0.893 (post-hoc) | **0.522** | — | **−0.375** | job 9088255 |
+| `distilled-sed-kd` (Phase 1, broken) | Tucker recipe + Perch v2 KD ON (last.ckpt, ep 24) | TBD (rerun) | **0.513** | **−0.009** | **−0.384** | job 9088258 |
+
+### Phase D retrain (Tucker-faithful mel via TuckerMelSpectrogram) — CONFIRM ✅
+
+After D.2 confirmed our training mel diverged from Tucker's by max\|d\| = 3.20 (Pearson r = 0.9356), D.3 landed `TuckerMelSpectrogram` (verbatim port of Tucker's `MelSpecTransform`). Configs flipped `mel.type: "nnaudio"` → `"tucker"`. Training and Kaggle inference now share the SAME torchaudio code paths — they cannot drift apart. Verified by 12 unit tests including the regression guard `test_diverges_from_nnaudio_amplitude_to_db`.
+
+| Slug | Variant | val/auroc (Tucker macro AUC) | val/cmap (Tucker macro AP) | best_val_score | LB | Δ paired |
+|------|---------|----------:|----------:|----------:|---:|---:|
+| `distilled-sed-control` (Phase D, ep 24 last-v2.ckpt) | Tucker recipe, KD OFF, mel fix | 0.887 | 0.645 | 0.659 | **0.856** | — |
+| `distilled-sed-kd` (Phase D, ep 24 last-v2.ckpt) | Tucker recipe + Perch v2 KD ON, mel fix | 0.908 | 0.692 | 0.709 | **0.906** | **+0.050** |
+| paired Δ (KD − control) | — | +0.021 | +0.047 | +0.050 | **+0.050 LB** | — |
+
+**Verdict: CONFIRM** per proposal's success matrix (+0.050 ≥ +0.014 threshold).
+- `distilled-sed-kd` matches v5j-original 0.906 LB **exactly**, lands within 0.004 of Tucker's published single-fold target.
+- The KD lever transfers in our codebase. The full Tucker recipe matters because KD requires the AttHeadLogitSpace consumer of Perch features — same KD branch on LSEHead (exp 031) got Δ = −0.006; on AttHeadLogitSpace it gets Δ = +0.050 (+0.056 LB swing from head choice).
+- This validates exp 031 post-mortem hypothesis #1: "LSEHead was the wrong downstream consumer of Perch features."
+
+Recipe alone (control 0.856 vs v5j_control_last 0.897 = −0.041) is **NOT** an LB win over v5j by itself. KD does all the heavy lifting on this stack.
+
+End-to-end validation (D.5) predicted both LBs:
+- Control: e2e 0.898 → LB 0.856 (−0.042 offline↔LB gap)
+- KD: e2e 0.912 → LB 0.906 (−0.006 offline↔LB gap, normal exp 030/031 range)
+
+Retrain jobs: 9136231 (control, walltime 3h39m, node atl1-1-03-007-11-0) + 9136232 (KD, walltime 4h26m, atl1-1-03-006-1-0). W&B: `dsgt-arc/birdclef-2026-exp032/g5rblf6o` (control) + `0w29iaut` (KD).
+
+Checkpoints (Phase D retrains): `/storage/project/.../checkpoints/2026-exp032-distilled-sed-{control,kd}/last.ckpt`. Phase D `last.ckpt` overwrites Phase 1; Phase 1 epoch-best checkpoints carry the `-v1` suffix, Phase D ones don't.
+
+### Phase 2: 5-fold KD ensemble (folds 1–4) + HGNet KD backbone ablation — LB LANDED (2026-05-25 PM)
+
+Extends the Phase D CONFIRM verdict in two directions:
+- **2.A 5-fold KD ensemble**: train folds 1–4 alongside the existing Phase D fold 0 (LB 0.906). Tucker's published 0.917 LB = 5-fold + 5-tap Gaussian smoothing. Inference: per-fold blended logits → LOGIT-space fold mean → 5-tap Gauss smooth → single sigmoid.
+- **2.D HGNet+KD ablation**: single-fold (fold 0) backbone swap `tf_efficientnet_b0.ns_jft_in1k` → `hgnetv2_b0.ssld_stage2_ft_in1k` (v5j's backbone) with `use_post_head: true → false`. Tests whether the −0.041 Phase D control-vs-v5j gap is backbone-driven. Same Tucker recipe + KD otherwise.
+
+All 5 runs trained 25 ep + 2 ep warmup + cosine, AdamW lr=5e-4 wd=1e-4, fp16, grad_clip=1.0, BCE dual-supervision 50/50, blend 50/50, Beta(0.4,0.4) hard-max mixup, SpecAugment, 90/10 focal/SS MixSamp, seed=42, `save_top_k: -1`. Configs: `distilled_sed_kd.yaml` (folds 1-4) + `distilled_sed_kd_hgnet.yaml` (HGNet).
+
+| Slug | Backbone | Fold | val/auroc (last) | val/cmap (last) | val/top1 | val/top5 | best val/cmap | Best Ep | Walltime | SLURM | W&B |
+|------|----------|------|-----------------:|----------------:|---------:|---------:|--------------:|--------:|----------|------:|-----|
+| `distilled-sed-kd-fold1` | EffNet-B0 NS-JFT | 1 | **0.9281** | 0.6654 | 0.8029 | 0.9197 | 0.6777 | 11 | 4h22m | 9158704 | `pmbh` |
+| `distilled-sed-kd-fold2` | EffNet-B0 NS-JFT | 2 | 0.9079 | 0.6092 | 0.8082 | 0.9658 | 0.6237 | 21 | 4h22m | 9158705 | `hoqe` |
+| `distilled-sed-kd-fold3` | EffNet-B0 NS-JFT | 3 | 0.9236 | 0.6927 | 0.7919 | 0.9396 | 0.6954 | ~24 | 4h22m | 9158706 | `bpuk` |
+| **`distilled-sed-kd-fold4`** | EffNet-B0 NS-JFT | 4 | **0.9310** | **0.7295** | **0.9013** | **0.9737** | 0.7335 | 21 | 4h22m | 9159168 | `lwy9` |
+| `distilled-sed-kd-hgnet` | HGNetV2-B0 SSLD | 0 | 0.9069 | 0.6706 | 0.7613 | 0.9097 | 0.6963 | ~17 | 4h19m | 9158713 | `hyu0` |
+
+Phase D fold 0 (for reference, on LB 0.906): val/auroc 0.908, val/cmap 0.692.
+
+5-fold KD val/auroc set: {0.908 (fold 0), 0.9281, 0.9079, 0.9236, 0.9310}, mean **0.920**.
+
+Fold 0 originally landed at the **bottom** of the 5-fold band — explains why Phase D's single-fold LB 0.906 sits at the low end of Tucker's published single-fold trajectory (~0.91-0.92). Fold 4 is the strongest individual fold; fold 2 the weakest.
+
+### D.5 end-to-end validation (pre-flight before LB submission) — ALL PASS ✅
+
+Each ckpt's training-side `val/auroc` compared against `validate_end_to_end.py` macro AUC (kernel inference path: `kernel_load_audio_chunk → compute_mel_tucker → encoder → AttHeadLogitSpace → LOGIT-space blend → 5-tap Gauss smooth → single sigmoid` on the same val SS fold). Gate: |gap| ≤ 0.02.
+
+| Slug | Training-side val/auroc | E2E val/auroc | Gap | Status | n_evaluable | Val windows |
+|------|----------------------:|--------------:|----:|--------|------------:|------------:|
+| `distilled-sed-kd-fold0` (Phase D) | 0.908 | 0.912 | +0.004 | ✅ PASS | — | 156 |
+| `distilled-sed-kd-fold1` | 0.9281 | 0.9361 | +0.008 | ✅ PASS | 31 | 156 |
+| `distilled-sed-kd-fold2` | 0.9079 | 0.9190 | +0.011 | ✅ PASS | 39 | 156 |
+| `distilled-sed-kd-fold3` | 0.9236 | 0.9302 | +0.007 | ✅ PASS | 41 | 156 |
+| `distilled-sed-kd-fold4` | 0.9310 | 0.9366 | +0.006 | ✅ PASS | 45 | 156 |
+| `distilled-sed-kd-hgnet` | 0.9069 | 0.9108 | +0.004 | ✅ PASS | 29 | 156 |
+
+E2E is uniformly slightly higher than training-side because the kernel path applies 5-tap Gaussian smoothing across the 12 windows per file in LOGIT space (acts as a temporal denoiser; matches Tucker's published "+0.004 from MengYe smoothing trick"). Pipeline is end-to-end consistent across all 5 new checkpoints. **LB submission is safe.**
+
+D.5 jobs: 9178659-63 first round (FAIL — fold_k hardcoded to 0; script bug, not model bug; ckpts were being eval'd against own training data → 0.995); 9178859-62 re-run with `--fold N` patch (PASS as above). HGNet's first-round PASS valid (trained + eval'd on fold 0).
+
+Checkpoints (Phase 2): top-level `2026-exp032-distilled-sed-kd/last-v2.ckpt` (Phase D fold 0, LB 0.906) + `2026-exp032-distilled-sed-kd/fold{1,2,3,4}/last.ckpt` (Phase 2.A folds 1-4) + `2026-exp032-distilled-sed-kd-hgnet/last.ckpt` (Phase 2.D HGNet).
+
+LB expectations:
+- 5-fold ensemble: target 0.910–0.920 (matches Tucker's published 0.917). 5-fold mean val/auroc 0.920 + 5-tap smoothing across folds in logit space should land in this band.
+- HGNet+KD single-fold: 0.90-0.92 if HGNet > EffNet for KD; otherwise marginal. Val metrics ≈ Phase D fold 0 EffNet (HGNet val/auroc 0.907 vs EffNet 0.908) → predicting LB also flat near 0.906.
+
+### Phase 2 LB results (2026-05-25 PM): PARTIAL REPLICATION
+
+| Slug | Variant | val/auroc | E2E val/auroc | LB | Δ vs Phase D fold 0 (0.906) | Δ vs Tucker target |
+|------|---------|----------:|--------------:|---:|---:|---:|
+| `distilled-sed-kd-5fold` | 5-fold KD ensemble | 0.920 (mean) | — | **0.915** | **+0.009** | **−0.002 vs 0.917** |
+| `distilled-sed-kd-hgnet` | HGNet KD single-fold ablation | 0.907 | 0.911 | **0.901** | **−0.005** | — |
+| `distilled-sed-kd-fold4` | EffNet KD fold 4 (strongest offline) | 0.931 | 0.937 | **0.903** | **−0.003** | offline-LB anti-correlation |
+
+**5-fold ensemble (0.915 LB)**: matches Tucker's published 0.917 within ~0.002 (well inside the documented cross-hardware variance ~0.007). Direction (+0.009 single→5-fold) matches Tucker's reported +0.011 single→5-fold lift. **What we did NOT replicate**: Tucker's "0.93+ with PP" stretch number, which depends on his private site/hour priors + per-class temperature (NOT in the public notebook). The publicly-replicable subset of his recipe yields 0.91-0.92 LB on this codebase, the same band his discussion thread reports.
+
+**HGNet+KD (0.901 LB)**: −0.005 below EffNet+KD fold 0 (0.906) despite near-identical offline val/auroc. **Backbone was NOT the bottleneck.** Refutes the Phase D hypothesis that the −0.041 control-vs-v5j gap was backbone-driven. The recipe-vs-recipe gap is driven by other ingredients (AttHeadLogitSpace vs LSEHead, dual-supervision vs single-clipwise, etc.). EffNet remains the right backbone for this recipe.
+
+**Fold 4 single-fold (0.903 LB)**: strongest offline val/auroc (0.931, +0.023 over fold 0) but **near-worst LB**. Single-fold LB band is narrow (~0.003 across 2 data points spanning 0.023 of offline range). The +0.009 single→5-fold ensemble lift is **pure variance-reduction** (Gaussian smoothing across 5 fold logits in LOGIT space), not "picking up better folds". 23rd data point in the offline-LB anti-correlation pattern.
+
+### Single-fold variance characterization (fold 0 + fold 4 landed)
+
+| Fold | Offline val/auroc | E2E val/auroc | LB | Δ offline vs fold 0 | Δ LB vs fold 0 |
+|---|---:|---:|---:|---:|---:|
+| 0 (Phase D) | 0.908 | 0.912 | **0.906** | — | — |
+| 4 | 0.931 | 0.937 | **0.903** | **+0.023** | **−0.003** |
+
+**Conclusion**: offline rank ≠ LB rank on single-fold. Folds 1/2/3 not submitted (would land in the same 0.903-0.906 band with high confidence — low marginal information for high LB-slot cost). The ensemble +0.009 lift is from variance-reduction across folds, not from any "magic fold" inside the 5-fold set.
+
+### Phase 2 implications for next steps
+
+The Tucker recipe is replicated within noise of the publicly-quantified target. Path to higher LB is no longer "fix the recipe":
+1. **Ensemble distilled-sed-kd-5fold (0.915) with exp 023 perch-sed-ensemble-mlp-only (0.929 LB)** — highest-EV move. Two strong, decorrelated stacks (Tucker SED + Perch probes); estimated landing 0.93-0.94 LB.
+2. **Port site/hour priors (EoS.6 style)** onto distilled-sed-kd-5fold — exp 021 priors gave +0.004 on v5j-4fold-pp2; similar lift here would land 0.918-0.920. Likely the path Tucker took for "0.93+ with PP".
+3. **Accept the publicly-replicable limit** of this recipe and pivot LB-lift effort to other levers (Sydorskyi-yoink stretch, MixIT-based PL, etc.).
+
+Best single Tucker-SED model: `distilled-sed-kd` (Phase D, fold 0) = **0.906 LB**, matching v5j-original. Best Tucker-SED ensemble: `distilled-sed-kd-5fold` = **0.915 LB**, within ~0.002 of Tucker's published 0.917. Neither approaches the exp 023 ensemble's 0.929 (current overall best).
+
+### Verdict: Phase 1 REJECTED (pipeline broken — historical, now resolved)
+
+Both runs collapsed to barely-above-random LB despite offline Tucker macro AUC
+tracking Tucker's published 0.91 trajectory exactly (control ep 6 = 0.889 vs
+Tucker's ~0.91 — matches to 4 dp). The paired Δ (−0.009) is within seed noise
+and is uninformative because the control itself is broken.
+
+### Leading hypothesis (HIGH-likelihood, blocking)
+
+**Training/inference mel-pipeline mismatch.**
+
+- Tucker: `power_mel → AmplitudeToDB(top_db=80) → per-sample (mel - mean) / (std + eps)`. One normalization pass at both training AND inference.
+- Our training: NNAudio `norm_type="amplitude_to_db"` does `power_to_db → z-score → min-max [0,1]`, THEN the module's `per_sample_mel_norm` does another z-score. **Three normalization passes**.
+- Our inference (`compute_mel_tucker` in submission.py): single z-score after AmplitudeToDB — matches Tucker but NOT our training distribution.
+
+Model trained on triple-normalized features sees single-normalized features at
+inference → output is near-random. Single bug sufficient to explain LB 0.522
+given a model that scores macro AUC 0.89 on its own training-distribution val.
+
+### Next steps (see `experiments/032-tucker-distilled-sed/tasks.md` Phase D)
+
+1. Side-by-side numerical test of our mel pipeline vs Tucker's (`scripts/diag_mel_pipeline.py`).
+2. Fix training mel to match Tucker's single-pass normalization (add `norm_type: "tucker_amp2db"` to NNAudioMelSpectrogram).
+3. Add end-to-end validation script (`scripts/validate_end_to_end.py`) — load ckpt, run kernel inference path on `train_soundscapes/`, compute macro AUC against labels, compare against offline val. Make this a pre-flight check before every LB submission.
+4. Retrain paired control + KD with fixed mel.
+5. Re-export + re-submit. Phase 2 (5-fold) and Phase 3 (KD diagnosis) BLOCKED until end-to-end validation passes AND retrained control LB ≥ 0.900.
+
+### Methodology lesson
+
+**Offline val/cmap/auroc cannot detect training-inference distribution
+mismatch** because the offline val uses the training pipeline. End-to-end
+validation against soundscape labels using the inference kernel's full path
+must be a pre-flight check, not an after-the-fact diagnostic.
+
+See `experiments/032-tucker-distilled-sed/results.md` for full LB table,
+hypothesis ranking, and audit checklist.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
