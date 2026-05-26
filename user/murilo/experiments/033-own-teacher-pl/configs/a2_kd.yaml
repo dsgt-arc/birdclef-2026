@@ -1,0 +1,15 @@
+# A2.kd — random init, Uniform sampler, 25 ep, T2 (distilled-sed-kd-5fold) teacher.
+# Paired with A2.v5j (pure Antoine protocol with different teacher).
+#
+# Inherits all unlisted knobs from configs/_common.yaml.
+
+run_name: "2026-exp033-a2-kd"
+
+logging:
+  project: "birdclef-2026-exp033"
+
+pseudo_label:
+  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet"
+  weight: 1.0
+  sampler: "uniform"
+  exclude_labeled_sc: true

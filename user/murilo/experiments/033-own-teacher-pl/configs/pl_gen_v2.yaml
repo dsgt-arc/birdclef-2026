@@ -1,0 +1,57 @@
+# Pseudo-label generation config: v2-distilled-sed-kd-5fold
+# Round 1 of exp 033 — pure-SED own-teacher PLs from distilled-sed-kd-5fold
+# (exp 032 Phase 2.A ensemble, LB 0.915).
+#
+# Usage:
+#   cd user/murilo/experiments/025-iter-pseudo-labeling
+#   python generate_pseudo_labels.py --config ../033-own-teacher-pl/configs/pl_gen_v2.yaml
+#
+# This config is copied into the output directory
+# (shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/) alongside the generated
+# parquet for full reproducibility.
+#
+# Differences from v1:
+#   - SED teacher: distilled-sed-kd-5fold (LB 0.915, EffNet+AttHeadLogitSpace+KD)
+#     instead of v5j-4fold (LB 0.913, HGNet+LSEHead+BCE)
+#   - n_folds: 5 (vs v1's 4) — corresponds to the 5 ONNX files in distilled-sed-kd-5fold/
+#   - Perch tier C OMITTED — pure-SED only (no cross-arch contamination for exp 033)
+#
+# Hyperparameters held constant vs v1 (temperature, power_transform, fold_strategy)
+# to isolate teacher-architecture as the variable.
+
+version: v2-distilled-sed-kd-5fold
+created: "2026-05-26"
+parent_version: null  # Independent Round 1; doesn't iterate from v1
+
+# --- Teacher: SED (all 234 species — pure own-arch, no tiering) ---
+sed:
+  source_dir: shared/inference/birdclef-2026/distilled-sed-kd-5fold/train_soundscapes
+  n_folds: 5  # 5 ONNX files (model_fold0..4.onnx)
+  fold_strategy: max  # max-across-folds (matches v1)
+  temperature: 0.6    # Sharpening — matches v1 (Nikita's 0.55-0.6 range)
+  power_transform: 1.5  # Matches v1
+  tiers: [A, B, C]    # All species — no Perch tier; coverage gaps just go to D
+
+# --- Teacher: Perch — OMITTED for v2 ---
+# Pure-SED only. Species the SED teacher can't predict will be in Tier D (no PL).
+# This is closer to the disclosed Antoine/OverfitOracle/Boredom protocols which
+# don't blend a separate cross-arch teacher.
+
+# --- Tier D species (no teacher; same as v1) ---
+tier_d_species:
+  - "23150"   # Central Dwarf Frog (1 focal recording)
+  - "23154"   # Bahia Dwarf Frog (5 focal, out of range)
+  - "23724"   # Waxy Monkey Tree Frog (1 focal)
+  - "25214"   # Muller's Termite Frog (3 focal)
+  - "476521"  # Cuyaba Dwarf Frog (3 focal)
+  - "74580"   # Black-tailed Marmoset (3 focal, diurnal)
+
+# --- Output ---
+output_dir: shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold
+
+# --- Training config (for reference — actual training uses exp 033 pipeline) ---
+training:
+  recipe: distilled-sed-kd  # Tucker recipe + Perch v2 KD branch
+  pl_loss_weight: 1.0  # Antoine 1:1 protocol (vs v1's 0.5)
+  batch_pl_fraction: variable  # Configurable per ablation (mixsamp 0.5/0.8/0.3 or uniform)
+  epochs: variable  # 25 (random init) or 10 (warm-start) per ablation
