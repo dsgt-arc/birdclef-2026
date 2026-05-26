@@ -103,13 +103,22 @@ Read these BEFORE starting any task. Implementation tasks reference them by shor
 - [ ] 3.2.1 `sbatch/_job.sh` — copy from exp 032, change run_name pattern + log dir.
 - [ ] 3.2.2 `sbatch/run.sh` — copy from exp 032, simplify (exp 033 just runs configs/<name>.yaml).
 
-### 3.3 Fast-dev-run sanity
-- [ ] 3.3.1 Run on `a2_v5j.yaml` (simplest: no warm-start, uses existing v1 PL parquet):
+### 3.3 Fast-dev-run sanity — DONE (2026-05-26)
+- [x] 3.3.1 Run on `a2_v5j.yaml` (simplest: no warm-start, uses existing v1 PL parquet):
   ```bash
   cd user/murilo/experiments/033-own-teacher-pl
-  ~/clef/birdclef-2026/.venv/bin/python train.py --config configs/a2_v5j.yaml --fast-dev-run
+  bash sbatch/run.sh configs/a2_v5j.yaml --fast-dev-run
   ```
-- [ ] 3.3.2 Verify: PLDS loaded, DataLoader yields 4-tuple batches, 1 train step + 1 val step complete, loss_weight correctly applied.
+  SLURM job 9185603 on `gpu-rtx6000` (atl1-1-03-007-1-0), walltime 1m28s, exit 0.
+  Log: `logs/slurm_a2_v5j_9185603.log`.
+- [x] 3.3.2 Verify: PLDS loaded, DataLoader yields 5-tuple batches, 5 train steps + val sanity complete, loss_weight correctly applied.
+  - ✅ `Exp 033 PL mode enabled: .../v1/sed_pseudo_labels.parquet` (weight=1.0, sampler=uniform, exclude_labeled_sc=True)
+  - ✅ `DistilledSEDDataModule PL filter: 127,896 → 127,728 (excl val-fold) → 127,104 (excl labeled-sc)` — matches design exactly
+  - ✅ `train_dataloader (PL/uniform): focal=28906, sc=624, pl=127104, total=156,634`
+  - ✅ `steps/epoch=2447` (fold 0; 28,906 focal + 624 sc → ⌈ /12 ⌉ batches, consistent with Tucker `nst` math)
+  - ✅ KD active: `train/dist_loss_step: 0.021` (Perch v2 ONNX teacher loaded; alpha_distill=1.0)
+  - ✅ Losses sane: `train/cls_loss_step 0.983, train/loss_step 1.004, val/loss 0.705`; no NaN/Inf
+  - ✅ `Trainer.fit stopped: max_steps=5 reached` + `Job completed successfully!`
 
 ---
 
