@@ -1,11 +1,16 @@
-"""Pre-flight diagnostic checks for exp 033 (Antoine-protocol PL on Tucker recipe).
+"""Pre-flight diagnostic checks for exp 033 (own-teacher PL on Tucker recipe).
 
 Runs read-only checks before any training. Surfaces issues so we don't
 discover them mid-run.
+
+Defaults to validating the v1 PL parquet (T1, v5j-4fold teacher). Use
+`--parquet-path` to validate a different parquet (e.g., v2 T2 after
+Phase 0.2 generation).
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -17,13 +22,32 @@ import yaml
 
 REPO = Path("/storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026")
 DATA = Path("/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026")
-PL_DIR = Path("/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v1")
+DEFAULT_PL_PATH = Path(
+    "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v1/sed_pseudo_labels.parquet"
+)
 INF_DIR = Path("/storage/project/ps-clef2026_birdclef-0/shared/inference/birdclef-2026")
 CKPT_BASE = Path(
     "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints"
 )
 SR = 32000
 WINDOW_SAMPLES = 160000
+
+# ----------------------------------------------------------------------
+# Argparse — supports overriding the PL parquet for v2 validation
+# ----------------------------------------------------------------------
+_parser = argparse.ArgumentParser(description=__doc__)
+_parser.add_argument(
+    "--parquet-path",
+    type=Path,
+    default=DEFAULT_PL_PATH,
+    help=f"Path to the PL parquet to validate. Default: {DEFAULT_PL_PATH}",
+)
+_args = _parser.parse_args()
+PL_PATH = _args.parquet_path
+print(f"Validating PL parquet: {PL_PATH}")
+if not PL_PATH.exists():
+    print(f"FATAL: parquet not found at {PL_PATH}")
+    sys.exit(1)
 
 
 def banner(n: int, title: str) -> None:
@@ -38,8 +62,7 @@ def report(passed: bool, msg: str) -> None:
 # CHECK 1: PL parquet filename format matches train_soundscapes/*.ogg
 # ----------------------------------------------------------------------
 banner(1, "PL parquet filenames match train_soundscapes/ files on disk")
-pl_path = PL_DIR / "sed_pseudo_labels.parquet"
-pl_df = pd.read_parquet(pl_path)
+pl_df = pd.read_parquet(PL_PATH)
 ss_dir = DATA / "train_soundscapes"
 on_disk = {f.name for f in ss_dir.glob("*.ogg")}
 in_parquet = set(pl_df["filename"].unique())
