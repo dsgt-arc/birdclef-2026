@@ -56,7 +56,12 @@ data:
   sample_rate: 32000
   window_duration: 5.0
   batch_size: 64
-  num_workers: 0
+  num_workers: 8  # Match SBATCH --cpus-per-task=8. Exp 032 inherited 0 from
+                  # Tucker's Jupyter notebook (single-threaded by default) and
+                  # got away with it because its labeled-SS pool was 624 files
+                  # that fit in OS cache. Exp 033's 127K-file PL pool is too
+                  # large for cache → main-thread I/O bottlenecks at ~4× the
+                  # actual GPU compute cost. All exps 025-031 used 8.
   n_folds: 5
   seed: 42
   min_sample: 20
