@@ -87,7 +87,11 @@ data:
   sample_rate: 32000
   window_duration: 5.0    # Tucker: 5s clips
   batch_size: 64          # Tucker's BATCH (16 in DEBUG; we use 64 for production)
-  num_workers: 0          # Tucker's default; revisit if I/O-bound
+  num_workers: 8          # Was 0 (Tucker's Jupyter default — single-threaded);
+                          # bumped to match SBATCH --cpus-per-task=8. The small
+                          # 624-file labeled-SS pool fit in OS cache so the
+                          # original 0 worked here, but exps with larger pools
+                          # (033 PL = 127K files) hit a 4× slowdown.
 
   # DistilledSEDDataModule controls (task 0.8):
   n_folds: 5
