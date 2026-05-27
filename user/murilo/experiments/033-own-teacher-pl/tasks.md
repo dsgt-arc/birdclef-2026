@@ -139,29 +139,39 @@ Read these BEFORE starting any task. Implementation tasks reference them by shor
 - [x] 4.1.3 Monitor via `squeue`. All 10 jobs completed overnight 2026-05-26 → 2026-05-27. 25-ep runs finished in 6h29m–7h25m, 10-ep runs in 2h38m–2h41m. (Real per-epoch time at `num_workers=8` was ~20 min on rtx6000, 2× the proposal's predicted 10 min — attributed to per-epoch worker startup + I/O dominance from 127K-file PL pool; acceptable.)
 - [x] 4.1.4 **All 10 runs trained to full `max_epochs`** with no NaN, no instability. Each log has `Training complete!` + `outputs/test_results/2026-exp033-<slug>-fold0.json` + `last.ckpt` (or `last-v1.ckpt` for T1 relaunches) + W&B upload. **Slurm FAIL emails were a false alarm**: `_job.sh:127` calls `save_metrics.py` which was missing from exp 033 (Phase E omission — copied `_job.sh`/`run.sh` from exp 032 but not `save_metrics.py`). `set -eu` propagated the missing-file error → `--mail-type=END,FAIL` fired despite training succeeding. Fix landed 2026-05-27 (commit pending): new `experiments/033-own-teacher-pl/save_metrics.py` mirrors `train.py:load_config`'s `_common.yaml` deep-merge so per-ablation diff-only configs serialize correctly. Backfilled `artifacts/training/a{1..5}_{v5j,kd}/fold0/metrics.json` for all 10 runs on the head node. Future runs will exit 0.
 
-### 4.2 D.5 end-to-end validation (mandatory pre-flight)
-- [ ] 4.2.1 For each of 10 ckpts, run `experiments/032-tucker-distilled-sed/sbatch/validate_end_to_end.sh` with the appropriate config + CKPT env vars + FOLD=0 (val set is fold 0).
-- [ ] 4.2.2 All must PASS (gap ≤ 0.02 vs training-side val/auroc).
-- [ ] 4.2.3 Rank by e2e val/auroc; record into `results.md`.
+### 4.2 D.5 end-to-end validation (mandatory pre-flight) — DONE (2026-05-27)
+- [x] 4.2.1 D.5 launcher `sbatch/launch_d5_validation.sh` written (auto-picks `last-v1.ckpt` for T1, `last.ckpt` for T2). Used exp 032's `validate_end_to_end.sh` with the `_common.yaml` deep-merge patch landed in commit `49d20d9`. Jobs 9196512–9196521 submitted 2026-05-27 10:13.
+- [x] 4.2.2 **All 10 PASS.** Max gap 0.0079 (well under 0.02 tolerance). E2E generally higher than training-side on warm-start runs (a3, a4 × both teachers: +0.004 to +0.007 — Tucker's "smoothing-trick" pattern); mixed on random-init runs.
+- [x] 4.2.3 Rank by e2e val/auroc → top 5 = a4-kd, a3-kd, a2-kd ⭐, a4-v5j, a3-v5j. Recorded in results.md + MODEL-RUNS.md.
 
-### 4.3 LB submission (under 5/day cap)
-- [ ] 4.3.1 Export ONNX for the top 5 by e2e rank. Use exp 032's `010-submission-pipeline/export.sbatch` patterns; may need to add wrappers for `distilled-sed-pl-a{N}-{T}` slugs.
-- [ ] 4.3.2 Day 1: upload + push kernel + LB submit for top 5.
-- [ ] 4.3.3 Day 2: same for remaining 5.
+### 4.3 LB submission (under 5/day cap) — STOPPED at 3/5 Day 1 after REJECT trajectory confirmed
+- [x] 4.3.1 ONNX export wired into exp 010 submission pipeline (commit `4280e72`):
+  - patched `scripts/export_distilled_sed.py` with `load_config_with_common` to handle `_common.yaml` inheritance;
+  - added `EXP033_DIR` + generic `export_distilled_sed_pl()` function in `sbatch/export.sbatch`;
+  - added 10 MODELS entries to `scripts/upload_kaggle.py`;
+  - generated 10 kernel-metadata JSONs with verified title-to-id slug match;
+  - added 10 weight slugs to `submission.py` MODEL_SLUGS.
+  Day-1 batch export (job 9198770): all 5 cleanly exported (walltime 2m11s; ONNX verification max diff 3.81e-6 to 4.77e-6 across the 5).
+- [x] 4.3.2 Day 1: 3 of 5 submitted to LB; all REJECT.
+  - **a4-kd**: LB **0.899** (Δ −0.007). On the edge of cross-hardware noise.
+  - **a2-kd** ⭐: LB **0.886** (Δ −0.020). Firmly inside REJECT band; canonical Antoine doesn't work.
+  - **a4-v5j**: LB **0.897** (Δ −0.009). Paired with a4-kd → teacher-axis Δ = +0.002 LB, refutes the diversity hypothesis.
+  - Remaining 2 Day-1 cells (a3-kd, a3-v5j) NOT submitted — trajectory said don't burn slots.
+- [ ] 4.3.3 ~~Day 2: same for remaining 5.~~ NOT executed (decision matrix triggered REJECT pivot; saving Day-2 slots for Sydorskyi-yoink).
 
-### 4.4 Apply decision matrix
-- [ ] 4.4.1 Per proposal.md § Falsifiable: CONFIRM ≥ +0.014, PARTIAL +0.007-0.013, WEAK +0.001-0.006, REJECT ≤ 0.
-- [ ] 4.4.2 Record per-ablation LB into `results.md`. Identify best protocol × teacher cell.
-- [ ] 4.4.3 If CONFIRM: plan Round 2 (teacher iteration with Round 1 student as teacher) and/or Sydorskyi-yoink layering.
-- [ ] 4.4.4 If PARTIAL: explore ensemble with exp 023 (0.929) to compound.
-- [ ] 4.4.5 If WEAK: extend to 5-fold to disambiguate.
-- [ ] 4.4.6 If REJECT: pivot to Sydorskyi-yoink directly.
+### 4.4 Apply decision matrix — DONE: REJECT
+- [x] 4.4.1 Per proposal.md § Falsifiable: all 3 LB Δ in REJECT band (≤ 0).
+- [x] 4.4.2 Per-ablation LB recorded into results.md + MODEL-RUNS.md. Best LB this experiment: a4-kd 0.899 (still below the 0.906 baseline).
+- [ ] ~~4.4.3 If CONFIRM: plan Round 2 + Sydorskyi-yoink layering.~~ Not triggered.
+- [ ] ~~4.4.4 If PARTIAL: ensemble with exp 023 (0.929).~~ Not triggered.
+- [ ] ~~4.4.5 If WEAK: 5-fold disambiguation.~~ Not triggered.
+- [x] 4.4.6 **REJECT → pivot to Sydorskyi-yoink directly.** Active path; scoping next session.
 
 ---
 
 ## Closeout
 
-- [x] C.1 (offline metrics portion) `results.md` written with full per-ablation table, paired Δ across teacher/sampler/init/PL-exposure axes, training dynamics, compute, artifacts, next-steps (2026-05-27). LB table + verdict still pending — re-update after Phase 4.2 + 4.3.
-- [x] C.2 (offline metrics portion) `MODEL-RUNS.md` updated with new `## Experiment 033` section (Phase G offline metrics table, read-outs, compute, LB predictions, next steps). LB column + decision-matrix entry pending Phase 4.3.
-- [ ] C.3 Update `user/murilo/CONTEXT.md` with next-session pickup notes (after D.5 + LB land).
-- [ ] C.4 PR — ready for merge with verdict. Squash-merge per `feedback_squash_merge.md`.
+- [x] C.1 `results.md` updated 2026-05-27 PM with LB verdict (REJECT), 3-cell LB table, paired Δ readings (teacher axis +0.002 LB refuting offline +0.011 auroc; protocol-cell axis −0.013 LB; offline-LB anti-correlation data point #24), next-steps pointing at Sydorskyi-yoink pivot.
+- [x] C.2 `MODEL-RUNS.md` exp 033 header updated to "REJECT"; offline-metrics table re-titled with LB column; LB-expectations section replaced with actual D.5 + LB results table + verdict + paired Δ readings.
+- [ ] C.3 Update `user/murilo/CONTEXT.md` with next-session pickup notes (Sydorskyi-yoink pivot scope + remaining Day-2 LB cap budget).
+- [ ] C.4 PR — ready for merge with REJECT verdict. Squash-merge per `feedback_squash_merge.md`.

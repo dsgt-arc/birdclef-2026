@@ -1101,7 +1101,7 @@ must be a pre-flight check, not an after-the-fact diagnostic.
 See `experiments/032-tucker-distilled-sed/results.md` for full LB table,
 hypothesis ranking, and audit checklist.
 
-## Experiment 033: Own-teacher Pseudo-Labels on distilled-sed-kd — OFFLINE TRAINING COMPLETE (10/10 fold-0 ablations; D.5 + LB pending)
+## Experiment 033: Own-teacher Pseudo-Labels on distilled-sed-kd — REJECT (3/5 Day-1 LB landed all in REJECT band; protocol does not transfer at LB)
 
 Applies the Antoine / OverfitOracle / Boredom 1:1 own-teacher PL protocol on top
 of the exp 032 Phase D `distilled-sed-kd` recipe (baseline LB 0.906). 5
@@ -1197,28 +1197,71 @@ At `num_workers=8` per-epoch time on rtx6000 is ~20 min (~2× the proposal's
 predicted 10 min, attributed to per-epoch worker startup + I/O dominance from
 the 127K-file PL pool — acceptable, not a regression).
 
-### LB expectations (predictions)
+### Phase G D.5 end-to-end validation — ALL 10 PASS ✅
 
-| Submission | Predicted LB | Decision bucket |
+Same kernel-inference-path methodology as exp 032 (`validate_end_to_end.sh`).
+Gate: `|train_auroc − e2e_auroc| ≤ 0.02`. All 10 PASS; max gap 0.0079; all 10
+runs took 4–5s of inference on the fold-0 val SS pool (n_evaluable=29, val
+windows=156). Used `last-v1.ckpt` for T1 ablations (the relaunched-with-
+num_workers=8 run) and `last.ckpt` for T2 ablations.
+
+| Slug | Train val/auroc | E2E val/auroc | Gap | LB | Δ vs 0.906 |
+|------|----------------:|--------------:|----:|---:|---:|
+| `2026-exp033-a4-kd` | 0.9477 | **0.9551** | +0.0074 | **0.899** | **−0.007** |
+| `2026-exp033-a3-kd` | 0.9486 | **0.9540** | +0.0054 | (not submitted) | — |
+| `2026-exp033-a2-kd` ⭐ | 0.9390 | 0.9403 | +0.0013 | **0.886** | **−0.020** |
+| `2026-exp033-a4-v5j` | 0.9352 | 0.9399 | +0.0047 | **0.897** | **−0.009** |
+| `2026-exp033-a3-v5j` | 0.9345 | 0.9387 | +0.0042 | (not submitted) | — |
+| `2026-exp033-a1-kd` | 0.9357 | 0.9362 | +0.0005 | (not submitted) | — |
+| `2026-exp033-a2-v5j` ⭐ | 0.9362 | 0.9332 | −0.0030 | (not submitted) | — |
+| `2026-exp033-a1-v5j` | 0.9288 | 0.9282 | −0.0006 | (not submitted) | — |
+| `2026-exp033-a5-kd` | 0.9285 | 0.9206 | −0.0079 | (not submitted) | — |
+| `2026-exp033-a5-v5j` | 0.9113 | 0.9095 | −0.0018 | (not submitted) | — |
+
+### Phase G LB results (2026-05-27 PM): REJECT
+
+3 of the top-5 by D.5 e2e val/auroc submitted; all landed in the REJECT bucket
+(per `proposal.md § Falsifiable`: CONFIRM ≥ +0.014, PARTIAL +0.007–0.013, WEAK
++0.001–0.006, REJECT ≤ 0). The remaining 7 ablations (2 Day-1 + 5 Day-2)
+were NOT submitted on the trajectory.
+
+**Paired Δ on the teacher axis (a4-kd vs a4-v5j)**: 0.899 vs 0.897 = +0.002 LB.
+Inside cross-hardware noise. **Refutes the proposal's headline teacher-diversity
+claim** (T2 won offline by +0.011 auroc, but does NOT win at LB on a paired
+single-fold test).
+
+**Paired Δ on the protocol-cell axis (a4-kd warm vs a2-kd random, same teacher)**:
+0.899 vs 0.886 = **−0.013** (canonical Antoine < warm-start). Inverts the offline
+ranking (a2-kd lower offline than a4-kd, but landed worse on LB too — both
+regressing). Another offline-LB anti-correlation data point.
+
+**Offline-LB anti-correlation data point #24**: the strongest offline cell
+(a4-kd, e2e rank 1/10) landed in the middle on LB (rank 2 of 3 submitted); the
+weakest of the 3 submitted by e2e (a4-v5j, e2e rank 4/10) was the best on LB
+(rank 1 of 3). Same pattern as exp 032 fold 4 (+0.023 offline → −0.003 LB) and
+22+ prior recipe data points.
+
+### Phase G verdict
+
+| Bucket | LB threshold (Δ vs 0.906) | Result |
 |---|---|---|
-| `distilled-sed-pl-a3-kd` (best offline; warm+T2+MixSamp 0.2/0.8) | 0.910–0.925 | LB read drives Round 2 / Sydorskyi-yoink decision |
-| `distilled-sed-pl-a2-kd` ⭐ (canonical Antoine + T2) | 0.910–0.920 | Cleanest cell to compare against competitor recipes |
-| Top-5 by D.5 (Day 1) + bottom-5 (Day 2) | wide band 0.90–0.92 | Spread informs robustness vs. tuning-required |
+| CONFIRM | ≥ +0.014 | ❌ |
+| PARTIAL | +0.007 to +0.013 | ❌ |
+| WEAK | +0.001 to +0.006 | ❌ |
+| **REJECT** | **≤ 0** | **✅ all 3 cells (−0.007 / −0.020 / −0.009)** |
 
-### Phase G next steps
+**The 1:1 own-teacher PL protocol does NOT lift LB on the distilled-sed-kd
+base** despite all 10 offline ablations landing +0.003 to +0.041 val/auroc above
+the baseline. Pivot per `proposal.md § Next-step plan`: Sydorskyi-yoink (XC
+pretrain) as the primary remaining lever before the 2026-06-03 deadline (7 days
+out).
 
-1. D.5 end-to-end validation on all 10 ckpts (mandatory pre-flight, reuses
-   exp 032's `validate_end_to_end.sh` — needs `last-v1.ckpt` for T1, `last.ckpt`
-   for T2).
-2. Rank by e2e val/auroc → LB top-5 Day 1, bottom-5 Day 2.
-3. Apply decision matrix (proposal.md § Falsifiable): CONFIRM ≥ +0.014 LB →
-   Round 2; PARTIAL +0.007-0.013 → ensemble with exp 023 (0.929);
-   WEAK +0.001-0.006 → 5-fold; REJECT ≤ 0 → Sydorskyi-yoink pivot.
+Best LB this experiment: `distilled-sed-pl-a4-kd` = **0.899** (still REJECT
+vs the distilled-sed-kd Phase D fold 0 baseline of 0.906).
 
-See `experiments/033-own-teacher-pl/results.md` for full offline metric tables
-(per-ablation, paired Δ across teacher / sampler / init / PL-exposure axes,
-training dynamics) and `experiments/033-own-teacher-pl/proposal.md` for the
-hypothesis and ablation grid design.
+See `experiments/033-own-teacher-pl/results.md` for the full per-ablation table
++ paired Δ across teacher/sampler/init/PL-exposure axes + decision-matrix
+read-out.
 
 ## Checkpoint Base Path
 

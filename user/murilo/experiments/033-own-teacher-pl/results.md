@@ -1,16 +1,74 @@
 ---
 experiment: "033-own-teacher-pl"
-status: training-complete-d5-pending
+status: reject-protocol-fails-on-base
 date: 2026-05-27
 author: Murilo Gustineli
 ---
 
 # Results: Own-teacher pseudo-labels on distilled-sed-kd
 
-**Date Updated**: 2026-05-27 (10/10 ablations trained; D.5 + LB pending)
+**Date Updated**: 2026-05-27 PM (3/5 Day-1 LB submissions landed — all REJECT)
 **Author**: Murilo Gustineli
 
-## Status: TRAINING COMPLETE (10/10 fold-0 ablations) — D.5 e2e validation + LB submission pending
+## Status: REJECT — 1:1 own-teacher PL protocol does NOT lift LB on the distilled-sed-kd base
+
+3 LB submissions across both teachers, including the canonical Antoine cell + the
+paired teacher-axis test, all regressed −0.007 to −0.020 vs the 0.906 baseline.
+The teacher-axis paired Δ on the warm+Uniform cell is effectively zero
+(0.899 vs 0.897 LB), refuting the proposal's headline teacher-diversity claim
+at LB scale. **The protocol does not transfer on this base regardless of teacher.**
+
+### LB summary (2026-05-27 PM)
+
+| Ablation | Cell | Teacher | LB | Δ vs 0.906 | Decision-matrix bucket |
+|---|---|---|---:|---:|:---:|
+| `2026-exp033-a4-kd` | warm + Uniform | T2 (distilled-sed-kd-5fold) | **0.899** | **−0.007** | REJECT (edge of cross-hardware noise) |
+| `2026-exp033-a2-kd` ⭐ | random + Uniform (canonical Antoine) | T2 | **0.886** | **−0.020** | REJECT (firmly inside REJECT band) |
+| `2026-exp033-a4-v5j` | warm + Uniform | T1 (v5j-4fold) | **0.897** | **−0.009** | REJECT |
+| `2026-exp033-a3-kd` | warm + MixSamp 0.2/0.8 | T2 | (not submitted) | — | — |
+| `2026-exp033-a3-v5j` | warm + MixSamp 0.2/0.8 | T1 | (not submitted) | — | — |
+
+Per `proposal.md § Falsifiable`: CONFIRM ≥ +0.014, PARTIAL +0.007 to +0.013,
+WEAK +0.001 to +0.006, REJECT ≤ 0. **All 3 landed in REJECT.** The remaining
+2 Day-1 slots (a3-kd, a3-v5j) and the 5 Day-2 cells (a1, a5 × teachers) are
+unlikely to surprise positive given the trajectory and were not submitted.
+
+### Paired Δ readings
+
+- **Teacher axis (a4-kd vs a4-v5j, same protocol cell)**: Δ = 0.899 − 0.897 = **+0.002 LB** (T2 vs T1). Inside cross-hardware noise. The proposal's headline teacher-diversity hypothesis (T2 wins offline by +0.011 auroc) does NOT transfer to LB. Refutes the "T2 is the teacher to keep iterating with" claim from this morning's read.
+- **Protocol axis (a4-kd warm vs a2-kd random, same teacher)**: a2-kd canonical Antoine LB 0.886 vs warm-variant a4-kd LB 0.899. Δ = **−0.013** (canonical < warm-start). Inverts the offline reading (a4-kd e2e 0.955 vs a2-kd e2e 0.940 = warm > canonical). Another offline-LB anti-correlation data point.
+
+### Decision-matrix read
+
+| Bucket | LB threshold | Result |
+|---|---|---|
+| CONFIRM | ≥ +0.014 | ❌ |
+| PARTIAL | +0.007 to +0.013 | ❌ |
+| WEAK | +0.001 to +0.006 | ❌ |
+| **REJECT** | **≤ 0** | **✅ all 3 cells** |
+
+**Verdict per proposal**: pivot to Sydorskyi-yoink (XC pretrain) as the primary
+remaining lever. The own-teacher PL protocol is refuted on the distilled-sed-kd
+base.
+
+### Offline-LB anti-correlation: data point #24
+
+This adds 3 paired data points to the project's documented offline-LB
+anti-correlation pattern (24+ total now):
+
+| Cell | Offline e2e val/auroc | LB | Offline rank | LB rank |
+|---|---:|---:|---:|---:|
+| a4-kd | 0.955 (rank 1/10) | 0.899 (rank 2 of 3) | strongest | middle |
+| a2-kd ⭐ | 0.940 (rank 3/10) | 0.886 (rank 3 of 3) | middle | worst |
+| a4-v5j | 0.940 (rank 4/10) | 0.897 (rank 1 of 3) | middle | best |
+
+**The offline-ranked best (a4-kd) was middle on LB; the offline-ranked weakest
+of the three (a4-v5j) was the LB best.** Same pattern as exp 032 fold 4 (+0.023
+offline → −0.003 LB) and 22+ prior recipe data points.
+
+---
+
+## Status: TRAINING COMPLETE (10/10 fold-0 ablations) — D.5 e2e validation + LB submission pending (HISTORICAL — superseded by LB results above)
 
 All 10 ablations of the Antoine-style 1:1 own-teacher PL protocol on top of the
 Phase D `distilled-sed-kd` recipe finished overnight 2026-05-26 → 2026-05-27 on
@@ -240,21 +298,30 @@ training-side, consistent with the 5-tap smoothing trick).
 
 ## Next Steps
 
-See `tasks.md` Phase 4.2 onward.
+D.5 + 3-cell LB landed; verdict is REJECT. Per the proposal's pivot plan, next
+session = scope Sydorskyi-yoink (XC pretrain as the remaining LB lever). The
+remaining 7 ablations (2 Day-1 + 5 Day-2) are NOT worth submitting on the
+current trajectory.
 
-1. **D.5 end-to-end validation** on all 10 ckpts (mandatory pre-flight before
-   LB). Reuse exp 032's `sbatch/validate_end_to_end.sh` with per-ablation
-   `CONFIG` + `CKPT` env vars. Gate: `|train_auroc − e2e_auroc| ≤ 0.02`.
-   Use `last-v1.ckpt` for T1 ablations and `last.ckpt` for T2 ablations.
-2. **Rank by e2e val/auroc** → top 5 to LB Day 1, remaining 5 to LB Day 2.
-3. **LB submit**, apply decision matrix on each result.
-4. **CONFIRM (≥ 0.920) →** Round 2 with Round-1 best as new teacher; layer
-   Sydorskyi-yoink XC base.
-5. **PARTIAL (+0.007 to +0.013) →** ensemble with exp 023 (0.929) for compound
-   LB lift.
-6. **WEAK (+0.001 to +0.006) →** extend best protocol to 5-fold to
-   disambiguate.
-7. **REJECT (≤ 0) →** pivot to Sydorskyi-yoink directly.
+1. **Closeout**: ✅ results.md updated · MODEL-RUNS.md updated · tasks.md
+   closeout phase pending PR.
+2. **Pivot**: scope `experiments/034-sydorskyi-yoink-xc-pretrain/` (or
+   similar). Goal = layer XC pretrain (Sydorskyi's recipe) on top of the
+   distilled-sed-kd recipe to unlock the lever Antoine has but we don't.
+3. **Don't run** Day-1 a3-kd + a3-v5j or the 5 Day-2 ablations — the LB cap
+   slots are better spent on the pivot's first iteration.
+
+### Historical (pre-LB plan)
+
+The original ladder, kept here for archival:
+
+1. D.5 end-to-end validation on all 10 ckpts (✅ done — all 10 PASS).
+2. Rank by e2e val/auroc → top 5 to LB Day 1 (3 submitted, 2 abandoned).
+3. LB submit, apply decision matrix → REJECT.
+4. CONFIRM → Round 2 + Sydorskyi-yoink. (Not triggered.)
+5. PARTIAL → ensemble with exp 023. (Not triggered.)
+6. WEAK → 5-fold. (Not triggered.)
+7. REJECT → pivot to Sydorskyi-yoink directly. **← active path**
 
 ## Methodology notes
 
