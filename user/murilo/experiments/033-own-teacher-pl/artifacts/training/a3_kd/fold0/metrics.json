@@ -1,0 +1,70 @@
+{
+  "auroc": 0.9486498236656189,
+  "cmap": 0.8310816287994385,
+  "f1_macro": 0.062274400144815445,
+  "f1_micro": 0.8076256513595581,
+  "top1_accuracy": 0.896774172782898,
+  "top5_accuracy": 0.9290322661399841,
+  "loss": 0.016953665763139725,
+  "metrics_source": "val",
+  "architecture": "sed",
+  "encoder_type": "efficientnet",
+  "encoder_model": "tf_efficientnet_b0.ns_jft_in1k",
+  "embed_dim": null,
+  "sed_head": {
+    "type": "att_head_logit_space",
+    "hidden_dim": 512,
+    "dropout": 0.5,
+    "gem_p": 3.0
+  },
+  "mel": {
+    "type": "tucker",
+    "n_fft": 2048,
+    "n_mels": 256,
+    "hop_length": 512,
+    "fmax": 16000,
+    "sample_rate": 32000
+  },
+  "dataset": "birdclef-2026",
+  "num_classes": 234,
+  "best_val_score": 0.8349578380584717,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/033-own-teacher-pl/checkpoints/2026-exp033-a3-kd/fold0/best-epochepoch=07.ckpt",
+  "stopped_epoch": 10,
+  "training": {
+    "max_epochs": 10,
+    "lr": 5e-05,
+    "head_lr": 5e-05,
+    "weight_decay": 0.0001,
+    "warmup_epochs": 0,
+    "batch_size": 64,
+    "num_workers": 8,
+    "precision": "16-mixed",
+    "early_stopping_patience": 999,
+    "grad_clip_val": 1.0,
+    "accumulate_grad_batches": 1,
+    "clipwise_weight": 0.5,
+    "framewise_weight": 0.5,
+    "blend_clip": 0.5,
+    "blend_frame": 0.5,
+    "window_duration": 5.0,
+    "sample_rate": 32000,
+    "use_perch_distill": true,
+    "alpha_distill": 1.0,
+    "warm_start_ckpt": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/last-v2.ckpt"
+  },
+  "pseudo_label": {
+    "path": "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet",
+    "weight": 1.0,
+    "sampler": "mixsamp",
+    "exclude_labeled_sc": true,
+    "focal_share": 0.2,
+    "sc_share": 0.0,
+    "pl_share": 0.8
+  },
+  "compute": {
+    "gpu": "unknown",
+    "slurm_job_id": 9195802,
+    "node": null,
+    "cpus_per_task": null
+  }
+}

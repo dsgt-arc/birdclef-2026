@@ -136,8 +136,8 @@ Read these BEFORE starting any task. Implementation tasks reference them by shor
   ```bash
   for AB in a1 a2 a3 a4 a5; do bash sbatch/run.sh configs/${AB}_kd.yaml --fold 0; done
   ```
-- [ ] 4.1.3 Monitor via `squeue`. Expect 25-epoch runs (a1/a2/a5) to finish in ~8h, 10-epoch runs (a3/a4) in ~3h.
-- [ ] 4.1.4 Verify all 10 logs end with `Job completed successfully!`; no NaNs.
+- [x] 4.1.3 Monitor via `squeue`. All 10 jobs completed overnight 2026-05-26 → 2026-05-27. 25-ep runs finished in 6h29m–7h25m, 10-ep runs in 2h38m–2h41m. (Real per-epoch time at `num_workers=8` was ~20 min on rtx6000, 2× the proposal's predicted 10 min — attributed to per-epoch worker startup + I/O dominance from 127K-file PL pool; acceptable.)
+- [x] 4.1.4 **All 10 runs trained to full `max_epochs`** with no NaN, no instability. Each log has `Training complete!` + `outputs/test_results/2026-exp033-<slug>-fold0.json` + `last.ckpt` (or `last-v1.ckpt` for T1 relaunches) + W&B upload. **Slurm FAIL emails were a false alarm**: `_job.sh:127` calls `save_metrics.py` which was missing from exp 033 (Phase E omission — copied `_job.sh`/`run.sh` from exp 032 but not `save_metrics.py`). `set -eu` propagated the missing-file error → `--mail-type=END,FAIL` fired despite training succeeding. Fix landed 2026-05-27 (commit pending): new `experiments/033-own-teacher-pl/save_metrics.py` mirrors `train.py:load_config`'s `_common.yaml` deep-merge so per-ablation diff-only configs serialize correctly. Backfilled `artifacts/training/a{1..5}_{v5j,kd}/fold0/metrics.json` for all 10 runs on the head node. Future runs will exit 0.
 
 ### 4.2 D.5 end-to-end validation (mandatory pre-flight)
 - [ ] 4.2.1 For each of 10 ckpts, run `experiments/032-tucker-distilled-sed/sbatch/validate_end_to_end.sh` with the appropriate config + CKPT env vars + FOLD=0 (val set is fold 0).
@@ -161,7 +161,7 @@ Read these BEFORE starting any task. Implementation tasks reference them by shor
 
 ## Closeout
 
-- [ ] C.1 Update `experiments/033-own-teacher-pl/results.md` with full LB table + verdict.
-- [ ] C.2 Update `user/murilo/MODEL-RUNS.md` with all 10 ablation results.
-- [ ] C.3 Update `user/murilo/CONTEXT.md` with next-session pickup notes.
+- [x] C.1 (offline metrics portion) `results.md` written with full per-ablation table, paired Δ across teacher/sampler/init/PL-exposure axes, training dynamics, compute, artifacts, next-steps (2026-05-27). LB table + verdict still pending — re-update after Phase 4.2 + 4.3.
+- [x] C.2 (offline metrics portion) `MODEL-RUNS.md` updated with new `## Experiment 033` section (Phase G offline metrics table, read-outs, compute, LB predictions, next steps). LB column + decision-matrix entry pending Phase 4.3.
+- [ ] C.3 Update `user/murilo/CONTEXT.md` with next-session pickup notes (after D.5 + LB land).
 - [ ] C.4 PR — ready for merge with verdict. Squash-merge per `feedback_squash_merge.md`.
