@@ -2,9 +2,9 @@
 
 - **URL**: https://www.kaggle.com/competitions/birdclef-2026/discussion/683791
 - **Posted**: 2026-03-21 (Antoine Masq)
-- **Topic author**: Antoine Masq (49th at 2026-05-21 capture)
-- **Comment count at capture**: 59
-- **Captured**: 2026-05-21 (prior pulls 2026-04-23, 2026-04-28, 2026-05-09)
+- **Topic author**: Antoine Masq (33rd at 2026-05-27 capture; was 49th at 2026-05-21)
+- **Comment count at capture**: 65
+- **Captured**: 2026-05-27 (prior pulls 2026-04-23, 2026-04-28, 2026-05-09, 2026-05-21)
 - **Companion thread**: [`kaggle-discussion-non-perch-limit.md`](kaggle-discussion-non-perch-limit.md) — "What's the limit without any Perch involved?"
 - **Companion Perch-stack note**: [`2026-05-21-nina2025-eos6-protossm-stack-analysis.md`](2026-05-21-nina2025-eos6-protossm-stack-analysis.md)
 
@@ -27,17 +27,26 @@ Notation in the transcript below:
 
 ---
 
-## Key competitor scores (at-a-glance, 2026-05-21)
+## Key competitor scores (at-a-glance, 2026-05-27)
 
-Synthesis table — *see comment transcript below for source quotes*. Ranks are as of 2026-05-21.
+Synthesis table — *see comment transcript below for source quotes*. Ranks are as of 2026-05-27.
 
 | Person | Rank | LB | Details |
 |---|---|---|---|
 | **Arunodhayan** | **7th** | **0.946** | No Perch, no details (cross-ref: [`kaggle-discussion-non-perch-limit.md`](kaggle-discussion-non-perch-limit.md)) |
-| **Boredom** | **5th** | **0.950+** w/ unlabeled, **0.938-0.939** w/o | Non-Perch, timm+SED, ~11min inference. 1st iter on unlabeled. **No TTA**; "simple PP" worth ~+0.004 (corrected from 0.03-0.04 typo). |
-| **Ali Ozan Memetoglu** | **6th** | **0.941** single | Uses Sydorskyi 2nd-place 2025 published checkpoint directly ([dataset](https://www.kaggle.com/datasets/vladimirsydor/bird-clef-2025-all-pretrained-models)). 1028 attention dim. ONNX 5-fold ~30 min total. |
-| **Antoine Masq** | **49th, Topic Author** | **0.943** single, **0.948** ensemble | EffNetV2-B0 + XC pretrain + own-teacher PL + custom ASL + sliding-window TTA + smoothing. 10 min inference. Trajectory: 0.889 → 0.936 → 0.943 (cross-ref: [`kaggle-discussion-non-perch-limit.md`](kaggle-discussion-non-perch-limit.md)). |
-| **Salman Ahmed** | **39th** | **0.937** solo v2B0, **0.932** ensemble of 4 | Modeling breakthrough — attention investigation on hardest/easiest loss examples. B0_NS now matching v2B0. Uses PP/TTA. 20s segments, ~50-60 min inference. |
+| **Boredom** | **2nd** (was 5th) | **0.950+** w/ unlabeled, **0.938-0.939** w/o | Non-Perch, timm+SED, ~11min inference. 1st iter on unlabeled. **No TTA**; "simple PP" worth ~+0.004 (corrected from 0.03-0.04 typo). 2026-05-27 update: confirms **"doesn't work for more than one pass"** in pseudo iteration thread. |
+| **Ali Ozan Memetoglu** | **7th** (was 6th) | **0.941** single | Uses Sydorskyi 2nd-place 2025 published checkpoint directly ([dataset](https://www.kaggle.com/datasets/vladimirsydor/bird-clef-2025-all-pretrained-models)). 1028 attention dim. ONNX 5-fold ~30 min total. 2026-05-27 update: recommends **"trim probability"** (cell-level pseudo prob below threshold zeroed) — also says to **"increase the trim probability"** when pseudo fails. |
+| **Antoine Masq** | **33rd** (was 49th, Topic Author) | **0.943** single, **0.948** ensemble | EffNetV2-B0 + XC pretrain + own-teacher PL + custom ASL + sliding-window TTA + smoothing. 10 min inference. Trajectory: 0.889 → 0.936 → 0.943 (cross-ref: [`kaggle-discussion-non-perch-limit.md`](kaggle-discussion-non-perch-limit.md)). 2026-05-27 update: warns against ensembling models trained on the **same teachers** (too correlated). |
+| **Salman Ahmed** | **43rd** (was 39th) | **0.937** solo v2B0 w/o PL, **0.939** w/o PL, **0.944** w/ PL, **0.952** ensemble | Modeling breakthrough — attention investigation on hardest/easiest loss examples. B0_NS now matching v2B0. Uses PP/TTA. 20s segments, ~50-60 min inference. 2026-05-27 update: PL lift +0.005 (0.939 → 0.944); second PL iteration doesn't help; teacher is a 0.944 ensemble. |
+| **Anil Ozturk** | **6th** (was 2nd) | **0.940** w/ "very weird customized pseudo" | Two trajectory points: supervised 0.931 → pseudo 0.940; supervised 0.934 → pseudo 0.939. **"Doesn't work for more than one pass."** GKF on sites OOF=0.608 (extreme CV/LB disconnect). Recommends "cell level any pseudo probability below it gets zeroed". |
+| **Jack** | **17th** (was 21st) | **0.933** 5-folds no pseudo / no distill, **0.934** w/ pseudo (1 fold) | No TTA / no PP. "Pseudo not lifting solos but allowing ensembling of solos to get a much better score in same compute." Confirms Sydorskyi backbone yoink + own head with melspec match. |
+| **Tucker Arrants** | **685th** (was 196th) | **0.946** best after 6 rounds of pseudo, virtually zero ensemble benefit | "6 rounds of pseudo, best model 0.946, but virtually zero ensemble benefit 😆". Earlier 0.93+ recipe (Perch-distilled B0, 5-fold + priors + smoothing) holds. Also: 0.925 w/o deep learning (frozen Perch + clustering + metadata). |
+| **Zejun_** | 15th | — | "totally same, only first student is smart" — independent confirmation of pseudo-iteration plateau. |
+| **Joseph** | 317th | **0.949** single, **0.947** ensemble | Solo > ensemble case — opposite of Jack's pattern. |
+| **Jiacheng Ma** | **25th** | — | Tried 2nd-place 2024 pseudo recipe, didn't work down to stage 1. Asks Tucker about adding priors in logit space. Reports same pattern as Jack: solo + pseudo + ensemble not lifting much. |
+| **MarkDjadchenko** | **109th** | 0.899 (clustering only) | Asks Tucker about clustering recipe. Also: "Maybe you are not training backbone during the pseudo-only distillation" — to Tucker re: 6-round plateau. |
+| **To be happy** | 1149th | — | Rank-ensembling teacher boosts LB but distorts probabilities → hard to use for PL targets. |
+| **BNBU Anpeng Yuan** | 918th | **0.910** 4-fold HGNetv2 no distill / no pseudo | New data point: HGNetv2 4-fold matches our 0.906 ballpark exactly without KD / PL. |
 | **Starry** | 3rd | — | Asked Boredom about 0.950+ unlabeled flow |
 | **Anil Ozturk** | 2nd | 0.879 | GKF on sites OOF=0.608 (extreme CV/LB disconnect) |
 | **Tom** | 14th | ~similar to hengck23 | "slightly different approach which fits on 4x5sec" |
@@ -836,6 +845,115 @@ Synthesis table — *see comment transcript below for source quotes*. Ranks are 
 
 ---
 
+### Thread 19 — BNBU Anpeng Yuan's 0.910 4-fold HGNetv2 (no KD, no PL)
+
+**BNBU Anpeng Yuan (918th) — Posted a day ago** ⭐ (HGNetv2 4-fold = 0.910 baseline; matches our ballpark)
+
+> No distill, no pseudo label. 4 Folds = 0.910 with HGNetv2
+
+---
+
+### Thread 20 — Jack's "pseudo doesn't help solos" cluster (2026-05-26/27, VERY RECENT)
+
+**Jack (17th) — Posted a day ago** ⭐⭐ (0.933 5-fold no PL / 0.934 single fold w/ PL — "huge +0.001 from PP")
+
+> I've got 0.933 with 5-folds and no pseudo or distill, 0.934 with pseudo but one fold. No TTA or postprocessing on either.
+>
+> What increases are people getting from postprocessing? I've tried several methods and have achieved a HUGE +0.001. Feels like a waste of time with stronger models.
+>
+> edit: asked about postprocessing, thread became about pseudo lol
+
+**↳ Jiacheng Ma (25th) — Posted a day ago**
+
+> My pseudo is not up😭.
+
+**↳↳ Jack (17th) — Posted a day ago** ⭐ (PL enables stronger ensembling, not solo lift)
+
+> Tbh, I haven't seen much gain either from pseudo on solos, but it's allowed me to ensemble those solos and get a much better score in the same amount of time as that 5-fold model.
+
+**↳↳↳ Jiacheng Ma (25th) — Posted a day ago**
+
+> My situation is just like yours.😅
+
+**↳↳ Anil Ozturk (6th) — Posted a day ago** ⭐⭐ (CUSTOMIZED PL: 931→940, 934→939; one pass max)
+
+> yeah kinda same
+>
+> - supervised 931 - a very weird customized pseudo 940
+> - supervised 934 - same very weird customized pseudo 939
+>
+> and it doesn't work for more than one pass. 😅
+
+**↳↳↳ Jiacheng Ma (25th) — Posted a day ago**
+
+> Could you share your mean "very weird customized pseudo"😜haha ? I tried the 2th place in the past year, but it don't work, even down to stage1.
+
+**↳↳↳↳ Ali Ozan Memetoglu (7th) — Posted a day ago** ⭐⭐ (TRIM PROBABILITY recommendation)
+
+> Try to increase the trim probability
+
+**↳↳↳↳↳ Jiacheng Ma (25th) — Posted a day ago**
+
+> Thank you very much. Could you clarify what you mean by 'trim probability'? Are you suggesting to change the sampling ratio between pseudo-labeled and focal samples? 😀
+
+**↳↳↳↳↳↳ Ali Ozan Memetoglu (7th) — Posted a day ago** ⭐⭐ (TRIM = CELL-LEVEL ZERO BELOW THRESHOLD)
+
+> Cell level any pseudo probability below it gets zeroed
+
+**↳↳↳↳↳↳↳ Jiacheng Ma (25th) — Posted a day ago** ⭐ (Jiacheng tried 0.1 threshold, didn't work for him)
+
+> Thank you for the clarification. 😁So you mean: before training, for each pseudo-labeled soft label vector, set any probability below a threshold (e.g., 0.1) to zero.（just like the 2nd place solution） Yes — I already do this when generating the pseudo labels. However, even with this, my self-training still does not work well.😭
+
+**↳↳↳ Jack (17th) — Posted a day ago**
+
+> Man, if I could get 0.940/0.939 from my pseudomodels I'd be straight chillin rn. I guess I should keep working on that hahaha. You doing any postprocessing?
+
+**↳↳↳ Boredom (2nd) — Posted a day ago** ⭐ (CONFIRMS one-pass plateau)
+
+> it doesn't work for more than one pass. +1 🤣
+
+**↳↳↳↳ Jack (17th) — Posted a day ago**
+
+> Same for you?
+
+**↳↳↳↳↳ Zejun_ (15th) — Posted 8 hours ago** ⭐ (3RD CONFIRMATION: "only first student is smart")
+
+> totally same, only first student is smart.
+
+**↳↳↳ Salman Ahmed (43rd) — Posted a day ago** ⭐⭐ (0.939 solo no PL → 0.944 w/ PL → 0.952 ensemble; PL = +0.005)
+
+> My single model without pseudo is 0.939 and with pseudo its 0.944 Ensemble goes to around 0.952 Second iteration of pseudo doesn't work for me. 😶😐
+
+**↳↳↳↳ Jack (17th) — Posted a day ago**
+
+> 0.952 is nice. What was the teacher score for getting 0.944?
+
+**↳↳↳↳↳ Salman Ahmed (43rd) — Posted a day ago** ⭐ (TEACHER WAS 0.944 ENSEMBLE)
+
+> Teacher is an ensemble that scores 0.944 without pseudo.
+
+**↳↳↳ Tucker Arrants (685th) — Posted a day ago** ⭐⭐ (6 ROUNDS PL → 0.946 BUT ZERO ENSEMBLE BENEFIT)
+
+> I have the opposite problem - 6 rounds of pseudo, best model 0.946, but virtually zero ensemble benefit 😆
+
+**↳↳↳↳ MarkDjadchenko (109th) — Posted 21 hours ago** ⭐ (training-backbone-during-PL hypothesis)
+
+> Maybe you are not training backbone during the pseudo-only distillation
+
+**↳↳↳↳ Antoine Masq (33rd, Topic Author) — Posted 12 hours ago** ⭐ (SAME-TEACHER ENSEMBLE TRAP)
+
+> Do you ensemble models that were trained with the same teachers ? If yes, it might be because they are too correlated with each other
+
+**↳↳↳↳ To be happy (1149th) — Posted 6 hours ago** ⭐ (RANK ENSEMBLE BREAKS PL TARGETS)
+
+> My teacher model is an ensemble. Because the models are quite diverse, I need to use rank ensembling to boost the LB, otherwise the score drops. However, when generating pseudo-labels, I noticed that the submission after rank ensembling doesn't represent true probabilities. So it seems I can only use hard labels, and I'm not sure how I should generate soft labels instead. Has anyone encountered a similar situation? I'd love to get some advice from the top competitors here.
+
+**↳↳↳ Joseph (317th) — Posted a day ago** ⭐ (SOLO 0.949 > ENSEMBLE 0.947 — opposite of Jack's pattern)
+
+> wow, your single model is 940 but ensemble to top 5? my best single model for now is 949 but 947 after ensemble…
+
+---
+
 ## Synthesis: proven 0.93+ recipes (2026-05-21)
 
 Single-model recipes that have publicly hit ≥0.93 LB.
@@ -1030,21 +1148,139 @@ Single-model recipes that have publicly hit ≥0.93 LB.
     - chenwenqiang_001 0.886 → 0.899 (+0.013) from own-teacher KD
 50. **Antoine's PL protocol is the simplest**: pseudo-label unlabeled SS with current best model, treat as additional labeled rows, retrain. No filtering, no confidence threshold disclosed.
 
+### Pseudo-label iteration findings (NEW 2026-05-27 — Thread 20, Jack's cluster)
+
+This is the most important new content. Multiple top teams independently
+report a consistent pattern that supersedes some of the 2026-05-21 takeaways.
+
+51. **PL doesn't lift solo models much for several top teams.** Jack (17th):
+    "I haven't seen much gain either from pseudo on solos." Anil Ozturk (6th):
+    supervised 0.931 → PL 0.940 (+0.009) and 0.934 → 0.939 (+0.005) — modest,
+    not headline. Salman: 0.939 → 0.944 (+0.005) — also modest. **Earlier
+    Boredom/Antoine/chenwenqiang headline numbers (+0.012, +0.007, +0.013) are
+    upper-band, not typical.** Median real-world solo PL lift is closer to
+    +0.005.
+
+52. **"Trim probability" is the critical detail (Ali Ozan, 7th).** Cell-level
+    rule: any pseudo-probability below a threshold (e.g., 0.1) gets zeroed
+    in the parquet *before training*. "Same as the 2nd place solution"
+    (Jiacheng Ma). **Our exp 033 did NOT trim** — we kept soft probabilities
+    everywhere ≥ 0.5 but didn't zero the noise below that. This may be one
+    cause of our REJECT verdict (the protocol can amplify low-confidence
+    noise on a weak base).
+
+53. **PL doesn't iterate past round 1 — multiple independent confirmations.**
+    Anil Ozturk: "doesn't work for more than one pass." Boredom: "+1." Zejun_
+    (15th): "totally same, only first student is smart." Salman: "Second
+    iteration doesn't work for me." **Antoine's 0.936→0.943 may be the
+    exception, not the rule.** This changes the strategic value of own-teacher
+    PL — it's a one-shot lever, not an iterative ladder.
+
+54. **Where PL DOES pay off: ensembling.** Jack: "[PL] allowed me to ensemble
+    those solos and get a much better score in the same amount of time as
+    that 5-fold model." Salman: 0.939 solo → 0.944 w/ PL → **0.952 ensemble**
+    (+0.008 from PL → +0.008 from ensemble). **PL's primary value is enabling
+    diversified ensembles, not lifting solo LB.**
+
+55. **Tucker's contrarian data point**: 6 rounds of PL → best model 0.946
+    BUT virtually zero ensemble benefit. Inverts the Jack/Salman pattern.
+    MarkDjadchenko's hypothesis: "Maybe you are not training backbone during
+    the pseudo-only distillation" — i.e., distillation-only continuation
+    may freeze the encoder, losing diversity. Antoine: "Do you ensemble
+    models that were trained with the same teachers? If yes, it might be
+    because they are too correlated." **Implication**: PL-iterated models
+    share the teacher's signal → tight cosine similarity → poor ensemble
+    decorrelation.
+
+56. **Rank-ensemble teacher → can't generate soft PL targets.** "To be happy"
+    (1149th): rank-ensembling for teacher boosts LB but distorts probabilities
+    → can only use hard labels for PL. Open problem on the discussion.
+
+57. **Joseph (317th) reports the inverse pattern**: solo 0.949 > ensemble 0.947.
+    Some pipelines saturate solo before ensembling can help. Less common.
+
+### Implications for our exp 033 REJECT verdict (NEW 2026-05-27)
+
+58. **Exp 033 omitted "trim probability"** (Ali Ozan's critical detail). Our
+    PL parquet kept all probabilities ≥ 0.5, but did NOT zero cell-level
+    probabilities below ~0.1. This is the closest thing to a "missing
+    protocol piece" identified in this thread.
+
+59. **Solo PL lift is modest even on stronger bases.** Anil Ozturk 0.931→0.940
+    is the strongest disclosed; Salman 0.939→0.944 is more typical. Our base
+    (0.906) is lower than either; if the protocol gives +0.005 on a 0.94
+    base, it may give less on a 0.906 base — or net negative if the trim
+    detail isn't right.
+
+60. **PL → ensemble is the real lever, not PL → solo.** Even if exp 033's
+    individual cells stayed at 0.886-0.899, an ensemble of those 10 cells
+    might lift if we trust Jack/Salman's pattern. **Untested possibility**:
+    rank-ensemble of our 10 PL'd students vs the distilled-sed-kd 5-fold
+    ensemble (0.915 LB) as a stretch.
+
+61. **One-shot, not iterative.** Antoine's "0.936 → 0.943 from teacher
+    iteration" is now an outlier — 4 other top teams say iteration plateaus
+    at round 1. Don't plan Round 2 PL experiments.
+
 ---
 
-## Occam's-razor priorities for us (updated 2026-05-21)
+## Occam's-razor priorities for us (updated 2026-05-27, post-exp-033-REJECT)
 
-Three paths to ≥0.93+ for a non-Perch SED, ranked by EV in the remaining ~12 days:
+Three paths to ≥0.93+ for a non-Perch SED, ranked by EV in the remaining ~7 days (deadline 2026-06-03):
 
-**Path A — Sydorskyi backbone yoink (Ali Ozan / Jack path).** Download `vladimirsydor/bird-clef-2025-all-pretrained-models`. Attach own head matching attention dim 1028 + melspec exactly. Fine-tune on 2026. Single-model LB target **0.92-0.94**. Cost: ~2-3 days.
+**Path A — Sydorskyi backbone yoink (Ali Ozan / Jack path).** Download
+`vladimirsydor/bird-clef-2025-all-pretrained-models`. Attach own head matching
+attention dim 1028 + melspec exactly (Jack: −0.012 LB on mismatch). Fine-tune
+on 2026. Single-model LB target **0.92-0.94**. Cost: ~2-3 days. **Highest EV
+remaining lever; Antoine's 0.943 and Ali Ozan's 0.941 both rely on this kind
+of XC-pretrained base.**
 
-**Path B — Own-teacher PL on top of Path A (Antoine / Boredom path).** Use Path A model as teacher, pseudo-label unlabeled SS, retrain (or continue) with focal + labeled SS + PL SS. Iterate teacher. Single-model LB target **+0.007 to +0.013** on top of Path A. Cost: 2-3 days per iteration.
+**Path B — Ensemble lever (cross-decorrelated stacks).** Average exp 023
+(Perch probes ensemble, 0.929 LB) with exp 032 distilled-sed-kd-5fold (0.915
+LB). Pure submission-time, no retraining. Estimated landing 0.92-0.93.
+Cost: ~1 hour code + 1 LB slot. **Best EV/cost ratio of any remaining lever
+given exp 023's 0.929 is already validated.**
 
-**Path C — Salman's attention investigation as an orthogonal +0.015 layer.** Compute attention maps on hard-loss and easy-loss training examples. Look for uniform attention, frame saturation, attention not localizing on call onsets. Iterate head/loss to fix observed failure modes. Pairs with any base model. Cost: 1-2 days of debugging + 1 retrain.
+**Path C — Own-teacher PL with trim probability (re-attempt exp 033 with
+the missing detail).** Re-run exp 033 a2-kd canonical cell BUT add the
+cell-level trim (zero pseudo-probabilities < 0.1) before training. Ali Ozan
+flagged this 2026-05-27. May fix exp 033's REJECT verdict. Cost: ~1 day
+retraining + 1 LB submission. **Speculative — Jiacheng Ma already does this
+trim and STILL fails, so the effect size is uncertain.**
 
-**Combined ceiling estimate**: 0.94-0.95 single-model, 0.95+ ensemble. Arunodhayan 0.946 and Boredom 0.950+ are the empirical ceilings for non-Perch single-model right now.
+**Path D (deferred) — Salman's attention investigation.** Compute attention
+maps on hard-loss and easy-loss training examples. Look for uniform attention,
+frame saturation, attention not localizing on call onsets. Iterate head/loss
+to fix observed failure modes. Pairs with any base model. Cost: 1-2 days of
+debugging + 1 retrain. **Defer until Path A or B lands.**
 
-This supersedes the earlier exp 030 mixup-recipe and exp 031 KD-on-HGNet-LSE work — those levers are smaller than the unexplored levers above.
+**Path E (deferred) — Salman's PP/TTA layer.** Site/hour priors at inference
++ Gaussian smoothing — Tucker quantified ~+0.005-0.010 from this. Pure
+inference-time. **Defer; small lever vs. Path A.**
+
+**Combined ceiling estimate**: 0.94-0.95 single-model, 0.95+ ensemble.
+Arunodhayan 0.946 and Boredom 0.950+ are the empirical ceilings for non-Perch
+single-model right now.
+
+This supersedes the earlier exp 030 mixup-recipe and exp 031 KD-on-HGNet-LSE
+work — those levers are smaller than the unexplored levers above.
+**Exp 033 own-teacher PL (without XC pretrain base) is now also empirically
+refuted on our codebase** — the protocol doesn't transfer at LB without the
+stronger base. Path A unlocks Paths B/C/D/E by giving them a 0.93+ starting
+point.
+
+### Revised PL strategy (post-Thread 20)
+
+If we revisit own-teacher PL after Path A, do it Salman-style:
+- **One pass only** — don't plan Round 2 (4 independent confirmations of
+  plateau).
+- **Trim probability < 0.1 at cell level** before training (Ali Ozan).
+- **Goal = enable ensembling, not lift solo** — train multiple base models
+  with diverse seeds/augmentations, PL each with the same teacher, ensemble
+  the PL'd students. Jack/Salman both confirm PL's primary value is
+  diversified ensembling (Salman: 0.939 → 0.944 → **0.952 ensemble**).
+- **Avoid same-teacher correlation trap** (Antoine warning) — ensemble PL'd
+  models trained from DIFFERENT teachers if possible.
 
 ---
 
