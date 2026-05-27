@@ -125,17 +125,19 @@ Read these BEFORE starting any task. Implementation tasks reference them by shor
 ## Phase 4 — Run ablations + LB
 
 ### 4.1 Submit all 10 ablation training jobs in parallel
-- [ ] 4.1.1 Submit:
+- [x] 4.1.0 **Bug fix: `num_workers` regression** (`ecc3ccb` + `87d668d`, 2026-05-26). Exp 032 inherited `num_workers=0` from Tucker's Jupyter notebook; the value propagated to exp 033 via copy-paste. With workers=0, single-threaded data loading on exp 033's 127K-file PL pool gave **~40 min/epoch** (4× slower than expected). All exps 025-031 used 8 workers; bumped exp 032 + exp 033 `_common.yaml` to match. Real per-epoch time at workers=8: **~20 min** on rtx6000 (note: still 2× slower than predicted 10 min/epoch — likely worker-startup overhead per epoch and audio I/O dominance from the large unique-file pool; acceptable).
+- [x] 4.1.1 Submit T1 ablations (relaunched 2026-05-26 PM after num_workers fix):
   ```bash
   cd user/murilo/experiments/033-own-teacher-pl
-  for AB in a1 a2 a3 a4 a5; do
-    for T in v5j kd; do
-      bash sbatch/run.sh configs/${AB}_${T}.yaml --fold 0
-    done
-  done
+  for AB in a1 a2 a3 a4 a5; do bash sbatch/run.sh configs/${AB}_v5j.yaml --fold 0; done
   ```
-- [ ] 4.1.2 Monitor via `squeue`. Expect all 10 to complete in ~4.5h wall (parallel on `gpu-rtx6000`).
-- [ ] 4.1.3 Verify all logs end with `Job completed successfully!`; no NaNs.
+  Jobs: 9190539 / 9190540 / 9190542 / 9190544 / 9190545 (gpu-rtx6000).
+- [x] 4.1.2 Submit T2 ablations (overnight, parallel with T1):
+  ```bash
+  for AB in a1 a2 a3 a4 a5; do bash sbatch/run.sh configs/${AB}_kd.yaml --fold 0; done
+  ```
+- [ ] 4.1.3 Monitor via `squeue`. Expect 25-epoch runs (a1/a2/a5) to finish in ~8h, 10-epoch runs (a3/a4) in ~3h.
+- [ ] 4.1.4 Verify all 10 logs end with `Job completed successfully!`; no NaNs.
 
 ### 4.2 D.5 end-to-end validation (mandatory pre-flight)
 - [ ] 4.2.1 For each of 10 ckpts, run `experiments/032-tucker-distilled-sed/sbatch/validate_end_to_end.sh` with the appropriate config + CKPT env vars + FOLD=0 (val set is fold 0).
