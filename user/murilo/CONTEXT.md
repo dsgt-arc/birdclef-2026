@@ -3,8 +3,8 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-26 (end of exp 033 scaffolding session — Phases A-D
-DONE + Phase E code DONE, pending fast-dev-run + Phase F/G runtime work)
+**Last updated**: 2026-05-26 (end of day — exp 033 Phase F complete, Phase G in
+flight: all 10 ablations running in parallel on gpu-rtx6000).
 
 **Competition deadline**: 2026-06-03 (8 days from this update).
 
@@ -13,112 +13,111 @@ DONE + Phase E code DONE, pending fast-dev-run + Phase F/G runtime work)
 ## Where we are
 
 **Exp 032 — Tucker distilled-SED full replication: COMPLETE (PARTIAL REPLICATION)**
-- PR #51 merged to main as commit `05f4063` (Phase D + Phase 2 full work).
+- PR #51 merged to main as commit `05f4063`.
 - Best Tucker-SED single: `distilled-sed-kd` (Phase D, fold 0) = **LB 0.906**.
-- Best Tucker-SED ensemble: `distilled-sed-kd-5fold` = **LB 0.915** (within ~0.002 of Tucker's published 0.917).
-- HGNet+KD ablation: LB 0.901 → **backbone was NOT the bottleneck** (refuted).
-- Fold 4 diagnostic: LB 0.903 despite offline +0.023 over fold 0 → **23rd data point of offline-LB anti-correlation**.
+- Best Tucker-SED ensemble: `distilled-sed-kd-5fold` = **LB 0.915** (within ~0.002 of Tucker's 0.917).
+- HGNet+KD ablation: LB 0.901 → backbone NOT the bottleneck (refuted).
 - Project best overall (UNCHANGED): exp 023 `perch-sed-ensemble-mlp-only` = **0.929 LB**.
 
-**Exp 033 — Own-teacher pseudo-labels on distilled-sed-kd: SCAFFOLDED (Phases A-D done + Phase E code done)**
-- Branch: `mg/exp033-own-teacher-pl` (5 commits ahead of main, all pushed).
-- Hypothesis: 1:1 own-teacher PL (Antoine/OverfitOracle/Boredom protocol) on Phase D `distilled-sed-kd` → LB ≥ 0.920 (CONFIRM).
-- 10-ablation grid: 5 protocols × 2 teachers (T1=v5j-4fold, T2=distilled-sed-kd-5fold).
-- All source code changes made + backward-compat verified (195/195 tests PASS).
-- **Fast-dev-run sanity check NOT yet executed** (compute session ended; flag for next session).
+**Exp 033 — Own-teacher pseudo-labels on distilled-sed-kd: PHASE G IN FLIGHT**
+- Branch: `mg/exp033-own-teacher-pl` (12 commits ahead of main, all pushed).
+- Hypothesis: 1:1 own-teacher PL (Antoine/OverfitOracle/Boredom protocol) on Phase D
+  `distilled-sed-kd` → LB ≥ 0.920 (CONFIRM).
+- All 10 ablations LAUNCHED 2026-05-26 PM → running overnight on gpu-rtx6000.
+- T1 cache + v1 parquet ready (existing); T2 cache + v2 parquet generated this session.
+
+**All Phase A-F done. Phase G (training) running through the night. Resume morning of 2026-05-27.**
 
 ---
 
-## Pick up here (next session) — 2026-05-26
+## Pick up here (next session) — 2026-05-27 morning
 
-### 0. Verify session state
+### 0. Check overnight job completion
 
 ```bash
 cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026
 git checkout mg/exp033-own-teacher-pl
-git log --oneline -8
-# Expected most recent: 34e3314 → 1a241dd → 4687b1f → 0729e21 → 5aa5558 → 05f4063 ...
+git log --oneline -12
+# Expected most recent: 11b25cd → 6185a77 → 87d668d → ecc3ccb → 84ab853 → 6ab8312 ...
 
-# Verify tests still pass (no source drift since last session)
-~/clef/birdclef-2026/.venv/bin/python -m pytest \
-    user/murilo/tests/032-tucker-distilled-sed/ \
-    user/murilo/tests/033-own-teacher-pl/ -q
-# Expected: 195 passed (163 exp032 + 32 exp033)
+squeue -u $USER   # All 10 GPU jobs should be done (or only stragglers remain)
 ```
 
-### 1. Fast-dev-run sanity (MANDATORY before Phase F/G)
+The 10 jobs were submitted in two waves:
+- **T1 wave (5 jobs, launched 2026-05-26 ~21:30)**: 9190539, 9190540, 9190542, 9190544, 9190545
+- **T2 wave (5 jobs, launched 2026-05-26 ~22:55)**: 9191658, 9191659, 9191660, 9191661, 9191662
 
-Phase E left this undone. Run on `a2_v5j.yaml` (simplest config: random init,
-uniform sampler, existing v1 PL parquet — no warm-start, no T2 PLs required):
+Expected completion times (at ~20 min/epoch with num_workers=8):
+| Ablation set | Epochs | Wall | T1 finish ETA | T2 finish ETA |
+|---|---|---|---|---|
+| a1 / a2 / a5 (random init, 25 ep) | 25 | ~8.3h | ~05:50 | ~07:15 |
+| a3 / a4 (warm-start, 10 ep) | 10 | ~3.3h | ~00:50 | ~02:15 |
 
-```bash
-cd user/murilo/experiments/033-own-teacher-pl
-WANDB_MODE=offline ~/clef/birdclef-2026/.venv/bin/python train.py \
-    --config configs/a2_v5j.yaml \
-    --fast-dev-run \
-    --num-workers 0
-```
+Hard walltime cap on each job: 24h (`#SBATCH --time=24:00:00`), so plenty of margin
+even if any node is slow.
 
-Verify in the log:
-- `Exp 033 PL mode enabled: /storage/.../v1/sed_pseudo_labels.parquet`
-- `DistilledSEDDataModule PL filter: 127,896 → 127,728 → 127,104 segments` (val-fold + labeled-sc filters)
-- `train_dataloader (PL/uniform): focal=..., sc=..., pl=127104, total=~150K`
-- 1 training step + 1 validation step complete without NaN/Inf
-- Output mentions `loss_weight` somewhere in the loss path (5-tuple batch detected)
-
-If fast-dev-run PASSES, proceed to Phase F. If it FAILS, diagnose before Phase F.
-
-### 2. Phase F — generate T2 PLs (~3hr runtime; do NOT run if fast-dev-run fails)
+### 1. Verify all 10 trained cleanly
 
 ```bash
-cd user/murilo/experiments/033-own-teacher-pl
-
-# Step 0.1: cache distilled-sed-kd-5fold ONNX inference on all 10,658 soundscapes
-sbatch sbatch/cache_inference.sh
-# ~30-60 min on rtx6000. Writes to:
-#   shared/inference/birdclef-2026/distilled-sed-kd-5fold/train_soundscapes/fold{0..4}/logits.parquet
-
-# Step 0.2: generate PL parquet from the cache (after Step 0.1 completes)
-sbatch sbatch/generate_pseudo_labels.sh
-# ~10-30 min on CPU. Writes:
-#   shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet
-
-# Step 0.3: validate the new T2 parquet (re-runs 7/7 PASS checks on v2)
-~/clef/birdclef-2026/.venv/bin/python scripts/preflight_checks.py \
-    --parquet-path /storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet
-```
-
-### 3. Phase G — submit 10 ablations (parallel, ~4.5hr walltime each)
-
-```bash
-cd user/murilo/experiments/033-own-teacher-pl
-for AB in a1 a2 a3 a4 a5; do
-  for T in v5j kd; do
-    bash sbatch/run.sh configs/${AB}_${T}.yaml --fold 0
-  done
+# All logs should end with "Job completed successfully!"
+for log in user/murilo/experiments/033-own-teacher-pl/logs/slurm_a*_*-fold0_91*.log; do
+    name=$(basename "$log" .log)
+    status=$(tail -5 "$log" | grep -E "Job completed|exit code" || echo "STILL RUNNING")
+    echo "$name → $status"
 done
-# All 10 jobs queue in parallel on gpu-rtx6000.
-# T1 ablations (a*_v5j) can run BEFORE Phase F completes — they use existing v1 parquet.
-# T2 ablations (a*_kd) need Phase F to complete first.
+
+# Confirm checkpoints exist
+ls -la /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/033-own-teacher-pl/checkpoints/2026-exp033-*/fold0/last.ckpt
+# Expect 10 paths: 2026-exp033-a{1..5}-{v5j,kd}/fold0/last.ckpt
 ```
 
-### 4. D.5 end-to-end validation + LB submission (after training)
+Per metric: read `outputs/test_results/2026-exp033-<ablation>-<teacher>-fold0.json`
+for `val_metrics.val/auroc` and `val_metrics.val/cmap`. These are training-side
+numbers (offline-LB anti-correlation caveat applies).
 
-D.5 script is in exp 032; reuse it pointing at exp 033 ckpts:
+### 2. D.5 end-to-end validation on all 10 ckpts (~10 min each, can run in parallel)
+
+Reuse exp 032's `sbatch/validate_end_to_end.sh` — it accepts FOLD/CKPT/CONFIG/TRAIN_AUROC
+env vars. Example launcher:
 
 ```bash
 cd user/murilo/experiments/032-tucker-distilled-sed
-# For each of 10 new ckpts:
-CKPT=/storage/project/.../2026-exp033-<ablation>-<teacher>/last.ckpt \
-CONFIG=../033-own-teacher-pl/configs/<ablation>_<teacher>.yaml \
-FOLD=0 \
-TRAIN_AUROC=<from metrics.json> \
-sbatch sbatch/validate_end_to_end.sh
+CKPT_BASE=/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/033-own-teacher-pl/checkpoints
+RESULTS=/storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/033-own-teacher-pl/outputs/test_results
+
+for AB in a1 a2 a3 a4 a5; do
+  for T in v5j kd; do
+    SLUG="2026-exp033-${AB}-${T}"
+    TRAIN_AUROC=$(jq -r '.val_metrics["val/auroc"]' "${RESULTS}/${SLUG}-fold0.json")
+    CKPT="${CKPT_BASE}/${SLUG}/fold0/last.ckpt" \
+    CONFIG="../033-own-teacher-pl/configs/${AB}_${T}.yaml" \
+    FOLD=0 \
+    TRAIN_AUROC="${TRAIN_AUROC}" \
+    sbatch sbatch/validate_end_to_end.sh
+  done
+done
 ```
 
-Rank by e2e val/auroc. Submit top 5 to LB Day 1, top 5 Day 2 (5/day cap).
+Gate: `|train_auroc - e2e_auroc| ≤ 0.02` PASS. Rank by **e2e val/auroc** to pick
+the top-5 for LB Day 1. Per exp 032 Phase 2: e2e is uniformly slightly HIGHER than
+training-side (~+0.004-0.011) due to 5-tap Gaussian smoothing in logit space.
 
-### 5. Apply decision matrix (exp 033 proposal.md § Falsifiable)
+### 3. LB submission (5/day cap)
+
+```
+Day 1 (today): export ONNX + push kernel + LB submit top-5 by e2e
+Day 2 (next day): same for remaining 5
+```
+
+Per `feedback_kaggle_upload.md`: two-step Kaggle upload (dataset first, then kernel).
+Per `feedback_kaggle_kernel_sources.md`: single-kernel pattern, kernel_sources uses
+push-run output.
+
+ONNX export wrappers: pattern matches exp 032's `010-submission-pipeline/`. New
+`MODELS` entries needed for `distilled-sed-pl-a{N}-{T}` slugs — refer to exp 032
+patterns for the wrappers.
+
+### 4. Apply decision matrix (proposal.md § Falsifiable)
 
 | Bucket | LB lift over 0.906 | Reading |
 |---|---|---|
@@ -127,85 +126,117 @@ Rank by e2e val/auroc. Submit top 5 to LB Day 1, top 5 Day 2 (5/day cap).
 | **WEAK** | +0.001 to +0.006 | Extend to 5-fold to disambiguate |
 | **REJECT** | ≤ 0 | Pivot to Sydorskyi-yoink directly |
 
-### 6. PR + closeout
+Secondary read: cross-ablation LB spread (std across A1-A5 within each teacher).
+Spread > 0.010 → sampler choice is a recipe parameter to tune. Spread < 0.003 →
+protocol is robust.
 
-Open draft PR for exp 033 after Phase E fast-dev-run PASS:
-```bash
-gh pr create --draft --title "Exp 033: own-teacher pseudo-labels on distilled-sed-kd" \
-  --body "<summary>" --base main --head mg/exp033-own-teacher-pl
-```
+### 5. Closeout
 
-Update on completion (Phase G results): mark non-draft, squash-merge per `feedback_squash_merge.md`.
-
----
-
-## What landed this session (2026-05-26)
-
-### Exp 032 close-out (early session)
-
-- PR #51 merged to main as squash commit `05f4063` (38 commits → 1).
-- All exp 032 docs (proposal, tasks, results, MODEL-RUNS) updated with final LB outcomes.
-
-### Exp 033 design + scaffolding (rest of session)
-
-Per the 2026-05-22 strategic direction note (Track B = own-teacher PL on top of Track A = Tucker), 5 disclosed competitor recipes (Antoine 0.943, OverfitOracle 0.946, Boredom 0.938+, chenwenqiang_001, Tucker) all converge on the same PL protocol. Our prior PL attempts (exp 014/015/025) used **wrong protocols** — `loss_weight=0.5` + hardcoded 50/50 GT/PL batches — and regressed LB. The disclosed 1:1 weighting + uniform sampling protocol has **never been tested** in our codebase.
-
-### Phases completed this session
-
-| Phase | What | Commit |
-|---|---|---|
-| **A — Scaffold metadata** | proposal.md, tasks.md, README.md, pyproject.toml, 11 ablation configs (_common.yaml + a{1..5}_{v5j,kd}.yaml + pl_gen_v2.yaml), preflight_checks.py (7/7 PASS) | `5aa5558` |
-| **B — Prereq tools** | scripts/cache_inference.py (5-fold ONNX → per-fold logits.parquet), sbatch/cache_inference.sh, sbatch/generate_pseudo_labels.sh (invokes exp 025 generator with v2 config) | `0729e21` |
-| **C — Core code integration** | DistilledSEDFinetuneModule.training_step + _dual_supervision_loss accept optional loss_weight; PLDS + GTDatasetWrapper added to distilled_sed_dataset.py; DistilledSEDDataModule gets 8 new PL kwargs + sampler dispatch (uniform vs MixSamp); _collate_drop_extras handles 5-tuple → 4-tuple AND 6-tuple → 5-tuple; backward-compat verified (163/163 exp 032 tests PASS unchanged) | `4687b1f` |
-| **D — Tests** | 32 new tests in tests/033-own-teacher-pl/: test_loss_weighting (9), test_pseudo_label_integration (11), test_mixsamp_3source (8), test_pl_filter (4). Combined 195/195 PASS (163 + 32). | `1a241dd` |
-| **E (partial) — train.py + sbatch** | exp 033 train.py with _deep_merge for _common.yaml inheritance + --pseudo-label-path arg + warm-start ckpt loading; sbatch wrappers copied + renamed. **Fast-dev-run NOT yet executed.** | `34e3314` |
+- Update `experiments/033-own-teacher-pl/results.md` with full LB table + verdict
+- Update `user/murilo/MODEL-RUNS.md` with all 10 ablation results
+- Update this CONTEXT.md with verdict + next-session pickup
+- Open PR (currently DRAFT NOT YET CREATED) — once verdict in:
+  ```bash
+  gh pr create --title "Exp 033: own-teacher pseudo-labels on distilled-sed-kd" \
+    --body "<summary with LB table>" --base main --head mg/exp033-own-teacher-pl
+  ```
+  Squash-merge per `feedback_squash_merge.md`.
 
 ---
 
-## The 10-ablation grid
+## What landed this session (2026-05-26, full day)
 
-| ID | Init | Sampler | Focal/SC | LR | Epochs | Teacher | Config file |
-|---|---|---|---|---|---|---|---|
-| A1.v5j | random | MixSamp | 0.5/0.0/0.5 | 5e-4 | 25 | T1 | a1_v5j.yaml |
-| A2.v5j | random | **Uniform** | natural ~17/0/83 | 5e-4 | 25 | T1 | a2_v5j.yaml |
-| A3.v5j | **warm-start** | MixSamp | 0.2/0.0/0.8 | 5e-5 | 10 | T1 | a3_v5j.yaml |
-| A4.v5j | **warm-start** | **Uniform** | natural | 5e-5 | 10 | T1 | a4_v5j.yaml |
-| A5.v5j | random | MixSamp | 0.7/0.0/0.3 | 5e-4 | 25 | T1 | a5_v5j.yaml |
-| A1.kd / A2.kd / A3.kd / A4.kd / A5.kd | (same as v5j, but T2 teacher) | | | | | T2 | a*_kd.yaml |
+### Morning — exp 033 scaffolding (Phases A-E code)
 
-- **T1** = v5j-4fold (LB 0.913, existing `v1/sed_pseudo_labels.parquet` — pre-flight 7/7 PASS).
-- **T2** = distilled-sed-kd-5fold (LB 0.915, **parquet to be generated in Phase F**).
-- **Warm-start ckpt**: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/last-v2.ckpt` (Phase D fold 0, LB 0.906).
+Per the 2026-05-22 strategic direction note: Track B = own-teacher PL on top of
+Track A = Tucker. 5 disclosed competitor recipes (Antoine 0.943, OverfitOracle 0.946,
+Boredom 0.938+, chenwenqiang_001, Tucker) all converge on the same PL protocol.
+Our prior PL attempts (exp 014/015/025) used **wrong protocols** — `loss_weight=0.5`
++ hardcoded 50/50 GT/PL batches — and regressed LB. The disclosed 1:1 weighting +
+uniform sampling protocol had never been tested in our codebase.
+
+| Phase | Commit |
+|---|---|
+| A — Scaffold metadata (proposal, tasks, 11 configs, preflight 7/7 PASS on v1) | `5aa5558` |
+| B — Prereq tools (cache_inference.py + sbatch wrappers + generate_pseudo_labels.sh) | `0729e21` |
+| C — Core code integration (loss_weight, PLDS, GTDatasetWrapper, MixSamp 3-source, collate) | `4687b1f` |
+| D — 32 tests in `tests/033-own-teacher-pl/`; 195/195 PASS combined with exp 032 | `1a241dd` |
+| E (code) — train.py + sbatch wrappers (fast-dev-run still pending at this point) | `34e3314` |
+
+### Afternoon — Phase E gate cleared + Phase F runtime
+
+| What | Commit / Job |
+|---|---|
+| Fast-dev-run PASS on a2_v5j (PL loaded, 5-tuple batches, KD active, no NaN) | `6ab8312`, job 9185603 |
+| tasks.md Phase 0-3 marked complete | `a977661` |
+| **T2 cache: smoke run** (LIMIT=5) — 300 preds, schema matches T1 | job 9185680 |
+| **T2 cache: full run** (10,658 files × 5 folds × 12 windows) — 639,480 preds, walltime 36m44s | job 9187954 |
+| **PL generator bugfix**: `cfg["perch"]` was hard-required; made optional via `use_perch` flag (5 conditional guards). Backward-compat verified for v1. | `84ab853` |
+| **T2 PL parquet generated** (v2-distilled-sed-kd-5fold) — 210,375 PLs >0.5, 166 species covered, walltime 43s | job 9188496 |
+| **v2 parquet preflight**: 7/7 PASS (identical schema + species ordering to v1) | (interactive) |
+
+### Evening — num_workers regression + Phase G launch
+
+| What | Commit / Job |
+|---|---|
+| **CRITICAL BUG: num_workers=0**. Exp 032 inherited 0 from Tucker's Jupyter notebook (single-threaded default). Comment said "revisit if I/O-bound" — exp 033 copy-pasted it. With 127K-file PL pool and no OS cache hits, single-threaded loading caused **4× slower training** (40 min/epoch vs predicted 10 min/epoch). Caught after 5 jobs at epoch 6 had burned 4h. | — |
+| First T1 ablations launched (with workers=0) — 5 jobs at ~40 min/epoch | jobs 9188227-9188231 |
+| **Fix 1**: exp 033 `_common.yaml`: `num_workers: 0 → 8` (matching all exps 025-031 and SBATCH `--cpus-per-task=8`). | `ecc3ccb` |
+| **Fix 2**: exp 032 configs (3 files): same fix preventively (its 624-file SS pool fit in cache so it worked, but configs are still on disk). | `87d668d` |
+| **Cancelled + relaunched 5 T1 ablations** with num_workers=8 → ~20 min/epoch (2× speedup; not quite the 4× predicted, but acceptable). Sunk 20 GPU-hours but saved ~8h calendar time on a1/a2/a5. | jobs 9190539-9190545 |
+| proposal.md: per-batch composition column added, ⭐ marker on A2 canonical | `6185a77` |
+| tasks.md Phase 4.1 updated with num_workers fix story | `11b25cd` |
+| **All 5 T2 ablations launched** | jobs 9191658-9191662 |
+
+---
+
+## Key learnings from this session
+
+1. **`num_workers` is not optional for large unique-file pools.** Exp 032 got away with `num_workers=0` because its 624-file labeled-SS pool fit in OS cache. Exp 033's 127K-file PL pool does not. Default to `num_workers=8` (matches `--cpus-per-task=8`).
+2. **Tucker's Jupyter defaults are notebook defaults, not production defaults.** Jupyter is inherently single-threaded; `num_workers=0` works there but not in DataLoader-with-large-pool training.
+3. **The PL generator's `perch:` config block is now optional.** Use pure-SED mode by omitting the block (Tier C species fall to zero, equivalent to Tier D).
+4. **Per-batch composition matters more than ratio names.** "Focal/SC 0.5/0.5" is ambiguous; "32/0/32 (focal/sc/pl) at B=64" is unambiguous. proposal.md updated.
+
+---
+
+## The 10-ablation grid (running now)
+
+| ID | Init | Sampler | Sampler share | Per-batch (B=64) | LR | Ep | Teacher | Config |
+|---|---|---|---|---|---|---|---|---|
+| A1.v5j | random | MixSamp | 0.50/0.00/0.50 | 32/0/32 | 5e-4 | 25 | T1 | a1_v5j.yaml |
+| **A2.v5j ⭐** | random | **Uniform** | ~0.18/~0.00/~0.82 | ~12/0/~52 | 5e-4 | 25 | T1 | a2_v5j.yaml |
+| A3.v5j | warm-start | MixSamp | 0.20/0.00/0.80 | 13/0/51 | 5e-5 | 10 | T1 | a3_v5j.yaml |
+| A4.v5j | warm-start | **Uniform** | ~0.18/~0.00/~0.82 | ~12/0/~52 | 5e-5 | 10 | T1 | a4_v5j.yaml |
+| A5.v5j | random | MixSamp | 0.70/0.00/0.30 | 45/0/19 | 5e-4 | 25 | T1 | a5_v5j.yaml |
+| A1.kd / A2.kd⭐ / A3.kd / A4.kd / A5.kd | (same as v5j, T2 teacher) | | | | | | T2 | a*_kd.yaml |
+
+- **T1** = v5j-4fold (LB 0.913) → `shared/pseudo-labels/birdclef-2026/v1/sed_pseudo_labels.parquet`
+- **T2** = distilled-sed-kd-5fold (LB 0.915) → `shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet`
+- **Warm-start ckpt**: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/last-v2.ckpt`
+
+A2 (⭐ random + uniform = pure Antoine protocol) is the canonical recipe. Others
+sweep init × sampler × focal/PL ratio around it as sensitivity ablations.
+
+### Pair structure for reading
+- A1↔A2, A3↔A4: sampler (MixSamp vs Uniform) within same init
+- A1↔A3, A2↔A4: init (random vs warm-start) within same sampler
+- A{i}.v5j ↔ A{i}.kd: teacher (T1 vs T2) within same protocol (5 paired tests)
+- A1 vs A5: PL fraction sensitivity (0.5 vs 0.3 under MixSamp)
 
 ---
 
 ## Key methodology decisions (locked in)
 
-1. **Naming convention**: dropped competitor author names from artifacts (branch, dirs, configs). References to disclosed protocols (Antoine, OverfitOracle, Boredom) stay in proposal.md "Provenance" + "Background" sections.
+1. **Naming convention**: dropped competitor author names from artifacts. References stay in proposal.md "Provenance" + "Background" sections only.
 2. **Diff-only configs**: each ablation YAML is ~20-30 lines, inherits from `_common.yaml` via `_deep_merge` in `train.py:load_config`. Tucker recipe + KD + pseudo_label defaults live in `_common.yaml`.
 3. **PL filter**: drop val-fold SS files (prevent leak) + drop labeled-SS train files (Antoine: GT used for labeled, PL only for unlabeled). Effective PL pool = 127,104 unlabeled segments per teacher.
-4. **Sampler choice**: uniform = pure 1:1 protocol (treat PL as labeled, natural pool proportions). MixSamp = explicit ratio control (focal/sc/pl). Both supported via `DistilledSEDDataModule.pseudo_label_sampler` config.
+4. **Sampler choice**: uniform = pure 1:1 protocol; MixSamp = explicit ratio control.
 5. **KD loss stays unweighted**: only the BCE task branch gets per-sample loss_weight. Perch v2 MSE alignment is sample-confidence-independent.
 6. **Schema contract**:
    - Tucker default dataloader → 4-tuple `(wavs, labels, wts, mks)`
    - PL-enabled dataloader → 5-tuple `(wavs, labels, wts, mks, loss_weights)`
    - `training_step` detects via `len(batch) > 4 and batch[4].ndim == 1`
-
----
-
-## Pool-size sampler math (justifies the ablation grid)
-
-With 26K focal + ~0.6K labeled SS + 127K PL segments, `nst = 2390 steps/epoch`:
-
-| Setup | Focal exposure/epoch | PL exposure/epoch |
-|---|---:|---:|
-| Tucker 0.9/0.1 (naive transplant) | 5.3× | **0.001×** ← invisible |
-| A5: 0.7/0.3 | 4.1× | 0.003× |
-| A1: 0.5/0.5 | 2.9× | 0.006× |
-| A3: 0.2/0.8 | 1.2× | 0.010× |
-| A2/A4: Uniform | **1.0×** | **1.0×** |
-
-Tucker's 0.9/0.1 was tuned for 792 SS. With 127K PL it makes the PL pool effectively invisible. Only uniform sampling achieves Antoine's "treat as labeled" semantics structurally.
+7. **num_workers = 8** in both `_common.yaml` files (exp 032 + exp 033). Matches SBATCH allocation.
 
 ---
 
@@ -214,55 +245,64 @@ Tucker's 0.9/0.1 was tuned for 792 SS. With 127K PL it makes the PL pool effecti
 | File | Purpose |
 |---|---|
 | **NEW (exp 033)** | |
-| `user/murilo/experiments/033-own-teacher-pl/proposal.md` | Hypothesis + falsifiable success matrix + method + variables |
-| `user/murilo/experiments/033-own-teacher-pl/tasks.md` | Phase 0-4 checklist + closeout |
+| `user/murilo/experiments/033-own-teacher-pl/proposal.md` | Hypothesis + falsifiable matrix + 10-ablation grid w/ per-batch composition |
+| `user/murilo/experiments/033-own-teacher-pl/tasks.md` | Phase 0-4 checklist + closeout (num_workers bug captured in 4.1.0) |
 | `user/murilo/experiments/033-own-teacher-pl/README.md` | Navigation + quickstart |
-| `user/murilo/experiments/033-own-teacher-pl/pyproject.toml` | Pinned deps (mirrors exp 032) |
-| `user/murilo/experiments/033-own-teacher-pl/configs/_common.yaml` | Shared Tucker recipe + KD + pseudo_label defaults |
+| `user/murilo/experiments/033-own-teacher-pl/pyproject.toml` | Pinned deps |
+| `user/murilo/experiments/033-own-teacher-pl/configs/_common.yaml` | Shared Tucker recipe + KD + pseudo_label defaults (num_workers=8) |
 | `user/murilo/experiments/033-own-teacher-pl/configs/a{1..5}_{v5j,kd}.yaml` | 10 ablation configs (diff-only) |
-| `user/murilo/experiments/033-own-teacher-pl/configs/pl_gen_v2.yaml` | T2 PL generation config (invokes exp 025 generator) |
-| `user/murilo/experiments/033-own-teacher-pl/scripts/preflight_checks.py` | 7-check diagnostic + `--parquet-path` arg for v2 |
-| `user/murilo/experiments/033-own-teacher-pl/scripts/cache_inference.py` | T2 ONNX inference cache (5-fold → per-fold logits.parquet) |
-| `user/murilo/experiments/033-own-teacher-pl/sbatch/cache_inference.sh` | SLURM wrapper for cache_inference.py |
-| `user/murilo/experiments/033-own-teacher-pl/sbatch/generate_pseudo_labels.sh` | SLURM wrapper for exp 025's generator with pl_gen_v2.yaml |
-| `user/murilo/experiments/033-own-teacher-pl/sbatch/{_job.sh,run.sh}` | Training launchers (copied from exp 032 + renamed) |
-| `user/murilo/experiments/033-own-teacher-pl/train.py` | Extends exp 032 train.py: load_config _common.yaml merge + --pseudo-label-path + DataModule PL kwargs + warm-start ckpt |
-| `user/murilo/tests/033-own-teacher-pl/test_loss_weighting.py` | 9 tests: _dual_supervision_loss + training_step 2/4/5-tuple |
-| `user/murilo/tests/033-own-teacher-pl/test_pseudo_label_integration.py` | 11 tests: PLDS + GTDatasetWrapper + ConcatDataset + collate |
-| `user/murilo/tests/033-own-teacher-pl/test_mixsamp_3source.py` | 8 tests: 3-source MixSamp + 2-source backward-compat |
-| `user/murilo/tests/033-own-teacher-pl/test_pl_filter.py` | 4 tests: val-fold + labeled-sc filters + soundscape_dir required |
+| `user/murilo/experiments/033-own-teacher-pl/configs/pl_gen_v2.yaml` | T2 PL gen config (pure-SED, no perch tier) |
+| `user/murilo/experiments/033-own-teacher-pl/scripts/preflight_checks.py` | 7-check diagnostic + `--parquet-path` arg |
+| `user/murilo/experiments/033-own-teacher-pl/scripts/cache_inference.py` | T2 ONNX inference cache |
+| `user/murilo/experiments/033-own-teacher-pl/sbatch/{cache_inference,generate_pseudo_labels,_job,run}.sh` | SLURM wrappers |
+| `user/murilo/experiments/033-own-teacher-pl/train.py` | Extends exp 032 train.py |
+| `user/murilo/tests/033-own-teacher-pl/test_{loss_weighting,pseudo_label_integration,mixsamp_3source,pl_filter}.py` | 32 tests, all PASS |
 | **MODIFIED (src/)** | |
-| `user/murilo/src/birdclef/lightning/distilled_sed_finetune.py` | _dual_supervision_loss + training_step: optional loss_weight (backward-compat) |
-| `user/murilo/src/birdclef/data/distilled_sed_dataset.py` | + PLDS class (6-tuple soft-label loader) + GTDatasetWrapper (5→6-tuple) |
-| `user/murilo/src/birdclef/data/distilled_sed_datamodule.py` | + 8 PL kwargs in __init__; setup() loads + filters PL parquet; train_dataloader() dispatches uniform vs MixSamp; _collate_drop_extras handles both 5- and 6-tuple inputs |
+| `user/murilo/src/birdclef/lightning/distilled_sed_finetune.py` | Optional `loss_weight` arg in `_dual_supervision_loss` + `training_step` |
+| `user/murilo/src/birdclef/data/distilled_sed_dataset.py` | + PLDS class + GTDatasetWrapper (5→6-tuple) |
+| `user/murilo/src/birdclef/data/distilled_sed_datamodule.py` | + 8 PL kwargs; PL parquet filter; sampler dispatch (uniform vs MixSamp); 5/6-tuple collate |
+| `user/murilo/experiments/025-iter-pseudo-labeling/generate_pseudo_labels.py` | Made `cfg["perch"]` optional via `use_perch` flag (5 guards; backward-compat for v1) |
+| **GENERATED ARTIFACTS** | |
+| `shared/inference/birdclef-2026/distilled-sed-kd-5fold/train_soundscapes/fold{0..4}/logits.parquet` | T2 cache, 639,480 rows total |
+| `shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet` | T2 PL parquet, 210,375 PLs>0.5, 166 species covered |
 | **EXISTING (inherited from exp 032)** | |
-| `user/murilo/src/birdclef/preprocessing/tucker_mel.py` | TuckerMelSpec (no change) |
-| `user/murilo/src/birdclef/heads/sed_head.py` | AttHeadLogitSpace + GeMFreqPool (no change) |
+| `user/murilo/src/birdclef/preprocessing/tucker_mel.py` | TuckerMelSpec (unchanged) |
+| `user/murilo/src/birdclef/heads/sed_head.py` | AttHeadLogitSpace + GeMFreqPool (unchanged) |
 
 ---
 
 ## Pending decisions / open items for next session
 
-1. **Fast-dev-run on a2_v5j** (~5 min) — gate to Phase F/G.
-2. **Phase F runtime** (~3hr total): cache_inference.sh → generate_pseudo_labels.sh → preflight on v2 parquet.
-3. **Phase G runtime** (~4.5hr training × 10 parallel + LB cap 5/day = ~3 LB days).
+1. **Verify 10 jobs completed** (squeue empty or only stragglers).
+2. **D.5 e2e validation** on all 10 ckpts (mandatory pre-flight before LB).
+3. **Pick top-5 by e2e val/auroc** for LB Day 1 submission.
 4. **Decision matrix** (proposal.md § Falsifiable) → drives Round 2 / Sydorskyi-yoink / ensemble / pivot.
-5. **Update results.md + MODEL-RUNS.md + this CONTEXT.md** with verdicts after LB lands.
-6. **PR for exp 033** — open as draft after fast-dev-run PASS; squash-merge after Phase G verdict.
+5. **Update results.md + MODEL-RUNS.md + this CONTEXT.md** with verdict after LB lands.
+6. **Open PR** (still no PR yet — open after verdict).
 
 ---
 
-## Branch / git state at session end
+## Branch / git state at session end (2026-05-26 ~23:00)
 
-- **Current branch**: `mg/exp033-own-teacher-pl`. 5 commits ahead of main, all pushed.
-- **Most recent commits**:
-  - `34e3314` — Phase E (partial): train.py + sbatch (fast-dev-run pending)
-  - `1a241dd` — Phase D: 32 tests, 195/195 PASS
-  - `4687b1f` — Phase C: PL integration in DistilledSEDFinetuneModule + DataModule
-  - `0729e21` — Phase B: T2 prereq tools (inference cache + PL generation)
-  - `5aa5558` — Phase A: scaffold proposal + tasks + 10 ablation configs
-  - `05f4063` — (main) Exp 032: Tucker distilled-SED full replication (PARTIAL REPLICATION)
-- **No PR yet for exp 033** (waiting on fast-dev-run gate).
+**Current branch**: `mg/exp033-own-teacher-pl`. 12 commits ahead of main, all pushed.
+
+**Most recent commits** (latest first):
+- `11b25cd` — tasks.md: T1/T2 launches + num_workers fix in Phase 4
+- `6185a77` — proposal.md: per-batch composition column + canonical marker
+- `87d668d` — exp 032 num_workers 0→8 (preventive)
+- `ecc3ccb` — exp 033 num_workers 0→8 (the actual fix)
+- `84ab853` — Phase F: Perch tier C optional in PL generator
+- `a977661` — tasks.md: Phase 0/1/2/3 sub-items complete
+- `6ab8312` — Phase E gate: fast-dev-run PASS on a2_v5j
+- `fc71a78` — (obsolete) CONTEXT.md for end of scaffolding session
+- `34e3314` — Phase E (partial): train.py + sbatch
+- `1a241dd` — Phase D: 32 tests, 195/195 PASS
+- `4687b1f` — Phase C: PL integration
+- `0729e21` — Phase B: T2 prereq tools
+- `5aa5558` — Phase A: scaffold
+- `05f4063` — (main) Exp 032: full Tucker replication
+
+**No PR yet for exp 033.** Open as ready-for-review after LB verdict lands.
 
 ---
 
@@ -270,10 +310,10 @@ Tucker's 0.9/0.1 was tuned for 792 SS. With 127K PL it makes the PL pool effecti
 
 | Model | LB | Notes |
 |---|---:|---|
-| Perch + SED MLP-only ensemble (exp 023) | **0.929** | Current overall best (unchanged this session) |
-| distilled-sed-kd-5fold (exp 032 Phase 2.A) | **0.915** | Best Tucker-SED ensemble; within ~0.002 of Tucker's 0.917 |
-| v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble (slightly above ours; cross-hardware variance) |
-| distilled-sed-kd (exp 032 Phase D, single-fold) | 0.906 | Best Tucker-SED single; matches v5j-original |
+| Perch + SED MLP-only ensemble (exp 023) | **0.929** | Current overall best |
+| distilled-sed-kd-5fold (exp 032 Phase 2.A) | **0.915** | Best Tucker-SED ensemble |
+| v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
+| distilled-sed-kd (exp 032 Phase D, single-fold) | 0.906 | Best Tucker-SED single; exp 033 baseline |
 | **exp 033 target (single-fold CONFIRM)** | **≥ 0.920** | Antoine-style PL lift on top of 0.906 base |
 | distilled-sed-kd-hgnet (exp 032 Phase 2.D) | 0.901 | HGNet backbone; refuted as bottleneck |
 | distilled-sed-control (exp 032 Phase D) | 0.856 | Recipe alone w/o KD |
@@ -284,8 +324,8 @@ Tucker's 0.9/0.1 was tuned for 792 SS. With 127K PL it makes the PL pool effecti
 
 | Doc | What it contains |
 |---|---|
-| `experiments/033-own-teacher-pl/proposal.md` | Hypothesis, falsifiable matrix, method, pool-size sampler math, variables, limitations |
-| `experiments/033-own-teacher-pl/tasks.md` | Phase 0-4 itemized checklist |
+| `experiments/033-own-teacher-pl/proposal.md` | Hypothesis, falsifiable matrix, method, per-batch grid, pool-size math, variables, limitations |
+| `experiments/033-own-teacher-pl/tasks.md` | Phase 0-4 itemized checklist (num_workers fix story in 4.1.0) |
 | `experiments/032-tucker-distilled-sed/results.md` | Phase D + Phase 2 LB results (CONFIRM verdict) |
 | `notes/kaggle-discussion-non-perch-limit.md` | Antoine + OverfitOracle + Boredom recipe disclosures |
 | `notes/2026-05-22-strategic-direction-tracks-A-B.md` | Track A (Tucker) → Track B (own-teacher PL) strategic context |
@@ -295,12 +335,13 @@ Tucker's 0.9/0.1 was tuned for 792 SS. With 127K PL it makes the PL pool effecti
 
 ## How to resume after disconnect
 
-1. Read this file top-to-bottom.
-2. `git log --oneline -8` should show `34e3314` → `1a241dd` → ... most recent first.
-3. Verify tests: `~/clef/birdclef-2026/.venv/bin/python -m pytest user/murilo/tests/032-tucker-distilled-sed/ user/murilo/tests/033-own-teacher-pl/ -q` → expect **195 passed**.
-4. Run fast-dev-run sanity (§ 1 above) before any Phase F/G work.
-5. If fast-dev-run PASS → proceed to Phase F (T2 PL generation).
-6. If fast-dev-run FAIL → diagnose; do NOT proceed.
+1. **Read this file top-to-bottom** (it's the source of truth for current state).
+2. `git log --oneline -12` should show `11b25cd` at the top.
+3. `squeue -u $USER` → all GPU jobs done (or only stragglers).
+4. Verify 10 last.ckpt files exist (paths in § 1 above).
+5. Launch D.5 e2e validation in parallel (§ 2 above).
+6. Rank by e2e val/auroc → top-5 to LB Day 1.
+7. Per `feedback_user_runs_commands.md`: don't run SLURM jobs / Kaggle uploads / kernel pushes yourself — give Murilo the commands.
 
 **Slack / Kaggle / W&B credentials**: in `user/murilo/.env` (gitignored).
 Loaded by `train.py`. If W&B login fails on SLURM, `WANDB_MODE=offline` or
