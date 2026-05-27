@@ -124,20 +124,26 @@ Train **distilled-sed-kd recipe** (Tucker recipe + Perch v2 KD, exp 032 base) on
 
 #### Step 1 — Ablation grid (10 paired runs)
 
-Each ablation is the same Tucker recipe (KD on) + Antoine 1:1 PL protocol. Variables: init × sampler × focal/SC ratio × **teacher**.
+Each ablation is the same Tucker recipe (KD on) + Antoine 1:1 PL protocol. Variables: init × sampler × focal/pl share × **teacher**. **A2** is marked ⭐ as the canonical Antoine protocol (random init + uniform sampler = "treat PL as labeled"). All other rows are sensitivity ablations around it.
 
-| ID | Init | Sampler | Focal/SC | LR | Epochs | Teacher | Hypothesis tested |
-|---|---|---|---|---|---|---|---|
-| **A1.v5j** | random | MixSamp | 0.5 / 0.5 | 5e-4 | 25 | T1 (v5j-4fold) | "Moderate PL emphasis from scratch, T1 teacher." |
-| **A2.v5j** | random | **Uniform** | natural ~17/83 | 5e-4 | 25 | T1 | "Pure 1:1 protocol from scratch, T1 teacher." |
-| **A3.v5j** | **warm-start** (`last-v2.ckpt`) | MixSamp | 0.2 / 0.8 | **5e-5** | **10** | T1 | "Continued training, PL-heavy mix, T1 teacher." |
-| **A4.v5j** | **warm-start** | **Uniform** | natural | **5e-5** | **10** | T1 | "Warm-start + pure protocol, T1 teacher (compound)." |
-| **A5.v5j** | random | MixSamp | 0.7 / 0.3 | 5e-4 | 25 | T1 | "Conservative under-exposure (predicted to underperform A1)." |
-| **A1.kd** | random | MixSamp | 0.5 / 0.5 | 5e-4 | 25 | **T2 (`distilled-sed-kd-5fold`)** | A1 paired across teachers. |
-| **A2.kd** | random | **Uniform** | natural ~17/83 | 5e-4 | 25 | T2 | A2 paired across teachers. |
-| **A3.kd** | **warm-start** | MixSamp | 0.2 / 0.8 | **5e-5** | **10** | T2 | A3 paired across teachers. |
-| **A4.kd** | **warm-start** | **Uniform** | natural | **5e-5** | **10** | T2 | A4 paired across teachers. |
-| **A5.kd** | random | MixSamp | 0.7 / 0.3 | 5e-4 | 25 | T2 | A5 paired across teachers. |
+The "Sampler share" column carries different meanings per sampler:
+- **MixSamp** rows: hand-set per-batch fractions `focal/sc/pl` (deterministic; sums to 1)
+- **Uniform** rows: pool-size-proportional sampling from `ConcatDataset(focal=28906, sc=624, pl=127104)` → natural ~18/0/82 batch composition
+
+| ID | Init | Sampler | Sampler share (focal/sc/pl) | Per-batch B=64 (focal/sc/pl) | LR | Epochs | Teacher | Hypothesis tested |
+|---|---|---|---|---|---|---|---|---|
+| **A1.v5j** | random | MixSamp | 0.50 / 0.00 / 0.50 | 32 / 0 / 32 | 5e-4 | 25 | T1 (v5j-4fold) | "Moderate PL emphasis from scratch, T1 teacher." |
+| **A2.v5j** ⭐ | random | **Uniform** | ~0.18 / ~0.00 / ~0.82 (natural) | ~12 / ~0 / ~52 | 5e-4 | 25 | T1 | **Pure 1:1 Antoine protocol** from scratch, T1 teacher (canonical recipe). |
+| **A3.v5j** | **warm-start** (`last-v2.ckpt`) | MixSamp | 0.20 / 0.00 / 0.80 | 13 / 0 / 51 | **5e-5** | **10** | T1 | "Continued training, PL-heavy mix, T1 teacher." |
+| **A4.v5j** | **warm-start** | **Uniform** | ~0.18 / ~0.00 / ~0.82 (natural) | ~12 / ~0 / ~52 | **5e-5** | **10** | T1 | "Warm-start + pure Antoine protocol (compound), T1 teacher." |
+| **A5.v5j** | random | MixSamp | 0.70 / 0.00 / 0.30 | 45 / 0 / 19 | 5e-4 | 25 | T1 | "Conservative under-exposure (predicted to underperform A1) — sensitivity check." |
+| **A1.kd** | random | MixSamp | 0.50 / 0.00 / 0.50 | 32 / 0 / 32 | 5e-4 | 25 | **T2 (`distilled-sed-kd-5fold`)** | A1 paired across teachers. |
+| **A2.kd** ⭐ | random | **Uniform** | ~0.18 / ~0.00 / ~0.82 (natural) | ~12 / ~0 / ~52 | 5e-4 | 25 | T2 | A2 paired across teachers (canonical recipe on T2). |
+| **A3.kd** | **warm-start** | MixSamp | 0.20 / 0.00 / 0.80 | 13 / 0 / 51 | **5e-5** | **10** | T2 | A3 paired across teachers. |
+| **A4.kd** | **warm-start** | **Uniform** | ~0.18 / ~0.00 / ~0.82 (natural) | ~12 / ~0 / ~52 | **5e-5** | **10** | T2 | A4 paired across teachers. |
+| **A5.kd** | random | MixSamp | 0.70 / 0.00 / 0.30 | 45 / 0 / 19 | 5e-4 | 25 | T2 | A5 paired across teachers. |
+
+The per-batch counts come from the datamodule's `MixSamp per_src=[focal, sc, pl]` log and from `batch_size × pool_share` for uniform. Note that the labeled-SS pool (624 segments) is never sampled directly in exp 033 — `sc_share=0.0` for all MixSamp ablations, and uniform's 624/156634 ≈ 0.4% rounds to 0 per batch. Labeled-SS audio still appears as **ground-truth focal anchors** in the focal × labeled-SS mixup (the Tucker recipe's `focal_sc_mixup_prob=0.5`), just not as a primary sampling source here.
 
 Stretch (decided after Round 1):
 - **A0.ensemble**: best-performing protocol (TBD) using **mean(PL_T1, PL_T2)** as targets — tests ensemble-of-teachers.
