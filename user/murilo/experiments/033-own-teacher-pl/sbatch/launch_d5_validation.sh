@@ -27,9 +27,9 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
-EXP033_DIR="${REPO_ROOT}/user/murilo/experiments/033-own-teacher-pl"
-EXP032_DIR="${REPO_ROOT}/user/murilo/experiments/032-tucker-distilled-sed"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXP033_DIR="$(dirname "${SCRIPT_DIR}")"
+EXP032_DIR="$(dirname "${EXP033_DIR}")/032-tucker-distilled-sed"
 CKPT_BASE="/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/033-own-teacher-pl/checkpoints"
 
 if [ ! -d "${EXP033_DIR}/configs" ]; then
