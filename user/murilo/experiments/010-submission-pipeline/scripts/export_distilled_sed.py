@@ -39,6 +39,36 @@ logger = logging.getLogger(__name__)
 USER_SRC_DIR = Path(__file__).resolve().parent.parent.parent.parent / "src"
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursive dict merge — override wins. Mirrors exp 033 train.py:_deep_merge."""
+    out = dict(base)
+    for k, v in override.items():
+        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def load_config_with_common(config_path: Path) -> dict:
+    """yaml.safe_load + optional sibling `_common.yaml` deep-merge.
+
+    No-op for experiments with flat configs (e.g., exp 032's distilled_sed_kd.yaml);
+    enables exp 033's diff-only per-ablation YAMLs to load correctly without
+    forking this script.
+    """
+    with open(config_path) as f:
+        override = yaml.safe_load(f) or {}
+    common_p = config_path.parent / "_common.yaml"
+    if common_p.exists() and config_path.name != "_common.yaml":
+        with open(common_p) as f:
+            base = yaml.safe_load(f) or {}
+        merged = _deep_merge(base, override)
+        logger.info(f"Loaded config: {config_path.name} (merged with _common.yaml)")
+        return merged
+    return override
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=str, required=True)
@@ -77,8 +107,7 @@ def main() -> None:
     from birdclef.preprocessing.nnaudio_mel import NNAudioMelSpectrogram
     from birdclef.preprocessing.tucker_mel import TuckerMelSpectrogram
 
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config_with_common(Path(args.config))
 
     species_list = build_full_species_list(args.train_csv)
     num_classes = len(species_list)

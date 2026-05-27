@@ -1,0 +1,16 @@
+{
+  "id": "murilogustineli/birdclef-2026-distilled-sed-pl-a4-kd",
+  "title": "BirdCLEF 2026 Distilled SED PL a4 kd",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-deps",
+    "murilogustineli/birdclef-2026-distilled-sed-pl-a4-kd-weights"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}

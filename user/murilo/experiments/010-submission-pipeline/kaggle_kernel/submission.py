@@ -91,6 +91,21 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 033 own-teacher PL ablations on distilled-sed-kd (10 cells = 5 protocols × 2 teachers).
+    # Same Tucker inference path as exp 032 distilled-sed-kd (mel_config["type"]=tucker_mel,
+    # output_type=tucker_logits → per-window inference + 5-tap Gaussian smooth in logit
+    # space + single sigmoid). PL is training-time only; ONNX schema is identical to
+    # distilled-sed-kd. T1=v5j-4fold teacher, T2=distilled-sed-kd-5fold teacher.
+    "birdclef-2026-distilled-sed-pl-a4-kd-weights",  # rank 1 by D.5 e2e val/auroc
+    "birdclef-2026-distilled-sed-pl-a3-kd-weights",
+    "birdclef-2026-distilled-sed-pl-a2-kd-weights",  # canonical Antoine + T2
+    "birdclef-2026-distilled-sed-pl-a4-v5j-weights",
+    "birdclef-2026-distilled-sed-pl-a3-v5j-weights",
+    "birdclef-2026-distilled-sed-pl-a1-kd-weights",
+    "birdclef-2026-distilled-sed-pl-a2-v5j-weights",  # canonical Antoine + T1
+    "birdclef-2026-distilled-sed-pl-a1-v5j-weights",
+    "birdclef-2026-distilled-sed-pl-a5-kd-weights",
+    "birdclef-2026-distilled-sed-pl-a5-v5j-weights",
     # Exp 032 Phase 2: 5-fold KD ensemble + HGNet backbone ablation
     "birdclef-2026-distilled-sed-kd-5fold-weights",
     "birdclef-2026-distilled-sed-kd-hgnet-weights",

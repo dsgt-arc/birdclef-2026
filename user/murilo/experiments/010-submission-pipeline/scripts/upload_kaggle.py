@@ -603,6 +603,61 @@ MODELS = {
         "weights_dir": "artifacts/weights/distilled-sed-kd-fold4",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-fold4.json",
     },
+    # Exp 033 own-teacher PL ablations on distilled-sed-kd (10 cells = 5 protocols × 2 teachers).
+    # T1 = v5j-4fold teacher (LB 0.913); T2 = distilled-sed-kd-5fold teacher (LB 0.915).
+    # Same Tucker inference path as distilled-sed-kd (mel_config["type"]=tucker_mel,
+    # output_type=tucker_logits → per-window inference + 5-tap Gaussian smooth in logit
+    # space + single sigmoid). PL is training-time only; ONNX is identical schema.
+    "distilled-sed-pl-a1-v5j": {
+        "slug": "birdclef-2026-distilled-sed-pl-a1-v5j-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a1-v5j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a1-v5j.json",
+    },
+    "distilled-sed-pl-a1-kd": {
+        "slug": "birdclef-2026-distilled-sed-pl-a1-kd-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a1-kd",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a1-kd.json",
+    },
+    "distilled-sed-pl-a2-v5j": {
+        "slug": "birdclef-2026-distilled-sed-pl-a2-v5j-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a2-v5j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a2-v5j.json",
+    },
+    "distilled-sed-pl-a2-kd": {
+        "slug": "birdclef-2026-distilled-sed-pl-a2-kd-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a2-kd",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a2-kd.json",
+    },
+    "distilled-sed-pl-a3-v5j": {
+        "slug": "birdclef-2026-distilled-sed-pl-a3-v5j-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a3-v5j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a3-v5j.json",
+    },
+    "distilled-sed-pl-a3-kd": {
+        "slug": "birdclef-2026-distilled-sed-pl-a3-kd-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a3-kd",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a3-kd.json",
+    },
+    "distilled-sed-pl-a4-v5j": {
+        "slug": "birdclef-2026-distilled-sed-pl-a4-v5j-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a4-v5j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a4-v5j.json",
+    },
+    "distilled-sed-pl-a4-kd": {
+        "slug": "birdclef-2026-distilled-sed-pl-a4-kd-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a4-kd",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a4-kd.json",
+    },
+    "distilled-sed-pl-a5-v5j": {
+        "slug": "birdclef-2026-distilled-sed-pl-a5-v5j-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a5-v5j",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a5-v5j.json",
+    },
+    "distilled-sed-pl-a5-kd": {
+        "slug": "birdclef-2026-distilled-sed-pl-a5-kd-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a5-kd",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a5-kd.json",
+    },
 }
 
 

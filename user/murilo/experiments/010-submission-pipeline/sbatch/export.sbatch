@@ -998,6 +998,7 @@ EXP029_DIR="$(dirname "$EXPERIMENT_DIR")/029-2025-pretrain"
 EXP030_DIR="$(dirname "$EXPERIMENT_DIR")/030-sydorskyi-mixup"
 EXP031_DIR="$(dirname "$EXPERIMENT_DIR")/031-perch-kd-distillation"
 EXP032_DIR="$(dirname "$EXPERIMENT_DIR")/032-tucker-distilled-sed"
+EXP033_DIR="$(dirname "$EXPERIMENT_DIR")/033-own-teacher-pl"
 
 export_hgnet_b2_sed_v6h() {
     echo "=== Exporting HGNetV2-B2 SED v6h (AttHead + BCE, 234 classes) ==="
@@ -1400,6 +1401,50 @@ export_distilled_sed_kd_single_fold() {
     fi
 }
 
+# ============================================================================
+# Exp 033 own-teacher PL ablations — 10 cells of distilled-sed-kd recipe +
+# 1:1 Antoine-style pseudo-labels. Same Tucker recipe + KD + AttHeadLogitSpace
+# as exp 032's distilled-sed-kd; the only differences vs exp 032 are training-
+# time (PL dataloader, sampler, loss_weight=1.0). Inference path is identical,
+# so we reuse export_distilled_sed.py.
+#
+# T1 (`*-v5j`) ablations: ckpt dir holds `last.ckpt` (stale, from cancelled
+# num_workers=0 first wave) AND `last-v1.ckpt` (the real final from the
+# relaunched run). `find_last_ckpt` picks newest mtime → last-v1.ckpt.
+# T2 (`*-kd`) ablations: single clean launch → just `last.ckpt`.
+# ============================================================================
+
+export_distilled_sed_pl() {
+    # Generic helper: export one exp 033 ablation cell.
+    # Args: $1 = ablation id (a1..a5), $2 = teacher (v5j|kd)
+    local AB="$1"
+    local TEACHER="$2"
+    if ! [[ "$AB" =~ ^a[1-5]$ ]] || ! [[ "$TEACHER" =~ ^(v5j|kd)$ ]]; then
+        echo "ERROR: export_distilled_sed_pl: invalid args (ablation='$AB', teacher='$TEACHER')" >&2
+        exit 1
+    fi
+    local SLUG="distilled-sed-pl-${AB}-${TEACHER}"
+    local CKPT_RUN_DIR="${CHECKPOINTS_BASE}/033-own-teacher-pl/checkpoints/2026-exp033-${AB}-${TEACHER}/fold0"
+    echo "=== Exporting Exp 033 ${SLUG} (own-teacher PL on distilled-sed-kd) ==="
+    local CKPT
+    CKPT="$(find_last_ckpt "${CKPT_RUN_DIR}")"
+    echo "Using checkpoint: $CKPT"
+    local OUTPUT_DIR="artifacts/weights/${SLUG}"
+    python scripts/export_distilled_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP033_DIR}/configs/${AB}_${TEACHER}.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir "${OUTPUT_DIR}/"
+
+    # 234-class identity species mapping (shared file from exp 030/031/032).
+    local MAPPING_2026="artifacts/weights/species_mapping_2026_234.json"
+    if [ -f "$MAPPING_2026" ]; then
+        cp "$MAPPING_2026" "${OUTPUT_DIR}/species_mapping.json"
+    elif [ -f "artifacts/weights/distilled-sed-kd/species_mapping.json" ]; then
+        cp "artifacts/weights/distilled-sed-kd/species_mapping.json" "${OUTPUT_DIR}/species_mapping.json"
+    fi
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -1462,6 +1507,12 @@ case "$MODEL" in
     distilled-sed-control|distilled-sed-kd|all-032-distilled-sed|\
     distilled-sed-kd-5fold|distilled-sed-kd-hgnet|\
     distilled-sed-kd-fold1|distilled-sed-kd-fold2|distilled-sed-kd-fold3|distilled-sed-kd-fold4|\
+    distilled-sed-pl-a1-v5j|distilled-sed-pl-a1-kd|\
+    distilled-sed-pl-a2-v5j|distilled-sed-pl-a2-kd|\
+    distilled-sed-pl-a3-v5j|distilled-sed-pl-a3-kd|\
+    distilled-sed-pl-a4-v5j|distilled-sed-pl-a4-kd|\
+    distilled-sed-pl-a5-v5j|distilled-sed-pl-a5-kd|\
+    all-033-distilled-sed-pl-day1|all-033-distilled-sed-pl-day2|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1592,6 +1643,34 @@ case "$MODEL" in
         export_distilled_sed_control
         echo ""
         export_distilled_sed_kd
+        ;;
+    # Exp 033 own-teacher PL ablations (10 cells = 5 protocols × 2 teachers)
+    distilled-sed-pl-a1-v5j)            export_distilled_sed_pl a1 v5j ;;
+    distilled-sed-pl-a1-kd)             export_distilled_sed_pl a1 kd ;;
+    distilled-sed-pl-a2-v5j)            export_distilled_sed_pl a2 v5j ;;
+    distilled-sed-pl-a2-kd)             export_distilled_sed_pl a2 kd ;;
+    distilled-sed-pl-a3-v5j)            export_distilled_sed_pl a3 v5j ;;
+    distilled-sed-pl-a3-kd)             export_distilled_sed_pl a3 kd ;;
+    distilled-sed-pl-a4-v5j)            export_distilled_sed_pl a4 v5j ;;
+    distilled-sed-pl-a4-kd)             export_distilled_sed_pl a4 kd ;;
+    distilled-sed-pl-a5-v5j)            export_distilled_sed_pl a5 v5j ;;
+    distilled-sed-pl-a5-kd)             export_distilled_sed_pl a5 kd ;;
+    # Day-1 / Day-2 batched dispatch (top-5 by D.5 e2e val/auroc then bottom-5).
+    all-033-distilled-sed-pl-day1)
+        # Top-5 by D.5 e2e val/auroc (2026-05-27).
+        export_distilled_sed_pl a4 kd  ; echo ""
+        export_distilled_sed_pl a3 kd  ; echo ""
+        export_distilled_sed_pl a2 kd  ; echo ""
+        export_distilled_sed_pl a4 v5j ; echo ""
+        export_distilled_sed_pl a3 v5j
+        ;;
+    all-033-distilled-sed-pl-day2)
+        # Bottom-5 by D.5 e2e val/auroc.
+        export_distilled_sed_pl a1 kd  ; echo ""
+        export_distilled_sed_pl a2 v5j ; echo ""
+        export_distilled_sed_pl a1 v5j ; echo ""
+        export_distilled_sed_pl a5 kd  ; echo ""
+        export_distilled_sed_pl a5 v5j
         ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
