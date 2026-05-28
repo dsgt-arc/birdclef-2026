@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger
 
 EXP_DIR = Path(__file__).resolve().parent
@@ -81,6 +82,19 @@ def main():
         type=float,
         default=0.0,
         help="gradient_clip_val (0 = none, matching Sydorskyi). Set e.g. 1.0 for full-FT stability.",
+    )
+    p.add_argument(
+        "--save-ckpt",
+        action="store_true",
+        help="save checkpoints (Phase E onward). Gate 2 omits this (reads val/auroc only).",
+    )
+    p.add_argument(
+        "--ckpt-root",
+        default="/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/034-pretrained-backbone/checkpoints",
+        help="checkpoint root on PROJECT storage (never home — 20GB quota).",
+    )
+    p.add_argument(
+        "--wandb", action="store_true", help="also log to W&B (needs WANDB_API_KEY in env)."
     )
     args = p.parse_args()
 
@@ -156,7 +170,32 @@ def main():
     run_tag = f"{args.run_name}-fold{args.fold}"
     out_dir = EXP_DIR / "outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
-    pl_logger = False if args.fast_dev_run else CSVLogger(save_dir=str(out_dir), name=run_tag)
+
+    loggers: list = [] if args.fast_dev_run else [CSVLogger(save_dir=str(out_dir), name=run_tag)]
+    if args.wandb and not args.fast_dev_run:
+        from pytorch_lightning.loggers import WandbLogger
+
+        loggers.append(
+            WandbLogger(project="birdclef-2026-exp034", name=run_tag, save_dir=str(out_dir))
+        )
+
+    callbacks: list = []
+    if args.save_ckpt and not args.fast_dev_run:
+        ckpt_dir = Path(args.ckpt_root) / run_tag
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        callbacks.append(
+            ModelCheckpoint(
+                dirpath=str(ckpt_dir),
+                filename="{epoch}-{step}",
+                monitor="val/auroc",
+                mode="max",
+                save_top_k=3,  # Sydorskyi n_checkpoints_to_save=3
+                save_last=True,  # genuine last.ckpt — selected for inference (Sydorskyi pattern)
+            )
+        )
+        logger.info(
+            f"Checkpoints → {ckpt_dir} (save_top_k=3 + save_last; inference uses last.ckpt)"
+        )
 
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
@@ -166,7 +205,8 @@ def main():
         gradient_clip_val=(args.grad_clip or None),  # Sydorskyi: none (trainer_params={})
         fast_dev_run=args.fast_dev_run,
         log_every_n_steps=10,
-        logger=pl_logger,
+        logger=(loggers if loggers else False),
+        callbacks=callbacks,
     )
     trainer.fit(module, data_module)
 

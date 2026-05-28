@@ -175,7 +175,7 @@ Script: `scripts/gate1_parity.py`. Results JSON: `outputs/gate1_parity{,_nfnet}.
 - [x] D.1 Freeze backbone — `--freeze-backbone` (verified: 371K trainable / 19.8M frozen in pre-flight).
 - [x] D.2 Random-init head — head is random by default; `--load-pretrained` loads only the backbone.
 - [x] Training-loop audit vs exp 021 / 032 / 033 / Sydorskyi — no bugs; Sydorskyi-faithful. See `results.md § Training-loop audit`.
-- [x] `train.py` persists OOF `val/auroc` to `outputs/<run>-fold<k>.json`; `sbatch/gate2.sbatch` wraps it ($TMPDIR venv, GPU).
+- [x] `train.py` persists OOF `val/auroc` to `outputs/<run>-fold<k>.json`; `sbatch/gate2.sh` wraps it (self-submitting, $TMPDIR venv, GPU; uses `$SLURM_SUBMIT_DIR` — NOT `$BASH_SOURCE`, which sbatch spools to `/var/lib/slurm/...`).
 - [x] Local CPU pre-flight (`--fast-dev-run --load-pretrained --freeze-backbone`) PASS — frozen+pretrained path runs clean.
 - [ ] D.3 Train head-only on fold 0, 5 epochs (**GPU job — launch below**).
 - [ ] D.4 Read OOF AUC from `outputs/gate2-tf_efficientnetv2_s_in21k-fold0.json` (= `val/auroc` on fold-0 holdout labeled-SS pool).
@@ -184,10 +184,10 @@ Script: `scripts/gate1_parity.py`. Results JSON: `outputs/gate1_parity{,_nfnet}.
 **Launch command** (per `feedback_user_runs_commands` — Murilo runs SLURM jobs):
 ```bash
 cd user/murilo/experiments/034-pretrained-backbone
-sbatch sbatch/gate2.sbatch          # EffNetV2-S, fold 0, 5 epochs, frozen + pretrained
-# optional NFNet-L0 variant:        BACKBONE=eca_nfnet_l0 sbatch sbatch/gate2.sbatch
-# monitor:                          squeue -u $USER ; tail -f logs/slurm-*.out
-# result:                           cat outputs/gate2-tf_efficientnetv2_s_in21k-fold0.json
+bash sbatch/gate2.sh                 # EffNetV2-S, fold 0, 5 ep, frozen + pretrained (self-submits)
+# optional NFNet-L0 variant:         BACKBONE=eca_nfnet_l0 bash sbatch/gate2.sh
+# monitor:                           squeue -u $USER ; tail -f logs/slurm-gate2-*.out
+# result:                            cat outputs/gate2-tf_efficientnetv2_s_in21k-fold0.json
 ```
 
 **Phase D exit criterion**: local OOF AUC ≥ 0.95. If 0.93-0.95, marginal — investigate head + augmentation. If <0.93, return to Phase C parity audit. (Offline-LB anti-correlation caveat applies — Gate 2 is a sanity FLOOR, not an LB predictor; Phase E LB is the real read.)
@@ -196,25 +196,48 @@ sbatch sbatch/gate2.sbatch          # EffNetV2-S, fold 0, 5 epochs, frozen + pre
 
 ## Phase E — Frozen-backbone fine-tune + first LB
 
-### E.1 Training
+**PRE-STAGED 2026-05-28** (ready to launch the moment Gate 2 clears).
 
-- [ ] E.1.1 Config: `configs/xcpretrain_effv2s_frozen.yaml` (to be created in Phase B).
-- [ ] E.1.2 Train frozen-backbone fold 0 for 25-50 epochs (start 25; extend if not converged).
-- [ ] E.1.3 Confirm `last.ckpt` written + W&B log uploaded + `metrics.json` saved.
+### Epoch decision (25 vs 50) — RESOLVED
 
-### E.2 D.5 e2e validation
+`train.py` default is 50 (Sydorskyi `selected_ebs.py` + `feedback_bump_epochs`), but
+that is his **full-fine-tune** number. **Phase E is frozen-backbone (head-only, 371K
+params on fixed features)** → converges fast, and the cosine LR must anneal over the
+*actual* run length. So:
+- **Phase E frozen primary = 25 epochs** (our proven exp 032/033 cadence → LB 0.906/0.915; proper annealing; ½ compute).
+- **50 epochs = cheap parallel ablation** (`MAX_EPOCHS=50 RUN_SUFFIX=-50ep bash sbatch/train.sh`) — let LB arbitrate 25 vs 50 (`feedback_pace_compute_not_bottleneck`).
+- **Phase G full-FT = 50** (Sydorskyi-faithful, whole network adapts; `MODE=fullft`).
 
-- [ ] E.2.1 Reuse exp 032's `validate_end_to_end.sh` adapted for the xcpretrain config.
+### E.1 Training — `sbatch/train.sh` (self-submitting; `--save-ckpt` save_top_k=3 + save_last → use `last.ckpt`)
+
+```bash
+cd user/murilo/experiments/034-pretrained-backbone
+bash sbatch/train.sh                              # Phase E: frozen, fold 0, 25 ep
+MAX_EPOCHS=50 RUN_SUFFIX=-50ep bash sbatch/train.sh   # 25-vs-50 LB ablation
+for f in 0 1 2 3 4; do FOLD=$f bash sbatch/train.sh; done   # Phase F: 5-fold
+# result: cat outputs/xcpretrain-tf_efficientnetv2_s_in21k-frozen-fold0.json
+# ckpts:  /storage/project/.../experiments/034-pretrained-backbone/checkpoints/<run>-fold0/last.ckpt
+```
+- [ ] E.1.1 Launch `bash sbatch/train.sh` (frozen, fold 0, 25 ep) once Gate 2 ≥ 0.95.
+- [ ] E.1.2 Confirm `last.ckpt` written + `outputs/<run>-fold0.json` has val/auroc.
+
+### E.2 e2e validation
+
+- [ ] E.2.1 Adapt exp 032's `validate_end_to_end.sh` for the xcpretrain forward path (nnAudio mel + clip-only `clipwise_pred_long`).
 - [ ] E.2.2 Gate: `|train_auroc − e2e_auroc| ≤ 0.02`.
 
-### E.3 Export + LB submit
+### E.3 Export + LB submit — **build once a trained ckpt exists** (depends on E.1)
 
-- [ ] E.3.1 Extend `experiments/010-submission-pipeline/sbatch/export.sbatch` with `export_sydorskyi_xcpretrain()` helper.
+⚠️ **Watch-items (from training-loop audit):**
+- **Inference scoring must match training** = clip-only `clipwise_pred_long` (NOT the exp 021/032 σ(clip)+σ(frame) blend) — or deliberately A/B a blend. Avoid silent train/infer mismatch.
+- **ONNX + nnAudio**: nnAudio STFT ops may not export to ONNX cleanly. `TraceableMelspec` is built `exportable=True`, but plan a **TorchScript fallback** if ONNX trips (E.3.6). Validate the exported mel vs the eager mel before trusting the kernel.
+
+- [ ] E.3.1 Extend exp 010 export with an `export_xcpretrain()` helper (ONNX → TorchScript fallback).
 - [ ] E.3.2 Add MODELS entry in `scripts/upload_kaggle.py`.
-- [ ] E.3.3 Create `kaggle_kernel/kernel-metadata-pretrained-backbone-xcpretrain-effv2s-frozen.json` (verify title→slug derivation).
+- [ ] E.3.3 `kaggle_kernel/kernel-metadata-...-xcpretrain-effv2s-frozen.json` (verify title→slug).
 - [ ] E.3.4 Add weights slug to `kaggle_kernel/submission.py` MODEL_SLUGS.
-- [ ] E.3.5 Submission notebook must use nnAudio mel inference (verify in kernel logs).
-- [ ] E.3.6 ONNX export — may not be straightforward with nnAudio in the forward path; consider TorchScript fallback if ONNX trips on nnAudio ops.
+- [ ] E.3.5 Submission kernel uses nnAudio mel inference (verify in kernel logs).
+- [ ] E.3.6 ONNX export (TorchScript fallback if nnAudio ops fail).
 - [ ] E.3.7 Submit to LB.
 
 ### E.4 Decision matrix
