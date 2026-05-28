@@ -119,12 +119,17 @@ def generate_sed_labels(meta_df, species_cols, unlabeled_mask, tiers, cfg):
     n_folds = sed_cfg["n_folds"]
     temperature = sed_cfg["temperature"]
     power = sed_cfg["power_transform"]
+    # v1/v2/v3 default: "max" (preserved for backward compat).
+    # v4 (Sydorskyi-faithful): "mean" — matches paper Section 3.5 which
+    # mean-ensembles the 8 teacher predictions before applying the
+    # primary_label_min_prob + trim_min_prob filters.
+    fold_strategy = sed_cfg.get("fold_strategy", "max")
 
     print("\n--- SED Pseudo-Labels (Tiers A+B) ---")
     print(f"  Source: {source_dir}")
-    print(f"  Strategy: max-across-{n_folds}-folds → T={temperature} → P^{power}")
+    print(f"  Strategy: {fold_strategy}-across-{n_folds}-folds → T={temperature} → P^{power}")
 
-    # Load folds and compute max-across-folds
+    # Load folds and compute aggregation
     fold_probs = []
     for fold in range(n_folds):
         logits_df = pd.read_parquet(source_dir / f"fold{fold}" / "logits.parquet")
@@ -133,14 +138,19 @@ def generate_sed_labels(meta_df, species_cols, unlabeled_mask, tiers, cfg):
         fold_probs.append(sigmoid(logits_df[sp_cols].values.astype(np.float32)))
         print(f"  Loaded fold {fold}: {fold_probs[-1].shape}")
 
-    sed_max = np.maximum.reduce(fold_probs)
+    if fold_strategy == "max":
+        sed_max = np.maximum.reduce(fold_probs)
+    elif fold_strategy == "mean":
+        sed_max = np.mean(np.stack(fold_probs, axis=0), axis=0)
+    else:
+        raise ValueError(f"sed.fold_strategy must be 'max' or 'mean', got {fold_strategy!r}")
     del fold_probs
-    print(f"  Max-across-folds: {sed_max.shape}")
+    print(f"  {fold_strategy.capitalize()}-across-folds: {sed_max.shape}")
 
-    # Apply temperature scaling
+    # Apply temperature scaling (no-op at T=1.0)
     sed_scaled = temperature_scale(sed_max, temperature)
 
-    # Apply power transform
+    # Apply power transform (no-op at P=1.0)
     sed_final = power_transform(sed_scaled, power)
 
     # Zero out non-Tier-A/B species

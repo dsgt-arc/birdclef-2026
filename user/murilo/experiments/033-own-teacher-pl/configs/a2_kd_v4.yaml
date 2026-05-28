@@ -1,0 +1,28 @@
+# A2.kd_v4 — Diagnostic Test 1 fallback. Run only if a2_kd_v3 still REJECTs.
+#
+# Identical to a2_kd_v3.yaml except points at the v4 PL parquet, which is
+# Sydorskyi-faithful at the PL generation step (mean-across-folds, no
+# temperature/power sharpening, same 0.5/0.1 filters).
+#
+# Decision criteria (same as v3 — see diagnostic-tests.md § Test 1.6):
+#   LB > 0.913 → Sydorskyi-faithful PL generation alone explains the
+#                v3 REJECT verdict; protocol is salvageable.
+#   LB 0.906-0.913 → Modest lift; PL quality matters but other divergences
+#                    (esp. focal × PL fusion, Test 2) still missing.
+#   LB < 0.906 → Even Sydorskyi-faithful PL generation isn't enough; the
+#                gap is the fusion mechanism. Pivot to Test 2 (FocalDS Path D).
+#
+# Inherits all unlisted knobs from configs/_common.yaml.
+# Reference: user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md
+
+run_name: "2026-exp033-a2-kd-v4"
+
+logging:
+  project: "birdclef-2026-exp033"
+
+pseudo_label:
+  # ONLY difference from a2_kd_v3.yaml — points at v4 parquet (mean+nosharpen).
+  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v4-distilled-sed-kd-5fold-meanfolds-nosharpen-trim01-discard05/sed_pseudo_labels.parquet"
+  weight: 1.0
+  sampler: "uniform"
+  exclude_labeled_sc: true

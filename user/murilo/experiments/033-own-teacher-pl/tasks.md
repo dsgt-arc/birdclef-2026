@@ -189,16 +189,24 @@ REJECT verdict was suspicious — exp 033 implementation diverges from the only 
 - [x] 5.1.1 Modify `experiments/025-iter-pseudo-labeling/generate_pseudo_labels.py` to support optional `filter:` section (`min_max_prob`, `trim_min_prob`); backward-compat (no filter section = no-op).
 - [x] 5.1.2 Create `configs/pl_gen_v3.yaml` — T2 source + Sydorskyi-canonical 0.5/0.1 filters. Output: `shared/pseudo-labels/birdclef-2026/v3-distilled-sed-kd-5fold-trim01-discard05/`.
 - [x] 5.1.3 Create `configs/a2_kd_v3.yaml` — a2-kd canonical Antoine cell pointed at v3 parquet.
-- [ ] 5.1.4 Re-issue v3 PL parquet (head node, ~30s).
-- [ ] 5.1.5 Pre-flight v3 parquet (`scripts/preflight_checks.py --parquet-path .../v3.../sed_pseudo_labels.parquet`).
+- [x] 5.1.4 Re-issue v3 PL parquet (cpu-small sbatch, job 9227102, walltime 46s). 33% chunk-discard rate (lower than Sydorskyi's ~83% — cause: our T=0.6 + P^1.5 sharpen + max-across-folds pre-bias). Trim filter zeroed 98% of cells.
+- [x] 5.1.5 Pre-flight v3 parquet — 5/7 PASS; 2 FAILs in Check 5 are stale assertions written for unfiltered parquets (chunks dropped by discard filter; no actual leakage risk). Deferred preflight patch noted in `diagnostic-tests.md § Deferred follow-ups`.
 - [ ] 5.1.6 Train a2-kd-v3 (sbatch, ~6.5h on rtx6000).
 - [ ] 5.1.7 D.5 e2e validation (~5 min).
 - [ ] 5.1.8 Export ONNX + Kaggle upload + LB submit.
 - [ ] 5.1.9 Read LB. Decision matrix:
   - LB > 0.913 → trim+discard explain REJECT; scale to other cells (a3-kd-v3, a4-kd-v3).
   - LB 0.906-0.913 → modest lift; run Test 2 (focal × PL fusion).
-  - LB 0.886-0.906 → these two filters alone don't help; run Test 2 then decide.
-  - LB < 0.886 → filters hurt; investigate, possibly skip Test 2.
+  - LB 0.886-0.906 → filters alone don't help; run v4 (Sydorskyi-faithful PL gen) AND scaffold Test 2 in parallel.
+  - LB < 0.886 → filters hurt; investigate parquet directly before continuing.
+
+### Test 1 fallback — v4 (Sydorskyi-faithful PL generation; LANDED CODE, conditional)
+
+- [x] 5.1.10 Extend `generate_pseudo_labels.py` to honor `fold_strategy: "mean"` in addition to `"max"` (was hardcoded). `temperature_scale` and `power_transform` are already no-ops at neutral values 1.0.
+- [x] 5.1.11 Create `configs/pl_gen_v4.yaml` — fold_strategy=mean + T=1.0 + P^1.0 + same 0.5/0.1 filters. Output: `shared/pseudo-labels/birdclef-2026/v4-distilled-sed-kd-5fold-meanfolds-nosharpen-trim01-discard05/`.
+- [x] 5.1.12 Create `configs/a2_kd_v4.yaml` — a2-kd canonical Antoine cell pointed at v4 parquet.
+- [ ] 5.1.13 Run only if v3 (a2-kd-v3) lands LB ≤ 0.906. Re-issue v4 parquet; train + D.5 + LB.
+- [ ] 5.1.14 Expected v4 discard rate ~80% (closer to Sydorskyi's 83%). Surviving pool ~20-25K chunks.
 
 ### Test 2 — focal × PL MixUp fusion (CONDITIONAL on Test 1)
 

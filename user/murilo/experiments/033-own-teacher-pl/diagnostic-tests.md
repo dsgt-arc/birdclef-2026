@@ -147,10 +147,37 @@ python scripts/upload_kaggle.py --model distilled-sed-pl-a2-kd-v3 --push-kernel
 |---|---|---|
 | **LB > 0.913** | trim+discard explain REJECT alone. Protocol is recoverable on our base. | Scope a full v3 re-run of the strongest cells (a3-kd-v3, a4-kd-v3, etc.). |
 | **LB 0.906-0.913** | Modest lift; trim+discard help but other divergences still matter. | Run Test 2 (focal × PL fusion). |
-| **LB 0.886-0.906** | Trim+discard alone don't help. Probably implementation issue or wrong divergence isolated. | Run Test 2; if it also fails, pivot. |
-| **LB < 0.886** | Worse than original a2-kd. Filters HURT — unlikely but possible if signal was in low-confidence chunks. | Investigate; possibly skip Test 2. |
+| **LB 0.886-0.906** | Trim+discard alone don't help. Probably implementation issue or wrong divergence isolated. | Run v4 (Sydorskyi-faithful PL generation), then Test 2 in parallel; if both fail, pivot. |
+| **LB < 0.886** | Worse than original a2-kd. Filters HURT — unlikely but possible if signal was in low-confidence chunks. | Investigate v3 parquet directly (low-prob signal hypothesis); consider skipping v4/Test 2. |
 
 Record in `results.md` under a new "Phase 5 — diagnostic" section.
+
+### Step 1.7 — v4 fallback (CONDITIONAL on Test 1 result)
+
+**v4 = Sydorskyi-faithful PL generation.** Differences vs v3:
+- `fold_strategy: max → mean` (Sydorskyi mean-ensembles the 8 teacher predictions)
+- `temperature: 0.6 → 1.0` (no sharpening — Sydorskyi-faithful)
+- `power_transform: 1.5 → 1.0` (no sharpening)
+- Same Sydorskyi 0.5/0.1 filters
+
+**Why this is a fallback, not the first move**: the cheapest hypothesis to test first is "v3's filters alone fix the regression." If they do, we don't need v4. If they don't, v4 isolates "did our T/P/max sharpening pipeline pre-bias the filter and let through too many noisy chunks?"
+
+**Expected v4 stats**: ~20-25K surviving chunks (~80% discard, closer to Sydorskyi's 83%) vs v3's 85K (33% discard). Smaller, cleaner pool.
+
+```bash
+# Re-issue v4 parquet
+cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/033-own-teacher-pl
+CONFIG=configs/pl_gen_v4.yaml sbatch sbatch/generate_pseudo_labels.sh
+
+# Pre-flight (same 2 FAILs in Check 5 expected — filter-driven, not a bug)
+~/clef/birdclef-2026/.venv/bin/python scripts/preflight_checks.py \
+  --parquet-path /storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v4-distilled-sed-kd-5fold-meanfolds-nosharpen-trim01-discard05/sed_pseudo_labels.parquet
+
+# Train a2-kd-v4 (canonical Antoine on v4 parquet)
+bash sbatch/run.sh configs/a2_kd_v4.yaml --fold 0
+```
+
+Decision criteria for v4 → see "Step 1.6 — read result, decide" table above (same thresholds apply).
 
 ---
 
@@ -306,9 +333,24 @@ This is the **genuine refutation** outcome. Pivot decisively:
 ## Naming convention reminder
 
 - `v1` = HGNet v5j-4fold teacher (LB 0.913), no filter
-- `v2` = distilled-sed-kd-5fold teacher (LB 0.915), no filter
-- `v3` = distilled-sed-kd-5fold teacher + trim 0.1 + discard 0.5 (Sydorskyi filters)
-- `v4` (reserved) = above + focal × PL fusion in FocalDS
-- `v5` (reserved) = above + focal loss
+- `v2` = distilled-sed-kd-5fold teacher (LB 0.915), no filter, T=0.6 + P^1.5 sharpening
+- `v3` = v2 + Sydorskyi 0.5/0.1 filters (still T=0.6 + P^1.5 sharpening and max-across-folds)
+- `v4` = v3 + Sydorskyi-faithful PL generation (mean-across-folds, T=1.0, P=1.0)
 
 Naming the parquets, configs, and run_names with the version number keeps the chain of evidence clear when we look at this in three days and forget what's what.
+
+For ablation configs: `a2_kd.yaml` (v2 parquet) → `a2_kd_v3.yaml` → `a2_kd_v4.yaml`. All point at the same Antoine canonical cell (random init + Uniform sampler + T2 teacher + 25 ep), differing only in which PL parquet is used.
+
+---
+
+## Deferred follow-ups (not blocking Test 1, but track them here)
+
+1. **Preflight filter-awareness**: `scripts/preflight_checks.py` Check 5 has two FAIL assertions ("labeled SS files have full 12-window PL coverage" + "all unlabeled SS files are in the PL parquet") that are written for the unfiltered v1/v2 parquets. With v3+ those FAIL because the chunk-discard filter intentionally drops chunks. **Safety impact: zero** — the actual leakage prevention happens in the DataModule (`exclude_labeled_sc=True` + `val_sc_files` filter at training time, not at parquet construction).
+
+   Patch (deferred): change Checks 5.1/5.2 to WARN when the parquet's sibling `stats.json` has a `filter:` block, and FAIL only when there's no filter declared. Or just add a `--allow-filtered` CLI flag.
+
+   Recovery if this becomes blocking: run preflight, note the 2 FAILs, confirm Check 1/2/3/4/6/7 PASS, proceed. The 2 FAILs are stale assertions.
+
+2. **fold_strategy=mean rename**: in `generate_pseudo_labels.py`, the internal variable is still named `sed_max` even when computing mean-across-folds. Cosmetic, doesn't affect behavior.
+
+3. **Test 2 (focal × PL fusion) scaffold**: see § Test 2 above for the full design. Has not been started yet.
