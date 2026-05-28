@@ -1,0 +1,28 @@
+# A2.kd_v3 — Diagnostic Test 1 from the exp 033 ↔ Sydorskyi divergence audit.
+#
+# Identical to a2_kd.yaml (random init, Uniform sampler, 25 ep, T2 teacher,
+# canonical Antoine 1:1 PL) EXCEPT pointed at the v3 PL parquet which has
+# Sydorskyi-style chunk-discard (max(prob) < 0.5 dropped) + per-class trim
+# (probs < 0.1 zeroed) applied.
+#
+# Hypothesis (audit Test 1): if exp 033's a2-kd REJECT verdict (LB 0.886) was
+# driven primarily by PL noise (low-confidence chunks + sub-0.1 per-class noise
+# floor), v3 should recover the regression. Decision criteria:
+#   - LB > 0.913 → trim+discard alone explain REJECT; protocol salvageable
+#   - LB 0.906-0.913 → modest lift; other divergences (fusion, focal loss) still matter
+#   - LB < 0.906 → these two filters don't help; pivot to Test 2 (focal × PL fusion)
+#
+# Inherits all unlisted knobs from configs/_common.yaml.
+# Reference: user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md
+
+run_name: "2026-exp033-a2-kd-v3"
+
+logging:
+  project: "birdclef-2026-exp033"
+
+pseudo_label:
+  # ONLY difference from a2_kd.yaml — points at the v3 parquet (trim+discard).
+  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v3-distilled-sed-kd-5fold-trim01-discard05/sed_pseudo_labels.parquet"
+  weight: 1.0
+  sampler: "uniform"
+  exclude_labeled_sc: true

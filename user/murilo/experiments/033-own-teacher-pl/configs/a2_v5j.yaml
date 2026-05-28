@@ -1,0 +1,18 @@
+# A2.v5j — random init, Uniform sampler (DataLoader shuffle=True over ConcatDataset),
+# 25 ep, T1 (v5j-4fold) teacher. Pure Antoine protocol: "treat PL as labeled, sample uniformly".
+#
+# With pool sizes ~26K focal + 0.6K labeled-sc + 127K PL, uniform sampling gives
+# natural proportions ~17% focal / 0.5% sc / 83% pl per batch.
+#
+# Inherits all unlisted knobs from configs/_common.yaml.
+
+run_name: "2026-exp033-a2-v5j"
+
+logging:
+  project: "birdclef-2026-exp033"
+
+pseudo_label:
+  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v1/sed_pseudo_labels.parquet"
+  weight: 1.0
+  sampler: "uniform"
+  exclude_labeled_sc: true

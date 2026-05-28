@@ -1,0 +1,63 @@
+# Pseudo-label generation config: v3-distilled-sed-kd-5fold-trim01-discard05
+# Diagnostic Test 1 from the exp 033 ↔ Sydorskyi divergence audit
+# (user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md).
+#
+# Identical to v2 (same T2 teacher = distilled-sed-kd-5fold ensemble, LB 0.915)
+# EXCEPT for the Sydorskyi-style filter section at the bottom, which applies
+# two filters after merging:
+#   - min_max_prob=0.5: discard chunks where max(prob) < 0.5
+#                       (~83% discard rate in Sydorskyi's iter 1)
+#   - trim_min_prob=0.1: zero per-class probs < 0.1
+#                       (eliminates teacher uncertainty noise)
+#
+# Hypothesis: v2's REJECT verdict (exp 033 a4-kd 0.899, a2-kd 0.886, a4-v5j 0.897)
+# was driven in part by missing chunk discard + trim filters. v3 tests this by
+# isolating those two divergences only — sampler, fusion, and loss remain
+# unchanged from exp 033. See the audit's Test 1 section for decision criteria.
+#
+# Usage:
+#   cd user/murilo/experiments/025-iter-pseudo-labeling
+#   python generate_pseudo_labels.py --config ../033-own-teacher-pl/configs/pl_gen_v3.yaml
+#
+# Walltime: ~30s (no model inference; reuses the existing T2 cache from v2).
+
+version: v3-distilled-sed-kd-5fold-trim01-discard05
+created: "2026-05-27"
+parent_version: v2-distilled-sed-kd-5fold
+
+# --- Teacher: SED (identical to v2) ---
+sed:
+  source_dir: shared/inference/birdclef-2026/distilled-sed-kd-5fold/train_soundscapes
+  n_folds: 5
+  fold_strategy: max
+  temperature: 0.6
+  power_transform: 1.5
+  tiers: [A, B, C]
+
+# --- Tier D species (identical to v2) ---
+tier_d_species:
+  - "23150"   # Central Dwarf Frog
+  - "23154"   # Bahia Dwarf Frog
+  - "23724"   # Waxy Monkey Tree Frog
+  - "25214"   # Muller's Termite Frog
+  - "476521"  # Cuyaba Dwarf Frog
+  - "74580"   # Black-tailed Marmoset
+
+# --- NEW: Sydorskyi-style filter (Test 1 from the divergence audit) ---
+# These two values are the canonical Sydorskyi 2025 settings (see paper
+# Section 3.5, table soundscape_pseudo_config). Both currently active.
+# Set either to null to disable that filter individually.
+filter:
+  min_max_prob: 0.5    # discard chunks where max(prob) < this (Sydorskyi "primary_label_min_prob")
+  trim_min_prob: 0.1   # zero per-class probs < this (Sydorskyi "trim_min_prob")
+
+# --- Output ---
+output_dir: shared/pseudo-labels/birdclef-2026/v3-distilled-sed-kd-5fold-trim01-discard05
+
+# --- Training config (for reference; actual training uses exp 033 pipeline) ---
+training:
+  recipe: distilled-sed-kd
+  pl_loss_weight: 1.0  # Antoine 1:1 protocol (held constant from v2)
+  batch_pl_fraction: variable
+  epochs: variable
+  expected_pool_size_after_filter: "~20K chunks (vs v2's 127K) — ~83% discard predicted"

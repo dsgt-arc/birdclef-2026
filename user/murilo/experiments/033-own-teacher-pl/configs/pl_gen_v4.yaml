@@ -1,0 +1,61 @@
+# Pseudo-label generation config: v4-distilled-sed-kd-5fold-meanfolds-nosharpen-trim01-discard05
+# Diagnostic Test 1 fallback — runs only if v3 (a2_kd_v3) still REJECTs on LB.
+#
+# v4 vs v3: Sydorskyi-faithful at the PL generation step.
+#   - fold_strategy: max → mean (Sydorskyi mean-ensembles teacher predictions)
+#   - temperature:   0.6 → 1.0 (no sharpening — Sydorskyi doesn't sharpen)
+#   - power_transform: 1.5 → 1.0 (no sharpening)
+#
+# Why: v3 only achieved ~33% chunk-discard rate vs Sydorskyi's ~83%. Cause was
+# that our T=0.6 + P^1.5 sharpening transforms inflated max probs BEFORE the
+# 0.5 chunk-discard filter, letting more chunks through. v4 removes the
+# sharpening + uses mean-across-folds (closer to Sydorskyi's mean-ensemble),
+# so the filter operates on Sydorskyi-faithful raw probs.
+#
+# Expected: ~80% chunk discard rate (closer to Sydorskyi's 83%), giving a
+# smaller, cleaner PL pool than v3.
+#
+# Usage:
+#   cd user/murilo/experiments/033-own-teacher-pl
+#   CONFIG=configs/pl_gen_v4.yaml sbatch sbatch/generate_pseudo_labels.sh
+#
+# Walltime: ~10-15 min on cpu-small (~46s actual compute + venv setup).
+# Reference: user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md
+
+version: v4-distilled-sed-kd-5fold-meanfolds-nosharpen-trim01-discard05
+created: "2026-05-27"
+parent_version: v3-distilled-sed-kd-5fold-trim01-discard05
+
+# --- Teacher: SED (Sydorskyi-faithful aggregation + no sharpening) ---
+sed:
+  source_dir: shared/inference/birdclef-2026/distilled-sed-kd-5fold/train_soundscapes
+  n_folds: 5
+  fold_strategy: mean    # CHANGED from v3 (was "max"). Sydorskyi uses mean-of-ensemble.
+  temperature: 1.0       # CHANGED from v3 (was 0.6). No sharpening — Sydorskyi-faithful.
+  power_transform: 1.0   # CHANGED from v3 (was 1.5). No sharpening — Sydorskyi-faithful.
+  tiers: [A, B, C]
+
+# --- Tier D species (identical to v2/v3) ---
+tier_d_species:
+  - "23150"
+  - "23154"
+  - "23724"
+  - "25214"
+  - "476521"
+  - "74580"
+
+# --- Sydorskyi-canonical filter (identical to v3) ---
+filter:
+  min_max_prob: 0.5    # Sydorskyi primary_label_min_prob
+  trim_min_prob: 0.1   # Sydorskyi trim_min_prob
+
+# --- Output ---
+output_dir: shared/pseudo-labels/birdclef-2026/v4-distilled-sed-kd-5fold-meanfolds-nosharpen-trim01-discard05
+
+# --- Training config (for reference) ---
+training:
+  recipe: distilled-sed-kd
+  pl_loss_weight: 1.0
+  batch_pl_fraction: variable
+  epochs: variable
+  expected_pool_size_after_filter: "~20-25K chunks (vs v3's 85K) — closer to Sydorskyi's ~20K"

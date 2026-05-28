@@ -1,0 +1,18 @@
+# A1.kd — random init, MixSamp focal=0.5/sc=0.0/pl=0.5, 25 ep, T2 (distilled-sed-kd-5fold) teacher.
+# Paired with A1.v5j to isolate teacher-architecture diversity (different model, ~equal LB quality).
+#
+# Inherits all unlisted knobs from configs/_common.yaml.
+
+run_name: "2026-exp033-a1-kd"
+
+logging:
+  project: "birdclef-2026-exp033"
+
+pseudo_label:
+  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet"
+  weight: 1.0
+  sampler: "mixsamp"
+  focal_share: 0.5
+  sc_share: 0.0
+  pl_share: 0.5
+  exclude_labeled_sc: true

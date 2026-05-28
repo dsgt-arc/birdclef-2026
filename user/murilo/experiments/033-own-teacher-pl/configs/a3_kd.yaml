@@ -1,0 +1,28 @@
+# A3.kd — warm-start from Phase D last-v2.ckpt, MixSamp focal=0.2/sc=0.0/pl=0.8,
+# 10 ep at LR 5e-5, T2 (distilled-sed-kd-5fold) teacher.
+# Paired with A3.v5j (warm-start + PL-heavy with different teacher).
+#
+# Inherits all unlisted knobs from configs/_common.yaml.
+
+run_name: "2026-exp033-a3-kd"
+
+logging:
+  project: "birdclef-2026-exp033"
+
+training:
+  max_epochs: 10
+  lr: 5.0e-5
+  head_lr: 5.0e-5
+  warmup_epochs: 0
+  warmup_start_factor: 1.0
+  eta_min: 1.0e-7
+  warm_start_ckpt: "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/last-v2.ckpt"
+
+pseudo_label:
+  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet"
+  weight: 1.0
+  sampler: "mixsamp"
+  focal_share: 0.2
+  sc_share: 0.0
+  pl_share: 0.8
+  exclude_labeled_sc: true

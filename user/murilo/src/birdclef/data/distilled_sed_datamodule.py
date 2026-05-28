@@ -32,6 +32,7 @@ Reference:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -41,7 +42,9 @@ from sklearn.model_selection import GroupKFold, StratifiedKFold
 from torch.utils.data import ConcatDataset, DataLoader
 
 from .distilled_sed_dataset import (
+    PLDS,
     FocalDS,
+    GTDatasetWrapper,
     MixSamp,
     ScDS,
     _default_audio_loader,
@@ -339,6 +342,19 @@ class DistilledSEDDataModule(pl.LightningDataModule):
         sc_ds_kwargs: dict | None = None,
         seed_epoch_shift: bool = True,
         base_seed: int = 42,
+        # --- Exp 033: own-teacher pseudo-label integration ---
+        # When pseudo_label_path is None (default), the DataModule behaves
+        # exactly as exp 032 (no PL integration). When set, loads the PL
+        # parquet, builds a PLDS, wraps focal+sc with GTDatasetWrapper, and
+        # combines via ConcatDataset for training.
+        pseudo_label_path: str | Path | None = None,
+        pseudo_label_weight: float = 1.0,
+        pseudo_label_sampler: str = "uniform",  # "uniform" or "mixsamp"
+        pseudo_label_focal_share: float = 0.5,
+        pseudo_label_sc_share: float = 0.0,
+        pseudo_label_pl_share: float = 0.5,
+        pseudo_label_exclude_labeled_sc: bool = True,
+        soundscape_dir: str | Path | None = None,
     ):
         super().__init__()
         self._focal_df_in = focal_df
@@ -364,11 +380,27 @@ class DistilledSEDDataModule(pl.LightningDataModule):
         self.seed_epoch_shift = seed_epoch_shift
         self.base_seed = base_seed
 
+        # PL config
+        self.pseudo_label_path = Path(pseudo_label_path) if pseudo_label_path else None
+        self.pseudo_label_weight = pseudo_label_weight
+        self.pseudo_label_sampler = pseudo_label_sampler
+        self.pseudo_label_focal_share = pseudo_label_focal_share
+        self.pseudo_label_sc_share = pseudo_label_sc_share
+        self.pseudo_label_pl_share = pseudo_label_pl_share
+        self.pseudo_label_exclude_labeled_sc = pseudo_label_exclude_labeled_sc
+        self.soundscape_dir = Path(soundscape_dir) if soundscape_dir else None
+        if self.pseudo_label_path is not None and self.soundscape_dir is None:
+            raise ValueError(
+                "soundscape_dir is required when pseudo_label_path is set "
+                "(PLDS needs it to construct audio file paths)."
+            )
+
         # Computed in setup
         self.focal_df: pd.DataFrame | None = None
         self.sc_df: pd.DataFrame | None = None
         self.Y_SC: np.ndarray | None = None
         self.steps_per_epoch: int | None = None
+        self.pl_df: pd.DataFrame | None = None  # Filtered PL parquet (post-leakage-filter)
 
     def setup(self, stage: str | None = None):
         """Build folds + label matrix. Idempotent (safe to call multiple times)."""
@@ -389,11 +421,36 @@ class DistilledSEDDataModule(pl.LightningDataModule):
                 self.num_classes,
             )
 
+        # --- Exp 033: load + filter PL parquet ---
+        if self.pseudo_label_path is not None and self.pl_df is None:
+            pl_df_raw = pd.read_parquet(self.pseudo_label_path)
+            n_in = len(pl_df_raw)
+
+            # Filter 1: exclude val-fold SS files (prevent val leak)
+            val_sc_files = set(self.sc_df[self.sc_df["fold"] == self.fold_k]["filename"].unique())
+            pl_df_filtered = pl_df_raw[~pl_df_raw["filename"].isin(val_sc_files)]
+            n_after_val_filter = len(pl_df_filtered)
+
+            # Filter 2 (optional): exclude labeled-SS train files
+            # (Antoine protocol: labeled SS uses GT labels via ScDS; PL only for unlabeled)
+            if self.pseudo_label_exclude_labeled_sc:
+                labeled_sc_files = set(self.sc_df["filename"].unique())
+                pl_df_filtered = pl_df_filtered[~pl_df_filtered["filename"].isin(labeled_sc_files)]
+            n_after_labeled_filter = len(pl_df_filtered)
+
+            self.pl_df = pl_df_filtered.reset_index(drop=True)
+            logger.info(
+                f"DistilledSEDDataModule PL filter: {n_in:,} → {n_after_val_filter:,} "
+                f"(excl val-fold) → {n_after_labeled_filter:,} (excl labeled-sc) segments"
+            )
+
         # Steps-per-epoch (Tucker: max(100, total_samples / batch_size))
         if self._steps_per_epoch_arg is None:
             non_val_focal = (self.focal_df["fold"] != self.fold_k).sum()
             non_val_sc = (self.sc_df["fold"] != self.fold_k).sum()
             total = non_val_focal + non_val_sc
+            if self.pl_df is not None:
+                total += len(self.pl_df)
             self.steps_per_epoch = max(100, total // self.batch_size)
         else:
             self.steps_per_epoch = self._steps_per_epoch_arg
@@ -404,6 +461,7 @@ class DistilledSEDDataModule(pl.LightningDataModule):
             f"{(self.focal_df['fold'] == self.fold_k).sum()} val), "
             f"sc={len(self.sc_df)} ({(self.sc_df['fold'] != self.fold_k).sum()} train, "
             f"{(self.sc_df['fold'] == self.fold_k).sum()} val), "
+            f"pl={'NONE' if self.pl_df is None else len(self.pl_df)}, "
             f"steps/epoch={self.steps_per_epoch}"
         )
 
@@ -450,7 +508,6 @@ class DistilledSEDDataModule(pl.LightningDataModule):
         focal_ds = self._make_focal_ds(training=True)
         non_val_mask = (self.sc_df["fold"] != self.fold_k).values
         sc_ds = self._make_sc_ds(non_val_mask, training=True)
-        concat = ConcatDataset([focal_ds, sc_ds])
 
         # Per-epoch seed shift: Tucker uses `seed=42 + ep`. We approximate
         # with `base_seed + current_epoch` — but pl.LightningDataModule doesn't
@@ -460,6 +517,73 @@ class DistilledSEDDataModule(pl.LightningDataModule):
         # for fast-dev-run; production configs should enable reload).
         ep = getattr(self.trainer, "current_epoch", 0) if self.trainer else 0
         seed = self.base_seed + (ep if self.seed_epoch_shift else 0)
+
+        # --- Exp 033 PL path: build PLDS + wrap focal/sc with GTDatasetWrapper ---
+        if self.pl_df is not None:
+            pl_ds = PLDS(
+                pl_df=self.pl_df,
+                species_list=sorted(self.species_to_idx, key=lambda s: self.species_to_idx[s]),
+                soundscape_dir=self.soundscape_dir,
+                window_samples=self.window_samples,
+                loss_weight=self.pseudo_label_weight,
+                audio_loader=self.sc_audio_loader,
+                sample_rate=self.sample_rate,
+                aug=False,  # match ScDS (no mixup on SS-side)
+                seed=seed,
+            )
+            # Wrap focal + sc so their 5-tuples become 6-tuples with loss_weight=1.0
+            gt_focal = GTDatasetWrapper(focal_ds, loss_weight=1.0)
+            gt_sc = GTDatasetWrapper(sc_ds, loss_weight=1.0)
+            concat = ConcatDataset([gt_focal, gt_sc, pl_ds])
+
+            if self.pseudo_label_sampler == "uniform":
+                # Pure Antoine protocol: shuffle the ConcatDataset uniformly.
+                logger.info(
+                    f"train_dataloader (PL/uniform): focal={len(gt_focal)}, "
+                    f"sc={len(gt_sc)}, pl={len(pl_ds)}, total={len(concat):,}"
+                )
+                return DataLoader(
+                    concat,
+                    batch_size=self.batch_size,
+                    shuffle=True,
+                    num_workers=self.num_workers,
+                    pin_memory=True,
+                    collate_fn=_collate_drop_extras,
+                    drop_last=True,
+                )
+            elif self.pseudo_label_sampler == "mixsamp":
+                # 3-source MixSamp with explicit shares
+                sampler = MixSamp(
+                    sizes=[len(gt_focal), len(gt_sc), len(pl_ds)],
+                    names=["focal", "sc", "pl"],
+                    shares={
+                        "focal": self.pseudo_label_focal_share,
+                        "sc": self.pseudo_label_sc_share,
+                        "pl": self.pseudo_label_pl_share,
+                    },
+                    bs=self.batch_size,
+                    nst=self.steps_per_epoch,
+                    seed=seed,
+                )
+                logger.info(
+                    f"train_dataloader (PL/mixsamp): focal={len(gt_focal)}, "
+                    f"sc={len(gt_sc)}, pl={len(pl_ds)}, sampler={sampler.extra_repr()}"
+                )
+                return DataLoader(
+                    concat,
+                    batch_sampler=sampler,
+                    num_workers=self.num_workers,
+                    pin_memory=True,
+                    collate_fn=_collate_drop_extras,
+                )
+            else:
+                raise ValueError(
+                    f"pseudo_label_sampler must be 'uniform' or 'mixsamp', "
+                    f"got {self.pseudo_label_sampler!r}"
+                )
+
+        # --- Exp 032 default path: focal + sc only (no PL) ---
+        concat = ConcatDataset([focal_ds, sc_ds])
         sampler = MixSamp(
             sizes=[len(focal_ds), len(sc_ds)],
             names=["focal", "sc"],
@@ -496,15 +620,32 @@ class DistilledSEDDataModule(pl.LightningDataModule):
 
 
 def _collate_drop_extras(batch):
-    """Stack the first two elements of each sample tuple `(wav, lb, wt, mk, tag)`
-    into (B, *)-shaped tensors. The LightningModule reads `batch[0]` and
-    `batch[1]` only — `wt`, `mk`, and `tag` are unused (audit § 4).
+    """Collate fn supporting two dataset tuple shapes (backward-compat):
 
-    Keeps `wt` and `mk` available (stacked) for future plumbing if we ever
-    enable class weighting / masking. Drops `tag` (string list).
+    - **5-tuple** `(wav, lb, wt, mk, tag)` from FocalDS/ScDS (Tucker default):
+      stacks first 4 into `(wavs, labels, wts, mks)`, drops `tag` → returns 4-tuple.
+      The LightningModule reads only `batch[0]` and `batch[1]` (per audit § 4
+      `wt`, `mk` are always all-ones in Tucker's recipe).
+
+    - **6-tuple** `(wav, lb, wt, mk, tag, loss_weight)` from PLDS or
+      GTDatasetWrapper (exp 033 own-teacher PL):
+      stacks first 4 as above, drops `tag`, additionally stacks `loss_weight`
+      (per-sample scalar) into a (B,) tensor → returns 5-tuple
+      `(wavs, labels, wts, mks, loss_weights)`. The LightningModule
+      `training_step` detects the 5-tuple shape and threads `loss_weight`
+      into `_dual_supervision_loss` for the per-sample weighted BCE branch.
+
+    Detection: if the first sample is a 6-tuple, the whole batch is assumed
+    to be 6-tuples. Mixed-length batches are unsupported (ConcatDataset
+    ensures uniform tuple length by construction).
     """
     wavs = torch.stack([b[0] for b in batch])
     labels = torch.stack([b[1] for b in batch])
     wts = torch.stack([b[2] for b in batch])
     mks = torch.stack([b[3] for b in batch])
+    if len(batch) > 0 and len(batch[0]) > 5:
+        loss_weights = torch.stack(
+            [torch.as_tensor(float(b[5]), dtype=torch.float32) for b in batch]
+        )
+        return wavs, labels, wts, mks, loss_weights
     return wavs, labels, wts, mks

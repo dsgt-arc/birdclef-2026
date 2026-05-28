@@ -3,382 +3,416 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-24 late evening (Phase D LB landed **CONFIRM** —
-paired Δ +0.050 LB. distilled_sed_kd LB 0.906 matches v5j-original.
-Phase 2 launched: 5 jobs running — kd folds 1/2/3/4 + kd_hgnet ablation,
-ETA ~04:00 EDT 2026-05-25.)
+**Last updated**: 2026-05-27 EOD (~midnight — exp 033 REJECT verdict +
+Phase 5 audit landed, a2_kd_v3 training overnight, deep research bundle
+uploaded to Claude.ai + in flight, pivot decision deferred to 2026-05-28 AM).
 
-**Competition deadline**: 2026-06-03 (~9 days from this update).
+**Competition deadline**: 2026-06-03 (7 days from this update).
 
 ---
 
-## Pick up here (next session) — UPDATED 2026-05-24 EOD
+## Where we are
 
-When you resume, the 5 retrain jobs should be DONE. Walk this checklist:
+**Exp 032 — Tucker distilled-SED full replication: COMPLETE (PARTIAL REPLICATION)**
+- PR #51 merged to main as commit `05f4063`.
+- Best Tucker-SED single: `distilled-sed-kd` (Phase D, fold 0) = **LB 0.906**.
+- Best Tucker-SED ensemble: `distilled-sed-kd-5fold` = **LB 0.915** (within ~0.002 of Tucker's 0.917).
+- HGNet+KD ablation: LB 0.901 → backbone NOT the bottleneck (refuted).
+- Project best overall (UNCHANGED): exp 023 `perch-sed-ensemble-mlp-only` = **0.929 LB**.
 
-### 1. Verify all 5 Phase 2 jobs completed cleanly
+**Exp 033 — Own-teacher pseudo-labels on distilled-sed-kd: REJECT verdict + Phase 5 diagnostic in progress**
+- Branch: `mg/exp033-own-teacher-pl` (~24 commits ahead of main, all pushed).
+- All 10 ablations trained. D.5 e2e validation: 10/10 PASS.
+- 3 of 5 Day-1 LB submissions landed — all REJECT (Δ ≤ 0 vs 0.906 baseline):
+  - a4-kd (warm + Uniform + T2 teacher):  LB **0.899** (Δ −0.007)
+  - a2-kd ⭐ (random + Uniform + T2, canonical Antoine):  LB **0.886** (Δ −0.020)
+  - a4-v5j (warm + Uniform + T1):  LB **0.897** (Δ −0.009)
+- Paired teacher-axis Δ (a4-kd vs a4-v5j): +0.002 LB — refutes proposal's headline
+  teacher-diversity hypothesis at LB scale.
+- Remaining Day-1 (a3-kd, a3-v5j) + all Day-2 cells NOT submitted on the trajectory.
+
+**Phase 5 — Sydorskyi-divergence diagnostic (NEW, 2026-05-27 PM)**:
+Audit found exp 033 implementation diverges from the only published 0.93+ PL recipe
+(Sydorskyi 2025 2nd place) on **16 of 20 axes**. Most important: we never implemented
+focal × PL MixUp fusion, chunk discard, or trim probability. The REJECT verdict
+cannot be cleanly interpreted as a refutation of the protocol — we never ran the
+protocol. See:
+  - `user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md`
+    (full 20-axis divergence table + decision matrix; commit `40708f7`)
+  - `experiments/033-own-teacher-pl/diagnostic-tests.md`
+    (Test 1/2/3 workflow + commands + decision criteria; **resume-after-disconnect anchor**)
+
+**Phase 5 Test 1 status (LAUNCHED, training overnight)**:
+- v3 PL parquet generated (job 9227102 — 46s walltime; 85K chunks, 33% chunk-discard, 98% per-cell trim).
+- v3 pre-flight ran: 5/7 PASS; 2 stale FAILs in Check 5 are chunk-discard-driven, not real (no safety impact; logged as deferred preflight patch in `diagnostic-tests.md § Deferred follow-ups`).
+- a2_kd_v3 training launched 2026-05-27 ~23:00 — finishes ~05:30 2026-05-28.
+- v4 (Sydorskyi-faithful PL gen: mean-folds + no T/P sharpen) scaffolded but NOT running — fallback only if v3 LB ≤ 0.906.
+- **Phase 5 closure decision recorded**: regardless of v3 outcome, next major effort = exp 034 Sydorskyi-yoink (NOT Test 2/3). v3 is the final PL data point on exp 033.
+
+**Deep research status (in flight, output expected tomorrow morning)**:
+- Self-contained context bundle at `notes/2026-05-27-deep-research-context-bundle.md` (5009 lines / 319 KB).
+- Bundle uploaded to Claude.ai's deep research with one-line external prompt.
+- Designed to challenge the Sydorskyi-yoink pivot (not validate it). Q1: is the audit confirmation-biased? Q2–Q6: realistic LB landings, implementation risks, missing levers, concrete day-by-day plan.
+
+---
+
+## Pick up here (next session) — 2026-05-28 morning
+
+### 0. Read both overnight outputs before doing anything else
+
+When you wake up:
+
+1. **a2_kd_v3 training result** — check the SLURM log + the `outputs/test_results/2026-exp033-a2-kd-v3-fold0.json` file. Expect completion in ~6.5h. If launched at, say, 23:00, finishes around 05:30.
+2. **Deep research output** — if you fired the prompt at `notes/2026-05-27-deep-research-prompt.md` overnight, the response should be ready at `docs/references/deep-research/2026-05-27-pivot-assessment.md` (or wherever Claude.ai delivered it).
+
+Read both. They drive the exp 034 commit/pivot decision.
+
+### 1. If a2_kd_v3 still needs LB submission (training landed, no LB shot yet)
 
 ```bash
-squeue -u $USER -o "%.10i %.30j %.8T %.10M %.20R"
-# Expect all 5 to be gone. If any still RUNNING, wait.
-
-for JOB in 9158704 9158705 9158706 9159168 9158713; do
-    echo "=== $JOB ==="
-    LOG=$(ls user/murilo/experiments/032-tucker-distilled-sed/logs/slurm_*${JOB}.log 2>/dev/null)
-    if [ -z "$LOG" ]; then echo "no log!"; continue; fi
-    tail -5 "$LOG"
-done
+cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/010-submission-pipeline
+# Add a2-kd-v3 to MODELS dict + kernel-metadata + export.sbatch (same pattern as commit 4280e72)
+# then:
+bash sbatch/run.sh export --model distilled-sed-pl-a2-kd-v3
+python scripts/upload_kaggle.py --model distilled-sed-pl-a2-kd-v3
+sleep 180
+python scripts/upload_kaggle.py --model distilled-sed-pl-a2-kd-v3 --push-kernel
+# Submit to Competition via Kaggle UI
 ```
 
-Expect `Job completed successfully!` + `Begin Slurm Epilog: …`. All 25 epochs
-saved per `save_top_k: -1` policy.
+### 2. Decision matrix (this is the actual point)
 
-**Running jobs as of session end (started 2026-05-24 ~23:12 EDT, ETA ~04:00):**
+After reading both inputs together:
 
-| Job ID | Name | Output ckpt dir |
+| Scenario | What it tells us | Move |
 |---|---|---|
-| 9158704 | exp032-distilled_sed_kd-fold1 | `.../2026-exp032-distilled-sed-kd/fold1/` |
-| 9158705 | exp032-distilled_sed_kd-fold2 | `.../2026-exp032-distilled-sed-kd/fold2/` |
-| 9158706 | exp032-distilled_sed_kd-fold3 | `.../2026-exp032-distilled-sed-kd/fold3/` |
-| 9159168 | exp032-distilled_sed_kd-fold4 (resubmit) | `.../2026-exp032-distilled-sed-kd/fold4/` |
-| 9158713 | exp032-distilled_sed_kd_hgnet | `.../2026-exp032-distilled-sed-kd-hgnet/` |
+| **v3 LB > 0.913 AND research recommends yoink** | PL recoverable + yoink validated. Both stack. | Yoink first (higher ceiling), PL fixes second. |
+| **v3 LB > 0.913 AND research recommends staying on PL** | PL works on our base; yoink may be unnecessary | Continue PL with Test 2 (focal × PL fusion) + scale to other cells |
+| **v3 LB 0.906-0.913 AND research recommends yoink** | Modest PL lift; yoink still the bigger lever | Pivot to yoink; come back to PL later if time |
+| **v3 LB < 0.906 AND research recommends yoink** | PL refuted on our base; yoink is the only path | Full pivot to yoink |
+| **v3 LB < 0.906 AND research recommends something else** | Surprise — read carefully and reassess | Whatever research recommends |
 
-Base ckpt dir: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/`.
+### 3. Commit to one path. No more spanning.
 
-The original fold 4 job 9158707 died at t=1m45s due to a `--fold` argparse
-bug (choices=[0,1,2,3] inherited from a 4-fold legacy; my Phase 2 fix
-removed the vestigial fold_assignments.json check but missed the argparse
-constraint). Fixed in commit `224e569`; resubmitted as 9159168.
+Once decided, the next 3-4 days are single-track on that path. No new experiments without LB validation.
 
-### 2. Run validate_end_to_end on each new checkpoint (pre-flight before LB)
+### 4. Files to read in order (if returning cold)
 
-We instituted D.5 end-to-end validation as a mandatory pre-flight after
-Phase 1's catastrophic LB collapse (0.522 / 0.513 vs target 0.910).
-**Every retrain must PASS validate_end_to_end before LB submission.**
+1. `user/murilo/CONTEXT.md` (this file) — current state
+2. `experiments/033-own-teacher-pl/results.md` — the REJECT verdict + paired Δ readings + Phase 5 status
+3. `analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md` — why exp 033 REJECT might be implementation, not protocol
+4. **Deep research output** (in Claude.ai history or saved to `docs/references/deep-research/2026-05-27-pivot-assessment.md`) — the overnight pivot assessment
+5. `notes/2026-05-27-deep-research-prompt.md` — what we asked the deep research (source of truth for the prompt)
+6. `notes/2026-05-27-deep-research-context-bundle.md` — the 5009-line self-contained bundle uploaded to Claude.ai (snapshot of materials)
+7. `experiments/033-own-teacher-pl/diagnostic-tests.md` — Phase 5 workflow (if Test 2/3 ends up being justified)
+8. `experiments/033-own-teacher-pl/tasks.md` — Phase 5 closure decision + Phase 6 placeholder
+
+### 5. Branch state at end of 2026-05-27
+
+**Branch**: `mg/exp033-own-teacher-pl`, ~30 commits ahead of main.
+
+**Most recent commits** (latest first):
+- `4867b34` — Make deep research bundle self-contained
+- `6dc4e93` — Add deep research context bundle (5009 lines / 319 KB)
+- `c3297d6` — EOD: Phase 5 closure + deep research prompt + pivot intent
+- `a6b8094` — Phase 5: v4 PL config (Sydorskyi-faithful fallback)
+- `51c1120` — generate_pseudo_labels.sh CONFIG-aware (reuse for v3)
+- `8ff083c` — Phase 5: Sydorskyi-divergence diagnostic Test 1 scaffold
+- `40708f7` — Exp 033 ↔ Sydorskyi 2025 PL protocol divergence audit
+- `c7beb60` — Capture 2026-05-27 update to best-single-model-LB Kaggle thread
+- `573b1ed` — Exp 033: LB REJECT verdict — 3/3 Day-1 submissions regressed
+
+**No PR yet for exp 033.** Open after a2_kd_v3 LB lands + Phase 5 closeout updates are committed.
+
+---
+
+### HISTORICAL: 2026-05-27 morning pickup (Phase G completion — REPLACED BY 2026-05-28 plan above)
+
+### 0. Check overnight job completion
+
+```bash
+cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026
+git checkout mg/exp033-own-teacher-pl
+git log --oneline -12
+# Expected most recent: 11b25cd → 6185a77 → 87d668d → ecc3ccb → 84ab853 → 6ab8312 ...
+
+squeue -u $USER   # All 10 GPU jobs should be done (or only stragglers remain)
+```
+
+The 10 jobs were submitted in two waves:
+- **T1 wave (5 jobs, launched 2026-05-26 ~21:30)**: 9190539, 9190540, 9190542, 9190544, 9190545
+- **T2 wave (5 jobs, launched 2026-05-26 ~22:55)**: 9191658, 9191659, 9191660, 9191661, 9191662
+
+Expected completion times (at ~20 min/epoch with num_workers=8):
+| Ablation set | Epochs | Wall | T1 finish ETA | T2 finish ETA |
+|---|---|---|---|---|
+| a1 / a2 / a5 (random init, 25 ep) | 25 | ~8.3h | ~05:50 | ~07:15 |
+| a3 / a4 (warm-start, 10 ep) | 10 | ~3.3h | ~00:50 | ~02:15 |
+
+Hard walltime cap on each job: 24h (`#SBATCH --time=24:00:00`), so plenty of margin
+even if any node is slow.
+
+### 1. Verify all 10 trained cleanly
+
+```bash
+# All logs should end with "Job completed successfully!"
+for log in user/murilo/experiments/033-own-teacher-pl/logs/slurm_a*_*-fold0_91*.log; do
+    name=$(basename "$log" .log)
+    status=$(tail -5 "$log" | grep -E "Job completed|exit code" || echo "STILL RUNNING")
+    echo "$name → $status"
+done
+
+# Confirm checkpoints exist
+ls -la /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/033-own-teacher-pl/checkpoints/2026-exp033-*/fold0/last.ckpt
+# Expect 10 paths: 2026-exp033-a{1..5}-{v5j,kd}/fold0/last.ckpt
+```
+
+Per metric: read `outputs/test_results/2026-exp033-<ablation>-<teacher>-fold0.json`
+for `val_metrics.val/auroc` and `val_metrics.val/cmap`. These are training-side
+numbers (offline-LB anti-correlation caveat applies).
+
+### 2. D.5 end-to-end validation on all 10 ckpts (~10 min each, can run in parallel)
+
+Reuse exp 032's `sbatch/validate_end_to_end.sh` — it accepts FOLD/CKPT/CONFIG/TRAIN_AUROC
+env vars. Example launcher:
 
 ```bash
 cd user/murilo/experiments/032-tucker-distilled-sed
+CKPT_BASE=/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/033-own-teacher-pl/checkpoints
+RESULTS=/storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/033-own-teacher-pl/outputs/test_results
 
-# 5-fold KD: validate folds 1-4 (fold 0 already validated in commit 787e43f)
-for F in 1 2 3 4; do
-  CKPT=/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/fold${F}/last.ckpt
-  if [ ! -f "$CKPT" ]; then
-    CKPT=$(ls -t /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/fold${F}/last*.ckpt 2>/dev/null | head -1)
-  fi
-  CKPT="$CKPT" CONFIG=configs/distilled_sed_kd.yaml \
+for AB in a1 a2 a3 a4 a5; do
+  for T in v5j kd; do
+    SLUG="2026-exp033-${AB}-${T}"
+    TRAIN_AUROC=$(jq -r '.val_metrics["val/auroc"]' "${RESULTS}/${SLUG}-fold0.json")
+    CKPT="${CKPT_BASE}/${SLUG}/fold0/last.ckpt" \
+    CONFIG="../033-own-teacher-pl/configs/${AB}_${T}.yaml" \
+    FOLD=0 \
+    TRAIN_AUROC="${TRAIN_AUROC}" \
     sbatch sbatch/validate_end_to_end.sh
+  done
 done
-
-# HGNet+KD: validate (no fold suffix, top-level ckpt dir)
-CKPT=$(ls -t /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd-hgnet/last*.ckpt | head -1) \
-CONFIG=configs/distilled_sed_kd_hgnet.yaml \
-  sbatch sbatch/validate_end_to_end.sh
 ```
 
-Look for `PASS ✅` in each log. Decision rule: if gap > 0.02 between
-training-side `val/auroc` and end-to-end, DO NOT submit to LB until
-diagnosed. (Phase D ran 0.011 + 0.004 gaps; pipeline is consistent now.)
+Gate: `|train_auroc - e2e_auroc| ≤ 0.02` PASS. Rank by **e2e val/auroc** to pick
+the top-5 for LB Day 1. Per exp 032 Phase 2: e2e is uniformly slightly HIGHER than
+training-side (~+0.004-0.011) due to 5-tap Gaussian smoothing in logit space.
 
-### 3. Export ONNX + Kaggle upload + LB submit (after all PASS)
+### 3. LB submission (5/day cap)
 
-```bash
-cd user/murilo/experiments/010-submission-pipeline
-
-# 5-fold KD ensemble (fold 0 reuses Phase D's top-level last-v2.ckpt;
-# folds 1-4 picked from fold{N}/last*.ckpt)
-bash sbatch/run.sh export --model distilled-sed-kd-5fold
-
-# HGNet+KD single-fold
-bash sbatch/run.sh export --model distilled-sed-kd-hgnet
-
-# After both exports complete (~10 min total):
-python scripts/upload_kaggle.py --model distilled-sed-kd-5fold
-python scripts/upload_kaggle.py --model distilled-sed-kd-hgnet
-# Wait 2-3 min for Kaggle to process
-python scripts/upload_kaggle.py --model distilled-sed-kd-5fold --push-kernel
-python scripts/upload_kaggle.py --model distilled-sed-kd-hgnet --push-kernel
+```
+Day 1 (today): export ONNX + push kernel + LB submit top-5 by e2e
+Day 2 (next day): same for remaining 5
 ```
 
-Then submit both to LB via Kaggle UI. Suggested descriptions:
+Per `feedback_kaggle_upload.md`: two-step Kaggle upload (dataset first, then kernel).
+Per `feedback_kaggle_kernel_sources.md`: single-kernel pattern, kernel_sources uses
+push-run output.
 
-**distilled-sed-kd-5fold**:
-> distilled_sed_kd 5-fold ensemble (Phase 2.A) — same Tucker recipe + Perch v2 KD; folds 0-4, seed=42, last-v2.ckpt each. Inference: per-fold blended LOGITS → fold-mean in LOGIT space → 5-tap Gauss smooth → single sigmoid. Phase D single-fold = 0.906; Tucker reports 5-fold + smoothing = 0.917. Expected band: 0.910-0.920.
+ONNX export wrappers: pattern matches exp 032's `010-submission-pipeline/`. New
+`MODELS` entries needed for `distilled-sed-pl-a{N}-{T}` slugs — refer to exp 032
+patterns for the wrappers.
 
-**distilled-sed-kd-hgnet**:
-> distilled_sed_kd_hgnet single-fold (Phase 2.D ablation) — same Tucker recipe + KD as distilled-sed-kd, only backbone changed: tf_efficientnet_b0.ns_jft_in1k → hgnetv2_b0.ssld_stage2_ft_in1k (v5j's choice), use_post_head=true → false. Tests whether the -0.041 control-vs-v5j gap was backbone-driven. Phase D EffNet+KD = 0.906; this measures HGNet+KD on the same fold 0.
+### 4. Apply decision matrix (proposal.md § Falsifiable)
 
-### 4. Apply decision matrix once LBs land
+| Bucket | LB lift over 0.906 | Reading |
+|---|---|---|
+| **CONFIRM** | ≥ +0.014 | Round 2 (iterate teacher) + Sydorskyi-yoink for XC base |
+| **PARTIAL** | +0.007 to +0.013 | Ensemble with exp 023 (0.929) |
+| **WEAK** | +0.001 to +0.006 | Extend to 5-fold to disambiguate |
+| **REJECT** | ≤ 0 | Pivot to Sydorskyi-yoink directly |
 
-Phase 2.A 5-fold ensemble LB:
-- ≥ 0.920 → Tucker target exceeded; consider site/hour priors for 0.93+
-- 0.910–0.919 → matches Tucker's published 0.917; consider ensemble with exp 023 Perch+SED
-- 0.900–0.909 → ensemble lift is modest; investigate (probably normal v5j-style 4→5 fold lift)
-- < 0.900 → unexpected; single-fold dominated by fold 0, ensemble pulling down
+Secondary read: cross-ablation LB spread (std across A1-A5 within each teacher).
+Spread > 0.010 → sampler choice is a recipe parameter to tune. Spread < 0.003 →
+protocol is robust.
 
-Phase 2.D HGNet+KD LB:
-- > 0.910 → backbone was real bottleneck; pivot to HGNet for any further runs
-- 0.900–0.910 → marginal backbone effect; EffNet was ~fine
-- < 0.900 → EffNet > HGNet for this recipe; stay on EffNet
+### 5. Closeout
 
-### 5. Update results.md + MODEL-RUNS.md + this CONTEXT.md with the verdict.
-
-### 6. Branch / git state
-
-- Branch `mg/exp032-tucker-distilled-sed-replication`, **~30 commits ahead of main**, all pushed.
-- PR #51 (draft) — title `Exp 032: Distilled-SED full replication (port of Tucker Arrants's notebook)`.
-- Most recent commits:
-  - `224e569` — Fix --fold argparse to accept fold 4
-  - `5cd047f` — Phase 2 scaffolding (5-fold + HGNet)
-  - `db8660c` — Phase D LB CONFIRM (+0.050)
-  - `787e43f` — D.5/D.6.2 end-to-end validation PASS
-  - `cffd725` — export funcs auto-pick newest last*.ckpt
-  - `8fa429f` — D.6.1 retrain offline metrics
-  - `3806b63` — D.5 validate_end_to_end script
-  - `9660862` — export dispatch stub mel on mel.type
-  - `b305c5e` — D.2/D.3 confirm + fix mel mismatch
-  - `63122db` — Phase 1 REJECT (catastrophic)
+- Update `experiments/033-own-teacher-pl/results.md` with full LB table + verdict
+- Update `user/murilo/MODEL-RUNS.md` with all 10 ablation results
+- Update this CONTEXT.md with verdict + next-session pickup
+- Open PR (currently DRAFT NOT YET CREATED) — once verdict in:
+  ```bash
+  gh pr create --title "Exp 033: own-teacher pseudo-labels on distilled-sed-kd" \
+    --body "<summary with LB table>" --base main --head mg/exp033-own-teacher-pl
+  ```
+  Squash-merge per `feedback_squash_merge.md`.
 
 ---
 
-## What landed today (full session walkthrough)
+## What landed this session (2026-05-26, full day)
 
-### Phase 1 — REJECTED (Phase 1 broken-mel LB collapse)
+### Morning — exp 033 scaffolding (Phases A-E code)
 
-| Run | Phase 1 LB | Δ paired ctrl | Δ vs v5j_control_last 0.897 |
-|---|---:|---:|---:|
-| distilled_sed_control (last.ckpt ep 24) | **0.522** | — | **−0.375** |
-| distilled_sed_kd (last.ckpt ep 24) | **0.513** | **−0.009** | **−0.384** |
+Per the 2026-05-22 strategic direction note: Track B = own-teacher PL on top of
+Track A = Tucker. 5 disclosed competitor recipes (Antoine 0.943, OverfitOracle 0.946,
+Boredom 0.938+, chenwenqiang_001, Tucker) all converge on the same PL protocol.
+Our prior PL attempts (exp 014/015/025) used **wrong protocols** — `loss_weight=0.5`
++ hardcoded 50/50 GT/PL batches — and regressed LB. The disclosed 1:1 weighting +
+uniform sampling protocol had never been tested in our codebase.
 
-Catastrophic. Both runs near-random despite offline Tucker macro AUC at
-Tucker's published 0.91 band. Verdict scoped to implementation, NOT
-hypothesis. Tucker recipe was NOT falsified.
+| Phase | Commit |
+|---|---|
+| A — Scaffold metadata (proposal, tasks, 11 configs, preflight 7/7 PASS on v1) | `5aa5558` |
+| B — Prereq tools (cache_inference.py + sbatch wrappers + generate_pseudo_labels.sh) | `0729e21` |
+| C — Core code integration (loss_weight, PLDS, GTDatasetWrapper, MixSamp 3-source, collate) | `4687b1f` |
+| D — 32 tests in `tests/033-own-teacher-pl/`; 195/195 PASS combined with exp 032 | `1a241dd` |
+| E (code) — train.py + sbatch wrappers (fast-dev-run still pending at this point) | `34e3314` |
 
-### Phase D — full audit + fix + LB retest = **CONFIRM**
+### Afternoon — Phase E gate cleared + Phase F runtime
 
-#### D.2 numerical diagnostic (scripts/diag_mel_pipeline.py)
+| What | Commit / Job |
+|---|---|
+| Fast-dev-run PASS on a2_v5j (PL loaded, 5-tuple batches, KD active, no NaN) | `6ab8312`, job 9185603 |
+| tasks.md Phase 0-3 marked complete | `a977661` |
+| **T2 cache: smoke run** (LIMIT=5) — 300 preds, schema matches T1 | job 9185680 |
+| **T2 cache: full run** (10,658 files × 5 folds × 12 windows) — 639,480 preds, walltime 36m44s | job 9187954 |
+| **PL generator bugfix**: `cfg["perch"]` was hard-required; made optional via `use_perch` flag (5 conditional guards). Backward-compat verified for v1. | `84ab853` |
+| **T2 PL parquet generated** (v2-distilled-sed-kd-5fold) — 210,375 PLs >0.5, 166 species covered, walltime 43s | job 9188496 |
+| **v2 parquet preflight**: 7/7 PASS (identical schema + species ordering to v1) | (interactive) |
 
-Ran Tucker reference vs our broken training vs our (Tucker-faithful)
-kernel on the same 5s audio window:
+### Evening — num_workers regression + Phase G launch
 
-| Comparison | max\|d\| | Pearson r | Status |
-|---|---:|---:|---|
-| Tucker reference vs our kernel | 4.77e-07 | 1.000000 | ✅ kernel was already Tucker-faithful |
-| Tucker reference vs our training | **3.20** | 0.9356 | ❌ training diverged 3σ |
-| Our training vs our kernel | **3.20** | 0.9356 | ❌ same gap |
-
-Diagnosis: NNAudio's `norm_type="amplitude_to_db"` does
-`power_to_db → z-score → min-max [0,1]` internally, then `_compute_mel`'s
-`per_sample_mel_norm=True` does another z-score. THREE normalization
-passes. Tucker does ONE (z-score after AmplitudeToDB). Model trained on
-triple-normalized features sees single-normalized features at inference
-→ near-random.
-
-#### D.3 fix — TuckerMelSpectrogram
-
-New `user/murilo/src/birdclef/preprocessing/tucker_mel.py`. Verbatim port
-of Tucker's `MelSpecTransform` (notebook lines 400-407): torchaudio
-MelSpec + AmplitudeToDB(80), zero internal normalization. The module's
-`per_sample_mel_norm=True` (unchanged) applies the single per-sample
-z-score on top → matches Tucker's training pipeline to atol=1e-5.
-
-- Configs flipped `mel.type: "nnaudio"` → `"tucker"`.
-- 12 new unit tests in `test_tucker_mel.py`; all 163/163 exp 032 tests pass.
-- Regression guard `test_diverges_from_nnaudio_amplitude_to_db` locks the
-  fix so future refactors can't accidentally re-route through NNAudio.
-
-Critical detail: training mel transform is now torchaudio, inference mel
-is torchaudio — **they share the SAME torchaudio code paths**. Cannot
-drift apart by construction.
-
-#### D.5 end-to-end validation script
-
-New `scripts/validate_end_to_end.py` + `sbatch/validate_end_to_end.sh`.
-
-Loads a ckpt, runs the KERNEL inference path (kernel_load_audio_chunk →
-compute_mel_tucker → encoder → AttHeadLogitSpace → per-window LOGIT-space
-blend → 5-tap Gauss smooth → single sigmoid) on the same val SS fold
-windows the training validation_step uses. Computes Tucker macro AUC.
-
-If training-side `val/auroc` ≈ end-to-end (within tolerance, default 0.02),
-the pipeline is consistent. Otherwise → train↔inference mismatch.
-
-**Now mandatory pre-flight before every LB submission going forward.**
-
-#### D.6.1 retrain (jobs 9136231 + 9136232)
-
-Same configs (just `mel.type: "tucker"`), same data, same seed=42, fold 0:
-
-| Run | val/auroc | val/cmap | best_val_score | walltime |
-|---|---:|---:|---:|---|
-| distilled_sed_control (ep 24 last-v2.ckpt) | **0.887** | 0.645 | 0.659 | 3h39m |
-| distilled_sed_kd (ep 24 last-v2.ckpt) | **0.908** | 0.692 | 0.709 | 4h26m |
-| **paired Δ** | **+0.021** | **+0.047** | +0.050 | — |
-
-Both in Tucker's published single-fold band (~0.91).
-
-W&B: `dsgt-arc/birdclef-2026-exp032/g5rblf6o` (control) + `0w29iaut` (KD).
-
-#### D.6.2 end-to-end validation (jobs 9156567 + 9156568)
-
-| Run | Training-side val/auroc | End-to-end val/auroc | Gap | Status |
-|---|---:|---:|---:|---|
-| control | 0.887 | 0.898 | 0.011 | ✅ PASS |
-| kd | 0.908 | 0.912 | 0.004 | ✅ PASS |
-
-End-to-end is slightly HIGHER than training-side because the kernel
-path includes the 5-tap Gauss smoothing across windows (acts as a
-temporal denoiser; +0.004 lift per Tucker's "MengYe smoothing trick").
-
-#### D.6.3 LB submission — CONFIRM
-
-| Run | LB | Δ paired ctrl | Δ vs v5j_control_last 0.897 | Δ vs Tucker target 0.910 |
-|---|---:|---:|---:|---:|
-| distilled_sed_control (Phase D last-v2.ckpt) | **0.856** | — | **−0.041** | **−0.054** |
-| distilled_sed_kd (Phase D last-v2.ckpt) | **0.906** | **+0.050** | **+0.009** | **−0.004** |
-
-**Verdict: CONFIRM per proposal.md § Falsifiable** (paired Δ ≥ +0.014).
-
-- distilled_sed_kd 0.906 ≡ v5j-original LB 0.906 (exact match) and within
-  0.004 of Tucker's published single-fold target.
-- Recipe alone (control) underperforms v5j by 0.041 — the **KD branch
-  does all the heavy lifting** on this stack.
-- KD on AttHeadLogitSpace: +0.050; KD on LSEHead (exp 031): −0.006. Same
-  KD branch, +0.056 LB swing from head choice. Validates exp 031
-  post-mortem hypothesis: "LSEHead was the wrong downstream consumer
-  of Perch features."
-
-### Phase 2 scaffolded + launched (commits `5cd047f` + `224e569`)
-
-Per CONFIRM verdict, Phase 2 extends in two directions:
-
-**Phase 2.A — 5-fold KD ensemble** (Tucker's 0.917 LB = 5-fold + smoothing):
-- Skip control's 5-fold (control underperforms, not worth compute).
-- Train KD on folds 1-4 (fold 0 already done at 0.906 LB).
-- New `export_distilled_sed_kd_5fold` handles asymmetric layout: fold 0
-  uses top-level Phase D `last-v2.ckpt`; folds 1-4 use `fold{N}/last*.ckpt`.
-- New `predict_soundscape_tucker_ensemble` in submission.py: per-window
-  LOGIT-space fold mean → 5-tap Gauss smooth → single sigmoid. Routed by
-  `use_tucker AND is_ensemble` (kernel detects ensemble via
-  `model_fold*.onnx` glob).
-
-**Phase 2.D — HGNet+KD backbone ablation** (your hypothesis):
-- New config `distilled_sed_kd_hgnet.yaml`. Only differences vs
-  `distilled_sed_kd.yaml`:
-  - `encoder.model_name`: `tf_efficientnet_b0.ns_jft_in1k` → `hgnetv2_b0.ssld_stage2_ft_in1k`
-  - `encoder.use_post_head`: `true` → `false` (HGNet features_only → 1024-d)
-  - `run_name` suffix for separate ckpt dir
-- Tests whether the −0.041 control-vs-v5j gap was backbone-driven.
+| What | Commit / Job |
+|---|---|
+| **CRITICAL BUG: num_workers=0**. Exp 032 inherited 0 from Tucker's Jupyter notebook (single-threaded default). Comment said "revisit if I/O-bound" — exp 033 copy-pasted it. With 127K-file PL pool and no OS cache hits, single-threaded loading caused **4× slower training** (40 min/epoch vs predicted 10 min/epoch). Caught after 5 jobs at epoch 6 had burned 4h. | — |
+| First T1 ablations launched (with workers=0) — 5 jobs at ~40 min/epoch | jobs 9188227-9188231 |
+| **Fix 1**: exp 033 `_common.yaml`: `num_workers: 0 → 8` (matching all exps 025-031 and SBATCH `--cpus-per-task=8`). | `ecc3ccb` |
+| **Fix 2**: exp 032 configs (3 files): same fix preventively (its 624-file SS pool fit in cache so it worked, but configs are still on disk). | `87d668d` |
+| **Cancelled + relaunched 5 T1 ablations** with num_workers=8 → ~20 min/epoch (2× speedup; not quite the 4× predicted, but acceptable). Sunk 20 GPU-hours but saved ~8h calendar time on a1/a2/a5. | jobs 9190539-9190545 |
+| proposal.md: per-batch composition column added, ⭐ marker on A2 canonical | `6185a77` |
+| tasks.md Phase 4.1 updated with num_workers fix story | `11b25cd` |
+| **All 5 T2 ablations launched** | jobs 9191658-9191662 |
 
 ---
 
-## Tucker's 0.917 vs our 0.906 — the answer
+## Key learnings from this session
 
-Tucker's published 0.917 LB = **5-fold ensemble + 5-tap Gaussian smoothing**,
-NOT single-fold. He mentions a fold-1 example at 0.922 LB; per-fold
-variance in his published trajectories is ~±0.015. Our 0.906 single-fold
-(fold 0) is at the bottom of his single-fold band — plausible because
-fold 0's labeled SS may be harder-to-predict than fold 1.
-
-Expected outcome of Phase 2.A: 5-fold ensemble at LB 0.910–0.920.
-
-Tucker also mentions 0.93+ "with PP" (private code, NOT in the public
-notebook). Site/hour priors (EoS.6 style) are the prime candidate for
-further lift. Reserved for Phase 2 stretch if 5-fold + HGNet land below 0.92.
+1. **`num_workers` is not optional for large unique-file pools.** Exp 032 got away with `num_workers=0` because its 624-file labeled-SS pool fit in OS cache. Exp 033's 127K-file PL pool does not. Default to `num_workers=8` (matches `--cpus-per-task=8`).
+2. **Tucker's Jupyter defaults are notebook defaults, not production defaults.** Jupyter is inherently single-threaded; `num_workers=0` works there but not in DataLoader-with-large-pool training.
+3. **The PL generator's `perch:` config block is now optional.** Use pure-SED mode by omitting the block (Tier C species fall to zero, equivalent to Tier D).
+4. **Per-batch composition matters more than ratio names.** "Focal/SC 0.5/0.5" is ambiguous; "32/0/32 (focal/sc/pl) at B=64" is unambiguous. proposal.md updated.
 
 ---
 
-## Key methodology lessons exposed by this experiment
+## The 10-ablation grid (running now)
 
-1. **Offline val/cmap/auroc cannot detect a training-inference distribution
-   mismatch** because the offline val uses the training pipeline. End-to-end
-   validation (kernel inference path on `train_soundscapes_labels.csv`,
-   compute macro AUROC, compare to offline) must be a pre-flight check, not
-   an after-the-fact diagnostic. `validate_end_to_end.py` now exists for
-   this purpose; **run it before every LB submission**.
+| ID | Init | Sampler | Sampler share | Per-batch (B=64) | LR | Ep | Teacher | Config |
+|---|---|---|---|---|---|---|---|---|
+| A1.v5j | random | MixSamp | 0.50/0.00/0.50 | 32/0/32 | 5e-4 | 25 | T1 | a1_v5j.yaml |
+| **A2.v5j ⭐** | random | **Uniform** | ~0.18/~0.00/~0.82 | ~12/0/~52 | 5e-4 | 25 | T1 | a2_v5j.yaml |
+| A3.v5j | warm-start | MixSamp | 0.20/0.00/0.80 | 13/0/51 | 5e-5 | 10 | T1 | a3_v5j.yaml |
+| A4.v5j | warm-start | **Uniform** | ~0.18/~0.00/~0.82 | ~12/0/~52 | 5e-5 | 10 | T1 | a4_v5j.yaml |
+| A5.v5j | random | MixSamp | 0.70/0.00/0.30 | 45/0/19 | 5e-4 | 25 | T1 | a5_v5j.yaml |
+| A1.kd / A2.kd⭐ / A3.kd / A4.kd / A5.kd | (same as v5j, T2 teacher) | | | | | | T2 | a*_kd.yaml |
 
-2. **Library-style classes can hide pipeline composition bugs**.
-   `NNAudioMelSpectrogram(norm_type="amplitude_to_db")` is one line but
-   does FOUR internal operations. Whether that matches Tucker's recipe is
-   not obvious from the call site. Diagnosed via numerical side-by-side.
+- **T1** = v5j-4fold (LB 0.913) → `shared/pseudo-labels/birdclef-2026/v1/sed_pseudo_labels.parquet`
+- **T2** = distilled-sed-kd-5fold (LB 0.915) → `shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet`
+- **Warm-start ckpt**: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/last-v2.ckpt`
 
-3. **torchmetrics MultilabelAUROC(average='macro')** counts 0-positive
-   classes as 0.0 AND includes them in the denominator. For a small val
-   pool with many sparse classes (our case: 205/234 classes had zero
-   positives), this drags the macro to ~0.11 while the "true" Tucker
-   macro (skip-empty) reads ~0.89. Fixed via `TuckerMacroAUC` /
-   `TuckerMacroAP` (drop-in torchmetrics.Metric subclasses).
+A2 (⭐ random + uniform = pure Antoine protocol) is the canonical recipe. Others
+sweep init × sampler × focal/PL ratio around it as sensitivity ablations.
 
-4. **Lightning's `save_last: true` versions instead of overwriting**.
-   After N runs in the same directory, you get `last.ckpt` + `last-v1.ckpt`
-   + ... + `last-v{N-1}.ckpt`. Hardcoded `last.ckpt` paths pick the
-   OLDEST. Use `find_last_ckpt` helper (newest mtime) instead.
-
-5. **argparse `choices=[...]` is a hard gate** — runtime validation in the
-   function body runs only after argparse passes. Fold 4 died at parse
-   time because choices was [0,1,2,3] from a 4-fold-CV legacy.
+### Pair structure for reading
+- A1↔A2, A3↔A4: sampler (MixSamp vs Uniform) within same init
+- A1↔A3, A2↔A4: init (random vs warm-start) within same sampler
+- A{i}.v5j ↔ A{i}.kd: teacher (T1 vs T2) within same protocol (5 paired tests)
+- A1 vs A5: PL fraction sensitivity (0.5 vs 0.3 under MixSamp)
 
 ---
 
-## Best LB
+## Key methodology decisions (locked in)
+
+1. **Naming convention**: dropped competitor author names from artifacts. References stay in proposal.md "Provenance" + "Background" sections only.
+2. **Diff-only configs**: each ablation YAML is ~20-30 lines, inherits from `_common.yaml` via `_deep_merge` in `train.py:load_config`. Tucker recipe + KD + pseudo_label defaults live in `_common.yaml`.
+3. **PL filter**: drop val-fold SS files (prevent leak) + drop labeled-SS train files (Antoine: GT used for labeled, PL only for unlabeled). Effective PL pool = 127,104 unlabeled segments per teacher.
+4. **Sampler choice**: uniform = pure 1:1 protocol; MixSamp = explicit ratio control.
+5. **KD loss stays unweighted**: only the BCE task branch gets per-sample loss_weight. Perch v2 MSE alignment is sample-confidence-independent.
+6. **Schema contract**:
+   - Tucker default dataloader → 4-tuple `(wavs, labels, wts, mks)`
+   - PL-enabled dataloader → 5-tuple `(wavs, labels, wts, mks, loss_weights)`
+   - `training_step` detects via `len(batch) > 4 and batch[4].ndim == 1`
+7. **num_workers = 8** in both `_common.yaml` files (exp 032 + exp 033). Matches SBATCH allocation.
+
+---
+
+## File index (exp 033)
+
+| File | Purpose |
+|---|---|
+| **NEW (exp 033)** | |
+| `user/murilo/experiments/033-own-teacher-pl/proposal.md` | Hypothesis + falsifiable matrix + 10-ablation grid w/ per-batch composition |
+| `user/murilo/experiments/033-own-teacher-pl/tasks.md` | Phase 0-4 checklist + closeout (num_workers bug captured in 4.1.0) |
+| `user/murilo/experiments/033-own-teacher-pl/README.md` | Navigation + quickstart |
+| `user/murilo/experiments/033-own-teacher-pl/pyproject.toml` | Pinned deps |
+| `user/murilo/experiments/033-own-teacher-pl/configs/_common.yaml` | Shared Tucker recipe + KD + pseudo_label defaults (num_workers=8) |
+| `user/murilo/experiments/033-own-teacher-pl/configs/a{1..5}_{v5j,kd}.yaml` | 10 ablation configs (diff-only) |
+| `user/murilo/experiments/033-own-teacher-pl/configs/pl_gen_v2.yaml` | T2 PL gen config (pure-SED, no perch tier) |
+| `user/murilo/experiments/033-own-teacher-pl/scripts/preflight_checks.py` | 7-check diagnostic + `--parquet-path` arg |
+| `user/murilo/experiments/033-own-teacher-pl/scripts/cache_inference.py` | T2 ONNX inference cache |
+| `user/murilo/experiments/033-own-teacher-pl/sbatch/{cache_inference,generate_pseudo_labels,_job,run}.sh` | SLURM wrappers |
+| `user/murilo/experiments/033-own-teacher-pl/train.py` | Extends exp 032 train.py |
+| `user/murilo/tests/033-own-teacher-pl/test_{loss_weighting,pseudo_label_integration,mixsamp_3source,pl_filter}.py` | 32 tests, all PASS |
+| **MODIFIED (src/)** | |
+| `user/murilo/src/birdclef/lightning/distilled_sed_finetune.py` | Optional `loss_weight` arg in `_dual_supervision_loss` + `training_step` |
+| `user/murilo/src/birdclef/data/distilled_sed_dataset.py` | + PLDS class + GTDatasetWrapper (5→6-tuple) |
+| `user/murilo/src/birdclef/data/distilled_sed_datamodule.py` | + 8 PL kwargs; PL parquet filter; sampler dispatch (uniform vs MixSamp); 5/6-tuple collate |
+| `user/murilo/experiments/025-iter-pseudo-labeling/generate_pseudo_labels.py` | Made `cfg["perch"]` optional via `use_perch` flag (5 guards; backward-compat for v1) |
+| **GENERATED ARTIFACTS** | |
+| `shared/inference/birdclef-2026/distilled-sed-kd-5fold/train_soundscapes/fold{0..4}/logits.parquet` | T2 cache, 639,480 rows total |
+| `shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet` | T2 PL parquet, 210,375 PLs>0.5, 166 species covered |
+| **EXISTING (inherited from exp 032)** | |
+| `user/murilo/src/birdclef/preprocessing/tucker_mel.py` | TuckerMelSpec (unchanged) |
+| `user/murilo/src/birdclef/heads/sed_head.py` | AttHeadLogitSpace + GeMFreqPool (unchanged) |
+
+---
+
+## Pending decisions / open items for next session
+
+1. **Verify 10 jobs completed** (squeue empty or only stragglers).
+2. **D.5 e2e validation** on all 10 ckpts (mandatory pre-flight before LB).
+3. **Pick top-5 by e2e val/auroc** for LB Day 1 submission.
+4. **Decision matrix** (proposal.md § Falsifiable) → drives Round 2 / Sydorskyi-yoink / ensemble / pivot.
+5. **Update results.md + MODEL-RUNS.md + this CONTEXT.md** with verdict after LB lands.
+6. **Open PR** (still no PR yet — open after verdict).
+
+---
+
+## Branch / git state at session end (2026-05-26 ~23:00)
+
+**Current branch**: `mg/exp033-own-teacher-pl`. 12 commits ahead of main, all pushed.
+
+**Most recent commits** (latest first):
+- `11b25cd` — tasks.md: T1/T2 launches + num_workers fix in Phase 4
+- `6185a77` — proposal.md: per-batch composition column + canonical marker
+- `87d668d` — exp 032 num_workers 0→8 (preventive)
+- `ecc3ccb` — exp 033 num_workers 0→8 (the actual fix)
+- `84ab853` — Phase F: Perch tier C optional in PL generator
+- `a977661` — tasks.md: Phase 0/1/2/3 sub-items complete
+- `6ab8312` — Phase E gate: fast-dev-run PASS on a2_v5j
+- `fc71a78` — (obsolete) CONTEXT.md for end of scaffolding session
+- `34e3314` — Phase E (partial): train.py + sbatch
+- `1a241dd` — Phase D: 32 tests, 195/195 PASS
+- `4687b1f` — Phase C: PL integration
+- `0729e21` — Phase B: T2 prereq tools
+- `5aa5558` — Phase A: scaffold
+- `05f4063` — (main) Exp 032: full Tucker replication
+
+**No PR yet for exp 033.** Open as ready-for-review after LB verdict lands.
+
+---
+
+## Best LB (project state)
 
 | Model | LB | Notes |
 |---|---:|---|
 | Perch + SED MLP-only ensemble (exp 023) | **0.929** | Current overall best |
+| distilled-sed-kd-5fold (exp 032 Phase 2.A) | **0.915** | Best Tucker-SED ensemble |
 | v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
-| Tucker published 5-fold+smooth | 0.917 | Reference (replicate target) |
-| **distilled-sed-kd (exp 032 Phase D, single-fold)** | **0.906** | Today's CONFIRM |
-| v5j single (exp 019) | 0.906 | Best single SED (matches us) |
-| v5j_control_last (exp 031) | 0.897 | HEAD-code v5j retrain |
-| **distilled-sed-control (exp 032 Phase D)** | **0.856** | Recipe alone w/o KD |
-| Phase 1 broken-mel (exp 032) | 0.513-0.522 | Pre-fix; obsolete |
-
-**Exp 032 Phase 2.A 5-fold target**: 0.910–0.920 LB.
-
----
-
-## Branch / git state
-
-- **Current branch**: `mg/exp032-tucker-distilled-sed-replication`.
-  ~30+ commits ahead of main, all pushed.
-- **PR**: [#51](https://github.com/dsgt-arc/birdclef-2026/pull/51) (draft)
-  — `Exp 032: Distilled-SED full replication (port of Tucker Arrants's notebook)`.
-- Plan: PR stays draft until Phase 2 lands (then we can either merge or
-  decide what to do with the rejected Phase 1 history).
-
----
-
-## File index for Phase 2 (active work)
-
-| File | Purpose |
-|---|---|
-| **New today (Phase D + Phase 2)** | |
-| `user/murilo/src/birdclef/preprocessing/tucker_mel.py` | **D.3 FIX** — TuckerMelSpectrogram (torchaudio + AmplitudeToDB, no internal norm) |
-| `user/murilo/tests/032-tucker-distilled-sed/test_tucker_mel.py` | 12 tests, all pass; regression guard included |
-| `experiments/032-tucker-distilled-sed/scripts/diag_mel_pipeline.py` | **D.2** — side-by-side numerical mel diagnostic |
-| `experiments/032-tucker-distilled-sed/scripts/validate_end_to_end.py` | **D.5** — pre-flight before LB |
-| `experiments/032-tucker-distilled-sed/sbatch/validate_end_to_end.sh` | sbatch wrapper for D.5 |
-| `experiments/032-tucker-distilled-sed/configs/distilled_sed_kd_hgnet.yaml` | **Phase 2.D** — HGNet+KD ablation config |
-| `experiments/010-submission-pipeline/scripts/export_distilled_sed.py` | Tucker-faithful ONNX export; dispatches stub mel on `mel.type` |
-| `experiments/010-submission-pipeline/kaggle_kernel/kernel-metadata-distilled-sed-{control,kd,kd-5fold,kd-hgnet}.json` | Kernel metadata files |
-| **Modified today** | |
-| `experiments/032-tucker-distilled-sed/train.py` | Removed vestigial `fold_assignments.json` check; fixed `--fold` argparse to accept 4 |
-| `experiments/032-tucker-distilled-sed/configs/distilled_sed_{control,kd}.yaml` | `mel.type: "tucker"` (was nnaudio) |
-| `experiments/010-submission-pipeline/kaggle_kernel/submission.py` | + `compute_mel_tucker` + `predict_soundscape_tucker[_ensemble]` + dispatch |
-| `experiments/010-submission-pipeline/sbatch/export.sbatch` | + `export_distilled_sed_{control,kd,kd_5fold,kd_hgnet}` + `find_last_ckpt` auto-pick |
-| `experiments/010-submission-pipeline/scripts/upload_kaggle.py` | + 4 MODELS entries for distilled-sed-* |
-| **Inherited from earlier sessions** | |
-| `user/murilo/src/birdclef/heads/sed_head.py` | AttHeadLogitSpace + GeMFreqPool (Phase 0.1) |
-| `user/murilo/src/birdclef/encoders/efficientnet.py` | `use_post_head` flag (Phase 0.2) |
-| `user/murilo/src/birdclef/lightning/distilled_sed_finetune.py` | DistilledSEDFinetuneModule (Phase 0.3); uses TuckerMacroAUC/AP |
-| `user/murilo/src/birdclef/data/distilled_sed_dataset.py` | FocalDS + ScDS + apply_aug + MixSamp (Phase 0.4 + 0.7) |
-| `user/murilo/src/birdclef/data/distilled_sed_datamodule.py` | DistilledSEDDataModule + fold helpers (Phase 0.8) |
-| `user/murilo/src/birdclef/preprocessing/spec_augment.py` | SpecAugment (Phase 0.5) |
-| `user/murilo/src/birdclef/metrics/tucker_macro.py` | TuckerMacroAUC + TuckerMacroAP (skip 0-positive classes) |
-| **Checkpoints (post-Phase-D + Phase 2 retrains)** | |
-| `.../032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-control/last-v2.ckpt` | Phase D control (LB 0.856) |
-| `.../032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/last-v2.ckpt` | Phase D KD fold 0 (LB 0.906) |
-| `.../2026-exp032-distilled-sed-kd/fold{1,2,3,4}/last*.ckpt` | Phase 2.A folds 1-4 (PENDING — running now) |
-| `.../2026-exp032-distilled-sed-kd-hgnet/last*.ckpt` | Phase 2.D HGNet+KD (PENDING — running now) |
+| distilled-sed-kd (exp 032 Phase D, single-fold) | 0.906 | Best Tucker-SED single; exp 033 baseline |
+| **exp 033 target (single-fold CONFIRM)** | **≥ 0.920** | Antoine-style PL lift on top of 0.906 base |
+| distilled-sed-kd-hgnet (exp 032 Phase 2.D) | 0.901 | HGNet backbone; refuted as bottleneck |
+| distilled-sed-control (exp 032 Phase D) | 0.856 | Recipe alone w/o KD |
 
 ---
 
@@ -386,39 +420,24 @@ further lift. Reserved for Phase 2 stretch if 5-fold + HGNet land below 0.92.
 
 | Doc | What it contains |
 |---|---|
-| `experiments/032-tucker-distilled-sed/proposal.md` | Hypothesis, falsifiable success matrix, Provenance section |
-| `experiments/032-tucker-distilled-sed/tasks.md` | Phases 0/1/D/2 checklist with all done items + pending |
-| `experiments/032-tucker-distilled-sed/results.md` | Phase D LB results (CONFIRM verdict) + Phase 1 (REJECT, historical) |
-| `analysis/notes/2026-05-09-tucker-distilled-sed-code-audit.md` | Forward + loss + head + mel audit |
-| `analysis/notes/2026-05-23-tucker-dataset-and-inference-audit.md` | Dataset internals + folds + 5-tap smoothing + inference + 2 notebook bugs NOT to inherit |
-| `notes/kaggle-discussion-tucker-distilled-sed-baseline.md` | Tucker's discussion + per-fold LB band (0.913-0.934 ns22_auc, ~0.91-0.92 LB) |
-| `notes/2026-05-22-strategic-direction-tracks-A-B.md` | Strategic context: Track A (Tucker) → Track B (own-teacher PL) |
-| `vendor/kaggle/notebooks/birdclef-2026/bc2026-distilled-sed/bc2026-distilled-sed.ipynb` | Tucker's verbatim notebook (re-pullable via `kaggle kernels pull tuckerarrants/bc2026-distilled-sed`) |
-
----
-
-## Pending decisions / open items for next session
-
-1. **Verify Phase 2 jobs completed** (folds 1/2/3/4 + hgnet — 5 jobs total).
-2. **Run validate_end_to_end on each new ckpt** (D.5 pre-flight, MANDATORY).
-3. **Export + upload + push kernels** for `distilled-sed-kd-5fold` and `distilled-sed-kd-hgnet`.
-4. **Submit both to LB**.
-5. **Apply Phase 2 decision matrix** (see § Pick up here above) → drives next move:
-   - Site/hour priors (EoS.6 port) if 5-fold lands < 0.92 and we want more lift.
-   - Ensemble with exp 023 Perch+SED stack if 5-fold ≥ 0.92.
-   - Pivot to HGNet if 2.D shows backbone was a bottleneck.
-6. **Update results.md + MODEL-RUNS.md + this CONTEXT.md** with verdicts.
-7. **PR #51** — decide on merge plan (squash all 30+ commits? Keep history?).
+| `experiments/033-own-teacher-pl/proposal.md` | Hypothesis, falsifiable matrix, method, per-batch grid, pool-size math, variables, limitations |
+| `experiments/033-own-teacher-pl/tasks.md` | Phase 0-4 itemized checklist (num_workers fix story in 4.1.0) |
+| `experiments/032-tucker-distilled-sed/results.md` | Phase D + Phase 2 LB results (CONFIRM verdict) |
+| `notes/kaggle-discussion-non-perch-limit.md` | Antoine + OverfitOracle + Boredom recipe disclosures |
+| `notes/2026-05-22-strategic-direction-tracks-A-B.md` | Track A (Tucker) → Track B (own-teacher PL) strategic context |
+| `experiments/025-iter-pseudo-labeling/results.md` | Prior failed PL attempt — uses 0.5 weight + StratifiedBatchSampler (the protocols exp 033 fixes) |
 
 ---
 
 ## How to resume after disconnect
 
-1. Read this file top-to-bottom.
-2. `git log --oneline -10` should show `224e569` → `5cd047f` → `db8660c` → `787e43f` → ... most recent first.
-3. Check `squeue -u $USER` — expect the 5 Phase 2 jobs to be done.
-4. Walk the "Pick up here" checklist above.
-5. Verify tests still pass: `~/clef/birdclef-2026/.venv/bin/python -m pytest user/murilo/tests/032-tucker-distilled-sed/ -q`. Expect **163 pass** (151 from Phase 0 + 12 from `test_tucker_mel.py`).
+1. **Read this file top-to-bottom** (it's the source of truth for current state).
+2. `git log --oneline -12` should show `11b25cd` at the top.
+3. `squeue -u $USER` → all GPU jobs done (or only stragglers).
+4. Verify 10 last.ckpt files exist (paths in § 1 above).
+5. Launch D.5 e2e validation in parallel (§ 2 above).
+6. Rank by e2e val/auroc → top-5 to LB Day 1.
+7. Per `feedback_user_runs_commands.md`: don't run SLURM jobs / Kaggle uploads / kernel pushes yourself — give Murilo the commands.
 
 **Slack / Kaggle / W&B credentials**: in `user/murilo/.env` (gitignored).
 Loaded by `train.py`. If W&B login fails on SLURM, `WANDB_MODE=offline` or

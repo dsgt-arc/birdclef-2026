@@ -215,6 +215,7 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
         clip_logits: torch.Tensor,
         frame_logits: torch.Tensor,
         labels: torch.Tensor,
+        loss_weight: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """`clipwise_weight · BCE(clip, lb) + framewise_weight · BCE(frame_max, lb)`.
 
@@ -232,6 +233,13 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
         BCE — which is what `F.binary_cross_entropy_with_logits(..., reduction='mean')`
         gives us here.
 
+        **Per-sample loss_weight** (exp 033 — own-teacher PL, Antoine 1:1 protocol):
+        When `loss_weight=None`, the formula simplifies to the original mean BCE
+        (backward-compatible with exp 032). When `loss_weight` is a (B,) tensor,
+        each sample's per-class BCE is averaged over classes, scaled by its
+        weight, then averaged over the batch — matching the exp 025
+        `sed_finetune.py:388-393` per-sample reduction pattern.
+
         **Known deviation**: we do not zero `focal_missing` samples via `sw`.
         Our pipeline guarantees no missing cache files (FocalDS load returns
         a real waveform or the row is filtered upstream), so this is a no-op
@@ -243,8 +251,19 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
         blend in metrics.
         """
         frame_max = frame_logits.max(dim=-1).values  # (B, num_classes)
-        bce_clip = F.binary_cross_entropy_with_logits(clip_logits, labels.float())
-        bce_frame = F.binary_cross_entropy_with_logits(frame_max, labels.float())
+        if loss_weight is None:
+            bce_clip = F.binary_cross_entropy_with_logits(clip_logits, labels.float())
+            bce_frame = F.binary_cross_entropy_with_logits(frame_max, labels.float())
+        else:
+            # Per-sample weighted BCE: mean over class dim, scale by weight, mean over batch
+            bce_clip_ps = F.binary_cross_entropy_with_logits(
+                clip_logits, labels.float(), reduction="none"
+            ).mean(dim=1)  # (B,)
+            bce_frame_ps = F.binary_cross_entropy_with_logits(
+                frame_max, labels.float(), reduction="none"
+            ).mean(dim=1)  # (B,)
+            bce_clip = (bce_clip_ps * loss_weight).mean()
+            bce_frame = (bce_frame_ps * loss_weight).mean()
         loss = self.hparams.clipwise_weight * bce_clip + self.hparams.framewise_weight * bce_frame
         return loss, frame_max
 
@@ -263,10 +282,26 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
     # ------------------------------------------------------------------
 
     def training_step(self, batch, batch_idx):
-        # Accept 2-tuple (x, labels) or 3-tuple (x, labels, primary_idx) for
-        # compat with multiple datasets. primary_idx is unused (BCE-only).
+        # Accept variable batch shapes:
+        #   - 2-tuple (x, labels): unit tests + fast-dev-run minimal
+        #   - 4-tuple (x, labels, wts, mks): Tucker training (exp 032 default
+        #     from _collate_drop_extras — wts/mks are (B, num_classes) per-class
+        #     and unused per audit § 4)
+        #   - 5-tuple (x, labels, wts, mks, loss_weight): PL training (exp 033
+        #     — loss_weight is (B,) per-sample)
+        # loss_weight is detected by ndim==1 to disambiguate from Tucker's
+        # (B, num_classes) `mks` tensor that lives at the same batch[3] index.
         x = batch[0]
         labels = batch[1]
+        loss_weight: torch.Tensor | None = None
+        if len(batch) > 4:
+            lw = batch[4]
+            if isinstance(lw, torch.Tensor) and lw.ndim == 1:
+                loss_weight = lw.to(x.device).float()
+            elif isinstance(lw, int | float):
+                loss_weight = torch.full(
+                    (x.size(0),), float(lw), device=x.device, dtype=torch.float32
+                )
 
         do_kd = self.hparams.use_perch_distill
 
@@ -302,7 +337,13 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
             distill_loss = None
 
         # --- 4. Loss ---
-        cls_loss, frame_max = self._dual_supervision_loss(clip_logits, frame_logits, labels)
+        # KD MSE loss (when enabled) is NOT per-sample weighted — it's a
+        # feature-space alignment signal between student backbone and
+        # frozen Perch teacher, sample-confidence-independent. Only the
+        # task BCE branch gets per-sample loss_weight.
+        cls_loss, frame_max = self._dual_supervision_loss(
+            clip_logits, frame_logits, labels, loss_weight=loss_weight
+        )
         if distill_loss is not None:
             loss = cls_loss + self.hparams.alpha_distill * distill_loss
             self.log("train/cls_loss", cls_loss, on_step=True, on_epoch=True, prog_bar=True)

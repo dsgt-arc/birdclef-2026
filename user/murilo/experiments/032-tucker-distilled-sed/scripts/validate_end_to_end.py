@@ -64,6 +64,36 @@ sys.path.insert(0, str(SRC_ROOT))
 logger = logging.getLogger(__name__)
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursive dict merge — override wins. Mirrors exp 033 train.py:_deep_merge."""
+    out = dict(base)
+    for k, v in override.items():
+        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def load_config_with_common(config_path: Path) -> dict:
+    """yaml.safe_load + optional sibling `_common.yaml` deep-merge.
+
+    No-op for experiments that don't use `_common.yaml` (e.g., exp 032's flat
+    configs); enables exp 033's diff-only per-ablation YAMLs to load correctly
+    without forking this script.
+    """
+    with open(config_path) as f:
+        override = yaml.safe_load(f) or {}
+    common_p = config_path.parent / "_common.yaml"
+    if common_p.exists() and config_path.name != "_common.yaml":
+        with open(common_p) as f:
+            base = yaml.safe_load(f) or {}
+        merged = _deep_merge(base, override)
+        logger.info(f"Loaded config: {config_path.name} (merged with _common.yaml)")
+        return merged
+    return override
+
+
 # ----------------------------------------------------------------------
 # Tucker's correct macro AUC / AP — skip 0-positive classes
 # (verbatim port of notebook lines 369-384; also implemented in
@@ -461,8 +491,7 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config_with_common(args.config)
 
     if args.fold is not None:
         if not 0 <= args.fold < 5:

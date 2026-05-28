@@ -119,12 +119,17 @@ def generate_sed_labels(meta_df, species_cols, unlabeled_mask, tiers, cfg):
     n_folds = sed_cfg["n_folds"]
     temperature = sed_cfg["temperature"]
     power = sed_cfg["power_transform"]
+    # v1/v2/v3 default: "max" (preserved for backward compat).
+    # v4 (Sydorskyi-faithful): "mean" — matches paper Section 3.5 which
+    # mean-ensembles the 8 teacher predictions before applying the
+    # primary_label_min_prob + trim_min_prob filters.
+    fold_strategy = sed_cfg.get("fold_strategy", "max")
 
     print("\n--- SED Pseudo-Labels (Tiers A+B) ---")
     print(f"  Source: {source_dir}")
-    print(f"  Strategy: max-across-{n_folds}-folds → T={temperature} → P^{power}")
+    print(f"  Strategy: {fold_strategy}-across-{n_folds}-folds → T={temperature} → P^{power}")
 
-    # Load folds and compute max-across-folds
+    # Load folds and compute aggregation
     fold_probs = []
     for fold in range(n_folds):
         logits_df = pd.read_parquet(source_dir / f"fold{fold}" / "logits.parquet")
@@ -133,14 +138,19 @@ def generate_sed_labels(meta_df, species_cols, unlabeled_mask, tiers, cfg):
         fold_probs.append(sigmoid(logits_df[sp_cols].values.astype(np.float32)))
         print(f"  Loaded fold {fold}: {fold_probs[-1].shape}")
 
-    sed_max = np.maximum.reduce(fold_probs)
+    if fold_strategy == "max":
+        sed_max = np.maximum.reduce(fold_probs)
+    elif fold_strategy == "mean":
+        sed_max = np.mean(np.stack(fold_probs, axis=0), axis=0)
+    else:
+        raise ValueError(f"sed.fold_strategy must be 'max' or 'mean', got {fold_strategy!r}")
     del fold_probs
-    print(f"  Max-across-folds: {sed_max.shape}")
+    print(f"  {fold_strategy.capitalize()}-across-folds: {sed_max.shape}")
 
-    # Apply temperature scaling
+    # Apply temperature scaling (no-op at T=1.0)
     sed_scaled = temperature_scale(sed_max, temperature)
 
-    # Apply power transform
+    # Apply power transform (no-op at P=1.0)
     sed_final = power_transform(sed_scaled, power)
 
     # Zero out non-Tier-A/B species
@@ -282,9 +292,13 @@ def main():
 
     version = cfg["version"]
     output_dir = SHARED / cfg["output_dir"].replace("shared/", "")
+    # Pure-SED configs (e.g., exp 033 pl_gen_v2.yaml) omit `perch:` to disable
+    # Tier C fallback. Tier C species end up with 0 labels (effectively Tier D).
+    use_perch = "perch" in cfg
     print(f"=== Generating pseudo-labels: {version} ===")
     print(f"  Config: {config_path}")
     print(f"  Output: {output_dir}")
+    print(f"  Perch tier C: {'enabled' if use_perch else 'DISABLED (pure-SED)'}")
 
     # Load competition metadata
     sample_sub = pd.read_csv(DATA / "sample_submission.csv")
@@ -313,15 +327,19 @@ def main():
 
     # We need sed_max_raw (before temp/power) for tier assignment
     # Recompute tiers now that we have sed_max_raw
-    # Load Perch for tier assignment
-    perch_source = SHARED / cfg["perch"]["source_path"].replace("shared/", "")
-    perch_df = pd.read_parquet(perch_source)
-    perch_df = perch_df.sort_values(["filename", "chunk_idx"]).reset_index(drop=True)
-    perch_meta_cols = ["filename", "chunk_idx", "site", "hour_utc"]
-    perch_sp = [c for c in perch_df.columns if c not in perch_meta_cols]
-    perch_raw = perch_df[perch_sp].values.astype(np.float32)
-
-    tiers = assign_tiers(species_cols, sed_max_raw, perch_raw, unlabeled_mask, cfg)
+    if use_perch:
+        # Load Perch for tier assignment
+        perch_source = SHARED / cfg["perch"]["source_path"].replace("shared/", "")
+        perch_df = pd.read_parquet(perch_source)
+        perch_df = perch_df.sort_values(["filename", "chunk_idx"]).reset_index(drop=True)
+        perch_meta_cols = ["filename", "chunk_idx", "site", "hour_utc"]
+        perch_sp = [c for c in perch_df.columns if c not in perch_meta_cols]
+        perch_raw = perch_df[perch_sp].values.astype(np.float32)
+        tiers = assign_tiers(species_cols, sed_max_raw, perch_raw, unlabeled_mask, cfg)
+    else:
+        # Pure-SED: assign_tiers doesn't actually read perch_raw_probs (only uses
+        # sed_max_probs + sc_labels + tier_d), so passing None is safe.
+        tiers = assign_tiers(species_cols, sed_max_raw, None, unlabeled_mask, cfg)
 
     # Print tier summary
     tier_counts = {}
@@ -334,11 +352,20 @@ def main():
     # Re-generate SED labels with correct tier mask
     sed_labels, _ = generate_sed_labels(meta_df, species_cols, unlabeled_mask, tiers, cfg)
 
-    del perch_df, perch_raw
-    # --- Generate Perch labels ---
-    perch_labels, perch_stats, perch_skipped = generate_perch_labels(
-        meta_df, species_cols, unlabeled_mask, tiers, cfg
-    )
+    # --- Generate Perch labels (optional — pure-SED configs skip this) ---
+    if use_perch:
+        del perch_df, perch_raw
+        perch_labels, perch_stats, perch_skipped = generate_perch_labels(
+            meta_df, species_cols, unlabeled_mask, tiers, cfg
+        )
+    else:
+        # Tier C species get 0 (effectively Tier D). Merging logic below
+        # writes perch_labels[:, i] for tier C — all zeros is a no-op since
+        # `merged` is pre-zeroed.
+        perch_labels = np.zeros((len(meta_df), len(species_cols)), dtype=np.float32)
+        perch_stats = []
+        perch_skipped = []
+        print("\n--- Perch Pseudo-Labels: SKIPPED (pure-SED mode) ---")
 
     # --- Merge ---
     print("\n--- Merging ---")
@@ -352,13 +379,92 @@ def main():
             merged[:, i] = perch_labels[:, i]
         # Tier D stays 0
 
-    # Final stats
+    # Final stats (pre-filter)
     merged_unlabeled = merged[unlabeled_mask]
     print(f"  Merged shape: {merged.shape}")
     print(f"  Total pseudo-labels >0.5 (unlabeled): {(merged_unlabeled > 0.5).sum():,}")
     print(f"  Total pseudo-labels >0.3 (unlabeled): {(merged_unlabeled > 0.3).sum():,}")
     print(f"  Species with any >0.5 (unlabeled): {(merged_unlabeled.max(axis=0) > 0.5).sum()}/234")
     print(f"  Mean labels per segment >0.5: {(merged_unlabeled > 0.5).sum(axis=1).mean():.2f}")
+
+    # --- Sydorskyi-style filter (optional; backward-compat: no-op when absent) ---
+    # See user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md
+    #
+    # Sydorskyi 2025 2nd place applies two filters AFTER ensemble + soft-label
+    # generation:
+    #   1. Chunk discard: drop rows where max(prob) < primary_label_min_prob.
+    #      ~83% discard rate in their iteration 1 (117K → 19.4K chunks).
+    #   2. Per-class trim: zero per-class probs < trim_min_prob.
+    #      Eliminates teacher uncertainty noise that BCE would otherwise
+    #      train the student to match.
+    #
+    # Order follows Sydorskyi (discard first, then trim) — both yield the same
+    # surviving set since max > 0.5 > 0.1, but the intent is clearer this way.
+    #
+    # NOTE: We filter BOTH labeled and unlabeled chunks here. The training-time
+    # PL filter (DistilledSEDDataModule.setup) still excludes val-fold SS and
+    # labeled-SS train files from the PL pool, so labeled rows in the parquet
+    # are harmless (just smaller storage win).
+    filter_cfg = cfg.get("filter", {}) or {}
+    min_max_prob = filter_cfg.get("min_max_prob")
+    trim_min_prob = filter_cfg.get("trim_min_prob")
+    filter_stats = {}
+
+    if min_max_prob is not None:
+        print(f"\n--- Filter: chunk discard (min_max_prob={min_max_prob}) ---")
+        chunk_max = merged.max(axis=1)
+        keep_mask = chunk_max >= min_max_prob
+        n_before = len(merged)
+        n_after = int(keep_mask.sum())
+        n_dropped = n_before - n_after
+        print(f"  Chunks before: {n_before:,}")
+        print(f"  Chunks after:  {n_after:,}")
+        print(f"  Dropped:       {n_dropped:,} ({n_dropped / n_before:.1%})")
+        # Keep all arrays/dataframes aligned
+        meta_df = meta_df.iloc[keep_mask].reset_index(drop=True)
+        merged = merged[keep_mask]
+        sed_labels = sed_labels[keep_mask]
+        if use_perch:
+            perch_labels = perch_labels[keep_mask]
+        unlabeled_mask = unlabeled_mask[keep_mask]
+        filter_stats["min_max_prob"] = float(min_max_prob)
+        filter_stats["chunks_before_discard"] = int(n_before)
+        filter_stats["chunks_after_discard"] = int(n_after)
+
+    if trim_min_prob is not None:
+        print(f"\n--- Filter: per-class trim (trim_min_prob={trim_min_prob}) ---")
+        n_probs_before = int((merged > 0).sum())
+        merged[merged < trim_min_prob] = 0.0
+        # Keep sed_labels and perch_labels in sync with the merged matrix so
+        # the per-source parquets reflect the same filter. (Sydorskyi-faithful
+        # — they trim the saved soft labels, not just the merge.)
+        sed_labels[sed_labels < trim_min_prob] = 0.0
+        if use_perch:
+            perch_labels[perch_labels < trim_min_prob] = 0.0
+        n_probs_after = int((merged > 0).sum())
+        n_zeroed = n_probs_before - n_probs_after
+        print(f"  Non-zero probs before: {n_probs_before:,}")
+        print(f"  Non-zero probs after:  {n_probs_after:,}")
+        print(f"  Zeroed:                {n_zeroed:,} ({n_zeroed / max(n_probs_before, 1):.1%})")
+        filter_stats["trim_min_prob"] = float(trim_min_prob)
+        filter_stats["nonzero_probs_before_trim"] = n_probs_before
+        filter_stats["nonzero_probs_after_trim"] = n_probs_after
+
+    # Re-print post-filter stats so logs show both before/after
+    if min_max_prob is not None or trim_min_prob is not None:
+        merged_unlabeled = merged[unlabeled_mask]
+        print("\n--- Post-filter stats ---")
+        print(f"  Merged shape: {merged.shape}")
+        print(f"  Total pseudo-labels >0.5 (unlabeled): {(merged_unlabeled > 0.5).sum():,}")
+        print(f"  Total pseudo-labels >0.3 (unlabeled): {(merged_unlabeled > 0.3).sum():,}")
+        print(
+            f"  Species with any >0.5 (unlabeled): {(merged_unlabeled.max(axis=0) > 0.5).sum()}/234"
+        )
+        if len(merged_unlabeled) > 0:
+            mean_labels = (merged_unlabeled > 0.5).sum(axis=1).mean()
+        else:
+            mean_labels = 0.0
+        print(f"  Mean labels per segment >0.5: {mean_labels:.2f}")
 
     if args.stats_only:
         print("\n  --stats-only mode, not saving.")
@@ -386,16 +492,17 @@ def main():
     sed_df.to_parquet(output_dir / "sed_pseudo_labels.parquet", index=False)
     print(f"  Saved sed_pseudo_labels.parquet ({sed_df.shape})")
 
-    # Perch pseudo-labels
-    perch_out_df = pd.concat(
-        [
-            meta_df[["filename", "chunk_idx"]],
-            pd.DataFrame(perch_labels, columns=species_cols),
-        ],
-        axis=1,
-    )
-    perch_out_df.to_parquet(output_dir / "perch_pseudo_labels.parquet", index=False)
-    print(f"  Saved perch_pseudo_labels.parquet ({perch_out_df.shape})")
+    # Perch pseudo-labels (skip when pure-SED — file would just be all zeros)
+    if use_perch:
+        perch_out_df = pd.concat(
+            [
+                meta_df[["filename", "chunk_idx"]],
+                pd.DataFrame(perch_labels, columns=species_cols),
+            ],
+            axis=1,
+        )
+        perch_out_df.to_parquet(output_dir / "perch_pseudo_labels.parquet", index=False)
+        print(f"  Saved perch_pseudo_labels.parquet ({perch_out_df.shape})")
 
     # Merged pseudo-labels
     merged_df = pd.concat(
@@ -423,15 +530,6 @@ def main():
             "pseudo_labels_above_0.5": int((sed_labels[unlabeled_mask] > 0.5).sum()),
             "species_covered_above_0.5": int((sed_labels[unlabeled_mask].max(axis=0) > 0.5).sum()),
         },
-        "perch": {
-            "z_threshold": cfg["perch"]["z_threshold"],
-            "min_std": cfg["perch"]["min_std"],
-            "power_transform": cfg["perch"]["power_transform"],
-            "active_species": len(perch_stats),
-            "skipped_species": len(perch_skipped),
-            "pseudo_labels_above_0.5": int((perch_labels[unlabeled_mask] > 0.5).sum()),
-            "per_species": perch_stats,
-        },
         "merged": {
             "pseudo_labels_above_0.5": int((merged_unlabeled > 0.5).sum()),
             "pseudo_labels_above_0.3": int((merged_unlabeled > 0.3).sum()),
@@ -439,6 +537,18 @@ def main():
             "mean_labels_per_segment_above_0.5": float((merged_unlabeled > 0.5).sum(axis=1).mean()),
         },
     }
+    if use_perch:
+        stats["perch"] = {
+            "z_threshold": cfg["perch"]["z_threshold"],
+            "min_std": cfg["perch"]["min_std"],
+            "power_transform": cfg["perch"]["power_transform"],
+            "active_species": len(perch_stats),
+            "skipped_species": len(perch_skipped),
+            "pseudo_labels_above_0.5": int((perch_labels[unlabeled_mask] > 0.5).sum()),
+            "per_species": perch_stats,
+        }
+    if filter_stats:
+        stats["filter"] = filter_stats
     with open(output_dir / "stats.json", "w") as f:
         json.dump(stats, f, indent=2)
     print("  Saved stats.json")

@@ -71,7 +71,7 @@ data:
   sample_rate: 32000
   window_duration: 5.0
   batch_size: 64
-  num_workers: 0
+  num_workers: 8  # Was 0 — see distilled_sed_control.yaml for rationale.
 
   # DistilledSEDDataModule controls:
   n_folds: 5

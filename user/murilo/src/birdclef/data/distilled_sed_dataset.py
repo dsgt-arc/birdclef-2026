@@ -466,6 +466,138 @@ class ScDS(Dataset):
 
 
 # ============================================================================
+# Pseudo-label datasets (exp 033 — own-teacher PL on Tucker recipe)
+# ============================================================================
+
+
+class PLDS(Dataset):
+    """Pseudo-labeled soundscape windows (exp 033 — own-teacher PL).
+
+    Returns 6-tuple `(waveform_tensor, soft_label_tensor, wt, mk, source_tag, loss_weight)`
+    with `source_tag = "pl"` and `loss_weight` carrying the per-sample PL weight
+    (Antoine 1:1 protocol → 1.0; exp 025-style down-weighting → 0.5).
+
+    Identical audio-loading semantics to `ScDS` — but labels are SOFT
+    probabilities (in [0, 1]) read from a precomputed PL parquet, and the
+    6th tuple element carries the per-sample loss weight that the training
+    loop applies to the BCE branch (NOT the KD MSE branch).
+
+    Args:
+        pl_df: DataFrame with at least `filename`, `chunk_idx` columns + 234
+            species columns (soft probabilities). Mirrors v1/sed_pseudo_labels.parquet
+            after filtering for val-fold leakage prevention.
+        species_list: Ordered list of 234 species labels — used to extract the
+            label matrix from pl_df in a consistent column order. MUST match
+            the model's output ordering.
+        soundscape_dir: Directory containing the `train_soundscapes/*.ogg` files
+            referenced by `pl_df.filename`.
+        window_samples: Samples per window (default 160000).
+        loss_weight: Per-sample loss weight (default 1.0 = Antoine 1:1 protocol).
+        audio_loader: Same callable convention as ScDS.
+        sample_rate: Sample rate (default 32000).
+        aug: Whether to apply augmentation (default False — match ScDS).
+        aug_prob: Per-augmentation firing probability.
+        seed: RNG seed for augmentation.
+    """
+
+    def __init__(
+        self,
+        pl_df: pd.DataFrame,
+        species_list: list[str],
+        soundscape_dir: str | Path,
+        window_samples: int = 160_000,
+        loss_weight: float = 1.0,
+        audio_loader: Callable[..., np.ndarray] = _default_audio_loader,
+        sample_rate: int = 32000,
+        aug: bool = False,
+        aug_prob: float = 0.5,
+        seed: int = 42,
+    ):
+        required_cols = {"filename", "chunk_idx"}
+        missing_cols = required_cols - set(pl_df.columns)
+        if missing_cols:
+            raise ValueError(f"pl_df missing required cols: {missing_cols}")
+        missing_species = [sp for sp in species_list if sp not in pl_df.columns]
+        if missing_species:
+            raise ValueError(
+                f"pl_df missing {len(missing_species)} species cols (first 5: {missing_species[:5]})"
+            )
+        self.df = pl_df.reset_index(drop=True)
+        self.species_list = list(species_list)
+        self.num_classes = len(self.species_list)
+        # Pre-extract labels matrix (fast __getitem__)
+        self.labels_matrix = self.df[self.species_list].values.astype(np.float32)
+        self.soundscape_dir = Path(soundscape_dir)
+        self.window_samples = window_samples
+        self.loss_weight = float(loss_weight)
+        self.audio_loader = audio_loader
+        self.sample_rate = sample_rate
+        self.aug = aug
+        self.aug_prob = aug_prob
+        self.rng = np.random.default_rng(seed)
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, i: int):
+        row = self.df.iloc[i]
+        audio_path = str(self.soundscape_dir / row["filename"])
+        start = int(row["chunk_idx"]) * 5 * self.sample_rate  # 5-sec windows
+        try:
+            wav = self.audio_loader(audio_path, self.window_samples, start, self.sample_rate)
+        except Exception as e:
+            logger.warning(f"PLDS: failed to load {row['filename']}: {e}")
+            wav = np.zeros(self.window_samples, dtype=np.float32)
+
+        if wav is None or wav.shape[0] < self.window_samples:
+            wav = _extract_chunk(wav if wav is not None else np.zeros(0), 0, self.window_samples)
+        wav = wav.astype(np.float32)
+
+        if self.aug:
+            wav = apply_aug(wav, self.rng, aug_prob=self.aug_prob)
+
+        lb = self.labels_matrix[i]
+        return (
+            torch.from_numpy(wav).unsqueeze(0),
+            torch.from_numpy(lb),
+            torch.ones(
+                self.num_classes, dtype=torch.float32
+            ),  # wt: per-class (unused, kept for collate compat)
+            torch.ones(
+                self.num_classes, dtype=torch.float32
+            ),  # mk: per-class (unused, kept for collate compat)
+            "pl",
+            self.loss_weight,  # NEW: per-sample loss weight (Antoine 1:1 → 1.0)
+        )
+
+
+class GTDatasetWrapper(Dataset):
+    """Wraps a 5-tuple dataset (FocalDS/ScDS) to add `loss_weight=1.0` as the
+    6th tuple element, matching the 6-tuple shape PLDS returns.
+
+    Required when ConcatDataset combines GT + PL datasets — collate fn needs
+    uniform tuple length across samples.
+
+    Converts (wav, lb, wt, mk, tag) → (wav, lb, wt, mk, tag, loss_weight=1.0).
+    """
+
+    def __init__(self, dataset: Dataset, loss_weight: float = 1.0):
+        self.dataset = dataset
+        self.loss_weight = float(loss_weight)
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, i: int):
+        item = self.dataset[i]
+        # Defensive: handle both 5-tuple (FocalDS/ScDS) and 6-tuple (already wrapped)
+        if len(item) == 6:
+            return item
+        wav, lb, wt, mk, tag = item
+        return wav, lb, wt, mk, tag, self.loss_weight
+
+
+# ============================================================================
 # MixSamp — multi-source batch sampler (Tucker cell 12)
 # ============================================================================
 

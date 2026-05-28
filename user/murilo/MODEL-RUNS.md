@@ -1101,6 +1101,188 @@ must be a pre-flight check, not an after-the-fact diagnostic.
 See `experiments/032-tucker-distilled-sed/results.md` for full LB table,
 hypothesis ranking, and audit checklist.
 
+## Experiment 033: Own-teacher Pseudo-Labels on distilled-sed-kd — REJECT (3/5 Day-1 + Phase 5 v3 filter-diagnostic all in REJECT band; v3 worse than v2 → filters HURT; pivot to exp 034 confirmed)
+
+Applies the Antoine / OverfitOracle / Boredom 1:1 own-teacher PL protocol on top
+of the exp 032 Phase D `distilled-sed-kd` recipe (baseline LB 0.906). 5
+protocol cells × 2 SED teachers × fold 0 = 10 paired runs. Prior PL attempts
+(exp 014/015/025) used down-weighted PLs (loss_weight=0.5) or hardcoded 50/50
+StratifiedBatchSampler — both regressed LB. This experiment isolates the
+disclosed competitor protocol (1:1 loss_weight + uniform-or-natural sampler +
+own-arch SED teacher) for the first time on this codebase.
+
+Teachers: T1 = `v5j-4fold` (`v1/sed_pseudo_labels.parquet`, teacher LB 0.913);
+T2 = `distilled-sed-kd-5fold` (`v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet`,
+teacher LB 0.915 — generated this session). Effective PL pool 127,104 unlabeled
+SS segments per teacher (val-fold leak + labeled-SS train files filtered).
+
+### Phase G: 10-ablation grid — offline metrics (fold 0, val-side)
+
+Baseline (`distilled-sed-kd` Phase D fold 0): val/auroc 0.908, val/cmap 0.692,
+LB **0.906**. All 10 ablations land above the baseline offline; the spread is
++0.003 to +0.041 val/auroc. **Offline rankings are direction-only** (per exp 032
+fold 4: +0.023 offline → −0.003 LB).
+
+| Slug | Init | Sampler (focal/sc/pl share) | Teacher | val/auroc | val/cmap | best val/cmap | Best Ep | Walltime | SLURM | W&B |
+|------|------|-----------------------------|---------|----------:|---------:|--------------:|--------:|----------|------:|-----|
+| `2026-exp033-a3-kd` | warm | MixSamp 0.2/0.0/0.8 | T2 | **0.9486** | 0.8311 | 0.8350 | 7 | 2h41m | 9191660 | `ax6t5qdz` |
+| `2026-exp033-a4-kd` | warm | Uniform              | T2 | **0.9477** | **0.8323** | 0.8335 | 7 | 2h38m | 9191661 | `htfgco92` |
+| `2026-exp033-a2-kd` ⭐ | random | Uniform           | T2 | 0.9390 | 0.8182 | 0.8201 | 3 | 6h29m | 9191659 | `1ye9s2ni` |
+| `2026-exp033-a2-v5j` ⭐ | random | Uniform          | T1 | 0.9362 | 0.7923 | 0.7977 | 14 | 7h20m | 9190540 | `4y0h7h1a` |
+| `2026-exp033-a1-kd` | random | MixSamp 0.5/0.0/0.5 | T2 | 0.9357 | 0.8242 | 0.8390 | 12 | 6h46m | 9191658 | `2cg0kcux` |
+| `2026-exp033-a4-v5j` | warm | Uniform             | T1 | 0.9352 | 0.8043 | 0.8058 | 7 | 2h39m | 9190544 | `dl7pz6kv` |
+| `2026-exp033-a3-v5j` | warm | MixSamp 0.2/0.0/0.8 | T1 | 0.9345 | 0.8061 | 0.8095 | 7 | 2h38m | 9190542 | `f781pbyz` |
+| `2026-exp033-a1-v5j` | random | MixSamp 0.5/0.0/0.5 | T1 | 0.9288 | 0.7821 | 0.7859 | 11 | 7h25m | 9190539 | `ct3by7ax` |
+| `2026-exp033-a5-kd` | random | MixSamp 0.7/0.0/0.3 | T2 | 0.9285 | 0.7915 | 0.7954 | 10 | 6h45m | 9191662 | `vn3vyrp5` |
+| `2026-exp033-a5-v5j` | random | MixSamp 0.7/0.0/0.3 | T1 | 0.9113 | 0.7586 | 0.7595 | 21 | 6h41m | 9190545 | `opv1942s` |
+
+⭐ = canonical Antoine protocol (random init + uniform sampler).
+Per-batch composition counts (focal/sc/pl @ B=64): A1 32/0/32, A2/A4 ~12/0/~52
+(natural over ConcatDataset 29K/0.6K/127K), A3 13/0/51, A5 45/0/19.
+
+### Phase G offline read-outs
+
+**Teacher axis (T2 vs T1, 5 paired tests)**: T2 wins **all 5 pairs** on val/auroc
+(mean Δ +0.011) and on val/cmap (mean Δ +0.031). Teacher-diversity benefit holds
+despite the two teachers being LB-comparable (Δ +0.002 LB). T2 is the teacher to
+keep iterating with offline; LB will say whether this transfers.
+
+**Sampler axis (Uniform vs MixSamp, 4 paired tests)**: Uniform wins on random
+init (+0.0033 to +0.0074 auroc); flat or marginally negative on warm-start
+(−0.0009 to +0.0007). Consistent with the proposal's pool-size math —
+Uniform's natural ~82% PL share converges with MixSamp 0.2/0.8 in the
+warm-start cells.
+
+**Init axis (warm-start vs random, 4 paired tests)**: warm-start helps 3/4
+(strongest A1.kd→A3.kd +0.013 auroc); flat on T1+uniform. Confounded with
+lr=5e-5 vs 5e-4 and 10ep vs 25ep.
+
+**PL-exposure sanity (A1 50% vs A5 30%)**: A1 wins +0.018 (T1) / +0.007 (T2)
+auroc. More PL exposure helps — Tucker's published 0.9/0.1 transplant would be
+worse than A5.
+
+### Phase G training dynamics
+
+- All 10 ran to `max_epochs` (early stopping was disabled with `patience: 999`).
+- Warm-start runs (A3/A4 × T1/T2) all peaked at epoch 7 — 10-epoch budget is
+  generous; could be trimmed to 8 in future.
+- A5.v5j peaked latest (ep 21) — under-PL'd config saturates focal slowly.
+- Final-epoch `train/cls_loss` ~0.02 across all 10 (matches Tucker's published
+  band); `train/dist_loss` plateaus at 0.002-0.003 (Tucker's floor). No NaN.
+
+Per-ablation `metrics.json` at `experiments/033-own-teacher-pl/artifacts/training/{a1..a5}_{v5j,kd}/fold0/metrics.json` (backfilled 2026-05-27 after `save_metrics.py` was ported with `_common.yaml` deep-merge inheritance).
+
+### Phase G checkpoints
+
+- T2 (`*-kd`) ablations: `2026-exp033-a{N}-kd/fold0/last.ckpt` is the final
+  (single launch, completed cleanly).
+- T1 (`*-v5j`) ablations: `2026-exp033-a{N}-v5j/fold0/last-v1.ckpt` is the
+  final (the relaunched-with-num_workers=8 run). `last.ckpt` in those dirs is
+  the stale epoch ~4-5 snapshot from the cancelled `num_workers=0` job; do NOT
+  use it.
+- Best-by-`val/cmap` ckpts saved per-epoch via `save_top_k: -1` at
+  `best-epochepoch=NN.ckpt`.
+
+### Phase G compute
+
+| Cell | Walltime | Runs | Total compute |
+|---|---|---:|---|
+| 25-ep ablations (A1/A2/A5 × T1/T2) | 6.5–7.4h each | 6 | ~41 GPU-h |
+| 10-ep ablations (A3/A4 × T1/T2)    | 2.6–2.7h each | 4 | ~11 GPU-h |
+| **All 10** (parallel overnight)    | wall ~7.5h    |    | **~52 GPU-h** |
+
+Cancelled+relaunched `num_workers=0 → 8` fix (commits `ecc3ccb` + `87d662d`)
+sunk an additional ~20 GPU-h on the T1 first wave; net effective compute ~72 GPU-h.
+At `num_workers=8` per-epoch time on rtx6000 is ~20 min (~2× the proposal's
+predicted 10 min, attributed to per-epoch worker startup + I/O dominance from
+the 127K-file PL pool — acceptable, not a regression).
+
+### Phase G D.5 end-to-end validation — ALL 10 PASS ✅
+
+Same kernel-inference-path methodology as exp 032 (`validate_end_to_end.sh`).
+Gate: `|train_auroc − e2e_auroc| ≤ 0.02`. All 10 PASS; max gap 0.0079; all 10
+runs took 4–5s of inference on the fold-0 val SS pool (n_evaluable=29, val
+windows=156). Used `last-v1.ckpt` for T1 ablations (the relaunched-with-
+num_workers=8 run) and `last.ckpt` for T2 ablations.
+
+| Slug | Train val/auroc | E2E val/auroc | Gap | LB | Δ vs 0.906 |
+|------|----------------:|--------------:|----:|---:|---:|
+| `2026-exp033-a4-kd` | 0.9477 | **0.9551** | +0.0074 | **0.899** | **−0.007** |
+| `2026-exp033-a3-kd` | 0.9486 | **0.9540** | +0.0054 | (not submitted) | — |
+| `2026-exp033-a2-kd` ⭐ | 0.9390 | 0.9403 | +0.0013 | **0.886** | **−0.020** |
+| `2026-exp033-a4-v5j` | 0.9352 | 0.9399 | +0.0047 | **0.897** | **−0.009** |
+| `2026-exp033-a3-v5j` | 0.9345 | 0.9387 | +0.0042 | (not submitted) | — |
+| `2026-exp033-a1-kd` | 0.9357 | 0.9362 | +0.0005 | (not submitted) | — |
+| `2026-exp033-a2-v5j` ⭐ | 0.9362 | 0.9332 | −0.0030 | (not submitted) | — |
+| `2026-exp033-a1-v5j` | 0.9288 | 0.9282 | −0.0006 | (not submitted) | — |
+| `2026-exp033-a5-kd` | 0.9285 | 0.9206 | −0.0079 | (not submitted) | — |
+| `2026-exp033-a5-v5j` | 0.9113 | 0.9095 | −0.0018 | (not submitted) | — |
+
+### Phase G LB results (2026-05-27 PM): REJECT
+
+3 of the top-5 by D.5 e2e val/auroc submitted; all landed in the REJECT bucket
+(per `proposal.md § Falsifiable`: CONFIRM ≥ +0.014, PARTIAL +0.007–0.013, WEAK
++0.001–0.006, REJECT ≤ 0). The remaining 7 ablations (2 Day-1 + 5 Day-2)
+were NOT submitted on the trajectory.
+
+**Paired Δ on the teacher axis (a4-kd vs a4-v5j)**: 0.899 vs 0.897 = +0.002 LB.
+Inside cross-hardware noise. **Refutes the proposal's headline teacher-diversity
+claim** (T2 won offline by +0.011 auroc, but does NOT win at LB on a paired
+single-fold test).
+
+**Paired Δ on the protocol-cell axis (a4-kd warm vs a2-kd random, same teacher)**:
+0.899 vs 0.886 = **−0.013** (canonical Antoine < warm-start). Inverts the offline
+ranking (a2-kd lower offline than a4-kd, but landed worse on LB too — both
+regressing). Another offline-LB anti-correlation data point.
+
+**Offline-LB anti-correlation data point #24**: the strongest offline cell
+(a4-kd, e2e rank 1/10) landed in the middle on LB (rank 2 of 3 submitted); the
+weakest of the 3 submitted by e2e (a4-v5j, e2e rank 4/10) was the best on LB
+(rank 1 of 3). Same pattern as exp 032 fold 4 (+0.023 offline → −0.003 LB) and
+22+ prior recipe data points.
+
+### Phase G verdict
+
+| Bucket | LB threshold (Δ vs 0.906) | Result |
+|---|---|---|
+| CONFIRM | ≥ +0.014 | ❌ |
+| PARTIAL | +0.007 to +0.013 | ❌ |
+| WEAK | +0.001 to +0.006 | ❌ |
+| **REJECT** | **≤ 0** | **✅ all 3 cells (−0.007 / −0.020 / −0.009)** |
+
+**The 1:1 own-teacher PL protocol does NOT lift LB on the distilled-sed-kd
+base** despite all 10 offline ablations landing +0.003 to +0.041 val/auroc above
+the baseline. Pivot per `proposal.md § Next-step plan`: Sydorskyi-yoink (XC
+pretrain) as the primary remaining lever before the 2026-06-03 deadline (7 days
+out).
+
+Best LB this experiment: `distilled-sed-pl-a4-kd` = **0.899** (still REJECT
+vs the distilled-sed-kd Phase D fold 0 baseline of 0.906).
+
+### Phase 5 — Sydorskyi-divergence diagnostic — CLOSED (filters HURT; pivot confirmed)
+
+After the Phase G REJECT verdict, a divergence audit (`analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md`) found exp 033 implementation diverges from the only published 0.93+ PL recipe (Sydorskyi 2025 2nd place) on **16 of 20 axes**. Test 1 fixed the two cheapest divergences (#2 trim_min_prob=0.1 + #3 min_max_prob=0.5 chunk discard) to test whether PL noise alone explained the regression.
+
+**Test 1 result (`2026-exp033-a2-kd-v3`)**: same canonical Antoine cell as v2 a2-kd, pointed at v3 PL parquet with Sydorskyi 0.5 chunk-discard + 0.1 per-class trim filters. 85K chunks surviving (33% discard, below Sydorskyi's ~83% because our T=0.6 + P^1.5 sharpening pre-biases the max-prob), 98% per-cell trim. Training: 25/25 ep, best ep 11, walltime 4h56m, SLURM 9228488, W&B `ule0zzog`.
+
+| Ablation | Train val/auroc | E2E val/auroc | Gap | LB | Δ vs 0.906 | Δ vs v2 a2-kd 0.886 |
+|------|----------------:|--------------:|----:|---:|---:|---:|
+| `2026-exp033-a2-kd-v3` | 0.9330 | (skipped — went direct to LB) | — | **0.879** | **−0.027** | **−0.007** |
+
+**Bucket per `diagnostic-tests.md § Step 1.6`**: LB < 0.886 → "Worse than original — filters HURT". This is the worst-case bucket of the four defined the night before.
+
+**Reading**: filters alone don't recover the REJECT — they actively hurt. The audit's working theory (PL noise was poisoning the student) is disproven. The low-confidence soft signal was apparently *useful* to the student. Possible mechanism: our T+P sharpening pre-biased the max-prob before the 0.5 discard filter ran, so surviving chunks were "sharpened-high" rather than "actually-confident"; the 0.1 trim then erased useful soft-label tails in those chunks. Net: smaller pool + flatter targets = weaker training signal.
+
+**Offline-LB direction** was consistent for once: v3 offline 0.933 < v2 offline 0.939 AND v3 LB 0.879 < v2 LB 0.886. Both say v3 worse. Does NOT add to the offline-LB anti-correlation tally (still at 24).
+
+**Phase 5 closure decision** (pre-recorded 2026-05-27 EOD; empirically confirmed by v3 LB): next major effort = **exp 034 Sydorskyi-yoink** rather than v4 PL gen / Test 2 fusion / Test 3 focal loss. v3 is the final data point on exp 033's PL track.
+
+Total LB experiments this experiment: 4 (a4-kd 0.899, a4-v5j 0.897, a2-kd ⭐ 0.886, **a2-kd-v3 0.879**) — all REJECT band, max Δ −0.027 below baseline.
+
+See `experiments/033-own-teacher-pl/results.md` for the full per-ablation table
++ paired Δ across teacher/sampler/init/PL-exposure axes + Phase 5 reading +
+decision-matrix collapse.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
