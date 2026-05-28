@@ -1,6 +1,6 @@
-# Exp 034 — Pretrained-backbone yoink
+# Exp 034 — Pretrained-backbone xcpretrain
 
-**Status**: draft (2026-05-28) · scaffold only · no code yet · branch `mg/exp034-pretrained-backbone-yoink` (to be created)
+**Status**: draft (2026-05-28) · scaffold only · no code yet · branch `mg/exp034-pretrained-backbone` (to be created)
 
 Reuse the publicly-released BirdCLEF+ 2025 2nd-place pretrained backbone weights (Sydorskyi & Gonçalves; EffNetV2-S + NFNet-L0, pretrained on 819K Xeno-Canto recordings / 7,489 species) as a starting point for fine-tuning on BirdCLEF 2026. Target: lift single-fold LB from 0.906 (current best, exp 032 Phase D `distilled-sed-kd`) to 0.91-0.93. Ensemble + PP target 0.94+.
 
@@ -22,7 +22,7 @@ Reuse the publicly-released BirdCLEF+ 2025 2nd-place pretrained backbone weights
 | **F** — 5-fold frozen ensemble | Train remaining 4 folds; logit-space average; LB | 1 slot |
 | **G** — Full fine-tune (unfreeze) | Paired test vs Phase E frozen-backbone | 1 slot |
 | **H** — PP + TTA layers | TopN N=1, site/hour priors, Gaussian smooth, sliding-window TTA | 1-2 slots |
-| **I** — Ensemble | Rank-ensemble yoink ⊕ exp 032 5-fold (0.915) ⊕ exp 023 Perch-MLP (0.929) ⊕ optional NFNet-L0 | 1-2 slots |
+| **I** — Ensemble | Rank-ensemble xcpretrain ⊕ exp 032 5-fold (0.915) ⊕ exp 023 Perch-MLP (0.929) ⊕ optional NFNet-L0 | 1-2 slots |
 | **J** — Final submission selection | 2 picks; <90 min CPU inference; submit by 2026-06-03 18:00 UTC | Final |
 
 **Phase progression is sequential by dependency, NOT by calendar.** Parallelizable work (e.g., reading source while downloading pretrained dataset) overlaps freely. LB submissions only fire after the in-phase gate passes.

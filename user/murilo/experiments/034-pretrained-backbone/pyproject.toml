@@ -1,5 +1,5 @@
 [project]
-name = "exp034-pretrained-backbone-yoink"
+name = "exp034-pretrained-backbone"
 version = "0.1.0"
 description = "Exp 034: Reuse Sydorskyi 2025 published in-domain-pretrained backbone (BirdCLEF+ 2025 2nd place; EffNetV2-S + NFNet-L0 on 819K XC recordings / 7,489 species) for fine-tuning on BirdCLEF 2026."
 authors = [

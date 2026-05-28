@@ -12,7 +12,7 @@ Covers:
 import pytest
 import torch
 
-from birdclef.preprocessing.yoink_mel import (
+from birdclef.preprocessing.xcpretrain_mel import (
     ChannelAgnosticAmplitudeToDB,
     GeMFreq,
     NormalizeMelSpec,

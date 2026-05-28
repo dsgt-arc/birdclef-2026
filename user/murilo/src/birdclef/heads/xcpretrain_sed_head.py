@@ -36,10 +36,10 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from birdclef.preprocessing.yoink_mel import GeMFreq
+from birdclef.preprocessing.xcpretrain_mel import GeMFreq
 
 
-class YoinkAttHead(nn.Module):
+class XCPretrainAttHead(nn.Module):
     """SED attention head, Sydorskyi 2025 style.
 
     Args:
@@ -68,7 +68,7 @@ class YoinkAttHead(nn.Module):
     ):
         super().__init__()
         assert train_period == infer_period, (
-            f"YoinkAttHead simplification: requires train_period == infer_period "
+            f"XCPretrainAttHead simplification: requires train_period == infer_period "
             f"(got {train_period} != {infer_period}). For Sydorskyi configs with "
             f"train_period > infer_period, port the short-window crop path from "
             f"vendor/sydorskyi-2025/code_base/models/blocks.py:330-365."

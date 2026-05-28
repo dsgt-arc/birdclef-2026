@@ -1,4 +1,4 @@
-"""Phase B unit tests for YoinkWaveClassifier — end-to-end orchestrator.
+"""Phase B unit tests for XCPretrainWaveClassifier — end-to-end orchestrator.
 
 Covers:
 - Construction from default config (EffNetV2-S, 234 classes)
@@ -14,13 +14,13 @@ from pathlib import Path
 import pytest
 import torch
 
-from birdclef.models.yoink_wave_classifier import YoinkWaveClassifier
+from birdclef.models.xcpretrain_wave_classifier import XCPretrainWaveClassifier
 
-# Import the loader script as a module (shared with test_yoink_backbone_loader.py)
+# Import the loader script as a module (shared with test_xcpretrain_backbone_loader.py)
 _LOADER_PATH = (
     Path(__file__).parent.parent.parent
     / "experiments"
-    / "034-pretrained-backbone-yoink"
+    / "034-pretrained-backbone"
     / "scripts"
     / "load_sydorskyi_backbone.py"
 )
@@ -36,7 +36,7 @@ def _ckpt_available(backbone_name: str) -> bool:
 
 
 def test_construct_default():
-    model = YoinkWaveClassifier(
+    model = XCPretrainWaveClassifier(
         backbone="tf_efficientnetv2_s_in21k",
     )
     # Mel chain has 3 components
@@ -48,7 +48,7 @@ def test_construct_default():
 
 
 def test_extract_spec_shape_5s_32khz():
-    model = YoinkWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
+    model = XCPretrainWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
     model.eval()
     wav = torch.randn(2, 5 * 32000)
     with torch.no_grad():
@@ -61,7 +61,7 @@ def test_extract_spec_shape_5s_32khz():
 
 
 def test_forward_output_keys_and_shapes():
-    model = YoinkWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
+    model = XCPretrainWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
     model.eval()
     wav = torch.randn(2, 5 * 32000)
     with torch.no_grad():
@@ -80,7 +80,7 @@ def test_forward_output_keys_and_shapes():
 
 
 def test_forward_outputs_finite():
-    model = YoinkWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
+    model = XCPretrainWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
     model.eval()
     wav = torch.randn(2, 5 * 32000)
     with torch.no_grad():
@@ -91,7 +91,7 @@ def test_forward_outputs_finite():
 
 def test_forward_with_precomputed_spec():
     """Bypass mel extraction if `spec` is provided."""
-    model = YoinkWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
+    model = XCPretrainWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
     model.eval()
     spec = torch.rand(2, 1, 128, 313)
     with torch.no_grad():
@@ -100,7 +100,7 @@ def test_forward_with_precomputed_spec():
 
 
 def test_return_spec_feature_short_circuit():
-    model = YoinkWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
+    model = XCPretrainWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
     model.eval()
     wav = torch.randn(2, 5 * 32000)
     with torch.no_grad():
@@ -109,7 +109,7 @@ def test_return_spec_feature_short_circuit():
 
 
 def test_return_cnn_emb_short_circuit():
-    model = YoinkWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
+    model = XCPretrainWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
     model.eval()
     wav = torch.randn(2, 5 * 32000)
     with torch.no_grad():
@@ -121,14 +121,14 @@ def test_return_cnn_emb_short_circuit():
 def test_spec_augment_config_raises_not_implemented():
     """spec_augment_config support is deferred — should raise clearly."""
     with pytest.raises(NotImplementedError, match="spec_augment_config support pending"):
-        YoinkWaveClassifier(
+        XCPretrainWaveClassifier(
             backbone="tf_efficientnetv2_s_in21k",
             spec_augment_config={"freq_mask": {"mask_max_length": 10}},
         )
 
 
 def test_custom_num_class():
-    model = YoinkWaveClassifier(
+    model = XCPretrainWaveClassifier(
         backbone="tf_efficientnetv2_s_in21k",
         head_config={"p": 0.5, "num_class": 100, "train_period": 5.0, "infer_period": 5.0},
     )
@@ -145,7 +145,7 @@ def test_custom_num_class():
 )
 def test_load_pretrained_backbone_then_forward():
     """End-to-end: instantiate → load Sydorskyi ckpt → forward on random waveform."""
-    model = YoinkWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
+    model = XCPretrainWaveClassifier(backbone="tf_efficientnetv2_s_in21k")
     pretrained = _loader_mod.load_sydorskyi_backbone("tf_efficientnetv2_s_in21k", verbose=False)
     model.backbone.load_state_dict(pretrained.state_dict(), strict=True)
     model.eval()

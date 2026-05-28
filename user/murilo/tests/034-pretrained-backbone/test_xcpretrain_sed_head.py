@@ -14,7 +14,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from birdclef.heads.yoink_sed_head import YoinkAttHead
+from birdclef.heads.xcpretrain_sed_head import XCPretrainAttHead
 
 
 def _backbone_features_like(B: int, C: int, H_freq: int = 4, W_time: int = 10) -> torch.Tensor:
@@ -24,7 +24,7 @@ def _backbone_features_like(B: int, C: int, H_freq: int = 4, W_time: int = 10) -
 
 
 def test_constructor_defaults_match_sydorskyi():
-    head = YoinkAttHead(in_chans=256)
+    head = XCPretrainAttHead(in_chans=256)
     # Hidden dim 512 is the Sydorskyi-verified value
     assert head.dense_layers[1].in_features == 256
     assert head.dense_layers[1].out_features == 512
@@ -35,7 +35,7 @@ def test_constructor_defaults_match_sydorskyi():
 
 def test_dropout_positions_and_rates():
     """Master p=0.5 → dropout(p/2=0.25) before linear, dropout(p=0.5) after ReLU."""
-    head = YoinkAttHead(in_chans=256, p=0.5)
+    head = XCPretrainAttHead(in_chans=256, p=0.5)
     dropouts = [m for m in head.dense_layers if isinstance(m, nn.Dropout)]
     assert len(dropouts) == 2
     assert dropouts[0].p == pytest.approx(0.25), f"first dropout = {dropouts[0].p}, expected 0.25"
@@ -43,14 +43,14 @@ def test_dropout_positions_and_rates():
 
 
 def test_activation_is_relu():
-    head = YoinkAttHead(in_chans=256)
+    head = XCPretrainAttHead(in_chans=256)
     activations = [m for m in head.dense_layers if isinstance(m, nn.ReLU)]
     assert len(activations) == 1, "expected exactly one ReLU activation in dense_layers"
 
 
 def test_forward_output_dict_keys_and_shapes():
     """Returns dict with {clipwise_pred_long, clipwise_logits_long, framewise_logits_long}."""
-    head = YoinkAttHead(in_chans=256, num_class=234)
+    head = XCPretrainAttHead(in_chans=256, num_class=234)
     feat = _backbone_features_like(B=2, C=256)  # mimics EffNetV2-S features_only output
     out = head(feat)
 
@@ -65,7 +65,7 @@ def test_forward_output_dict_keys_and_shapes():
 
 
 def test_forward_outputs_finite():
-    head = YoinkAttHead(in_chans=2304, num_class=234)  # mimics NFNet-L0 features_only output
+    head = XCPretrainAttHead(in_chans=2304, num_class=234)  # mimics NFNet-L0 features_only output
     feat = _backbone_features_like(B=2, C=2304)
     out = head(feat)
     for k, v in out.items():
@@ -74,7 +74,7 @@ def test_forward_outputs_finite():
 
 def test_clipwise_pred_is_probability_space():
     """clipwise_pred_long = sum(sigmoid(feat_v) * softmax_t(time_att), dim=t) — must be in [0, 1]."""
-    head = YoinkAttHead(in_chans=256)
+    head = XCPretrainAttHead(in_chans=256)
     head.eval()
     feat = _backbone_features_like(B=2, C=256) * 5.0  # large dynamic range
     out = head(feat)
@@ -86,7 +86,7 @@ def test_clipwise_pred_is_probability_space():
 
 def test_clipwise_logits_unbounded():
     """clipwise_logits_long = sum(feat_v * softmax_t(time_att), dim=t) — should NOT be saturated in [0, 1]."""
-    head = YoinkAttHead(in_chans=256)
+    head = XCPretrainAttHead(in_chans=256)
     head.eval()
     feat = _backbone_features_like(B=4, C=256) * 5.0
     out = head(feat)
@@ -101,12 +101,12 @@ def test_clipwise_logits_unbounded():
 def test_simplification_assertion_train_period_must_equal_infer_period():
     """Our simplified head requires train_period == infer_period. Confirm explicit error."""
     with pytest.raises(AssertionError, match="train_period == infer_period"):
-        YoinkAttHead(in_chans=256, train_period=15.0, infer_period=5.0)
+        XCPretrainAttHead(in_chans=256, train_period=15.0, infer_period=5.0)
 
 
 def test_gradient_flow_end_to_end():
     """A backward pass through the head must propagate gradients to all learnable params."""
-    head = YoinkAttHead(in_chans=256, num_class=234, p=0.5)
+    head = XCPretrainAttHead(in_chans=256, num_class=234, p=0.5)
     head.train()
     feat = _backbone_features_like(B=2, C=256)
     feat.requires_grad_(True)

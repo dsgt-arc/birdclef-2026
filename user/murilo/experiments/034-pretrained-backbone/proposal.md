@@ -1,5 +1,5 @@
 ---
-experiment: "034-pretrained-backbone-yoink"
+experiment: "034-pretrained-backbone"
 status: draft
 date: 2026-05-28
 author: Murilo Gustineli
@@ -10,7 +10,7 @@ author: Murilo Gustineli
 **Status**: draft (2026-05-28)
 **Created**: 2026-05-28
 **Author**: Murilo Gustineli
-**Branch (planned)**: `mg/exp034-pretrained-backbone-yoink`
+**Branch (planned)**: `mg/exp034-pretrained-backbone`
 
 ## Provenance
 
@@ -54,12 +54,12 @@ The 2nd-order benefit: a 0.92+ single-model base unlocks **two further levers** 
 
 ### Falsifiable success matrix
 
-Read against the paired **same-codebase baseline** (`distilled-sed-kd` Phase D fold 0 = LB 0.906, reproducible at HEAD). Per the deep research probability bands (Sydorskyi-yoink mode 0.925, conditional on operator track record):
+Read against the paired **same-codebase baseline** (`distilled-sed-kd` Phase D fold 0 = LB 0.906, reproducible at HEAD). Per the deep research probability bands (Sydorskyi-xcpretrain mode 0.925, conditional on operator track record):
 
 | Bucket | Single-fold LB (frozen-backbone) | Reading | Active path |
 |---|---|---|---|
-| **CONFIRM** | ≥ 0.93 | Yoink transferred cleanly; in-domain pretraining is the lever. | Scale to 5-fold + full fine-tune + PP + ensemble for 0.94+ |
-| **PARTIAL** | 0.91-0.93 | Yoink paying out at expected mode. PP + ensemble + maybe full FT close the 0.94 gap. | Continue scaling; layer PP early (Phase H) |
+| **CONFIRM** | ≥ 0.93 | XCPretrain transferred cleanly; in-domain pretraining is the lever. | Scale to 5-fold + full fine-tune + PP + ensemble for 0.94+ |
+| **PARTIAL** | 0.91-0.93 | XCPretrain paying out at expected mode. PP + ensemble + maybe full FT close the 0.94 gap. | Continue scaling; layer PP early (Phase H) |
 | **WEAK** | 0.906-0.91 | Pretrain barely transfers. Likely a silent mel/head/ckpt parity bug. | Re-run Gate 1 + Gate 2; debug parity before more LB |
 | **REJECT** | < 0.906 | Pipeline broken OR pretrain doesn't transfer to 2026's class distribution. | Pivot to Path C fallback (rank-ensemble exp 023 0.929 + exp 032 5-fold 0.915) |
 
@@ -97,7 +97,7 @@ ONLY after Gates 1+2 pass do we burn the first LB slot (Phase E). This decouples
 
 ### What we DON'T have (forced workarounds)
 
-- **No XC pretrain compute budget**: Sydorskyi's pretrain took weeks on 819K recordings; we can't redo it. We must yoink.
+- **No XC pretrain compute budget**: Sydorskyi's pretrain took weeks on 819K recordings; we can't redo it. We must xcpretrain.
 - **No nnAudio installed**: Sydorskyi uses `nnAudio` for on-the-fly GPU mel (not torchaudio). 60% silent-bug risk if we translate to torchaudio. **Decision**: install `nnAudio` and use directly. ~5 lines in pyproject.toml.
 - **No 2-seed identical-architecture ensemble baseline** (Nikita's stability lever): out of scope for first pass; can be added in Phase I if compute allows.
 
@@ -187,7 +187,7 @@ Phase A → J. Phases are **sequential by dependency**, not by calendar. Two pha
 
 - Train frozen-backbone head fine-tune on fold 0 for 25-50 epochs (start at 25, extend if not converged).
 - Run D.5 e2e validation (gap < 0.02).
-- Export ONNX via `experiments/010-submission-pipeline/` (extend export.sbatch with a new helper for yoink models).
+- Export ONNX via `experiments/010-submission-pipeline/` (extend export.sbatch with a new helper for xcpretrain models).
 - Upload to Kaggle, push kernel, submit.
 
 **Phase E exit criterion + decision matrix**:
@@ -236,12 +236,12 @@ Phase A → J. Phases are **sequential by dependency**, not by calendar. Two pha
 
 #### Phase I — Ensemble
 
-**Goal**: ensemble the yoinked model with our existing strong models. **This is the lever that bridges 0.92-0.93 single-model to 0.94+ final.**
+**Goal**: ensemble the xcpretrained model with our existing strong models. **This is the lever that bridges 0.92-0.93 single-model to 0.94+ final.**
 
-- Rank-ensemble: yoink-FT (Phase G or E) ⊕ exp 032 distilled-sed-kd-5fold (0.915) ⊕ exp 023 Perch-MLP (0.929).
-- Optional: add NFNet-L0 yoink variant for backbone-diversity.
+- Rank-ensemble: xcpretrain-FT (Phase G or E) ⊕ exp 032 distilled-sed-kd-5fold (0.915) ⊕ exp 023 Perch-MLP (0.929).
+- Optional: add NFNet-L0 xcpretrain variant for backbone-diversity.
 - Optional: 2-seed identical-architecture ensemble (Nikita's stability lever).
-- LB submissions: stepwise — yoink+032, yoink+032+023, yoink+032+023+NFNet — to attribute lift per added member.
+- LB submissions: stepwise — xcpretrain+032, xcpretrain+032+023, xcpretrain+032+023+NFNet — to attribute lift per added member.
 
 **Phase I exit criterion**: ensemble LB > best Phase G/H single. Stop adding members when a new member doesn't lift.
 
@@ -278,8 +278,8 @@ Phase A → J. Phases are **sequential by dependency**, not by calendar. Two pha
 
 | Metric | Description | Role |
 |---|---|---|
-| Paired LB lift | LB(yoink) − LB(distilled-sed-kd Phase D 0.906) | **Primary read** |
-| Frozen-vs-full-FT LB delta | Paired test within yoink branch | Validates Phase G decision |
+| Paired LB lift | LB(xcpretrain) − LB(distilled-sed-kd Phase D 0.906) | **Primary read** |
+| Frozen-vs-full-FT LB delta | Paired test within xcpretrain branch | Validates Phase G decision |
 | 5-fold lift | LB(5-fold avg) − LB(single fold) | Validates Phase F scaling |
 | Ensemble lift per added member | Stepwise LB | Validates Phase I composition |
 | Local OOF AUC | Fold-0 holdout SS pool | Gate 2 + Phase F sanity |
@@ -289,7 +289,7 @@ Phase A → J. Phases are **sequential by dependency**, not by calendar. Two pha
 
 - **Primary**: `distilled-sed-kd` Phase D fold 0 = LB 0.906 (paired-within-codebase, reproducible at HEAD).
 - **Secondary** (for ensemble Phase I): exp 023 Perch-MLP = 0.929, exp 032 5-fold = 0.915.
-- **External anchors**: Ali Ozan 0.941, Jack 0.92x range (yoink confirmation points); Nikita 0.935 no-PL (top of yoink-without-PL band).
+- **External anchors**: Ali Ozan 0.941, Jack 0.92x range (xcpretrain confirmation points); Nikita 0.935 no-PL (top of xcpretrain-without-PL band).
 
 ### Success criteria
 
@@ -299,19 +299,19 @@ See § Falsifiable success matrix above.
 
 - **Reproducibility risk (research-quantified at 80-85%)**: at least one of nnAudio mel / standardize axes / head hidden dim / checkpoint keys / focal α/γ has a non-trivial silent-bug probability. The Phase A→C→D pre-flight gates exist to catch these before LB burn but may not catch all of them.
 - **PP variance (Jack's warning)**: "most things I've tried have only hurt my score." Phase H PP/TTA is high-variance and adds individual LB burns to validate each layer.
-- **Compute budget for ensemble variants (Phase I)**: a full NFNet-L0 yoink branch + a 2-seed ensemble adds substantial wall-clock; we may skip these and accept a smaller ensemble if compute or LB-slot budget constrains.
+- **Compute budget for ensemble variants (Phase I)**: a full NFNet-L0 xcpretrain branch + a 2-seed ensemble adds substantial wall-clock; we may skip these and accept a smaller ensemble if compute or LB-slot budget constrains.
 - **Deadline-coupled risk**: 2026-06-03 23:59 UTC final-submission deadline. Phase J has no slack for re-doing if a silent bug surfaces at the last day.
 - **Hardware variance**: cross-PACE-node LB has 0.007-0.013 single-fold variance (per exp 030/031). The Phase E first-LB "≥ 0.91 = pipeline works" gate has WEAK boundary noise — re-submission on a different node may be needed to disambiguate.
-- **Single iteration of PL only (if revisited later)**: 4 independent confirmations (Anil Ozturk / Boredom / Zejun_ / Salman) that PL plateaus at round 1. If PL is added on top of yoink in a future round, plan one iteration, not many.
+- **Single iteration of PL only (if revisited later)**: 4 independent confirmations (Anil Ozturk / Boredom / Zejun_ / Salman) that PL plateaus at round 1. If PL is added on top of xcpretrain in a future round, plan one iteration, not many.
 
 ## Next-step plan (after exp 034)
 
 | Phase 034 outcome | Next experiment / action |
 |---|---|
-| CONFIRM (LB ≥ 0.93 single-fold) | Layer PL on top of yoinked base (one iteration, Sydorskyi-faithful with trim + chunk-discard + focal × PL fusion). Stretch toward 0.94+. |
+| CONFIRM (LB ≥ 0.93 single-fold) | Layer PL on top of xcpretrained base (one iteration, Sydorskyi-faithful with trim + chunk-discard + focal × PL fusion). Stretch toward 0.94+. |
 | PARTIAL (0.91-0.93) | Iterate Phase H PP variants + Phase I ensemble compositions. Target final LB 0.93+ via stacking. |
 | WEAK (0.906-0.91) | Re-audit Phase B/C parity. If still WEAK after second pass, accept ceiling and go direct to Phase I ensemble. |
-| REJECT (< 0.906) | Path C fallback (ensemble existing 0.906 + 0.915 + 0.929 without yoink). No further yoink iteration. |
+| REJECT (< 0.906) | Path C fallback (ensemble existing 0.906 + 0.915 + 0.929 without xcpretrain). No further xcpretrain iteration. |
 
 ## Acknowledgments
 

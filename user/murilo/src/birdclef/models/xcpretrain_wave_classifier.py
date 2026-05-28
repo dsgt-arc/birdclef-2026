@@ -7,7 +7,7 @@ Composes:
     Sydorskyi mel chain (TraceableMelspec + ChannelAgnosticAmplitudeToDB + NormalizeMelSpec)
       + timm features_only backbone (EffNetV2-S or NFNet-L0, in_chans=1)
       + SpecAugment (CustomFreqMasking + CustomTimeMasking, training only — TODO Phase B sub-commit)
-      + YoinkAttHead (512 hidden, GeMFreq, dropout 0.25/0.5)
+      + XCPretrainAttHead (512 hidden, GeMFreq, dropout 0.25/0.5)
 
 Pipeline (forward):
     waveform (B, T_audio)
@@ -40,11 +40,11 @@ import timm
 import torch.nn as nn
 from torch import Tensor
 
-from birdclef.heads.yoink_sed_head import YoinkAttHead
-from birdclef.preprocessing.yoink_mel import build_sydorskyi_mel_extractor
+from birdclef.heads.xcpretrain_sed_head import XCPretrainAttHead
+from birdclef.preprocessing.xcpretrain_mel import build_sydorskyi_mel_extractor
 
 
-class YoinkWaveClassifier(nn.Module):
+class XCPretrainWaveClassifier(nn.Module):
     """Sydorskyi 2025 WaveCNNAttenClasifier, simplified to our selected-config path.
 
     Args:
@@ -52,7 +52,7 @@ class YoinkWaveClassifier(nn.Module):
         mel_spec_params: kwargs for TraceableMelspec. Defaults to Sydorskyi config
             (sample_rate=32000, n_mels=128, n_fft=2048, hop_length=512, f_min=20,
              normalized=True).
-        head_config: kwargs for YoinkAttHead. At minimum {"p": 0.5, "num_class": 234,
+        head_config: kwargs for XCPretrainAttHead. At minimum {"p": 0.5, "num_class": 234,
             "train_period": 5.0, "infer_period": 5.0}.
         pretrained: pass-through to timm.create_model. Default False (we load Sydorskyi
             ckpt manually via load_sydorskyi_backbone).
@@ -100,8 +100,8 @@ class YoinkWaveClassifier(nn.Module):
         # raises clearly if config is provided but module not implemented.
         if spec_augment_config is not None:
             raise NotImplementedError(
-                "YoinkWaveClassifier: spec_augment_config support pending Phase B sub-commit "
-                "(needs birdclef.preprocessing.yoink_spec_augment). For Gate 1 parity testing "
+                "XCPretrainWaveClassifier: spec_augment_config support pending Phase B sub-commit "
+                "(needs birdclef.preprocessing.xcpretrain_spec_augment). For Gate 1 parity testing "
                 "and Gate 2 frozen-backbone sanity, leave spec_augment_config=None."
             )
         self.spec_augment = None
@@ -120,7 +120,7 @@ class YoinkWaveClassifier(nn.Module):
         backbone_channels = self.backbone.feature_info.channels()
         if head_config is None:
             head_config = {"p": 0.5, "num_class": 234, "train_period": 5.0, "infer_period": 5.0}
-        self.head = YoinkAttHead(
+        self.head = XCPretrainAttHead(
             in_chans=backbone_channels[-1],
             exportable=exportable,
             **head_config,
@@ -151,7 +151,7 @@ class YoinkWaveClassifier(nn.Module):
             return_cnn_emb: short-circuit return after backbone (debug/parity).
 
         Returns:
-            Head output dict (see YoinkAttHead.forward), OR the intermediate tensor
+            Head output dict (see XCPretrainAttHead.forward), OR the intermediate tensor
             if a short-circuit flag is set.
         """
         if spec is None:

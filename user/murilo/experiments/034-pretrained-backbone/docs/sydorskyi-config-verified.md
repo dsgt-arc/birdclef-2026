@@ -1,5 +1,5 @@
 ---
-experiment: "034-pretrained-backbone-yoink"
+experiment: "034-pretrained-backbone"
 phase: A (source reading + verified config)
 status: COMPLETE (Phase A.1 + A.2; ready for Phase B implementation)
 date_started: 2026-05-28
@@ -436,8 +436,8 @@ Reuse Sydorskyi's exact source where possible (`vendor/sydorskyi-2025/code_base/
 
 ## Cross-references
 
-- Proposal: `user/murilo/experiments/034-pretrained-backbone-yoink/proposal.md`
-- Tasks: `user/murilo/experiments/034-pretrained-backbone-yoink/tasks.md`
+- Proposal: `user/murilo/experiments/034-pretrained-backbone/proposal.md`
+- Tasks: `user/murilo/experiments/034-pretrained-backbone/tasks.md`
 - Deep research review: `user/murilo/notes/2026-05-28-research-report.md`
 - Source (submodule): `vendor/sydorskyi-2025/` @ `053594f`
 - Pretrained ckpts: `/storage/project/ps-clef2026_birdclef-0/shared/pretrained-models/sydorskyi-2025/`

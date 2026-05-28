@@ -23,7 +23,7 @@ import torch
 _LOADER_PATH = (
     Path(__file__).parent.parent.parent
     / "experiments"
-    / "034-pretrained-backbone-yoink"
+    / "034-pretrained-backbone"
     / "scripts"
     / "load_sydorskyi_backbone.py"
 )

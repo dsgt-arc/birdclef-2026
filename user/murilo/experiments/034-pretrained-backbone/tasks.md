@@ -1,13 +1,13 @@
-# Tasks — Exp 034 Pretrained-backbone yoink
+# Tasks — Exp 034 Pretrained-backbone xcpretrain
 
 ## Tests
 
-Tests will live in `user/murilo/tests/034-pretrained-backbone-yoink/` (mirroring the experiment dir).
+Tests will live in `user/murilo/tests/034-pretrained-backbone/` (mirroring the experiment dir).
 
 Run with the interactive venv:
 
 ```bash
-~/clef/birdclef-2026/.venv/bin/python -m pytest user/murilo/tests/034-pretrained-backbone-yoink/ -v
+~/clef/birdclef-2026/.venv/bin/python -m pytest user/murilo/tests/034-pretrained-backbone/ -v
 ```
 
 Test files (planned — to be created in Phase B):
@@ -40,7 +40,7 @@ Read these BEFORE starting any phase. Implementation tasks reference them by sho
 | **Pretrained weights (Kaggle)** | `vladimirsydor/bird-clef-2025-all-pretrained-models` |
 | **Reference inference notebook (Kaggle)** | `vladimirsydor/bird-clef-2025-minimul-inference` (v245080754) — Phase C parity anchor |
 | **Tucker recipe module (exp 032)** | `user/murilo/src/birdclef/lightning/distilled_sed_finetune.py` — reuse LightningModule patterns where compatible |
-| **Inference path (exp 010)** | `experiments/010-submission-pipeline/sbatch/export.sbatch` — extend with new yoink-export helper |
+| **Inference path (exp 010)** | `experiments/010-submission-pipeline/sbatch/export.sbatch` — extend with new xcpretrain-export helper |
 
 ---
 
@@ -88,34 +88,34 @@ Read these BEFORE starting any phase. Implementation tasks reference them by sho
 
 ### B.1 Dependencies — DONE 2026-05-28
 
-- [x] B.1.1 `experiments/034-pretrained-backbone-yoink/pyproject.toml` created. Pins inherit exp 033 ML stack + adds `torchvision==0.20.1` (needed for `torchvision.ops.focal_loss.sigmoid_focal_loss` in B.5). `nnAudio==0.3.4` already present.
+- [x] B.1.1 `experiments/034-pretrained-backbone/pyproject.toml` created. Pins inherit exp 033 ML stack + adds `torchvision==0.20.1` (needed for `torchvision.ops.focal_loss.sigmoid_focal_loss` in B.5). `nnAudio==0.3.4` already present.
 - [x] B.1.2 No new install needed — active venv already has nnAudio 0.3.4, torchvision 0.25.0, timm 1.0.25, torch 2.10. Versions exceed pyproject pins but tests pass cleanly.
 - [x] B.1.3 `import nnAudio; from nnAudio.Spectrogram import STFT as nnAudioSTFT` works (Sydorskyi uses STFT, not full MelSpectrogram — see verified-config doc § Mel pipeline).
 
 ### B.2 nnAudio mel pipeline — DONE 2026-05-28
 
-- [x] B.2.1 `src/birdclef/preprocessing/yoink_mel.py` — direct port of Sydorskyi's mel chain (`TraceableMelspec` = nnAudio STFT + torchaudio MelScale; `ChannelAgnosticAmplitudeToDB`; `NormalizeMelSpec`; `GeMFreq`; `Swish`).
+- [x] B.2.1 `src/birdclef/preprocessing/xcpretrain_mel.py` — direct port of Sydorskyi's mel chain (`TraceableMelspec` = nnAudio STFT + torchaudio MelScale; `ChannelAgnosticAmplitudeToDB`; `NormalizeMelSpec`; `GeMFreq`; `Swish`).
 - [x] B.2.2 `build_sydorskyi_mel_extractor` convenience function composes the full chain (TraceableMelspec → ChannelAgnosticAmplitudeToDB → NormalizeMelSpec) with Sydorskyi-default params.
-- [x] B.2.3 Unit tests: 10 tests in `test_yoink_mel.py` pass. Coverage: GeMFreq learnable p=3 init + exportable/non-exportable parity; NormalizeMelSpec per-sample standardize over (1,2) + output range [0,1]; ChannelAgnosticAmplitudeToDB 3D/4D acceptance + top_db=80 clip; TraceableMelspec output shape (2, 128, 313) for 5s @ 32kHz; full chain end-to-end finite + range.
+- [x] B.2.3 Unit tests: 10 tests in `test_xcpretrain_mel.py` pass. Coverage: GeMFreq learnable p=3 init + exportable/non-exportable parity; NormalizeMelSpec per-sample standardize over (1,2) + output range [0,1]; ChannelAgnosticAmplitudeToDB 3D/4D acceptance + top_db=80 clip; TraceableMelspec output shape (2, 128, 313) for 5s @ 32kHz; full chain end-to-end finite + range.
 
 ### B.3 SED-attention head — DONE 2026-05-28
 
-- [x] B.3.1 `src/birdclef/heads/yoink_sed_head.py` — `YoinkAttHead` port. Backbone-features → GeMFreq pool → squeeze + permute → dense(in_chans → 512) + dropout(0.25) + ReLU + dropout(0.5) → 2 parallel Conv1d (attention + value) → soft-attention-weighted aggregation in BOTH logit-space (loss) and prob-space (metric).
+- [x] B.3.1 `src/birdclef/heads/xcpretrain_sed_head.py` — `XCPretrainAttHead` port. Backbone-features → GeMFreq pool → squeeze + permute → dense(in_chans → 512) + dropout(0.25) + ReLU + dropout(0.5) → 2 parallel Conv1d (attention + value) → soft-attention-weighted aggregation in BOTH logit-space (loss) and prob-space (metric).
 - [x] B.3.2 Default `p=0.5` master → dropout(p/2=0.25) before linear, dropout(p=0.5) after ReLU. ReLU activation.
 - [x] B.3.3 Default `num_class=234` (BirdCLEF 2026). `train_period == infer_period` asserted (simplified vs original Sydorskyi which supports short-window crop path at inference).
-- [x] B.3.4 Unit tests: 9 tests in `test_yoink_sed_head.py` pass. Coverage: constructor defaults match Sydorskyi (hidden 512); dropout positions/rates verified; ReLU activation verified; output dict has 3 keys with correct shapes; clipwise_pred in [0,1] (prob-space); clipwise_logits unbounded (logit-space); simplification assertion fires when train_period != infer_period; gradient flows to GeMFreq.p, attention.weight, fix_scale.weight.
+- [x] B.3.4 Unit tests: 9 tests in `test_xcpretrain_sed_head.py` pass. Coverage: constructor defaults match Sydorskyi (hidden 512); dropout positions/rates verified; ReLU activation verified; output dict has 3 keys with correct shapes; clipwise_pred in [0,1] (prob-space); clipwise_logits unbounded (logit-space); simplification assertion fires when train_period != infer_period; gradient flows to GeMFreq.p, attention.weight, fix_scale.weight.
 
 ### B.4 Checkpoint loader — DONE 2026-05-28
 
-- [x] B.4.1 `experiments/034-pretrained-backbone-yoink/scripts/load_sydorskyi_backbone.py` — instantiates `timm.create_model(features_only=True, in_chans=1)` and loads Sydorskyi ckpt with `strict=True` (after stripping defensive `model.backbone.` / `backbone.` prefixes). CLI + Python API.
+- [x] B.4.1 `experiments/034-pretrained-backbone/scripts/load_sydorskyi_backbone.py` — instantiates `timm.create_model(features_only=True, in_chans=1)` and loads Sydorskyi ckpt with `strict=True` (after stripping defensive `model.backbone.` / `backbone.` prefixes). CLI + Python API.
 - [x] B.4.2 Both backbones (EffNetV2-S 2024 + NFNet-L0 2025) load with strict=True; no missing/unexpected keys. Conv weight norms confirmed non-zero post-load.
 - [x] B.4.3 `backbone.feature_info.channels()[-1]` confirmed: **256 for EffNetV2-S** (features_only strips conv_head/bn2 — matches stripped ckpt) and **2304 for NFNet-L0**.
-- [x] B.4.4 Unit tests: 6 tests in `test_yoink_backbone_loader.py` pass. Coverage: strict=True load for both backbones; output channels verification; conv weights non-zero; forward pass produces finite (B, 256/2304, H, W); unknown-backbone raises ValueError.
+- [x] B.4.4 Unit tests: 6 tests in `test_xcpretrain_backbone_loader.py` pass. Coverage: strict=True load for both backbones; output channels verification; conv weights non-zero; forward pass produces finite (B, 256/2304, H, W); unknown-backbone raises ValueError.
 
 ### B.5 WaveCNNAttenClasifier orchestrator — DONE 2026-05-28 (added beyond original Phase B scope)
 
-- [x] B.5.1 `src/birdclef/models/yoink_wave_classifier.py` — `YoinkWaveClassifier` simplified port. Composes mel chain + features_only backbone + (deferred) spec_augment + head.
-- [x] B.5.2 Unit tests: 10 tests in `test_yoink_wave_classifier.py` pass. Coverage: construction with defaults; extract_spec shape (2, 1, 128, 313); forward output dict; finite outputs; precomputed-spec path; short-circuit return_spec_feature / return_cnn_emb; spec_augment_config raises NotImplementedError (deferred); custom num_class; load pretrained backbone end-to-end forward.
+- [x] B.5.1 `src/birdclef/models/xcpretrain_wave_classifier.py` — `XCPretrainWaveClassifier` simplified port. Composes mel chain + features_only backbone + (deferred) spec_augment + head.
+- [x] B.5.2 Unit tests: 10 tests in `test_xcpretrain_wave_classifier.py` pass. Coverage: construction with defaults; extract_spec shape (2, 1, 128, 313); forward output dict; finite outputs; precomputed-spec path; short-circuit return_spec_feature / return_cnn_emb; spec_augment_config raises NotImplementedError (deferred); custom num_class; load pretrained backbone end-to-end forward.
 
 ### B.6 FocalBCELoss — PENDING (next Phase B sub-commit)
 
@@ -124,19 +124,19 @@ Read these BEFORE starting any phase. Implementation tasks reference them by sho
 
 ### B.7 Class-balancing sampler — PENDING
 
-- [ ] B.7.1 `src/birdclef/data/yoink_sampler.py` — `WeightedRandomSampler` factory with γ knob. NFNet path: γ=−0.5 ("sqrt"); EffNetV2-S path: γ=−1 (equivalent to "1/n_c"). Verified-config doc § Training hyperparameters.
+- [ ] B.7.1 `src/birdclef/data/xcpretrain_sampler.py` — `WeightedRandomSampler` factory with γ knob. NFNet path: γ=−0.5 ("sqrt"); EffNetV2-S path: γ=−1 (equivalent to "1/n_c"). Verified-config doc § Training hyperparameters.
 - [ ] B.7.2 Unit test: empirical sample frequency over a fixed dataset matches expected within tolerance.
 
 ### B.8 Augmentation pipeline — PENDING
 
-- [ ] B.8.1 `src/birdclef/preprocessing/yoink_spec_augment.py` — `CustomFreqMasking` + `CustomTimeMasking` ports (torchaudio FreqMasking/TimeMasking wrappers; per-sample stochastic apply with p, n_masks).
+- [ ] B.8.1 `src/birdclef/preprocessing/xcpretrain_spec_augment.py` — `CustomFreqMasking` + `CustomTimeMasking` ports (torchaudio FreqMasking/TimeMasking wrappers; per-sample stochastic apply with p, n_masks).
 - [ ] B.8.2 `src/birdclef/preprocessing/random_filtering.py` — `RandomFiltering` port (4-band STFT-domain random EQ; min_db=-20; applied to waveform pre-mel).
-- [ ] B.8.3 `src/birdclef/data/yoink_dataset.py` — `WaveDataset` port (focal + labeled-SS + PL with 40% Bernoulli swap; MixUp with sum-clip target; label smoothing GT-only; BG noise OneOf). Skip the unused features (unlabeled, montage, curation, OOF, deep_supervision).
+- [ ] B.8.3 `src/birdclef/data/xcpretrain_dataset.py` — `WaveDataset` port (focal + labeled-SS + PL with 40% Bernoulli swap; MixUp with sum-clip target; label smoothing GT-only; BG noise OneOf). Skip the unused features (unlabeled, montage, curation, OOF, deep_supervision).
 - [ ] B.8.4 Unit tests: augmentation chain ends with finite tensor; MixUp sum-clip target rule verified; PL swap probability empirically ~0.4; label smoothing math correct.
 
 ### B.9 PyTorch Lightning module — PENDING
 
-- [ ] B.9.1 `src/birdclef/lightning/yoink_finetune.py` — `YoinkFinetuneModule` Lightning wrapper. training_step calls YoinkWaveClassifier + RandomFiltering(wave) + FocalLossBCE on clipwise_logits_long. validation_step computes val ROC-AUC. Optimizer + scheduler from config.
+- [ ] B.9.1 `src/birdclef/lightning/xcpretrain_finetune.py` — `XCPretrainFinetuneModule` Lightning wrapper. training_step calls XCPretrainWaveClassifier + RandomFiltering(wave) + FocalLossBCE on clipwise_logits_long. validation_step computes val ROC-AUC. Optimizer + scheduler from config.
 - [ ] B.9.2 Fast-dev-run gate: launch on a tiny subset (no full ckpt load), verify no NaN/Inf, exit 0.
 
 **Phase B exit criterion**: every component has a unit test that passes; fast-dev-run completes cleanly.
@@ -165,7 +165,7 @@ Read these BEFORE starting any phase. Implementation tasks reference them by sho
 
 ### B.8 PyTorch Lightning module
 
-- [ ] B.8.1 `src/birdclef/lightning/sydorskyi_yoink_finetune.py` — extend exp 032's `DistilledSEDFinetuneModule` pattern, replacing the backbone + head + loss + sampler.
+- [ ] B.8.1 `src/birdclef/lightning/sydorskyi_xcpretrain_finetune.py` — extend exp 032's `DistilledSEDFinetuneModule` pattern, replacing the backbone + head + loss + sampler.
 - [ ] B.8.2 `training_step`, `validation_step`, optimizer config (AdamW lr=1e-4 cosine→1e-6, 50 epochs).
 - [ ] B.8.3 Fast-dev-run on a tiny subset; confirm no NaN/Inf and W&B/log integration works.
 
@@ -173,18 +173,29 @@ Read these BEFORE starting any phase. Implementation tasks reference them by sho
 
 ---
 
-## Phase C — Gate 1: feature parity (mandatory, no LB)
+## Phase C — Gate 1: feature parity (mandatory, no LB) — DONE 2026-05-28 ✅ PASS
 
-- [ ] C.1 Pick 5 fixed BirdCLEF 2026 test audio files; document their paths.
-- [ ] C.2 Run Sydorskyi's published Kaggle inference notebook on those 5 audios; dump backbone embeddings (or final logits if no embedding hook available).
-- [ ] C.3 Run our Phase B pipeline on the same 5 audios (frozen backbone, our wrappers).
-- [ ] C.4 Compute per-audio cosine similarity on embeddings.
-- [ ] C.5 Compute mean L2 distance.
-- [ ] C.6 Target: cosine ≥ **0.999** on all 5, mean L2 < 1e-4.
+**Approach change (vs original plan)**: the proposal specced parity against
+Sydorskyi's *published Kaggle inference notebook*. Since we now have his full
+source vendored as a git submodule (`vendor/sydorskyi-2025/`), we ran the parity
+test LOCALLY against his *own* `WaveCNNAttenClasifier` — a stronger, faster,
+fully-reproducible oracle for "is our PORT faithful?", with no Kaggle round-trip.
+Both classifiers expose identical `return_spec_feature` / `return_cnn_emb` taps;
+both backbones loaded from the *same* cleaned pretrained `state_dict`, so any
+Stage-2 divergence would be attributable purely to the mel front-end.
+(Library version-skew vs Sydorskyi's original training env is NOT tested here —
+that lower-risk concern is what Gate 2 frozen-backbone OOF AUC covers.)
 
-**Phase C exit criterion**: cosine ≥0.999 on every audio. NO LB submission until this passes.
+Script: `scripts/gate1_parity.py`. Results JSON: `outputs/gate1_parity{,_nfnet}.json`.
 
-**Phase C pivot (if cosine <0.99 after extended debug)**: abandon Path A → Path C fallback (skip directly to Phase I ensemble of existing models without yoink).
+- [x] C.1 Picked first 5 sorted `train_soundscapes` `.ogg` (deterministic): `BC2026_Train_0001..0005_S08`. Same waveform tensor fed to both classifiers (audio backend not part of the comparison).
+- [x] C.2/C.3 Ran our `XCPretrainWaveClassifier` AND vendored `WaveCNNAttenClasifier` on the same 5 audios, frozen, eval mode.
+- [x] C.4/C.5 Computed per-audio cosine + RMS-L2 + max-abs-diff at BOTH the mel stage and the backbone-embedding stage.
+- [x] C.6 Result: **bit-identical** — cosine = 1.00000000, max-abs-diff = 0.0, RMS-L2 = 0.0 on all 5 audios, BOTH stages, BOTH backbones (EffNetV2-S 256-ch + NFNet-L0 2304-ch). Far exceeds the cosine ≥0.999 / L2 <1e-4 bar.
+
+**Phase C exit criterion**: ✅ cosine ≥0.999 on every audio — PASS (bit-identical). Clears the highest-probability catastrophic-bug class (nnAudio mel mismatch, standardize/min-max order/axes, head dim, ckpt keys). NO LB burned. Ready for Phase D Gate 2.
+
+**Phase C pivot (if cosine <0.99 after extended debug)**: N/A — passed cleanly.
 
 ---
 
@@ -204,20 +215,20 @@ Read these BEFORE starting any phase. Implementation tasks reference them by sho
 
 ### E.1 Training
 
-- [ ] E.1.1 Config: `configs/yoink_effv2s_frozen.yaml` (to be created in Phase B).
+- [ ] E.1.1 Config: `configs/xcpretrain_effv2s_frozen.yaml` (to be created in Phase B).
 - [ ] E.1.2 Train frozen-backbone fold 0 for 25-50 epochs (start 25; extend if not converged).
 - [ ] E.1.3 Confirm `last.ckpt` written + W&B log uploaded + `metrics.json` saved.
 
 ### E.2 D.5 e2e validation
 
-- [ ] E.2.1 Reuse exp 032's `validate_end_to_end.sh` adapted for the yoink config.
+- [ ] E.2.1 Reuse exp 032's `validate_end_to_end.sh` adapted for the xcpretrain config.
 - [ ] E.2.2 Gate: `|train_auroc − e2e_auroc| ≤ 0.02`.
 
 ### E.3 Export + LB submit
 
-- [ ] E.3.1 Extend `experiments/010-submission-pipeline/sbatch/export.sbatch` with `export_sydorskyi_yoink()` helper.
+- [ ] E.3.1 Extend `experiments/010-submission-pipeline/sbatch/export.sbatch` with `export_sydorskyi_xcpretrain()` helper.
 - [ ] E.3.2 Add MODELS entry in `scripts/upload_kaggle.py`.
-- [ ] E.3.3 Create `kaggle_kernel/kernel-metadata-pretrained-backbone-yoink-effv2s-frozen.json` (verify title→slug derivation).
+- [ ] E.3.3 Create `kaggle_kernel/kernel-metadata-pretrained-backbone-xcpretrain-effv2s-frozen.json` (verify title→slug derivation).
 - [ ] E.3.4 Add weights slug to `kaggle_kernel/submission.py` MODEL_SLUGS.
 - [ ] E.3.5 Submission notebook must use nnAudio mel inference (verify in kernel logs).
 - [ ] E.3.6 ONNX export — may not be straightforward with nnAudio in the forward path; consider TorchScript fallback if ONNX trips on nnAudio ops.
@@ -251,7 +262,7 @@ Read these BEFORE starting any phase. Implementation tasks reference them by sho
 
 ## Phase G — Full fine-tune (unfreeze backbone)
 
-- [ ] G.1 Config: `configs/yoink_effv2s_fullft.yaml` (lr=1e-4 cosine→1e-6, 50 epochs, AdamW).
+- [ ] G.1 Config: `configs/xcpretrain_effv2s_fullft.yaml` (lr=1e-4 cosine→1e-6, 50 epochs, AdamW).
 - [ ] G.2 Train full FT EffNetV2-S fold 0.
 - [ ] G.3 D.5 e2e validation.
 - [ ] G.4 Export + LB submit.
@@ -280,11 +291,11 @@ Run only after Phase F or G yields a single base LB ≥ 0.92 (Jack's warning: PP
 
 ## Phase I — Ensemble
 
-Run anytime once a yoinked base ≥ 0.91 exists (Phase E onward).
+Run anytime once a xcpretrained base ≥ 0.91 exists (Phase E onward).
 
-- [ ] I.1 Rank-ensemble: yoink (Phase E/F/G best) ⊕ exp 032 distilled-sed-kd-5fold (0.915) ⊕ exp 023 Perch-MLP (0.929).
-- [ ] I.2 Stepwise LB: yoink+032 → +023 → maybe +NFNet-L0 variant.
-- [ ] I.3 Optional: NFNet-L0 yoink branch (different pretrain backbone for diversity) — gate on remaining compute budget.
+- [ ] I.1 Rank-ensemble: xcpretrain (Phase E/F/G best) ⊕ exp 032 distilled-sed-kd-5fold (0.915) ⊕ exp 023 Perch-MLP (0.929).
+- [ ] I.2 Stepwise LB: xcpretrain+032 → +023 → maybe +NFNet-L0 variant.
+- [ ] I.3 Optional: NFNet-L0 xcpretrain branch (different pretrain backbone for diversity) — gate on remaining compute budget.
 - [ ] I.4 Optional: 2-seed identical-architecture ensemble (Nikita's stability lever).
 - [ ] I.5 Drop any added member that doesn't lift.
 
@@ -311,7 +322,7 @@ Run anytime once a yoinked base ≥ 0.91 exists (Phase E onward).
 - [ ] C.2 Update `user/murilo/MODEL-RUNS.md` with exp 034 section.
 - [ ] C.3 Update `user/murilo/CONTEXT.md` for the next session.
 - [ ] C.4 Open PR — squash-merge per `feedback_squash_merge.md`.
-- [ ] C.5 If CONFIRM/PARTIAL: scope follow-up (own-teacher PL on yoinked base, OR additional ensemble members).
+- [ ] C.5 If CONFIRM/PARTIAL: scope follow-up (own-teacher PL on xcpretrained base, OR additional ensemble members).
 - [ ] C.6 If REJECT: document negative result; revert to Path C ensemble.
 
 ---
@@ -320,7 +331,7 @@ Run anytime once a yoinked base ≥ 0.91 exists (Phase E onward).
 
 | Trigger | Pivot |
 |---|---|
-| Phase C cosine <0.99 after extended debug | Abandon Path A → Path C fallback (Phase I direct, no yoink) |
+| Phase C cosine <0.99 after extended debug | Abandon Path A → Path C fallback (Phase I direct, no xcpretrain) |
 | Phase D OOF AUC <0.93 | Return to Phase C parity audit |
 | Phase E LB <0.90 | Pipeline broken — debug Phase B; if still broken after extended debug, fall back to Path C |
 | Phase F 5-fold <0.92 | Try NFNet-L0 variant OR accept ceiling + skip to Phase H+I |
