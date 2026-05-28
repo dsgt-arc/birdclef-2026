@@ -171,13 +171,26 @@ Script: `scripts/gate1_parity.py`. Results JSON: `outputs/gate1_parity{,_nfnet}.
 
 ## Phase D — Gate 2: frozen-backbone head sanity (no LB)
 
-- [ ] D.1 Freeze backbone (`for p in backbone.parameters(): p.requires_grad = False`).
-- [ ] D.2 Random-init head.
-- [ ] D.3 Train head only on fold 0, 5 epochs.
-- [ ] D.4 Compute local OOF AUC on fold-0 holdout SS pool.
+**Setup DONE 2026-05-28** (ready to launch; Murilo runs the SLURM job):
+- [x] D.1 Freeze backbone — `--freeze-backbone` (verified: 371K trainable / 19.8M frozen in pre-flight).
+- [x] D.2 Random-init head — head is random by default; `--load-pretrained` loads only the backbone.
+- [x] Training-loop audit vs exp 021 / 032 / 033 / Sydorskyi — no bugs; Sydorskyi-faithful. See `results.md § Training-loop audit`.
+- [x] `train.py` persists OOF `val/auroc` to `outputs/<run>-fold<k>.json`; `sbatch/gate2.sbatch` wraps it ($TMPDIR venv, GPU).
+- [x] Local CPU pre-flight (`--fast-dev-run --load-pretrained --freeze-backbone`) PASS — frozen+pretrained path runs clean.
+- [ ] D.3 Train head-only on fold 0, 5 epochs (**GPU job — launch below**).
+- [ ] D.4 Read OOF AUC from `outputs/gate2-tf_efficientnetv2_s_in21k-fold0.json` (= `val/auroc` on fold-0 holdout labeled-SS pool).
 - [ ] D.5 Target: AUC ≥ **0.95**. (Sydorskyi reference: 0.984.)
 
-**Phase D exit criterion**: local OOF AUC ≥ 0.95. If 0.93-0.95, marginal — investigate head + augmentation. If <0.93, return to Phase C parity audit.
+**Launch command** (per `feedback_user_runs_commands` — Murilo runs SLURM jobs):
+```bash
+cd user/murilo/experiments/034-pretrained-backbone
+sbatch sbatch/gate2.sbatch          # EffNetV2-S, fold 0, 5 epochs, frozen + pretrained
+# optional NFNet-L0 variant:        BACKBONE=eca_nfnet_l0 sbatch sbatch/gate2.sbatch
+# monitor:                          squeue -u $USER ; tail -f logs/slurm-*.out
+# result:                           cat outputs/gate2-tf_efficientnetv2_s_in21k-fold0.json
+```
+
+**Phase D exit criterion**: local OOF AUC ≥ 0.95. If 0.93-0.95, marginal — investigate head + augmentation. If <0.93, return to Phase C parity audit. (Offline-LB anti-correlation caveat applies — Gate 2 is a sanity FLOOR, not an LB predictor; Phase E LB is the real read.)
 
 ---
 

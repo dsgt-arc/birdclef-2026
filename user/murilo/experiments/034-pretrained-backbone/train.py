@@ -20,12 +20,14 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
 
 import pandas as pd
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import CSVLogger
 
 EXP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(EXP_DIR.parent.parent / "src"))  # user/murilo/src (belt-and-suspenders)
@@ -73,6 +75,13 @@ def main():
     p.add_argument("--devices", type=int, default=1)
     p.add_argument("--accelerator", default="auto")
     p.add_argument("--no-spec-augment", action="store_true")
+    p.add_argument("--run-name", default="xcpretrain")
+    p.add_argument(
+        "--grad-clip",
+        type=float,
+        default=0.0,
+        help="gradient_clip_val (0 = none, matching Sydorskyi). Set e.g. 1.0 for full-FT stability.",
+    )
     args = p.parse_args()
 
     pl.seed_everything(1243, workers=True)  # Sydorskyi seed
@@ -144,16 +153,45 @@ def main():
         freeze_backbone=args.freeze_backbone,
     )
 
+    run_tag = f"{args.run_name}-fold{args.fold}"
+    out_dir = EXP_DIR / "outputs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    pl_logger = False if args.fast_dev_run else CSVLogger(save_dir=str(out_dir), name=run_tag)
+
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         devices=args.devices,
         accelerator=args.accelerator,
         precision="32-true",  # Sydorskyi: no AMP
+        gradient_clip_val=(args.grad_clip or None),  # Sydorskyi: none (trainer_params={})
         fast_dev_run=args.fast_dev_run,
         log_every_n_steps=10,
-        logger=False,
+        logger=pl_logger,
     )
     trainer.fit(module, data_module)
+
+    # Persist the OOF metric (Gate 2 reads val/auroc on the fold-0 holdout SS pool).
+    if not args.fast_dev_run:
+        metrics = {}
+        for k, v in trainer.callback_metrics.items():
+            try:
+                metrics[k] = float(v)
+            except (TypeError, ValueError):
+                pass
+        result = {
+            "run_name": args.run_name,
+            "fold": args.fold,
+            "backbone": args.backbone,
+            "freeze_backbone": args.freeze_backbone,
+            "load_pretrained": args.load_pretrained,
+            "max_epochs": args.max_epochs,
+            "val_auroc": metrics.get("val/auroc"),
+            "val_loss": metrics.get("val/loss"),
+            "all_metrics": metrics,
+        }
+        result_path = out_dir / f"{run_tag}.json"
+        result_path.write_text(json.dumps(result, indent=2))
+        logger.info(f"OOF val/auroc = {result['val_auroc']}  →  {result_path}")
     logger.info("Training complete.")
 
 
