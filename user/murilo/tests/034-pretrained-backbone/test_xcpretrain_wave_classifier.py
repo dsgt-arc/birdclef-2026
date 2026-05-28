@@ -118,12 +118,34 @@ def test_return_cnn_emb_short_circuit():
     assert emb.shape[0] == 2 and emb.shape[1] == 256
 
 
-def test_spec_augment_config_raises_not_implemented():
-    """spec_augment_config support is deferred — should raise clearly."""
-    with pytest.raises(NotImplementedError, match="spec_augment_config support pending"):
+def test_spec_augment_config_builds_and_applies():
+    """spec_augment_config now wires CustomFreq/TimeMasking; applied in training mode only."""
+    import torch
+
+    cfg = {
+        "freq_mask": {"mask_max_length": 10, "mask_max_masks": 3, "p": 1.0, "inplace": False},
+        "time_mask": {"mask_max_length": 20, "mask_max_masks": 3, "p": 1.0, "inplace": False},
+    }
+    model = XCPretrainWaveClassifier(backbone="tf_efficientnetv2_s_in21k", spec_augment_config=cfg)
+    assert model.spec_augment is not None and len(model.spec_augment) == 2
+
+    spec = torch.rand(2, 1, 128, 313)
+    # eval mode: spec_augment must NOT fire (forward checks self.training)
+    model.eval()
+    out_eval = model(x=None, spec=spec.clone(), return_spec_feature=True)
+    torch.testing.assert_close(out_eval, spec)
+    # train mode with p=1.0: masking must change the spec
+    model.train()
+    out_train = model(x=None, spec=spec.clone(), return_spec_feature=True)
+    assert not torch.allclose(out_train, spec)
+
+
+def test_unsupported_spec_augment_key_raises():
+    """Only freq_mask/time_mask are supported (selected configs)."""
+    with pytest.raises(ValueError, match="freq_mask.*time_mask"):
         XCPretrainWaveClassifier(
             backbone="tf_efficientnetv2_s_in21k",
-            spec_augment_config={"freq_mask": {"mask_max_length": 10}},
+            spec_augment_config={"power_aug": {"foo": 1}},
         )
 
 

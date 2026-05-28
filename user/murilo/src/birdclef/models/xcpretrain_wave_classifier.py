@@ -6,7 +6,7 @@ Source: vendor/sydorskyi-2025/code_base/models/wave_clasifier.py:37-298 @ 053594
 Composes:
     Sydorskyi mel chain (TraceableMelspec + ChannelAgnosticAmplitudeToDB + NormalizeMelSpec)
       + timm features_only backbone (EffNetV2-S or NFNet-L0, in_chans=1)
-      + SpecAugment (CustomFreqMasking + CustomTimeMasking, training only — TODO Phase B sub-commit)
+      + SpecAugment (CustomFreqMasking + CustomTimeMasking, training only)
       + XCPretrainAttHead (512 hidden, GeMFreq, dropout 0.25/0.5)
 
 Pipeline (forward):
@@ -42,6 +42,10 @@ from torch import Tensor
 
 from birdclef.heads.xcpretrain_sed_head import XCPretrainAttHead
 from birdclef.preprocessing.xcpretrain_mel import build_sydorskyi_mel_extractor
+from birdclef.preprocessing.xcpretrain_spec_augment import (
+    CustomFreqMasking,
+    CustomTimeMasking,
+)
 
 
 class XCPretrainWaveClassifier(nn.Module):
@@ -94,17 +98,26 @@ class XCPretrainWaveClassifier(nn.Module):
             exportable=exportable,
         )
 
-        # 2. SpecAugment (optional, training-only) — TODO Phase B sub-commit
-        # For now we defer the CustomFreqMasking / CustomTimeMasking import (those
-        # modules will land alongside the dataset + loss + sampler ports). Forward
-        # raises clearly if config is provided but module not implemented.
+        # 2. SpecAugment (optional, training-only). Mirrors Sydorskyi's
+        #    WaveCNNAttenClasifier spec_augment construction (wave_clasifier.py:81-100),
+        #    restricted to the freq_mask + time_mask transforms our selected_ebs.py /
+        #    selected_eca.py configs actually use (power_aug / lower_high / white_noise /
+        #    bandpass are not in the selected configs).
         if spec_augment_config is not None:
-            raise NotImplementedError(
-                "XCPretrainWaveClassifier: spec_augment_config support pending Phase B sub-commit "
-                "(needs birdclef.preprocessing.xcpretrain_spec_augment). For Gate 1 parity testing "
-                "and Gate 2 frozen-backbone sanity, leave spec_augment_config=None."
-            )
-        self.spec_augment = None
+            unsupported = set(spec_augment_config) - {"freq_mask", "time_mask"}
+            if unsupported:
+                raise ValueError(
+                    "XCPretrainWaveClassifier supports only 'freq_mask'/'time_mask' "
+                    f"spec_augment keys (selected configs); got extra: {sorted(unsupported)}"
+                )
+            modules = []
+            if "freq_mask" in spec_augment_config:
+                modules.append(CustomFreqMasking(**spec_augment_config["freq_mask"]))
+            if "time_mask" in spec_augment_config:
+                modules.append(CustomTimeMasking(**spec_augment_config["time_mask"]))
+            self.spec_augment = nn.Sequential(*modules)
+        else:
+            self.spec_augment = None
 
         # 3. Backbone (timm features_only mode — strips conv_head/bn2/classifier
         #    automatically; matches Sydorskyi's stripped pretrained ckpt key set)

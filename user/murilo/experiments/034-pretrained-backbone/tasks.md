@@ -117,59 +117,29 @@ Read these BEFORE starting any phase. Implementation tasks reference them by sho
 - [x] B.5.1 `src/birdclef/models/xcpretrain_wave_classifier.py` — `XCPretrainWaveClassifier` simplified port. Composes mel chain + features_only backbone + (deferred) spec_augment + head.
 - [x] B.5.2 Unit tests: 10 tests in `test_xcpretrain_wave_classifier.py` pass. Coverage: construction with defaults; extract_spec shape (2, 1, 128, 313); forward output dict; finite outputs; precomputed-spec path; short-circuit return_spec_feature / return_cnn_emb; spec_augment_config raises NotImplementedError (deferred); custom num_class; load pretrained backbone end-to-end forward.
 
-### B.6 FocalBCELoss — PENDING (next Phase B sub-commit)
+### B.6 FocalLossBCE — DONE 2026-05-28 ✅
 
-- [ ] B.6.1 `src/birdclef/losses/focal_bce.py` — direct port from `vendor/sydorskyi-2025/code_base/losses/focal_loss.py:28-54`. Composition: `1.0 * BCEWithLogitsLoss + 1.0 * torchvision.ops.focal_loss.sigmoid_focal_loss(α=0.25, γ=2.0)`. Reduction="mean".
-- [ ] B.6.2 Unit tests: synthetic batch finite loss + gradient finite; matches torchvision impl when bce_weight=0; matches BCE-only when focal_weight=0.
+- [x] B.6.1 `src/birdclef/losses/focal_bce.py` — verbatim port of `focal_loss.py:28-54`. `1.0*BCEWithLogitsLoss + 1.0*torchvision.ops.focal_loss.sigmoid_focal_loss(α=0.25, γ=2.0)`, reduction="mean", applied to `clipwise_logits_long`.
+- [x] B.6.2 `test_focal_bce.py` — 5 tests: finite loss+grad; == torchvision focal when bce_weight=0; == BCEWithLogits when focal_weight=0; default params; weighted-sum composition.
 
-### B.7 Class-balancing sampler — PENDING
+### B.7 Class-balancing sampler — DONE 2026-05-28 ✅
 
-- [ ] B.7.1 `src/birdclef/data/xcpretrain_sampler.py` — `WeightedRandomSampler` factory with γ knob. NFNet path: γ=−0.5 ("sqrt"); EffNetV2-S path: γ=−1 (equivalent to "1/n_c"). Verified-config doc § Training hyperparameters.
-- [ ] B.7.2 Unit test: empirical sample frequency over a fixed dataset matches expected within tolerance.
+- [x] B.7.1 `src/birdclef/data/xcpretrain_sampler.py` — `compute_class_weights` + `build_xcpretrain_sampler`. mode "balanced"→1/n_c (EffNetV2-S), "sqrt"→(n_c/N)^-0.5 (NFNet). Mirrors `train_lightning.py:240-263`.
+- [x] B.7.2 `test_xcpretrain_sampler.py` — 6 tests incl. empirical equalization of a skewed 90/10 distribution. (Standalone utility — exp 032 datamodule uses its own MixSamp by default; available to swap in for Sydorskyi-faithful sampling.)
 
-### B.8 Augmentation pipeline — PENDING
+### B.8 Augmentation ports — DONE 2026-05-28 ✅ (B.8.1/B.8.2); B.8.3 = REUSE (see decision)
 
-- [ ] B.8.1 `src/birdclef/preprocessing/xcpretrain_spec_augment.py` — `CustomFreqMasking` + `CustomTimeMasking` ports (torchaudio FreqMasking/TimeMasking wrappers; per-sample stochastic apply with p, n_masks).
-- [ ] B.8.2 `src/birdclef/preprocessing/random_filtering.py` — `RandomFiltering` port (4-band STFT-domain random EQ; min_db=-20; applied to waveform pre-mel).
-- [ ] B.8.3 `src/birdclef/data/xcpretrain_dataset.py` — `WaveDataset` port (focal + labeled-SS + PL with 40% Bernoulli swap; MixUp with sum-clip target; label smoothing GT-only; BG noise OneOf). Skip the unused features (unlabeled, montage, curation, OOF, deep_supervision).
-- [ ] B.8.4 Unit tests: augmentation chain ends with finite tensor; MixUp sum-clip target rule verified; PL swap probability empirically ~0.4; label smoothing math correct.
+- [x] B.8.1 `src/birdclef/preprocessing/xcpretrain_spec_augment.py` — `CustomMasking`/`CustomFreqMasking`/`CustomTimeMasking` verbatim port. Wired into `XCPretrainWaveClassifier` (replaces the prior NotImplementedError; applied in forward when training).
+- [x] B.8.2 `src/birdclef/preprocessing/random_filtering.py` — `RandomFiltering` verbatim port (4-band STFT EQ, min_db=-20, peak-normalize). Applied to the waveform in the module's training_step (Sydorskyi `batch_aug`).
+- [x] B.8.3 **DECISION — reuse exp 032's `DistilledSEDDataModule` instead of porting Sydorskyi's `WaveDataset` from scratch.** An Explore-agent audit confirmed the datamodule is model-agnostic: it yields raw-waveform `(wavs (B,1,T), labels (B,C), wts, mks)` batches and already owns the 2026 5-fold split (seed=42), data paths, rare-species upsampling, and PL hooks. Porting a stateful WaveDataset would re-introduce exactly the silent-bug surface Gate 1 just eliminated, and can't be data-faithful anyway (different competition). **Rationale + 3-option tradeoff + fidelity-escalation path recorded in `results.md` § B.8.3.** Sydorskyi-specific data dynamics NOT yet matched (MixUp sum-clip, 40% PL swap, BG-noise OneOf, class-balanced sampler) are LOW-risk per the research and can be swapped in incrementally and A/B'd at Phase G / PL round. Empirical arbiter = Gate 2 OOF AUC + Phase E LB.
+- [x] B.8.4 `test_xcpretrain_augment.py` — 6 tests: masking shape/energy-non-increase/p=0 noop/p=1 changes/inplace; RandomFiltering wave roundtrip finite + peak-capped + spec-path gain.
 
-### B.9 PyTorch Lightning module — PENDING
+### B.9 PyTorch Lightning module — DONE 2026-05-28 ✅
 
-- [ ] B.9.1 `src/birdclef/lightning/xcpretrain_finetune.py` — `XCPretrainFinetuneModule` Lightning wrapper. training_step calls XCPretrainWaveClassifier + RandomFiltering(wave) + FocalLossBCE on clipwise_logits_long. validation_step computes val ROC-AUC. Optimizer + scheduler from config.
-- [ ] B.9.2 Fast-dev-run gate: launch on a tiny subset (no full ckpt load), verify no NaN/Inf, exit 0.
+- [x] B.9.1 `src/birdclef/lightning/xcpretrain_finetune.py` — `XCPretrainFinetuneModule`. Consumes exp 032 datamodule batches → squeeze → (train) RandomFiltering → XCPretrainWaveClassifier → FocalLossBCE on `clipwise_logits_long`; mass-preserving label smoothing (0.05); optional frozen-backbone; AdamW lr=1e-4 cos→1e-6 per-step; val AUROC via TuckerMacroAUC (matches exp 032 e2e gate). `test_xcpretrain_finetune.py` — 6 smoke tests.
+- [x] B.9.2 Fast-dev-run gate: `experiments/034-pretrained-backbone/train.py` (reuses exp 032 data wiring). `--fast-dev-run` ran 1 train + 1 val batch on real 2026 data — finite losses (train 1.023, val 0.821), AUROC computed, exit 0, no NaN/Inf.
 
-**Phase B exit criterion**: every component has a unit test that passes; fast-dev-run completes cleanly.
-
-**Phase B sub-commit 1 (CURRENT) exit criterion**: ✅ B.1-B.5 done. Mel + head + backbone-loader + classifier orchestrator + 35 tests pass + backward-compat (exp 032/033's 195 tests still pass = 230 total). Ready for Phase C Gate 1 parity test.
-
-### B.5 FocalBCELoss
-
-- [ ] B.5.1 `src/birdclef/losses/focal_bce.py` — `FocalBCELoss = 1.0 * BCE + 1.0 * sigmoid_focal(α, γ)` with verified α/γ.
-- [ ] B.5.2 Label smoothing α=0.05 mass-preserving applied to targets before loss.
-- [ ] B.5.3 Unit test: synthetic batch, loss tensor finite, gradient finite, matches reference behavior at α=γ extremes.
-
-### B.6 Class-balancing sampler
-
-- [ ] B.6.1 Use `WeightedRandomSampler` with weights = `(class_freq / total)^γ`, γ from Phase A.
-- [ ] B.6.2 Unit test: empirical sample frequency over a fixed dataset matches expected within tolerance.
-
-### B.7 Augmentation pipeline
-
-- [ ] B.7.1 Random 5s crop (training) + non-overlapping 5s windows (inference).
-- [ ] B.7.2 MixUp(p=0.5) with `target = clip(t1 + t2, 0, 1)` (sum-clip, not max).
-- [ ] B.7.3 BG noise (p=0.5, OneOf nocall-SS | ESC-50) with convex blend amp ∈ U[0.25, 0.75]. (defer ESC-50 sourcing if it adds friction).
-- [ ] B.7.4 Peak-normalize after augmentation.
-- [ ] B.7.5 RandomFiltering (4-band random EQ via STFT, U[−20, 0] dB per band) — may be optional for Phase E first LB; full reproducibility for Phase G full FT.
-- [ ] B.7.6 SpecAugment freq L=10 n=3 p=0.3 + time L=20 n=3 p=0.3.
-
-### B.8 PyTorch Lightning module
-
-- [ ] B.8.1 `src/birdclef/lightning/sydorskyi_xcpretrain_finetune.py` — extend exp 032's `DistilledSEDFinetuneModule` pattern, replacing the backbone + head + loss + sampler.
-- [ ] B.8.2 `training_step`, `validation_step`, optimizer config (AdamW lr=1e-4 cosine→1e-6, 50 epochs).
-- [ ] B.8.3 Fast-dev-run on a tiny subset; confirm no NaN/Inf and W&B/log integration works.
-
-**Phase B exit criterion**: every component has a unit test that passes; fast-dev-run completes cleanly.
+**Phase B exit criterion**: ✅ every component unit-tested (58 exp034 tests pass); fast-dev-run completes cleanly; 195 backward-compat tests still pass (253 total green).
 
 ---
 
