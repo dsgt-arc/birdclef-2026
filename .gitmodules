@@ -82,3 +82,6 @@
 [submodule "vendor/scaling-verification"]
 	path = vendor/scaling-verification
 	url = https://github.com/HazyResearch/scaling-verification.git
+[submodule "vendor/sydorskyi-2025"]
+	path = vendor/sydorskyi-2025
+	url = https://github.com/VSydorskyy/BirdCLEF_2025_2nd_place.git
