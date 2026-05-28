@@ -175,3 +175,50 @@ Read these BEFORE starting any task. Implementation tasks reference them by shor
 - [x] C.2 `MODEL-RUNS.md` exp 033 header updated to "REJECT"; offline-metrics table re-titled with LB column; LB-expectations section replaced with actual D.5 + LB results table + verdict + paired Δ readings.
 - [ ] C.3 Update `user/murilo/CONTEXT.md` with next-session pickup notes (Sydorskyi-yoink pivot scope + remaining Day-2 LB cap budget).
 - [ ] C.4 PR — ready for merge with REJECT verdict. Squash-merge per `feedback_squash_merge.md`.
+
+---
+
+## Phase 5 — Sydorskyi-divergence diagnostic tests (2026-05-27)
+
+REJECT verdict was suspicious — exp 033 implementation diverges from the only published 0.93+ PL recipe (Sydorskyi 2025 2nd place) on 16 of 20 axes. Full audit at `user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md`. Phase 5 reissues the experiment with the cheapest divergence fixes before pivoting.
+
+**Detailed workflow + commands + decision criteria**: `experiments/033-own-teacher-pl/diagnostic-tests.md` (resume-after-disconnect anchor; read this first if returning to this work).
+
+### Test 1 — chunk discard + trim probability (LANDED CODE, READY TO LAUNCH)
+
+- [x] 5.1.1 Modify `experiments/025-iter-pseudo-labeling/generate_pseudo_labels.py` to support optional `filter:` section (`min_max_prob`, `trim_min_prob`); backward-compat (no filter section = no-op).
+- [x] 5.1.2 Create `configs/pl_gen_v3.yaml` — T2 source + Sydorskyi-canonical 0.5/0.1 filters. Output: `shared/pseudo-labels/birdclef-2026/v3-distilled-sed-kd-5fold-trim01-discard05/`.
+- [x] 5.1.3 Create `configs/a2_kd_v3.yaml` — a2-kd canonical Antoine cell pointed at v3 parquet.
+- [ ] 5.1.4 Re-issue v3 PL parquet (head node, ~30s).
+- [ ] 5.1.5 Pre-flight v3 parquet (`scripts/preflight_checks.py --parquet-path .../v3.../sed_pseudo_labels.parquet`).
+- [ ] 5.1.6 Train a2-kd-v3 (sbatch, ~6.5h on rtx6000).
+- [ ] 5.1.7 D.5 e2e validation (~5 min).
+- [ ] 5.1.8 Export ONNX + Kaggle upload + LB submit.
+- [ ] 5.1.9 Read LB. Decision matrix:
+  - LB > 0.913 → trim+discard explain REJECT; scale to other cells (a3-kd-v3, a4-kd-v3).
+  - LB 0.906-0.913 → modest lift; run Test 2 (focal × PL fusion).
+  - LB 0.886-0.906 → these two filters alone don't help; run Test 2 then decide.
+  - LB < 0.886 → filters hurt; investigate, possibly skip Test 2.
+
+### Test 2 — focal × PL MixUp fusion (CONDITIONAL on Test 1)
+
+Implements Sydorskyi's "cleverest piece" — focal (hard) × PL (soft) audio mix at 50/50 with sum-clip targets. Adds Path D to `FocalDS.__getitem__`.
+
+- [ ] 5.2.1 Add `PLDataPool` + `focal_pl_mixup_prob` to FocalDS.
+- [ ] 5.2.2 Wire into DataModule under new `sampler="focal_fusion"` option.
+- [ ] 5.2.3 Unit tests + smoke test (fast-dev-run).
+- [ ] 5.2.4 Create `configs/a2_kd_v3_fusion.yaml`.
+- [ ] 5.2.5 Train + D.5 + LB.
+- [ ] 5.2.6 Decision matrix per `diagnostic-tests.md` § Test 2.
+
+### Test 3 — add focal loss (CONDITIONAL on Tests 1, 2 inconclusive)
+
+Adds `sigmoid_focal_loss(α=0.25, γ=2.0)` to BCE branch.
+
+- [ ] 5.3.1 Modify `_dual_supervision_loss` with optional `focal_loss_weight`.
+- [ ] 5.3.2 Train `a2_kd_v3_fusion_focal.yaml`.
+- [ ] 5.3.3 LB read; pivot decision.
+
+### Pivot trigger
+
+If all 3 tests fail (LB < 0.906): pivot to Sydorskyi-yoink (Path A). Document negative result. Don't run remaining exp 033 cells (a3-kd, a3-v5j Day 1, all Day 2).

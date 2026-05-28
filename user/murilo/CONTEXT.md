@@ -3,10 +3,10 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-26 (end of day — exp 033 Phase F complete, Phase G in
-flight: all 10 ablations running in parallel on gpu-rtx6000).
+**Last updated**: 2026-05-27 (end of day — exp 033 REJECT verdict landed,
+Phase 5 diagnostic tests scaffolded; Test 1 ready to launch).
 
-**Competition deadline**: 2026-06-03 (8 days from this update).
+**Competition deadline**: 2026-06-03 (7 days from this update).
 
 ---
 
@@ -19,18 +19,80 @@ flight: all 10 ablations running in parallel on gpu-rtx6000).
 - HGNet+KD ablation: LB 0.901 → backbone NOT the bottleneck (refuted).
 - Project best overall (UNCHANGED): exp 023 `perch-sed-ensemble-mlp-only` = **0.929 LB**.
 
-**Exp 033 — Own-teacher pseudo-labels on distilled-sed-kd: PHASE G IN FLIGHT**
-- Branch: `mg/exp033-own-teacher-pl` (12 commits ahead of main, all pushed).
-- Hypothesis: 1:1 own-teacher PL (Antoine/OverfitOracle/Boredom protocol) on Phase D
-  `distilled-sed-kd` → LB ≥ 0.920 (CONFIRM).
-- All 10 ablations LAUNCHED 2026-05-26 PM → running overnight on gpu-rtx6000.
-- T1 cache + v1 parquet ready (existing); T2 cache + v2 parquet generated this session.
+**Exp 033 — Own-teacher pseudo-labels on distilled-sed-kd: REJECT verdict + Phase 5 diagnostic in progress**
+- Branch: `mg/exp033-own-teacher-pl` (~24 commits ahead of main, all pushed).
+- All 10 ablations trained. D.5 e2e validation: 10/10 PASS.
+- 3 of 5 Day-1 LB submissions landed — all REJECT (Δ ≤ 0 vs 0.906 baseline):
+  - a4-kd (warm + Uniform + T2 teacher):  LB **0.899** (Δ −0.007)
+  - a2-kd ⭐ (random + Uniform + T2, canonical Antoine):  LB **0.886** (Δ −0.020)
+  - a4-v5j (warm + Uniform + T1):  LB **0.897** (Δ −0.009)
+- Paired teacher-axis Δ (a4-kd vs a4-v5j): +0.002 LB — refutes proposal's headline
+  teacher-diversity hypothesis at LB scale.
+- Remaining Day-1 (a3-kd, a3-v5j) + all Day-2 cells NOT submitted on the trajectory.
 
-**All Phase A-F done. Phase G (training) running through the night. Resume morning of 2026-05-27.**
+**Phase 5 — Sydorskyi-divergence diagnostic (NEW, 2026-05-27 PM)**:
+Audit found exp 033 implementation diverges from the only published 0.93+ PL recipe
+(Sydorskyi 2025 2nd place) on **16 of 20 axes**. Most important: we never implemented
+focal × PL MixUp fusion, chunk discard, or trim probability. The REJECT verdict
+cannot be cleanly interpreted as a refutation of the protocol — we never ran the
+protocol. See:
+  - `user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md`
+    (full 20-axis divergence table + decision matrix; commit `40708f7`)
+  - `experiments/033-own-teacher-pl/diagnostic-tests.md`
+    (Test 1/2/3 workflow + commands + decision criteria; **resume-after-disconnect anchor**)
+
+**Phase 5 Test 1 status (READY TO LAUNCH)**:
+- Code: `generate_pseudo_labels.py` modified with optional `filter:` section.
+- Configs: `configs/pl_gen_v3.yaml` (T2 + Sydorskyi 0.5/0.1 filters) and
+  `configs/a2_kd_v3.yaml` (canonical Antoine on v3 parquet) created.
+- Steps: re-issue v3 PL parquet (~30s head node) → pre-flight → sbatch
+  a2_kd_v3 (~6.5h) → D.5 → ONNX export → LB submit.
+- Decision criterion: LB > 0.913 → protocol recoverable, scale to other cells;
+  LB 0.906-0.913 → run Test 2 (focal × PL fusion); LB < 0.906 → run Test 2 then
+  decide pivot.
 
 ---
 
-## Pick up here (next session) — 2026-05-27 morning
+## Pick up here (next session) — 2026-05-28 morning
+
+### 0. Read the resume-after-disconnect anchor
+
+```
+experiments/033-own-teacher-pl/diagnostic-tests.md
+```
+
+This file has the exact commands, expected outputs, and decision criteria
+for Phase 5 Test 1. The audit at
+`analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md` is the
+"why" behind those commands — read both before launching.
+
+### 0a. Launch Phase 5 Test 1 (chunk discard + trim probability)
+
+```bash
+cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026
+
+# 1. Re-issue v3 PL parquet (~30s)
+~/clef/birdclef-2026/.venv/bin/python \
+  user/murilo/experiments/025-iter-pseudo-labeling/generate_pseudo_labels.py \
+  --config user/murilo/experiments/033-own-teacher-pl/configs/pl_gen_v3.yaml
+
+# 2. Pre-flight v3 parquet (~5 min)
+~/clef/birdclef-2026/.venv/bin/python \
+  user/murilo/experiments/033-own-teacher-pl/scripts/preflight_checks.py \
+  --parquet-path /storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v3-distilled-sed-kd-5fold-trim01-discard05/sed_pseudo_labels.parquet
+
+# 3. Train a2-kd-v3 (~6.5h)
+cd user/murilo/experiments/033-own-teacher-pl
+bash sbatch/run.sh configs/a2_kd_v3.yaml --fold 0
+```
+
+If you're returning fresh, the older "overnight pickup" instructions
+below are HISTORICAL and refer to the now-complete Phase G training
+work. Skip to Phase 5 above.
+
+---
+
+### HISTORICAL: 2026-05-27 morning pickup (Phase G completion)
 
 ### 0. Check overnight job completion
 
