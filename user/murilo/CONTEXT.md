@@ -3,8 +3,9 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-27 (end of day — exp 033 REJECT verdict landed,
-Phase 5 diagnostic tests scaffolded; Test 1 ready to launch).
+**Last updated**: 2026-05-27 (end of day — exp 033 REJECT verdict +
+Phase 5 audit landed, Test 1 a2_kd_v3 launched as final PL data point,
+deep research prompt drafted, pivot decision deferred to 2026-05-28 AM).
 
 **Competition deadline**: 2026-06-03 (7 days from this update).
 
@@ -55,44 +56,59 @@ protocol. See:
 
 ## Pick up here (next session) — 2026-05-28 morning
 
-### 0. Read the resume-after-disconnect anchor
+### 0. Read both overnight outputs before doing anything else
 
-```
-experiments/033-own-teacher-pl/diagnostic-tests.md
-```
+When you wake up:
 
-This file has the exact commands, expected outputs, and decision criteria
-for Phase 5 Test 1. The audit at
-`analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md` is the
-"why" behind those commands — read both before launching.
+1. **a2_kd_v3 training result** — check the SLURM log + the `outputs/test_results/2026-exp033-a2-kd-v3-fold0.json` file. Expect completion in ~6.5h. If launched at, say, 23:00, finishes around 05:30.
+2. **Deep research output** — if you fired the prompt at `notes/2026-05-27-deep-research-prompt.md` overnight, the response should be ready at `docs/references/deep-research/2026-05-27-pivot-assessment.md` (or wherever Claude.ai delivered it).
 
-### 0a. Launch Phase 5 Test 1 (chunk discard + trim probability)
+Read both. They drive the exp 034 commit/pivot decision.
 
-All three steps use existing sbatch wrappers — no head-node Python:
+### 1. If a2_kd_v3 still needs LB submission (training landed, no LB shot yet)
 
 ```bash
-cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/033-own-teacher-pl
-
-# 1. Re-issue v3 PL parquet (cpu-small sbatch, ~10-15 min walltime)
-CONFIG=configs/pl_gen_v3.yaml sbatch sbatch/generate_pseudo_labels.sh
-
-# 2. Pre-flight v3 parquet after step 1 completes
-#    (small enough for head node, but if preferred:
-#     wrap in a quick sbatch or use the interactive venv directly)
-~/clef/birdclef-2026/.venv/bin/python scripts/preflight_checks.py \
-  --parquet-path /storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v3-distilled-sed-kd-5fold-trim01-discard05/sed_pseudo_labels.parquet
-
-# 3. Train a2-kd-v3 (gpu-rtx6000 sbatch, ~6.5h)
-bash sbatch/run.sh configs/a2_kd_v3.yaml --fold 0
+cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/010-submission-pipeline
+# Add a2-kd-v3 to MODELS dict + kernel-metadata + export.sbatch (same pattern as commit 4280e72)
+# then:
+bash sbatch/run.sh export --model distilled-sed-pl-a2-kd-v3
+python scripts/upload_kaggle.py --model distilled-sed-pl-a2-kd-v3
+sleep 180
+python scripts/upload_kaggle.py --model distilled-sed-pl-a2-kd-v3 --push-kernel
+# Submit to Competition via Kaggle UI
 ```
 
-If you're returning fresh, the older "overnight pickup" instructions
-below are HISTORICAL and refer to the now-complete Phase G training
-work. Skip to Phase 5 above.
+### 2. Decision matrix (this is the actual point)
+
+After reading both inputs together:
+
+| Scenario | What it tells us | Move |
+|---|---|---|
+| **v3 LB > 0.913 AND research recommends yoink** | PL recoverable + yoink validated. Both stack. | Yoink first (higher ceiling), PL fixes second. |
+| **v3 LB > 0.913 AND research recommends staying on PL** | PL works on our base; yoink may be unnecessary | Continue PL with Test 2 (focal × PL fusion) + scale to other cells |
+| **v3 LB 0.906-0.913 AND research recommends yoink** | Modest PL lift; yoink still the bigger lever | Pivot to yoink; come back to PL later if time |
+| **v3 LB < 0.906 AND research recommends yoink** | PL refuted on our base; yoink is the only path | Full pivot to yoink |
+| **v3 LB < 0.906 AND research recommends something else** | Surprise — read carefully and reassess | Whatever research recommends |
+
+### 3. Commit to one path. No more spanning.
+
+Once decided, the next 3-4 days are single-track on that path. No new experiments without LB validation.
+
+### 4. Files to read in order (if returning cold)
+
+1. `user/murilo/CONTEXT.md` (this file) — current state
+2. `experiments/033-own-teacher-pl/results.md` — the REJECT verdict + paired Δ readings
+3. `analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md` — why exp 033 REJECT might be implementation, not protocol
+4. `notes/2026-05-27-deep-research-prompt.md` — the deep research prompt fired overnight (and read its output)
+5. `experiments/033-own-teacher-pl/diagnostic-tests.md` — Phase 5 workflow if needed
 
 ---
 
 ### HISTORICAL: 2026-05-27 morning pickup (Phase G completion)
+
+---
+
+### HISTORICAL: 2026-05-27 morning pickup (Phase G completion — REPLACED BY 2026-05-28 plan above)
 
 ### 0. Check overnight job completion
 

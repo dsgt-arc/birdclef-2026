@@ -296,12 +296,51 @@ end-to-end val/auroc**, not training-side val/auroc — D.5 was a tighter
 LB predictor in exp 032 Phase D (gap of +0.004 to +0.011 between e2e and
 training-side, consistent with the 5-tap smoothing trick).
 
+## Phase 5 — Sydorskyi-divergence diagnostic (in flight, 2026-05-27 EOD)
+
+After the REJECT verdict, audit identified that exp 033 implementation diverges
+from the only published 0.93+ PL recipe (Sydorskyi 2025 2nd place) on **16 of 20
+axes** — full table in
+`user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md`.
+The REJECT verdict therefore can't cleanly be read as a refutation of the
+protocol; we never actually ran the protocol.
+
+### Test 1: a2_kd_v3 (chunk discard + per-class trim)
+
+**Status**: training launched 2026-05-27 EOD. LB result expected 2026-05-28
+morning.
+
+| Setup | Value |
+|---|---|
+| Run name | `2026-exp033-a2-kd-v3` |
+| Base config | Canonical Antoine (random init + Uniform sampler + T2 teacher + 25 ep) |
+| Diff vs v2 (LB 0.886) | PL parquet has Sydorskyi-canonical filters applied: `min_max_prob=0.5` (chunk discard) + `trim_min_prob=0.1` (per-class trim) |
+| PL parquet | `v3-distilled-sed-kd-5fold-trim01-discard05/sed_pseudo_labels.parquet` (85K chunks, 33% chunk-discard rate, 98% per-cell trim) |
+| Note on discard rate | Below Sydorskyi's ~83% — our existing T=0.6 + P^1.5 sharpening + max-across-folds inflates max probs before the filter. v4 (Sydorskyi-faithful PL gen) is scaffolded as fallback. |
+
+**Decision criteria** (see `diagnostic-tests.md § Step 1.6`):
+
+| LB outcome | Reading |
+|---|---|
+| > 0.913 | trim+discard explain REJECT; protocol recoverable on our base |
+| 0.906-0.913 | Modest lift; deeper protocol fixes (focal × PL fusion) may help |
+| 0.886-0.906 | Filters alone don't help; protocol mechanism likely the gap |
+| < 0.886 | Worse than original — investigate parquet directly |
+
+**Phase 5 closure decision (recorded 2026-05-27 EOD)**: regardless of v3
+outcome, the next major effort goes to **Sydorskyi-yoink (exp 034)** rather
+than continuing PL diagnostics (Test 2 / Test 3). v3 is the final data point
+on exp 033's PL track. Rationale: even best-case PL lift lands at ~0.92, not
+0.94; the disclosed 0.94+ paths all rely on a data move, not a recipe move.
+
 ## Next Steps
 
-D.5 + 3-cell LB landed; verdict is REJECT. Per the proposal's pivot plan, next
-session = scope Sydorskyi-yoink (XC pretrain as the remaining LB lever). The
-remaining 7 ablations (2 Day-1 + 5 Day-2) are NOT worth submitting on the
-current trajectory.
+D.5 + 3-cell LB landed; verdict is REJECT. v3 (Test 1) is the final PL
+data point. Next major effort goes to **Sydorskyi-yoink (exp 034)** — XC
+pretrain via Ali Ozan's path (download Sydorskyi 2025 published backbone,
+attach own head, fine-tune on 2026). Decision finalized after v3 LB lands +
+deep research overnight output (`notes/2026-05-27-deep-research-prompt.md`)
+is read.
 
 1. **Closeout**: ✅ results.md updated · MODEL-RUNS.md updated · tasks.md
    closeout phase pending PR.

@@ -230,3 +230,40 @@ Adds `sigmoid_focal_loss(α=0.25, γ=2.0)` to BCE branch.
 ### Pivot trigger
 
 If all 3 tests fail (LB < 0.906): pivot to Sydorskyi-yoink (Path A). Document negative result. Don't run remaining exp 033 cells (a3-kd, a3-v5j Day 1, all Day 2).
+
+---
+
+## Phase 5 closure (2026-05-27 EOD)
+
+**Decision (2026-05-27 EOD)**: stop running PL experiments after a2_kd_v3. v3 is the final data point on exp 033. Whatever its LB result, **the next major effort goes to Sydorskyi-yoink (exp 034)** — not Tests 2 or 3.
+
+Rationale (captured in conversation with Claude on 2026-05-27 PM):
+- Even my best-case prior on v3 (CONFIRM > 0.915) lands at ~0.92, not 0.94. PL is a finishing move on a strong base, not a way to leapfrog the 0.03 LB gap to 0.94.
+- The disclosed 0.94+ paths all rely on a DATA move (XC pretrain or Sydorskyi backbone), not a recipe move. PL diagnostics are recipe moves.
+- We have real code (`github.com/VSydorskyy/BirdCLEF_2025_2nd_place`) + 2 independent disclosures at LB 0.941 (Ali Ozan, Jack) for the Sydorskyi-yoink path.
+- Continuing to fix all 5 PL divergences would take 3-4 days, the same as a yoink pivot, with lower ceiling.
+
+**Phase 5 sub-status**:
+- [x] 5.1.1-5.1.5 Test 1 v3 scaffold + parquet generation + pre-flight: DONE
+- [ ] 5.1.6 a2-kd-v3 training: launched 2026-05-27 EOD; expected complete ~05:30 2026-05-28
+- [ ] 5.1.7 D.5 e2e validation on a2-kd-v3: TBD after training
+- [ ] 5.1.8 LB submit for a2-kd-v3: TBD after D.5
+- [ ] 5.1.9 Read LB → record in results.md (NOT trigger Test 2/3)
+- [ ] 5.1.10-14 v4 scaffold: COMPLETE but DEFERRED. Not running. Available if deep research surprises us.
+- [ ] 5.2 Test 2 (focal × PL fusion): CANCELLED (effort goes to exp 034 instead)
+- [ ] 5.3 Test 3 (focal loss): CANCELLED
+
+---
+
+## Phase 6 — Sydorskyi-yoink pivot (planned for 2026-05-28+, NOT scaffolded yet)
+
+Will live in a new experiment directory: `experiments/034-sydorskyi-yoink/` (or similar — to be created tomorrow).
+
+**Trigger**: combination of (a) a2_kd_v3 LB result and (b) deep research output at `docs/references/deep-research/2026-05-27-pivot-assessment.md`. Decision matrix in `CONTEXT.md § 2`.
+
+**Default plan** (assuming research confirms yoink): download Sydorskyi 2025 backbone, attach own head (attention dim 1028, melspec match), fine-tune on 2026 data. Estimated 3-4 days.
+
+**Closeout for exp 033** (after a2_kd_v3 LB lands tomorrow):
+- C.5 Update `results.md` with v3 row
+- C.6 Update `MODEL-RUNS.md` with v3 entry
+- C.7 PR-ready state — exp 033 done regardless of v3 outcome; open PR with REJECT (+ v3 follow-up note) verdict
