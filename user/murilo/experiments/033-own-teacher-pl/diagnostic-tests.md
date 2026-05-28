@@ -52,23 +52,36 @@ Read this section first if returning to this work after a break.
 
 **Why this is Test 1**: lowest cost, highest information. ~1h work, 30 min compute. If a2-kd-v3 lifts to >0.906, we have evidence the protocol is recoverable; if it doesn't, we know these two filters alone aren't the problem and we can target Test 2 with confidence.
 
-### Step 1.1 — Re-issue v3 PL parquet (~30s on head node)
+### Step 1.1 — Re-issue v3 PL parquet (sbatch, ~10-15 min walltime)
+
+Use the existing sbatch wrapper with `CONFIG` override (default points at v2):
 
 ```bash
-cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026
-~/clef/birdclef-2026/.venv/bin/python user/murilo/experiments/025-iter-pseudo-labeling/generate_pseudo_labels.py \
-    --config user/murilo/experiments/033-own-teacher-pl/configs/pl_gen_v3.yaml
+cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/033-own-teacher-pl
+CONFIG=configs/pl_gen_v3.yaml sbatch sbatch/generate_pseudo_labels.sh
 ```
 
-**Expected output**:
-- Initial merge stats show ~120K+ chunks with various >0.5 counts (same as v2).
-- "Filter: chunk discard (min_max_prob=0.5)" block reports ~120K → ~20K chunks (~83% discard expected per Sydorskyi).
-- "Filter: per-class trim (trim_min_prob=0.1)" block reports several million zeroed cells.
-- Final parquet written to `/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v3-distilled-sed-kd-5fold-trim01-discard05/sed_pseudo_labels.parquet`.
+This submits to `cpu-small` (no GPU needed — just numpy on cached parquets).
+Walltime budget 1h; actual expected ~5-15 min (venv setup + parquet I/O + filter math).
 
-**Sanity check**:
-- `~20K rows × 234 cols` parquet (down from `127K × 234` in v2).
-- Each row should be sparse (many zeros after trim).
+**Watch the log**:
+```bash
+tail -f logs/slurm_generate_pl_<jobid>.log
+```
+
+**Expected output sections** (in the log):
+- "Loaded fold N: (127728, 234)" × 5 — same as v2 input data.
+- Initial merge stats show ~127K chunks with various >0.5 counts.
+- **"Filter: chunk discard (min_max_prob=0.5)"** block reports ~127K → ~20K chunks (~83% discard expected per Sydorskyi).
+- **"Filter: per-class trim (trim_min_prob=0.1)"** block reports several million zeroed cells.
+- "Post-filter stats" section shows the surviving distribution.
+- Final parquet written to `/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v3-distilled-sed-kd-5fold-trim01-discard05/sed_pseudo_labels.parquet`.
+- "Job completed successfully!"
+
+**Sanity check after completion**:
+- `~20K rows × 236 cols` parquet (down from `127K × 236` in v2). Two extra cols are `filename` + `chunk_idx`.
+- Each row sparse (many zeros after trim).
+- `stats.json` in the output dir has a new top-level `filter` block with the actual before/after counts.
 
 ### Step 1.2 — Pre-flight verify v3 parquet (~5 min)
 

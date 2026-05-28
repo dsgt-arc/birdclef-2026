@@ -68,21 +68,21 @@ for Phase 5 Test 1. The audit at
 
 ### 0a. Launch Phase 5 Test 1 (chunk discard + trim probability)
 
+All three steps use existing sbatch wrappers — no head-node Python:
+
 ```bash
-cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026
+cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/033-own-teacher-pl
 
-# 1. Re-issue v3 PL parquet (~30s)
-~/clef/birdclef-2026/.venv/bin/python \
-  user/murilo/experiments/025-iter-pseudo-labeling/generate_pseudo_labels.py \
-  --config user/murilo/experiments/033-own-teacher-pl/configs/pl_gen_v3.yaml
+# 1. Re-issue v3 PL parquet (cpu-small sbatch, ~10-15 min walltime)
+CONFIG=configs/pl_gen_v3.yaml sbatch sbatch/generate_pseudo_labels.sh
 
-# 2. Pre-flight v3 parquet (~5 min)
-~/clef/birdclef-2026/.venv/bin/python \
-  user/murilo/experiments/033-own-teacher-pl/scripts/preflight_checks.py \
+# 2. Pre-flight v3 parquet after step 1 completes
+#    (small enough for head node, but if preferred:
+#     wrap in a quick sbatch or use the interactive venv directly)
+~/clef/birdclef-2026/.venv/bin/python scripts/preflight_checks.py \
   --parquet-path /storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v3-distilled-sed-kd-5fold-trim01-discard05/sed_pseudo_labels.parquet
 
-# 3. Train a2-kd-v3 (~6.5h)
-cd user/murilo/experiments/033-own-teacher-pl
+# 3. Train a2-kd-v3 (gpu-rtx6000 sbatch, ~6.5h)
 bash sbatch/run.sh configs/a2_kd_v3.yaml --fold 0
 ```
 
