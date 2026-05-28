@@ -29,7 +29,11 @@ from pathlib import Path
 import pandas as pd
 import pytorch_lightning as pl
 import yaml
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import (
+    LearningRateMonitor,
+    ModelCheckpoint,
+    TQDMProgressBar,
+)
 from pytorch_lightning.loggers import TensorBoardLogger
 
 EXP_DIR = Path(__file__).resolve().parent
@@ -238,6 +242,10 @@ def main():
         )
     if loggers:
         callbacks.append(LearningRateMonitor(logging_interval="epoch"))
+    # Force the tqdm progress bar (file-friendly) over the auto-selected RichProgressBar,
+    # which repaints multi-line ANSI blocks every step and floods SLURM .log files.
+    # refresh_rate=50 → a handful of clean progress lines per epoch (matches exp 032/033).
+    callbacks.append(TQDMProgressBar(refresh_rate=50))
 
     # --- Trainer --------------------------------------------------------------
     trainer = pl.Trainer(

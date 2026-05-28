@@ -59,16 +59,15 @@ cd "$EXPERIMENT_DIR"
 mkdir -p logs outputs
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
-export PYTHONUNBUFFERED=1  # stream training logs in real time
 [ -f "$USER_DIR/.env" ] && { set -a; source "$USER_DIR/.env"; set +a; }
 
 ARGS=(--config "$CONFIG" --fold "$FOLD")
 [ "$FAST_DEV_RUN" = "true" ] && ARGS+=(--fast-dev-run)
 [ -n "$NUM_WORKERS" ] && ARGS+=(--num-workers "$NUM_WORKERS")
 
-echo "Running: python -u train.py ${ARGS[*]}"
+echo "Running: python train.py ${ARGS[*]}"
 echo ""
-srun --unbuffered python -u train.py "${ARGS[@]}"
+srun python train.py "${ARGS[@]}"
 
 # Structured metrics → artifacts/ (skip for fast-dev-run; matches exp 032).
 if [ "$FAST_DEV_RUN" != "true" ]; then

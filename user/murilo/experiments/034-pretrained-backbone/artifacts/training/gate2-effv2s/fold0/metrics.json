@@ -1,0 +1,21 @@
+{
+  "experiment": "034-pretrained-backbone",
+  "run_name": "gate2-effv2s",
+  "fold": 0,
+  "config": "gate2-effv2s.yaml",
+  "backbone": "tf_efficientnetv2_s_in21k",
+  "freeze_backbone": true,
+  "load_pretrained": true,
+  "max_epochs": 5,
+  "val_auroc": 0.7906675338745117,
+  "val_loss": 0.04744435101747513,
+  "all_metrics": {
+    "lr-AdamW": 1.0453658433107194e-05,
+    "train/loss": 0.057808224111795425,
+    "train/loss_step": 0.05820633843541145,
+    "val/loss": 0.04744435101747513,
+    "val/auroc": 0.7906675338745117,
+    "train/loss_epoch": 0.057808224111795425
+  },
+  "saved_at_utc": "2026-05-28T22:15:42.991510+00:00"
+}
