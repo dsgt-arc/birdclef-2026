@@ -26,7 +26,7 @@ LOG_DIR="${EXPERIMENT_DIR}/logs"
 CMD=(sbatch
     --job-name="exp034-gate2"
     --partition="$PARTITION"
-    --output="logs/slurm-gate2-%j.out"
+    --output="${LOG_DIR}/slurm-gate2-%j.out"
     --export="ALL,BACKBONE=$BACKBONE,FOLD=$FOLD,MAX_EPOCHS=$MAX_EPOCHS,RUN_NAME=$RUN_NAME,FREEZE=1,LOAD_PRETRAINED=1"
     "$SCRIPT_DIR/_job.sh")
 

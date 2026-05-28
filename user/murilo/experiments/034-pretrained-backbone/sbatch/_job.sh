@@ -64,6 +64,7 @@ cd "$EXPERIMENT_DIR"
 mkdir -p logs outputs
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+export PYTHONUNBUFFERED=1  # stream training logs in real time (no block-buffering)
 [ -f "$USER_DIR/.env" ] && { set -a; source "$USER_DIR/.env"; set +a; }
 
 # Build train.py args from boolean env flags (avoids spaces in --export values).
@@ -76,9 +77,9 @@ ARGS=(--backbone "$BACKBONE" --fold "$FOLD" --max-epochs "$MAX_EPOCHS"
 [ "${WANDB:-0}" = "1" ]           && ARGS+=(--wandb)
 [ "${NO_SPEC_AUGMENT:-0}" = "1" ] && ARGS+=(--no-spec-augment)
 
-echo "Running: python train.py ${ARGS[*]}"
+echo "Running: python -u train.py ${ARGS[*]}"
 echo ""
-srun python train.py "${ARGS[@]}"
+srun --unbuffered python -u train.py "${ARGS[@]}"
 
 echo ""
 echo "=============================================="

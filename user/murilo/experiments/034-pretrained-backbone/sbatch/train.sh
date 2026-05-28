@@ -44,7 +44,7 @@ EXPORTS="ALL,BACKBONE=$BACKBONE,FOLD=$FOLD,MAX_EPOCHS=$MAX_EPOCHS,GRAD_CLIP=$GRA
 CMD=(sbatch
     --job-name="exp034-${MODE}"
     --partition="$PARTITION"
-    --output="logs/slurm-${MODE}-%j.out"
+    --output="${LOG_DIR}/slurm-${MODE}-%j.out"
     --export="$EXPORTS"
     "$SCRIPT_DIR/_job.sh")
 
