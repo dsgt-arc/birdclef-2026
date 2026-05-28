@@ -20,13 +20,13 @@ the materials Claude.ai should read before answering.
 
 **Purpose**: Independent assessment of the BirdCLEF 2026 pivot decision after exp 033's REJECT verdict. Designed to **challenge** the project's current direction (Sydorskyi backbone yoink), not validate it.
 
-**How to use**: Paste the body below into Claude.ai's deep research interface. Attach the listed companion docs (or paste their contents). Fire it overnight; review the output tomorrow morning along with the a2_kd_v3 LB result.
+**How to use**: This bundle is self-contained. All companion materials are inlined as sections §2–§9 of this same file. **No external attachments needed.** Read §1 (this prompt), reference §2–§9 as needed, output the markdown document with the structure described at the end of §1.
 
 **Why this prompt is shaped this way**: Our prior research docs (2026-04-13 Claude + Gemini, 2026-04-11 Claude) all answered "what should I try?" — they were strategy-from-zero. We now have specific failures (exp 033 REJECT + 24 data points of offline-LB anti-correlation) and a specific candidate pivot (Sydorskyi-yoink). This prompt asks for independent ranking against that landscape, not new ideas from scratch.
 
 ---
 
-## The prompt body (paste this into Claude.ai's deep research)
+## The prompt body
 
 I'm in the BirdCLEF 2026 Kaggle competition. **7 days remaining** before the 2026-06-03 deadline. **5 LB submissions/day** quota, with 2 already used today on diagnostic runs.
 
@@ -124,23 +124,24 @@ Be willing to tell me I'm wrong. Don't validate; assess.
 
 ---
 
-## Companion documents to attach (paste content if Claude.ai can't read files directly)
+## Companion documents (inlined below in this same file)
 
-| File | What it provides |
+All 7 companion documents are provided as sections §2–§9 of this bundle. **No external file paths need to be resolved.** Cite them by section number when reasoning (e.g., "per §2 the audit identifies 16 of 20 divergences").
+
+| Bundle section | What it provides |
 |---|---|
-| `user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md` | Full 20-axis divergence table + audit (the document Question 1 should challenge) |
-| `docs/references/kaggle/birdclef-2025/birdclef2025-2nd-place-domain-shift.md` | Sydorskyi 2025 writeup (479 lines, line-by-line protocol detail) |
-| `user/murilo/experiments/032-tucker-distilled-sed/results.md` | Tucker recipe results — confirms our pipeline can match 0.906 / 0.915 |
-| `user/murilo/experiments/033-own-teacher-pl/proposal.md` + `results.md` | Exp 033 design + REJECT verdict |
-| `user/murilo/notes/kaggle-discussion-best-single-model-lb.md` | All competitor disclosures captured to date |
-| `user/murilo/notes/kaggle-discussion-non-perch-limit.md` | Companion thread (non-Perch ceiling discussions) |
-| `user/murilo/MODEL-RUNS.md` | Full experiment ledger (28+ runs) |
-
-If Claude.ai's interface doesn't accept attachments, paste the content of each into the chat or summarize what's needed.
+| **§2** | Exp 033 ↔ Sydorskyi divergence audit (full 20-axis table; the document Question 1 should challenge) |
+| **§3** | Sydorskyi 2025 2nd-place writeup (479 lines, line-by-line protocol detail) |
+| **§4** | Exp 033 proposal (hypothesis + design) |
+| **§5** | Exp 033 results (REJECT verdict + v3 status) |
+| **§6** | Exp 032 results (Tucker recipe — confirms our pipeline can match 0.906 / 0.915) |
+| **§7** | Kaggle thread "best single model LB" (all competitor disclosures captured to date) |
+| **§8** | Kaggle thread "non-Perch limit" (companion ceiling discussions) |
+| **§9** | MODEL-RUNS.md (full experiment ledger, 28+ runs) |
 
 ## Expected output
 
-A markdown file at `docs/references/deep-research/2026-05-27-pivot-assessment.md`. Read it tomorrow morning alongside the a2_kd_v3 LB result. Together they drive the exp 034 commit/pivot decision.
+A single markdown document with the structure listed above (Executive summary, Q1–Q7 answers, day-by-day plan, risk table, references). I will save it to my repo at `docs/references/deep-research/2026-05-27-pivot-assessment.md`. It should be readable standalone alongside the a2_kd_v3 LB result that lands ~2026-05-28 morning.
 
 
 ---
