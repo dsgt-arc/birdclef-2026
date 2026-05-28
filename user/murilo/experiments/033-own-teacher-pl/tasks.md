@@ -191,14 +191,14 @@ REJECT verdict was suspicious — exp 033 implementation diverges from the only 
 - [x] 5.1.3 Create `configs/a2_kd_v3.yaml` — a2-kd canonical Antoine cell pointed at v3 parquet.
 - [x] 5.1.4 Re-issue v3 PL parquet (cpu-small sbatch, job 9227102, walltime 46s). 33% chunk-discard rate (lower than Sydorskyi's ~83% — cause: our T=0.6 + P^1.5 sharpen + max-across-folds pre-bias). Trim filter zeroed 98% of cells.
 - [x] 5.1.5 Pre-flight v3 parquet — 5/7 PASS; 2 FAILs in Check 5 are stale assertions written for unfiltered parquets (chunks dropped by discard filter; no actual leakage risk). Deferred preflight patch noted in `diagnostic-tests.md § Deferred follow-ups`.
-- [ ] 5.1.6 Train a2-kd-v3 (sbatch, ~6.5h on rtx6000).
-- [ ] 5.1.7 D.5 e2e validation (~5 min).
-- [ ] 5.1.8 Export ONNX + Kaggle upload + LB submit.
-- [ ] 5.1.9 Read LB. Decision matrix:
-  - LB > 0.913 → trim+discard explain REJECT; scale to other cells (a3-kd-v3, a4-kd-v3).
-  - LB 0.906-0.913 → modest lift; run Test 2 (focal × PL fusion).
-  - LB 0.886-0.906 → filters alone don't help; run v4 (Sydorskyi-faithful PL gen) AND scaffold Test 2 in parallel.
-  - LB < 0.886 → filters hurt; investigate parquet directly before continuing.
+- [x] 5.1.6 Train a2-kd-v3 — SLURM 9228488, walltime 4h56m, 25/25 ep, best ep 11, no NaN, exit 0. Offline val/auroc 0.9330, val/cmap 0.8016 (Δ −0.006 / −0.017 vs v2 a2-kd). W&B `ule0zzog`.
+- [~] 5.1.7 D.5 e2e validation — **SKIPPED** (went direct to LB). Kernel ran clean on 2 dummy test soundscapes (24 predictions, 5.8s runtime); ONNX path verified end-to-end via Kaggle kernel itself. D.5 gap would have been informative but didn't change the LB outcome.
+- [x] 5.1.8 Export ONNX + Kaggle upload + LB submit — submission pipeline wired (commit pending: export.sbatch v3-version-arg + upload_kaggle MODELS + kernel-metadata + submission.py MODEL_SLUGS). LB submitted 2026-05-28.
+- [x] 5.1.9 Read LB. **Result: a2-kd-v3 LB = 0.879** (Δ −0.027 vs baseline 0.906; Δ −0.007 vs v2 a2-kd 0.886). Falls in the **LB < 0.886 "filters HURT" bucket** — the worst-case outcome.
+  - LB > 0.913 → trim+discard explain REJECT; scale to other cells (a3-kd-v3, a4-kd-v3). ❌
+  - LB 0.906-0.913 → modest lift; run Test 2 (focal × PL fusion). ❌
+  - LB 0.886-0.906 → filters alone don't help; run v4 (Sydorskyi-faithful PL gen) AND scaffold Test 2 in parallel. ❌
+  - **LB < 0.886 → filters hurt; investigate parquet directly OR (per Phase 5 closure decision) confirm pivot to exp 034. ✅ — pivot confirmed.**
 
 ### Test 1 fallback — v4 (Sydorskyi-faithful PL generation; LANDED CODE, conditional)
 
@@ -243,15 +243,15 @@ Rationale (captured in conversation with Claude on 2026-05-27 PM):
 - We have real code (`github.com/VSydorskyy/BirdCLEF_2025_2nd_place`) + 2 independent disclosures at LB 0.941 (Ali Ozan, Jack) for the Sydorskyi-yoink path.
 - Continuing to fix all 5 PL divergences would take 3-4 days, the same as a yoink pivot, with lower ceiling.
 
-**Phase 5 sub-status**:
+**Phase 5 sub-status (FINAL — closed 2026-05-28 AM)**:
 - [x] 5.1.1-5.1.5 Test 1 v3 scaffold + parquet generation + pre-flight: DONE
-- [ ] 5.1.6 a2-kd-v3 training: launched 2026-05-27 EOD; expected complete ~05:30 2026-05-28
-- [ ] 5.1.7 D.5 e2e validation on a2-kd-v3: TBD after training
-- [ ] 5.1.8 LB submit for a2-kd-v3: TBD after D.5
-- [ ] 5.1.9 Read LB → record in results.md (NOT trigger Test 2/3)
-- [ ] 5.1.10-14 v4 scaffold: COMPLETE but DEFERRED. Not running. Available if deep research surprises us.
-- [ ] 5.2 Test 2 (focal × PL fusion): CANCELLED (effort goes to exp 034 instead)
-- [ ] 5.3 Test 3 (focal loss): CANCELLED
+- [x] 5.1.6 a2-kd-v3 training: completed 2026-05-28 04:35 (SLURM 9228488, 4h56m, 25/25 ep, offline val/auroc 0.933)
+- [~] 5.1.7 D.5 e2e validation: SKIPPED (went direct to LB — kernel ran clean on dummy soundscapes)
+- [x] 5.1.8 LB submit: DONE 2026-05-28
+- [x] 5.1.9 **Read LB: a2-kd-v3 = 0.879 (Δ −0.027 vs baseline; Δ −0.007 vs v2 a2-kd) — filters HURT bucket; pivot to exp 034 empirically confirmed**
+- [x] 5.1.10-14 v4 scaffold: COMPLETE but NOT running (Phase 5 closure decision). Available if deep research surprises us.
+- [x] 5.2 Test 2 (focal × PL fusion): CANCELLED (effort goes to exp 034 instead)
+- [x] 5.3 Test 3 (focal loss): CANCELLED
 
 ---
 
@@ -263,7 +263,8 @@ Will live in a new experiment directory: `experiments/034-sydorskyi-yoink/` (or 
 
 **Default plan** (assuming research confirms yoink): download Sydorskyi 2025 backbone, attach own head (attention dim 1028, melspec match), fine-tune on 2026 data. Estimated 3-4 days.
 
-**Closeout for exp 033** (after a2_kd_v3 LB lands tomorrow):
-- C.5 Update `results.md` with v3 row
-- C.6 Update `MODEL-RUNS.md` with v3 entry
-- C.7 PR-ready state — exp 033 done regardless of v3 outcome; open PR with REJECT (+ v3 follow-up note) verdict
+**Closeout for exp 033** (v3 LB landed 2026-05-28 AM = 0.879, filters HURT):
+- [x] C.5 `results.md` updated with v3 row + Phase 5 closure (2026-05-28)
+- [x] C.6 `MODEL-RUNS.md` updated with v3 entry + Phase 5 section (2026-05-28)
+- [x] C.7 010-submission-pipeline plumbing wired for v3 (export.sbatch helper extended with version arg, upload_kaggle MODELS, kernel-metadata JSON, submission.py MODEL_SLUGS)
+- [ ] C.8 PR-ready state — exp 033 done; open PR with REJECT + Phase 5 closure verdict

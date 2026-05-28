@@ -658,6 +658,14 @@ MODELS = {
         "weights_dir": "artifacts/weights/distilled-sed-pl-a5-kd",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a5-kd.json",
     },
+    # Exp 033 Phase 5 Sydorskyi-divergence diagnostic — Test 1 (chunk discard + trim).
+    # Same canonical Antoine cell as distilled-sed-pl-a2-kd, but pointed at v3 parquet
+    # (min_max_prob=0.5 + trim_min_prob=0.1 filters applied to T2 PLs).
+    "distilled-sed-pl-a2-kd-v3": {
+        "slug": "birdclef-2026-distilled-sed-pl-a2-kd-v3-weights",
+        "weights_dir": "artifacts/weights/distilled-sed-pl-a2-kd-v3",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-pl-a2-kd-v3.json",
+    },
 }
 
 

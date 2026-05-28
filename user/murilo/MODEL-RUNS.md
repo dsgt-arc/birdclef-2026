@@ -1101,7 +1101,7 @@ must be a pre-flight check, not an after-the-fact diagnostic.
 See `experiments/032-tucker-distilled-sed/results.md` for full LB table,
 hypothesis ranking, and audit checklist.
 
-## Experiment 033: Own-teacher Pseudo-Labels on distilled-sed-kd — REJECT (3/5 Day-1 LB landed all in REJECT band; protocol does not transfer at LB)
+## Experiment 033: Own-teacher Pseudo-Labels on distilled-sed-kd — REJECT (3/5 Day-1 + Phase 5 v3 filter-diagnostic all in REJECT band; v3 worse than v2 → filters HURT; pivot to exp 034 confirmed)
 
 Applies the Antoine / OverfitOracle / Boredom 1:1 own-teacher PL protocol on top
 of the exp 032 Phase D `distilled-sed-kd` recipe (baseline LB 0.906). 5
@@ -1259,9 +1259,29 @@ out).
 Best LB this experiment: `distilled-sed-pl-a4-kd` = **0.899** (still REJECT
 vs the distilled-sed-kd Phase D fold 0 baseline of 0.906).
 
+### Phase 5 — Sydorskyi-divergence diagnostic — CLOSED (filters HURT; pivot confirmed)
+
+After the Phase G REJECT verdict, a divergence audit (`analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md`) found exp 033 implementation diverges from the only published 0.93+ PL recipe (Sydorskyi 2025 2nd place) on **16 of 20 axes**. Test 1 fixed the two cheapest divergences (#2 trim_min_prob=0.1 + #3 min_max_prob=0.5 chunk discard) to test whether PL noise alone explained the regression.
+
+**Test 1 result (`2026-exp033-a2-kd-v3`)**: same canonical Antoine cell as v2 a2-kd, pointed at v3 PL parquet with Sydorskyi 0.5 chunk-discard + 0.1 per-class trim filters. 85K chunks surviving (33% discard, below Sydorskyi's ~83% because our T=0.6 + P^1.5 sharpening pre-biases the max-prob), 98% per-cell trim. Training: 25/25 ep, best ep 11, walltime 4h56m, SLURM 9228488, W&B `ule0zzog`.
+
+| Ablation | Train val/auroc | E2E val/auroc | Gap | LB | Δ vs 0.906 | Δ vs v2 a2-kd 0.886 |
+|------|----------------:|--------------:|----:|---:|---:|---:|
+| `2026-exp033-a2-kd-v3` | 0.9330 | (skipped — went direct to LB) | — | **0.879** | **−0.027** | **−0.007** |
+
+**Bucket per `diagnostic-tests.md § Step 1.6`**: LB < 0.886 → "Worse than original — filters HURT". This is the worst-case bucket of the four defined the night before.
+
+**Reading**: filters alone don't recover the REJECT — they actively hurt. The audit's working theory (PL noise was poisoning the student) is disproven. The low-confidence soft signal was apparently *useful* to the student. Possible mechanism: our T+P sharpening pre-biased the max-prob before the 0.5 discard filter ran, so surviving chunks were "sharpened-high" rather than "actually-confident"; the 0.1 trim then erased useful soft-label tails in those chunks. Net: smaller pool + flatter targets = weaker training signal.
+
+**Offline-LB direction** was consistent for once: v3 offline 0.933 < v2 offline 0.939 AND v3 LB 0.879 < v2 LB 0.886. Both say v3 worse. Does NOT add to the offline-LB anti-correlation tally (still at 24).
+
+**Phase 5 closure decision** (pre-recorded 2026-05-27 EOD; empirically confirmed by v3 LB): next major effort = **exp 034 Sydorskyi-yoink** rather than v4 PL gen / Test 2 fusion / Test 3 focal loss. v3 is the final data point on exp 033's PL track.
+
+Total LB experiments this experiment: 4 (a4-kd 0.899, a4-v5j 0.897, a2-kd ⭐ 0.886, **a2-kd-v3 0.879**) — all REJECT band, max Δ −0.027 below baseline.
+
 See `experiments/033-own-teacher-pl/results.md` for the full per-ablation table
-+ paired Δ across teacher/sampler/init/PL-exposure axes + decision-matrix
-read-out.
++ paired Δ across teacher/sampler/init/PL-exposure axes + Phase 5 reading +
+decision-matrix collapse.
 
 ## Checkpoint Base Path
 

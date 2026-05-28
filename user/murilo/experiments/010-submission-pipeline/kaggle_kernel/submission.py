@@ -91,6 +91,11 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 033 Phase 5 Sydorskyi-divergence diagnostic — Test 1 (chunk discard + trim).
+    # Same canonical Antoine cell (a2-kd: random init + Uniform sampler + T2 teacher
+    # + 25 ep) pointed at v3 PL parquet (Sydorskyi 0.5 chunk-discard + 0.1 per-class trim).
+    # Same Tucker ONNX schema as exp 032 distilled-sed-kd / exp 033 v2 cells.
+    "birdclef-2026-distilled-sed-pl-a2-kd-v3-weights",
     # Exp 033 own-teacher PL ablations on distilled-sed-kd (10 cells = 5 protocols × 2 teachers).
     # Same Tucker inference path as exp 032 distilled-sed-kd (mel_config["type"]=tucker_mel,
     # output_type=tucker_logits → per-window inference + 5-tap Gaussian smooth in logit

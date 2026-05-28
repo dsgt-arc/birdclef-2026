@@ -7,24 +7,27 @@ author: Murilo Gustineli
 
 # Results: Own-teacher pseudo-labels on distilled-sed-kd
 
-**Date Updated**: 2026-05-27 PM (3/5 Day-1 LB submissions landed — all REJECT)
+**Date Updated**: 2026-05-28 AM (Phase 5 Test 1 v3 LB landed — filters HURT)
 **Author**: Murilo Gustineli
 
-## Status: REJECT — 1:1 own-teacher PL protocol does NOT lift LB on the distilled-sed-kd base
+## Status: REJECT — protocol does NOT transfer + Phase 5 filters actively HURT
 
-3 LB submissions across both teachers, including the canonical Antoine cell + the
-paired teacher-axis test, all regressed −0.007 to −0.020 vs the 0.906 baseline.
-The teacher-axis paired Δ on the warm+Uniform cell is effectively zero
-(0.899 vs 0.897 LB), refuting the proposal's headline teacher-diversity claim
-at LB scale. **The protocol does not transfer on this base regardless of teacher.**
+4 LB submissions across both teachers + the Sydorskyi-filter diagnostic
+(Phase 5 Test 1 v3) all regressed −0.007 to −0.027 vs the 0.906 baseline.
+v3 (a2-kd canonical + Sydorskyi chunk-discard + per-class trim) landed at
+**0.879 LB** — **WORSE than the v2 a2-kd it was supposed to diagnose** (0.886).
+Filters alone don't recover the regression; they HURT. The Phase 5 closure
+decision (recorded 2026-05-27 EOD: pivot to exp 034 Sydorskyi-yoink regardless
+of v3 outcome) is now also empirically supported. **Active path: exp 034.**
 
-### LB summary (2026-05-27 PM)
+### LB summary (2026-05-28)
 
 | Ablation | Cell | Teacher | LB | Δ vs 0.906 | Decision-matrix bucket |
 |---|---|---|---:|---:|:---:|
 | `2026-exp033-a4-kd` | warm + Uniform | T2 (distilled-sed-kd-5fold) | **0.899** | **−0.007** | REJECT (edge of cross-hardware noise) |
 | `2026-exp033-a2-kd` ⭐ | random + Uniform (canonical Antoine) | T2 | **0.886** | **−0.020** | REJECT (firmly inside REJECT band) |
 | `2026-exp033-a4-v5j` | warm + Uniform | T1 (v5j-4fold) | **0.897** | **−0.009** | REJECT |
+| `2026-exp033-a2-kd-v3` | random + Uniform + **Sydorskyi 0.5 discard + 0.1 trim** | T2 | **0.879** | **−0.027** | **REJECT (filters HURT — Δ −0.007 vs v2 a2-kd)** |
 | `2026-exp033-a3-kd` | warm + MixSamp 0.2/0.8 | T2 | (not submitted) | — | — |
 | `2026-exp033-a3-v5j` | warm + MixSamp 0.2/0.8 | T1 | (not submitted) | — | — |
 
@@ -296,59 +299,63 @@ end-to-end val/auroc**, not training-side val/auroc — D.5 was a tighter
 LB predictor in exp 032 Phase D (gap of +0.004 to +0.011 between e2e and
 training-side, consistent with the 5-tap smoothing trick).
 
-## Phase 5 — Sydorskyi-divergence diagnostic (in flight, 2026-05-27 EOD)
+## Phase 5 — Sydorskyi-divergence diagnostic — CLOSED (filters HURT, pivot confirmed)
 
 After the REJECT verdict, audit identified that exp 033 implementation diverges
 from the only published 0.93+ PL recipe (Sydorskyi 2025 2nd place) on **16 of 20
 axes** — full table in
 `user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md`.
-The REJECT verdict therefore can't cleanly be read as a refutation of the
-protocol; we never actually ran the protocol.
+The REJECT verdict cannot be cleanly read as a refutation of the
+protocol; we never actually ran the protocol. Test 1 fixed the two cheapest
+divergences (#2 trim + #3 chunk discard) to test whether PL noise alone
+explained the regression.
 
-### Test 1: a2_kd_v3 (chunk discard + per-class trim)
-
-**Status**: training launched 2026-05-27 EOD. LB result expected 2026-05-28
-morning.
+### Test 1 result: a2_kd_v3 LB = 0.879 — filters HURT
 
 | Setup | Value |
 |---|---|
 | Run name | `2026-exp033-a2-kd-v3` |
-| Base config | Canonical Antoine (random init + Uniform sampler + T2 teacher + 25 ep) |
-| Diff vs v2 (LB 0.886) | PL parquet has Sydorskyi-canonical filters applied: `min_max_prob=0.5` (chunk discard) + `trim_min_prob=0.1` (per-class trim) |
+| Base config | Canonical Antoine (random init + Uniform sampler + T2 teacher + 25 ep @ lr=5e-4 + 1:1 PL weight) |
+| Diff vs v2 a2-kd (LB 0.886) | PL parquet has Sydorskyi-canonical filters applied: `min_max_prob=0.5` (chunk discard) + `trim_min_prob=0.1` (per-class trim) |
 | PL parquet | `v3-distilled-sed-kd-5fold-trim01-discard05/sed_pseudo_labels.parquet` (85K chunks, 33% chunk-discard rate, 98% per-cell trim) |
-| Note on discard rate | Below Sydorskyi's ~83% — our existing T=0.6 + P^1.5 sharpening + max-across-folds inflates max probs before the filter. v4 (Sydorskyi-faithful PL gen) is scaffolded as fallback. |
+| Note on discard rate | Below Sydorskyi's ~83% — our existing T=0.6 + P^1.5 sharpening + max-across-folds inflates max probs before the filter. v4 (Sydorskyi-faithful: mean-folds + no T/P sharpen) was scaffolded but NOT run per Phase 5 closure decision. |
+| Training | 25/25 epochs, best ep 11, walltime 4h56m, no NaN, exit 0. SLURM 9228488. W&B `ule0zzog`. |
+| Offline | val/auroc **0.9330** (Δ −0.006 vs v2 a2-kd 0.9390); val/cmap 0.8016 (Δ −0.017 vs v2 0.8182). |
+| **LB** | **0.879** (Δ **−0.027** vs baseline 0.906; Δ **−0.007** vs v2 a2-kd 0.886). |
 
-**Decision criteria** (see `diagnostic-tests.md § Step 1.6`):
+**Bucket per `diagnostic-tests.md § Step 1.6`**: LB < 0.886 → "Worse than original — filters HURT — unlikely but possible if signal was in low-confidence chunks." This is the worst-case outcome of the four buckets defined the night before.
 
-| LB outcome | Reading |
-|---|---|
-| > 0.913 | trim+discard explain REJECT; protocol recoverable on our base |
-| 0.906-0.913 | Modest lift; deeper protocol fixes (focal × PL fusion) may help |
-| 0.886-0.906 | Filters alone don't help; protocol mechanism likely the gap |
-| < 0.886 | Worse than original — investigate parquet directly |
+### Reading
 
-**Phase 5 closure decision (recorded 2026-05-27 EOD)**: regardless of v3
-outcome, the next major effort goes to **Sydorskyi-yoink (exp 034)** rather
-than continuing PL diagnostics (Test 2 / Test 3). v3 is the final data point
-on exp 033's PL track. Rationale: even best-case PL lift lands at ~0.92, not
-0.94; the disclosed 0.94+ paths all rely on a data move, not a recipe move.
+1. **Filters alone don't recover the REJECT verdict — they make it worse by 0.007 LB.** v3 < v2 a2-kd despite the only protocol change being two PL-quality filters that were *supposed* to make the data cleaner.
+2. **The "PL noise" hypothesis is disproven.** The audit's working theory was that low-confidence chunks + sub-0.1 per-class noise were poisoning the student. The data says the opposite: that low-confidence soft signal was apparently being *used* by the student. Stripping it out hurt.
+3. **Possible mechanism**: our T=0.6 + P^1.5 sharpening pre-biased the max-prob distribution before the 0.5 chunk-discard filter ran, so the surviving 85K chunks (33% discard) were "sharpened-high" rather than "actually-confident". The 0.1 trim then erased the long tail of useful soft labels in the surviving chunks. Net effect: smaller pool + flatter targets = weaker training signal.
+4. **v4 (Sydorskyi-faithful PL gen: mean-folds + no T/P sharpen) would test this mechanism specifically.** Not running per the Phase 5 closure decision — even if v4 recovered to 0.906, it would still be below the 0.92+ band that justifies further PL investment, and the deadline (7 days out at audit time, 6 days out now) makes a recipe-fix path lower-ceiling than a data-move (yoink) path.
+5. **Offline-LB direction was consistent for once.** v3 offline 0.933 < v2 offline 0.939 AND v3 LB 0.879 < v2 LB 0.886. Both axes say v3 worse. This does NOT add to the offline-LB anti-correlation tally (still at 24 data points); it's a rare correlated reading.
+
+### Decision-matrix collapse
+
+| LB outcome | Reading | Active? |
+|---|---|---|
+| > 0.913 | trim+discard explain REJECT; protocol recoverable | ❌ |
+| 0.906-0.913 | Modest lift; deeper fixes (focal × PL fusion) may help | ❌ |
+| 0.886-0.906 | Filters alone don't help; protocol mechanism likely the gap | ❌ |
+| **< 0.886** | **Worse — investigate parquet directly OR confirm pivot** | **✅** |
+
+**Phase 5 closure decision (already recorded 2026-05-27 EOD; now empirically confirmed)**: next major effort goes to **Sydorskyi-yoink (exp 034)** rather than continuing PL diagnostics (Test 2 fusion / Test 3 focal loss) or v4 PL gen. v3 is the final data point on exp 033's PL track.
 
 ## Next Steps
 
-D.5 + 3-cell LB landed; verdict is REJECT. v3 (Test 1) is the final PL
-data point. Next major effort goes to **Sydorskyi-yoink (exp 034)** — XC
-pretrain via Ali Ozan's path (download Sydorskyi 2025 published backbone,
-attach own head, fine-tune on 2026). Decision finalized after v3 LB lands +
-deep research overnight output (`notes/2026-05-27-deep-research-prompt.md`)
-is read.
+Phase 5 closed. 4 LB submissions: all REJECT. Active path = **exp 034
+Sydorskyi-yoink** (XC pretrain via Ali Ozan / Jack disclosed path: download
+Sydorskyi 2025 published backbone, attach own head, fine-tune on 2026).
+Open the exp 033 PR with the REJECT + Phase 5 closure verdict; scaffold
+`experiments/034-sydorskyi-yoink/` (or similar) next.
 
-1. **Closeout**: ✅ results.md updated · MODEL-RUNS.md updated · tasks.md
-   closeout phase pending PR.
-2. **Pivot**: scope `experiments/034-sydorskyi-yoink-xc-pretrain/` (or
-   similar). Goal = layer XC pretrain (Sydorskyi's recipe) on top of the
-   distilled-sed-kd recipe to unlock the lever Antoine has but we don't.
-3. **Don't run** Day-1 a3-kd + a3-v5j or the 5 Day-2 ablations — the LB cap
-   slots are better spent on the pivot's first iteration.
+1. **Closeout**: ✅ results.md (this file) · ✅ MODEL-RUNS.md · ✅ tasks.md · PR pending.
+2. **Pivot**: scope `experiments/034-sydorskyi-yoink/`. Goal = layer XC pretrain (Sydorskyi's recipe) on top of the distilled-sed-kd recipe to unlock the lever Antoine has but we don't. Combine with deep research output (overnight 2026-05-27 → 2026-05-28) before finalizing scope.
+3. **Don't run** Day-1 a3-kd + a3-v5j or the 5 Day-2 ablations — LB cap slots reserved for the pivot's first iteration.
+4. **Don't run** v4 PL gen, Test 2 (focal × PL fusion), or Test 3 (focal loss) — Phase 5 closed.
 
 ### Historical (pre-LB plan)
 

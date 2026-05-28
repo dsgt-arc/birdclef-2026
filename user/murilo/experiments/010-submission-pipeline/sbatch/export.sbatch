@@ -1416,15 +1416,24 @@ export_distilled_sed_kd_single_fold() {
 
 export_distilled_sed_pl() {
     # Generic helper: export one exp 033 ablation cell.
-    # Args: $1 = ablation id (a1..a5), $2 = teacher (v5j|kd)
+    # Args: $1 = ablation id (a1..a5), $2 = teacher (v5j|kd), $3 = optional version (v3, v4, ...)
+    # When $3 is provided, slug/config/ckpt-dir all get a trailing -v3 / _v3 marker
+    # (e.g. distilled-sed-pl-a2-kd-v3, configs/a2_kd_v3.yaml, 2026-exp033-a2-kd-v3/fold0).
     local AB="$1"
     local TEACHER="$2"
+    local VERSION="${3:-}"
     if ! [[ "$AB" =~ ^a[1-5]$ ]] || ! [[ "$TEACHER" =~ ^(v5j|kd)$ ]]; then
         echo "ERROR: export_distilled_sed_pl: invalid args (ablation='$AB', teacher='$TEACHER')" >&2
         exit 1
     fi
-    local SLUG="distilled-sed-pl-${AB}-${TEACHER}"
-    local CKPT_RUN_DIR="${CHECKPOINTS_BASE}/033-own-teacher-pl/checkpoints/2026-exp033-${AB}-${TEACHER}/fold0"
+    if [[ -n "$VERSION" ]] && ! [[ "$VERSION" =~ ^v[3-9]$ ]]; then
+        echo "ERROR: export_distilled_sed_pl: invalid version '$VERSION' (expect v3..v9)" >&2
+        exit 1
+    fi
+    local VDASH="${VERSION:+-${VERSION}}"
+    local VUNDER="${VERSION:+_${VERSION}}"
+    local SLUG="distilled-sed-pl-${AB}-${TEACHER}${VDASH}"
+    local CKPT_RUN_DIR="${CHECKPOINTS_BASE}/033-own-teacher-pl/checkpoints/2026-exp033-${AB}-${TEACHER}${VDASH}/fold0"
     echo "=== Exporting Exp 033 ${SLUG} (own-teacher PL on distilled-sed-kd) ==="
     local CKPT
     CKPT="$(find_last_ckpt "${CKPT_RUN_DIR}")"
@@ -1432,7 +1441,7 @@ export_distilled_sed_pl() {
     local OUTPUT_DIR="artifacts/weights/${SLUG}"
     python scripts/export_distilled_sed.py \
         --checkpoint "$CKPT" \
-        --config "${EXP033_DIR}/configs/${AB}_${TEACHER}.yaml" \
+        --config "${EXP033_DIR}/configs/${AB}_${TEACHER}${VUNDER}.yaml" \
         --train-csv "$TAXONOMY_CSV_2026" \
         --output-dir "${OUTPUT_DIR}/"
 
@@ -1512,6 +1521,7 @@ case "$MODEL" in
     distilled-sed-pl-a3-v5j|distilled-sed-pl-a3-kd|\
     distilled-sed-pl-a4-v5j|distilled-sed-pl-a4-kd|\
     distilled-sed-pl-a5-v5j|distilled-sed-pl-a5-kd|\
+    distilled-sed-pl-a2-kd-v3|\
     all-033-distilled-sed-pl-day1|all-033-distilled-sed-pl-day2|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
@@ -1672,6 +1682,11 @@ case "$MODEL" in
         export_distilled_sed_pl a5 kd  ; echo ""
         export_distilled_sed_pl a5 v5j
         ;;
+    # Exp 033 Phase 5 Sydorskyi-divergence diagnostic — Test 1 (chunk discard + trim).
+    # Same canonical Antoine cell (random init + Uniform sampler + T2 teacher + 25 ep)
+    # as distilled-sed-pl-a2-kd, but pointed at the v3 PL parquet that has Sydorskyi's
+    # min_max_prob=0.5 chunk discard + trim_min_prob=0.1 per-class trim applied.
+    distilled-sed-pl-a2-kd-v3)          export_distilled_sed_pl a2 kd v3 ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;
