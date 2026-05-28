@@ -46,65 +46,102 @@ Read these BEFORE starting any phase. Implementation tasks reference them by sho
 
 ## Phase A — Source reading + verified config
 
-### A.1 Get the source
+### A.1 Get the source — DONE 2026-05-28
 
-- [ ] A.1.1 Clone `git@github.com:VSydorskyy/BirdCLEF_2025_2nd_place.git` into `vendor/` (or wherever is `.gitignore`-safe).
-- [ ] A.1.2 Download Kaggle dataset `vladimirsydor/bird-clef-2025-all-pretrained-models` to PACE shared storage: `/storage/project/ps-clef2026_birdclef-0/shared/pretrained-models/sydorskyi-2025/`.
-- [ ] A.1.3 Verify checkpoint files present: `eca_nfnet_l0_*.pth`, `tf_efficientnetv2_s_in21k_*.pth` (or whatever the actual file naming is — confirm from repo README).
-- [ ] A.1.4 `torch.load` each ckpt, print `list(ckpt.keys())[:20]` and `{k: v.shape for k, v in list(ckpt.items())[:10]}` — capture in `docs/sydorskyi-config-verified.md`.
+- [x] A.1.1 Cloned `github.com/VSydorskyy/BirdCLEF_2025_2nd_place` as git submodule at `vendor/sydorskyi-2025/` (commit `053594f`).
+- [x] A.1.2 Downloaded Kaggle dataset `vladimirsydor/bird-clef-2025-all-pretrained-models` (219 MB → 237 MB unzipped, ~10s) to `/storage/project/ps-clef2026_birdclef-0/shared/pretrained-models/sydorskyi-2025/`.
+- [x] A.1.3 Verified 3 ckpts present: `models_2025/eca_nfnet_l0_pretrain_from_bigXCV2_best.ckpt` (84 MB), `models_2025/tf_efficientnetv2_s_in21k_pretrain_from_bigXCV2Ext_swa.ckpt` (77 MB, SWA), `models_2024/tf_efficientnetv2_s_in21k_Pretrainversion1.pth` (77 MB, legacy).
+- [x] A.1.4 Inspected ckpt keys: flat OrderedDicts (no Lightning wrapping); both stems are `in_chans=1`; NFNet `final_conv` shape `(2304, 1536, 1, 1)` → 2304 ch ✅; EffNetV2-S missing `conv_head` + `bn2` → loadable backbone-out = **256 ch** (NOT 1280) ⚠️. Findings captured at `docs/sydorskyi-config-verified.md`.
 
-### A.2 Read the source line-by-line
+### A.2 Read the source line-by-line — DONE 2026-05-28
 
-- [ ] A.2.1 `code_base/models.py` — confirm head structure (hidden dim, GeM, dropout positions, ReLU vs other activation, SED-attention impl).
-- [ ] A.2.2 `code_base/dataset.py` — confirm mel pipeline (nnAudio call, standardize axes, min-max[0,1] axes, augmentation chain order).
-- [ ] A.2.3 `code_base/losses.py` — confirm FocalBCELoss exact α, γ, reduction.
-- [ ] A.2.4 `code_base/samplers.py` (or wherever sampler lives) — confirm class-balancing γ values per backbone.
-- [ ] A.2.5 `create_pretrain_backbone.py` — confirm ckpt key format output (prefix, wrapping under `state_dict`).
-- [ ] A.2.6 Configs (`configs/*.yaml` in the source repo) — confirm hparams per backbone variant.
+- [x] A.2.1 `code_base/models/wave_clasifier.py` + `code_base/models/blocks.py` (AttHead, NormalizeMelSpec, TraceableMelspec, GeMFreq, ChannelAgnosticAmplitudeToDB) — head structure verified. Backbone instantiation uses `features_only=True` (explains EffNetV2-S ckpt truncation at `blocks.5.14.bn3`).
+- [x] A.2.2 `code_base/datasets/wave_dataset.py` — mel pipeline + dataset augmentation chain verified. Standardize axes = `(1, 2)` per-sample over full spectrogram. MixUp with `alpha=None` = equal-weight wave + sum-clip target (the "cleverest piece" from audit, verified line-by-line).
+- [x] A.2.3 `code_base/losses/focal_loss.py` (`FocalLossBCE`) + `code_base/losses/combined_losses.py` (`BCEFocal2WayLoss`) — FocalLossBCE: α=0.25, γ=2.0, bce_weight=1.0, focal_weight=1.0, reduction="mean". With `loss_type="baseline"`, applied to `clipwise_logits_long` only (no framewise-max term).
+- [x] A.2.4 `code_base/train_functions/train_lightning.py:220-265` — sampler / class-balancing logic. Confirmed `power_value=-0.5` default. NFNet `class_weights_path="sqrt"` → `w_c = (n_c/N)^-0.5`; EffNetV2-S `class_weights_path="balanced"` → `w_c = 1/n_c`. ⚠️ Proposal had this backwards; corrected in verified-config doc.
+- [x] A.2.5 `scripts/create_pretrain_backbone.py` — ckpt key format confirmed. Strips `model.backbone.` prefix from Lightning ckpt → outputs flat `OrderedDict`. Distributed ckpts already in this format. Compatible with `timm features_only + strict=True` load.
+- [x] A.2.6 `train_configs/{selected_ebs,selected_eca,best_solo_ebs}.py` — fully-resolved hparams captured. ⚠️ Key finding: EffNetV2-S configs reference `models_2024/tf_efficientnetv2_s_in21k_Pretrainversion1.pth` (NOT the 2025 SWA ckpt). NFNet references `models_2025/eca_nfnet_l0_pretrain_from_bigXCV2_best.ckpt`.
+- [x] A.2.7 `code_base/models/augmentations.py` (RandomFiltering) — 4-band STFT-domain random EQ. min_db=-20, n_fft=1024 (different from mel n_fft=2048), peak-normalize after iSTFT.
+- [x] A.2.8 `code_base/augmentations/spec_augment.py` + `code_base/augmentations/transforms.py` (OneOf, BackgroundNoise) — SpecAugment wraps torchaudio FrequencyMasking + TimeMasking. OneOf picks one transform uniformly; each branch has internal p=0.5. Net BG noise: 25% nocall + 25% ESC50 + 50% none.
+- [x] A.2.9 `code_base/forwards/cls_forward.py` (`MultilabelClsForwardLongShort`) — forward wrapper. `loss_type="baseline"` + `use_bce_focal_loss=True` → FocalLossBCE on `clipwise_logits_long`. RandomFiltering applied to waveform before mel.
 
-### A.3 Write verified config doc
+### A.3 Write verified config doc — DONE 2026-05-28
 
-- [ ] A.3.1 Create `docs/sydorskyi-config-verified.md` with every config cell from `proposal.md § Setup` table updated to HIGH confidence with line-number citation.
-- [ ] A.3.2 Specifically resolve:
-  - Head hidden dim: **512 or other?**
-  - GeM freq pool params (p, eps)
-  - Standardize axes (per-spectrogram vs per-batch vs per-channel)
-  - mel `normalized` flag handling (True vs False)
-  - FocalBCELoss α, γ
-  - Class-balancing γ for EffNetV2-S vs NFNet-L0
-  - Ckpt key prefix + whether wrapped under `state_dict`
+- [x] A.3.1 Created `docs/sydorskyi-config-verified.md` with every config cell line-cited against source. Replaces the in-flight skeleton with comprehensive Phase A.2 findings.
+- [x] A.3.2 All "Open questions" from proposal table resolved:
+  - Head hidden dim: **512** ✅
+  - GeM freq pool: `p=3.0` learnable, `eps=1e-6` ✅
+  - Standardize axes: `(1, 2) = (n_mels, time), per-sample` ✅
+  - mel `normalized=True`: divides by `||hann_window||₂` after STFT ✅
+  - FocalLossBCE: α=0.25, γ=2.0, 1.0/1.0 weights, reduction="mean" ✅
+  - Class-balancing γ: ⚠️ CORRECTED (NFNet=sqrt/γ=-0.5, EffNetV2-S=balanced/γ=-1)
+  - Ckpt key prefix: NONE (flat OrderedDict, no wrapping) ✅
+  - Backbone output channels: ⚠️ CORRECTED (EffNetV2-S = **256** via features_only, NFNet = **2304**)
+  - Mel library: ⚠️ partial correction — nnAudio STFT + torchaudio MelScale (hybrid, not pure nnAudio)
+  - Which ckpt for EffNetV2-S: ⚠️ CORRECTED — **2024** ckpt, NOT 2025 SWA
 
-**Phase A exit criterion**: `docs/sydorskyi-config-verified.md` landed. No "MED" or "LOW" confidence cells remain in the setup table.
+**Phase A exit criterion**: ✅ `docs/sydorskyi-config-verified.md` landed with every config cell either HIGH-confidence VERIFIED or explicitly out-of-scope. No "MED" or "LOW" cells remain in the setup table. 5 corrections to original proposal documented.
 
 ---
 
 ## Phase B — Implementation
 
-### B.1 Dependencies
+### B.1 Dependencies — DONE 2026-05-28
 
-- [ ] B.1.1 Add `nnAudio` to `pyproject.toml` deps in `experiments/034-pretrained-backbone-yoink/pyproject.toml` (to be created).
-- [ ] B.1.2 `uv pip install -e ".[dev]"` inside active interactive venv (NOT in cwd).
-- [ ] B.1.3 Verify `import nnAudio; from nnAudio.Spectrogram import MelSpectrogram` works.
+- [x] B.1.1 `experiments/034-pretrained-backbone-yoink/pyproject.toml` created. Pins inherit exp 033 ML stack + adds `torchvision==0.20.1` (needed for `torchvision.ops.focal_loss.sigmoid_focal_loss` in B.5). `nnAudio==0.3.4` already present.
+- [x] B.1.2 No new install needed — active venv already has nnAudio 0.3.4, torchvision 0.25.0, timm 1.0.25, torch 2.10. Versions exceed pyproject pins but tests pass cleanly.
+- [x] B.1.3 `import nnAudio; from nnAudio.Spectrogram import STFT as nnAudioSTFT` works (Sydorskyi uses STFT, not full MelSpectrogram — see verified-config doc § Mel pipeline).
 
-### B.2 nnAudio mel pipeline
+### B.2 nnAudio mel pipeline — DONE 2026-05-28
 
-- [ ] B.2.1 `src/birdclef/preprocessing/sydorskyi_mel.py` — wrap `nnAudio.Spectrogram.MelSpectrogram` with verified params (Phase A).
-- [ ] B.2.2 Compose: nnAudio mel → `AmplitudeToDb(top_db=80, amin=1e-10)` → standardize (verified axes) → min-max[0,1].
-- [ ] B.2.3 Unit test against captured reference tensor (small fixed audio, deterministic).
+- [x] B.2.1 `src/birdclef/preprocessing/yoink_mel.py` — direct port of Sydorskyi's mel chain (`TraceableMelspec` = nnAudio STFT + torchaudio MelScale; `ChannelAgnosticAmplitudeToDB`; `NormalizeMelSpec`; `GeMFreq`; `Swish`).
+- [x] B.2.2 `build_sydorskyi_mel_extractor` convenience function composes the full chain (TraceableMelspec → ChannelAgnosticAmplitudeToDB → NormalizeMelSpec) with Sydorskyi-default params.
+- [x] B.2.3 Unit tests: 10 tests in `test_yoink_mel.py` pass. Coverage: GeMFreq learnable p=3 init + exportable/non-exportable parity; NormalizeMelSpec per-sample standardize over (1,2) + output range [0,1]; ChannelAgnosticAmplitudeToDB 3D/4D acceptance + top_db=80 clip; TraceableMelspec output shape (2, 128, 313) for 5s @ 32kHz; full chain end-to-end finite + range.
 
-### B.3 SED-attention head
+### B.3 SED-attention head — DONE 2026-05-28
 
-- [ ] B.3.1 `src/birdclef/heads/sydorskyi_sed_head.py` — backbone-features → GeM freq pool → SED-attention time pool → hidden(512) → dropout(0.5) → ReLU → classifier(num_classes).
-- [ ] B.3.2 Initial dropout 0.25 after backbone, before pooling.
-- [ ] B.3.3 Unit test forward pass on synthetic backbone features.
-- [ ] B.3.4 Verify `head.classifier.out_features == num_classes_2026` after init.
+- [x] B.3.1 `src/birdclef/heads/yoink_sed_head.py` — `YoinkAttHead` port. Backbone-features → GeMFreq pool → squeeze + permute → dense(in_chans → 512) + dropout(0.25) + ReLU + dropout(0.5) → 2 parallel Conv1d (attention + value) → soft-attention-weighted aggregation in BOTH logit-space (loss) and prob-space (metric).
+- [x] B.3.2 Default `p=0.5` master → dropout(p/2=0.25) before linear, dropout(p=0.5) after ReLU. ReLU activation.
+- [x] B.3.3 Default `num_class=234` (BirdCLEF 2026). `train_period == infer_period` asserted (simplified vs original Sydorskyi which supports short-window crop path at inference).
+- [x] B.3.4 Unit tests: 9 tests in `test_yoink_sed_head.py` pass. Coverage: constructor defaults match Sydorskyi (hidden 512); dropout positions/rates verified; ReLU activation verified; output dict has 3 keys with correct shapes; clipwise_pred in [0,1] (prob-space); clipwise_logits unbounded (logit-space); simplification assertion fires when train_period != infer_period; gradient flows to GeMFreq.p, attention.weight, fix_scale.weight.
 
-### B.4 Checkpoint loader
+### B.4 Checkpoint loader — DONE 2026-05-28
 
-- [ ] B.4.1 `scripts/load_sydorskyi_backbone.py` — `torch.load` ckpt → inspect keys → strip head if needed → `load_state_dict(strict=True)`.
-- [ ] B.4.2 Assert: every loaded conv layer's `weight.abs().mean()` > 1e-3 (catches all-zeros silent load).
-- [ ] B.4.3 Verify `backbone.num_features` matches expected (1280 for EffNetV2-S, 2304 for NFNet-L0).
-- [ ] B.4.4 Unit test: load ckpt, run dummy forward pass, no NaN/Inf.
+- [x] B.4.1 `experiments/034-pretrained-backbone-yoink/scripts/load_sydorskyi_backbone.py` — instantiates `timm.create_model(features_only=True, in_chans=1)` and loads Sydorskyi ckpt with `strict=True` (after stripping defensive `model.backbone.` / `backbone.` prefixes). CLI + Python API.
+- [x] B.4.2 Both backbones (EffNetV2-S 2024 + NFNet-L0 2025) load with strict=True; no missing/unexpected keys. Conv weight norms confirmed non-zero post-load.
+- [x] B.4.3 `backbone.feature_info.channels()[-1]` confirmed: **256 for EffNetV2-S** (features_only strips conv_head/bn2 — matches stripped ckpt) and **2304 for NFNet-L0**.
+- [x] B.4.4 Unit tests: 6 tests in `test_yoink_backbone_loader.py` pass. Coverage: strict=True load for both backbones; output channels verification; conv weights non-zero; forward pass produces finite (B, 256/2304, H, W); unknown-backbone raises ValueError.
+
+### B.5 WaveCNNAttenClasifier orchestrator — DONE 2026-05-28 (added beyond original Phase B scope)
+
+- [x] B.5.1 `src/birdclef/models/yoink_wave_classifier.py` — `YoinkWaveClassifier` simplified port. Composes mel chain + features_only backbone + (deferred) spec_augment + head.
+- [x] B.5.2 Unit tests: 10 tests in `test_yoink_wave_classifier.py` pass. Coverage: construction with defaults; extract_spec shape (2, 1, 128, 313); forward output dict; finite outputs; precomputed-spec path; short-circuit return_spec_feature / return_cnn_emb; spec_augment_config raises NotImplementedError (deferred); custom num_class; load pretrained backbone end-to-end forward.
+
+### B.6 FocalBCELoss — PENDING (next Phase B sub-commit)
+
+- [ ] B.6.1 `src/birdclef/losses/focal_bce.py` — direct port from `vendor/sydorskyi-2025/code_base/losses/focal_loss.py:28-54`. Composition: `1.0 * BCEWithLogitsLoss + 1.0 * torchvision.ops.focal_loss.sigmoid_focal_loss(α=0.25, γ=2.0)`. Reduction="mean".
+- [ ] B.6.2 Unit tests: synthetic batch finite loss + gradient finite; matches torchvision impl when bce_weight=0; matches BCE-only when focal_weight=0.
+
+### B.7 Class-balancing sampler — PENDING
+
+- [ ] B.7.1 `src/birdclef/data/yoink_sampler.py` — `WeightedRandomSampler` factory with γ knob. NFNet path: γ=−0.5 ("sqrt"); EffNetV2-S path: γ=−1 (equivalent to "1/n_c"). Verified-config doc § Training hyperparameters.
+- [ ] B.7.2 Unit test: empirical sample frequency over a fixed dataset matches expected within tolerance.
+
+### B.8 Augmentation pipeline — PENDING
+
+- [ ] B.8.1 `src/birdclef/preprocessing/yoink_spec_augment.py` — `CustomFreqMasking` + `CustomTimeMasking` ports (torchaudio FreqMasking/TimeMasking wrappers; per-sample stochastic apply with p, n_masks).
+- [ ] B.8.2 `src/birdclef/preprocessing/random_filtering.py` — `RandomFiltering` port (4-band STFT-domain random EQ; min_db=-20; applied to waveform pre-mel).
+- [ ] B.8.3 `src/birdclef/data/yoink_dataset.py` — `WaveDataset` port (focal + labeled-SS + PL with 40% Bernoulli swap; MixUp with sum-clip target; label smoothing GT-only; BG noise OneOf). Skip the unused features (unlabeled, montage, curation, OOF, deep_supervision).
+- [ ] B.8.4 Unit tests: augmentation chain ends with finite tensor; MixUp sum-clip target rule verified; PL swap probability empirically ~0.4; label smoothing math correct.
+
+### B.9 PyTorch Lightning module — PENDING
+
+- [ ] B.9.1 `src/birdclef/lightning/yoink_finetune.py` — `YoinkFinetuneModule` Lightning wrapper. training_step calls YoinkWaveClassifier + RandomFiltering(wave) + FocalLossBCE on clipwise_logits_long. validation_step computes val ROC-AUC. Optimizer + scheduler from config.
+- [ ] B.9.2 Fast-dev-run gate: launch on a tiny subset (no full ckpt load), verify no NaN/Inf, exit 0.
+
+**Phase B exit criterion**: every component has a unit test that passes; fast-dev-run completes cleanly.
+
+**Phase B sub-commit 1 (CURRENT) exit criterion**: ✅ B.1-B.5 done. Mel + head + backbone-loader + classifier orchestrator + 35 tests pass + backward-compat (exp 032/033's 195 tests still pass = 230 total). Ready for Phase C Gate 1 parity test.
 
 ### B.5 FocalBCELoss
 
