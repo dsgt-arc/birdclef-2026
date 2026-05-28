@@ -3,9 +3,9 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-27 (end of day — exp 033 REJECT verdict +
-Phase 5 audit landed, Test 1 a2_kd_v3 launched as final PL data point,
-deep research prompt drafted, pivot decision deferred to 2026-05-28 AM).
+**Last updated**: 2026-05-27 EOD (~midnight — exp 033 REJECT verdict +
+Phase 5 audit landed, a2_kd_v3 training overnight, deep research bundle
+uploaded to Claude.ai + in flight, pivot decision deferred to 2026-05-28 AM).
 
 **Competition deadline**: 2026-06-03 (7 days from this update).
 
@@ -42,15 +42,17 @@ protocol. See:
   - `experiments/033-own-teacher-pl/diagnostic-tests.md`
     (Test 1/2/3 workflow + commands + decision criteria; **resume-after-disconnect anchor**)
 
-**Phase 5 Test 1 status (READY TO LAUNCH)**:
-- Code: `generate_pseudo_labels.py` modified with optional `filter:` section.
-- Configs: `configs/pl_gen_v3.yaml` (T2 + Sydorskyi 0.5/0.1 filters) and
-  `configs/a2_kd_v3.yaml` (canonical Antoine on v3 parquet) created.
-- Steps: re-issue v3 PL parquet (~30s head node) → pre-flight → sbatch
-  a2_kd_v3 (~6.5h) → D.5 → ONNX export → LB submit.
-- Decision criterion: LB > 0.913 → protocol recoverable, scale to other cells;
-  LB 0.906-0.913 → run Test 2 (focal × PL fusion); LB < 0.906 → run Test 2 then
-  decide pivot.
+**Phase 5 Test 1 status (LAUNCHED, training overnight)**:
+- v3 PL parquet generated (job 9227102 — 46s walltime; 85K chunks, 33% chunk-discard, 98% per-cell trim).
+- v3 pre-flight ran: 5/7 PASS; 2 stale FAILs in Check 5 are chunk-discard-driven, not real (no safety impact; logged as deferred preflight patch in `diagnostic-tests.md § Deferred follow-ups`).
+- a2_kd_v3 training launched 2026-05-27 ~23:00 — finishes ~05:30 2026-05-28.
+- v4 (Sydorskyi-faithful PL gen: mean-folds + no T/P sharpen) scaffolded but NOT running — fallback only if v3 LB ≤ 0.906.
+- **Phase 5 closure decision recorded**: regardless of v3 outcome, next major effort = exp 034 Sydorskyi-yoink (NOT Test 2/3). v3 is the final PL data point on exp 033.
+
+**Deep research status (in flight, output expected tomorrow morning)**:
+- Self-contained context bundle at `notes/2026-05-27-deep-research-context-bundle.md` (5009 lines / 319 KB).
+- Bundle uploaded to Claude.ai's deep research with one-line external prompt.
+- Designed to challenge the Sydorskyi-yoink pivot (not validate it). Q1: is the audit confirmation-biased? Q2–Q6: realistic LB landings, implementation risks, missing levers, concrete day-by-day plan.
 
 ---
 
@@ -97,14 +99,30 @@ Once decided, the next 3-4 days are single-track on that path. No new experiment
 ### 4. Files to read in order (if returning cold)
 
 1. `user/murilo/CONTEXT.md` (this file) — current state
-2. `experiments/033-own-teacher-pl/results.md` — the REJECT verdict + paired Δ readings
+2. `experiments/033-own-teacher-pl/results.md` — the REJECT verdict + paired Δ readings + Phase 5 status
 3. `analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md` — why exp 033 REJECT might be implementation, not protocol
-4. `notes/2026-05-27-deep-research-prompt.md` — the deep research prompt fired overnight (and read its output)
-5. `experiments/033-own-teacher-pl/diagnostic-tests.md` — Phase 5 workflow if needed
+4. **Deep research output** (in Claude.ai history or saved to `docs/references/deep-research/2026-05-27-pivot-assessment.md`) — the overnight pivot assessment
+5. `notes/2026-05-27-deep-research-prompt.md` — what we asked the deep research (source of truth for the prompt)
+6. `notes/2026-05-27-deep-research-context-bundle.md` — the 5009-line self-contained bundle uploaded to Claude.ai (snapshot of materials)
+7. `experiments/033-own-teacher-pl/diagnostic-tests.md` — Phase 5 workflow (if Test 2/3 ends up being justified)
+8. `experiments/033-own-teacher-pl/tasks.md` — Phase 5 closure decision + Phase 6 placeholder
 
----
+### 5. Branch state at end of 2026-05-27
 
-### HISTORICAL: 2026-05-27 morning pickup (Phase G completion)
+**Branch**: `mg/exp033-own-teacher-pl`, ~30 commits ahead of main.
+
+**Most recent commits** (latest first):
+- `4867b34` — Make deep research bundle self-contained
+- `6dc4e93` — Add deep research context bundle (5009 lines / 319 KB)
+- `c3297d6` — EOD: Phase 5 closure + deep research prompt + pivot intent
+- `a6b8094` — Phase 5: v4 PL config (Sydorskyi-faithful fallback)
+- `51c1120` — generate_pseudo_labels.sh CONFIG-aware (reuse for v3)
+- `8ff083c` — Phase 5: Sydorskyi-divergence diagnostic Test 1 scaffold
+- `40708f7` — Exp 033 ↔ Sydorskyi 2025 PL protocol divergence audit
+- `c7beb60` — Capture 2026-05-27 update to best-single-model-LB Kaggle thread
+- `573b1ed` — Exp 033: LB REJECT verdict — 3/3 Day-1 submissions regressed
+
+**No PR yet for exp 033.** Open after a2_kd_v3 LB lands + Phase 5 closeout updates are committed.
 
 ---
 
