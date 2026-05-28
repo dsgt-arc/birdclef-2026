@@ -37,6 +37,7 @@ else
 fi
 
 RUN_NAME="xcpretrain-${BACKBONE}-${MODE}${RUN_SUFFIX}"
+LOG_DIR="${EXPERIMENT_DIR}/logs"
 EXPORTS="ALL,BACKBONE=$BACKBONE,FOLD=$FOLD,MAX_EPOCHS=$MAX_EPOCHS,GRAD_CLIP=$GRAD_CLIP,RUN_NAME=$RUN_NAME,FREEZE=$FREEZE,LOAD_PRETRAINED=1,SAVE_CKPT=1"
 [[ "${WANDB:-0}" == "1" ]] && EXPORTS="$EXPORTS,WANDB=1"
 
@@ -47,11 +48,22 @@ CMD=(sbatch
     --export="$EXPORTS"
     "$SCRIPT_DIR/_job.sh")
 
-echo "Train (${MODE}): ${BACKBONE} fold ${FOLD}, ${MAX_EPOCHS} ep, grad_clip ${GRAD_CLIP} → ${RUN_NAME}"
+echo "=============================================="
+echo "Experiment 034: Pretrained-backbone — train (${MODE})"
+echo "=============================================="
+echo "Backbone: ${BACKBONE}"
+echo "Run name: ${RUN_NAME}"
+echo "Partition: ${PARTITION}"
+echo "Fold: ${FOLD}"
+echo "Epochs: ${MAX_EPOCHS}   Mode: ${MODE}   grad_clip: ${GRAD_CLIP}"
+echo ""
+
 if [[ "${1:-}" == "--dry-run" ]]; then
-    printf '%q ' "${CMD[@]}"; echo
+    echo "[DRY-RUN] ${CMD[*]}"
 else
+    echo "Submitting job..."
     "${CMD[@]}"
-    echo "Monitor: squeue -u \$USER ; tail -f logs/slurm-${MODE}-*.out"
-    echo "Result:  cat outputs/${RUN_NAME}-fold${FOLD}.json"
+    echo ""
+    echo "Monitor: squeue -u \$USER"
+    echo "Logs: ${LOG_DIR}/"
 fi

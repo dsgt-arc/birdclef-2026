@@ -21,6 +21,7 @@ FOLD="${FOLD:-0}"
 MAX_EPOCHS="${MAX_EPOCHS:-5}"
 PARTITION="${PARTITION:-gpu-rtx6000,gpu-v100}"
 RUN_NAME="gate2-${BACKBONE}"
+LOG_DIR="${EXPERIMENT_DIR}/logs"
 
 CMD=(sbatch
     --job-name="exp034-gate2"
@@ -29,11 +30,22 @@ CMD=(sbatch
     --export="ALL,BACKBONE=$BACKBONE,FOLD=$FOLD,MAX_EPOCHS=$MAX_EPOCHS,RUN_NAME=$RUN_NAME,FREEZE=1,LOAD_PRETRAINED=1"
     "$SCRIPT_DIR/_job.sh")
 
-echo "Gate 2: ${BACKBONE} fold ${FOLD}, ${MAX_EPOCHS} ep, frozen + pretrained → ${RUN_NAME}"
+echo "=============================================="
+echo "Experiment 034: Pretrained-backbone — Gate 2"
+echo "=============================================="
+echo "Backbone: ${BACKBONE}"
+echo "Run name: ${RUN_NAME}"
+echo "Partition: ${PARTITION}"
+echo "Fold: ${FOLD}"
+echo "Epochs: ${MAX_EPOCHS} (frozen-backbone head-only sanity)"
+echo ""
+
 if [[ "${1:-}" == "--dry-run" ]]; then
-    printf '%q ' "${CMD[@]}"; echo
+    echo "[DRY-RUN] ${CMD[*]}"
 else
+    echo "Submitting job..."
     "${CMD[@]}"
-    echo "Monitor: squeue -u \$USER ; tail -f logs/slurm-gate2-*.out"
-    echo "Result:  cat outputs/${RUN_NAME}-fold${FOLD}.json   (OOF val_auroc, target >= 0.95)"
+    echo ""
+    echo "Monitor: squeue -u \$USER"
+    echo "Logs: ${LOG_DIR}/"
 fi
