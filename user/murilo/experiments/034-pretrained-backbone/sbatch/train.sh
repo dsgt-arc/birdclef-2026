@@ -33,14 +33,19 @@
 
 set -eu
 
-if [[ -z "${SLURM_JOB_ID:-}" ]]; then
+# Self-submit unless WE already did (custom sentinel — NOT $SLURM_JOB_ID, which
+# is also set inside interactive salloc/srun and would skip submission).
+if [[ -z "${XCPRETRAIN_SUBMITTED:-}" ]]; then
     HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     EXP="$(dirname "$HERE")"
     mkdir -p "$EXP/logs"
     cd "$EXP"
     echo "Submitting train to SLURM: sbatch $HERE/train.sh"
-    exec sbatch --export=ALL "$HERE/train.sh"
+    exec sbatch --export=ALL,XCPRETRAIN_SUBMITTED=1 "$HERE/train.sh"
 fi
+
+# Hard guard: the heavy body must only run inside a SLURM batch job.
+: "${SLURM_JOB_ID:?train.sh body reached outside SLURM — launch as 'bash sbatch/train.sh'}"
 
 # =========================== running under SLURM ===========================
 EXPERIMENT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"

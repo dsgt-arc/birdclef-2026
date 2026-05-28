@@ -24,16 +24,21 @@
 
 set -eu
 
-# --- self-submit: when invoked via `bash` (no SLURM_JOB_ID yet), resubmit via sbatch.
+# --- self-submit: resubmit via sbatch unless WE already did (custom sentinel).
+#     Do NOT guard on $SLURM_JOB_ID — it is also set inside interactive
+#     salloc/srun allocations, which would skip submission and run locally.
 #     cd into the experiment dir first so $SLURM_SUBMIT_DIR points there. ---
-if [[ -z "${SLURM_JOB_ID:-}" ]]; then
+if [[ -z "${XCPRETRAIN_SUBMITTED:-}" ]]; then
     HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # .../sbatch
     EXP="$(dirname "$HERE")"
     mkdir -p "$EXP/logs"
     cd "$EXP"
     echo "Submitting Gate 2 to SLURM: sbatch $HERE/gate2.sh"
-    exec sbatch --export=ALL "$HERE/gate2.sh"
+    exec sbatch --export=ALL,XCPRETRAIN_SUBMITTED=1 "$HERE/gate2.sh"
 fi
+
+# Hard guard: the heavy body must only run inside a SLURM batch job.
+: "${SLURM_JOB_ID:?gate2.sh body reached outside SLURM — launch as 'bash sbatch/gate2.sh'}"
 
 # =========================== running under SLURM ===========================
 # NOTE: sbatch spools a COPY of this script to /var/lib/slurm/..., so
