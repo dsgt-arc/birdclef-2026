@@ -127,6 +127,26 @@ prob-space-aggregation issue. The only divergence is the DATA pipeline (§ B.8.3
    keep inference scoring consistent with training (clip-only `clipwise_pred_long`), or
    deliberately A/B a blend — avoid a silent train/infer mismatch.
 
+## Implementation conventions (aligned to exp 032/033, 2026-05-28)
+
+After an audit, exp 034 now matches the established experiment scaffold:
+- **Config-driven**: `configs/_common.yaml` (Sydorskyi recipe) + diff configs
+  (`gate2-effv2s`, `xcpretrain-effv2s-frozen`, `xcpretrain-effv2s-fullft`) with
+  `inherit:` deep-merge. `train.py --config <yaml> --fold N` (was CLI/env-flag driven).
+- **Launchers**: `bash sbatch/gate2.sh` / `bash sbatch/train.sh` → `sbatch sbatch/_job.sh`
+  (launcher + `_job.sh` split, like exp 032/033 `run.sh`+`_job.sh`; `$SLURM_SUBMIT_DIR`).
+- **Logs**: `logs/slurm_<run>-fold<N>_%j.log` (`.log`, absolute path, unbuffered).
+- **Lightning logger**: `TensorBoardLogger` → `outputs/tensorboard` (read by `tb:metrics`);
+  W&B (`entity=dsgt-arc`, `project=birdclef-2026-exp034`) for full runs only (not Gate 2).
+- **Metrics**: `train.py` → `outputs/test_results/<run>-fold<N>.json`; `save_metrics.py`
+  → `artifacts/training/<run>/fold<N>/metrics.json` (run by `_job.sh`, non-fast-dev).
+- **Checkpoints**: `<project>/experiments/034-pretrained-backbone/checkpoints/<run>/fold<N>/`
+  (`save_top_k=3` + `save_last` → inference uses `last.ckpt`).
+
+Verified: config deep-merge correct; fast-dev-run via `configs/gate2-effv2s.yaml` loads the
+pretrained backbone (371K trainable / 19.8M frozen), 1 train+val batch finite, exit 0; 58
+unit tests pass.
+
 ## LB results
 
 _(none yet — Phase C/D are offline gates; first LB is Phase E.)_

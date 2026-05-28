@@ -1,0 +1,58 @@
+# Shared XCPretrain config — Sydorskyi-faithful recipe on the exp 032 datamodule.
+# Diff configs (gate2 / frozen / fullft) inherit this via `inherit: _common.yaml`
+# and override leaf values (deep-merged in train.py:load_config).
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  num_classes: 234
+  batch_size: 64
+  num_workers: 8 # never 0 (feedback_num_workers_default); matches --cpus-per-task
+  n_folds: 5
+  seed: 42 # exp 032 fold split seed
+  focal_share: 0.9
+  sc_share: 0.1
+  min_sample: 20
+  window_seconds: 5.0
+  sample_rate: 32000
+
+model:
+  backbone: "tf_efficientnetv2_s_in21k"
+  load_pretrained: true # load Sydorskyi pretrained backbone (strict)
+  freeze_backbone: true # frozen-backbone by default (Phase D/E)
+  spec_augment: true # Sydorskyi freq/time masking inside the model forward
+  head:
+    p: 0.5
+    train_period: 5.0
+    infer_period: 5.0
+
+training:
+  seed: 1243 # Sydorskyi
+  max_epochs: 25 # proven exp 032/033 cadence (frozen-backbone converges fast)
+  lr: 1.0e-4 # Sydorskyi EffNetV2-S AdamW
+  weight_decay: 0.0
+  eta_min: 1.0e-6 # cosine floor
+  grad_clip_val: 0.0 # Sydorskyi: none (0 → disabled)
+  precision: "32-true" # Sydorskyi: no AMP
+  label_smoothing: 0.05 # mass-preserving, GT
+  random_filtering: true # Sydorskyi waveform batch_aug
+  rf_min_db: -20.0
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+
+callbacks:
+  save_checkpoint: true
+  model_checkpoint:
+    monitor: "val/auroc"
+    mode: "max"
+    save_top_k: 3 # Sydorskyi n_checkpoints_to_save
+    save_last: true # inference uses last.ckpt (Sydorskyi pattern)
+    filename: "epoch{epoch:02d}"
+  # NO early_stopping — Sydorskyi trains fixed epochs + selects last.
+
+logging:
+  use_wandb: true
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp034"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

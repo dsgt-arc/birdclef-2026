@@ -1,0 +1,11 @@
+# Phase G — full fine-tune (unfreeze backbone). 50 epochs (Sydorskyi), grad-clip 1.0
+# for whole-network stability. Run only after frozen-backbone establishes a baseline.
+inherit: _common.yaml
+run_name: "xcpretrain-effv2s-fullft"
+
+model:
+  freeze_backbone: false
+
+training:
+  max_epochs: 50 # Sydorskyi full-FT
+  grad_clip_val: 1.0 # stability for whole-network FT

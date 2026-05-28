@@ -1,63 +1,57 @@
 #!/bin/bash
 # Exp 034 Phase E/F/G — train launcher (matches exp 032/033 run.sh pattern).
-# A plain bash launcher: it submits sbatch/_job.sh; it is NOT itself a SLURM script.
-#
-#   MODE=frozen (default) → freeze backbone, head-only, 25 ep (Phase E first LB, Phase F folds).
-#   MODE=fullft           → unfreeze backbone, 50 ep, grad-clip 1.0 (Phase G; Sydorskyi).
+# Plain bash launcher: submits sbatch/_job.sh with a full-run config.
+#   MODE=frozen (default) → configs/xcpretrain-effv2s-frozen.yaml (25 ep, Phase E/F)
+#   MODE=fullft           → configs/xcpretrain-effv2s-fullft.yaml (50 ep, Phase G)
+#   override entirely with  CONFIG=configs/<other>.yaml
 #
 # RUN WITH:
 #   cd user/murilo/experiments/034-pretrained-backbone
-#   bash sbatch/train.sh                                  # Phase E: frozen, fold 0, 25 ep
-#   MAX_EPOCHS=50 RUN_SUFFIX=-50ep bash sbatch/train.sh    # 25-vs-50 LB ablation
+#   bash sbatch/train.sh                                   # Phase E: frozen, fold 0
 #   for f in 0 1 2 3 4; do FOLD=$f bash sbatch/train.sh; done   # Phase F: 5-fold
-#   MODE=fullft bash sbatch/train.sh                      # Phase G: full fine-tune
-#   BACKBONE=eca_nfnet_l0 bash sbatch/train.sh             # NFNet-L0
-#   WANDB=1 bash sbatch/train.sh                           # also log to W&B
-#   bash sbatch/train.sh --dry-run                         # preview
+#   MODE=fullft bash sbatch/train.sh                       # Phase G: full fine-tune
+#   CONFIG=configs/xcpretrain-nfnet-frozen.yaml bash sbatch/train.sh
+#   bash sbatch/train.sh --dry-run
 
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$EXPERIMENT_DIR"
-mkdir -p logs
+LOG_DIR="${EXPERIMENT_DIR}/logs"
+mkdir -p "$LOG_DIR"
 
 MODE="${MODE:-frozen}"
-BACKBONE="${BACKBONE:-tf_efficientnetv2_s_in21k}"
 FOLD="${FOLD:-0}"
 PARTITION="${PARTITION:-gpu-rtx6000,gpu-v100}"
-RUN_SUFFIX="${RUN_SUFFIX:-}"
 
-if [[ "$MODE" == "frozen" ]]; then
-    MAX_EPOCHS="${MAX_EPOCHS:-25}"; FREEZE=1; GRAD_CLIP="${GRAD_CLIP:-0.0}"
-elif [[ "$MODE" == "fullft" ]]; then
-    MAX_EPOCHS="${MAX_EPOCHS:-50}"; FREEZE=0; GRAD_CLIP="${GRAD_CLIP:-1.0}"
+if [ -n "${CONFIG:-}" ]; then
+    :  # explicit config override via env
+elif [ "$MODE" = "frozen" ]; then
+    CONFIG="configs/xcpretrain-effv2s-frozen.yaml"
+elif [ "$MODE" = "fullft" ]; then
+    CONFIG="configs/xcpretrain-effv2s-fullft.yaml"
 else
-    echo "ERROR: MODE must be 'frozen' or 'fullft', got '$MODE'" >&2; exit 1
+    echo "ERROR: MODE must be 'frozen' or 'fullft' (or set CONFIG=...); got '$MODE'" >&2
+    exit 1
 fi
-
-RUN_NAME="xcpretrain-${BACKBONE}-${MODE}${RUN_SUFFIX}"
-LOG_DIR="${EXPERIMENT_DIR}/logs"
-EXPORTS="ALL,BACKBONE=$BACKBONE,FOLD=$FOLD,MAX_EPOCHS=$MAX_EPOCHS,GRAD_CLIP=$GRAD_CLIP,RUN_NAME=$RUN_NAME,FREEZE=$FREEZE,LOAD_PRETRAINED=1,SAVE_CKPT=1"
-[[ "${WANDB:-0}" == "1" ]] && EXPORTS="$EXPORTS,WANDB=1"
+RUN_NAME="$(basename "$CONFIG" .yaml)"
 
 CMD=(sbatch
-    --job-name="exp034-${MODE}"
+    --job-name="exp034-${RUN_NAME}"
     --partition="$PARTITION"
-    --output="${LOG_DIR}/slurm-${MODE}-%j.out"
-    --export="$EXPORTS"
+    --output="${LOG_DIR}/slurm_${RUN_NAME}-fold${FOLD}_%j.log"
+    --export="ALL,CONFIG=${CONFIG},FOLD=${FOLD}"
     "$SCRIPT_DIR/_job.sh")
 
 echo "=============================================="
-echo "Experiment 034: Pretrained-backbone — train (${MODE})"
+echo "Experiment 034: Pretrained-backbone — train"
 echo "=============================================="
-echo "Backbone: ${BACKBONE}"
+echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
 echo "Partition: ${PARTITION}"
 echo "Fold: ${FOLD}"
-echo "Epochs: ${MAX_EPOCHS}   Mode: ${MODE}   grad_clip: ${GRAD_CLIP}"
 echo ""
-
 if [[ "${1:-}" == "--dry-run" ]]; then
     echo "[DRY-RUN] ${CMD[*]}"
 else

@@ -1,45 +1,42 @@
 #!/bin/bash
 # Exp 034 Phase D — Gate 2 launcher (matches exp 032/033 run.sh pattern).
-# A plain bash launcher: it submits sbatch/_job.sh; it is NOT itself a SLURM script.
+# Plain bash launcher: submits sbatch/_job.sh with the Gate-2 config.
 #
 # RUN WITH:
 #   cd user/murilo/experiments/034-pretrained-backbone
-#   bash sbatch/gate2.sh                          # EffNetV2-S, fold 0, 5 ep, frozen + pretrained
-#   BACKBONE=eca_nfnet_l0 bash sbatch/gate2.sh     # NFNet-L0 variant
-#   FOLD=0 MAX_EPOCHS=5 bash sbatch/gate2.sh        # overrides
-#   bash sbatch/gate2.sh --dry-run                  # preview the sbatch command
+#   bash sbatch/gate2.sh                                   # configs/gate2-effv2s.yaml, fold 0, 5 ep
+#   FOLD=0 bash sbatch/gate2.sh                             # override fold
+#   CONFIG=configs/gate2-nfnet.yaml bash sbatch/gate2.sh    # different config
+#   bash sbatch/gate2.sh --dry-run                          # preview the sbatch command
 
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPERIMENT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$EXPERIMENT_DIR"                 # → submission dir = experiment dir → $SLURM_SUBMIT_DIR
-mkdir -p logs
-
-BACKBONE="${BACKBONE:-tf_efficientnetv2_s_in21k}"
-FOLD="${FOLD:-0}"
-MAX_EPOCHS="${MAX_EPOCHS:-5}"
-PARTITION="${PARTITION:-gpu-rtx6000,gpu-v100}"
-RUN_NAME="gate2-${BACKBONE}"
 LOG_DIR="${EXPERIMENT_DIR}/logs"
+mkdir -p "$LOG_DIR"
+
+CONFIG="${CONFIG:-configs/gate2-effv2s.yaml}"
+FOLD="${FOLD:-0}"
+PARTITION="${PARTITION:-gpu-rtx6000,gpu-v100}"
+RUN_NAME="$(basename "$CONFIG" .yaml)"
 
 CMD=(sbatch
-    --job-name="exp034-gate2"
+    --job-name="exp034-${RUN_NAME}"
     --partition="$PARTITION"
-    --output="${LOG_DIR}/slurm-gate2-%j.out"
-    --export="ALL,BACKBONE=$BACKBONE,FOLD=$FOLD,MAX_EPOCHS=$MAX_EPOCHS,RUN_NAME=$RUN_NAME,FREEZE=1,LOAD_PRETRAINED=1"
+    --output="${LOG_DIR}/slurm_${RUN_NAME}-fold${FOLD}_%j.log"
+    --export="ALL,CONFIG=${CONFIG},FOLD=${FOLD}"
     "$SCRIPT_DIR/_job.sh")
 
 echo "=============================================="
 echo "Experiment 034: Pretrained-backbone — Gate 2"
 echo "=============================================="
-echo "Backbone: ${BACKBONE}"
+echo "Config: ${CONFIG}"
 echo "Run name: ${RUN_NAME}"
 echo "Partition: ${PARTITION}"
 echo "Fold: ${FOLD}"
-echo "Epochs: ${MAX_EPOCHS} (frozen-backbone head-only sanity)"
 echo ""
-
 if [[ "${1:-}" == "--dry-run" ]]; then
     echo "[DRY-RUN] ${CMD[*]}"
 else

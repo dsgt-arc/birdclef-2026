@@ -1,0 +1,4 @@
+# Phase E — frozen-backbone fine-tune (first LB). 25 epochs (proven cadence),
+# checkpoints + W&B on. Inherits all of _common (which is already frozen, 25 ep).
+inherit: _common.yaml
+run_name: "xcpretrain-effv2s-frozen"

@@ -1,0 +1,13 @@
+# Phase D Gate 2 — frozen-backbone head-only sanity (NO LB, NO W&B, NO ckpt).
+# Trains the head only on fold 0 for 5 epochs; reads OOF val/auroc (target >= 0.95).
+inherit: _common.yaml
+run_name: "gate2-effv2s"
+
+training:
+  max_epochs: 5
+
+callbacks:
+  save_checkpoint: false # sanity run — no checkpoints
+
+logging:
+  use_wandb: false # sanity run — local TensorBoard only

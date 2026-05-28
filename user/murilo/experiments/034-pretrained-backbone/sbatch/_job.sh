@@ -12,14 +12,13 @@
 # job-name / partition / output are set by the launcher's sbatch flags.
 # DO NOT run directly — use a launcher:  bash sbatch/gate2.sh  |  bash sbatch/train.sh
 #
-# Params arrive as env vars (set by the launcher via `sbatch --export`):
-#   BACKBONE FOLD MAX_EPOCHS BATCH_SIZE GRAD_CLIP RUN_NAME
-#   FREEZE LOAD_PRETRAINED SAVE_CKPT WANDB NO_SPEC_AUGMENT   (boolean 0/1)
+# Params via env (set by the launcher's `sbatch --export`):
+#   CONFIG (required, path to configs/*.yaml), FOLD, FAST_DEV_RUN (true/false),
+#   NUM_WORKERS (optional override).
 
 set -eu
-
-# Hard guard: this body must only run inside a SLURM batch job.
 : "${SLURM_JOB_ID:?_job.sh must run via sbatch — use 'bash sbatch/gate2.sh' or 'bash sbatch/train.sh'}"
+: "${CONFIG:?CONFIG env var required (path to a configs/*.yaml)}"
 
 # sbatch spools a COPY of this script to /var/lib/slurm/..., so $BASH_SOURCE is
 # NOT the repo path. $SLURM_SUBMIT_DIR is the dir the launcher submitted from.
@@ -27,20 +26,16 @@ EXPERIMENT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 USER_DIR="$(dirname "$(dirname "$EXPERIMENT_DIR")")"
 REPO_DIR="$(dirname "$(dirname "$USER_DIR")")"
 
-BACKBONE="${BACKBONE:-tf_efficientnetv2_s_in21k}"
 FOLD="${FOLD:-0}"
-MAX_EPOCHS="${MAX_EPOCHS:-25}"
-BATCH_SIZE="${BATCH_SIZE:-64}"
-GRAD_CLIP="${GRAD_CLIP:-0.0}"
-RUN_NAME="${RUN_NAME:-xcpretrain}"
+FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
+NUM_WORKERS="${NUM_WORKERS:-}"
 
 echo "=============================================="
 echo "Exp 034 _job.sh"
 echo "=============================================="
 echo "Job ID:   ${SLURM_JOB_ID}   Node: $(hostname)   Date: $(date)"
 echo "ExpDir:   ${EXPERIMENT_DIR}"
-echo "Run:      ${RUN_NAME}   Backbone: ${BACKBONE}   Fold: ${FOLD}   Epochs: ${MAX_EPOCHS}"
-echo "Flags:    FREEZE=${FREEZE:-0} LOAD_PRETRAINED=${LOAD_PRETRAINED:-0} SAVE_CKPT=${SAVE_CKPT:-0} grad_clip=${GRAD_CLIP}"
+echo "Config:   ${CONFIG}   Fold: ${FOLD}   FastDevRun: ${FAST_DEV_RUN}"
 echo "Git:      $(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown) ($(git -C "$REPO_DIR" branch --show-current 2>/dev/null || echo unknown))"
 echo ""
 nvidia-smi || true
@@ -64,26 +59,24 @@ cd "$EXPERIMENT_DIR"
 mkdir -p logs outputs
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
-export PYTHONUNBUFFERED=1  # stream training logs in real time (no block-buffering)
+export PYTHONUNBUFFERED=1  # stream training logs in real time
 [ -f "$USER_DIR/.env" ] && { set -a; source "$USER_DIR/.env"; set +a; }
 
-# Build train.py args from boolean env flags (avoids spaces in --export values).
-ARGS=(--backbone "$BACKBONE" --fold "$FOLD" --max-epochs "$MAX_EPOCHS"
-      --batch-size "$BATCH_SIZE" --num-workers 8 --grad-clip "$GRAD_CLIP"
-      --accelerator gpu --run-name "$RUN_NAME")
-[ "${FREEZE:-0}" = "1" ]          && ARGS+=(--freeze-backbone)
-[ "${LOAD_PRETRAINED:-0}" = "1" ] && ARGS+=(--load-pretrained)
-[ "${SAVE_CKPT:-0}" = "1" ]       && ARGS+=(--save-ckpt)
-[ "${WANDB:-0}" = "1" ]           && ARGS+=(--wandb)
-[ "${NO_SPEC_AUGMENT:-0}" = "1" ] && ARGS+=(--no-spec-augment)
+ARGS=(--config "$CONFIG" --fold "$FOLD")
+[ "$FAST_DEV_RUN" = "true" ] && ARGS+=(--fast-dev-run)
+[ -n "$NUM_WORKERS" ] && ARGS+=(--num-workers "$NUM_WORKERS")
 
 echo "Running: python -u train.py ${ARGS[*]}"
 echo ""
 srun --unbuffered python -u train.py "${ARGS[@]}"
 
+# Structured metrics → artifacts/ (skip for fast-dev-run; matches exp 032).
+if [ "$FAST_DEV_RUN" != "true" ]; then
+    echo ""
+    echo "Saving structured metrics to artifacts/..."
+    python save_metrics.py --config "$CONFIG" --fold "$FOLD"
+fi
+
 echo ""
-echo "=============================================="
-echo "RESULT (val/auroc):"
-cat "outputs/${RUN_NAME}-fold${FOLD}.json" 2>/dev/null || echo "  (metrics JSON not found — check log above)"
 echo "=============================================="
 echo "Job completed at $(date)"
