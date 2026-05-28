@@ -954,6 +954,44 @@ Synthesis table — *see comment transcript below for source quotes*. Ranks are 
 
 ---
 
+### Thread 21 — Nikita's PP-package disclosure + Anil's full progression (2026-05-28, VERY RECENT)
+
+**Nikita Babych (1st) — Posted 5 hours ago** ⭐⭐⭐ (CURRENT LB LEADER: 0.935 no-PL+partial-PP / 0.955 PL+full-PP; 2-seed identical-arch ensemble for stability)
+
+> Usually, I don't submit a single model but rather an ensemble of 2 seeds (I don't think it boosts the score much, but it makes results more stable):
+>
+> - Without pseudo-labels and with partial pp: ~0.935
+> - With pseudo-labels and the full pp package: ~0.955
+
+**↳ Jack (16th) — Posted 5 hours ago** ⭐ (PP-VARIANCE: "most things hurt my score")
+
+> Full pp package? I am clearly not doing enough postprocessing with my models. Most things I've tried have only hurt my score though. Impressive stuff again man. Seeing our base scores are about the same is motivating but maaaaaaaaaaan I am hitting a wall 😆
+
+**↳ Boredom (4th) — Posted 5 hours ago** ⭐⭐ (4-MODEL ENSEMBLE + PL + FULL PP = 0.954; matches Nikita's band)
+
+> My 4 models with pseudo-labels and the full pp package: 0.954. By the way, does your "ensemble of 2 seeds" mean two identical models but with different seeds?
+
+**↳↳ Nikita Babych (1st) — Posted 4 hours ago** ⭐ (2-SEED = IDENTICAL ARCH, DIFFERENT SEEDS)
+
+> Yes, identical
+
+**↳↳↳ Jack (16th) — Posted 44 minutes ago** ⭐ (SOUPING vs ENSEMBLING — open question)
+
+> Do you not see improvement from souping the different seeds? Or is the ensemble just better?
+
+**↳↳↳↳ Anil Ozturk (6th) — Posted 10 minutes ago** ⭐⭐⭐ (FIRST FULLY-DISCLOSED PROGRESSION: Supervised 0.931 → +Pseudo 0.943 → +PP 0.944; PP delta = +0.001 ONLY)
+
+> I didn't try seed ensembling yet, still submitting soup of a single CV model set.
+>
+> Last status:
+> - Supervised: ~0.931
+> - Pseudo: ~0.943
+> - Pseudo + PP: ~0.944
+>
+> I am running out of tricks 😅
+
+---
+
 ## Synthesis: proven 0.93+ recipes (2026-05-21)
 
 Single-model recipes that have publicly hit ≥0.93 LB.
@@ -1221,6 +1259,26 @@ report a consistent pattern that supersedes some of the 2026-05-21 takeaways.
 61. **One-shot, not iterative.** Antoine's "0.936 → 0.943 from teacher
     iteration" is now an outlier — 4 other top teams say iteration plateaus
     at round 1. Don't plan Round 2 PL experiments.
+
+### PP-package size + LB ceiling (NEW 2026-05-28 — Thread 21, Nikita/Boredom/Anil)
+
+62. **Full PP package delivers +0.020 LB** (Nikita 1st): partial-PP no-PL = 0.935 → full-PP + PL = **0.955**. This is BOTH a PP upgrade (partial → full) AND a PL add (none → with) — the +0.020 is the combined delta, not pure PP. Boredom (4th) confirms the band: 4 models + PL + full PP = **0.954**. **Implication**: the realistic top-team ceiling is 0.95-0.955, not 0.96+.
+
+63. **First fully-disclosed PL-vs-PP attribution** (Anil 6th): Supervised 0.931 → +Pseudo 0.943 (Δ **+0.012**) → +PP 0.944 (Δ **+0.001** from PP alone). **PL >> PP on Anil's stack — PP added only +0.001 LB.** This contradicts the "PP is the bigger lever" reading from Nikita's combined number; PP attribution is recipe-dependent, not universal. Jack (16th) confirms PP variance: "most things I've tried have only hurt my score."
+
+64. **2-seed ensemble is for stability, NOT score** (Nikita explicit): "I don't think it boosts the score much, but it makes results more stable." Useful for de-noising cross-fold LB but doesn't shift leaderboard. **Implication**: in compute-constrained settings, prefer a single robust submission over 2-seed unless LB variance is causing wrong final-picks.
+
+65. **Open question: soup-of-seeds vs ensemble-of-seeds** (Jack, no answer yet from Nikita). For our exp 034 plan, this is moot until we have multiple seeds — out of scope for the first LB submission.
+
+66. **"Running out of tricks" cluster (Anil 6th, Jack 16th)** — even top-10 teams are saturating around 0.94-0.955. The remaining headroom is small and recipe-dependent. **Reinforces the deep research's mode prior (0.925, not 0.94) for a clean first-attempt Sydorskyi-yoink.**
+
+### Implications for our exp 034 (UPDATED 2026-05-28 with Thread 21 data)
+
+67. **PP layer attribution is highly recipe-dependent.** Anil's PP delta is +0.001; Nikita's combined PL+PP delta is +0.020. We should NOT plan around a specific PP-lift number for exp 034 Phase H; instead, run PP layers stepwise and attribute per layer (TopN → priors → smoothing → TTA). Drop any layer that regresses.
+
+68. **PL gives +0.012 on a 0.931 base (Anil)**; +0.005 on a 0.939 base (Salman); +0.012 on a 0.938 base (Boredom; combined with PP). PL-on-yoinked-base would land roughly +0.005 to +0.012 over the frozen-backbone yoink baseline — small but real. **Defer to exp 034 Phase J / next experiment**; not first-pass scope.
+
+69. **Top teams have converged on the same recipe shape**: in-domain pretrain (XC or Sydorskyi-yoink) + 1-iter PL (own teacher, soft labels with trim < 0.1) + PP package (some combo of TopN / site-hour / smoothing / TTA) + (optional) 2-seed-or-4-model ensemble for stability. **Our exp 034 plan matches this shape**; the asymmetric remaining work is the implementation correctness (Gates 1+2 mandatory).
 
 ---
 
