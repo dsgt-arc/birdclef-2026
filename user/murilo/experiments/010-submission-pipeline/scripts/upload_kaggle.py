@@ -570,6 +570,17 @@ MODELS = {
         "weights_dir": "artifacts/weights/distilled-sed-kd",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd.json",
     },
+    # Exp 034: pretrained-backbone yoink (Sydorskyi EffNetV2-S), full-model audio→probs ONNX.
+    "xcpretrain-effv2s-frozen": {
+        "slug": "birdclef-2026-xcpretrain-effv2s-frozen-weights",
+        "weights_dir": "artifacts/weights/xcpretrain-effv2s-frozen",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-frozen.json",
+    },
+    "xcpretrain-effv2s-fullft": {
+        "slug": "birdclef-2026-xcpretrain-effv2s-fullft-weights",
+        "weights_dir": "artifacts/weights/xcpretrain-effv2s-fullft",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-fullft.json",
+    },
     # Exp 032 Phase 2: 5-fold ensemble (KD) + HGNet backbone ablation
     "distilled-sed-kd-5fold": {
         "slug": "birdclef-2026-distilled-sed-kd-5fold-weights",

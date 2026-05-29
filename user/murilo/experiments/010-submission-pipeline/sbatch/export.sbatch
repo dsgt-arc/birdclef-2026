@@ -1475,6 +1475,36 @@ export_convnext_2026_soundscape() {
 # Build species mappings and run exports
 # ============================================================================
 
+# ===== Exp 034: Pretrained-backbone yoink (Sydorskyi EffNetV2-S), 234 classes =====
+# Full-model audio→probs ONNX (nnAudio mel baked into the graph; see export_xcpretrain.py).
+EXP034_DIR="$(dirname "$EXPERIMENT_DIR")/034-pretrained-backbone"
+
+export_xcpretrain_effv2s_frozen() {
+    echo "=== Exporting XCPretrain EffNetV2-S frozen (exp 034, fold 0) ==="
+    local CKPT="${CHECKPOINTS_BASE}/034-pretrained-backbone/checkpoints/xcpretrain-effv2s-frozen/fold0/last.ckpt"
+    local OUT="artifacts/weights/xcpretrain-effv2s-frozen"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_xcpretrain.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP034_DIR}/configs/xcpretrain-effv2s-frozen.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir "${OUT}/"
+    cp artifacts/weights/species_mapping_2026_234.json "${OUT}/species_mapping.json"
+}
+
+export_xcpretrain_effv2s_fullft() {
+    echo "=== Exporting XCPretrain EffNetV2-S full-FT (exp 034, fold 0) ==="
+    local CKPT="${CHECKPOINTS_BASE}/034-pretrained-backbone/checkpoints/xcpretrain-effv2s-fullft/fold0/last.ckpt"
+    local OUT="artifacts/weights/xcpretrain-effv2s-fullft"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_xcpretrain.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP034_DIR}/configs/xcpretrain-effv2s-fullft.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir "${OUT}/"
+    cp artifacts/weights/species_mapping_2026_234.json "${OUT}/species_mapping.json"
+}
+
 case "$MODEL" in
     eat-2025|convnext-2025|protoclr-2025|all-2025)
         echo "=== Building species mapping (2025→2026, 41 overlap) ==="
@@ -1523,6 +1553,7 @@ case "$MODEL" in
     distilled-sed-pl-a5-v5j|distilled-sed-pl-a5-kd|\
     distilled-sed-pl-a2-kd-v3|\
     all-033-distilled-sed-pl-day1|all-033-distilled-sed-pl-day2|\
+    xcpretrain-effv2s-frozen|xcpretrain-effv2s-fullft|all-034-xcpretrain|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1687,6 +1718,12 @@ case "$MODEL" in
     # as distilled-sed-pl-a2-kd, but pointed at the v3 PL parquet that has Sydorskyi's
     # min_max_prob=0.5 chunk discard + trim_min_prob=0.1 per-class trim applied.
     distilled-sed-pl-a2-kd-v3)          export_distilled_sed_pl a2 kd v3 ;;
+    xcpretrain-effv2s-frozen)           export_xcpretrain_effv2s_frozen ;;
+    xcpretrain-effv2s-fullft)           export_xcpretrain_effv2s_fullft ;;
+    all-034-xcpretrain)
+        export_xcpretrain_effv2s_frozen ; echo ""
+        export_xcpretrain_effv2s_fullft
+        ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;
     hgnet-b2-sed-v6h)          export_hgnet_b2_sed_v6h ;;
