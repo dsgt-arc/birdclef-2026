@@ -27,12 +27,17 @@ uses its own MixSamp by default.
 Confidence: VERIFIED ports (Phase A.2) wired into a reuse-exp032 loop. 2026-05-28.
 """
 
+import logging
+
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from birdclef.losses.focal_bce import FocalLossBCE
 from birdclef.preprocessing.random_filtering import RandomFiltering
+
+logger = logging.getLogger(__name__)
 
 
 class XCPretrainFinetuneModule(pl.LightningModule):
@@ -53,6 +58,18 @@ class XCPretrainFinetuneModule(pl.LightningModule):
             training (his `batch_aug`).
         rf_min_db: RandomFiltering min dB (Sydorskyi -20).
         focal_alpha / focal_gamma: FocalLossBCE params (Sydorskyi 0.25 / 2.0).
+        use_perch_distill: enable the Perch v2 embedding-KD branch (Phase H). Mirrors
+            exp 032's DistilledSEDFinetuneModule: project the backbone feature map
+            (GAP→Linear→`perch_embed_dim`) and MSE against a frozen Perch v2 ONNX
+            teacher. Requires a trainable backbone (freeze_backbone=False).
+        perch_onnx_path: path to the Perch v2 ONNX (required when KD on).
+        perch_embed_dim: Perch clip-embedding dim (1536).
+        alpha_distill: KD MSE weight (exp 032 / Tucker default 1.0; re-tune if it
+            swamps the FocalBCE cls term — watch train/dist_loss vs train/cls_loss).
+        kd_detach_cls_features: True → Tucker-faithful (backbone grad ONLY from the
+            Perch MSE; SED head reads detached features). False → joint (backbone gets
+            BOTH the task and the distill gradient — likely safer for an already-strong
+            in-domain backbone).
     """
 
     def __init__(
@@ -69,6 +86,11 @@ class XCPretrainFinetuneModule(pl.LightningModule):
         rf_min_db: float = -20.0,
         focal_alpha: float = 0.25,
         focal_gamma: float = 2.0,
+        use_perch_distill: bool = False,
+        perch_onnx_path: str | None = None,
+        perch_embed_dim: int = 1536,
+        alpha_distill: float = 1.0,
+        kd_detach_cls_features: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["model"])
@@ -91,6 +113,32 @@ class XCPretrainFinetuneModule(pl.LightningModule):
             for p in self.model.backbone.parameters():
                 p.requires_grad = False
 
+        # --- Perch v2 KD branch (Phase H) ---------------------------------------
+        # Port of exp 032 DistilledSEDFinetuneModule KD onto the in-domain backbone.
+        # DistillHead is discarded at inference (export takes model.* only), so KD
+        # changes weights, not the deployed graph — the same export/kernel works.
+        self.use_perch_distill = use_perch_distill
+        self.alpha_distill = alpha_distill
+        self.kd_detach_cls_features = kd_detach_cls_features
+        if use_perch_distill:
+            if perch_onnx_path is None:
+                raise ValueError("use_perch_distill=True requires perch_onnx_path.")
+            if freeze_backbone:
+                raise ValueError(
+                    "use_perch_distill=True with freeze_backbone=True is a no-op — the "
+                    "backbone can't learn from the distill signal. Unfreeze the backbone."
+                )
+            from birdclef.lightning.sed_finetune import DistillHead, PerchTeacher
+
+            backbone_dim = self.model.backbone.feature_info.channels()[-1]
+            self.distill_head = DistillHead(backbone_dim, perch_embed_dim)
+            self.perch_teacher = PerchTeacher(perch_onnx_path)
+            logger.info(
+                f"Perch v2 KD enabled: backbone_dim={backbone_dim}, "
+                f"perch_embed_dim={perch_embed_dim}, alpha_distill={alpha_distill}, "
+                f"detach_cls_features={kd_detach_cls_features}, onnx={perch_onnx_path}"
+            )
+
         from birdclef.metrics import TuckerMacroAUC
 
         self.val_auroc = TuckerMacroAUC(num_labels=num_classes)
@@ -112,30 +160,93 @@ class XCPretrainFinetuneModule(pl.LightningModule):
             x = x.squeeze(1)
         return x, labels
 
-    def _step(self, batch, *, training: bool):
-        """Core forward + loss (no logging — unit-testable without a Trainer)."""
+    def _prep(self, batch, *, training: bool):
+        """Unpack → (training) RandomFiltering → smoothed targets.
+
+        Returns (wave (B, T), targets (B, C), labels (B, C)). `targets` are the
+        (smoothed in training) supervision; `labels` are the raw 0/1 multi-hot
+        used for metrics."""
         wave, labels = self._waveform(batch)
         if training and self.batch_aug is not None:
             wave = self.batch_aug(wave)
-        out = self.model(wave)
         targets = self._smooth(labels) if training else labels
+        return wave, targets, labels
+
+    def _step(self, batch, *, training: bool):
+        """Core forward + loss (no logging — unit-testable without a Trainer)."""
+        wave, targets, labels = self._prep(batch, training=training)
+        out = self.model(wave)
         loss = self.loss_fn(out["clipwise_logits_long"], targets)
         return loss, out, labels
+
+    def _perch_embed(self, wave: torch.Tensor) -> torch.Tensor:
+        """Frozen Perch v2 clip embedding of the (filtered) waveform → (B, perch_embed_dim).
+
+        Crops/pads to exactly 160000 samples (5s @ 32 kHz), matching the teacher's
+        training window (exp 032 DistilledSEDFinetuneModule). The teacher sees the
+        SAME post-RandomFiltering waveform the student does; mel + SpecAugment happen
+        afterward inside the model (so the teacher never sees them — same as exp 032)."""
+        w = wave if wave.dim() == 2 else wave.squeeze(1)
+        target_n = 160_000
+        n = w.shape[1]
+        if n > target_n:
+            start = (n - target_n) // 2
+            w = w[:, start : start + target_n]
+        elif n < target_n:
+            w = F.pad(w, (0, target_n - n))
+        return self.perch_teacher.embed(w)  # PerchTeacher.embed is @torch.no_grad
+
+    def _step_kd(self, batch):
+        """KD training path (Perch v2 embedding distillation).
+
+            cls   = FocalLossBCE(clipwise_logits_long, smoothed_targets)
+            dist  = MSE(distill_head(backbone_feat), perch_emb)
+            total = cls + alpha_distill · dist
+
+        Backbone gradient flows from `dist` always (distill_head→feat→backbone), and
+        from `cls` too iff kd_detach_cls_features=False. Returns the sub-losses for
+        logging."""
+        wave, targets, labels = self._prep(batch, training=True)
+        perch_emb = self._perch_embed(wave)  # (B, embed_dim), no grad
+        feat = self.model(
+            wave, return_cnn_emb=True
+        )  # (B, C, H, W); SpecAugment applied (train mode)
+        distill_emb = self.distill_head(feat)  # grad → backbone
+        distill_loss = F.mse_loss(distill_emb, perch_emb)
+        feat_for_head = feat.detach() if self.kd_detach_cls_features else feat
+        out = self.model.head(feat_for_head)
+        cls_loss = self.loss_fn(out["clipwise_logits_long"], targets)
+        loss = cls_loss + self.alpha_distill * distill_loss
+        return loss, out, labels, cls_loss, distill_loss
 
     def forward(self, wave: torch.Tensor) -> dict:
         return self.model(wave)
 
     # ---- Lightning hooks ---------------------------------------------------
     def training_step(self, batch, batch_idx):
-        loss, _, labels = self._step(batch, training=True)
-        self.log(
-            "train/loss",
-            loss,
-            prog_bar=True,
-            on_step=True,
-            on_epoch=True,
-            batch_size=labels.shape[0],
-        )
+        if self.use_perch_distill:
+            loss, _, labels, cls_loss, distill_loss = self._step_kd(batch)
+            bs = labels.shape[0]
+            self.log(
+                "train/cls_loss",
+                cls_loss,
+                prog_bar=True,
+                on_step=True,
+                on_epoch=True,
+                batch_size=bs,
+            )
+            self.log(
+                "train/dist_loss",
+                distill_loss,
+                prog_bar=True,
+                on_step=True,
+                on_epoch=True,
+                batch_size=bs,
+            )
+        else:
+            loss, _, labels = self._step(batch, training=True)
+            bs = labels.shape[0]
+        self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=bs)
         return loss
 
     def validation_step(self, batch, batch_idx):

@@ -1,0 +1,24 @@
+# Phase H — Perch v2 KD on the in-domain backbone (Tucker-faithful detach).
+#
+# Our biggest LB-evidenced lever: exp 032 control 0.856 → distilled-sed-kd 0.906
+# = +0.050, now stacked on Sydorskyi's in-domain-pretrained EffNetV2-S instead of
+# the ImageNet b0 backbone that delta was measured on. Inherits the full-FT recipe
+# (backbone trainable, 50 ep, grad-clip 1.0) — KD needs a trainable backbone.
+#
+# kd_detach_cls_features: true → Tucker-faithful: the backbone gradient comes ONLY
+# from the Perch embedding MSE; the SED head trains on detached features. This is
+# the exact mechanism behind the +0.050. (Joint variant — backbone also gets the
+# task gradient — is xcpretrain-effv2s-kd-joint.yaml.)
+#
+# WATCH in the first epoch: train/cls_loss vs train/dist_loss. FocalLossBCE (cls)
+# has a much smaller magnitude than exp 032's plain BCE, so alpha_distill=1.0 may
+# over-weight the MSE here — if dist_loss dominates, lower alpha_distill.
+inherit: xcpretrain-effv2s-fullft.yaml
+run_name: "xcpretrain-effv2s-kd"
+
+training:
+  use_perch_distill: true
+  perch_onnx_path: "vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx"
+  perch_embed_dim: 1536
+  alpha_distill: 1.0 # exp 032 / Tucker default; re-tune if it swamps cls
+  kd_detach_cls_features: true

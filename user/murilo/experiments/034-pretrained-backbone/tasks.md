@@ -282,6 +282,25 @@ for f in 0 1 2 3 4; do FOLD=$f bash sbatch/train.sh; done   # Phase F: 5-fold
 
 ---
 
+## Phase K — Perch v2 KD on the in-domain backbone (post-LB pivot, 2026-05-29)
+
+**Why**: KD is our biggest LB-evidenced lever — exp 032 control 0.856 → distilled-sed-kd 0.906 = **+0.050** — but that delta was measured on an ImageNet b0 backbone. This phase stacks the SAME mechanism (Perch v2 embedding distillation) onto Sydorskyi's in-domain backbone (which already scored full-FT 0.865), to test whether KD still pays when the backbone is already strong.
+
+**Mechanism** (ported from `DistilledSEDFinetuneModule`, lives in `XCPretrainFinetuneModule._step_kd`): `DistillHead` (GAP→Linear, 256→1536) MSE'd against the frozen Perch v2 ONNX teacher's clip embedding; total = FocalLossBCE(cls) + `alpha_distill`·MSE. Teacher embeds the same post-RandomFiltering 5s waveform the student does. DistillHead is discarded at inference → **export/kernel are unchanged** (export takes `model.*` only).
+
+- [x] K.1 Add KD branch to `XCPretrainFinetuneModule` (config-gated, backward-compatible); `onnxruntime-gpu==1.26.0` dep; wire Perch path in `train.py`. **5 unit tests + real-teacher integration check PASS** (DistillHead 256→1536 == Perch 1536, MSE-compatible).
+- [x] K.2 Configs: `xcpretrain-effv2s-kd.yaml` (detach=True, Tucker-faithful) + `xcpretrain-effv2s-kd-joint.yaml` (detach=False, joint backbone grad). Both inherit fullft (trainable backbone, 50 ep).
+- [ ] K.3 Train the 2-cell grid (detach vs joint), fold 0, in parallel:
+  - `CONFIG=configs/xcpretrain-effv2s-kd.yaml bash sbatch/train.sh`
+  - `CONFIG=configs/xcpretrain-effv2s-kd-joint.yaml bash sbatch/train.sh`
+- [ ] K.4 **Epoch-1 watch**: `train/cls_loss` vs `train/dist_loss` (W&B). FocalBCE ≪ exp 032's plain BCE, so `alpha_distill=1.0` may over-weight the MSE — if `dist_loss` dominates, kill + lower alpha.
+- [ ] K.5 Export (same `export_xcpretrain.py` — KD changes weights, not graph) + distinct kernel + LB submit each.
+
+**Phase K exit criterion**: KD LB > full-FT 0.865 (the no-KD base). Stretch: approach the +0.050 paired delta → ~0.91.
+**Phase K pivot**: if detach regresses (likely — forcing a strong backbone to mimic Perch can lose task-specific signal) but joint helps, keep joint. If neither helps, KD doesn't transfer to an in-domain backbone → drop, focus on 5-fold + ensemble.
+
+---
+
 ## Phase H — Postprocessing + TTA
 
 Run only after Phase F or G yields a single base LB ≥ 0.92 (Jack's warning: PP layers easily hurt on weaker bases).

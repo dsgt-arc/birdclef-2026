@@ -37,6 +37,9 @@ from pytorch_lightning.callbacks import (
 from pytorch_lightning.loggers import TensorBoardLogger
 
 EXP_DIR = Path(__file__).resolve().parent
+REPO_DIR = EXP_DIR.parents[
+    3
+]  # .../birdclef-2026 (repo root; for repo-relative assets, e.g. Perch ONNX)
 sys.path.insert(0, str(EXP_DIR.parent.parent / "src"))  # user/murilo/src (belt-and-suspenders)
 sys.path.insert(0, str(EXP_DIR / "scripts"))  # for load_sydorskyi_backbone
 
@@ -174,6 +177,15 @@ def main():
         model.backbone.load_state_dict(loaded.state_dict(), strict=True)
         logger.info("Loaded Sydorskyi pretrained backbone into model.backbone (strict=True)")
 
+    # Perch v2 KD (Phase H) — resolve the repo-relative ONNX path; fail loud if absent.
+    kd_on = tcfg.get("use_perch_distill", False)
+    perch_path = None
+    if kd_on:
+        perch_path = REPO_DIR / tcfg["perch_onnx_path"]
+        if not perch_path.exists():
+            raise FileNotFoundError(f"Perch v2 ONNX teacher not found: {perch_path}")
+        logger.info(f"KD enabled — Perch teacher: {perch_path}")
+
     module = XCPretrainFinetuneModule(
         model=model,
         num_classes=num_classes,
@@ -187,6 +199,11 @@ def main():
         rf_min_db=tcfg["rf_min_db"],
         focal_alpha=tcfg["focal_alpha"],
         focal_gamma=tcfg["focal_gamma"],
+        use_perch_distill=kd_on,
+        perch_onnx_path=(str(perch_path) if kd_on else None),
+        perch_embed_dim=tcfg.get("perch_embed_dim", 1536),
+        alpha_distill=tcfg.get("alpha_distill", 1.0),
+        kd_detach_cls_features=tcfg.get("kd_detach_cls_features", True),
     )
 
     # --- Loggers (TensorBoard always; W&B for full runs) ----------------------
@@ -277,6 +294,9 @@ def main():
             "freeze_backbone": mcfg["freeze_backbone"],
             "load_pretrained": mcfg["load_pretrained"],
             "max_epochs": tcfg["max_epochs"],
+            "use_perch_distill": kd_on,
+            "kd_detach_cls_features": tcfg.get("kd_detach_cls_features", True) if kd_on else None,
+            "alpha_distill": tcfg.get("alpha_distill", 1.0) if kd_on else None,
             "val_auroc": metrics.get("val/auroc"),
             "val_loss": metrics.get("val/loss"),
             "all_metrics": metrics,
