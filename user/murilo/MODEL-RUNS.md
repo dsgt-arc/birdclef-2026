@@ -1298,14 +1298,16 @@ labeled-SS fold-0 holdout (same val set as exp 032; full-model ceiling there = *
 | Slug | Variant | Epochs | Train val/auroc | LB | last.ckpt (under `034-pretrained-backbone/checkpoints/`) | SLURM | W&B |
 |------|---------|-------:|----------------:|----|----------------------------------------------------------|-------|-----|
 | `xcpretrain-effv2s-gate2` | frozen head (Gate 2 sanity) | 5 | 0.791 | — | (no ckpt) | 9277013 | — |
-| `xcpretrain-effv2s-frozen` | frozen backbone (Phase E) | 25 | **0.859** | _pending_ | `xcpretrain-effv2s-frozen/fold0/last.ckpt` | 9279181 | `qfm8` |
-| `xcpretrain-effv2s-fullft` | full fine-tune (Phase G) | 50 | **0.883** | _pending_ | `xcpretrain-effv2s-fullft/fold0/last.ckpt` | 9279209 | `gvx4` |
+| `xcpretrain-effv2s-frozen` | frozen backbone (Phase E) | 25 | 0.859 | **0.819** | `xcpretrain-effv2s-frozen/fold0/last.ckpt` | 9279181 | `qfm8` |
+| `xcpretrain-effv2s-fullft` | full fine-tune (Phase G) | 50 | 0.883 | **0.865** | `xcpretrain-effv2s-fullft/fold0/last.ckpt` | 9279209 | `gvx4` |
 
-**Offline read (direction-only — offline val/auroc anti-correlates with LB):** full-FT
-(0.883) > frozen (0.859) > Gate-2 (0.791), all below exp 032 distilled-sed-kd's 0.908 on
-the same val set — but exp 034 has no KD/PP yet, is single-fold + last-ckpt, and offline ≠ LB.
-**Next: LB submission of both frozen + full-FT** (the real arbiter); then 5-fold (Phase F) +
-PP (Phase H) + ensemble (Phase I) if the lever pays out.
+**LB read (2026-05-28):** full-FT **0.865** > frozen **0.819**, both below the 0.906 base.
+Decisive comparison — exp 032's no-KD **control** (ImageNet backbone, recipe, PP smoothing,
+no KD) = **0.856**; exp 034 full-FT (in-domain backbone, NO PP/KD) = **0.865** → the in-domain
+backbone adds a small lift even WITHOUT the PP the control had. The gap to 0.906/0.929 is the
+STACK exp 034 omits: **KD +0.050** (exp 032 control→kd), PP +0.012–0.020, 5-fold +0.009,
+PL +0.027 (disclosed). Backbone is necessary-not-sufficient; 0.94 competitors stack backbone
++ PL + PP + ensemble. Full gap audit + path → `experiments/034-pretrained-backbone/results.md § LB results`.
 
 ## Checkpoint Base Path
 

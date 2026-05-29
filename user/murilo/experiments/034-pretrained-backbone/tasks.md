@@ -244,15 +244,13 @@ for f in 0 1 2 3 4; do FOLD=$f bash sbatch/train.sh; done   # Phase F: 5-fold
 - [ ] E.3.6 ONNX export (TorchScript fallback if nnAudio ops fail).
 - [ ] E.3.7 Submit to LB.
 
-### E.4 Decision matrix
+### E.4 Decision matrix — RESULT (2026-05-28)
 
-- [ ] E.4.1 Read LB; record in `results.md` (to be created).
-  - LB ≥ 0.91 → proceed to Phase F.
-  - LB 0.90-0.91 → re-audit Phase C parity.
-  - LB < 0.90 → debug Phase B for silent bug; fall back to Phase C pivot if unresolvable.
-  - LB > 0.92 → consider skipping Phase G full-FT, jumping to Phase I ensemble.
+- [x] E.4.1 LB landed (after fixing the 41/234 species_mapping bug): **frozen 0.819, full-FT 0.865** — both below the 0.906 base (`results.md § LB results`).
+  - Per the matrix this is the "< 0.90" bucket, BUT the cause is **NOT a silent bug** (Gate 1 bit-identical + kernel parity 9e-7 + canary 234-mapped). The cause is **configuration**: exp 034 is a BARE single-fold model with NO KD / PP / PL / ensemble. full-FT 0.865 ≈ exp 032's no-KD control (0.856) → the in-domain backbone is a small real lever, not a broken one.
+  - **Decision: don't debug; STACK.** The gap to 0.906/0.929 is the missing levers, by LB-evidenced value: KD +0.050, PL +0.027, PP +0.012–0.020, 5-fold +0.009, ensemble. See `results.md § Gap to our best + path forward`.
 
-**Phase E exit criterion**: LB ≥ 0.91 OR active debug plan with cause hypothesis.
+**Phase E exit criterion**: ⚠️ LB < 0.91 — but pipeline validated; path = add the stack (PP cheapest → KD biggest → ensemble), not debug.
 
 ---
 

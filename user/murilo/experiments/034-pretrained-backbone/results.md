@@ -24,9 +24,10 @@ in-domain pretraining). Earlier scaffold used the codename "yoink"; renamed
 | B.6–B.9 | Training path: focal loss + sampler + augmentation ports + Lightning module + train.py | ✅ DONE (58 tests + fast-dev-run) |
 | **C — Gate 1** | **Feature parity vs vendored source** | ✅ **PASS (bit-identical)** |
 | **D — Gate 2** | Frozen-backbone head sanity | ⚠️ **0.791** (gate threshold was mis-set — see below) |
-| **E — frozen FT (fold 0, 25 ep)** | training done; LB pending | ✅ trained → val/auroc **0.859** |
-| **G — full-FT (fold 0, 50 ep)** | training done; LB pending | ✅ trained → val/auroc **0.883** |
-| E.3 → F → H → I → J | export + **first LB** → 5-fold → PP/TTA → ensemble → final | ⬜ next |
+| **E — frozen FT (fold 0, 25 ep)** | first LB | ✅ val/auroc 0.859 → **LB 0.819** |
+| **G — full-FT (fold 0, 50 ep)** | first LB | ✅ val/auroc 0.883 → **LB 0.865** |
+| E.3 export pipeline | full-model audio→probs ONNX + kernel | ✅ done (parity 1e-7) |
+| H PP / KD / F 5-fold / I ensemble | close the gap to 0.906+ (see LB results + gap audit) | ⬜ next — bare model below base |
 
 ## Phase E/G — single-fold training results (2026-05-28)
 
@@ -198,6 +199,48 @@ Verified: config deep-merge correct; fast-dev-run via `configs/gate2-effv2s.yaml
 pretrained backbone (371K trainable / 19.8M frozen), 1 train+val batch finite, exit 0; 58
 unit tests pass.
 
-## LB results
+## LB results (2026-05-28) — single-fold, BARE model
 
-_(none yet — Phase C/D are offline gates; first LB is Phase E.)_
+| Run | Config | val/auroc | **LB** | vs 0.906 base |
+|---|---|---:|---:|---:|
+| `xcpretrain-effv2s-frozen` | frozen, 25ep, no PP/KD/PL | 0.859 | **0.819** | −0.087 |
+| `xcpretrain-effv2s-fullft` | full-FT, 50ep, no PP/KD/PL | 0.883 | **0.865** | −0.041 |
+
+(First submissions were invalid — 41/234 species_mapping bug; re-submitted after the fix.
+Kernel canary `234 mapped` confirmed. full-FT > frozen, as predicted.)
+
+### Verdict: bucket REJECT vs the 0.906 base — but the read is "necessary-not-sufficient," not "backbone fails"
+
+The decisive comparison is to exp 032's **no-KD control**, the apples-to-apples bare model:
+
+| | backbone | KD | PP (smooth) | 5-fold | PL | LB |
+|---|---|---|---|---|---|---:|
+| exp 032 control | ImageNet EffNet-B0 | ❌ | ✅ | ❌ | ❌ | 0.856 |
+| **exp 034 full-FT** | **in-domain EffNetV2-S** | ❌ | ❌ | ❌ | ❌ | **0.865** |
+| exp 032 distilled-sed-kd | ImageNet EffNet-B0 | ✅ | ✅ | ❌ | ❌ | 0.906 |
+
+**exp 034 full-FT (0.865) ≈ a no-KD control with a slightly better backbone.** It even
+BEAT exp 032's control (0.856) *despite* having NO post-processing (exp 032's kernel
+applies 5-tap Gaussian smoothing; the xcpretrain kernel applies none). So the in-domain
+backbone IS adding value — but it's a single, modest lever, and we built the WEAKEST
+possible configuration around it.
+
+The 0.94 competitors (Ali Ozan 0.941) stacked this same backbone WITH the levers we omitted.
+Our own LB-measured lever values: **KD +0.050** (exp 032 control→KD), **5-fold +0.009**,
+PP/priors +0.004–0.020, **PL +0.027** (Sydorskyi, disclosed). exp 034 has **none** of them.
+
+### Gap to our best + path forward (by LB-evidenced impact)
+
+| Missing lever | Evidence (LB) | Cost | Note |
+|---|---|---|---|
+| **Post-processing** (5-tap Gaussian smooth + TopN + sliding-window TTA + site/hour priors) | +0.012–0.020 (Nikita/Sydorskyi); exp 021 priors +0.004 | **cheap — no retrain**, kernel-only on existing ckpts | exp 034 kernel has ZERO PP; exp 032 control already had smoothing |
+| **KD** (Perch v2 embedding distillation, AttHeadLogitSpace) | **+0.050** (exp 032 control 0.856→kd 0.906) | retrain | our single biggest evidenced lever; exp 034 is a "control" without it |
+| **5-fold ensemble** | +0.009 (exp 032) | 4× train | variance reduction |
+| **PL** (own-teacher pseudo-labels on soundscapes, Sydorskyi-faithful: sum-clip MixUp + 40% PL-swap + BG-noise) | +0.027 (Sydorskyi); finicky on our ImageNet base (exp 033 REJECT) but "multiplies a strong base" | PL-gen + retrain | the soundscape-domain adapter that *unlocks* the focal-pretrained backbone |
+| **Ensemble w/ exp 023 (0.929) + exp 032 (0.915)** | exp 023 already 0.929 | cheap rank-ensemble | in-domain backbone = diverse member; may lift the ensemble even at 0.865 |
+
+**Why competitors hit 0.94 with this backbone:** backbone is ~1 of 4–5 stacked levers
+(backbone + PL + PP + ensemble [+ multi-iter noisy-student]). The deep research said it
+plainly: *PL is a multiplier on a strong base.* We validated the base transfers; we have
+not added the multipliers. Nothing is mechanically wrong (Gate 1 bit-identical, kernel
+parity 9e-7) — the configuration is just bare.
