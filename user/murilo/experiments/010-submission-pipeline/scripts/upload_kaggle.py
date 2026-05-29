@@ -590,6 +590,16 @@ MODELS = {
         "weights_dir": "artifacts/weights/xcpretrain-effv2s-fullft",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-fullft-pp.json",
     },
+    # Phase K: Perch v2 KD (joint-gradient) on the in-domain backbone — best of the
+    # KD grid (offline val/auroc 0.9217 vs detach 0.8847). NEW weights dataset (KD
+    # retrains the backbone). PP smoothing baked into mel_config at export → this
+    # kernel runs WITH post-processing (the "keep PP on" directive). First-time
+    # upload: run without --push-kernel, wait 2-3 min, then push.
+    "xcpretrain-effv2s-kd-joint": {
+        "slug": "birdclef-2026-xcpretrain-effv2s-kd-joint-weights",
+        "weights_dir": "artifacts/weights/xcpretrain-effv2s-kd-joint",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-kd-joint.json",
+    },
     # Exp 032 Phase 2: 5-fold ensemble (KD) + HGNet backbone ablation
     "distilled-sed-kd-5fold": {
         "slug": "birdclef-2026-distilled-sed-kd-5fold-weights",

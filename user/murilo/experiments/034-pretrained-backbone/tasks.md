@@ -290,15 +290,15 @@ for f in 0 1 2 3 4; do FOLD=$f bash sbatch/train.sh; done   # Phase F: 5-fold
 
 - [x] K.1 Add KD branch to `XCPretrainFinetuneModule` (config-gated, backward-compatible); `onnxruntime-gpu==1.26.0` dep; wire Perch path in `train.py`. **5 unit tests + real-teacher integration check PASS** (DistillHead 256→1536 == Perch 1536, MSE-compatible).
 - [x] K.2 Configs: `xcpretrain-effv2s-kd.yaml` (detach=True, Tucker-faithful) + `xcpretrain-effv2s-kd-joint.yaml` (detach=False, joint backbone grad). Both inherit fullft (trainable backbone, 50 ep).
-- [x] K.3 Train the 2-cell grid (detach vs joint), fold 0, in parallel — **LAUNCHED 2026-05-29 EOD, running overnight**:
-  - `xcpretrain-effv2s-kd` (detach, Tucker-faithful): **SLURM 9299507** (gpu-rtx6000, atl1-1-03-006-27-0)
-  - `xcpretrain-effv2s-kd-joint` (joint): **SLURM 9299513** (gpu-rtx6000, atl1-1-03-006-29-0)
-  - 50 ep each; expect completion overnight. Read `outputs/test_results/<run>-fold0.json` + W&B on resume.
-- [ ] K.4 **Epoch-1 watch**: `train/cls_loss` vs `train/dist_loss` (W&B). FocalBCE ≪ exp 032's plain BCE, so `alpha_distill=1.0` may over-weight the MSE — if `dist_loss` dominates, kill + lower alpha.
-- [ ] K.5 Export (same `export_xcpretrain.py` — KD changes weights, not graph) + distinct kernel + LB submit each.
+- [x] K.3 Train the 2-cell grid (detach vs joint), fold 0, parallel — **DONE 2026-05-29** (both 50 ep, clean exit):
+  - `xcpretrain-effv2s-kd` (detach, Tucker-faithful): SLURM 9299507, W&B `29fz` → **val/auroc 0.8847** (last.ckpt ep 29)
+  - `xcpretrain-effv2s-kd-joint` (joint): SLURM 9299513, W&B `tptu` → **val/auroc 0.9217** (last.ckpt ep 43, val 0.9226)
+  - **Joint ≫ detach (+0.037)** — exactly the prior; joint's 0.9217 also > exp 032 distilled-sed-kd's own offline (0.908) on the same val set, and +0.034 over full-FT (0.883). (Detail: `results.md § Phase K`.)
+- [x] K.4 **Epoch-1 watch — PASS.** `dist_loss` 0.047 ≈ 25% of `cls_loss` 0.186 at ep0, never swamped `cls` throughout → `alpha_distill=1.0` was fine; no relaunch / re-tune.
+- [x] K.5 Export + LB — **DONE 2026-05-29.** Joint exported (same `export_xcpretrain.py`; `model.*`-only filter discards the DistillHead → graph identical to full-FT; PP baked into mel_config). 4 exp-010 files wired + `kernel-metadata-xcpretrain-effv2s-kd-joint.json`. Kernel validated (234-mapped, 5-tap logit-space Gauss smooth confirmed) → **LB 0.878.** Detach never submitted (moot).
 
-**Phase K exit criterion**: KD LB > full-FT 0.865 (the no-KD base). Stretch: approach the +0.050 paired delta → ~0.91.
-**Phase K pivot**: if detach regresses (likely — forcing a strong backbone to mimic Perch can lose task-specific signal) but joint helps, keep joint. If neither helps, KD doesn't transfer to an in-domain backbone → drop, focus on 5-fold + ensemble.
+**Phase K exit criterion**: ❌ NOT met in spirit. **LB 0.878 ≈ full-FT+PP 0.879** → KD adds ~0 on LB (the +0.013 over no-PP 0.865 is entirely the PP lever). Stretch ~0.91 not approached. Despite +0.034 offline (0.9217 vs 0.883) — offline-anti-correlation.
+**Phase K verdict**: **KD does NOT transfer to the in-domain backbone → DROP.** exp 032's +0.050 was a multiplier on a WEAK ImageNet b0 base that lacked in-domain structure; Sydorskyi's EffV2S already has it (819K XC focal-pretrain), so Perch distillation adds no new signal. Single-fold ceiling ≈0.879. → **Phase F 5-fold + Phase I ensemble** (exp 034 as a backbone-diverse member). Full verdict: `results.md § KD LB verdict`.
 
 ---
 

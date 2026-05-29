@@ -94,6 +94,8 @@ MODEL_SLUGS = [
     # Exp 034: pretrained-backbone yoink (Sydorskyi EffNetV2-S). Full-model audio→probs
     # ONNX (nnAudio mel in-graph); routed by mel_config type=xcpretrain_audio_onnx →
     # predict_soundscape_xcpretrain (raw audio in, clipwise probs out).
+    # Phase K KD (joint Perch v2 distillation) is the preferred member → listed first.
+    "birdclef-2026-xcpretrain-effv2s-kd-joint-weights",
     "birdclef-2026-xcpretrain-effv2s-fullft-weights",
     "birdclef-2026-xcpretrain-effv2s-frozen-weights",
     # Exp 033 Phase 5 Sydorskyi-divergence diagnostic — Test 1 (chunk discard + trim).

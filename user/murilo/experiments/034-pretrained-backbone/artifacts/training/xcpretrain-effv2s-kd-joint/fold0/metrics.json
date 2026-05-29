@@ -1,0 +1,27 @@
+{
+  "experiment": "034-pretrained-backbone",
+  "run_name": "xcpretrain-effv2s-kd-joint",
+  "fold": 0,
+  "config": "xcpretrain-effv2s-kd-joint.yaml",
+  "backbone": "tf_efficientnetv2_s_in21k",
+  "freeze_backbone": false,
+  "load_pretrained": true,
+  "max_epochs": 50,
+  "val_auroc": 0.9216678142547607,
+  "val_loss": 0.038691677153110504,
+  "all_metrics": {
+    "lr-AdamW": 1.0976768862747122e-06,
+    "train/cls_loss": 0.02414439246058464,
+    "train/cls_loss_step": 0.02708861604332924,
+    "train/dist_loss": 0.008700232021510601,
+    "train/dist_loss_step": 0.008600905537605286,
+    "train/loss": 0.03284462168812752,
+    "train/loss_step": 0.035689521580934525,
+    "val/loss": 0.038691677153110504,
+    "val/auroc": 0.9216678142547607,
+    "train/cls_loss_epoch": 0.02414439246058464,
+    "train/dist_loss_epoch": 0.008700232021510601,
+    "train/loss_epoch": 0.03284462168812752
+  },
+  "saved_at_utc": "2026-05-29T07:56:40.062184+00:00"
+}

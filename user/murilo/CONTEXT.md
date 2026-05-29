@@ -3,15 +3,18 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-29 EOD. Exp 034 (xcpretrain) first LB landed
+**Last updated**: 2026-05-29. Exp 034 (xcpretrain) first LB landed
 (frozen 0.819 / full-FT 0.865, below the 0.906 base — bare model, gap = the
-omitted stack). This session: **PP lever LANDED +0.014 (full-FT 0.865 → 0.879)** —
-stack-levers compose on this backbone; and the **KD grid is training overnight**
-(Phase K, jobs 9299507 detach / 9299513 joint). **KD training reads pending** — see below.
+omitted stack). PP lever LANDED +0.014 (full-FT 0.865 → 0.879). This session: KD grid finished + exported.
+**Joint-KD + PP scored LB 0.878 ≈ full-FT+PP 0.879 → KD does NOT transfer** to the in-domain
+backbone (despite +0.034 offline — anti-correlation). **KD DROPPED.** exp 034 single-fold
+ceiling ≈ 0.879. **Next = Phase F 5-fold + Phase I ensemble** (exp 034 as a backbone-diverse
+member), plus a new final-experiment idea under discussion before the 2026-06-03 deadline.
 
 **Competition deadline**: 2026-06-03 (5 days out).
 
-**Branch**: `mg/exp034-pretrained-backbone` (PR **#54**, open). Latest commit `09dea9e`.
+**Branch**: `mg/exp034-pretrained-backbone` (PR **#54**, open). Latest commit `ee160dc`
+(doc updates for the KD-grid result + export wiring are UNCOMMITTED in the working tree).
 
 ---
 
@@ -73,30 +76,32 @@ Smoothing stacks on this backbone. **Keep PP on for every future exp 034 submiss
 (the KD kernels must use the same `predict_soundscape_xcpretrain` smoothing). No action
 needed here — this just green-lights the bigger levers.
 
-### 2. Check the KD grid (Phase K) — LAUNCHED overnight 2026-05-29
-Jobs **9299507** (detach, `xcpretrain-effv2s-kd`) + **9299513** (joint,
-`xcpretrain-effv2s-kd-joint`), both gpu-rtx6000, 50 ep.
-```bash
-squeue -u $USER                                              # done? (or check sacct)
-cd .../user/murilo/experiments/034-pretrained-backbone
-cat outputs/test_results/xcpretrain-effv2s-kd-fold0.json     # val/auroc (direction-only)
-cat outputs/test_results/xcpretrain-effv2s-kd-joint-fold0.json
-grep -E "dist_loss|cls_loss" logs/slurm_xcpretrain-effv2s-kd*-fold0_*.log | head   # epoch-1 balance
-```
-**First thing to check (epoch-1 balance):** `train/dist_loss` vs `train/cls_loss` (W&B
-or the log). FocalBCE ≪ exp 032's plain BCE, so `alpha_distill=1.0` may have
-over-weighted the MSE — if `dist_loss` dominated, the run is suspect; lower
-`alpha_distill` (one-line config edit) and relaunch.
-**Prior:** expect **joint** > **detach** — detach forces an already-strong in-domain
-backbone to mimic Perch (gave +0.050 on a WEAK ImageNet backbone; risks regressing a
-strong one); joint keeps task fine-tuning + adds Perch as an auxiliary.
-Then export → distinct kernel → LB (see §3).
+### 2. KD grid (Phase K) — DONE 2026-05-29. Joint wins decisively (offline). ✅
+Both 50-ep runs finished clean. **joint `tptu` val/auroc 0.9217 ≫ detach `29fz` 0.8847**
+(+0.037) — exactly the prior (detach forces a strong backbone to mimic Perch; joint adds
+Perch as an auxiliary). Joint's 0.9217 also > exp 032 distilled-sed-kd's own offline (0.908,
+the LB-0.906 model) on the SAME val set, and +0.034 over full-FT (0.883). Epoch-1 balance
+gate **PASS** (`dist_loss` ≈25% of `cls_loss`, never swamped → `alpha_distill=1.0` fine).
+Save-last quirk: `last.ckpt` = last top-k save (joint ep43 val 0.9226), uniform across the
+experiment (full-FT's LB ckpt = ep22), so the ep43 export is apples-to-apples. Detail:
+`results.md § Phase K` + `MODEL-RUNS.md § Exp 034`. (Offline anti-correlates with LB → the LB read decides.)
 
-### 3. After KD trains → export + LB (mirror the full-FT path)
-KD models export with the SAME `export_xcpretrain.py` (architecture unchanged).
-Add `xcpretrain-effv2s-kd{,-joint}` entries to `upload_kaggle.py` MODELS +
-`export.sbatch` + a kernel-metadata JSON (mirror `kernel-metadata-xcpretrain-effv2s-fullft-pp.json`;
-include "234 mapped" + "5-tap Gauss smooth" canaries). Export → upload → push kernel → LB.
+### 3. Export joint-KD + PP kernel — DONE 2026-05-29 → **LB 0.878 ≈ full-FT+PP 0.879 → KD dropped.**
+(Verdict in `results.md § KD LB verdict`: KD is a multiplier on a weak base, not an additive lever
+on Sydorskyi's already-focal-pretrained backbone. Single-fold ceiling ≈0.879. Wiring kept for
+provenance; the export/submit commands below are how it was produced.)
+KD discards the DistillHead (`distill_head.*` ≠ `model.*`; export filters `model.*`) →
+ONNX graph **identical** to full-FT; `export_xcpretrain.py` bakes PP into mel_config → the
+kernel runs WITH 5-tap logit-space Gauss smooth by default. 4 exp-010 files wired +
+`kernel-metadata-xcpretrain-effv2s-kd-joint.json` (title slug-resolves to id ✅). Kernel
+**validated on Kaggle** (commit run clean: `Species mapping: 234 mapped`, `5-tap LOGIT-space
+Gauss smooth`, weights dataset resolves, 24 preds/2 files, CPU ~1s/file).
+```bash
+cd user/murilo/experiments/010-submission-pipeline
+bash sbatch/run.sh export --model xcpretrain-effv2s-kd-joint      # GPU, ~10 min
+python scripts/upload_kaggle.py --model xcpretrain-effv2s-kd-joint           # NEW dataset; wait 2-3 min
+python scripts/upload_kaggle.py --model xcpretrain-effv2s-kd-joint --push-kernel  # then submit in UI
+```
 **Exit (Phase K):** KD LB > 0.865; stretch ~0.91 (approaching the +0.050 paired delta).
 
 ### 4. Then the 5-fold / ensemble decision
@@ -142,20 +147,15 @@ Raw audio → ONNX (nnAudio mel in-graph), 234-class identity mapping.
 
 | File | Change |
 |---|---|
-| `010-submission-pipeline/kaggle_kernel/submission.py` | `predict_soundscape_xcpretrain` + logit-space 5-tap Gaussian smoothing |
-| `010-submission-pipeline/scripts/export_xcpretrain.py` | emit `gaussian_smooth_logit_space`/`gaussian_kernel` in mel_config |
-| `010-submission-pipeline/kaggle_kernel/kernel-metadata-xcpretrain-effv2s-fullft-pp.json` | NEW distinct PP kernel (reuses -fullft-weights) |
-| `010-submission-pipeline/scripts/upload_kaggle.py` | `xcpretrain-effv2s-fullft-pp` MODELS entry |
-| `src/birdclef/lightning/xcpretrain_finetune.py` | KD branch: `_prep`/`_step_kd`/`_perch_embed` + KD `__init__` params + training_step |
-| `034-pretrained-backbone/train.py` | wire KD config + REPO_DIR (repo-relative Perch path) |
-| `034-pretrained-backbone/configs/xcpretrain-effv2s-kd{,-joint}.yaml` | NEW KD configs (detach + joint) |
-| `034-pretrained-backbone/pyproject.toml` | `onnxruntime-gpu==1.26.0` (PerchTeacher) |
-| `034-pretrained-backbone/{results,tasks}.md`, `MODEL-RUNS.md` | LB scores + gap audit + Phase K |
-| `tests/034-pretrained-backbone/test_xcpretrain_kd.py` | NEW 5 KD tests (PASS) |
+| `010-submission-pipeline/sbatch/export.sbatch` | NEW `export_xcpretrain_effv2s_kd_joint()` + 234-map case + dispatch case |
+| `010-submission-pipeline/scripts/upload_kaggle.py` | NEW `xcpretrain-effv2s-kd-joint` MODELS entry (own `-kd-joint-weights` slug) |
+| `010-submission-pipeline/kaggle_kernel/kernel-metadata-xcpretrain-effv2s-kd-joint.json` | NEW kernel (PP baked in via export; title slug-resolves ✅) |
+| `010-submission-pipeline/kaggle_kernel/submission.py` | `…-kd-joint-weights` added to `MODEL_SLUGS` (first in exp-034 group) |
+| `034-pretrained-backbone/{results,tasks}.md`, `CONTEXT.md`, `MODEL-RUNS.md` | KD grid result + export wiring recorded |
 
-**Recent commits (latest first):** `09dea9e` (KD scaffold) · `fc47673` (distinct PP
-kernel) · `6417d52` (PP smoothing) · `3701a57` (LB scores + gap audit) ·
-`fa71d2b` (upload routing fix).
+**Recent commits (latest first):** `ee160dc` (PP LB-validated 0.879) · `eaec243` (KD grid
+launched) · `09dea9e` (KD scaffold) · `fc47673` (distinct PP kernel) · `6417d52` (PP smoothing).
+**Uncommitted:** the 4 export-wiring files + new kernel-metadata + the doc updates above.
 
 ---
 
@@ -167,11 +167,12 @@ kernel) · `6417d52` (PP smoothing) · `3701a57` (LB scores + gap audit) ·
 | v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
 | distilled-sed-kd-5fold (exp 032) | 0.915 | Best Tucker-SED ensemble |
 | distilled-sed-kd (exp 032, single-fold) | 0.906 | **The base exp 034 must beat** |
+| **exp 034 KD-joint + PP** | **0.878** | = full-FT+PP 0.879 → KD adds ~0 on LB (offline 0.9217 was an artifact); KD dropped |
 | **exp 034 full-FT + PP** | **0.879** | PP lever +0.014 over 0.865 (kernel-only) |
 | exp 034 full-FT (in-domain backbone, no stack) | 0.865 | bare; +0.009 vs ImageNet control |
 | distilled-sed-control (exp 032, ImageNet, no KD, +PP) | 0.856 | the apples-to-apples control |
 | exp 034 frozen-backbone | 0.819 | weaker variant |
-| exp 034 KD (detach 9299507 / joint 9299513) | _training_ | Phase K, overnight 2026-05-29 |
+| exp 034 KD-detach | _skip_ | offline 0.8847 (expected-weaker; paired data point only) |
 
 ---
 

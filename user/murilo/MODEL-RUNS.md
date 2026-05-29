@@ -1301,8 +1301,8 @@ labeled-SS fold-0 holdout (same val set as exp 032; full-model ceiling there = *
 | `xcpretrain-effv2s-frozen` | frozen backbone (Phase E) | 25 | 0.859 | **0.819** | `xcpretrain-effv2s-frozen/fold0/last.ckpt` | 9279181 | `qfm8` |
 | `xcpretrain-effv2s-fullft` | full fine-tune (Phase G) | 50 | 0.883 | **0.865** | `xcpretrain-effv2s-fullft/fold0/last.ckpt` | 9279209 | `gvx4` |
 | `xcpretrain-effv2s-fullft-pp` | = fullft weights + logit-space PP smoothing (kernel-only) | 50 | — | **0.879** | (same as fullft) | — | — |
-| `xcpretrain-effv2s-kd` | full-FT + Perch v2 KD, **detach** (Phase K) | 50 | _running_ | _pending_ | `xcpretrain-effv2s-kd/fold0/last.ckpt` | 9299507 | — |
-| `xcpretrain-effv2s-kd-joint` | full-FT + Perch v2 KD, **joint** (Phase K) | 50 | _running_ | _pending_ | `xcpretrain-effv2s-kd-joint/fold0/last.ckpt` | 9299513 | — |
+| `xcpretrain-effv2s-kd` | full-FT + Perch v2 KD, **detach** (Phase K) | 50 | 0.885 | _pending (skip)_ | `xcpretrain-effv2s-kd/fold0/last.ckpt` (ep 29) | 9299507 | `29fz` |
+| **`xcpretrain-effv2s-kd-joint`** | full-FT + Perch v2 KD, **joint** + PP (Phase K) | 50 | **0.922** | **0.878** | `xcpretrain-effv2s-kd-joint/fold0/last.ckpt` (ep 43, val 0.9226) | 9299513 | `tptu` |
 
 **LB read (2026-05-28):** full-FT **0.865** > frozen **0.819**, both below the 0.906 base.
 Decisive comparison — exp 032's no-KD **control** (ImageNet backbone, recipe, PP smoothing,
@@ -1314,8 +1314,32 @@ PL +0.027 (disclosed). Backbone is necessary-not-sufficient; 0.94 competitors st
 
 **PP lever PAYS (2026-05-29):** full-FT + PP smoothing (identical weights, kernel-only) =
 **0.879** = **+0.014** over no-PP 0.865, in the predicted +0.012–0.020 band → stack-levers
-compose on the in-domain backbone. PP stays on for all future exp 034 submissions. KD grid
-(9299507 detach / 9299513 joint) training overnight 2026-05-29 — the next, biggest lever.
+compose on the in-domain backbone. PP stays on for all future exp 034 submissions.
+
+**KD grid LANDED (2026-05-29) — joint wins decisively (offline):** both 50-ep KD runs
+finished cleanly. **joint val/auroc 0.9217 ≫ detach 0.8847** (+0.037), matching the prior
+(detach forces an already-strong in-domain backbone to mimic Perch; joint keeps task FT +
+adds Perch as an auxiliary regularizer). Joint's 0.9217 is **above** exp 032 distilled-sed-kd's
+own offline (0.908) on the SAME val set (the model that scored LB 0.906) and **+0.034 over
+full-FT's 0.883** → KD adds the same kind of lift on the in-domain backbone it did on ImageNet.
+Epoch-1 balance gate PASS (`dist_loss` ≈25% of `cls_loss` at ep0, never swamped `cls` →
+`alpha_distill=1.0` was fine, no relaunch). Save-last quirk
+([[feedback_save_top_k_does_not_preserve_last]]): every run's `last.ckpt` = last top-k save,
+not the true final epoch — uniform across the experiment (full-FT's LB-validated ckpt = ep22),
+so joint's ep43 export is apples-to-apples.
+
+**KD LB verdict (2026-05-29) — KD does NOT transfer to the in-domain backbone; DROP:**
+`xcpretrain-effv2s-kd-joint` + PP scored **LB 0.878** vs `xcpretrain-effv2s-fullft-pp` **0.879**
+(same PP) → **KD adds −0.001 = nothing on LB**, despite +0.034 offline (0.9217 vs 0.883).
+Textbook offline anti-correlation ([[feedback_offline_metrics_unreliable]]): the distillation
+AUROC gain was an offline artifact. Why it transferred on ImageNet (+0.050) but not here — exp
+032's delta was on a WEAK b0 backbone that LACKED in-domain bioacoustic structure; Sydorskyi's
+EffV2S is already focal-pretrained on 819K XC, so pulling it toward Perch's embedding space adds
+no new signal. **KD is a multiplier on a weak base, not an additive lever on a strong one.**
+exp 034 single-fold ceiling = **≈0.879** (full-FT+PP = KD+PP). Detach (0.8847 offline) never
+submitted — moot. Path forward: **Phase F 5-fold + Phase I ensemble** (exp 034 as a
+backbone-diverse member of exp 023 0.929 ⊕ exp 032 0.915). Full verdict →
+`experiments/034-pretrained-backbone/results.md § KD LB verdict`.
 
 ## Checkpoint Base Path
 

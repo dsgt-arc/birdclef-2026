@@ -27,7 +27,9 @@ in-domain pretraining). Earlier scaffold used the codename "yoink"; renamed
 | **E — frozen FT (fold 0, 25 ep)** | first LB | ✅ val/auroc 0.859 → **LB 0.819** |
 | **G — full-FT (fold 0, 50 ep)** | first LB | ✅ val/auroc 0.883 → **LB 0.865** |
 | E.3 export pipeline | full-model audio→probs ONNX + kernel | ✅ done (parity 1e-7) |
-| H PP / KD / F 5-fold / I ensemble | close the gap to 0.906+ (see LB results + gap audit) | ⬜ next — bare model below base |
+| H — PP smoothing | logit-space 5-tap Gaussian (kernel-only) | ✅ **LB +0.014** (0.865 → 0.879) |
+| **K — Perch v2 KD grid** | detach vs joint, fold 0, 50 ep | ✅ DONE; joint offline 0.9217 but **LB 0.878 ≈ full-FT+PP 0.879** → **KD does NOT transfer** to the in-domain backbone (drop) |
+| F 5-fold / I ensemble | close the gap to 0.929 (see LB results + gap audit) | ⬜ **next** — KD dropped; exp 034 single-fold ceiling ≈ 0.879 → ensemble as a diverse member |
 
 ## Phase E/G — single-fold training results (2026-05-28)
 
@@ -206,6 +208,7 @@ unit tests pass.
 | `xcpretrain-effv2s-frozen` | frozen, 25ep, no PP/KD/PL | 0.859 | **0.819** | −0.087 |
 | `xcpretrain-effv2s-fullft` | full-FT, 50ep, no PP/KD/PL | 0.883 | **0.865** | −0.041 |
 | `xcpretrain-effv2s-fullft-pp` | **= fullft weights + logit-space PP smoothing** | — | **0.879** | −0.027 |
+| `xcpretrain-effv2s-kd-joint` | full-FT + Perch v2 **joint KD** + PP | 0.9217 | **0.878** | −0.028 |
 
 (First submissions were invalid — 41/234 species_mapping bug; re-submitted after the fix.
 Kernel canary `234 mapped` confirmed. full-FT > frozen, as predicted.)
@@ -277,3 +280,81 @@ smooth across windows → sigmoid. Toggled by `mel_cfg["gaussian_smooth_logit_sp
 (default True; baked into both models' `mel_config.json`). Math sanity-tested (shape/finite,
 constant-in-time ≈ identity 6e-8, <3-window skip, extreme-prob clamp, spike-bleed). **No
 retrain / re-export — kernel re-push only.** This is the A/B vs the no-smooth 0.865 baseline.
+
+## Phase K — Perch v2 KD grid results (2026-05-29): joint wins decisively (offline)
+
+The 2-cell KD grid (Perch v2 embedding distillation, `DistillHead` 256→1536 MSE vs the
+frozen Perch v2 ONNX teacher, `total = FocalLossBCE + alpha_distill·MSE`) finished both
+50-ep fold-0 runs cleanly. KD is our biggest LB-evidenced lever (exp 032 control 0.856 →
+distilled-sed-kd 0.906 = **+0.050**), here stacked on the in-domain backbone.
+
+| Run | KD gradient routing | val/auroc (final ep) | last.ckpt (epoch) | SLURM | W&B |
+|---|---|---:|---|---|---|
+| `xcpretrain-effv2s-kd` | **detach** (Tucker-faithful) | 0.8847 | ep 29 | 9299507 | `29fz` |
+| **`xcpretrain-effv2s-kd-joint`** | **joint** (backbone gets task + KD grad) | **0.9217** | ep 43 (val 0.9226) | 9299513 | `tptu` |
+
+**Reading (direction-only — offline anti-correlates with LB):**
+- **joint 0.9217 ≫ detach 0.8847 (+0.037)** — exactly the prior. Detach forces an
+  already-strong focal-pretrained backbone to *mimic* Perch (gave +0.050 on a WEAK ImageNet
+  backbone; risks regressing a strong one). Joint keeps task fine-tuning and adds Perch as an
+  **auxiliary regularizer** — the right shape for a strong backbone.
+- joint's **0.9217 is above exp 032 distilled-sed-kd's own offline (0.908) on the SAME val
+  set** (the model that scored LB 0.906), and **+0.034 over full-FT's 0.883** → KD adds the
+  same kind of lift on the in-domain backbone it did on ImageNet. Encouraging, but the LB is
+  the arbiter (`feedback_offline_metrics_unreliable`): full-FT went 0.883 offline → 0.865 LB;
+  if that gap holds, joint-KD could land ~0.90+.
+
+**Epoch-1 balance gate (the flagged risk): PASS.** Concern was that FocalLossBCE ≪ exp 032's
+plain BCE, so `alpha_distill=1.0` might over-weight the MSE. It didn't: at epoch 0,
+`dist_loss` 0.047 is ~25% of `cls_loss` 0.186 and stays a small fraction throughout. No
+relaunch / re-tune needed.
+
+**Save-last quirk (`feedback_save_top_k_does_not_preserve_last`):** both runs completed all
+50 epochs (`max_epochs=50 reached`), but `save_top_k=3` + `save_last` makes `last.ckpt` = the
+last *top-k* save, NOT the true final epoch (joint = ep 43, detach = ep 29; the true ep-49
+weights were never saved). This is **uniform across the experiment** — the LB-validated
+full-FT model's `last.ckpt` is also ep 22, not 49 — so exporting joint's ep-43 `last.ckpt` is
+apples-to-apples with the 0.865/0.879 baseline. The ~0.001 val spread across saved epochs is
+noise; no retrain warranted.
+
+### Export wiring (joint-KD + PP kernel) — DONE, LB pending
+
+KD discards the `DistillHead` at inference (`distill_head.*` is a separate ckpt group from
+`model.*`; the export filters `model.*` only) → the ONNX **graph is identical to full-FT**,
+and `export_xcpretrain.py` bakes PP (`gaussian_smooth_logit_space=True`) into `mel_config.json`
+→ the joint-KD kernel runs **WITH** smoothing by default (the "keep PP on" directive; one PP-on
+kernel, no separate `-pp` split needed since there's no pre-PP KD baseline to A/B against).
+4 exp-010 files wired + 1 new kernel-metadata (`murilogustineli/birdclef-2026-xcpretrain-effv2s-kd-joint`,
+title slug-resolves to id ✅). Detach skipped (expected-weaker; paired data point only).
+**Commands handed to Murilo** (first-time upload → export → upload → wait → push-kernel → submit).
+
+### KD LB verdict (2026-05-29): KD does NOT transfer to the in-domain backbone — DROP
+
+`xcpretrain-effv2s-kd-joint` + PP scored **LB 0.878** (kernel validated: 234-mapped, 5-tap
+logit-space Gauss smooth confirmed). The clean comparison is vs full-FT **+ the same PP**:
+
+| | backbone | KD | PP | LB |
+|---|---|---|---|---:|
+| `xcpretrain-effv2s-fullft-pp` | in-domain EffV2S | ❌ | ✅ | 0.879 |
+| `xcpretrain-effv2s-kd-joint` | in-domain EffV2S | ✅ joint | ✅ | **0.878** |
+
+**KD adds −0.001 on LB — i.e. nothing — once PP is on.** This is despite a large **+0.034
+offline** lift (joint 0.9217 vs full-FT 0.883). A textbook offline-anti-correlation case
+(`feedback_offline_metrics_unreliable`): the offline AUROC gain from distillation was an
+**offline artifact**, not real generalization on the hidden soundscapes.
+
+**Why KD transferred on ImageNet (+0.050) but not here:** exp 032's +0.050 was measured on a
+WEAK ImageNet-b0 backbone, where Perch embeddings injected in-domain bioacoustic structure the
+backbone lacked. Sydorskyi's EffV2S is ALREADY focal-pretrained on 819K XC recordings — it
+already has that structure, so being pulled toward Perch's embedding space adds no new signal
+(and `joint`'s mild help over `detach` offline never reached the LB). KD is a **multiplier on a
+weak base**, not an additive lever on a strong one. This matches the Phase K pivot's prediction.
+
+**Decision: DROP KD on this backbone.** The exp 034 single-fold ceiling is **≈0.879**
+(full-FT+PP = KD+PP). Path forward is **Phase F (5-fold) + Phase I (ensemble)** — exp 034 is a
+backbone-diverse member that may lift the exp 023 (0.929) ⊕ exp 032 (0.915) rank-ensemble even
+at 0.879. Detach (0.8847 offline) was never submitted — moot now.
+
+**Phase K exit (original):** "KD LB > full-FT 0.865" is *technically* met (0.878 > 0.865), but
+that +0.013 is **entirely the PP lever** (full-FT+PP was already 0.879); KD's own contribution
+is ~0. Stretch (~0.91) NOT met. Verdict: KD does not transfer → drop.
