@@ -304,16 +304,20 @@ for f in 0 1 2 3 4; do FOLD=$f bash sbatch/train.sh; done   # Phase F: 5-fold
 
 ## Phase H — Postprocessing + TTA
 
-Run only after Phase F or G yields a single base LB ≥ 0.92 (Jack's warning: PP layers easily hurt on weaker bases).
+Started early (didn't wait for a ≥0.92 base) — and the smoothing layer PAID even on the
+0.865 base, refuting Jack's "PP hurts weak bases" warning for this lever.
 
 - [ ] H.1 TopN N=1 postprocessing (Sydorskyi paper §5.6).
 - [ ] H.2 Site/hour priors layer (reference: `ferariz/birdclef2026` `priors.py`).
-- [ ] H.3 Gaussian smoothing in logit space (5-tap, matches exp 032 path).
+- [x] H.3 Gaussian smoothing in logit space (5-tap, matches exp 032 path) — **DONE + LB-validated**:
+  full-FT 0.865 → **0.879** (`xcpretrain-effv2s-fullft-pp`, identical weights, kernel-only). **+0.014**,
+  in the predicted +0.012–0.020 band. Keep PP on for all future submissions.
 - [ ] H.4 Sliding-window TTA (2.5-sec left/right shifts, Sydorskyi solo +0.012).
 - [ ] H.5 Stepwise LB submissions: base only → +TopN → +priors → +smooth → +TTA. Attribute lift per layer.
 - [ ] H.6 Drop any individual layer that regresses LB.
 
-**Phase H exit criterion**: cumulative PP lift ≥ +0.005 LB.
+**Phase H exit criterion**: cumulative PP lift ≥ +0.005 LB. ✅ **MET** by smoothing alone (+0.014).
+Next PP layers (TopN / priors / TTA) are incremental on top once the KD base is chosen.
 
 ---
 

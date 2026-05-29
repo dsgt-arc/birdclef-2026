@@ -205,9 +205,21 @@ unit tests pass.
 |---|---|---:|---:|---:|
 | `xcpretrain-effv2s-frozen` | frozen, 25ep, no PP/KD/PL | 0.859 | **0.819** | −0.087 |
 | `xcpretrain-effv2s-fullft` | full-FT, 50ep, no PP/KD/PL | 0.883 | **0.865** | −0.041 |
+| `xcpretrain-effv2s-fullft-pp` | **= fullft weights + logit-space PP smoothing** | — | **0.879** | −0.027 |
 
 (First submissions were invalid — 41/234 species_mapping bug; re-submitted after the fix.
 Kernel canary `234 mapped` confirmed. full-FT > frozen, as predicted.)
+
+### PP lever PAYS (2026-05-29): full-FT + PP = 0.879 (**+0.014** over no-PP 0.865)
+
+5-tap logit-space Gaussian smoothing on the **identical full-FT weights** (kernel-only,
+no retrain) lifted LB **0.865 → 0.879**, squarely in the predicted +0.012–0.020 band.
+This is a clean isolated read (same weights, distinct kernel) and it confirms the key
+thesis: **the stack-levers compose on the in-domain backbone** — PP adds the same kind of
+lift here it did on the ImageNet backbone. Strong green light for the bigger levers (KD).
+Notably, Sydorskyi's own pipeline uses NO smoothing — this is our 2026 lever, validated
+independently (see `reference_sydorskyi_inference_recipe`). All future exp 034 submissions
+should keep PP on.
 
 ### Verdict: bucket REJECT vs the 0.906 base — but the read is "necessary-not-sufficient," not "backbone fails"
 

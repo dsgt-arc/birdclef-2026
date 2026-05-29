@@ -5,9 +5,9 @@ to resume; follow the linked files for full detail.
 
 **Last updated**: 2026-05-29 EOD. Exp 034 (xcpretrain) first LB landed
 (frozen 0.819 / full-FT 0.865, below the 0.906 base — bare model, gap = the
-omitted stack). This session shipped the PP lever (kernel pushed, LB pending) and
-launched the KD grid (Phase K, jobs 9299507/9299513 running overnight). **PP LB +
-KD training reads pending** — see below.
+omitted stack). This session: **PP lever LANDED +0.014 (full-FT 0.865 → 0.879)** —
+stack-levers compose on this backbone; and the **KD grid is training overnight**
+(Phase K, jobs 9299507 detach / 9299513 joint). **KD training reads pending** — see below.
 
 **Competition deadline**: 2026-06-03 (5 days out).
 
@@ -36,14 +36,13 @@ backbone + PL + PP + ensemble. Full gap audit: `results.md § LB results`.
 
 **Two levers actioned this session (both LB reads PENDING):**
 
-1. **PP smoothing (cheapest, no-retrain) — kernel pushed, awaiting LB.**
-   Added logit-space 5-tap Gaussian smoothing to `predict_soundscape_xcpretrain`
-   (mirrors our 0.906 Tucker recipe). Pushed as a **distinct kernel**
-   `birdclef-2026-xcpretrain-effv2s-fullft-pp` ("BirdCLEF 2026 XCPretrain EffV2S
-   FullFT PP") that **reuses the existing `-fullft-weights` dataset** so the with-PP
-   LB is a clean A/B vs the no-PP **0.865**. Logs verified (234-mapped + "5-tap
-   LOGIT-space Gauss smooth"). NOTE: Sydorskyi himself uses NO smoothing — this is
-   OUR lever (see [[reference_sydorskyi_inference_recipe]]).
+1. **PP smoothing (cheapest, no-retrain) — DONE, LB-validated +0.014.**
+   Logit-space 5-tap Gaussian smoothing in `predict_soundscape_xcpretrain` (mirrors
+   our 0.906 Tucker recipe), shipped as a distinct kernel
+   `birdclef-2026-xcpretrain-effv2s-fullft-pp` reusing the `-fullft-weights` dataset.
+   **LB 0.865 → 0.879 (+0.014)**, in the predicted +0.012–0.020 band → stack-levers
+   compose on the in-domain backbone. **Keep PP on for all future exp 034 submissions.**
+   (Sydorskyi himself uses NO smoothing — this is OUR lever; [[reference_sydorskyi_inference_recipe]].)
 
 2. **KD on the in-domain backbone (biggest lever) — LAUNCHED, running overnight.**
    Phase K. Ported exp 032's Perch v2 embedding distillation into
@@ -69,14 +68,10 @@ PP + KD LB reads come back before fanning out (Murilo's call, 2026-05-29).
 3. `experiments/034-pretrained-backbone/tasks.md` § Phase K (KD), § E.4 (LB verdict).
 4. `git log --oneline -6` → top should be `09dea9e`.
 
-### 1. Check the PP LB read (vs no-PP full-FT 0.865)
-The `...-fullft-pp` kernel was pushed (maybe submitted EOD 05-29). Get its LB score.
-- **PP LB > 0.865** → smoothing stacks on this backbone; keep it on for all future
-  exp 034 submissions. Strong green light for KD.
-- **PP LB ≈/< 0.865** → logit-space PP doesn't help here; try **prob-space** smoothing
-  (Sydorskyi's native space for this prob-output head) as the quick follow-up
-  (`mel_cfg["gaussian_smooth_logit_space"]` already gates it; would need a prob-space
-  branch added). Don't block KD on this.
+### 1. PP read is IN — full-FT + PP = 0.879 (+0.014 over 0.865). ✅ DONE.
+Smoothing stacks on this backbone. **Keep PP on for every future exp 034 submission**
+(the KD kernels must use the same `predict_soundscape_xcpretrain` smoothing). No action
+needed here — this just green-lights the bigger levers.
 
 ### 2. Check the KD grid (Phase K) — LAUNCHED overnight 2026-05-29
 Jobs **9299507** (detach, `xcpretrain-effv2s-kd`) + **9299513** (joint,
@@ -172,11 +167,11 @@ kernel) · `6417d52` (PP smoothing) · `3701a57` (LB scores + gap audit) ·
 | v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
 | distilled-sed-kd-5fold (exp 032) | 0.915 | Best Tucker-SED ensemble |
 | distilled-sed-kd (exp 032, single-fold) | 0.906 | **The base exp 034 must beat** |
-| **exp 034 full-FT (in-domain backbone, no stack)** | **0.865** | bare; +0.009 vs ImageNet control |
+| **exp 034 full-FT + PP** | **0.879** | PP lever +0.014 over 0.865 (kernel-only) |
+| exp 034 full-FT (in-domain backbone, no stack) | 0.865 | bare; +0.009 vs ImageNet control |
 | distilled-sed-control (exp 032, ImageNet, no KD, +PP) | 0.856 | the apples-to-apples control |
 | exp 034 frozen-backbone | 0.819 | weaker variant |
-| exp 034 full-FT + PP | _pending_ | A/B for the PP lever |
-| exp 034 KD (detach / joint) | _pending_ | Phase K, awaiting launch |
+| exp 034 KD (detach 9299507 / joint 9299513) | _training_ | Phase K, overnight 2026-05-29 |
 
 ---
 

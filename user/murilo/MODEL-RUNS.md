@@ -1300,6 +1300,9 @@ labeled-SS fold-0 holdout (same val set as exp 032; full-model ceiling there = *
 | `xcpretrain-effv2s-gate2` | frozen head (Gate 2 sanity) | 5 | 0.791 | — | (no ckpt) | 9277013 | — |
 | `xcpretrain-effv2s-frozen` | frozen backbone (Phase E) | 25 | 0.859 | **0.819** | `xcpretrain-effv2s-frozen/fold0/last.ckpt` | 9279181 | `qfm8` |
 | `xcpretrain-effv2s-fullft` | full fine-tune (Phase G) | 50 | 0.883 | **0.865** | `xcpretrain-effv2s-fullft/fold0/last.ckpt` | 9279209 | `gvx4` |
+| `xcpretrain-effv2s-fullft-pp` | = fullft weights + logit-space PP smoothing (kernel-only) | 50 | — | **0.879** | (same as fullft) | — | — |
+| `xcpretrain-effv2s-kd` | full-FT + Perch v2 KD, **detach** (Phase K) | 50 | _running_ | _pending_ | `xcpretrain-effv2s-kd/fold0/last.ckpt` | 9299507 | — |
+| `xcpretrain-effv2s-kd-joint` | full-FT + Perch v2 KD, **joint** (Phase K) | 50 | _running_ | _pending_ | `xcpretrain-effv2s-kd-joint/fold0/last.ckpt` | 9299513 | — |
 
 **LB read (2026-05-28):** full-FT **0.865** > frozen **0.819**, both below the 0.906 base.
 Decisive comparison — exp 032's no-KD **control** (ImageNet backbone, recipe, PP smoothing,
@@ -1308,6 +1311,11 @@ backbone adds a small lift even WITHOUT the PP the control had. The gap to 0.906
 STACK exp 034 omits: **KD +0.050** (exp 032 control→kd), PP +0.012–0.020, 5-fold +0.009,
 PL +0.027 (disclosed). Backbone is necessary-not-sufficient; 0.94 competitors stack backbone
 + PL + PP + ensemble. Full gap audit + path → `experiments/034-pretrained-backbone/results.md § LB results`.
+
+**PP lever PAYS (2026-05-29):** full-FT + PP smoothing (identical weights, kernel-only) =
+**0.879** = **+0.014** over no-PP 0.865, in the predicted +0.012–0.020 band → stack-levers
+compose on the in-domain backbone. PP stays on for all future exp 034 submissions. KD grid
+(9299507 detach / 9299513 joint) training overnight 2026-05-29 — the next, biggest lever.
 
 ## Checkpoint Base Path
 
