@@ -570,6 +570,36 @@ MODELS = {
         "weights_dir": "artifacts/weights/distilled-sed-kd",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd.json",
     },
+    # Exp 034: pretrained-backbone yoink (Sydorskyi EffNetV2-S), full-model audio→probs ONNX.
+    "xcpretrain-effv2s-frozen": {
+        "slug": "birdclef-2026-xcpretrain-effv2s-frozen-weights",
+        "weights_dir": "artifacts/weights/xcpretrain-effv2s-frozen",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-frozen.json",
+    },
+    "xcpretrain-effv2s-fullft": {
+        "slug": "birdclef-2026-xcpretrain-effv2s-fullft-weights",
+        "weights_dir": "artifacts/weights/xcpretrain-effv2s-fullft",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-fullft.json",
+    },
+    # PP variant: SAME weights dataset as -fullft, distinct kernel so the
+    # with-PP submission (logit-space Gauss smoothing) is distinguishable from
+    # the no-PP 0.865 baseline on the Kaggle LB. Push kernel only — weights
+    # already uploaded with the PP mel_config (no re-upload needed).
+    "xcpretrain-effv2s-fullft-pp": {
+        "slug": "birdclef-2026-xcpretrain-effv2s-fullft-weights",
+        "weights_dir": "artifacts/weights/xcpretrain-effv2s-fullft",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-fullft-pp.json",
+    },
+    # Phase K: Perch v2 KD (joint-gradient) on the in-domain backbone — best of the
+    # KD grid (offline val/auroc 0.9217 vs detach 0.8847). NEW weights dataset (KD
+    # retrains the backbone). PP smoothing baked into mel_config at export → this
+    # kernel runs WITH post-processing (the "keep PP on" directive). First-time
+    # upload: run without --push-kernel, wait 2-3 min, then push.
+    "xcpretrain-effv2s-kd-joint": {
+        "slug": "birdclef-2026-xcpretrain-effv2s-kd-joint-weights",
+        "weights_dir": "artifacts/weights/xcpretrain-effv2s-kd-joint",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-kd-joint.json",
+    },
     # Exp 032 Phase 2: 5-fold ensemble (KD) + HGNet backbone ablation
     "distilled-sed-kd-5fold": {
         "slug": "birdclef-2026-distilled-sed-kd-5fold-weights",
@@ -778,6 +808,7 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
         or "-student" in model_name
         or "-sed" in model_name
         or "-atthead" in model_name
+        or "xcpretrain" in model_name  # exp 034: 234-class 2026 model → identity mapping
     ):
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026_234.json"
     elif "-2026" in model_name:

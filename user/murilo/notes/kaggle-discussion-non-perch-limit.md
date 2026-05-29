@@ -1,9 +1,9 @@
 # Kaggle Discussion: What's the limit without any Perch involved?
 
-- **URL**: https://www.kaggle.com/competitions/birdclef-2026/discussion/ (BirdCLEF+ 2026 discussion forum, post by an unidentified user asking about non-Perch ceilings)
+- **URL**: https://www.kaggle.com/competitions/birdclef-2026/discussion/ (BirdCLEF+ 2026 discussion forum; topic author **sghwr**, 587th)
 - **Posted**: ~2026-05-17 (estimated from "Posted 4 days ago" at capture time)
-- **Captured**: 2026-05-21
-- **Status at capture**: 14 comments
+- **Captured**: 2026-05-21; **re-captured 2026-05-29** (see § Re-capture below — adds the XC self-download specifics)
+- **Status at capture**: 14 comments (16+ at 2026-05-29 re-capture)
 - **Companion thread**: [`kaggle-discussion-best-single-model-lb.md`](kaggle-discussion-best-single-model-lb.md) — many of the same people show up in both
 - **Companion vendored notebook**: `vendor/kaggle/notebooks/birdclef-2026/birdclef-2026-eos-6-bz/` (the Perch-heavy 0.949 stack — the thing this thread is asking how to compete with *without* Perch)
 
@@ -26,6 +26,43 @@ The two big public takeaways from this thread:
 2. **Own-teacher pseudo-labels** add +0.007 LB on top of an already-strong (0.936) teacher (Antoine 0.936 → 0.943 from improved-teacher PL). Boredom reports +0.012 LB from 1-iter PL on his 0.938 base.
 
 This thread also documents the **failure mode for Jack** (rank 21, training from scratch): "I've tried every method that has been discussed this year alongside the top two methods from last year. I haven't managed to see that increase people are getting." → confirms that copying-the-recipe-list-only-half-works without the unspoken details.
+
+---
+
+## Re-capture 2026-05-29 — new comments (XC self-download specifics + score updates) ⭐
+
+The thread grew since the 2026-05-21 pull. The load-bearing new content is **Antoine Masq spelling out his Xeno-Canto self-download** — directly relevant to the proposed XC+PL final experiment.
+
+**Antoine Masq (27th) — best single now 0.936, ensemble 0.948 (later 0.943 single):** ⭐
+> I'm only using custom CNN pipelines (EfficientNetv2_b0 only) without using Perch, and now my best single model gets a 0.936 LB score and I can reach 0.948 by ensembling different runs.
+
+**↳ To be happy:** "Did you initialize your EfficientNetv2_b0 with pretrained weights?"
+**↳↳ Antoine Masq:** "Yes and I also pretrained it on Xeno-Canto data."
+
+**↳ BNBU Anpeng Yuan:** "Is the XC dataset downloaded by yourself or is it on Kaggle?"
+**↳↳ Antoine Masq:** "I did it by myself."
+
+**↳ Jack (14th):** "I don't know how much data you pulled, but did you run into rate limits? Also, how in the heck are you managing storage for this?"
+**↳↳ Antoine Masq:** ⭐⭐ **"I limited the download to recordings shorter than 1 minute. In total, I have 306,682 files taking only 38GB on my disk."**
+
+**↳ Antoine Masq (later update):** "Update: now my best single model is leading to a 0.943 LB score with efficientnetv2_b0 (10min for inference)."
+**↳↳ Jack:** "Is this with pseudolabels or no? What about tta or postprocessing?"
+**↳↳↳ Antoine Masq:** "Yes with pseudo-labels and the classic TTA with the sliding window and smoothing patterns."
+**↳↳ Dhruv Pai Dukle:** "Impressive without Perch Distillation — was this with or without XC pre-training?"  → **Antoine: "With Pre-training."**
+
+**Arunodhayan (8th) — re-confirms the ceiling datapoint:** "my single model LB is 0.946." Asked if without Perch / what backbone: no direct answer; **Dhruv Pai Dukle** speculates "It's probably Effnet/HGNet pre-trained on XC data."
+
+**tennogh (37th):** "If you look at the best LB scores threads you will see people made strong models without any Perch involvement. Even using Perch, different methods can still be complementary, e.g. the public notebooks using Perch embeddings and the one using SED with distillation aren't very correlated." (→ diversity argument: KD and non-KD/Perch-embedding members are worth ensembling.)
+
+**Zejun_ (18th):** "The single model score reached 0.934, but there were issues with student iteration, and the AUC was significantly lower than the LB." (another offline-anti-correlation + pseudo-iteration-plateau data point.)
+
+**MengYe (457th):** "you can use asymmetric loss with the public hgnet notebook and some tuning to reach 0.90+ lb, some public post-processing methods can make it reach 0.91+ lb."
+
+### Why the XC self-download numbers matter for us
+
+- **38GB / 306,682 files is trivially affordable on PACE** (we have project storage; this is small vs our existing data). The "<1 minute recordings" filter is the key trick that keeps it small + fast to process.
+- This is the **third independent confirmation** that "own XC pretrain (or yoinked XC backbone) + own-teacher PL" is THE non-Perch path to 0.94+ (Antoine 0.943, Ali Ozan 0.941 via Sydorskyi yoink, Arunodhayan 0.946). We already have the *yoinked* XC backbone (exp 034); the untried multiplier is **own-teacher PL** on it.
+- Antoine's stack decomposition: XC pretrain (base) → 0.936 supervised → **+PL → 0.943** → **+ensemble → 0.948**. The PL step is +0.007 on an already-0.936 base.
 
 ---
 

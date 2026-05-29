@@ -1,0 +1,14 @@
+# Phase H — Perch v2 KD on the in-domain backbone (JOINT-gradient variant).
+#
+# Same as xcpretrain-effv2s-kd.yaml but kd_detach_cls_features: false → the
+# backbone receives BOTH the task gradient (FocalBCE) and the distill gradient
+# (Perch MSE). Hypothesis: an already-strong in-domain backbone (focal-pretrained
+# on 819K XC) benefits more from Perch as an AUXILIARY regularizer (joint) than
+# from being forced to mimic it (detach) — where mimicking a teacher that may be
+# weaker for THIS task could regress it. Paired against the detach config on the
+# same job batch so the Δ isolates the gradient-routing choice.
+inherit: xcpretrain-effv2s-kd.yaml
+run_name: "xcpretrain-effv2s-kd-joint"
+
+training:
+  kd_detach_cls_features: false

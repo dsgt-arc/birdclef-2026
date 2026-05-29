@@ -1,0 +1,21 @@
+{
+  "experiment": "034-pretrained-backbone",
+  "run_name": "xcpretrain-effv2s-frozen",
+  "fold": 0,
+  "config": "xcpretrain-effv2s-frozen.yaml",
+  "backbone": "tf_efficientnetv2_s_in21k",
+  "freeze_backbone": true,
+  "load_pretrained": true,
+  "max_epochs": 25,
+  "val_auroc": 0.8590059876441956,
+  "val_loss": 0.0370909757912159,
+  "all_metrics": {
+    "lr-AdamW": 1.390322267980082e-06,
+    "train/loss": 0.03808710724115372,
+    "train/loss_step": 0.0349406860768795,
+    "val/loss": 0.0370909757912159,
+    "val/auroc": 0.8590059876441956,
+    "train/loss_epoch": 0.03808710724115372
+  },
+  "saved_at_utc": "2026-05-28T23:04:21.049120+00:00"
+}

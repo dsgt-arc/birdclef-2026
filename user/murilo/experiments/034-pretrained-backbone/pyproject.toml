@@ -1,0 +1,66 @@
+[project]
+name = "exp034-pretrained-backbone"
+version = "0.1.0"
+description = "Exp 034: Reuse Sydorskyi 2025 published in-domain-pretrained backbone (BirdCLEF+ 2025 2nd place; EffNetV2-S + NFNet-L0 on 819K XC recordings / 7,489 species) for fine-tuning on BirdCLEF 2026."
+authors = [
+    {name = "Murilo Gustineli", email = "mgustineli3@gatech.edu"}
+]
+requires-python = ">=3.11"
+dependencies = [
+    # Inherits exp 033 ML stack pins. No uv.lock — pins tight enough on the
+    # load-bearing stack; transitive non-ML drift tolerated. Active venv state
+    # may exceed these (e.g. torch 2.10 installed); pins document the
+    # minimum tested versions.
+    "torch==2.5.1",
+    "torchaudio==2.5.1",
+    "torchvision==0.20.1",       # NEW (Phase B): torchvision.ops.focal_loss for FocalLossBCE
+    "pytorch-lightning==2.6.1",
+    "torchmetrics==1.9.0",
+    "timm==1.0.26",
+    "huggingface-hub==1.9.2",
+    "wandb>=0.16.0",
+    # Phase H KD: frozen Perch v2 ONNX teacher (PerchTeacher in sed_finetune.py).
+    "onnxruntime-gpu==1.26.0",
+
+    # Audio processing
+    "librosa>=0.10.0",
+    "resampy>=0.4.0",
+    "soundfile>=0.12.0",
+    # nnAudio is REQUIRED — Sydorskyi's TraceableMelspec uses nnAudio.Spectrogram.STFT
+    # for the STFT step (then torchaudio.MelScale for the mel filterbank).
+    # See docs/sydorskyi-config-verified.md § Mel pipeline.
+    "nnAudio==0.3.4",
+
+    # Data handling
+    "pyarrow>=15.0.0",
+    "pandas>=2.0.0",
+    "h5py>=3.10.0",              # Sydorskyi dataset uses .hdf5 features
+
+    # Logging
+    "tensorboard>=2.14.0",
+
+    # GPU monitoring
+    "nvidia-ml-py>=12.0.0",
+    "matplotlib>=3.7.0",
+
+    # Utilities
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+    "tqdm>=4.65.0",
+
+    # Scikit-learn (fold-split reuse from exp 032)
+    "scikit-learn>=1.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-xdist>=3.5.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/birdclef"]

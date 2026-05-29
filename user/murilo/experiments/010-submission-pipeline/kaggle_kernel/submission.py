@@ -91,6 +91,13 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 034: pretrained-backbone yoink (Sydorskyi EffNetV2-S). Full-model audio→probs
+    # ONNX (nnAudio mel in-graph); routed by mel_config type=xcpretrain_audio_onnx →
+    # predict_soundscape_xcpretrain (raw audio in, clipwise probs out).
+    # Phase K KD (joint Perch v2 distillation) is the preferred member → listed first.
+    "birdclef-2026-xcpretrain-effv2s-kd-joint-weights",
+    "birdclef-2026-xcpretrain-effv2s-fullft-weights",
+    "birdclef-2026-xcpretrain-effv2s-frozen-weights",
     # Exp 033 Phase 5 Sydorskyi-divergence diagnostic — Test 1 (chunk discard + trim).
     # Same canonical Antoine cell (a2-kd: random init + Uniform sampler + T2 teacher
     # + 25 ep) pointed at v3 PL parquet (Sydorskyi 0.5 chunk-discard + 0.1 per-class trim).
@@ -1437,6 +1444,84 @@ def predict_soundscape_tucker(
     return predictions
 
 
+def predict_soundscape_xcpretrain(
+    session, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
+):
+    """Exp 034 XCPretrain inference — feed RAW AUDIO to the full-model ONNX.
+
+    The ONNX is the FULL pipeline (raw audio → nnAudio mel → backbone → SED head
+    → clipwise_pred_long PROBABILITIES), so there is NO kernel-side mel computation
+    → zero mel-mismatch risk. Per non-overlapping 5s segment: load audio →
+    ONNX(audio) → (1, 234) probs → stack windows → 5-tap Gaussian temporal smooth
+    in LOGIT space → map to 234 columns.
+
+    PP (added 2026-05-28): 5-tap Gaussian smoothing across windows, mirroring exp
+    032's Tucker 0.906 recipe (`predict_soundscape_tucker`). The ONNX returns
+    prob-space `clipwise_pred_long`, so we inverse-sigmoid → smooth → sigmoid back;
+    logit-space matches the winning recipe + the SED logit-space-aggregation finding.
+    Toggled by `mel_cfg["gaussian_smooth_logit_space"]` (default True). Still no TTA
+    / TopN / priors. `taxa_mapping` / `metadata_priors` accepted only to match the
+    dispatch signature.
+    """
+    del taxa_mapping, metadata_priors  # unused, intentional
+
+    sr = mel_cfg["sr"]
+    segment_duration = mel_cfg.get("window_duration", 5.0)
+    soundscape_id = Path(audio_path).stem
+
+    species_2026 = species_mapping["birdclef2026_species"]
+    idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
+
+    info = sf.info(audio_path)
+    total_duration = info.frames / info.samplerate
+    input_name = session.get_inputs()[0].name  # "audio"
+
+    window_probs = []
+    segment_times = []
+    segment_start_s = 0.0
+    while segment_start_s < total_duration:
+        # load_audio_chunk pads/trims to exactly sr*segment_duration (= 160000) samples.
+        audio = load_audio_chunk(audio_path, sr, segment_start_s, segment_duration)
+        audio = np.asarray(audio, dtype=np.float32).reshape(1, -1)  # (1, T)
+        out = session.run(None, {input_name: audio})[0]  # (1, 234) probs (already sigmoid'd)
+        window_probs.append(out.flatten())
+        segment_times.append(int(segment_start_s + segment_duration))
+        segment_start_s += segment_duration
+
+    if not window_probs:
+        return []
+    probs_matrix = np.stack(window_probs)  # (n_windows, 234) — already probabilities
+
+    # 5-tap Gaussian temporal smoothing in LOGIT space (mirrors exp 032's Tucker
+    # 0.906 recipe — see predict_soundscape_tucker). ONNX returns prob-space
+    # clipwise_pred_long, so inverse-sigmoid → smooth across windows → sigmoid back.
+    if mel_cfg.get("gaussian_smooth_logit_space", True) and probs_matrix.shape[0] >= 3:
+        eps = 1e-7
+        p = np.clip(probs_matrix, eps, 1 - eps)
+        logits_matrix = np.log(p / (1 - p))  # inverse-sigmoid (pseudo-logit)
+        kernel = np.array(
+            mel_cfg.get("gaussian_kernel", [0.1, 0.2, 0.4, 0.2, 0.1]), dtype=np.float32
+        )
+        kernel = kernel / kernel.sum()  # safety re-normalize if cfg drifts
+        pad = len(kernel) // 2
+        padded = np.pad(logits_matrix, ((pad, pad), (0, 0)), mode="edge")
+        smoothed = np.zeros_like(logits_matrix)
+        for c in range(logits_matrix.shape[1]):
+            smoothed[:, c] = np.convolve(padded[:, c], kernel, mode="valid")
+        probs_matrix = sigmoid(smoothed)
+
+    predictions = []
+    for i, end_time in enumerate(segment_times):
+        row_id = f"{soundscape_id}_{end_time}"
+        row = {"row_id": row_id}
+        for sp in species_2026:
+            row[sp] = 0.0
+        for idx_str, name_2026 in idx_map.items():
+            row[name_2026] = float(probs_matrix[i, int(idx_str)])
+        predictions.append(row)
+    return predictions
+
+
 def predict_soundscape_tucker_ensemble(
     sessions, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
 ):
@@ -1731,7 +1816,16 @@ def main():
     use_tucker = mel_cfg.get("type") == "tucker_mel"
     use_tucker_ensemble = use_tucker and is_ensemble
     use_fullsignal = mel_cfg.get("architecture") == "sed" and mel_type == "mel"
-    if use_tucker_ensemble:
+    use_xcpretrain = (
+        mel_cfg.get("type") == "xcpretrain_audio_onnx"
+    )  # exp 034: full-model audio→probs ONNX
+    if use_xcpretrain:
+        print(
+            "Using XCPretrain full-model audio-input ONNX (raw audio → in-graph "
+            "nnAudio mel → backbone → SED head → probs) → 5-tap LOGIT-space Gauss "
+            "smooth. No kernel mel, no TTA/priors."
+        )
+    elif use_tucker_ensemble:
         print(
             f"Using Tucker {len(sessions)}-fold ensemble inference (per-window "
             "LOGIT-space fold mean → 5-tap Gauss smooth → single sigmoid). "
@@ -1755,7 +1849,11 @@ def main():
     all_predictions = []
     for i, audio_path in enumerate(audio_files):
         t0 = time.time()
-        if use_tucker_ensemble:
+        if use_xcpretrain:
+            preds = predict_soundscape_xcpretrain(
+                session, str(audio_path), mel_cfg, species_mapping
+            )
+        elif use_tucker_ensemble:
             preds = predict_soundscape_tucker_ensemble(
                 sessions,
                 str(audio_path),
