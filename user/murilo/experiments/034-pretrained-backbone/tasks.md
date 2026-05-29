@@ -221,8 +221,9 @@ for f in 0 1 2 3 4; do FOLD=$f bash sbatch/train.sh; done   # Phase F: 5-fold
 # result: cat outputs/xcpretrain-tf_efficientnetv2_s_in21k-frozen-fold0.json
 # ckpts:  /storage/project/.../experiments/034-pretrained-backbone/checkpoints/<run>-fold0/last.ckpt
 ```
-- [ ] E.1.1 Launch `bash sbatch/train.sh` (frozen, fold 0, 25 ep) once Gate 2 ≥ 0.95.
-- [ ] E.1.2 Confirm `last.ckpt` written + `outputs/<run>-fold0.json` has val/auroc.
+- [x] E.1.1 Frozen fold-0, 25 ep — DONE (SLURM 9279181, W&B `qfm8`): **val/auroc 0.859**, `last.ckpt` written.
+- [x] E.1.2 Full-FT fold-0, 50 ep (Phase G, run in parallel) — DONE (SLURM 9279209, W&B `gvx4`): **val/auroc 0.883**, `last.ckpt` written.
+- [x] E.1.3 Both confirmed: `outputs/test_results/<run>-fold0.json` + `artifacts/training/<run>/fold0/metrics.json` written; clean tqdm logs. Trajectory: frozen 0.791(5ep)→0.859(25ep); full-FT 0.883 > frozen. (See `results.md § Phase E/G`.) **Decision point: LB submit both — offline can't tell us if the yoink lever beats 0.906.**
 
 ### E.2 e2e validation
 

@@ -24,7 +24,30 @@ in-domain pretraining). Earlier scaffold used the codename "yoink"; renamed
 | B.6–B.9 | Training path: focal loss + sampler + augmentation ports + Lightning module + train.py | ✅ DONE (58 tests + fast-dev-run) |
 | **C — Gate 1** | **Feature parity vs vendored source** | ✅ **PASS (bit-identical)** |
 | **D — Gate 2** | Frozen-backbone head sanity | ⚠️ **0.791** (gate threshold was mis-set — see below) |
-| E → J | Frozen FT + LB → 5-fold → full-FT → PP/TTA → ensemble → final | ⬜ |
+| **E — frozen FT (fold 0, 25 ep)** | training done; LB pending | ✅ trained → val/auroc **0.859** |
+| **G — full-FT (fold 0, 50 ep)** | training done; LB pending | ✅ trained → val/auroc **0.883** |
+| E.3 → F → H → I → J | export + **first LB** → 5-fold → PP/TTA → ensemble → final | ⬜ next |
+
+## Phase E/G — single-fold training results (2026-05-28)
+
+Both fold-0 runs finished cleanly (config-driven pipeline; W&B + checkpoints + artifacts;
+clean tqdm logs). Val = TuckerMacroAUC on the labeled-SS fold-0 holdout.
+
+| Run | Config | Epochs | val/auroc | last.ckpt | SLURM | W&B |
+|---|---|---:|---:|---|---|---|
+| Gate 2 | frozen head sanity | 5 | 0.791 | — | 9277013 | — |
+| **Phase E** | frozen backbone | 25 | **0.859** | `checkpoints/xcpretrain-effv2s-frozen/fold0/last.ckpt` | 9279181 | `qfm8` |
+| **Phase G** | full fine-tune | 50 | **0.883** | `checkpoints/xcpretrain-effv2s-fullft/fold0/last.ckpt` | 9279209 | `gvx4` |
+
+**Reading (direction-only — offline anti-correlates with LB):**
+- Trajectory is sensible: more epochs lift the frozen head (0.791 → 0.859), and **full-FT > frozen** (0.883 > 0.859) — full fine-tune adapts the focal-pretrained backbone to the soundscape domain, as predicted.
+- Both sit below exp 032 `distilled-sed-kd`'s 0.908 on the same val set — but exp 034 has **no KD, no PP, single-fold, last-ckpt**, whereas exp 032's offline is boosted by Perch-KD + dual-supervision. Offline ≠ LB.
+- **The yoink hypothesis (does the in-domain backbone lift LB over 0.906?) is only testable on the LB.** Offline 0.86/0.88 can't answer it. → Phase E.3 export + LB submit both single-fold models is the decisive next step.
+
+> Metric-suite note: these runs logged `val/auroc` + losses + lr only (the module
+> wired just `val_auroc`). The full exp 032/033 suite (cmap, f1_macro/micro,
+> top1/top5, train-side) is a logging-only addition deferred to the next runs
+> (Phase F 5-fold) to avoid racing these two live jobs.
 
 ## Phase C — Gate 1: feature parity (2026-05-28) ✅ PASS
 

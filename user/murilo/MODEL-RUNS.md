@@ -1283,6 +1283,30 @@ See `experiments/033-own-teacher-pl/results.md` for the full per-ablation table
 + paired Δ across teacher/sampler/init/PL-exposure axes + Phase 5 reading +
 decision-matrix collapse.
 
+## Experiment 034: Pretrained-backbone yoink (Sydorskyi 2025 EffNetV2-S) — single-fold offline, LB pending
+
+Reuse the BirdCLEF+ 2025 2nd-place published in-domain-pretrained EffNetV2-S backbone
+(819K XC recordings / 7,489 species) + our own SED att-head, fine-tuned on BirdCLEF 2026
+(exp 032 datamodule, fold 0). Gate 1 = **bit-identical** feature parity vs the vendored
+source (no silent mel/head/ckpt bug). Branch `mg/exp034-pretrained-backbone`, PR #54.
+
+Config: `tf_efficientnetv2_s_in21k` (features_only, 256-ch) + Sydorskyi 2024 ckpt; SED
+att-head (512 hidden, logit-space agg); FocalLossBCE (α0.25 γ2.0); AdamW 1e-4 cos→1e-6;
+32-true; label-smooth 0.05; RandomFiltering + SpecAugment. Val = TuckerMacroAUC on the
+labeled-SS fold-0 holdout (same val set as exp 032; full-model ceiling there = **0.908**).
+
+| Slug | Variant | Epochs | Train val/auroc | LB | last.ckpt (under `034-pretrained-backbone/checkpoints/`) | SLURM | W&B |
+|------|---------|-------:|----------------:|----|----------------------------------------------------------|-------|-----|
+| `xcpretrain-effv2s-gate2` | frozen head (Gate 2 sanity) | 5 | 0.791 | — | (no ckpt) | 9277013 | — |
+| `xcpretrain-effv2s-frozen` | frozen backbone (Phase E) | 25 | **0.859** | _pending_ | `xcpretrain-effv2s-frozen/fold0/last.ckpt` | 9279181 | `qfm8` |
+| `xcpretrain-effv2s-fullft` | full fine-tune (Phase G) | 50 | **0.883** | _pending_ | `xcpretrain-effv2s-fullft/fold0/last.ckpt` | 9279209 | `gvx4` |
+
+**Offline read (direction-only — offline val/auroc anti-correlates with LB):** full-FT
+(0.883) > frozen (0.859) > Gate-2 (0.791), all below exp 032 distilled-sed-kd's 0.908 on
+the same val set — but exp 034 has no KD/PP yet, is single-fold + last-ckpt, and offline ≠ LB.
+**Next: LB submission of both frozen + full-FT** (the real arbiter); then 5-fold (Phase F) +
+PP (Phase H) + ensemble (Phase I) if the lever pays out.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
