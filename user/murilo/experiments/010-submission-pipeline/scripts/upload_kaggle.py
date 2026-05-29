@@ -789,6 +789,7 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
         or "-student" in model_name
         or "-sed" in model_name
         or "-atthead" in model_name
+        or "xcpretrain" in model_name  # exp 034: 234-class 2026 model → identity mapping
     ):
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026_234.json"
     elif "-2026" in model_name:
