@@ -290,9 +290,10 @@ for f in 0 1 2 3 4; do FOLD=$f bash sbatch/train.sh; done   # Phase F: 5-fold
 
 - [x] K.1 Add KD branch to `XCPretrainFinetuneModule` (config-gated, backward-compatible); `onnxruntime-gpu==1.26.0` dep; wire Perch path in `train.py`. **5 unit tests + real-teacher integration check PASS** (DistillHead 256→1536 == Perch 1536, MSE-compatible).
 - [x] K.2 Configs: `xcpretrain-effv2s-kd.yaml` (detach=True, Tucker-faithful) + `xcpretrain-effv2s-kd-joint.yaml` (detach=False, joint backbone grad). Both inherit fullft (trainable backbone, 50 ep).
-- [ ] K.3 Train the 2-cell grid (detach vs joint), fold 0, in parallel:
-  - `CONFIG=configs/xcpretrain-effv2s-kd.yaml bash sbatch/train.sh`
-  - `CONFIG=configs/xcpretrain-effv2s-kd-joint.yaml bash sbatch/train.sh`
+- [x] K.3 Train the 2-cell grid (detach vs joint), fold 0, in parallel — **LAUNCHED 2026-05-29 EOD, running overnight**:
+  - `xcpretrain-effv2s-kd` (detach, Tucker-faithful): **SLURM 9299507** (gpu-rtx6000, atl1-1-03-006-27-0)
+  - `xcpretrain-effv2s-kd-joint` (joint): **SLURM 9299513** (gpu-rtx6000, atl1-1-03-006-29-0)
+  - 50 ep each; expect completion overnight. Read `outputs/test_results/<run>-fold0.json` + W&B on resume.
 - [ ] K.4 **Epoch-1 watch**: `train/cls_loss` vs `train/dist_loss` (W&B). FocalBCE ≪ exp 032's plain BCE, so `alpha_distill=1.0` may over-weight the MSE — if `dist_loss` dominates, kill + lower alpha.
 - [ ] K.5 Export (same `export_xcpretrain.py` — KD changes weights, not graph) + distinct kernel + LB submit each.
 

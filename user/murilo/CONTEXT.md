@@ -5,8 +5,9 @@ to resume; follow the linked files for full detail.
 
 **Last updated**: 2026-05-29 EOD. Exp 034 (xcpretrain) first LB landed
 (frozen 0.819 / full-FT 0.865, below the 0.906 base — bare model, gap = the
-omitted stack). This session shipped the PP lever (kernel pushed) and scaffolded
-the KD lever (Phase K, ready to launch). **Two LB reads pending** — see below.
+omitted stack). This session shipped the PP lever (kernel pushed, LB pending) and
+launched the KD grid (Phase K, jobs 9299507/9299513 running overnight). **PP LB +
+KD training reads pending** — see below.
 
 **Competition deadline**: 2026-06-03 (5 days out).
 
@@ -44,14 +45,16 @@ backbone + PL + PP + ensemble. Full gap audit: `results.md § LB results`.
    LOGIT-space Gauss smooth"). NOTE: Sydorskyi himself uses NO smoothing — this is
    OUR lever (see [[reference_sydorskyi_inference_recipe]]).
 
-2. **KD on the in-domain backbone (biggest lever) — scaffolded, NOT launched.**
+2. **KD on the in-domain backbone (biggest lever) — LAUNCHED, running overnight.**
    Phase K. Ported exp 032's Perch v2 embedding distillation into
    `XCPretrainFinetuneModule._step_kd` (DistillHead GAP+Linear 256→1536, MSE vs
    frozen Perch v2 ONNX teacher; `total = FocalBCE(cls) + alpha_distill·MSE`).
    `kd_detach_cls_features` selects Tucker-faithful (detach) vs joint. 5 unit tests
-   + real-teacher integration check PASS. **2 configs ready, awaiting Murilo to
-   launch the GPU grid.** DistillHead is discarded at inference → the SAME
-   `export_xcpretrain.py` + kernel apply (KD changes weights, not the graph).
+   + real-teacher integration check PASS. **2-cell grid launched 2026-05-29 EOD:**
+   - `xcpretrain-effv2s-kd` (detach): **SLURM 9299507** (gpu-rtx6000)
+   - `xcpretrain-effv2s-kd-joint` (joint): **SLURM 9299513** (gpu-rtx6000)
+   50 ep each; expect completion overnight. DistillHead is discarded at inference →
+   the SAME `export_xcpretrain.py` + kernel apply (KD changes weights, not the graph).
 
 **On hold (deliberately):** 5-fold (Phase F) + ensemble (Phase I) — wait until the
 PP + KD LB reads come back before fanning out (Murilo's call, 2026-05-29).
@@ -75,18 +78,24 @@ The `...-fullft-pp` kernel was pushed (maybe submitted EOD 05-29). Get its LB sc
   (`mel_cfg["gaussian_smooth_logit_space"]` already gates it; would need a prob-space
   branch added). Don't block KD on this.
 
-### 2. Launch the KD grid (Phase K) — GIVE MURILO THESE COMMANDS (don't run)
+### 2. Check the KD grid (Phase K) — LAUNCHED overnight 2026-05-29
+Jobs **9299507** (detach, `xcpretrain-effv2s-kd`) + **9299513** (joint,
+`xcpretrain-effv2s-kd-joint`), both gpu-rtx6000, 50 ep.
 ```bash
-cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/034-pretrained-backbone
-CONFIG=configs/xcpretrain-effv2s-kd.yaml       bash sbatch/train.sh   # Tucker-faithful (detach), 50 ep
-CONFIG=configs/xcpretrain-effv2s-kd-joint.yaml bash sbatch/train.sh   # joint backbone grad, 50 ep
+squeue -u $USER                                              # done? (or check sacct)
+cd .../user/murilo/experiments/034-pretrained-backbone
+cat outputs/test_results/xcpretrain-effv2s-kd-fold0.json     # val/auroc (direction-only)
+cat outputs/test_results/xcpretrain-effv2s-kd-joint-fold0.json
+grep -E "dist_loss|cls_loss" logs/slurm_xcpretrain-effv2s-kd*-fold0_*.log | head   # epoch-1 balance
 ```
-**Epoch-1 watch (W&B):** `train/dist_loss` vs `train/cls_loss`. FocalBCE ≪ exp 032's
-plain BCE, so `alpha_distill=1.0` may over-weight the MSE — if `dist_loss` dominates,
-kill + lower `alpha_distill` (one-line config edit), relaunch.
-**Prior:** expect **joint** > **detach** here — detach forces an already-strong
-in-domain backbone to mimic Perch (gave +0.050 on a WEAK ImageNet backbone; risks
-regressing a strong one); joint keeps task fine-tuning + adds Perch as an auxiliary.
+**First thing to check (epoch-1 balance):** `train/dist_loss` vs `train/cls_loss` (W&B
+or the log). FocalBCE ≪ exp 032's plain BCE, so `alpha_distill=1.0` may have
+over-weighted the MSE — if `dist_loss` dominated, the run is suspect; lower
+`alpha_distill` (one-line config edit) and relaunch.
+**Prior:** expect **joint** > **detach** — detach forces an already-strong in-domain
+backbone to mimic Perch (gave +0.050 on a WEAK ImageNet backbone; risks regressing a
+strong one); joint keeps task fine-tuning + adds Perch as an auxiliary.
+Then export → distinct kernel → LB (see §3).
 
 ### 3. After KD trains → export + LB (mirror the full-FT path)
 KD models export with the SAME `export_xcpretrain.py` (architecture unchanged).
