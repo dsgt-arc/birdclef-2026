@@ -581,6 +581,15 @@ MODELS = {
         "weights_dir": "artifacts/weights/xcpretrain-effv2s-fullft",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-fullft.json",
     },
+    # PP variant: SAME weights dataset as -fullft, distinct kernel so the
+    # with-PP submission (logit-space Gauss smoothing) is distinguishable from
+    # the no-PP 0.865 baseline on the Kaggle LB. Push kernel only — weights
+    # already uploaded with the PP mel_config (no re-upload needed).
+    "xcpretrain-effv2s-fullft-pp": {
+        "slug": "birdclef-2026-xcpretrain-effv2s-fullft-weights",
+        "weights_dir": "artifacts/weights/xcpretrain-effv2s-fullft",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-fullft-pp.json",
+    },
     # Exp 032 Phase 2: 5-fold ensemble (KD) + HGNet backbone ablation
     "distilled-sed-kd-5fold": {
         "slug": "birdclef-2026-distilled-sed-kd-5fold-weights",
