@@ -3,402 +3,155 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-27 EOD (~midnight — exp 033 REJECT verdict +
-Phase 5 audit landed, a2_kd_v3 training overnight, deep research bundle
-uploaded to Claude.ai + in flight, pivot decision deferred to 2026-05-28 AM).
+**Last updated**: 2026-05-29 EOD. Exp 034 (xcpretrain) first LB landed
+(frozen 0.819 / full-FT 0.865, below the 0.906 base — bare model, gap = the
+omitted stack). This session shipped the PP lever (kernel pushed) and scaffolded
+the KD lever (Phase K, ready to launch). **Two LB reads pending** — see below.
 
-**Competition deadline**: 2026-06-03 (7 days from this update).
+**Competition deadline**: 2026-06-03 (5 days out).
+
+**Branch**: `mg/exp034-pretrained-backbone` (PR **#54**, open). Latest commit `09dea9e`.
 
 ---
 
 ## Where we are
 
-**Exp 032 — Tucker distilled-SED full replication: COMPLETE (PARTIAL REPLICATION)**
-- PR #51 merged to main as commit `05f4063`.
-- Best Tucker-SED single: `distilled-sed-kd` (Phase D, fold 0) = **LB 0.906**.
-- Best Tucker-SED ensemble: `distilled-sed-kd-5fold` = **LB 0.915** (within ~0.002 of Tucker's 0.917).
-- HGNet+KD ablation: LB 0.901 → backbone NOT the bottleneck (refuted).
-- Project best overall (UNCHANGED): exp 023 `perch-sed-ensemble-mlp-only` = **0.929 LB**.
+**Exp 034 — pretrained-backbone reuse (xcpretrain): Sydorskyi 2025 in-domain
+EffNetV2-S backbone + our SED attention head, fine-tuned on BirdCLEF 2026.**
 
-**Exp 033 — Own-teacher pseudo-labels on distilled-sed-kd: REJECT verdict + Phase 5 diagnostic in progress**
-- Branch: `mg/exp033-own-teacher-pl` (~24 commits ahead of main, all pushed).
-- All 10 ablations trained. D.5 e2e validation: 10/10 PASS.
-- 3 of 5 Day-1 LB submissions landed — all REJECT (Δ ≤ 0 vs 0.906 baseline):
-  - a4-kd (warm + Uniform + T2 teacher):  LB **0.899** (Δ −0.007)
-  - a2-kd ⭐ (random + Uniform + T2, canonical Antoine):  LB **0.886** (Δ −0.020)
-  - a4-v5j (warm + Uniform + T1):  LB **0.897** (Δ −0.009)
-- Paired teacher-axis Δ (a4-kd vs a4-v5j): +0.002 LB — refutes proposal's headline
-  teacher-diversity hypothesis at LB scale.
-- Remaining Day-1 (a3-kd, a3-v5j) + all Day-2 cells NOT submitted on the trajectory.
+First valid LB (after fixing a species_mapping 41-vs-234 bug — see
+[[feedback_species_mapping_canary]]):
+- frozen-backbone (25 ep): **0.819**
+- full-FT (50 ep): **0.865**
 
-**Phase 5 — Sydorskyi-divergence diagnostic (NEW, 2026-05-27 PM)**:
-Audit found exp 033 implementation diverges from the only published 0.93+ PL recipe
-(Sydorskyi 2025 2nd place) on **16 of 20 axes**. Most important: we never implemented
-focal × PL MixUp fusion, chunk discard, or trim probability. The REJECT verdict
-cannot be cleanly interpreted as a refutation of the protocol — we never ran the
-protocol. See:
-  - `user/murilo/analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md`
-    (full 20-axis divergence table + decision matrix; commit `40708f7`)
-  - `experiments/033-own-teacher-pl/diagnostic-tests.md`
-    (Test 1/2/3 workflow + commands + decision criteria; **resume-after-disconnect anchor**)
+Both **below the 0.906 base**. The read is **"necessary-not-sufficient," NOT
+"backbone fails"**: Gate 1 parity bit-identical, kernel↔eager 9e-7, 234-mapped.
+Decisive control comparison — exp 032's no-KD control (ImageNet backbone, same
+recipe, +PP smoothing) = **0.856**; exp 034 full-FT (in-domain backbone, NO PP) =
+**0.865** → the in-domain backbone is a small real lever even without PP. The gap to
+0.906/0.929 is the **STACK exp 034 omits**, by LB-evidenced value: **KD +0.050**,
+PL +0.027, PP +0.012–0.020, 5-fold +0.009, ensemble. 0.94 competitors stack
+backbone + PL + PP + ensemble. Full gap audit: `results.md § LB results`.
 
-**Phase 5 Test 1 status (LAUNCHED, training overnight)**:
-- v3 PL parquet generated (job 9227102 — 46s walltime; 85K chunks, 33% chunk-discard, 98% per-cell trim).
-- v3 pre-flight ran: 5/7 PASS; 2 stale FAILs in Check 5 are chunk-discard-driven, not real (no safety impact; logged as deferred preflight patch in `diagnostic-tests.md § Deferred follow-ups`).
-- a2_kd_v3 training launched 2026-05-27 ~23:00 — finishes ~05:30 2026-05-28.
-- v4 (Sydorskyi-faithful PL gen: mean-folds + no T/P sharpen) scaffolded but NOT running — fallback only if v3 LB ≤ 0.906.
-- **Phase 5 closure decision recorded**: regardless of v3 outcome, next major effort = exp 034 Sydorskyi-yoink (NOT Test 2/3). v3 is the final PL data point on exp 033.
+**Two levers actioned this session (both LB reads PENDING):**
 
-**Deep research status (in flight, output expected tomorrow morning)**:
-- Self-contained context bundle at `notes/2026-05-27-deep-research-context-bundle.md` (5009 lines / 319 KB).
-- Bundle uploaded to Claude.ai's deep research with one-line external prompt.
-- Designed to challenge the Sydorskyi-yoink pivot (not validate it). Q1: is the audit confirmation-biased? Q2–Q6: realistic LB landings, implementation risks, missing levers, concrete day-by-day plan.
+1. **PP smoothing (cheapest, no-retrain) — kernel pushed, awaiting LB.**
+   Added logit-space 5-tap Gaussian smoothing to `predict_soundscape_xcpretrain`
+   (mirrors our 0.906 Tucker recipe). Pushed as a **distinct kernel**
+   `birdclef-2026-xcpretrain-effv2s-fullft-pp` ("BirdCLEF 2026 XCPretrain EffV2S
+   FullFT PP") that **reuses the existing `-fullft-weights` dataset** so the with-PP
+   LB is a clean A/B vs the no-PP **0.865**. Logs verified (234-mapped + "5-tap
+   LOGIT-space Gauss smooth"). NOTE: Sydorskyi himself uses NO smoothing — this is
+   OUR lever (see [[reference_sydorskyi_inference_recipe]]).
+
+2. **KD on the in-domain backbone (biggest lever) — scaffolded, NOT launched.**
+   Phase K. Ported exp 032's Perch v2 embedding distillation into
+   `XCPretrainFinetuneModule._step_kd` (DistillHead GAP+Linear 256→1536, MSE vs
+   frozen Perch v2 ONNX teacher; `total = FocalBCE(cls) + alpha_distill·MSE`).
+   `kd_detach_cls_features` selects Tucker-faithful (detach) vs joint. 5 unit tests
+   + real-teacher integration check PASS. **2 configs ready, awaiting Murilo to
+   launch the GPU grid.** DistillHead is discarded at inference → the SAME
+   `export_xcpretrain.py` + kernel apply (KD changes weights, not the graph).
+
+**On hold (deliberately):** 5-fold (Phase F) + ensemble (Phase I) — wait until the
+PP + KD LB reads come back before fanning out (Murilo's call, 2026-05-29).
 
 ---
 
-## Pick up here (next session) — 2026-05-28 morning
+## Pick up here (next session)
 
-### 0. Read both overnight outputs before doing anything else
+### 0. Read state first
+1. This file.
+2. `experiments/034-pretrained-backbone/results.md` § LB results + § Gap to our best.
+3. `experiments/034-pretrained-backbone/tasks.md` § Phase K (KD), § E.4 (LB verdict).
+4. `git log --oneline -6` → top should be `09dea9e`.
 
-When you wake up:
+### 1. Check the PP LB read (vs no-PP full-FT 0.865)
+The `...-fullft-pp` kernel was pushed (maybe submitted EOD 05-29). Get its LB score.
+- **PP LB > 0.865** → smoothing stacks on this backbone; keep it on for all future
+  exp 034 submissions. Strong green light for KD.
+- **PP LB ≈/< 0.865** → logit-space PP doesn't help here; try **prob-space** smoothing
+  (Sydorskyi's native space for this prob-output head) as the quick follow-up
+  (`mel_cfg["gaussian_smooth_logit_space"]` already gates it; would need a prob-space
+  branch added). Don't block KD on this.
 
-1. **a2_kd_v3 training result** — check the SLURM log + the `outputs/test_results/2026-exp033-a2-kd-v3-fold0.json` file. Expect completion in ~6.5h. If launched at, say, 23:00, finishes around 05:30.
-2. **Deep research output** — if you fired the prompt at `notes/2026-05-27-deep-research-prompt.md` overnight, the response should be ready at `docs/references/deep-research/2026-05-27-pivot-assessment.md` (or wherever Claude.ai delivered it).
-
-Read both. They drive the exp 034 commit/pivot decision.
-
-### 1. If a2_kd_v3 still needs LB submission (training landed, no LB shot yet)
-
+### 2. Launch the KD grid (Phase K) — GIVE MURILO THESE COMMANDS (don't run)
 ```bash
-cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/010-submission-pipeline
-# Add a2-kd-v3 to MODELS dict + kernel-metadata + export.sbatch (same pattern as commit 4280e72)
-# then:
-bash sbatch/run.sh export --model distilled-sed-pl-a2-kd-v3
-python scripts/upload_kaggle.py --model distilled-sed-pl-a2-kd-v3
-sleep 180
-python scripts/upload_kaggle.py --model distilled-sed-pl-a2-kd-v3 --push-kernel
-# Submit to Competition via Kaggle UI
+cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/034-pretrained-backbone
+CONFIG=configs/xcpretrain-effv2s-kd.yaml       bash sbatch/train.sh   # Tucker-faithful (detach), 50 ep
+CONFIG=configs/xcpretrain-effv2s-kd-joint.yaml bash sbatch/train.sh   # joint backbone grad, 50 ep
 ```
+**Epoch-1 watch (W&B):** `train/dist_loss` vs `train/cls_loss`. FocalBCE ≪ exp 032's
+plain BCE, so `alpha_distill=1.0` may over-weight the MSE — if `dist_loss` dominates,
+kill + lower `alpha_distill` (one-line config edit), relaunch.
+**Prior:** expect **joint** > **detach** here — detach forces an already-strong
+in-domain backbone to mimic Perch (gave +0.050 on a WEAK ImageNet backbone; risks
+regressing a strong one); joint keeps task fine-tuning + adds Perch as an auxiliary.
 
-### 2. Decision matrix (this is the actual point)
+### 3. After KD trains → export + LB (mirror the full-FT path)
+KD models export with the SAME `export_xcpretrain.py` (architecture unchanged).
+Add `xcpretrain-effv2s-kd{,-joint}` entries to `upload_kaggle.py` MODELS +
+`export.sbatch` + a kernel-metadata JSON (mirror `kernel-metadata-xcpretrain-effv2s-fullft-pp.json`;
+include "234 mapped" + "5-tap Gauss smooth" canaries). Export → upload → push kernel → LB.
+**Exit (Phase K):** KD LB > 0.865; stretch ~0.91 (approaching the +0.050 paired delta).
 
-After reading both inputs together:
-
-| Scenario | What it tells us | Move |
-|---|---|---|
-| **v3 LB > 0.913 AND research recommends yoink** | PL recoverable + yoink validated. Both stack. | Yoink first (higher ceiling), PL fixes second. |
-| **v3 LB > 0.913 AND research recommends staying on PL** | PL works on our base; yoink may be unnecessary | Continue PL with Test 2 (focal × PL fusion) + scale to other cells |
-| **v3 LB 0.906-0.913 AND research recommends yoink** | Modest PL lift; yoink still the bigger lever | Pivot to yoink; come back to PL later if time |
-| **v3 LB < 0.906 AND research recommends yoink** | PL refuted on our base; yoink is the only path | Full pivot to yoink |
-| **v3 LB < 0.906 AND research recommends something else** | Surprise — read carefully and reassess | Whatever research recommends |
-
-### 3. Commit to one path. No more spanning.
-
-Once decided, the next 3-4 days are single-track on that path. No new experiments without LB validation.
-
-### 4. Files to read in order (if returning cold)
-
-1. `user/murilo/CONTEXT.md` (this file) — current state
-2. `experiments/033-own-teacher-pl/results.md` — the REJECT verdict + paired Δ readings + Phase 5 status
-3. `analysis/notes/2026-05-27-exp033-sydorskyi-divergence-audit.md` — why exp 033 REJECT might be implementation, not protocol
-4. **Deep research output** (in Claude.ai history or saved to `docs/references/deep-research/2026-05-27-pivot-assessment.md`) — the overnight pivot assessment
-5. `notes/2026-05-27-deep-research-prompt.md` — what we asked the deep research (source of truth for the prompt)
-6. `notes/2026-05-27-deep-research-context-bundle.md` — the 5009-line self-contained bundle uploaded to Claude.ai (snapshot of materials)
-7. `experiments/033-own-teacher-pl/diagnostic-tests.md` — Phase 5 workflow (if Test 2/3 ends up being justified)
-8. `experiments/033-own-teacher-pl/tasks.md` — Phase 5 closure decision + Phase 6 placeholder
-
-### 5. Branch state at end of 2026-05-27
-
-**Branch**: `mg/exp033-own-teacher-pl`, ~30 commits ahead of main.
-
-**Most recent commits** (latest first):
-- `4867b34` — Make deep research bundle self-contained
-- `6dc4e93` — Add deep research context bundle (5009 lines / 319 KB)
-- `c3297d6` — EOD: Phase 5 closure + deep research prompt + pivot intent
-- `a6b8094` — Phase 5: v4 PL config (Sydorskyi-faithful fallback)
-- `51c1120` — generate_pseudo_labels.sh CONFIG-aware (reuse for v3)
-- `8ff083c` — Phase 5: Sydorskyi-divergence diagnostic Test 1 scaffold
-- `40708f7` — Exp 033 ↔ Sydorskyi 2025 PL protocol divergence audit
-- `c7beb60` — Capture 2026-05-27 update to best-single-model-LB Kaggle thread
-- `573b1ed` — Exp 033: LB REJECT verdict — 3/3 Day-1 submissions regressed
-
-**No PR yet for exp 033.** Open after a2_kd_v3 LB lands + Phase 5 closeout updates are committed.
+### 4. Then the 5-fold / ensemble decision
+Once PP + KD reads are in: if a single exp 034 config clears ~0.90, fan out to 5-fold
+(Phase F) + rank-ensemble exp 034 ⊕ exp 032 5-fold (0.915) ⊕ exp 023 (0.929) (Phase I).
+If KD doesn't transfer to the in-domain backbone, drop it → go straight to ensemble.
 
 ---
 
-### HISTORICAL: 2026-05-27 morning pickup (Phase G completion — REPLACED BY 2026-05-28 plan above)
+## Submission descriptions (for Murilo, 500-char Kaggle limit)
 
-### 0. Check overnight job completion
-
-```bash
-cd /storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026
-git checkout mg/exp033-own-teacher-pl
-git log --oneline -12
-# Expected most recent: 11b25cd → 6185a77 → 87d668d → ecc3ccb → 84ab853 → 6ab8312 ...
-
-squeue -u $USER   # All 10 GPU jobs should be done (or only stragglers remain)
+**PP kernel (`...-fullft-pp`), if not yet submitted:**
 ```
-
-The 10 jobs were submitted in two waves:
-- **T1 wave (5 jobs, launched 2026-05-26 ~21:30)**: 9190539, 9190540, 9190542, 9190544, 9190545
-- **T2 wave (5 jobs, launched 2026-05-26 ~22:55)**: 9191658, 9191659, 9191660, 9191661, 9191662
-
-Expected completion times (at ~20 min/epoch with num_workers=8):
-| Ablation set | Epochs | Wall | T1 finish ETA | T2 finish ETA |
-|---|---|---|---|---|
-| a1 / a2 / a5 (random init, 25 ep) | 25 | ~8.3h | ~05:50 | ~07:15 |
-| a3 / a4 (warm-start, 10 ep) | 10 | ~3.3h | ~00:50 | ~02:15 |
-
-Hard walltime cap on each job: 24h (`#SBATCH --time=24:00:00`), so plenty of margin
-even if any node is slow.
-
-### 1. Verify all 10 trained cleanly
-
-```bash
-# All logs should end with "Job completed successfully!"
-for log in user/murilo/experiments/033-own-teacher-pl/logs/slurm_a*_*-fold0_91*.log; do
-    name=$(basename "$log" .log)
-    status=$(tail -5 "$log" | grep -E "Job completed|exit code" || echo "STILL RUNNING")
-    echo "$name → $status"
-done
-
-# Confirm checkpoints exist
-ls -la /storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/033-own-teacher-pl/checkpoints/2026-exp033-*/fold0/last.ckpt
-# Expect 10 paths: 2026-exp033-a{1..5}-{v5j,kd}/fold0/last.ckpt
+XCPretrain EffV2S full fine-tune (Sydorskyi in-domain backbone + our SED head)
+on BirdCLEF 2026, WITH post-processing: 5-tap logit-space Gaussian temporal
+smoothing across 5s windows (mirrors our 0.906 recipe). Identical weights to the
+0.865 no-PP fullft run — isolates the PP lever. Single fold; no KD/PL/ensemble.
+Raw audio → ONNX (nnAudio mel in-graph), 234-class identity mapping.
 ```
-
-Per metric: read `outputs/test_results/2026-exp033-<ablation>-<teacher>-fold0.json`
-for `val_metrics.val/auroc` and `val_metrics.val/cmap`. These are training-side
-numbers (offline-LB anti-correlation caveat applies).
-
-### 2. D.5 end-to-end validation on all 10 ckpts (~10 min each, can run in parallel)
-
-Reuse exp 032's `sbatch/validate_end_to_end.sh` — it accepts FOLD/CKPT/CONFIG/TRAIN_AUROC
-env vars. Example launcher:
-
-```bash
-cd user/murilo/experiments/032-tucker-distilled-sed
-CKPT_BASE=/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/033-own-teacher-pl/checkpoints
-RESULTS=/storage/project/ps-clef2026_birdclef-0/mgustineli3/birdclef-2026/user/murilo/experiments/033-own-teacher-pl/outputs/test_results
-
-for AB in a1 a2 a3 a4 a5; do
-  for T in v5j kd; do
-    SLUG="2026-exp033-${AB}-${T}"
-    TRAIN_AUROC=$(jq -r '.val_metrics["val/auroc"]' "${RESULTS}/${SLUG}-fold0.json")
-    CKPT="${CKPT_BASE}/${SLUG}/fold0/last.ckpt" \
-    CONFIG="../033-own-teacher-pl/configs/${AB}_${T}.yaml" \
-    FOLD=0 \
-    TRAIN_AUROC="${TRAIN_AUROC}" \
-    sbatch sbatch/validate_end_to_end.sh
-  done
-done
-```
-
-Gate: `|train_auroc - e2e_auroc| ≤ 0.02` PASS. Rank by **e2e val/auroc** to pick
-the top-5 for LB Day 1. Per exp 032 Phase 2: e2e is uniformly slightly HIGHER than
-training-side (~+0.004-0.011) due to 5-tap Gaussian smoothing in logit space.
-
-### 3. LB submission (5/day cap)
-
-```
-Day 1 (today): export ONNX + push kernel + LB submit top-5 by e2e
-Day 2 (next day): same for remaining 5
-```
-
-Per `feedback_kaggle_upload.md`: two-step Kaggle upload (dataset first, then kernel).
-Per `feedback_kaggle_kernel_sources.md`: single-kernel pattern, kernel_sources uses
-push-run output.
-
-ONNX export wrappers: pattern matches exp 032's `010-submission-pipeline/`. New
-`MODELS` entries needed for `distilled-sed-pl-a{N}-{T}` slugs — refer to exp 032
-patterns for the wrappers.
-
-### 4. Apply decision matrix (proposal.md § Falsifiable)
-
-| Bucket | LB lift over 0.906 | Reading |
-|---|---|---|
-| **CONFIRM** | ≥ +0.014 | Round 2 (iterate teacher) + Sydorskyi-yoink for XC base |
-| **PARTIAL** | +0.007 to +0.013 | Ensemble with exp 023 (0.929) |
-| **WEAK** | +0.001 to +0.006 | Extend to 5-fold to disambiguate |
-| **REJECT** | ≤ 0 | Pivot to Sydorskyi-yoink directly |
-
-Secondary read: cross-ablation LB spread (std across A1-A5 within each teacher).
-Spread > 0.010 → sampler choice is a recipe parameter to tune. Spread < 0.003 →
-protocol is robust.
-
-### 5. Closeout
-
-- Update `experiments/033-own-teacher-pl/results.md` with full LB table + verdict
-- Update `user/murilo/MODEL-RUNS.md` with all 10 ablation results
-- Update this CONTEXT.md with verdict + next-session pickup
-- Open PR (currently DRAFT NOT YET CREATED) — once verdict in:
-  ```bash
-  gh pr create --title "Exp 033: own-teacher pseudo-labels on distilled-sed-kd" \
-    --body "<summary with LB table>" --base main --head mg/exp033-own-teacher-pl
-  ```
-  Squash-merge per `feedback_squash_merge.md`.
 
 ---
 
-## What landed this session (2026-05-26, full day)
+## Key decisions / learnings this session (2026-05-29)
 
-### Morning — exp 033 scaffolding (Phases A-E code)
+1. **Backbone is necessary-not-sufficient.** In-domain backbone alone = 0.865 (a
+   small +0.009 over the ImageNet control even without PP); the gap is the omitted
+   KD/PP/PL/ensemble stack, not the backbone.
+2. **Sydorskyi's inference uses NO smoothing/TTA** (audited `vendor/sydorskyi-2025/`).
+   His lift = PL + **prob-space** ensemble (mean/vlom/gaus) + SWA + Google-model blend.
+   → For exp 034 Phase F, use **prob-space fold averaging**, not the logit-space
+   fold-mean our Tucker ensemble uses. ([[reference_sydorskyi_inference_recipe]])
+3. **PP space is a genuine fork.** This head outputs a probability (`clipwise_pred_long`),
+   so prob-space smoothing is more native; we shipped **logit-space** (our 0.906 prior)
+   first by Murilo's call. Prob-space is the documented fallback.
+4. **KD detach vs joint is the Phase K experiment.** Tucker's +0.050 used detach on a
+   weak backbone; joint is likely safer on a strong one. Grid settles it.
+5. **species_mapping canary is mandatory.** Always eyeball "Species mapping: 234 mapped"
+   in the kernel log before trusting an LB. ([[feedback_species_mapping_canary]])
 
-Per the 2026-05-22 strategic direction note: Track B = own-teacher PL on top of
-Track A = Tucker. 5 disclosed competitor recipes (Antoine 0.943, OverfitOracle 0.946,
-Boredom 0.938+, chenwenqiang_001, Tucker) all converge on the same PL protocol.
-Our prior PL attempts (exp 014/015/025) used **wrong protocols** — `loss_weight=0.5`
-+ hardcoded 50/50 GT/PL batches — and regressed LB. The disclosed 1:1 weighting +
-uniform sampling protocol had never been tested in our codebase.
+---
 
-| Phase | Commit |
+## Files touched this session
+
+| File | Change |
 |---|---|
-| A — Scaffold metadata (proposal, tasks, 11 configs, preflight 7/7 PASS on v1) | `5aa5558` |
-| B — Prereq tools (cache_inference.py + sbatch wrappers + generate_pseudo_labels.sh) | `0729e21` |
-| C — Core code integration (loss_weight, PLDS, GTDatasetWrapper, MixSamp 3-source, collate) | `4687b1f` |
-| D — 32 tests in `tests/033-own-teacher-pl/`; 195/195 PASS combined with exp 032 | `1a241dd` |
-| E (code) — train.py + sbatch wrappers (fast-dev-run still pending at this point) | `34e3314` |
+| `010-submission-pipeline/kaggle_kernel/submission.py` | `predict_soundscape_xcpretrain` + logit-space 5-tap Gaussian smoothing |
+| `010-submission-pipeline/scripts/export_xcpretrain.py` | emit `gaussian_smooth_logit_space`/`gaussian_kernel` in mel_config |
+| `010-submission-pipeline/kaggle_kernel/kernel-metadata-xcpretrain-effv2s-fullft-pp.json` | NEW distinct PP kernel (reuses -fullft-weights) |
+| `010-submission-pipeline/scripts/upload_kaggle.py` | `xcpretrain-effv2s-fullft-pp` MODELS entry |
+| `src/birdclef/lightning/xcpretrain_finetune.py` | KD branch: `_prep`/`_step_kd`/`_perch_embed` + KD `__init__` params + training_step |
+| `034-pretrained-backbone/train.py` | wire KD config + REPO_DIR (repo-relative Perch path) |
+| `034-pretrained-backbone/configs/xcpretrain-effv2s-kd{,-joint}.yaml` | NEW KD configs (detach + joint) |
+| `034-pretrained-backbone/pyproject.toml` | `onnxruntime-gpu==1.26.0` (PerchTeacher) |
+| `034-pretrained-backbone/{results,tasks}.md`, `MODEL-RUNS.md` | LB scores + gap audit + Phase K |
+| `tests/034-pretrained-backbone/test_xcpretrain_kd.py` | NEW 5 KD tests (PASS) |
 
-### Afternoon — Phase E gate cleared + Phase F runtime
-
-| What | Commit / Job |
-|---|---|
-| Fast-dev-run PASS on a2_v5j (PL loaded, 5-tuple batches, KD active, no NaN) | `6ab8312`, job 9185603 |
-| tasks.md Phase 0-3 marked complete | `a977661` |
-| **T2 cache: smoke run** (LIMIT=5) — 300 preds, schema matches T1 | job 9185680 |
-| **T2 cache: full run** (10,658 files × 5 folds × 12 windows) — 639,480 preds, walltime 36m44s | job 9187954 |
-| **PL generator bugfix**: `cfg["perch"]` was hard-required; made optional via `use_perch` flag (5 conditional guards). Backward-compat verified for v1. | `84ab853` |
-| **T2 PL parquet generated** (v2-distilled-sed-kd-5fold) — 210,375 PLs >0.5, 166 species covered, walltime 43s | job 9188496 |
-| **v2 parquet preflight**: 7/7 PASS (identical schema + species ordering to v1) | (interactive) |
-
-### Evening — num_workers regression + Phase G launch
-
-| What | Commit / Job |
-|---|---|
-| **CRITICAL BUG: num_workers=0**. Exp 032 inherited 0 from Tucker's Jupyter notebook (single-threaded default). Comment said "revisit if I/O-bound" — exp 033 copy-pasted it. With 127K-file PL pool and no OS cache hits, single-threaded loading caused **4× slower training** (40 min/epoch vs predicted 10 min/epoch). Caught after 5 jobs at epoch 6 had burned 4h. | — |
-| First T1 ablations launched (with workers=0) — 5 jobs at ~40 min/epoch | jobs 9188227-9188231 |
-| **Fix 1**: exp 033 `_common.yaml`: `num_workers: 0 → 8` (matching all exps 025-031 and SBATCH `--cpus-per-task=8`). | `ecc3ccb` |
-| **Fix 2**: exp 032 configs (3 files): same fix preventively (its 624-file SS pool fit in cache so it worked, but configs are still on disk). | `87d668d` |
-| **Cancelled + relaunched 5 T1 ablations** with num_workers=8 → ~20 min/epoch (2× speedup; not quite the 4× predicted, but acceptable). Sunk 20 GPU-hours but saved ~8h calendar time on a1/a2/a5. | jobs 9190539-9190545 |
-| proposal.md: per-batch composition column added, ⭐ marker on A2 canonical | `6185a77` |
-| tasks.md Phase 4.1 updated with num_workers fix story | `11b25cd` |
-| **All 5 T2 ablations launched** | jobs 9191658-9191662 |
-
----
-
-## Key learnings from this session
-
-1. **`num_workers` is not optional for large unique-file pools.** Exp 032 got away with `num_workers=0` because its 624-file labeled-SS pool fit in OS cache. Exp 033's 127K-file PL pool does not. Default to `num_workers=8` (matches `--cpus-per-task=8`).
-2. **Tucker's Jupyter defaults are notebook defaults, not production defaults.** Jupyter is inherently single-threaded; `num_workers=0` works there but not in DataLoader-with-large-pool training.
-3. **The PL generator's `perch:` config block is now optional.** Use pure-SED mode by omitting the block (Tier C species fall to zero, equivalent to Tier D).
-4. **Per-batch composition matters more than ratio names.** "Focal/SC 0.5/0.5" is ambiguous; "32/0/32 (focal/sc/pl) at B=64" is unambiguous. proposal.md updated.
-
----
-
-## The 10-ablation grid (running now)
-
-| ID | Init | Sampler | Sampler share | Per-batch (B=64) | LR | Ep | Teacher | Config |
-|---|---|---|---|---|---|---|---|---|
-| A1.v5j | random | MixSamp | 0.50/0.00/0.50 | 32/0/32 | 5e-4 | 25 | T1 | a1_v5j.yaml |
-| **A2.v5j ⭐** | random | **Uniform** | ~0.18/~0.00/~0.82 | ~12/0/~52 | 5e-4 | 25 | T1 | a2_v5j.yaml |
-| A3.v5j | warm-start | MixSamp | 0.20/0.00/0.80 | 13/0/51 | 5e-5 | 10 | T1 | a3_v5j.yaml |
-| A4.v5j | warm-start | **Uniform** | ~0.18/~0.00/~0.82 | ~12/0/~52 | 5e-5 | 10 | T1 | a4_v5j.yaml |
-| A5.v5j | random | MixSamp | 0.70/0.00/0.30 | 45/0/19 | 5e-4 | 25 | T1 | a5_v5j.yaml |
-| A1.kd / A2.kd⭐ / A3.kd / A4.kd / A5.kd | (same as v5j, T2 teacher) | | | | | | T2 | a*_kd.yaml |
-
-- **T1** = v5j-4fold (LB 0.913) → `shared/pseudo-labels/birdclef-2026/v1/sed_pseudo_labels.parquet`
-- **T2** = distilled-sed-kd-5fold (LB 0.915) → `shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet`
-- **Warm-start ckpt**: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/032-tucker-distilled-sed/checkpoints/2026-exp032-distilled-sed-kd/last-v2.ckpt`
-
-A2 (⭐ random + uniform = pure Antoine protocol) is the canonical recipe. Others
-sweep init × sampler × focal/PL ratio around it as sensitivity ablations.
-
-### Pair structure for reading
-- A1↔A2, A3↔A4: sampler (MixSamp vs Uniform) within same init
-- A1↔A3, A2↔A4: init (random vs warm-start) within same sampler
-- A{i}.v5j ↔ A{i}.kd: teacher (T1 vs T2) within same protocol (5 paired tests)
-- A1 vs A5: PL fraction sensitivity (0.5 vs 0.3 under MixSamp)
-
----
-
-## Key methodology decisions (locked in)
-
-1. **Naming convention**: dropped competitor author names from artifacts. References stay in proposal.md "Provenance" + "Background" sections only.
-2. **Diff-only configs**: each ablation YAML is ~20-30 lines, inherits from `_common.yaml` via `_deep_merge` in `train.py:load_config`. Tucker recipe + KD + pseudo_label defaults live in `_common.yaml`.
-3. **PL filter**: drop val-fold SS files (prevent leak) + drop labeled-SS train files (Antoine: GT used for labeled, PL only for unlabeled). Effective PL pool = 127,104 unlabeled segments per teacher.
-4. **Sampler choice**: uniform = pure 1:1 protocol; MixSamp = explicit ratio control.
-5. **KD loss stays unweighted**: only the BCE task branch gets per-sample loss_weight. Perch v2 MSE alignment is sample-confidence-independent.
-6. **Schema contract**:
-   - Tucker default dataloader → 4-tuple `(wavs, labels, wts, mks)`
-   - PL-enabled dataloader → 5-tuple `(wavs, labels, wts, mks, loss_weights)`
-   - `training_step` detects via `len(batch) > 4 and batch[4].ndim == 1`
-7. **num_workers = 8** in both `_common.yaml` files (exp 032 + exp 033). Matches SBATCH allocation.
-
----
-
-## File index (exp 033)
-
-| File | Purpose |
-|---|---|
-| **NEW (exp 033)** | |
-| `user/murilo/experiments/033-own-teacher-pl/proposal.md` | Hypothesis + falsifiable matrix + 10-ablation grid w/ per-batch composition |
-| `user/murilo/experiments/033-own-teacher-pl/tasks.md` | Phase 0-4 checklist + closeout (num_workers bug captured in 4.1.0) |
-| `user/murilo/experiments/033-own-teacher-pl/README.md` | Navigation + quickstart |
-| `user/murilo/experiments/033-own-teacher-pl/pyproject.toml` | Pinned deps |
-| `user/murilo/experiments/033-own-teacher-pl/configs/_common.yaml` | Shared Tucker recipe + KD + pseudo_label defaults (num_workers=8) |
-| `user/murilo/experiments/033-own-teacher-pl/configs/a{1..5}_{v5j,kd}.yaml` | 10 ablation configs (diff-only) |
-| `user/murilo/experiments/033-own-teacher-pl/configs/pl_gen_v2.yaml` | T2 PL gen config (pure-SED, no perch tier) |
-| `user/murilo/experiments/033-own-teacher-pl/scripts/preflight_checks.py` | 7-check diagnostic + `--parquet-path` arg |
-| `user/murilo/experiments/033-own-teacher-pl/scripts/cache_inference.py` | T2 ONNX inference cache |
-| `user/murilo/experiments/033-own-teacher-pl/sbatch/{cache_inference,generate_pseudo_labels,_job,run}.sh` | SLURM wrappers |
-| `user/murilo/experiments/033-own-teacher-pl/train.py` | Extends exp 032 train.py |
-| `user/murilo/tests/033-own-teacher-pl/test_{loss_weighting,pseudo_label_integration,mixsamp_3source,pl_filter}.py` | 32 tests, all PASS |
-| **MODIFIED (src/)** | |
-| `user/murilo/src/birdclef/lightning/distilled_sed_finetune.py` | Optional `loss_weight` arg in `_dual_supervision_loss` + `training_step` |
-| `user/murilo/src/birdclef/data/distilled_sed_dataset.py` | + PLDS class + GTDatasetWrapper (5→6-tuple) |
-| `user/murilo/src/birdclef/data/distilled_sed_datamodule.py` | + 8 PL kwargs; PL parquet filter; sampler dispatch (uniform vs MixSamp); 5/6-tuple collate |
-| `user/murilo/experiments/025-iter-pseudo-labeling/generate_pseudo_labels.py` | Made `cfg["perch"]` optional via `use_perch` flag (5 guards; backward-compat for v1) |
-| **GENERATED ARTIFACTS** | |
-| `shared/inference/birdclef-2026/distilled-sed-kd-5fold/train_soundscapes/fold{0..4}/logits.parquet` | T2 cache, 639,480 rows total |
-| `shared/pseudo-labels/birdclef-2026/v2-distilled-sed-kd-5fold/sed_pseudo_labels.parquet` | T2 PL parquet, 210,375 PLs>0.5, 166 species covered |
-| **EXISTING (inherited from exp 032)** | |
-| `user/murilo/src/birdclef/preprocessing/tucker_mel.py` | TuckerMelSpec (unchanged) |
-| `user/murilo/src/birdclef/heads/sed_head.py` | AttHeadLogitSpace + GeMFreqPool (unchanged) |
-
----
-
-## Pending decisions / open items for next session
-
-1. **Verify 10 jobs completed** (squeue empty or only stragglers).
-2. **D.5 e2e validation** on all 10 ckpts (mandatory pre-flight before LB).
-3. **Pick top-5 by e2e val/auroc** for LB Day 1 submission.
-4. **Decision matrix** (proposal.md § Falsifiable) → drives Round 2 / Sydorskyi-yoink / ensemble / pivot.
-5. **Update results.md + MODEL-RUNS.md + this CONTEXT.md** with verdict after LB lands.
-6. **Open PR** (still no PR yet — open after verdict).
-
----
-
-## Branch / git state at session end (2026-05-26 ~23:00)
-
-**Current branch**: `mg/exp033-own-teacher-pl`. 12 commits ahead of main, all pushed.
-
-**Most recent commits** (latest first):
-- `11b25cd` — tasks.md: T1/T2 launches + num_workers fix in Phase 4
-- `6185a77` — proposal.md: per-batch composition column + canonical marker
-- `87d668d` — exp 032 num_workers 0→8 (preventive)
-- `ecc3ccb` — exp 033 num_workers 0→8 (the actual fix)
-- `84ab853` — Phase F: Perch tier C optional in PL generator
-- `a977661` — tasks.md: Phase 0/1/2/3 sub-items complete
-- `6ab8312` — Phase E gate: fast-dev-run PASS on a2_v5j
-- `fc71a78` — (obsolete) CONTEXT.md for end of scaffolding session
-- `34e3314` — Phase E (partial): train.py + sbatch
-- `1a241dd` — Phase D: 32 tests, 195/195 PASS
-- `4687b1f` — Phase C: PL integration
-- `0729e21` — Phase B: T2 prereq tools
-- `5aa5558` — Phase A: scaffold
-- `05f4063` — (main) Exp 032: full Tucker replication
-
-**No PR yet for exp 033.** Open as ready-for-review after LB verdict lands.
+**Recent commits (latest first):** `09dea9e` (KD scaffold) · `fc47673` (distinct PP
+kernel) · `6417d52` (PP smoothing) · `3701a57` (LB scores + gap audit) ·
+`fa71d2b` (upload routing fix).
 
 ---
 
@@ -407,38 +160,33 @@ sweep init × sampler × focal/PL ratio around it as sensitivity ablations.
 | Model | LB | Notes |
 |---|---:|---|
 | Perch + SED MLP-only ensemble (exp 023) | **0.929** | Current overall best |
-| distilled-sed-kd-5fold (exp 032 Phase 2.A) | **0.915** | Best Tucker-SED ensemble |
 | v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
-| distilled-sed-kd (exp 032 Phase D, single-fold) | 0.906 | Best Tucker-SED single; exp 033 baseline |
-| **exp 033 target (single-fold CONFIRM)** | **≥ 0.920** | Antoine-style PL lift on top of 0.906 base |
-| distilled-sed-kd-hgnet (exp 032 Phase 2.D) | 0.901 | HGNet backbone; refuted as bottleneck |
-| distilled-sed-control (exp 032 Phase D) | 0.856 | Recipe alone w/o KD |
-
----
-
-## Key reference docs
-
-| Doc | What it contains |
-|---|---|
-| `experiments/033-own-teacher-pl/proposal.md` | Hypothesis, falsifiable matrix, method, per-batch grid, pool-size math, variables, limitations |
-| `experiments/033-own-teacher-pl/tasks.md` | Phase 0-4 itemized checklist (num_workers fix story in 4.1.0) |
-| `experiments/032-tucker-distilled-sed/results.md` | Phase D + Phase 2 LB results (CONFIRM verdict) |
-| `notes/kaggle-discussion-non-perch-limit.md` | Antoine + OverfitOracle + Boredom recipe disclosures |
-| `notes/2026-05-22-strategic-direction-tracks-A-B.md` | Track A (Tucker) → Track B (own-teacher PL) strategic context |
-| `experiments/025-iter-pseudo-labeling/results.md` | Prior failed PL attempt — uses 0.5 weight + StratifiedBatchSampler (the protocols exp 033 fixes) |
+| distilled-sed-kd-5fold (exp 032) | 0.915 | Best Tucker-SED ensemble |
+| distilled-sed-kd (exp 032, single-fold) | 0.906 | **The base exp 034 must beat** |
+| **exp 034 full-FT (in-domain backbone, no stack)** | **0.865** | bare; +0.009 vs ImageNet control |
+| distilled-sed-control (exp 032, ImageNet, no KD, +PP) | 0.856 | the apples-to-apples control |
+| exp 034 frozen-backbone | 0.819 | weaker variant |
+| exp 034 full-FT + PP | _pending_ | A/B for the PP lever |
+| exp 034 KD (detach / joint) | _pending_ | Phase K, awaiting launch |
 
 ---
 
 ## How to resume after disconnect
 
-1. **Read this file top-to-bottom** (it's the source of truth for current state).
-2. `git log --oneline -12` should show `11b25cd` at the top.
-3. `squeue -u $USER` → all GPU jobs done (or only stragglers).
-4. Verify 10 last.ckpt files exist (paths in § 1 above).
-5. Launch D.5 e2e validation in parallel (§ 2 above).
-6. Rank by e2e val/auroc → top-5 to LB Day 1.
-7. Per `feedback_user_runs_commands.md`: don't run SLURM jobs / Kaggle uploads / kernel pushes yourself — give Murilo the commands.
+1. Read this file top-to-bottom.
+2. `git log --oneline -6` → `09dea9e` at top; branch `mg/exp034-pretrained-backbone` (PR #54).
+3. Get the PP LB read (§1) and KD grid status (§2: launched? finished? not started?).
+4. Proceed per §1–4 above.
+5. **Per [[feedback_user_runs_commands]]: don't run SLURM jobs / Kaggle uploads / kernel
+   pushes yourself — give Murilo the commands.** Local pytest is fine (interactive venv
+   at `/storage/home/hcoda1/9/mgustineli3/clef/birdclef-2026/.venv`; see [[feedback_use_uv_venv]]).
+6. Venv policy: NEVER create a venv under home/project; SLURM jobs build on `$TMPDIR`
+   (CLAUDE.md). PACE compute is NOT the bottleneck — prefer parallel grids
+   ([[feedback_pace_compute_not_bottleneck]]).
 
-**Slack / Kaggle / W&B credentials**: in `user/murilo/.env` (gitignored).
-Loaded by `train.py`. If W&B login fails on SLURM, `WANDB_MODE=offline` or
-`--fast-dev-run` skips W&B entirely.
+**Prior context (exp 032/033):** exp 032 merged to main (`05f4063`); exp 033 own-teacher
+PL = REJECT (PR not merged, branch `mg/exp033-own-teacher-pl`). Detail in those experiments'
+`results.md`. Exp 034 superseded both as the active track.
+
+**Credentials**: `user/murilo/.env` (gitignored), loaded by `train.py`.
+```
