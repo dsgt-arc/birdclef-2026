@@ -717,3 +717,61 @@ class MixSamp(Sampler[list[int]]):
             f"sizes={self.sizes}, shares={self.shares}, bs={self.bs}, "
             f"nst={self.nst}, per_src=[{per_src_str}], seed={self.seed}"
         )
+
+
+class ClassBalancedMixSamp(MixSamp):
+    """MixSamp variant that draws a source's indices with per-sample weights
+    (Sydorskyi class-balancing) instead of uniform. Exp 036 Phase B.
+
+    Preserves MixSamp's exact per-source batch composition (e.g. 58 focal + 6 sc),
+    offsets, `__len__`, and the collate contract — only WHICH indices are drawn from a
+    weighted source changes (uniform → `rng.choice(p=weights)`). Class-balancing is
+    applied where Sydorskyi applies it (focal primary-label frequency); sc stays uniform.
+
+    Args:
+        (all MixSamp args) +
+        source_weights: dict `name → per-sample weight array (len == that source's size)`,
+            or `name → None` for uniform. Weights are normalized to a probability vector.
+    """
+
+    def __init__(
+        self,
+        sizes: list[int],
+        names: list[str],
+        shares: dict[str, float],
+        bs: int,
+        nst: int,
+        seed: int = 0,
+        source_weights: dict[str, np.ndarray | None] | None = None,
+    ):
+        super().__init__(sizes, names, shares, bs, nst, seed=seed)
+        self.source_weights: dict[str, np.ndarray | None] = {}
+        for name, size in zip(self.names, self.sizes, strict=False):
+            w = (source_weights or {}).get(name)
+            if w is None:
+                self.source_weights[name] = None
+                continue
+            w = np.asarray(w, dtype=np.float64)
+            if len(w) != size:
+                raise ValueError(f"source_weights[{name!r}] length {len(w)} != source size {size}")
+            total = w.sum()
+            if not np.isfinite(total) or total <= 0:
+                raise ValueError(f"source_weights[{name!r}] must sum to a positive finite value")
+            self.source_weights[name] = w / total  # probability vector for rng.choice
+
+    def __iter__(self) -> Iterator[list[int]]:
+        for _ in range(self.nst):
+            batch: list[int] = []
+            for off, size, n, name in zip(
+                self.offsets, self.sizes, self.per_src, self.names, strict=False
+            ):
+                if n <= 0 or size <= 0:
+                    continue
+                w = self.source_weights.get(name)
+                if w is not None:
+                    idxs = self.rng.choice(size, size=n, replace=True, p=w)
+                else:
+                    idxs = self.rng.integers(0, size, size=n)
+                batch.extend([off + int(i) for i in idxs])
+            self.rng.shuffle(batch)
+            yield batch

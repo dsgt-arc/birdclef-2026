@@ -33,8 +33,11 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchmetrics
 
+from birdclef.classifiers import MultiLabelTopKAccuracy
 from birdclef.losses.focal_bce import FocalLossBCE
+from birdclef.metrics import TuckerMacroAP, TuckerMacroAUC
 from birdclef.preprocessing.random_filtering import RandomFiltering
 
 logger = logging.getLogger(__name__)
@@ -91,6 +94,12 @@ class XCPretrainFinetuneModule(pl.LightningModule):
         perch_embed_dim: int = 1536,
         alpha_distill: float = 1.0,
         kd_detach_cls_features: bool = True,
+        threshold: float = 0.5,
+        optimizer_mode: str = "uniform",
+        backbone_lr_mult: float = 1.0,
+        warmup_epochs: int = 0,
+        warmup_start_factor: float = 0.04,
+        unfreeze_backbone_epoch: int = 0,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["model"])
@@ -109,7 +118,26 @@ class XCPretrainFinetuneModule(pl.LightningModule):
             else None
         )
 
+        # --- LR-schedule knobs (Phase A) ---------------------------------------
+        self.optimizer_mode = optimizer_mode
+        self.backbone_lr_mult = backbone_lr_mult
+        self.warmup_epochs = warmup_epochs
+        self.warmup_start_factor = warmup_start_factor
+        self.unfreeze_backbone_epoch = unfreeze_backbone_epoch
+        if unfreeze_backbone_epoch > 0 and freeze_backbone:
+            raise ValueError(
+                "freeze_backbone=True and unfreeze_backbone_epoch>0 are mutually exclusive — "
+                "A3 gradual-unfreeze owns the freezing (and keeps the backbone in the optimizer)."
+            )
+
         if freeze_backbone:
+            for p in self.model.backbone.parameters():
+                p.requires_grad = False
+        # A3 gradual unfreeze: freeze the backbone now; on_train_epoch_start unfreezes it at
+        # `unfreeze_backbone_epoch`. Unlike freeze_backbone, the params STAY in the optimizer
+        # (configure_optimizers includes frozen params when unfreeze_backbone_epoch>0) so they
+        # start updating immediately on unfreeze.
+        if unfreeze_backbone_epoch > 0:
             for p in self.model.backbone.parameters():
                 p.requires_grad = False
 
@@ -139,9 +167,26 @@ class XCPretrainFinetuneModule(pl.LightningModule):
                 f"detach_cls_features={kd_detach_cls_features}, onnx={perch_onnx_path}"
             )
 
-        from birdclef.metrics import TuckerMacroAUC
-
-        self.val_auroc = TuckerMacroAUC(num_labels=num_classes)
+        # Full metric suite (matches exp 032 distilled_sed_finetune) on BOTH train + val,
+        # logged to W&B + TB. Keeps `self.val_auroc` (tests depend on the name).
+        # NOTE: this module aggregates CLIP-ONLY (clipwise_pred_long / _logits_long) — no
+        # clip+frame blend — so metrics read clipwise_pred_long directly.
+        self.threshold = threshold
+        for split in ("train", "val"):
+            setattr(self, f"{split}_cmap", TuckerMacroAP(num_labels=num_classes))
+            setattr(self, f"{split}_auroc", TuckerMacroAUC(num_labels=num_classes))
+            setattr(
+                self,
+                f"{split}_f1_macro",
+                torchmetrics.F1Score(task="multilabel", average="macro", num_labels=num_classes),
+            )
+            setattr(
+                self,
+                f"{split}_f1_micro",
+                torchmetrics.F1Score(task="multilabel", average="micro", num_labels=num_classes),
+            )
+            setattr(self, f"{split}_top1", MultiLabelTopKAccuracy(k=1))
+            setattr(self, f"{split}_top5", MultiLabelTopKAccuracy(k=5))
 
     # ---- helpers -----------------------------------------------------------
     def _smooth(self, targets: torch.Tensor) -> torch.Tensor:
@@ -219,13 +264,38 @@ class XCPretrainFinetuneModule(pl.LightningModule):
         loss = cls_loss + self.alpha_distill * distill_loss
         return loss, out, labels, cls_loss, distill_loss
 
+    def _update_metrics(self, split: str, out: dict, labels: torch.Tensor) -> None:
+        """Update the `{split}_*` metric accumulators from a forward output (clip-only)."""
+        probs = out["clipwise_pred_long"]
+        preds = (probs > self.threshold).int()
+        li = labels.int()
+        getattr(self, f"{split}_cmap").update(probs, li)
+        getattr(self, f"{split}_auroc").update(probs, li)
+        getattr(self, f"{split}_f1_macro").update(preds, li)
+        getattr(self, f"{split}_f1_micro").update(preds, li)
+        getattr(self, f"{split}_top1").update(probs, li)
+        getattr(self, f"{split}_top5").update(probs, li)
+
+    def _log_reset_metrics(self, split: str) -> None:
+        """Log + reset the `{split}_*` metrics at epoch end."""
+        self.log(f"{split}/cmap", getattr(self, f"{split}_cmap").compute(), prog_bar=True)
+        self.log(f"{split}/auroc", getattr(self, f"{split}_auroc").compute(), prog_bar=True)
+        if split == "val":
+            self.log("val/n_evaluable", float(self.val_auroc.n_evaluable()))
+        self.log(f"{split}/f1_macro", getattr(self, f"{split}_f1_macro").compute())
+        self.log(f"{split}/f1_micro", getattr(self, f"{split}_f1_micro").compute())
+        self.log(f"{split}/top1_acc", getattr(self, f"{split}_top1").compute())
+        self.log(f"{split}/top5_acc", getattr(self, f"{split}_top5").compute())
+        for name in ("cmap", "auroc", "f1_macro", "f1_micro", "top1", "top5"):
+            getattr(self, f"{split}_{name}").reset()
+
     def forward(self, wave: torch.Tensor) -> dict:
         return self.model(wave)
 
     # ---- Lightning hooks ---------------------------------------------------
     def training_step(self, batch, batch_idx):
         if self.use_perch_distill:
-            loss, _, labels, cls_loss, distill_loss = self._step_kd(batch)
+            loss, out, labels, cls_loss, distill_loss = self._step_kd(batch)
             bs = labels.shape[0]
             self.log(
                 "train/cls_loss",
@@ -244,31 +314,95 @@ class XCPretrainFinetuneModule(pl.LightningModule):
                 batch_size=bs,
             )
         else:
-            loss, _, labels = self._step(batch, training=True)
+            loss, out, labels = self._step(batch, training=True)
             bs = labels.shape[0]
         self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=bs)
+        # hengck23 overfit proxy: std of the clip logits (inflates as the model overconfident).
+        self.log(
+            "train/logit_std",
+            out["clipwise_logits_long"].detach().std(),
+            on_step=True,
+            on_epoch=True,
+            batch_size=bs,
+        )
+        self._update_metrics("train", out, labels)
         return loss
+
+    def on_train_epoch_end(self):
+        self._log_reset_metrics("train")
 
     def validation_step(self, batch, batch_idx):
         loss, out, labels = self._step(batch, training=False)
-        self.val_auroc.update(out["clipwise_pred_long"], labels.int())
+        self._update_metrics("val", out, labels)
         self.log("val/loss", loss, prog_bar=True, on_epoch=True, batch_size=labels.shape[0])
         return loss
 
     def on_validation_epoch_end(self):
-        self.log("val/auroc", self.val_auroc.compute(), prog_bar=True)
-        self.val_auroc.reset()
+        self._log_reset_metrics("val")
+
+    def on_train_epoch_start(self):
+        """A3 gradual unfreeze: flip backbone requires_grad on at the configured epoch."""
+        if self.unfreeze_backbone_epoch > 0 and self.current_epoch == self.unfreeze_backbone_epoch:
+            for p in self.model.backbone.parameters():
+                p.requires_grad = True
+            logger.info(f"Gradual unfreeze: backbone unfrozen at epoch {self.current_epoch}")
+
+    def _param_groups(self) -> tuple[list, list]:
+        """Split params into (backbone, everything-else) by id — KD distill_head lands in 'else'."""
+        backbone_ids = {id(p) for p in self.model.backbone.parameters()}
+        backbone = [p for p in self.parameters() if id(p) in backbone_ids]
+        other = [p for p in self.parameters() if id(p) not in backbone_ids]
+        return backbone, other
 
     def configure_optimizers(self):
-        params = [p for p in self.parameters() if p.requires_grad]
-        opt = torch.optim.AdamW(
-            params, lr=self.lr, weight_decay=self.weight_decay, eps=1e-8, betas=(0.9, 0.999)
-        )
+        # A3 keeps frozen backbone params in the optimizer so they update on unfreeze.
+        include_frozen = self.unfreeze_backbone_epoch > 0
+
+        def _keep(ps):
+            return ps if include_frozen else [p for p in ps if p.requires_grad]
+
+        if self.optimizer_mode == "discriminative":
+            bb, hd = self._param_groups()
+            groups = [
+                {"params": _keep(hd), "lr": self.lr},
+                {"params": _keep(bb), "lr": self.lr * self.backbone_lr_mult},
+            ]
+            opt = torch.optim.AdamW(
+                groups, weight_decay=self.weight_decay, eps=1e-8, betas=(0.9, 0.999)
+            )
+        else:  # "uniform" — byte-identical to the prior single-group path
+            params = _keep(list(self.parameters()))
+            opt = torch.optim.AdamW(
+                params, lr=self.lr, weight_decay=self.weight_decay, eps=1e-8, betas=(0.9, 0.999)
+            )
+
         try:
             total_steps = int(self.trainer.estimated_stepping_batches)
         except (RuntimeError, AttributeError):
             total_steps = self.max_epochs * 100  # standalone fallback (unit tests)
-        sched = torch.optim.lr_scheduler.CosineAnnealingLR(
-            opt, T_max=max(total_steps, 1), eta_min=self.eta_min
-        )
+        total_steps = max(total_steps, 1)
+
+        if self.warmup_epochs and self.warmup_epochs > 0:
+            steps_per_epoch = max(total_steps // max(self.max_epochs, 1), 1)
+            warmup_steps = self.warmup_epochs * steps_per_epoch
+            if warmup_steps >= total_steps:
+                warmup_steps = 0  # guard: warmup can't exceed the run
+            if warmup_steps > 0:
+                warmup = torch.optim.lr_scheduler.LinearLR(
+                    opt, start_factor=self.warmup_start_factor, total_iters=warmup_steps
+                )
+                cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    opt, T_max=total_steps - warmup_steps, eta_min=self.eta_min
+                )
+                sched = torch.optim.lr_scheduler.SequentialLR(
+                    opt, [warmup, cosine], milestones=[warmup_steps]
+                )
+            else:
+                sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    opt, T_max=total_steps, eta_min=self.eta_min
+                )
+        else:
+            sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+                opt, T_max=total_steps, eta_min=self.eta_min
+            )
         return {"optimizer": opt, "lr_scheduler": {"scheduler": sched, "interval": "step"}}

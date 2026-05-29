@@ -1,0 +1,6 @@
+# A1 — uniform lower LR. Tests whether exp 034's 0.879 was feature-washout from too-high
+# full-FT LR (1e-4). Everything else = exp 034 fullft (via _common).
+inherit: _common.yaml
+run_name: "a1-lower-lr"
+training:
+  lr: 5.0e-5

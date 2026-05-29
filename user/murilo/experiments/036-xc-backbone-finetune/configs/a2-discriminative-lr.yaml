@@ -1,0 +1,10 @@
+# A2 — discriminative (layer-wise) LR: low LR on the in-domain backbone (preserve XC features),
+# higher LR on the randomly-init SED head. The standard fix for fine-tuning a strong pretrained
+# backbone. head_lr = lr = 1e-3; backbone_lr = lr * backbone_lr_mult = 1e-5. + 2-epoch warmup.
+inherit: _common.yaml
+run_name: "a2-discriminative-lr"
+training:
+  optimizer_mode: "discriminative"
+  lr: 1.0e-3 # head group
+  backbone_lr_mult: 0.01 # backbone group → 1e-5
+  warmup_epochs: 2

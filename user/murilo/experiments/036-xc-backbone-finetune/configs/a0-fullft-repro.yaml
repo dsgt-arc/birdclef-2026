@@ -1,0 +1,7 @@
+# A0 — reproduce exp 034 full-FT (LB 0.879) on the exp 036 harness.
+# Parity baseline (Gate 6): val/auroc trajectory must track exp 034 fullft (W&B gvx4, 0.883).
+# Identical training to exp 034 fullft EXCEPT save_top_k=-1 + the (logging-only) metric suite.
+# All recipe values come from _common.yaml (max_epochs 50, lr 1e-4, grad_clip 1.0,
+# freeze_backbone false, optimizer_mode uniform, no warmup, no class balance).
+inherit: _common.yaml
+run_name: "a0-fullft-repro"

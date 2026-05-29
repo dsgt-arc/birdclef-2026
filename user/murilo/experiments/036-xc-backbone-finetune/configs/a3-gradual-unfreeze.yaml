@@ -1,0 +1,8 @@
+# A3 — gradual unfreeze: freeze the backbone for the first 5 epochs (head adapts to the frozen
+# XC features), then unfreeze. Protects the in-domain features from being washed out early.
+# (freeze_backbone stays false — the unfreeze hook owns the freezing; mutually exclusive.)
+inherit: _common.yaml
+run_name: "a3-gradual-unfreeze"
+training:
+  unfreeze_backbone_epoch: 5
+  warmup_epochs: 2

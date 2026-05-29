@@ -43,12 +43,14 @@ from torch.utils.data import ConcatDataset, DataLoader
 
 from .distilled_sed_dataset import (
     PLDS,
+    ClassBalancedMixSamp,
     FocalDS,
     GTDatasetWrapper,
     MixSamp,
     ScDS,
     _default_audio_loader,
 )
+from .xcpretrain_sampler import compute_class_weights
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +357,13 @@ class DistilledSEDDataModule(pl.LightningDataModule):
         pseudo_label_pl_share: float = 0.5,
         pseudo_label_exclude_labeled_sc: bool = True,
         soundscape_dir: str | Path | None = None,
+        # --- Exp 036: Sydorskyi-faithful class-balanced focal sampling (Phase B) ---
+        # When False (default), behaves exactly as exp 032/034 (MixSamp uniform draws).
+        # When True (non-PL path only), focal indices are drawn with class-balanced
+        # weights (sc stays uniform), preserving the focal/sc batch composition.
+        use_class_balanced_sampler: bool = False,
+        class_balance_mode: str = "balanced",  # "balanced" (1/n_c) | "sqrt" ((n_c/N)^power)
+        class_balance_power: float = -0.5,
     ):
         super().__init__()
         self._focal_df_in = focal_df
@@ -394,6 +403,11 @@ class DistilledSEDDataModule(pl.LightningDataModule):
                 "soundscape_dir is required when pseudo_label_path is set "
                 "(PLDS needs it to construct audio file paths)."
             )
+
+        # Exp 036 Phase B: class-balanced focal sampling (defaults off → exp 032 MixSamp)
+        self.use_class_balanced_sampler = use_class_balanced_sampler
+        self.class_balance_mode = class_balance_mode
+        self.class_balance_power = class_balance_power
 
         # Computed in setup
         self.focal_df: pd.DataFrame | None = None
@@ -584,17 +598,37 @@ class DistilledSEDDataModule(pl.LightningDataModule):
 
         # --- Exp 032 default path: focal + sc only (no PL) ---
         concat = ConcatDataset([focal_ds, sc_ds])
-        sampler = MixSamp(
-            sizes=[len(focal_ds), len(sc_ds)],
-            names=["focal", "sc"],
-            shares={"focal": self.focal_share, "sc": self.sc_share},
-            bs=self.batch_size,
-            nst=self.steps_per_epoch,
-            seed=seed,
-        )
+        if self.use_class_balanced_sampler:
+            # Exp 036 Phase B: class-balance the FOCAL draws by primary-label frequency
+            # (Sydorskyi); sc stays uniform. Targets are aligned to FocalDS row order
+            # (FocalDS.df is the reset-indexed train-fold df → iloc(i) matches getitem(i)).
+            focal_targets = focal_ds.df["primary_label"].astype(str).tolist()
+            assert len(focal_targets) == len(focal_ds), "focal targets misaligned with FocalDS"
+            cw = compute_class_weights(
+                focal_targets, mode=self.class_balance_mode, power_value=self.class_balance_power
+            )
+            focal_weights = np.array([cw[t] for t in focal_targets], dtype=np.float64)
+            sampler = ClassBalancedMixSamp(
+                sizes=[len(focal_ds), len(sc_ds)],
+                names=["focal", "sc"],
+                shares={"focal": self.focal_share, "sc": self.sc_share},
+                bs=self.batch_size,
+                nst=self.steps_per_epoch,
+                seed=seed,
+                source_weights={"focal": focal_weights, "sc": None},
+            )
+        else:
+            sampler = MixSamp(
+                sizes=[len(focal_ds), len(sc_ds)],
+                names=["focal", "sc"],
+                shares={"focal": self.focal_share, "sc": self.sc_share},
+                bs=self.batch_size,
+                nst=self.steps_per_epoch,
+                seed=seed,
+            )
         logger.info(
             f"train_dataloader: focal={len(focal_ds)}, sc={len(sc_ds)}, "
-            f"sampler={sampler.extra_repr()}"
+            f"class_balanced={self.use_class_balanced_sampler}, sampler={sampler.extra_repr()}"
         )
         return DataLoader(
             concat,

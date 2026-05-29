@@ -1,0 +1,9 @@
+# B1 — Phase B: Sydorskyi-faithful class-balanced focal sampling (targets the diagnosed
+# long-tail / soundscape-only failure). Inherits the lead Phase-A cell (a2-discriminative-lr);
+# RE-POINT this `inherit:` to whichever Phase-A cell wins on the LB before training B1.
+# (sum-clip mixup + RandomFiltering already on; BG-noise deferred — see proposal.md.)
+inherit: a2-discriminative-lr.yaml
+run_name: "b1-class-balanced"
+data:
+  use_class_balanced_sampler: true
+  class_balance_mode: "balanced" # EffNetV2-S branch (1/n_c)
