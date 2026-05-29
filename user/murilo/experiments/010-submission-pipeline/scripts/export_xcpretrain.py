@@ -164,8 +164,23 @@ def main():
     if max_diff > 1e-4:
         raise RuntimeError(f"ONNX parity FAILED: max diff {max_diff:.3e} > 1e-4")
 
-    # species_list.json
+    # species_list.json (reference) + species_mapping.json (what the kernel loads).
+    # Emit the mapping DIRECTLY here (234-identity) so the export is self-sufficient —
+    # the kernel reads idx_to_name_2026; relying on a separate `cp` of the canonical
+    # mapping is fragile (a stale leftover shipped the 41-overlap map once). Our model
+    # is 234-class on the 2026 taxonomy, so idx i ↔ species_list[i] is identity.
     (output_dir / "species_list.json").write_text(json.dumps(species_list, indent=2))
+    idx_to_name_2026 = {str(i): name for i, name in enumerate(species_list)}
+    species_mapping = {
+        "model_species": species_list,
+        "birdclef2026_species": species_list,
+        "idx_to_name_2026": idx_to_name_2026,
+        "idx_2025_to_name_2026": idx_to_name_2026,  # backward-compat key for the kernel
+    }
+    (output_dir / "species_mapping.json").write_text(json.dumps(species_mapping, indent=2))
+    logger.info(
+        f"species_mapping.json: {len(idx_to_name_2026)} idx_to_name_2026 entries (234-identity)"
+    )
 
     # mel_config.json — signals the kernel to feed RAW AUDIO (mel is in the ONNX).
     mel_config = {
