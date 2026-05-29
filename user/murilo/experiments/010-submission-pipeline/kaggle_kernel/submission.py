@@ -1450,9 +1450,16 @@ def predict_soundscape_xcpretrain(
     The ONNX is the FULL pipeline (raw audio → nnAudio mel → backbone → SED head
     → clipwise_pred_long PROBABILITIES), so there is NO kernel-side mel computation
     → zero mel-mismatch risk. Per non-overlapping 5s segment: load audio →
-    ONNX(audio) → (1, 234) probs → map to 234 columns. No TTA / smoothing / priors
-    in this first-LB read (isolates the in-domain-backbone lever). `taxa_mapping`
-    / `metadata_priors` accepted only to match the dispatch signature.
+    ONNX(audio) → (1, 234) probs → stack windows → 5-tap Gaussian temporal smooth
+    in LOGIT space → map to 234 columns.
+
+    PP (added 2026-05-28): 5-tap Gaussian smoothing across windows, mirroring exp
+    032's Tucker 0.906 recipe (`predict_soundscape_tucker`). The ONNX returns
+    prob-space `clipwise_pred_long`, so we inverse-sigmoid → smooth → sigmoid back;
+    logit-space matches the winning recipe + the SED logit-space-aggregation finding.
+    Toggled by `mel_cfg["gaussian_smooth_logit_space"]` (default True). Still no TTA
+    / TopN / priors. `taxa_mapping` / `metadata_priors` accepted only to match the
+    dispatch signature.
     """
     del taxa_mapping, metadata_priors  # unused, intentional
 
@@ -1482,6 +1489,24 @@ def predict_soundscape_xcpretrain(
     if not window_probs:
         return []
     probs_matrix = np.stack(window_probs)  # (n_windows, 234) — already probabilities
+
+    # 5-tap Gaussian temporal smoothing in LOGIT space (mirrors exp 032's Tucker
+    # 0.906 recipe — see predict_soundscape_tucker). ONNX returns prob-space
+    # clipwise_pred_long, so inverse-sigmoid → smooth across windows → sigmoid back.
+    if mel_cfg.get("gaussian_smooth_logit_space", True) and probs_matrix.shape[0] >= 3:
+        eps = 1e-7
+        p = np.clip(probs_matrix, eps, 1 - eps)
+        logits_matrix = np.log(p / (1 - p))  # inverse-sigmoid (pseudo-logit)
+        kernel = np.array(
+            mel_cfg.get("gaussian_kernel", [0.1, 0.2, 0.4, 0.2, 0.1]), dtype=np.float32
+        )
+        kernel = kernel / kernel.sum()  # safety re-normalize if cfg drifts
+        pad = len(kernel) // 2
+        padded = np.pad(logits_matrix, ((pad, pad), (0, 0)), mode="edge")
+        smoothed = np.zeros_like(logits_matrix)
+        for c in range(logits_matrix.shape[1]):
+            smoothed[:, c] = np.convolve(padded[:, c], kernel, mode="valid")
+        probs_matrix = sigmoid(smoothed)
 
     predictions = []
     for i, end_time in enumerate(segment_times):
@@ -1795,7 +1820,8 @@ def main():
     if use_xcpretrain:
         print(
             "Using XCPretrain full-model audio-input ONNX (raw audio → in-graph "
-            "nnAudio mel → backbone → SED head → probs). No kernel mel, no TTA/PP."
+            "nnAudio mel → backbone → SED head → probs) → 5-tap LOGIT-space Gauss "
+            "smooth. No kernel mel, no TTA/priors."
         )
     elif use_tucker_ensemble:
         print(

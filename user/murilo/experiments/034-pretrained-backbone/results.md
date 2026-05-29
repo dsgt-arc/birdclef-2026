@@ -244,3 +244,24 @@ PP/priors +0.004–0.020, **PL +0.027** (Sydorskyi, disclosed). exp 034 has **no
 plainly: *PL is a multiplier on a strong base.* We validated the base transfers; we have
 not added the multipliers. Nothing is mechanically wrong (Gate 1 bit-identical, kernel
 parity 9e-7) — the configuration is just bare.
+
+### What Sydorskyi's own inference pipeline actually does (audited `vendor/sydorskyi-2025/` @ `053594f`, 2026-05-29)
+
+Checked `code_base/inefernce/inference_class.py`, `inference_configs/*.py`, `scripts/main_inference_and_compile.py`, and the submission notebooks. His PP is **minimal** — the 0.925/0.928 lift came from training-side + ensemble levers, NOT inference smoothing:
+
+- **No temporal smoothing.** Zero `smooth`/`convolve`/`ndimage`/`savgol` anywhere. (So smoothing is *our* 2026 lever, not his — our exp 032 LB history justifies it independently.)
+- **No TTA.** `step=None` → non-overlapping 5s windows; `lookback/lookahead=None` → no temporal context.
+- **Per-segment prediction**, output is `clipwise_pred_long` (a *probability*); `use_sigmoid=False` because the head already outputs probs — **identical to our exp 034 ONNX**.
+- **Ensemble averaging is PROB-space**, not logit-space: `mean`, `vlom` (avg of geometric-mean & quadratic-mean), or `gaus` (RMS). → For Phase F (5-fold) on this head, prefer **prob-space fold averaging (mean/vlom/gaus)** over the logit-space fold-mean our Tucker ensemble path uses.
+- **SWA** weight-averaging across checkpoints; **Google-model (Perch/SurfPerch) blend**; heavy **PL** (`PseudoF2…P04…` in the exp name) + `AddRareBirds`; FocalBCE + label-smoothing-fix; `late_normalize`.
+
+**Implication for our PP choice:** his head is prob-space, but we ship **logit-space** 5-tap Gaussian smoothing anyway (user decision, 2026-05-29) because it mirrors *our* 0.906 Tucker recipe — our strongest 2026 prior. Prob-space is the fast follow-up if logit underperforms the 0.865 baseline.
+
+### PP-smoothing change (2026-05-29) — cheapest lever first
+
+Added 5-tap logit-space Gaussian smoothing (`[0.1,0.2,0.4,0.2,0.1]`, edge-padded) to
+`predict_soundscape_xcpretrain` in the exp 010 kernel: ONNX prob → inverse-sigmoid →
+smooth across windows → sigmoid. Toggled by `mel_cfg["gaussian_smooth_logit_space"]`
+(default True; baked into both models' `mel_config.json`). Math sanity-tested (shape/finite,
+constant-in-time ≈ identity 6e-8, <3-window skip, extreme-prob clamp, spike-bleed). **No
+retrain / re-export — kernel re-push only.** This is the A/B vs the no-smooth 0.865 baseline.

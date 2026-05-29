@@ -192,6 +192,11 @@ def main():
         "num_classes": num_classes,
         "run_name": cfg["run_name"],
         "backbone": mcfg["backbone"],
+        # PP: 5-tap Gaussian temporal smoothing in LOGIT space across windows
+        # (mirrors exp 032's Tucker 0.906 recipe). Kernel inverse-sigmoids the
+        # prob-space ONNX output → smooths → sigmoids back. Set false to disable.
+        "gaussian_smooth_logit_space": True,
+        "gaussian_kernel": [0.1, 0.2, 0.4, 0.2, 0.1],
     }
     (output_dir / "mel_config.json").write_text(json.dumps(mel_config, indent=2))
     logger.info(f"Saved species_list.json + mel_config.json → {output_dir}")
