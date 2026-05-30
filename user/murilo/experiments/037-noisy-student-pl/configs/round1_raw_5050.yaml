@@ -1,0 +1,6 @@
+# Round 1 — PRIMARY cell. Raw ensemble-teacher blend (faithful 0.929, well-calibrated:
+# frac>0.5=2.6%), mixsamp ~50/50 GT:PL. The main bet. Inherits _common.yaml.
+run_name: "2026-exp037-r1-raw-5050"
+pseudo_label:
+  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v037-ens-raw/ensemble_pseudo_labels.parquet"
+  sampler: "mixsamp"
