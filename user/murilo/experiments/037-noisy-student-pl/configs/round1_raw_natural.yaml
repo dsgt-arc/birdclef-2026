@@ -1,7 +1,0 @@
-# Round 1 — sampler ablation. Raw blend, uniform sampler (natural pool proportions
-# ~17% focal / 83% PL — exp 033's setting, here with the CORRECTED ensemble teacher).
-# Isolates the GT:PL-ratio lever vs round1_raw_5050. Inherits _common.yaml.
-run_name: "2026-exp037-r1-raw-natural"
-pseudo_label:
-  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v037-ens-raw/ensemble_pseudo_labels.parquet"
-  sampler: "uniform"

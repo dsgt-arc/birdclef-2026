@@ -66,20 +66,35 @@ LB is the arbiter (offline labeled-SS is a rough screen only — [[project_cv_me
   `analysis/data/cv_trust/` OOF scaffold (exp 035) + `macro_auc_skip_empty`; record the teacher's
   held-out macro-AUC as the reference bar.
 - **Phase 1** — `scripts/generate_ensemble_pl.py`: prob-space blend `0.5·perch_234_probs +
-  0.5·sigmoid(mean_folds(sed_logits))`, optional transform, write parquet `(filename, chunk_idx, +234
-  soft-prob cols)` over all 10,658 files. **No filtering.** Generate 3 variants:
-  `raw` (T=1, γ=1), `T-soften` (T=2), `g-soften` (γ=0.5). (Perch probe is diffuse / SED is peaked → the
-  right transform is uncertain a priori, hence a small grid, not a blind p^0.5.)
-- **Phase 2** — round-1 student. Clone exp 032/033 wiring (`DistilledSEDFinetuneModule` soft-BCE +
-  per-sample loss_weight, `DistilledSEDDataModule` `pseudo_label_*`, `PLDS`, `MixSamp`). **Keep KD on.**
-  4-cell single-fold grid (parquet {raw, soften} × sampler {mixsamp 50/50, uniform natural}); screen on
-  Phase-0 val; **Gate A**: student ≥ teacher → 5-fold the winner; export + LB.
+  0.5·sigmoid(mean_folds(sed_logits))`, transform, write parquet `(filename, chunk_idx, +234 soft-prob
+  cols)` over all 10,658 files. **No filtering.** Variants `raw` (T=1, γ=1) + `t2` (T=2,
+  temperature-soften). **g05 (γ=0.5) DROPPED** — empirically over-inflates our already-sparse blend
+  (frac>0.5: 0.95% → 56%); power-softening assumes a *peaked* teacher, ours isn't → temperature is the
+  principled soften. Generator GUARDS against sharpening (T≥1, γ≤1 only).
+- **Phase 2** — round-1 **ablation factorial** (15 single-fold cells; PACE compute is not the
+  bottleneck — [[feedback_pace_compute_not_bottleneck]]). Built on exp 032/033 wiring
+  (`DistilledSEDFinetuneModule` soft-BCE / SoftAUC, `DistilledSEDDataModule` `pseudo_label_*`, `PLDS`,
+  `MixSamp` 50/50). Axes:
+  - **KD routing** {A on/detach (PL→head), B off/e2e (PL→whole student), C on/no-detach (PL→both)} —
+    the structural lever exp 033 never tested (it was A only).
+  - **PL transform** {raw, t2}; **PL aug** {False control, True noise-the-student}.
+  - → A/B/C × {raw,t2} × {augF,augT} = **12 soft-BCE** + **3 SoftAUC** (raw·augT per KD) = **15**.
+  - **Budget:** 25 ep (= 0.906 baseline) · `steps_per_epoch=500` (GT-only — excludes the 127K PL pool so
+    it's not a 5× balloon) · `save_top_k=-1` → best-checkpoint; extend B/C per-cell if val still climbing.
+  - **LB screening (LB-limited + offline can't rank):** train all 15, use offline OOF only to *eliminate
+    broken cells + read per-axis direction*, then LB **~5 mechanism-diverse** cells (best per KD regime +
+    best SoftAUC + faithful reference). 5-fold + ensemble-blend the LB winner.
 - **Phase 3** — round 2 (only if round 1 LB-green): promote round-1 student into the teacher,
   regenerate softened PLs, retrain, LB. **Stop if ensemble gain < +0.005.**
 - **Phase 4** — final picks: #1 (safe) = reproduced 0.929; #2 (upside) = best PL-student blend.
 
-**Explicitly AVOID (exp 033 failure modes):** sharpening (T<1 / γ>1); chunk-discard 0.5 + trim 0.1
-filters; own-teacher (SED-only) PLs; loss_weight=0.5.
+**Explicitly AVOID (exp 033 failure modes):** sharpening (T<1 / γ>1, generator-guarded); chunk-discard
+0.5 + trim 0.1 filters; own-teacher (SED-only) PLs; loss_weight=0.5.
+
+**New code (flag-gated, defaults = exp 032/033 behavior, all unit-tested):** `kd_detach_head` (cell C),
+`loss_type`/`SoftAUCLoss` (+ `train/cls_loss` component log), `pseudo_label_aug` (aug control),
+`train/logit_std` (overfit proxy), GT-only `steps_per_epoch` (via config). Full metric suite
+(cmap/auroc/f1/top-k/loss + n_evaluable + LR + logit_std) logs to **W&B and TensorBoard**.
 
 ## 5. Reuse
 

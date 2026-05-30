@@ -46,6 +46,7 @@ import torchmetrics
 
 from birdclef.classifiers import MultiLabelTopKAccuracy
 from birdclef.lightning.sed_finetune import DistillHead, PerchTeacher
+from birdclef.losses import soft_auc_loss
 
 logger = logging.getLogger(__name__)
 
@@ -120,9 +121,17 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
         perch_embed_dim: int = 1536,
         alpha_distill: float = 1.0,
         per_sample_mel_norm: bool = True,
+        kd_detach_head: bool = True,
+        loss_type: str = "bce",
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform", "spec_augment"])
+
+        if loss_type not in ("bce", "softauc"):
+            raise ValueError(f"loss_type must be 'bce' or 'softauc', got {loss_type!r}")
+        # kd_detach_head=False (exp 037 cell C) lets the cls-loss gradient reach the
+        # backbone IN ADDITION to the KD MSE (PL labels shape the representation, not
+        # just the head). Default True = Tucker/exp 032/033 behavior (KD-only backbone).
 
         if mel_transform is None:
             raise ValueError(
@@ -251,6 +260,15 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
         blend in metrics.
         """
         frame_max = frame_logits.max(dim=-1).values  # (B, num_classes)
+
+        # --- Exp 037: SoftAUC (ranking) loss path ---
+        # Pairwise/batch-level loss → the per-sample `loss_weight` does not apply
+        # (it is 1.0 throughout our PL setup anyway). Same dual-supervision blend.
+        if self.hparams.loss_type == "softauc":
+            cls = self.hparams.clipwise_weight * soft_auc_loss(clip_logits, labels.float())
+            frm = self.hparams.framewise_weight * soft_auc_loss(frame_max, labels.float())
+            return cls + frm, frame_max
+
         if loss_weight is None:
             bce_clip = F.binary_cross_entropy_with_logits(clip_logits, labels.float())
             bce_frame = F.binary_cross_entropy_with_logits(frame_max, labels.float())
@@ -330,7 +348,9 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
             features = self.encoder.forward_features(mel)
             distill_emb = self.distill_head(features)  # grad → backbone
             distill_loss = F.mse_loss(distill_emb, perch_emb)
-            features_for_head = features.detach()  # cls branch: no backbone grad
+            # kd_detach_head=True (default): cls branch gets no backbone grad (Tucker).
+            # False (exp 037 cell C): cls loss ALSO trains the backbone (PL → representation).
+            features_for_head = features.detach() if self.hparams.kd_detach_head else features
             clip_logits, frame_logits = self.sed_head(features_for_head)
         else:
             clip_logits, frame_logits = self(mel)
@@ -344,12 +364,22 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
         cls_loss, frame_max = self._dual_supervision_loss(
             clip_logits, frame_logits, labels, loss_weight=loss_weight
         )
+        # Always log the classification-loss component (= BCE or SoftAUC value,
+        # per loss_type) so the SoftAUC runs are interpretable on W&B/TB.
+        self.log("train/cls_loss", cls_loss, on_step=True, on_epoch=True, prog_bar=True)
         if distill_loss is not None:
             loss = cls_loss + self.hparams.alpha_distill * distill_loss
-            self.log("train/cls_loss", cls_loss, on_step=True, on_epoch=True, prog_bar=True)
             self.log("train/dist_loss", distill_loss, on_step=True, on_epoch=True, prog_bar=True)
         else:
             loss = cls_loss
+        # Overfit proxy (exp 036): spread of clip logits. Rising std with flat/falling
+        # val metrics = memorization.
+        self.log(
+            "train/logit_std",
+            clip_logits.detach().float().std(),
+            on_step=False,
+            on_epoch=True,
+        )
 
         # --- 5. Metrics ---
         probs = self._blended_probs(clip_logits, frame_max)

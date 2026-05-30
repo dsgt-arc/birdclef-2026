@@ -473,6 +473,9 @@ def main():
         ),
         perch_embed_dim=training_cfg.get("perch_embed_dim", 1536),
         alpha_distill=training_cfg.get("alpha_distill", 1.0),
+        # --- Exp 037 levers ---
+        kd_detach_head=training_cfg.get("kd_detach_head", True),
+        loss_type=training_cfg.get("loss_type", "bce"),
     )
 
     # ========================================================================
@@ -626,6 +629,7 @@ def main():
         pseudo_label_sc_share=pl_cfg.get("sc_share", 0.0),
         pseudo_label_pl_share=pl_cfg.get("pl_share", 0.5),
         pseudo_label_exclude_labeled_sc=pl_cfg.get("exclude_labeled_sc", True),
+        pseudo_label_aug=pl_cfg.get("aug", False),
         soundscape_dir=sc_audio_dir if pl_path else None,
     )
 

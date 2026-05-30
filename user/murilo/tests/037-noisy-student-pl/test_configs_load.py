@@ -1,11 +1,10 @@
-"""Exp 037 — round-1 config inheritance + the corrected-recipe knobs.
+"""Exp 037 — round-1 factorial config validation.
 
-Replicates train.py's `_deep_merge` (load _common.yaml, deep-merge the cell on top) and pins the
-knobs that distinguish this experiment from exp 033's failures:
-  - pseudo_label.path is set + points at the cell's parquet (raw vs t2)
-  - pseudo_label.sampler matches the cell (mixsamp 50/50 vs uniform natural)
-  - pseudo_label.weight == 1.0 (NOT exp 025's 0.5), exclude_labeled_sc == True
-  - KD on (use_perch_distill, alpha_distill=1.0); 50/50 shares sum to ~1.0
+Replicates train.py's `_deep_merge` (load _common.yaml, deep-merge each cell on top) and pins,
+for every `r1_*.yaml` cell, that the merged config encodes the intended factorial point:
+KD regime (A/B/C → use_perch_distill / kd_detach_head), PL transform (raw/t2 parquet),
+PL aug (augF/augT), and loss_type (bce/softauc). Also pins the corrected-recipe invariants
+(mixsamp 50/50, loss_weight=1.0, exclude_labeled_sc, GT-only steps_per_epoch, 25 ep).
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ import pytest
 import yaml
 
 CFG = Path(__file__).parent.parent.parent / "experiments/037-noisy-student-pl/configs"
+CELLS = sorted(CFG.glob("r1_*.yaml"))
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -28,45 +28,60 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
-def _load(cell: str) -> dict:
+def _load(cell: Path) -> dict:
     base = yaml.safe_load((CFG / "_common.yaml").read_text())
-    override = yaml.safe_load((CFG / cell).read_text())
-    return _deep_merge(base, override)
+    return _deep_merge(base, yaml.safe_load(cell.read_text()))
 
 
-CELLS = {
-    "round1_raw_5050.yaml": ("v037-ens-raw", "mixsamp"),
-    "round1_raw_natural.yaml": ("v037-ens-raw", "uniform"),
-    "round1_t2_5050.yaml": ("v037-ens-t2", "mixsamp"),
-    "round1_t2_natural.yaml": ("v037-ens-t2", "uniform"),
-}
+def _parse(name: str) -> dict:
+    # r1_{KD}_{transform}_{augTag}[_softauc]
+    parts = name.split("_")
+    return {
+        "kd": parts[1],
+        "transform": parts[2],
+        "aug": parts[3] == "augT",
+        "softauc": parts[-1] == "softauc",
+    }
 
 
-@pytest.mark.parametrize("cell,expected", CELLS.items())
-def test_cell_pl_config(cell, expected):
-    parquet_tag, sampler = expected
+def test_factorial_complete():
+    # 3 KD × 2 transform × 2 aug = 12 soft-BCE + 3 SoftAUC (raw, augT) = 15
+    assert len(CELLS) == 15, [c.name for c in CELLS]
+    softauc = [c for c in CELLS if c.stem.endswith("softauc")]
+    assert len(softauc) == 3
+
+
+@pytest.mark.parametrize("cell", CELLS, ids=[c.stem for c in CELLS])
+def test_cell_encodes_its_factorial_point(cell):
+    spec = _parse(cell.stem)
     cfg = _load(cell)
-    pl = cfg["pseudo_label"]
-    assert pl["path"] is not None and parquet_tag in pl["path"]
+    pl, tr = cfg["pseudo_label"], cfg["training"]
+
+    # PL transform → parquet + invariants
+    assert f"v037-ens-{spec['transform']}" in pl["path"]
     assert pl["path"].endswith("ensemble_pseudo_labels.parquet")
-    assert pl["sampler"] == sampler
-    assert pl["weight"] == 1.0  # Antoine 1:1, NOT exp 025's 0.5 confound
-    assert pl["exclude_labeled_sc"] is True
-    assert cfg["run_name"].startswith("2026-exp037-r1-")
+    assert pl["aug"] is spec["aug"]
+    assert pl["sampler"] == "mixsamp" and pl["weight"] == 1.0 and pl["exclude_labeled_sc"] is True
+    assert abs(pl["focal_share"] + pl["sc_share"] - pl["pl_share"]) < 1e-9  # ~50/50 GT:PL
+
+    # KD regime
+    expect_kd = spec["kd"] != "B"
+    assert tr["use_perch_distill"] is expect_kd
+    if spec["kd"] == "A":
+        assert tr["kd_detach_head"] is True
+    elif spec["kd"] == "C":
+        assert tr["kd_detach_head"] is False
+
+    # loss + training budget
+    assert tr["loss_type"] == ("softauc" if spec["softauc"] else "bce")
+    assert cfg["training"]["max_epochs"] == 25
+    assert cfg["data"]["steps_per_epoch"] == 500  # GT-only-equivalent (not the 5× PL balloon)
 
 
-def test_kd_on_and_shares_sum():
-    cfg = _load("round1_raw_5050.yaml")
-    assert cfg["training"]["use_perch_distill"] is True
-    assert cfg["training"]["alpha_distill"] == 1.0
-    pl = cfg["pseudo_label"]
-    total = pl["focal_share"] + pl["sc_share"] + pl["pl_share"]
-    assert abs(total - 1.0) < 1e-9
-    assert abs((pl["focal_share"] + pl["sc_share"]) - pl["pl_share"]) < 1e-9  # ~50/50 GT:PL
-
-
-def test_common_is_not_runnable_sentinel():
-    # _common has path=null → must be overridden per cell (train.py would no-op PL otherwise)
+def test_common_defaults():
     common = yaml.safe_load((CFG / "_common.yaml").read_text())
-    assert common["pseudo_label"]["path"] is None
+    assert common["pseudo_label"]["path"] is None  # must be overridden per cell
     assert common["pseudo_label"]["sampler"] == "mixsamp"
+    assert common["pseudo_label"]["aug"] is False  # augF is the default/control
+    assert common["training"]["kd_detach_head"] is True  # cell-A default
+    assert common["training"]["loss_type"] == "bce"

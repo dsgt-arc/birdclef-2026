@@ -1,6 +1,0 @@
-# Round 1 — softening × sampler. Temperature-softened blend (T=2), uniform sampler.
-# Inherits _common.yaml.
-run_name: "2026-exp037-r1-t2-natural"
-pseudo_label:
-  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v037-ens-t2/ensemble_pseudo_labels.parquet"
-  sampler: "uniform"

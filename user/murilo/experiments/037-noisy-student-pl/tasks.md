@@ -18,10 +18,14 @@ Tests live in `user/murilo/tests/037-noisy-student-pl/`; run with the interactiv
       assumes a peaked teacher; ours isn't. Temperature (t2) is the principled soften.
 - [x] Sanity: 127,896 rows, 234 cols ∈ [0,1]; raw mean=0.239, frac>0.5=0.95% (~2 species/window — sparse, realistic).
 
-## Phase 2 — round-1 student (Day 2–3)
-- [x] `train.py` (clone exp 033, EXPERIMENT_NAME=037) + `configs/_common.yaml` + 4 round-1 grid configs. **Built.**
-- [ ] **(Murilo, GPU)** fast-dev-run gate, then single-fold grid: parquet {raw, t2} × sampler {mixsamp 50/50, uniform natural}.
-- [ ] Gate A (offline, rough): best cell's labeled-SS OOF vs baseline 0.7632 → 5-fold the winner.
+## Phase 2 — round-1 ablation factorial (Day 2–3)
+- [x] `train.py` (clone exp 033, EXPERIMENT_NAME=037) + `_common.yaml` + **15 factorial configs** (gen_round1_configs.py). **Built.**
+- [x] New flags wired + tested: `kd_detach_head` (cell C, gradient-routing test), `loss_type`/`SoftAUCLoss`
+      (+ component log), `pseudo_label_aug`, `train/logit_std`, GT-only `steps_per_epoch=500`, 25 ep. 43 unit + 290 regression PASS.
+- [ ] **(Murilo, GPU)** fast-dev-run gate (`r1_A_raw_augT --fast-dev-run`), then launch all 15 single-fold:
+      `for c in configs/r1_*.yaml; do bash sbatch/run.sh "$c" --fold 0; done`. Extend B/C cells if val still climbing.
+- [ ] Offline screen (rough): `eval_labeled_ss.py --pred` vs baseline 0.7632 → eliminate broken + read per-axis direction.
+- [ ] LB ~5 mechanism-diverse cells (best per KD regime + best SoftAUC + faithful ref). 5-fold the LB winner.
 - [ ] Export ONNX (mirror exp 032) → LB: single-fold vs 0.906, 5-fold vs 0.915, ensemble-blend vs 0.929.
 
 ## Phase 3 — round 2 (Day 3–4, only if round 1 LB-green)

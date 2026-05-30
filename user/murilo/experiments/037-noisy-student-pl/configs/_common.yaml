@@ -59,7 +59,8 @@ data:
   n_folds: 5
   seed: 42
   min_sample: 20
-  steps_per_epoch: null
+  steps_per_epoch: 500  # GT-only-equivalent (~baseline 454): decouples epoch length from the
+                        # 127K PL pool so 25 ep ≈ the 0.906 gradient budget (not the 5× balloon).
   base_seed: 42
   seed_epoch_shift: true
   val_fraction: 0.1
@@ -92,6 +93,10 @@ training:
   perch_embed_dim: 1536
   alpha_distill: 1.0
 
+  # Exp 037 levers (overridden per grid cell):
+  kd_detach_head: true   # A (default): PL BCE → head only. C sets false → PL also trains backbone.
+  loss_type: "bce"       # softauc cells override → ranking loss (SoftAUC)
+
   warm_start_ckpt: null
 
 # ============================================================================
@@ -111,6 +116,7 @@ pseudo_label:
   sc_share: 0.05
   pl_share: 0.50
   exclude_labeled_sc: true
+  aug: false             # noise-the-student control: PL waveform gain/noise. augT cells override.
 
 callbacks:
   model_checkpoint:

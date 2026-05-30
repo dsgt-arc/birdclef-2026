@@ -20,13 +20,24 @@ Inverts every knob our 4 prior PL failures got wrong: **strong ensemble teacher*
 - Perch (TF, 0.925-quality): `shared/inference/birdclef-2026/perch-v2-tf/train_soundscapes/perch_234_probs.parquet`
 - SED v5j-4fold logits: `shared/inference/birdclef-2026/hgnet-b0-sed-v5j-4fold/train_soundscapes/fold{0..3}/logits.parquet`
 
+## Round-1 ablation factorial (15 single-fold cells)
+
+`r1_{A,B,C}_{raw,t2}_{augF,augT}[_softauc].yaml` — KD routing × PL transform × PL aug (+ SoftAUC).
+A = KD-on/detach (PL→head), B = KD-off/e2e (PL→whole student), C = KD-on/no-detach (PL→both).
+Configs are emitted by `scripts/gen_round1_configs.py` (re-run to regenerate). PL parquets (raw, t2)
+are already generated.
+
 ## Run (Murilo, on PACE)
 ```bash
 cd user/murilo/experiments/037-noisy-student-pl
-# Phase 1: generate PL parquets (CPU, minutes)
-python scripts/generate_ensemble_pl.py --variant raw
-python scripts/generate_ensemble_pl.py --variant t2
-python scripts/generate_ensemble_pl.py --variant g05
-# Phase 2: round-1 grid (single-fold), then 5-fold the winner
-CONFIG=configs/round1_raw_5050.yaml bash sbatch/train.sh   # + the other 3 cells
+# Phase 1 (already done; ~15s each on interactive venv if regenerating):
+#   python scripts/generate_ensemble_pl.py --variant raw   (and --variant t2)
+# 0) gradient-flow GATE first:
+bash sbatch/run.sh configs/r1_A_raw_augT.yaml --fast-dev-run
+# 1) launch the 15-cell single-fold grid (parallel):
+for c in configs/r1_*.yaml; do bash sbatch/run.sh "$c" --fold 0; done
+# 2) offline screen (rough — eliminate/direction only; LB is the arbiter):
+python scripts/eval_labeled_ss.py --pred <student_oof.parquet>   # Gate-A bar = 0.7632
+# 3) LB ~5 mechanism-diverse cells; 5-fold the winner:
+bash sbatch/run.sh configs/<winner>.yaml --all-folds
 ```

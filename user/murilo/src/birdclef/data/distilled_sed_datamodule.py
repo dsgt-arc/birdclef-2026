@@ -356,6 +356,7 @@ class DistilledSEDDataModule(pl.LightningDataModule):
         pseudo_label_sc_share: float = 0.0,
         pseudo_label_pl_share: float = 0.5,
         pseudo_label_exclude_labeled_sc: bool = True,
+        pseudo_label_aug: bool = False,
         soundscape_dir: str | Path | None = None,
         # --- Exp 036: Sydorskyi-faithful class-balanced focal sampling (Phase B) ---
         # When False (default), behaves exactly as exp 032/034 (MixSamp uniform draws).
@@ -397,6 +398,7 @@ class DistilledSEDDataModule(pl.LightningDataModule):
         self.pseudo_label_sc_share = pseudo_label_sc_share
         self.pseudo_label_pl_share = pseudo_label_pl_share
         self.pseudo_label_exclude_labeled_sc = pseudo_label_exclude_labeled_sc
+        self.pseudo_label_aug = pseudo_label_aug
         self.soundscape_dir = Path(soundscape_dir) if soundscape_dir else None
         if self.pseudo_label_path is not None and self.soundscape_dir is None:
             raise ValueError(
@@ -542,7 +544,7 @@ class DistilledSEDDataModule(pl.LightningDataModule):
                 loss_weight=self.pseudo_label_weight,
                 audio_loader=self.sc_audio_loader,
                 sample_rate=self.sample_rate,
-                aug=False,  # match ScDS (no mixup on SS-side)
+                aug=self.pseudo_label_aug,  # exp 037: noise-the-student control (False/True)
                 seed=seed,
             )
             # Wrap focal + sc so their 5-tuples become 6-tuples with loss_weight=1.0

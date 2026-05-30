@@ -1,7 +1,0 @@
-# Round 1 — softening test. Temperature-softened blend (T=2: pulls confident preds toward
-# 0.5, KEEPS sparsity frac>0.5=2.6%), mixsamp ~50/50. The principled "soften" (vs g05 power,
-# which over-inflates to frac>0.5=56% — banned). Inherits _common.yaml.
-run_name: "2026-exp037-r1-t2-5050"
-pseudo_label:
-  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v037-ens-t2/ensemble_pseudo_labels.parquet"
-  sampler: "mixsamp"
