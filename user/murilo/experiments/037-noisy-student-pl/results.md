@@ -1,16 +1,52 @@
 ---
 experiment: "037-noisy-student-pl"
-status: in-progress — round-1 factorial trained + offline-screened; LB screening next
+status: REJECT — round-1 trio LB ≤0.832, far below the 0.906 no-PL baseline (5th PL failure)
 date: 2026-05-30
 author: Murilo Gustineli
 ---
 
 # Results — Exp 037: Multi-Iterative Noisy-Student Soft Pseudo-Labeling
 
-**Status**: Round-1 **ablation factorial (15 cells, fold 0) trained** to completion; offline
-labeled-SS metrics pulled + screened. **No LB yet** — next step is ~5 mechanism-diverse LB
-submissions (offline can only eliminate/direction, not rank — it anti-correlates with LB).
-**Date**: 2026-05-30 · **Author**: Murilo Gustineli
+**Status**: **REJECT.** Round-1 ablation factorial (15 cells, fold 0) trained; the A/B/C-raw-augF
+trio (the clean KD-routing comparison) submitted to LB and **all three land far below the 0.906
+no-PL baseline** (best = C 0.832, −0.074). PL **poisons** the distilled-sed-kd student. The 2
+SoftAUC cells were NOT submitted (trio is decisive). **5th PL failure** (014/015/025/033/037).
+Pivot to securing the 0.929 ensemble + PP/TTA before 2026-06-03. **Date**: 2026-05-30 · Murilo
+
+## LB verdict (2026-05-30) — REJECT, hard
+
+| Cell | KD routing (PL reaches…) | LB | Δ vs 0.906 base | offline val/auroc(last) |
+|---|---|---:|---:|---:|
+| `r1-A-raw-augF` | head only (KD-on/detach) | **0.754** | **−0.152** | 0.942 |
+| `r1-B-raw-augF` | whole student (KD-off/e2e) | **0.790** | **−0.116** | 0.928 |
+| `r1-C-raw-augF` | head + backbone (KD-on/no-detach) | **0.832** | **−0.074** | 0.942 |
+
+**Two findings:**
+1. **The KD-routing axis TRANSFERRED to LB: C > B > A** — same order as the offline cmap direction
+   (a rare offline→LB agreement for us). So "let PL reach the backbone" is a **real relative effect**:
+   C (KD-MSE *and* PL-BCE both train the backbone) > B (PL-BCE trains backbone, no KD) > A (PL→head
+   only, backbone frozen-from-PL = worst). This confirms exp 033's structural limitation (it ran cell
+   A only) and is a genuine result worth the paper.
+2. **But PL poisons regardless of routing** — even the best cell (C, 0.832) is −0.074 below the no-PL
+   0.906, and the worst (A, 0.754) is −0.152. The lever is net-negative.
+
+**Why PL poisons here (most likely):** the **raw ensemble blend is a diffuse soft target** — mean
+0.239, frac>0.5 only 0.95%, i.e. ~233 of 234 classes sit at small-but-nonzero prob (0.1–0.3) per
+window. At **50/50 GT:PL with loss_weight=1.0**, half of every batch trains the student (via BCE) to
+emit moderate probabilities across *all* classes → calibration flattens → ranking/AUC collapses. This
+is *worse* than exp 033's own-teacher PL (0.886): exp 033 **sharpened** (T=0.6, P^1.5), which
+concentrated the targets; our "no sharpening / no filtering" likely **flooded the student with diffuse
+weak-positive mass**. The goldilocks band between "diffuse soft" (poisons, here) and "aggressive
+filter/sharpen" (HURT, exp 033 −0.027) was not found — and at 5 PL failures, the base rate says stop.
+
+**Addressing the candidate causes (2026-05-30):**
+- **Validation metric (cmap vs auroc)? NOT the cause.** We submitted **`last.ckpt`** (final epoch),
+  not the monitor-selected "best" epoch — the checkpoint monitor is irrelevant to what shipped. (We
+  did revert the monitor to val/auroc for any future runs, but it would not have changed these.)
+- **Train longer? No.** val curves plateaued by ep10–15; A (worst) and C (best) both ran 25 ep. More
+  epochs on a poisoning objective worsens it.
+- **PLs just bad? Yes — primary cause** (diffuse soft targets, above).
+- **Perch-only PLs / XC pretraining?** Speculative pivots — see Next steps.
 
 > **Metric note:** primary = **best `val/auroc`** (the competition metric = macro ROC-AUC, and the
 > metric exp 021's v5j-0.917 monitored). The configs originally inherited `val/cmap` monitoring from
@@ -69,27 +105,33 @@ held-out labeled-SS windows). So these numbers **eliminate broken cells + read d
 NOT rank, and do NOT conclude PL works. No cell collapsed; `logit_std` (2.85–3.86) shows no runaway.
 **LB decides.**
 
-## Next step — LB screening (~5 mechanism-diverse cells)
+## LB screening (the trio, submitted) + offline picks (for the record)
 
-All `raw` (tops both metrics). Picks span the KD axis (the #1 structural question) + SoftAUC.
-**Export uses `last.ckpt` (final epoch 24), NOT the best-val/auroc epoch:** the 168-window val is
-noisy (stable cells plateau ±0.002; B/C-softauc oscillate ±0.02 — the early "peaks" at ep3/11 are
-noise spikes, not learn-then-tank) and anti-correlates with LB, so argmax-epoch = noise-steering.
-last.ckpt is LR-annealed (cosine→1e-6) and matches the 0.906/0.915 + exp-033 lineage convention.
+The 5 mechanism-diverse picks were all `raw`, `last.ckpt` (final epoch 24, NOT best-val — the
+168-window val is noisy + anti-correlates with LB). The A/B/C-raw-augF **trio** (the clean KD
+comparison) was submitted first per plan and **decisively REJECTED** (see LB verdict above), so the 2
+SoftAUC picks (`r1-A-raw-augT-softauc` 0.952, `r1-C-raw-augT-softauc` 0.914 offline) were **NOT
+submitted** — LB budget conserved. (SoftAUC is a ranking loss, less sensitive to the diffuse-target
+poisoning, so it's the one untested mechanism that *might* differ — but at 5 PL failures it's a
+low-EV, post-deadline question, not worth an LB pull now.)
 
-| # | Cell | best val/auroc | Why |
-|---|---|---:|---|
-| 1 | `r1-A-raw-augF` | 0.9433 | KD-on/detach, BCE — faithful "0.906 recipe + clean PL" reference; closest to exp 033's structure (corrected teacher) → did fixing the teacher fix A? |
-| 2 | `r1-B-raw-augF` | 0.9555 | KD-off/e2e — **offline #1 on both metrics**; the true-Noisy-Student mechanism |
-| 3 | `r1-C-raw-augF` | 0.9504 | KD-on/no-detach — strong on both; "best of both" |
-| 4 | `r1-A-raw-augT-softauc` | 0.9523 | **offline #2 auroc** + SoftAUC |
-| 5 | `r1-C-raw-augT-softauc` | 0.9423 | SoftAUC on a 2nd regime (best-C on cmap 0.8014); alt = `r1-B-raw-augT` (e2e+aug, auroc 0.9507) |
+## Next steps — PIVOT (PL is exhausted; deadline 2026-06-03)
 
-Cells 1–3 = a clean A/B/C KD comparison (raw/augF/BCE) → resolves the structural lever on LB.
-**Falsifiable (single-fold vs 0.906):** CONFIRM ≥0.916 / PARTIAL 0.909–0.915 / WEAK 0.907–0.908 /
-REJECT ≤0.906. LB-green → 5-fold the winner (monitor now val/auroc) + blend into the 0.929 ensemble;
-round 2 if it lifts. **Risk**: exp 033 (structurally similar PL) rejected on LB; the new bets are the
-ensemble teacher + raw blend + the B/C structural lever. ~5 of ~20 remaining LB pulls.
+PL on our models is now **0/5** (014/015/025/033/037). Combined with pretraining capping at ~0.88
+(exp 034/036) and training-recipe base-rate≈0 (exp 027), the deadline-rational move is **secure the
+final submission**, not another single-model lever:
+1. **Re-confirm + lock the 0.929 ensemble (exp 023)** as final pick #1.
+2. **PP/TTA + ensemble-diversity** A/B on it (the only LB-proven lever at this altitude) for final pick #2.
+
+**Deferred to post-deadline paper track** (compute is not the bottleneck — can run after 06-03; results
+count for the working note, not the LB): (a) **one SoftAUC PL submission** to close the ranking-loss
+question; (b) **Perch-only PLs** (drop the SED half of the teacher — it may add the noise); (c) a
+**PL-target fix** (mild trim of the diffuse <0.05 tail, between exp-037-raw and exp-033-sharpen); (d)
+**broad XC-pretraining** (deep-research #2). None is deadline-EV given 0/5 + 4 days.
+
+**Reusable result for the paper:** the KD-routing axis (C>B>A) transferred offline→LB — "let the PL
+loss reach the backbone, don't detach" is a real effect; exp 033's detach-only design was the
+structural limit. The remaining gap is that ensemble soft-PL **poisons** our SED student regardless.
 
 ## Artifacts
 

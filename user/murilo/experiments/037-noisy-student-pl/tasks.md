@@ -34,15 +34,20 @@ Tests live in `user/murilo/tests/037-noisy-student-pl/`; run with the interactiv
       last.ckpt). **Do NOT cherry-pick best-val/auroc epoch** — the 168-window val is noisy (stable
       cells plateau ±0.002, noisy cells oscillate ±0.02) & anti-correlates with LB → argmax-epoch
       = noise-steering. Model slugs `exp037-r1-{a,b,c}-raw-augf` + `*-raw-augt-softauc`.
-- [ ] **(Murilo, PACE+Kaggle)** export → upload → push → submit each of the 5 (see README/below).
-- [ ] LB-green → 5-fold the winner (monitor=val/auroc) → blend into 0.929. vs 0.906 / 0.915 / 0.929.
+- [x] Export → upload (fixed species_mapping 41→234 via exp037 token in upload_kaggle heuristic) →
+      pushed → **A/B/C-raw-augF trio submitted to LB**.
+- [x] **LB VERDICT = REJECT.** C 0.832 / B 0.790 / A 0.754 — all far below 0.906 base (best −0.074).
+      KD axis transferred (C>B>A offline→LB) but PL **poisons** regardless (diffuse soft targets:
+      raw blend mean 0.24, ~233 cls at 0.1–0.3/window × 50/50 + loss_weight=1.0 → flat calibration).
+      **5th PL failure.** 2 SoftAUC picks NOT submitted (decisive; LB conserved).
 
-## Phase 3 — round 2 (Day 3–4, only if round 1 LB-green)
-- [ ] Promote round-1 student into teacher → regenerate softened PL → retrain → LB.
-- [ ] Stop if ensemble gain < +0.005.
+## Phase 3 — REJECT → PIVOT (PL is 0/5; deadline 06-03)
+- [ ] **Secure the 0.929 ensemble (exp 023)** as final pick #1; A/B PP/TTA + ensemble-diversity for #2.
+- [ ] Post-deadline paper track (compute free, doesn't count for LB): 1 SoftAUC PL submission to close
+      the ranking-loss question; Perch-only PLs; PL-target trim (<0.05 tail); broad XC-pretraining.
 
 ## Phase 4 — final picks (Day 4)
-- [ ] #1 safe = reproduced 0.929; #2 upside = best PL-student blend.
+- [ ] #1 safe = reproduced 0.929; #2 upside = best PP/TTA/diversity blend on it. (exp 037 PL model NOT a pick — REJECT.)
 
 ## Verification gates
 - [ ] Full `user/murilo/tests/` suite green (032/033/034/036 regression + new 037 tests).

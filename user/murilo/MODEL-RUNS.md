@@ -1372,17 +1372,35 @@ metric, not LB generalization. **3rd XC-backbone fine-tune in the 0.878–0.882 
 + 3× ceiling; base rate ≈ 0 per exp 027). XC model remains a candidate **backbone-diverse ensemble
 member** (separate test). Full read → `experiments/036-xc-backbone-finetune/results.md § LB verdict`.
 
-## Experiment 037: Multi-Iterative Noisy-Student Soft PL — ROUND-1 FACTORIAL TRAINED (offline-screened; LB pending)
+## Experiment 037: Multi-Iterative Noisy-Student Soft PL — REJECT (trio LB ≤0.832, far below 0.906 base; 5th PL failure)
 
-Student `distilled-sed-kd` (EffNet-B0) retrained on a 50/50 GT:PL mix from the cached **0.929
-ensemble teacher** (`0.5·perch_234_probs(TF) + 0.5·sigmoid(mean SED v5j-4fold)`). Inverts every
-exp-033 PL failure knob (strong ensemble teacher not own-SED; soft un-sharpened not T=0.6/P^1.5;
-no filters; loss_weight=1.0). 15-cell round-1 factorial: KD routing {A on/detach, B off/e2e,
-C on/no-detach} × transform {raw, t2} × PL-aug {F, T} + 3 SoftAUC. Fold 0, 25 ep,
-steps_per_epoch=500 (GT-only). Sorted by **best val/auroc** (competition metric; matches exp 021
-v5j). Configs originally inherited `val/cmap` monitoring from the Tucker port — **reverted to
-`val/auroc`** for round-2/5-fold; round 1 lost nothing (`save_top_k=-1` saved all 25 epochs →
-export the best-by-val/auroc epoch). Jobs 9346722–37.
+**LB verdict (2026-05-30): REJECT.** The A/B/C-raw-augF trio (clean KD-routing comparison, `last.ckpt`
+fold0) all landed far below the 0.906 no-PL baseline. PL poisons the distilled-sed-kd student.
+
+| Cell | PL reaches… | LB | Δ vs 0.906 |
+|------|-------------|---:|-----------:|
+| `r1-C-raw-augF` | head + backbone (KD-on/no-detach) | **0.832** | **−0.074** |
+| `r1-B-raw-augF` | whole student (KD-off/e2e) | **0.790** | **−0.116** |
+| `r1-A-raw-augF` | head only (KD-on/detach) | **0.754** | **−0.152** |
+
+**KD-routing axis TRANSFERRED offline→LB (C>B>A** — rare for us): "let PL reach the backbone" is a real
+*relative* effect (confirms exp 033's detach-only cell A was the structural limit). **But PL poisons
+regardless** — best cell −0.074. Cause: the raw ensemble blend is a **diffuse soft target** (mean 0.24,
+frac>0.5=0.95% → ~233 classes at 0.1–0.3/window); at 50/50 GT:PL + loss_weight=1.0 it flattens the
+student's calibration → ranking collapses. Worse than exp 033's *sharpened* own-teacher PL (0.886) →
+the "no sharpen / no filter" correction over-corrected into diffuse-target poisoning. **5th PL failure**
+(014/015/025/033/037). The 2 SoftAUC picks were NOT submitted (trio decisive; LB conserved). NOT caused
+by the val metric (submitted `last.ckpt`, not the monitor-selected epoch) nor by epochs (curves
+plateaued ep10–15). **Pivot: secure the 0.929 ensemble + PP/TTA before 06-03.** Full read →
+`experiments/037-noisy-student-pl/results.md § LB verdict`.
+
+### Round-1 offline factorial (fold 0, for the record — offline did NOT predict LB magnitude)
+
+Student `distilled-sed-kd` (EffNet-B0) on 50/50 GT:PL from the cached **0.929 ensemble teacher**
+(`0.5·perch_234_probs(TF) + 0.5·sigmoid(mean SED v5j-4fold)`). 15-cell factorial: KD routing {A
+on/detach, B off/e2e, C on/no-detach} × transform {raw, t2} × PL-aug {F, T} + 3 SoftAUC. 25 ep,
+steps_per_epoch=500 (GT-only), monitor reverted val/cmap→val/auroc. Sorted by best val/auroc.
+Jobs 9346722–37. (All 15 beat the 0.906 baseline *offline* — exactly the exp-033 mirage before LB REJECT.)
 
 | Cell | KD | transf | aug | loss | best val/auroc | val/cmap | logit_std |
 |------|----|--------|-----|------|---------------:|---------:|----------:|

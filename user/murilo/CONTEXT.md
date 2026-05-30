@@ -3,28 +3,25 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-30 (late). **Pivoted to Exp 037 — multi-iterative Noisy-Student SOFT
-pseudo-labeling — SCAFFOLDED + verified, ready to run.** After two Claude deep-research reports
-(captured in `user/murilo/notes/2026-05-30-deep-research-{noisy-student-pseudo-labeling,
-xeno-canto-pretraining}.md`) + a discriminator review, we chose PL (not XC-pretraining) as the
-final pre-deadline experiment: pretraining is a *known ~0.88 quantity for us* (exp 034/036 = the
-documented "pretrain-only 0.881"), while PL is the +0.036 lever we've **never run correctly** —
-our 4 prior PL failures (014/015/025/033) all **sharpened** (T=0.6/P^1.5) + used a weak own-teacher.
-Exp 037 inverts that: strong **0.929 ENSEMBLE teacher** (cached), **soft un-sharpened** labels,
-**no filtering**, ~50/50 GT:PL, multi-round. Student = `distilled-sed-kd` (0.906/0.915).
-XC-pretraining deferred to a parallel/post-deadline paper track (deep-research #2).
+**Last updated**: 2026-05-30 (night). **Exp 037 (multi-iterative Noisy-Student soft PL) — CLOSED,
+REJECT.** The A/B/C-raw-augF trio (clean KD-routing comparison, `last.ckpt` fold0) submitted to LB:
+**C 0.832 / B 0.790 / A 0.754 — all far below the 0.906 no-PL base** (best −0.074). PL **poisons** the
+distilled-sed-kd student (raw ensemble blend = diffuse soft targets, mean 0.24, ~233 cls at 0.1–0.3/win;
+50/50 + loss_weight=1.0 → calibration flattens → ranking collapses). **5th PL failure** (014/015/025/
+033/037). One genuine result: the **KD-routing axis transferred offline→LB (C>B>A)** — "let PL reach the
+backbone, don't detach" is real — but PL is net-negative regardless. 2 SoftAUC picks NOT submitted
+(trio decisive; LB conserved). NOT the val metric (shipped `last.ckpt`) nor epochs (curves plateaued).
 
-**Competition deadline**: 2026-06-03 (4 days out) — the priority.
+**Competition deadline**: 2026-06-03 (~4 days) — now the priority.
 
-**Branch/state**: on `mg/037-noisy-student-pl` (pushed to origin), clean. Commits: `8343676`
-(exp 037 scaffold) on top of `7c92a07` (deep-research notes, on main). No PR yet (opens after
-LB results). **Local verification ALL GREEN**: 20 new unit tests + 310 regression pass; PL
-generator runs on all 10,658 files (raw+t2 parquets written); eval harness reproduces reference
-bars; species alignment exact. **Teacher is fully CACHED — no new inference needed.**
+**Branch/state**: on `mg/037-noisy-student-pl` (pushed), clean. exp 037 fully closed (REJECT) across
+`results.md`/`tasks.md`/`MODEL-RUNS.md`. PL track exhausted (0/5); pretraining capped ~0.88 (exp
+034/036); training-recipe base-rate≈0 (exp 027). Deep-research notes + a SoftAUC-PL / Perch-only-PL /
+XC-pretrain track remain for the **post-deadline paper** (compute free, doesn't count for LB).
 
-**▶ NEXT SESSION STARTS HERE:** exp 037 scaffold is done + verified. **Murilo's next step = run it
-on PACE** (see "Pick up here" below). Highest-EV remaining task. The 0.929-ensemble END-GAME
-(secure final picks + PP/TTA) is the fallback/parallel track if exp 037 round-1 rejects on LB.
+**▶ NEXT SESSION STARTS HERE:** exp 037 is CLOSED (REJECT). All levers (PL, pretrain, recipe) are
+exhausted for the deadline. **Pivot to the END-GAME (secure the 0.929 ensemble + PP/TTA final picks
+before 06-03)** — see "Pick up here" below. No in-flight jobs; ~14 LB pulls left.
 
 ---
 
@@ -59,39 +56,23 @@ SWA built: `a1-lower-lr/fold0/swa-last5.ckpt` (avg of ep45–49; 786 model.* ten
 
 ---
 
-## Pick up here (next session) — RUN EXP 037 (multi-iterative soft PL)
+## Pick up here (next session) — END-GAME: secure the 0.929 final submission (deadline 2026-06-03)
 
-Scaffold + **15-cell round-1 ablation factorial** complete + locally verified on branch
-`mg/037-noisy-student-pl` (commit `81d916d`, pushed). **Murilo runs these on PACE** (Claude doesn't
-run SLURM/Kaggle — [[feedback_user_runs_commands]]). PL parquets (raw, t2) ALREADY generated.
+**Exp 037 is CLOSED (REJECT)** — the PL trio tanked (C 0.832 / B 0.790 / A 0.754 ≪ 0.906; full read in
+`037-noisy-student-pl/results.md § LB verdict`). PL is 0/5, pretraining caps ~0.88 (exp 034/036),
+recipe changes base-rate≈0 (exp 027). **Every single-model lever is exhausted for the deadline.** The
+highest-EV use of the remaining ~4 days + ~14 LB pulls = **lock in the best final submission.**
+[[feedback_user_runs_commands]]: give Murilo the commands; don't run SLURM/Kaggle.
 
-Factorial = KD routing {A on/detach (PL→head), B off/e2e, C on/no-detach} × transform {raw,t2} ×
-PL-aug {F,T} = 12 soft-BCE + 3 SoftAUC (raw·augT per KD). The KD axis is the structural lever exp
-033 never tested (it was A-only → PL never reached the backbone). 25 ep, GT-only steps_per_epoch=500.
-
-```bash
-cd user/murilo/experiments/037-noisy-student-pl
-# 0) GRADIENT-FLOW GATE (do first): fast-dev-run on a GPU node
-bash sbatch/run.sh configs/r1_A_raw_augT.yaml --fast-dev-run
-# 1) launch the 15-cell single-fold grid (parallel — PACE is not the bottleneck):
-for c in configs/r1_*.yaml; do bash sbatch/run.sh "$c" --fold 0; done
-#    (extend B/C cells to more epochs if their val curve is still climbing at ep 25)
-# 2) offline screen (ROUGH — labeled-SS anti-correlates w/ LB; eliminate broken + read direction):
-#    python scripts/eval_labeled_ss.py --pred <student_oof.parquet>   # Gate-A bar = baseline 0.7632
-# 3) LB ~5 MECHANISM-DIVERSE cells (best per KD regime + best SoftAUC + faithful ref) — NOT offline-best.
-# 4) 5-fold the LB winner (bash sbatch/run.sh <cfg> --all-folds), export ONNX, blend into 0.929.
-```
-**Falsifiable (single-fold vs 0.906):** CONFIRM ≥0.916 / PARTIAL 0.909–0.915 / WEAK 0.907–0.908 /
-REJECT ≤0.906. If round 1 LB-green → round 2 (promote student into teacher, regenerate, retrain).
-Full method/gates in `037-noisy-student-pl/{proposal,tasks,README}.md`. **LB is the arbiter.**
+Concretely (this is the END-GAME deferred since exp 036):
 
 ---
 
-## Fallback / parallel track — END-GAME: secure the 0.929 final submission (deadline 2026-06-03)
+## END-GAME steps — secure the 0.929 final submission (deadline 2026-06-03)
 
-If exp 037 round-1 rejects on LB (base rate for our PL attempts is poor, though all prior ones
-used the WRONG recipe), fall back here. The XC fine-tune track is exhausted (exp 034/036, three
-recipes ~0.88). **Lock in the best final submission**, not more single-model training. Concretely:
+The XC fine-tune + PL tracks are exhausted (PL 0/5; XC ~0.88). **Lock in the best final submission**,
+not more single-model training. (Post-deadline paper track: SoftAUC-PL / Perch-only-PL /
+PL-target-trim / broad XC-pretrain.) Concretely:
 
 1. **Re-confirm the 0.929 ensemble (exp 023) is reproducible + submittable** as one of the two
    final picks. Verify its kernel still builds/scores; canary `Species mapping: 234 mapped`.
