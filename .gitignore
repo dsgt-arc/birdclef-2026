@@ -111,6 +111,10 @@ logs/
 *.pkl
 *.pickle
 
+# Exp 035 cv-trust diagnostic data outputs (regenerable by analysis/cv_trust/*.py).
+# Most are already caught by *.csv/*.parquet/*.npy; this also covers the json metadata.
+user/murilo/analysis/data/cv_trust/
+
 # Model weights
 *.onnx
 weights/
