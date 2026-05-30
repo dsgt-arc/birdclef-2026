@@ -16,9 +16,11 @@ deadline by distilling the ensemble's *soundscape-domain* knowledge into a singl
 **multi-iterative Noisy-Student pseudo-labeling** — the one documented lever that moved every 2025
 top solution across the 0.90→0.93 band (winner: 0.872 → 0.930 via PL).
 
-The student is `distilled-sed-kd` (exp 032 HGNet-B0 SED + KD-from-Perch, **LB 0.906 single / 0.915
-5-fold**) — our best reproducible single model and strongest PL starting point. The teacher is the
-**0.929 ensemble** (Perch-MLP + SED v5j-4fold), whose per-window predictions over all 10,658
+The student is `distilled-sed-kd` (exp 032, **EfficientNet-B0** `tf_efficientnet_b0.ns_jft_in1k`
+SED + KD-from-Perch, **LB 0.906 single / 0.915 5-fold**) — our best reproducible single model and
+strongest PL starting point. (NOT the HGNet `distilled_sed_kd_hgnet.yaml` variant; and distinct
+from the teacher's SED, which IS HGNet-B0 v5j.) The teacher is the
+**0.929 ensemble** (Perch-MLP + SED v5j-4fold = HGNet-B0), whose per-window predictions over all 10,658
 `train_soundscapes` are **already cached on disk** (`perch-v2-tf/.../perch_234_probs.parquet` +
 `hgnet-b0-sed-v5j-4fold/.../fold{0..3}/logits.parquet`). PL generation is therefore a pure
 blend+transform — no new model inference.
