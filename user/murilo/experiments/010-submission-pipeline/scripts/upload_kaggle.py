@@ -600,6 +600,20 @@ MODELS = {
         "weights_dir": "artifacts/weights/xcpretrain-effv2s-kd-joint",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-xcpretrain-effv2s-kd-joint.json",
     },
+    # Exp 036 Phase A winner (a1-lower-lr): same XCPretrain graph, gentler LR (5e-5) that
+    # fixes exp 034's overfitting collapse (offline 0.906→0.875) → stable 0.92 plateau.
+    # Two LB candidates from the same run (NEW datasets), lead with SWA. PP baked in.
+    # First-time upload: run without --push-kernel, wait 2-3 min, then push.
+    "xcfinetune-effv2s-lowlr-swa": {
+        "slug": "birdclef-2026-xcfinetune-effv2s-lowlr-swa-weights",
+        "weights_dir": "artifacts/weights/xcfinetune-effv2s-lowlr-swa",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcfinetune-effv2s-lowlr-swa.json",
+    },
+    "xcfinetune-effv2s-lowlr-last": {
+        "slug": "birdclef-2026-xcfinetune-effv2s-lowlr-last-weights",
+        "weights_dir": "artifacts/weights/xcfinetune-effv2s-lowlr-last",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-xcfinetune-effv2s-lowlr-last.json",
+    },
     # Exp 032 Phase 2: 5-fold ensemble (KD) + HGNet backbone ablation
     "distilled-sed-kd-5fold": {
         "slug": "birdclef-2026-distilled-sed-kd-5fold-weights",
@@ -809,6 +823,7 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
         or "-sed" in model_name
         or "-atthead" in model_name
         or "xcpretrain" in model_name  # exp 034: 234-class 2026 model → identity mapping
+        or "xcfinetune" in model_name  # exp 036: 234-class 2026 model → identity mapping
     ):
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026_234.json"
     elif "-2026" in model_name:

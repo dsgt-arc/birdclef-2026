@@ -1,0 +1,71 @@
+# Shared exp 036 config — unlock the XC backbone via a faithful fine-tune recipe.
+# Builds on exp 034's _common (same Sydorskyi-faithful model + exp 032 datamodule).
+# Diffs from exp 034: full-FT by default, save_top_k=-1 + save_weights_only (SWA),
+# and new (defaulted-off) knobs for Phase A (LR schedule) + Phase B (class balance).
+# Cell configs inherit this via `inherit: _common.yaml` (deep-merge in train.py:load_config).
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  num_classes: 234
+  batch_size: 64
+  num_workers: 8 # never 0 (feedback_num_workers_default)
+  n_folds: 5
+  seed: 42 # exp 032 fold split seed
+  focal_share: 0.9
+  sc_share: 0.1
+  min_sample: 20
+  window_seconds: 5.0
+  sample_rate: 32000
+  # Phase B (defaulted off → exp 034 MixSamp behavior):
+  use_class_balanced_sampler: false
+  class_balance_mode: "balanced" # "balanced" (1/n_c, EffNetV2-S) | "sqrt" ((n_c/N)^power)
+  class_balance_power: -0.5
+
+model:
+  backbone: "tf_efficientnetv2_s_in21k"
+  load_pretrained: true # Sydorskyi in-domain XC backbone (strict)
+  freeze_backbone: false # exp 036 fine-tunes the backbone (vs exp 034 frozen default)
+  spec_augment: true
+  head:
+    p: 0.5
+    train_period: 5.0
+    infer_period: 5.0
+
+training:
+  seed: 1243
+  max_epochs: 50
+  lr: 1.0e-4 # Sydorskyi EffNetV2-S AdamW
+  weight_decay: 0.0
+  eta_min: 1.0e-6
+  grad_clip_val: 1.0 # full-FT default (exp 034 fullft used 1.0)
+  precision: "32-true"
+  label_smoothing: 0.05
+  random_filtering: true
+  rf_min_db: -20.0
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  # Phase A LR knobs (defaulted → exp 034 single-group cosine, no warmup, no unfreeze):
+  optimizer_mode: "uniform" # "uniform" | "discriminative"
+  backbone_lr_mult: 1.0 # discriminative: backbone_lr = lr * this
+  warmup_epochs: 0 # 0 → no warmup
+  warmup_start_factor: 0.04 # LinearLR start factor when warmup_epochs > 0
+  unfreeze_backbone_epoch: 0 # 0 → never (gradual-unfreeze trigger, A3)
+  threshold: 0.5 # for f1 preds
+
+callbacks:
+  save_checkpoint: true
+  model_checkpoint:
+    monitor: "val/auroc"
+    mode: "max"
+    save_top_k: -1 # save EVERY epoch → true last + best + SWA-able (no save_last quirk)
+    save_last: true
+    save_weights_only: true # ~3x smaller ckpts; SWA + export only need state_dict
+    filename: "epoch{epoch:02d}"
+
+logging:
+  use_wandb: true
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp036"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

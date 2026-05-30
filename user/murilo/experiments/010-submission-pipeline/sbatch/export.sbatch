@@ -1478,6 +1478,9 @@ export_convnext_2026_soundscape() {
 # ===== Exp 034: Pretrained-backbone yoink (Sydorskyi EffNetV2-S), 234 classes =====
 # Full-model audio→probs ONNX (nnAudio mel baked into the graph; see export_xcpretrain.py).
 EXP034_DIR="$(dirname "$EXPERIMENT_DIR")/034-pretrained-backbone"
+# ===== Exp 036: XC-backbone faithful fine-tune (same model as exp 034, gentler LR) =====
+# Reuses export_xcpretrain.py (identical XCPretrainWaveClassifier graph; PP baked in).
+EXP036_DIR="$(dirname "$EXPERIMENT_DIR")/036-xc-backbone-finetune"
 
 export_xcpretrain_effv2s_frozen() {
     echo "=== Exporting XCPretrain EffNetV2-S frozen (exp 034, fold 0) ==="
@@ -1521,6 +1524,38 @@ export_xcpretrain_effv2s_kd_joint() {
     python scripts/export_xcpretrain.py \
         --checkpoint "$CKPT" \
         --config "${EXP034_DIR}/configs/xcpretrain-effv2s-kd-joint.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir "${OUT}/"
+    cp artifacts/weights/species_mapping_2026_234.json "${OUT}/species_mapping.json"
+}
+
+# Exp 036 Phase A winner: a1-lower-lr (lr 5e-5). Fixes exp 034 full-FT's overfitting
+# collapse (peaks ep3 0.906 → decays 0.875); a1 climbs to a stable 0.91-0.92 plateau
+# (ep19-50), best offline val/auroc 0.921. Same XCPretrainWaveClassifier graph as exp 034
+# → export_xcpretrain.py applies UNCHANGED (model.* filter; PP baked into mel_config).
+# Two checkpoint candidates LB-arbitrated (lead with SWA): swa-last5 (avg of ep45-49,
+# the flat tail — selection-free, robust to the untrustworthy CV) and last.ckpt (ep49).
+export_xcfinetune_effv2s_lowlr_swa() {
+    echo "=== Exporting XCFinetune EffNetV2-S LowLR SWA (exp 036 a1, last-5 avg, fold 0) ==="
+    local CKPT="${CHECKPOINTS_BASE}/036-xc-backbone-finetune/checkpoints/a1-lower-lr/fold0/swa-last5.ckpt"
+    local OUT="artifacts/weights/xcfinetune-effv2s-lowlr-swa"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_xcpretrain.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP036_DIR}/configs/a1-lower-lr.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir "${OUT}/"
+    cp artifacts/weights/species_mapping_2026_234.json "${OUT}/species_mapping.json"
+}
+
+export_xcfinetune_effv2s_lowlr_last() {
+    echo "=== Exporting XCFinetune EffNetV2-S LowLR last (exp 036 a1, ep49, fold 0) ==="
+    local CKPT="${CHECKPOINTS_BASE}/036-xc-backbone-finetune/checkpoints/a1-lower-lr/fold0/last.ckpt"
+    local OUT="artifacts/weights/xcfinetune-effv2s-lowlr-last"
+    echo "Using checkpoint: $CKPT"
+    python scripts/export_xcpretrain.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP036_DIR}/configs/a1-lower-lr.yaml" \
         --train-csv "$TAXONOMY_CSV_2026" \
         --output-dir "${OUT}/"
     cp artifacts/weights/species_mapping_2026_234.json "${OUT}/species_mapping.json"
@@ -1575,6 +1610,7 @@ case "$MODEL" in
     distilled-sed-pl-a2-kd-v3|\
     all-033-distilled-sed-pl-day1|all-033-distilled-sed-pl-day2|\
     xcpretrain-effv2s-frozen|xcpretrain-effv2s-fullft|xcpretrain-effv2s-kd-joint|all-034-xcpretrain|\
+    xcfinetune-effv2s-lowlr-swa|xcfinetune-effv2s-lowlr-last|all-036-xcfinetune|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1745,6 +1781,12 @@ case "$MODEL" in
     all-034-xcpretrain)
         export_xcpretrain_effv2s_frozen ; echo ""
         export_xcpretrain_effv2s_fullft
+        ;;
+    xcfinetune-effv2s-lowlr-swa)        export_xcfinetune_effv2s_lowlr_swa ;;
+    xcfinetune-effv2s-lowlr-last)       export_xcfinetune_effv2s_lowlr_last ;;
+    all-036-xcfinetune)
+        export_xcfinetune_effv2s_lowlr_swa ; echo ""
+        export_xcfinetune_effv2s_lowlr_last
         ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;

@@ -91,6 +91,13 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 036: XC-backbone faithful fine-tune (a1-lower-lr). Same XCPretrain graph as
+    # exp 034 (routed by mel_config type=xcpretrain_audio_onnx → predict_soundscape_xcpretrain),
+    # gentler LR 5e-5 fixes the full-FT overfitting collapse → stable 0.92 plateau offline.
+    # Lead with SWA (avg of ep45-49) over the plain last.ckpt. Each kernel attaches only its
+    # own weights dataset, so listing order between these two is moot; preferred → first.
+    "birdclef-2026-xcfinetune-effv2s-lowlr-swa-weights",
+    "birdclef-2026-xcfinetune-effv2s-lowlr-last-weights",
     # Exp 034: pretrained-backbone yoink (Sydorskyi EffNetV2-S). Full-model audio→probs
     # ONNX (nnAudio mel in-graph); routed by mel_config type=xcpretrain_audio_onnx →
     # predict_soundscape_xcpretrain (raw audio in, clipwise probs out).
