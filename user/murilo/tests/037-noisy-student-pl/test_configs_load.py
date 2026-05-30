@@ -85,3 +85,7 @@ def test_common_defaults():
     assert common["pseudo_label"]["aug"] is False  # augF is the default/control
     assert common["training"]["kd_detach_head"] is True  # cell-A default
     assert common["training"]["loss_type"] == "bce"
+    # checkpoint selection on the competition metric (macro ROC-AUC), matching exp 021 v5j —
+    # NOT the Tucker port's val/cmap.
+    assert common["callbacks"]["model_checkpoint"]["monitor"] == "val/auroc"
+    assert common["callbacks"]["early_stopping"]["monitor"] == "val/auroc"

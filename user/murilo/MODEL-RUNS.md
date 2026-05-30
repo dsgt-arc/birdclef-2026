@@ -1372,6 +1372,48 @@ metric, not LB generalization. **3rd XC-backbone fine-tune in the 0.878–0.882 
 + 3× ceiling; base rate ≈ 0 per exp 027). XC model remains a candidate **backbone-diverse ensemble
 member** (separate test). Full read → `experiments/036-xc-backbone-finetune/results.md § LB verdict`.
 
+## Experiment 037: Multi-Iterative Noisy-Student Soft PL — ROUND-1 FACTORIAL TRAINED (offline-screened; LB pending)
+
+Student `distilled-sed-kd` (EffNet-B0) retrained on a 50/50 GT:PL mix from the cached **0.929
+ensemble teacher** (`0.5·perch_234_probs(TF) + 0.5·sigmoid(mean SED v5j-4fold)`). Inverts every
+exp-033 PL failure knob (strong ensemble teacher not own-SED; soft un-sharpened not T=0.6/P^1.5;
+no filters; loss_weight=1.0). 15-cell round-1 factorial: KD routing {A on/detach, B off/e2e,
+C on/no-detach} × transform {raw, t2} × PL-aug {F, T} + 3 SoftAUC. Fold 0, 25 ep,
+steps_per_epoch=500 (GT-only). Sorted by **best val/auroc** (competition metric; matches exp 021
+v5j). Configs originally inherited `val/cmap` monitoring from the Tucker port — **reverted to
+`val/auroc`** for round-2/5-fold; round 1 lost nothing (`save_top_k=-1` saved all 25 epochs →
+export the best-by-val/auroc epoch). Jobs 9346722–37.
+
+| Cell | KD | transf | aug | loss | best val/auroc | val/cmap | logit_std |
+|------|----|--------|-----|------|---------------:|---------:|----------:|
+| **r1-B-raw-augF** | off | raw | F | bce | **0.9555** | 0.8041 | 3.86 |
+| r1-A-raw-augT-softauc | detach | raw | T | softauc | 0.9523 | 0.7763 | 2.85 |
+| r1-B-raw-augT | off | raw | T | bce | 0.9507 | 0.7759 | 3.80 |
+| r1-C-raw-augF | no-detach | raw | F | bce | 0.9504 | 0.7980 | 3.83 |
+| r1-C-t2-augF | no-detach | t2 | F | bce | 0.9484 | 0.7799 | 3.71 |
+| r1-A-raw-augT | detach | raw | T | bce | 0.9472 | 0.7800 | 3.29 |
+| r1-A-raw-augF | detach | raw | F | bce | 0.9433 | 0.7771 | 3.49 |
+| r1-C-raw-augT | no-detach | raw | T | bce | 0.9426 | 0.7988 | 3.77 |
+| r1-C-raw-augT-softauc | no-detach | raw | T | softauc | 0.9423 | 0.8014 | 3.46 |
+| r1-A-t2-augF | detach | t2 | F | bce | 0.9391 | 0.7246 | 3.42 |
+| r1-B-t2-augT | off | t2 | T | bce | 0.9368 | 0.7642 | 3.71 |
+| r1-A-t2-augT | detach | t2 | T | bce | 0.9238 | 0.7173 | 3.10 |
+| r1-B-t2-augF | off | t2 | F | bce | 0.9213 | 0.7176 | 3.77 |
+| r1-B-raw-augT-softauc | off | raw | T | softauc | 0.9173 | 0.7740 | 3.47 |
+| r1-C-t2-augT | no-detach | t2 | T | bce | 0.9163 | 0.7418 | 3.65 |
+
+**Per-axis direction (NOT a ranking — offline labeled-SS anti-correlates with LB):**
+- **KD: B (off) 0.953 ≳ C (no-detach) 0.947 > A (detach) 0.945** on auroc (cmap: C>B>A). Both metrics agree **A (head-only) is worst → letting PL reach the backbone (B/C) helps** (the lever exp 033 never tested).
+- **transform: raw 0.945 > t2 0.931 (Δ+0.014 auroc; +0.046 cmap)** — t2+augT cells worst; raw is the safe pick → LB raw.
+- **aug: augF ≳ augT (weak)**; **SoftAUC ≈ BCE (inconclusive** — best on A, much worse on B).
+
+**Caveat:** all cells beat the no-PL baseline offline (val/auroc 0.908→0.96) — **but exp 033's
+own-teacher PL did too and REJECTED on LB.** Single-fold (168 val windows). Offline = eliminate +
+direction only. **LB decides.** Next: LB ~5 mechanism-diverse cells (A/B/C-raw-augF = clean KD
+comparison + A-raw-augT-softauc + C-raw-augT-softauc), exporting each cell's best-by-val/auroc epoch.
+Falsifiable single-fold vs 0.906: CONFIRM ≥0.916 / REJECT ≤0.906. Full read →
+`experiments/037-noisy-student-pl/results.md`.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
