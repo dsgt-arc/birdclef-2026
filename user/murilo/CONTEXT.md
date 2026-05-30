@@ -61,25 +61,25 @@ SWA built: `a1-lower-lr/fold0/swa-last5.ckpt` (avg of ep45–49; 786 model.* ten
 
 ## Pick up here (next session) — RUN EXP 037 (multi-iterative soft PL)
 
-Scaffold is complete + locally verified on branch `mg/037-noisy-student-pl`. **Murilo runs these
-on PACE** (Claude doesn't run SLURM/Kaggle — [[feedback_user_runs_commands]]). PL parquets (raw,
-t2) are ALREADY generated. Sequence:
+Scaffold + **15-cell round-1 ablation factorial** complete + locally verified on branch
+`mg/037-noisy-student-pl` (commit `81d916d`, pushed). **Murilo runs these on PACE** (Claude doesn't
+run SLURM/Kaggle — [[feedback_user_runs_commands]]). PL parquets (raw, t2) ALREADY generated.
+
+Factorial = KD routing {A on/detach (PL→head), B off/e2e, C on/no-detach} × transform {raw,t2} ×
+PL-aug {F,T} = 12 soft-BCE + 3 SoftAUC (raw·augT per KD). The KD axis is the structural lever exp
+033 never tested (it was A-only → PL never reached the backbone). 25 ep, GT-only steps_per_epoch=500.
 
 ```bash
 cd user/murilo/experiments/037-noisy-student-pl
-# 0) (optional) regenerate PL parquets — already done; ~15s each on interactive venv:
-#    python scripts/generate_ensemble_pl.py --variant raw   (and --variant t2)
-# 1) GRADIENT-FLOW GATE (do first): fast-dev-run on a GPU node
-bash sbatch/run.sh configs/round1_raw_5050.yaml --fast-dev-run
-# 2) round-1 single-fold grid (4 cells, parallel — PACE is not the bottleneck):
-bash sbatch/run.sh configs/round1_raw_5050.yaml    --fold 0
-bash sbatch/run.sh configs/round1_raw_natural.yaml --fold 0
-bash sbatch/run.sh configs/round1_t2_5050.yaml     --fold 0
-bash sbatch/run.sh configs/round1_t2_natural.yaml  --fold 0
-# 3) offline screen (rough — labeled-SS anti-correlates w/ LB): training logs val/cmap+val/auroc.
-#    Gate-A bar = baseline distilled OOF 0.7632:  python scripts/eval_labeled_ss.py --pred <student_oof.parquet>
-# 4) 5-fold the best cell (bash sbatch/run.sh <cfg> --all-folds), export ONNX (mirror exp 032),
-#    LB: single-fold vs 0.906, 5-fold vs 0.915, blend-into-0.929 vs 0.929.
+# 0) GRADIENT-FLOW GATE (do first): fast-dev-run on a GPU node
+bash sbatch/run.sh configs/r1_A_raw_augT.yaml --fast-dev-run
+# 1) launch the 15-cell single-fold grid (parallel — PACE is not the bottleneck):
+for c in configs/r1_*.yaml; do bash sbatch/run.sh "$c" --fold 0; done
+#    (extend B/C cells to more epochs if their val curve is still climbing at ep 25)
+# 2) offline screen (ROUGH — labeled-SS anti-correlates w/ LB; eliminate broken + read direction):
+#    python scripts/eval_labeled_ss.py --pred <student_oof.parquet>   # Gate-A bar = baseline 0.7632
+# 3) LB ~5 MECHANISM-DIVERSE cells (best per KD regime + best SoftAUC + faithful ref) — NOT offline-best.
+# 4) 5-fold the LB winner (bash sbatch/run.sh <cfg> --all-folds), export ONNX, blend into 0.929.
 ```
 **Falsifiable (single-fold vs 0.906):** CONFIRM ≥0.916 / PARTIAL 0.909–0.915 / WEAK 0.907–0.908 /
 REJECT ≤0.906. If round 1 LB-green → round 2 (promote student into teacher, regenerate, retrain).
