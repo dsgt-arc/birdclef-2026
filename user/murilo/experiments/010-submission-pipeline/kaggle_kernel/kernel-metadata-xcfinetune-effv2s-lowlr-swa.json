@@ -1,0 +1,16 @@
+{
+  "id": "murilogustineli/birdclef-2026-xcfinetune-effv2s-lowlr-swa",
+  "title": "BirdCLEF 2026 XCFinetune EffV2S LowLR SWA",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-deps",
+    "murilogustineli/birdclef-2026-xcfinetune-effv2s-lowlr-swa-weights"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}

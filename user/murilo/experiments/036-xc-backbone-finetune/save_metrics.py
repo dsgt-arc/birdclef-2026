@@ -60,7 +60,7 @@ def main():
     out_dir = EXP_DIR / args.artifacts_dir / run_name / f"fold{args.fold}"
     out_dir.mkdir(parents=True, exist_ok=True)
     metrics = {
-        "experiment": "034-pretrained-backbone",
+        "experiment": "036-xc-backbone-finetune",
         "run_name": run_name,
         "fold": args.fold,
         "config": raw.get("config"),

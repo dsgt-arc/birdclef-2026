@@ -1341,6 +1341,37 @@ submitted — moot. Path forward: **Phase F 5-fold + Phase I ensemble** (exp 034
 backbone-diverse member of exp 023 0.929 ⊕ exp 032 0.915). Full verdict →
 `experiments/034-pretrained-backbone/results.md § KD LB verdict`.
 
+## Experiment 036: XC-backbone faithful fine-tune (LR schedule) — REJECT (flat on LB)
+
+Same model as exp 034 (Sydorskyi in-domain EffNetV2-S backbone + our SED att-head, exp 032
+datamodule, fold 0). exp 034 full-FT scored LB 0.879 (<0.906); exp 036 tests whether a gentler
+fine-tune *schedule* unlocks the backbone. Phase A varies ONLY the LR schedule (50 ep each);
+`save_top_k=-1` → SWA-able. Branch `mg/exp036-xc-backbone-finetune`, PR #56. PP (5-tap
+logit-space Gauss) baked into every submission via `export_xcpretrain.py`.
+
+| Slug | Variant | best val/auroc | best ep | LB | ckpt (under `036-xc-backbone-finetune/checkpoints/`) | SLURM |
+|------|---------|---------------:|--------:|----|------------------------------------------------------|-------|
+| `a0-fullft-repro` | full-FT lr 1e-4 (exp034 parity) | 0.906 | ~3 | — (parity only) | `a0-fullft-repro/fold0/` | 9325488 |
+| **`xcfinetune-effv2s-lowlr-swa`** | a1 lr 5e-5, SWA avg ep45–49 + PP | 0.917 (SWA) | — | **0.881** | `a1-lower-lr/fold0/swa-last5.ckpt` | 9325490 |
+| **`xcfinetune-effv2s-lowlr-last`** | a1 lr 5e-5, last.ckpt (ep49) + PP | 0.921 | ~34 | **0.882** | `a1-lower-lr/fold0/last.ckpt` | 9325490 |
+| `a2-discriminative-lr` | backbone 2e-5 / head 1e-3 | 0.888 | ~15 | — (dead offline) | `a2-discriminative-lr/fold0/` | 9325501 |
+| `a3-gradual-unfreeze` | freeze 5 ep → unfreeze | 0.914 | ~9 | — (offline < a1) | `a3-gradual-unfreeze/fold0/` | 9325517 |
+
+**Gate 6 PASS:** `a0-fullft-repro` reproduces exp 034 full-FT *essentially bit-identically*
+epoch-by-epoch (ep1 0.8918/0.8919, ep3 0.9063/0.9059; diffs ~1e-4 = dataloader-shuffle noise).
+The added metric suite did not perturb training. exp034-fullft's *true* offline peak was also
+~0.906 @ep3 (the prior "0.883" was a late epoch). Anchor: offline 0.906 → LB 0.865 raw / 0.879 +PP.
+
+**LB verdict (2026-05-30) — REJECT, flat:** a1-SWA **0.881** / a1-last **0.882** vs the 0.879
+baseline = **+0.002/+0.003 = within noise.** Lower LR fixed the offline overfitting collapse
+(0.875→0.921) but that gain did NOT transfer — it was overfitting to the noisy labeled-SS val
+metric, not LB generalization. **3rd XC-backbone fine-tune in the 0.878–0.882 band** (full-FT
+0.879, KD-joint 0.878, lower-LR 0.881/0.882) → hard single-fold ceiling ~0.88, schedule-independent.
+**2nd offline→LB anti-correlation** at the same ~0.92→~0.88 mapping; **SWA added nothing** (≤ last).
+**Phase B (class-balanced data) / Phase C (PL+PP) NOT PURSUED** (deadline EV + offline-can't-screen
++ 3× ceiling; base rate ≈ 0 per exp 027). XC model remains a candidate **backbone-diverse ensemble
+member** (separate test). Full read → `experiments/036-xc-backbone-finetune/results.md § LB verdict`.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
