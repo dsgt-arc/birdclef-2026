@@ -14,10 +14,14 @@ backbone-diverse ensemble member (separate, cheap test).
 
 **Competition deadline**: 2026-06-03 (4 days out) — now the priority.
 
-**Branch**: `mg/exp036-xc-backbone-finetune` (PR **#56**, open). This session: exp 036
-`results.md`/`tasks.md`/`save_metrics.py`, `MODEL-RUNS.md`, this file; exp 010
-export/upload/kernel wiring (5 files: export.sbatch, upload_kaggle.py, submission.py, 2 kernel
-jsons). Committed + pushed.
+**Branch/state**: on `main`, clean. **PR #56 squash-merged → `main` (merge commit `e64a09f`),
+feature branch deleted (local + remote).** No open experiment branch. Session ended 2026-05-30
+night. This session shipped: exp 036 Phase A LB read + REJECT verdict across `results.md`/
+`tasks.md`/`MODEL-RUNS.md`/`save_metrics.py`/this file, and exp 010 `xcfinetune-effv2s-lowlr-
+{swa,last}` export/upload/kernel wiring (built + smoke-tested) — all on main.
+
+**▶ NEXT SESSION STARTS HERE:** exp 036 is fully closed. No in-flight jobs, no pending LB reads.
+Pick up at the **END-GAME** section below (secure the 0.929 ensemble final pick before 06-03).
 
 ---
 
@@ -87,16 +91,16 @@ offline, deadline). Wiring/assets stay in the repo if ever revisited.
 ## How to resume after disconnect
 
 1. Read this file top-to-bottom, then `036-xc-backbone-finetune/results.md § LB verdict`.
-2. `git log --oneline -6`; branch `mg/exp036-xc-backbone-finetune` (PR #56). exp 036 is CLOSED.
+2. `git log --oneline -6` on `main` → top is `e64a09f` (exp 036 REJECT, merged). No open branch;
+   exp 036 is CLOSED and on main. Start a fresh branch for the next experiment.
 3. Proceed to the END-GAME steps above (secure the 0.929 final pick; PP/TTA; optional XC-as-
    ensemble-member blend). This is final-submission work, not new single-model training.
-4. Consider merging PR #56 (REJECT, documented) so main reflects the closed state.
-5. **[[feedback_user_runs_commands]]**: don't run SLURM/Kaggle yourself — give Murilo the
+4. **[[feedback_user_runs_commands]]**: don't run SLURM/Kaggle yourself — give Murilo the
    commands. Local pytest + light SWA averaging are fine (interactive venv at
    `/storage/home/hcoda1/9/mgustineli3/clef/birdclef-2026/.venv`; [[feedback_use_uv_venv]]).
-6. Venv policy: NEVER create a venv under home/project; SLURM jobs build on `$TMPDIR` (CLAUDE.md).
+5. Venv policy: NEVER create a venv under home/project; SLURM jobs build on `$TMPDIR` (CLAUDE.md).
    PACE compute is NOT the bottleneck ([[feedback_pace_compute_not_bottleneck]]); Kaggle LB IS
-   rate-limited (~5/day) — be strategic there.
+   rate-limited (~5/day) — be strategic there. Use `--squash` for PR merges ([[feedback_squash_merge]]).
 
 **Prior context**: exp 034 (xcpretrain) REJECT — backbone necessary-not-sufficient, single-fold
 ceiling 0.879; KD does not transfer. exp 036 REJECT — fine-tune schedule doesn't unlock it either
