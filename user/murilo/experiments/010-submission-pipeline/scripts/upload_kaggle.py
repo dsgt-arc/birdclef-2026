@@ -625,6 +625,33 @@ MODELS = {
         "weights_dir": "artifacts/weights/distilled-sed-kd-hgnet",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-distilled-sed-kd-hgnet.json",
     },
+    # Exp 037 Noisy-Student soft-PL round-1 LB picks (distilled-sed-kd recipe + ensemble-teacher
+    # PL; best-by-val/auroc epoch, fold 0). Same Tucker inference path as exp 032/033.
+    "exp037-r1-a-raw-augf": {
+        "slug": "birdclef-2026-exp037-r1-a-raw-augf-weights",
+        "weights_dir": "artifacts/weights/exp037-r1-a-raw-augf",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-exp037-r1-a-raw-augf.json",
+    },
+    "exp037-r1-b-raw-augf": {
+        "slug": "birdclef-2026-exp037-r1-b-raw-augf-weights",
+        "weights_dir": "artifacts/weights/exp037-r1-b-raw-augf",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-exp037-r1-b-raw-augf.json",
+    },
+    "exp037-r1-c-raw-augf": {
+        "slug": "birdclef-2026-exp037-r1-c-raw-augf-weights",
+        "weights_dir": "artifacts/weights/exp037-r1-c-raw-augf",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-exp037-r1-c-raw-augf.json",
+    },
+    "exp037-r1-a-raw-augt-softauc": {
+        "slug": "birdclef-2026-exp037-r1-a-raw-augt-softauc-weights",
+        "weights_dir": "artifacts/weights/exp037-r1-a-raw-augt-softauc",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-exp037-r1-a-raw-augt-softauc.json",
+    },
+    "exp037-r1-c-raw-augt-softauc": {
+        "slug": "birdclef-2026-exp037-r1-c-raw-augt-softauc-weights",
+        "weights_dir": "artifacts/weights/exp037-r1-c-raw-augt-softauc",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-exp037-r1-c-raw-augt-softauc.json",
+    },
     # Phase 2.A individual-fold diagnostics (folds 1-4; fold 0 is `distilled-sed-kd`).
     # Characterize per-fold LB variance + offline↔LB correlation across folds.
     "distilled-sed-kd-fold1": {
