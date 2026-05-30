@@ -1458,24 +1458,23 @@ export_distilled_sed_pl() {
 # ============================================================================
 # Exp 037 Noisy-Student soft-PL round-1 LB picks. Same distilled-sed-kd recipe
 # + inference path as exp 032/033 (EffNet-B0 + AttHeadLogitSpace + Tucker mel),
-# so we reuse export_distilled_sed.py. The ONLY difference vs exp 033's helper:
-# we export the BEST-BY-VAL/AUROC epoch checkpoint (explicit best-epoch*.ckpt),
-# not find_last_ckpt — round 1 used save_top_k=-1 (all epochs saved) and the
-# competition metric is val/auroc. Best epochs (fold 0) read from TensorBoard.
+# so we reuse export_distilled_sed.py AND exp 033's last.ckpt convention.
+#
+# Checkpoint = last.ckpt (final epoch 24, LR-annealed via cosine→1e-6). We do
+# NOT cherry-pick the "best val/auroc" epoch: the 168-window labeled-SS val
+# metric is noisy (stable cells plateau ±0.002; noisy cells oscillate ±0.02)
+# and anti-correlates with LB — picking its argmax-epoch steers on noise. This
+# matches the lineage that produced 0.906/0.915 (distilled-sed-kd + exp 033 all
+# submitted last.ckpt).
 # ============================================================================
 export_exp037_pl() {
-    # Args: $1 = cell (mixed-case, matches run_name suffix + config basename),
-    #       $2 = best-by-val/auroc epoch (zero-padded, e.g. 03 / 11 / 19).
+    # Args: $1 = cell (mixed-case, matches run_name suffix + config basename).
     local CELL="$1"
-    local EP="$2"
     local SLUG="exp037-$(echo "$CELL" | tr '[:upper:]' '[:lower:]')"
     local CFG="${CELL//-/_}"  # r1-A-raw-augF -> r1_A_raw_augF (config basename)
-    local CKPT="${CHECKPOINTS_BASE}/037-noisy-student-pl/checkpoints/2026-exp037-${CELL}/fold0/best-epochepoch=${EP}.ckpt"
-    echo "=== Exporting Exp 037 ${SLUG} (best val/auroc @ ep${EP}) ==="
-    if [ ! -f "$CKPT" ]; then
-        echo "ERROR: checkpoint not found: $CKPT" >&2
-        exit 1
-    fi
+    local CKPT
+    CKPT="$(find_last_ckpt "${CHECKPOINTS_BASE}/037-noisy-student-pl/checkpoints/2026-exp037-${CELL}/fold0")"
+    echo "=== Exporting Exp 037 ${SLUG} (last.ckpt = final epoch) ==="
     echo "Using checkpoint: $CKPT"
     local OUTPUT_DIR="artifacts/weights/${SLUG}"
     python scripts/export_distilled_sed.py \
@@ -1814,18 +1813,18 @@ case "$MODEL" in
     # as distilled-sed-pl-a2-kd, but pointed at the v3 PL parquet that has Sydorskyi's
     # min_max_prob=0.5 chunk discard + trim_min_prob=0.1 per-class trim applied.
     distilled-sed-pl-a2-kd-v3)          export_distilled_sed_pl a2 kd v3 ;;
-    # Exp 037 Noisy-Student soft-PL round-1 LB picks (best-by-val/auroc epoch, fold 0).
-    exp037-r1-a-raw-augf)               export_exp037_pl r1-A-raw-augF 19 ;;
-    exp037-r1-b-raw-augf)               export_exp037_pl r1-B-raw-augF 11 ;;
-    exp037-r1-c-raw-augf)               export_exp037_pl r1-C-raw-augF 11 ;;
-    exp037-r1-a-raw-augt-softauc)       export_exp037_pl r1-A-raw-augT-softauc 12 ;;
-    exp037-r1-c-raw-augt-softauc)       export_exp037_pl r1-C-raw-augT-softauc 03 ;;
+    # Exp 037 Noisy-Student soft-PL round-1 LB picks (last.ckpt = final epoch, fold 0).
+    exp037-r1-a-raw-augf)               export_exp037_pl r1-A-raw-augF ;;
+    exp037-r1-b-raw-augf)               export_exp037_pl r1-B-raw-augF ;;
+    exp037-r1-c-raw-augf)               export_exp037_pl r1-C-raw-augF ;;
+    exp037-r1-a-raw-augt-softauc)       export_exp037_pl r1-A-raw-augT-softauc ;;
+    exp037-r1-c-raw-augt-softauc)       export_exp037_pl r1-C-raw-augT-softauc ;;
     all-037-pl)
-        export_exp037_pl r1-A-raw-augF 19 ; echo ""
-        export_exp037_pl r1-B-raw-augF 11 ; echo ""
-        export_exp037_pl r1-C-raw-augF 11 ; echo ""
-        export_exp037_pl r1-A-raw-augT-softauc 12 ; echo ""
-        export_exp037_pl r1-C-raw-augT-softauc 03
+        export_exp037_pl r1-A-raw-augF ; echo ""
+        export_exp037_pl r1-B-raw-augF ; echo ""
+        export_exp037_pl r1-C-raw-augF ; echo ""
+        export_exp037_pl r1-A-raw-augT-softauc ; echo ""
+        export_exp037_pl r1-C-raw-augT-softauc
         ;;
     xcpretrain-effv2s-frozen)           export_xcpretrain_effv2s_frozen ;;
     xcpretrain-effv2s-fullft)           export_xcpretrain_effv2s_fullft ;;

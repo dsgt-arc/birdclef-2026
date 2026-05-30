@@ -71,8 +71,11 @@ NOT rank, and do NOT conclude PL works. No cell collapsed; `logit_std` (2.85–3
 
 ## Next step — LB screening (~5 mechanism-diverse cells)
 
-All `raw` (tops both metrics). Picks span the KD axis (the #1 structural question) + SoftAUC;
-each cell's **best-by-`val/auroc`** epoch checkpoint is exported (not the cmap-best):
+All `raw` (tops both metrics). Picks span the KD axis (the #1 structural question) + SoftAUC.
+**Export uses `last.ckpt` (final epoch 24), NOT the best-val/auroc epoch:** the 168-window val is
+noisy (stable cells plateau ±0.002; B/C-softauc oscillate ±0.02 — the early "peaks" at ep3/11 are
+noise spikes, not learn-then-tank) and anti-correlates with LB, so argmax-epoch = noise-steering.
+last.ckpt is LR-annealed (cosine→1e-6) and matches the 0.906/0.915 + exp-033 lineage convention.
 
 | # | Cell | best val/auroc | Why |
 |---|---|---:|---|

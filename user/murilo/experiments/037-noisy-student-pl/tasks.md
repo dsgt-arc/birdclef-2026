@@ -28,10 +28,12 @@ Tests live in `user/murilo/tests/037-noisy-student-pl/`; run with the interactiv
       no-PL baseline offline but exp 033 did too & REJECTED → offline = direction only, LB decides.
 - [x] **Metric fix:** reverted `_common.yaml` monitor `val/cmap` → **`val/auroc`** (competition metric, matches
       exp 021). Round 1 lost nothing (save_top_k=-1 → all 25 epochs saved; export best-by-val/auroc epoch).
-- [x] **Export WIRED** for the 5 picks (best-by-val/auroc epoch, fold 0) — exp 010 pipeline:
+- [x] **Export WIRED** for the 5 picks (**last.ckpt = final epoch**, fold 0) — exp 010 pipeline:
       `export_exp037_pl` in `sbatch/export.sbatch` + 5 MODELS entries + 5 kernel-metadata JSONs +
-      5 MODEL_SLUGS. Best epochs: A-raw-augF=19, B-raw-augF=11, C-raw-augF=11, A-raw-augT-softauc=12,
-      C-raw-augT-softauc=03. Model slugs `exp037-r1-{a,b,c}-raw-augf` + `*-raw-augt-softauc`.
+      5 MODEL_SLUGS. Uses `find_last_ckpt` (lineage convention: 0.906/0.915 + exp 033 all submitted
+      last.ckpt). **Do NOT cherry-pick best-val/auroc epoch** — the 168-window val is noisy (stable
+      cells plateau ±0.002, noisy cells oscillate ±0.02) & anti-correlates with LB → argmax-epoch
+      = noise-steering. Model slugs `exp037-r1-{a,b,c}-raw-augf` + `*-raw-augt-softauc`.
 - [ ] **(Murilo, PACE+Kaggle)** export → upload → push → submit each of the 5 (see README/below).
 - [ ] LB-green → 5-fold the winner (monitor=val/auroc) → blend into 0.929. vs 0.906 / 0.915 / 0.929.
 
