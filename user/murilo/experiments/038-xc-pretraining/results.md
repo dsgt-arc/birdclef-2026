@@ -1,6 +1,6 @@
 ---
 experiment: "038-xc-pretraining"
-status: Stage 1 COMPLETE (XC-val sanity gate PASS, 0.984–0.986); Stage 2 fine-tune TRAINED (A & C × 5 folds; offline val/auroc A 0.910 / C 0.909 — tied, ≈ the 0.906 B0 baseline offline); **LB the arbiter, PENDING**
+status: Stage 1 COMPLETE (XC-val sanity gate PASS, 0.984–0.986); Stage 2 fine-tune TRAINED (A & C × 5 folds). **Single-fold LB IN: Cell A 0.907 (parity w/ 0.906 KD; +0.025–0.029 over the ~0.88 XC-backbone ceiling → REFUTES "XC-pretrain caps at 0.88"), Cell C 0.901 (A>C by 0.006 → mixup-reg pretrain transfers better). 5-fold LB PENDING.**
 date: 2026-05-31
 author: Murilo Gustineli
 ---
@@ -120,15 +120,41 @@ Checkpoints: `experiments/038-xc-pretraining/checkpoints/2026-exp038-finetune-ce
 (`save_top_k=-1`; export uses `last*.ckpt` = final epoch, the 0.906 lineage convention). Submission
 wiring built (exp 010, commit baecafb): models `finetune-cell-{a,c}` (fold0) + `-5fold`.
 
+## Stage 2 — LB results (the arbiter)
+
+**Single-fold (fold 0), 2026-05-31.** Both kernels printed the `Species mapping: 234 mapped` canary
+([[feedback_species_mapping_canary]]); logs reviewed (deps/ONNX/Tucker path/logit-space blend all clean).
+
+| Model | LB | vs 0.906 KD baseline | vs ~0.88 XC-backbone (exp 034/036) | offline val/auroc (fold0) |
+|---|--:|:--:|:--:|--:|
+| **`finetune-cell-a`** (mixup-reg backbone) | **0.907** | **+0.001 (parity)** | **+0.025 to +0.029** | 0.887 |
+| **`finetune-cell-c`** (no-mixup backbone) | **0.901** | −0.005 | +0.019 to +0.023 | 0.894 |
+| `finetune-cell-{a,c}-5fold` (logit fold-mean) | **pending** (inference running on Kaggle) | vs 0.915 | — | A 0.910 / C 0.909 mean |
+
+**Read (LB resolves what offline couldn't):**
+1. **The proposal's falsifiable test resolves in the experiment's favor: the ~0.88 XC-backbone ceiling
+   is REFUTED.** Both single folds clear exp 034/036's 0.878–0.882 (warm-starting *someone else's* bird
+   checkpoint) by **+0.019 to +0.029**. Doing **our own** broad-Neotropical supervised XC pretrain *under
+   the exact KD-SED regime* reaches **parity with the in-domain ImageNet+KD 0.906** — Cell A 0.907 is
+   +0.001, inside the ~±0.007 cross-hardware LB noise, so call it parity not a beat. The earlier "XC-pretrain
+   caps at 0.88" read was about the *transfer recipe*, not XC pretraining per se.
+2. **A > C by 0.006 → mixup-regularized pretrain transfers better** to the focal→soundscape shift than the
+   sharp/no-mixup backbone. LB **answers the A-vs-C mixup-transfer question** that offline declared a tie
+   (Δ0.0019). Offline's *fold0* even ranked C 0.894 > A 0.887 — the usual anti-correlation
+   ([[feedback_offline_metrics_unreliable]]); LB called it for A. So fine-tune-Cell-A-first was the right call.
+3. **Not a plateau-break** (≤ the 0.906/0.915/0.929 stack, exactly the honest ceiling the proposal set) but
+   a **legitimate backbone-diverse member at 0.906-class strength** + the working-note result: our own XC
+   backbone ≈ ImageNet+KD. Value = ensemble diversity + paper, as scoped.
+
 ## Next steps — LB (the arbiter)
 
-1. **Single-fold A vs C vs 0.906** (the decisive read): export + submit `finetune-cell-a` and
-   `finetune-cell-c` (fold 0). CONFIRM if either beats 0.906 (would refute the "XC-pretrain caps 0.88"
-   read); else they're diverse members.
-2. **5-fold ensembles** `finetune-cell-{a,c}-5fold` (logit-space fold mean) vs 0.915; then the
-   **prob-space blend into the 0.929** ensemble — keep iff it beats 0.929 on LB.
+1. ~~**Single-fold A vs C vs 0.906**~~ — **DONE: A 0.907 (parity / ceiling refuted), C 0.901, A>C.** (above)
+2. **5-fold ensembles** `finetune-cell-{a,c}-5fold` (logit-space fold mean) vs 0.915 — **inference running
+   on Kaggle (2026-05-31); scores pending.** Then the **prob-space blend of the best into the 0.929**
+   ensemble — keep iff it beats 0.929 on LB. (Runtime: 5-fold est. ~73 min of the 90-min CPU budget — fits
+   but thin; watch for timeout, 4-fold trim is the fallback.)
 3. **Canary** every submission: kernel log must print `Species mapping: 234 mapped`
-   ([[feedback_species_mapping_canary]]).
+   ([[feedback_species_mapping_canary]]). ✅ confirmed on both single-fold runs.
 
 **Deadline END-GAME:** the 0.929 exp-023 ensemble is already submitted + scored — just **select it as
 a final submission** (+ pick the 2nd slot from the best LB result here). LB ~5/day.

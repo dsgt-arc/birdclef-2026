@@ -80,12 +80,16 @@ single-fold A + single-fold C first** (2 pulls = decisive read).
       `export.sbatch` (export_finetune_cell_single_fold/_5fold + dispatch + species-map glob),
       `upload_kaggle.py` (4 MODELS entries), 4 `kernel-metadata-finetune-cell-*.json`, `submission.py`
       (4 MODEL_SLUGS). Verified bash -n / py_compile / title-slug / cross-file naming.
-- [ ] **(Murilo) Export + LB** (after folds train), from `experiments/010-submission-pipeline/`:
-      `bash sbatch/run.sh export --model finetune-cell-a` (+ `finetune-cell-c`) →
-      `python scripts/upload_kaggle.py --model finetune-cell-a` (creates dataset; wait ~2-3 min if new) →
-      `... --model finetune-cell-a --push-kernel` → submit notebook from Kaggle UI. **Canary: kernel log
-      must print `Species mapping: 234 mapped`** ([[feedback_species_mapping_canary]]). Submit single-fold
-      A + C first (vs 0.906); then `finetune-cell-{a,c}-5fold` (vs 0.915) + prob-space blend into 0.929.
+- [x] **(Murilo) Export + LB — single-fold DONE (2026-05-31).** Exported/uploaded/pushed `finetune-cell-a`
+      & `finetune-cell-c` from `experiments/010-submission-pipeline/`; both kernel logs printed the
+      `Species mapping: 234 mapped` canary ([[feedback_species_mapping_canary]]) and ran clean. **LB:
+      Cell A 0.907 (parity w/ 0.906 KD; +0.025–0.029 over the ~0.88 exp 034/036 XC-backbone ceiling →
+      REFUTES "XC-pretrain caps at 0.88"), Cell C 0.901 (A>C by 0.006 → mixup-reg pretrain transfers
+      better; offline fold0 anti-ranked: C 0.894 > A 0.887).** results.md/MODEL-RUNS.md updated.
+- [ ] **(Murilo) 5-fold LB** `finetune-cell-{a,c}-5fold` (logit-space fold mean) vs 0.915 — **inference
+      running on Kaggle (2026-05-31); scores pending.** Runtime est. ~73 min of the 90-min CPU budget (fits
+      but thin; 4-fold trim = fallback if it times out). Then **prob-space blend of the best into the 0.929**
+      ensemble — keep iff it beats 0.929 on LB (blend kernel not yet wired; post-deadline-safe, 0.929 banked).
 
 ## Stage 3 — eval / use
 - [ ] Pretrain quality → held-out XC macro-AUC. Downstream → **LB** (labeled-SS anti-correlates).

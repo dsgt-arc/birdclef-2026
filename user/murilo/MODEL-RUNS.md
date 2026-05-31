@@ -1432,7 +1432,7 @@ comparison + A-raw-augT-softauc + C-raw-augT-softauc), exporting each cell's bes
 Falsifiable single-fold vs 0.906: CONFIRM ≥0.916 / REJECT ≤0.906. Full read →
 `experiments/037-noisy-student-pl/results.md`.
 
-## Experiment 038: Broad Neotropical XC Pretraining (EffNetV2-S) — Stage 1 COMPLETE (XC-val sanity gate PASS; Stage 2 fine-tune + LB pending)
+## Experiment 038: Broad Neotropical XC Pretraining (EffNetV2-S) — Stage 1 PASS; Stage 2 single-fold LB IN (A 0.907 / C 0.901 — clears the ~0.88 XC-backbone ceiling, parity w/ 0.906 KD; 5-fold LB pending)
 
 **Stage 1 verdict (2026-05-31): sanity gate PASS, decisively.** All 3 cells trained 25 ep clean on
 rtx6000; held-out **XC macro-AUROC 0.984–0.986** vs the proposal's ≳0.95 "pretrain works" bar (top-5
@@ -1464,24 +1464,39 @@ multi-label + random 5 s crops + macro long tail; AUROC/top-k are the trustworth
 fine-tune Cell A first** (closest to the proven 0.906 recipe); B/C are ready backups. Full read →
 `experiments/038-xc-pretraining/results.md`.
 
-### Exp 038 Stage 2 — fine-tune on 2026 (Cell A & C × 5 folds) — TRAINED, LB pending
+### Exp 038 Stage 2 — fine-tune on 2026 (Cell A & C × 5 folds) — single-fold LB IN; 5-fold LB pending
 
 Recipe = exp 032's 0.906 KD-SED (`DistilledSEDFinetuneModule`, Perch-v2 KD, dual-BCE, mixup, Tucker mel
 256, AttHeadLogitSpace) with the encoder swapped to **EffNetV2-S warm-started** from each Stage-1
-backbone (encoder-only; 234-class head re-init). 10 folds, 25 ep clean, rtx6000. **Final-epoch val on
-the held-out labeled-SS fold** (offline — anti-correlates with LB; for-the-record only):
+backbone (encoder-only; 234-class head re-init). 10 folds, 25 ep clean, rtx6000.
 
-| Backbone (Stage-1) | mean val/auroc (5-fold) | mean val/cmap | per-fold auroc | Checkpoints |
-|---|--:|--:|---|---|
-| **A** (mixup-regularized) | **0.9104** (±0.013) | 0.6934 | .887/.915/.919/.907/.924 | `2026-exp038-finetune-cellA/fold{0-4}/` |
-| **C** (no-mixup, sharp) | **0.9085** (±0.009) | 0.6887 | .894/.921/.907/.908/.912 | `2026-exp038-finetune-cellC/fold{0-4}/` |
+**LB (the arbiter) — single-fold (fold 0), 2026-05-31. Both kernels printed the `Species mapping: 234
+mapped` canary** ([[feedback_species_mapping_canary]]):
 
-**Read:** A vs C is a **statistical tie** offline (Δ 0.0019 ≪ ±0.01 fold spread) — offline can't rank
-them ([[project_cv_measurement_failure]]); **LB decides the mixup-transfer question.** Both means sit on
-the exp 032 B0 baseline's offline (val/auroc 0.908) → the XC-pretrained V2-S is offline-competitive with
-ImageNet+KD; LB vs 0.906/0.929 is the open test (honest ~0.88–0.90 single-fold ceiling). Submission
-wiring built (exp 010): `finetune-cell-{a,c}` (fold0) + `-5fold` (logit-space fold mean). Full read →
-`experiments/038-xc-pretraining/results.md`.
+| Model | LB | vs 0.906 KD baseline | vs ~0.88 XC-backbone (exp 034/036) | Offline val/auroc (fold0) |
+|---|--:|:--:|:--:|--:|
+| **`finetune-cell-a`** (mixup-reg backbone) | **0.907** | **+0.001 (parity)** | **+0.025 to +0.029** | 0.887 |
+| **`finetune-cell-c`** (no-mixup backbone) | **0.901** | −0.005 | +0.019 to +0.023 | 0.894 |
+| `finetune-cell-{a,c}-5fold` (logit fold-mean) | **pending** | vs 0.915 | — | A 0.910 / C 0.909 (5-fold mean) |
+
+**Offline (final-epoch val on held-out labeled-SS — anti-correlates with LB; for-the-record):** 5-fold
+mean val/auroc A **0.9104** (±0.013), C **0.9085** (±0.009); per-fold A .887/.915/.919/.907/.924, C
+.894/.921/.907/.908/.912; mean cmap A 0.693 / C 0.689. Checkpoints `2026-exp038-finetune-cell{A,C}/fold{0-4}/`.
+
+**Read (LB resolves what offline couldn't):**
+- **Headline — the ~0.88 XC-backbone ceiling is REFUTED.** Both single folds clear exp 034/036's
+  0.878–0.882 (warm-starting someone else's bird checkpoint) by **+0.019 to +0.029**. Doing **our own**
+  broad-Neotropical supervised XC pretrain *under the exact KD-SED regime* reaches **parity with the
+  in-domain ImageNet+KD 0.906** — Cell A 0.907 (+0.001, within the ~±0.007 cross-hardware LB noise).
+  So the prior "XC-pretrain caps at 0.88" read was about the *transfer recipe*, not XC pretraining itself.
+- **A > C by 0.006 → mixup-regularized pretrain transfers better** to the focal→soundscape shift than the
+  sharp/no-mixup backbone. This **answers the A-vs-C mixup-transfer question** that offline called a tie
+  (Δ0.0019). Note offline's *fold0* even ranked C 0.894 > A 0.887 — the usual anti-correlation
+  ([[project_cv_measurement_failure]], [[feedback_offline_metrics_unreliable]]); LB called it for A.
+- **Not a plateau-break** (≤ the 0.906/0.915/0.929 stack) but a **legitimate backbone-diverse member at
+  0.906-class strength** + the working-note result (our own XC backbone ≈ ImageNet+KD).
+- **Next:** 5-fold LB (vs 0.915) → prob-space blend of the best into the 0.929 ensemble (keep iff > 0.929).
+Full read → `experiments/038-xc-pretraining/results.md`.
 
 ## Checkpoint Base Path
 
