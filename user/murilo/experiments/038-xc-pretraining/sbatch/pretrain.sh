@@ -25,6 +25,8 @@ CONFIG="${CONFIG:-configs/pretrain_cellA_dualbce.yaml}"
 PROJECT_NAME="${PROJECT_NAME:-ps-clef2026_birdclef-0}"
 FAST_DEV_RUN="${FAST_DEV_RUN:-false}"
 NUM_WORKERS="${NUM_WORKERS:-}"
+BATCH_SIZE="${BATCH_SIZE:-}"
+ACCUMULATE="${ACCUMULATE:-}"
 
 # $SLURM_SUBMIT_DIR = the experiment dir (where run.sh called sbatch). NOT $BASH_SOURCE — sbatch
 # spools a copy of this script ([[feedback_slurm_script_conventions]]).
@@ -91,6 +93,12 @@ if [[ "${FAST_DEV_RUN}" == "true" ]]; then
 fi
 if [[ -n "${NUM_WORKERS}" ]]; then
     TRAIN_CMD="${TRAIN_CMD} --num-workers ${NUM_WORKERS}"
+fi
+if [[ -n "${BATCH_SIZE}" ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --batch-size ${BATCH_SIZE}"
+fi
+if [[ -n "${ACCUMULATE}" ]]; then
+    TRAIN_CMD="${TRAIN_CMD} --accumulate-grad-batches ${ACCUMULATE}"
 fi
 
 echo "Starting pretraining..."

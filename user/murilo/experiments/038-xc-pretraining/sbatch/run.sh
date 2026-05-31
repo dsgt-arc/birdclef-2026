@@ -18,6 +18,8 @@ NUM_WORKERS=""
 CONFIG=""
 PROJECT_NAME="ps-clef2026_birdclef-0"
 GPU_TYPE=""
+BATCH_SIZE=""
+ACCUMULATE=""
 
 resolve_partitions() {
     local result=""
@@ -43,9 +45,11 @@ while [[ $# -gt 0 ]]; do
         --fast-dev-run) FAST_DEV_RUN=true; shift ;;
         --gpu)          GPU_TYPE="$2"; shift 2 ;;
         --num-workers)  NUM_WORKERS="$2"; shift 2 ;;
+        --batch-size)   BATCH_SIZE="$2"; shift 2 ;;
+        --accumulate)   ACCUMULATE="$2"; shift 2 ;;
         --project-name) PROJECT_NAME="$2"; shift 2 ;;
         -h|--help)
-            echo "Usage: $0 CONFIG_PATH [--gpu TYPE] [--num-workers N] [--fast-dev-run] [--dry-run]"
+            echo "Usage: $0 CONFIG_PATH [--gpu TYPE] [--batch-size N] [--accumulate N] [--num-workers N] [--fast-dev-run] [--dry-run]"
             ls configs/*.yaml 2>/dev/null | grep -v _common | sed 's/^/  /'
             exit 0 ;;
         *)
@@ -84,7 +88,7 @@ echo ""
 CMD="sbatch \
     --partition=${PARTITION} \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},NUM_WORKERS=${NUM_WORKERS} \
+    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},NUM_WORKERS=${NUM_WORKERS},BATCH_SIZE=${BATCH_SIZE},ACCUMULATE=${ACCUMULATE} \
     --job-name=exp038-${RUN_NAME} \
     ${SCRIPT_DIR}/pretrain.sh"
 

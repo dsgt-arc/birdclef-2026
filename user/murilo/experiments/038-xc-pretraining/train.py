@@ -147,6 +147,18 @@ def main():
     parser.add_argument("--fast-dev-run", action="store_true")
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--devices", type=int, default=1)
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Override data.batch_size (e.g. smaller on 24 GB rtx6000 vs 80 GB a100).",
+    )
+    parser.add_argument(
+        "--accumulate-grad-batches",
+        type=int,
+        default=None,
+        help="Override training.accumulate_grad_batches (keep effective batch ~128 on smaller GPUs).",
+    )
     args = parser.parse_args()
 
     config_path = Path(__file__).parent / args.config
@@ -157,6 +169,10 @@ def main():
     pl.seed_everything(seed, workers=True)
     if args.num_workers is not None:
         config["data"]["num_workers"] = args.num_workers
+    if args.batch_size is not None:
+        config["data"]["batch_size"] = args.batch_size
+    if args.accumulate_grad_batches is not None:
+        config["training"]["accumulate_grad_batches"] = args.accumulate_grad_batches
     logger.info(f"Config: {config_path} | run: {run_name} | seed: {seed}")
 
     data_cfg = config["data"]
