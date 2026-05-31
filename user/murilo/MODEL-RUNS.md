@@ -1432,6 +1432,34 @@ comparison + A-raw-augT-softauc + C-raw-augT-softauc), exporting each cell's bes
 Falsifiable single-fold vs 0.906: CONFIRM ≥0.916 / REJECT ≤0.906. Full read →
 `experiments/037-noisy-student-pl/results.md`.
 
+## Experiment 038: Broad Neotropical XC Pretraining (EffNetV2-S) — Stage 1 COMPLETE (XC-val sanity gate PASS; Stage 2 fine-tune + LB pending)
+
+**Stage 1 verdict (2026-05-31): sanity gate PASS, decisively.** All 3 cells trained 25 ep clean on
+rtx6000; held-out **XC macro-AUROC 0.984–0.986** vs the proposal's ≳0.95 "pretrain works" bar (top-5
+~0.89 across **2,683** Neotropical bird species). The loop learned broad XC bird ID. **AUROC ranks the
+cells within 0.0013** (un-rankable — XC-val is a *sanity gate*, NOT a 2026-LB proxy:
+[[project_cv_measurement_failure]]). **Stage 2 (re-head to 234 → KD-SED fine-tune → LB) is the arbiter,
+NOT YET RUN.** Honest ceiling ~0.88–0.90 single-fold (exp 034/036) → backbone-diverse ensemble member +
+working-note, not a plateau-break.
+
+EffNetV2-S `tf_efficientnetv2_s.in21k` (embed_dim 1280), SED-mirror head (`AttHeadLogitSpace`, KD off),
+Tucker mel n_mels=256 sr=32000, 5 s crop, dual-supervision `0.5·BCE(clip)+0.5·BCE(frame_max)`. 148,427
+train / 2,834 val (per-species 2% val). Eff batch 128, AdamW 5e-4→cosine→1e-6, 25 ep, `save_top_k=-1`.
+
+| Cell | Lever | Loss | Classes | Best ep | **XC val/auroc** | val/cmap | val/f1_macro | val/top1 | val/top5 | Job | Checkpoint |
+|------|-------|------|--------:|:-------:|-----------------:|---------:|-------------:|---------:|---------:|-----|------------|
+| A (PRIMARY) | dual-BCE + **LS 0.05** + full aug | bce | 2683 | 23 | 0.9843 | 0.6766 | 0.2361 | 0.7470 | 0.8899 | 9351785 | `038-xc-pretraining/checkpoints/2026-exp038-pretrain-cellA-dualbce/epoch23.ckpt` |
+| B | **focal-BCE** (α0.25/γ2) | focalbce | 2683 | 23 | **0.9847** | 0.6756 | 0.2154 | 0.7315 | 0.8889 | 9351788 | `038-.../2026-exp038-pretrain-cellB-focalbce/epoch23.ckpt` |
+| C | **mixup OFF** | bce | 2683 | 22 | **0.9856** | 0.6751 | **0.2642** | **0.7572** | 0.8867 | 9351789 | `038-.../2026-exp038-pretrain-cellC-nomixup/epoch22.ckpt` |
+
+**Read:** (1) AUROC tied within noise → don't pick by XC-val. (2) **Sharpness metrics separate and
+expose the mixup trade-off** — C (no-mixup) sharpest in-distribution (f1_macro 0.264 / top-1 0.757),
+because mixup softens predictions (regularizer); whether that buys soundscape generalization is an
+**LB-only** question. (3) Absolute f1/cmap modest = normal for 2683-class extreme multi-label + random
+5 s crops + macro long tail; AUROC/top-k are the trustworthy signals. **Plan: fine-tune Cell A first**
+(closest to the proven 0.906 recipe); B/C are ready backups. Full read →
+`experiments/038-xc-pretraining/results.md`.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`
