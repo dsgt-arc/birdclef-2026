@@ -159,6 +159,17 @@ def main():
         default=None,
         help="Override training.accumulate_grad_batches (keep effective batch ~128 on smaller GPUs).",
     )
+    parser.add_argument(
+        "--gpu-check",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Run N epochs (default 1) with GPU-utilization monitoring; no W&B, no checkpoints. "
+        "Prints a throughput/util summary + real epoch wall-time (→ 25-ep ETA) and flags whether "
+        "data loading is the bottleneck. Use before committing the full grid. Mutually exclusive "
+        "with --fast-dev-run.",
+    )
     args = parser.parse_args()
 
     config_path = Path(__file__).parent / args.config
@@ -173,6 +184,17 @@ def main():
         config["data"]["batch_size"] = args.batch_size
     if args.accumulate_grad_batches is not None:
         config["training"]["accumulate_grad_batches"] = args.accumulate_grad_batches
+
+    gpu_check_mode = args.gpu_check > 0
+    if args.fast_dev_run and gpu_check_mode:
+        parser.error("--fast-dev-run and --gpu-check are mutually exclusive")
+    if gpu_check_mode:
+        config["training"]["max_epochs"] = args.gpu_check
+        if config["training"].get("warmup_epochs", 0) >= args.gpu_check:
+            config["training"]["warmup_epochs"] = 0  # keep cosine T_max > 0 for short schedules
+        logger.info(
+            f"GPU-check mode: {args.gpu_check} epoch(s) — GPU monitor on, no W&B/checkpoints"
+        )
     logger.info(f"Config: {config_path} | run: {run_name} | seed: {seed}")
 
     data_cfg = config["data"]
@@ -256,26 +278,36 @@ def main():
     )
 
     # --- callbacks ---
-    ckpt_cfg = config.get("callbacks", {}).get("model_checkpoint", {})
-    checkpoint_callback = ModelCheckpoint(
-        monitor=ckpt_cfg.get("monitor", "val/auroc"),
-        mode=ckpt_cfg.get("mode", "max"),
-        save_top_k=ckpt_cfg.get("save_top_k", -1),
-        save_last=ckpt_cfg.get("save_last", True),
-        # Name by epoch only — embedding {val/auroc} in the filename is fragile (the "/" in the
-        # metric key breaks the format string). save_top_k=-1 keeps all; best is tracked via
-        # best_model_path / best_model_score and written to pretrain_results.json.
-        filename=ckpt_cfg.get("filename", "epoch{epoch:02d}"),
-        auto_insert_metric_name=False,
-        dirpath=run_dir,
-        verbose=True,
-    )
-    callbacks = [
-        checkpoint_callback,
-        LearningRateMonitor(logging_interval="epoch"),
-        DeviceStatsMonitor(),
-    ]
-    logger.info(f"Checkpoints → {run_dir} (monitor={checkpoint_callback.monitor}, save_top_k=-1)")
+    if gpu_check_mode:
+        from birdclef.callbacks.gpu_monitor import GPUUtilizationMonitor
+
+        gpu_monitor = GPUUtilizationMonitor(log_every_n_steps=10)
+        checkpoint_callback = None
+        callbacks = [gpu_monitor, LearningRateMonitor(logging_interval="step")]
+    else:
+        gpu_monitor = None
+        ckpt_cfg = config.get("callbacks", {}).get("model_checkpoint", {})
+        checkpoint_callback = ModelCheckpoint(
+            monitor=ckpt_cfg.get("monitor", "val/auroc"),
+            mode=ckpt_cfg.get("mode", "max"),
+            save_top_k=ckpt_cfg.get("save_top_k", -1),
+            save_last=ckpt_cfg.get("save_last", True),
+            # Name by epoch only — embedding {val/auroc} in the filename is fragile (the "/" in the
+            # metric key breaks the format string). save_top_k=-1 keeps all; best is tracked via
+            # best_model_path / best_model_score and written to pretrain_results.json.
+            filename=ckpt_cfg.get("filename", "epoch{epoch:02d}"),
+            auto_insert_metric_name=False,
+            dirpath=run_dir,
+            verbose=True,
+        )
+        callbacks = [
+            checkpoint_callback,
+            LearningRateMonitor(logging_interval="epoch"),
+            DeviceStatsMonitor(),
+        ]
+        logger.info(
+            f"Checkpoints → {run_dir} (monitor={checkpoint_callback.monitor}, save_top_k=-1)"
+        )
 
     # --- loggers ---
     experiment_name = f"exp038-{run_name}"
@@ -284,7 +316,7 @@ def main():
             save_dir=Path(__file__).parent / "outputs", name="tensorboard", version=experiment_name
         )
     ]
-    if not args.fast_dev_run:
+    if not args.fast_dev_run and not gpu_check_mode:
         log_cfg = config.get("logging", {})
         wandb_logger = WandbLogger(
             entity=log_cfg.get("entity", "dsgt-arc"),
@@ -299,7 +331,7 @@ def main():
         )
         loggers.append(wandb_logger)
     else:
-        logger.info("Fast dev run — skipping W&B")
+        logger.info(f"{'GPU-check' if gpu_check_mode else 'Fast dev run'} — skipping W&B")
 
     # --- trainer ---
     trainer = pl.Trainer(
@@ -321,6 +353,16 @@ def main():
 
     logger.info("Starting pretraining...")
     trainer.fit(pl_module, data_module)
+
+    if gpu_check_mode:
+        import os
+
+        job_id = os.environ.get("SLURM_JOB_ID", "local")
+        summary_dir = Path(__file__).parent / "outputs" / "gpu_check"
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        gpu_monitor.print_summary(save_path=summary_dir / f"{run_name}_{job_id}.txt")
+        logger.info("GPU-check complete!")
+        return
 
     if not args.fast_dev_run:
         results = {

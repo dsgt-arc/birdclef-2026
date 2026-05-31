@@ -14,6 +14,7 @@ set -eu
 
 DRY_RUN=false
 FAST_DEV_RUN=false
+GPU_CHECK=0
 NUM_WORKERS=""
 CONFIG=""
 PROJECT_NAME="ps-clef2026_birdclef-0"
@@ -43,13 +44,16 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run)      DRY_RUN=true; shift ;;
         --fast-dev-run) FAST_DEV_RUN=true; shift ;;
+        --gpu-check)
+            if [[ -n "${2:-}" && "$2" =~ ^[0-9]+$ ]]; then GPU_CHECK="$2"; shift 2; else GPU_CHECK=1; shift; fi
+            ;;
         --gpu)          GPU_TYPE="$2"; shift 2 ;;
         --num-workers)  NUM_WORKERS="$2"; shift 2 ;;
         --batch-size)   BATCH_SIZE="$2"; shift 2 ;;
         --accumulate)   ACCUMULATE="$2"; shift 2 ;;
         --project-name) PROJECT_NAME="$2"; shift 2 ;;
         -h|--help)
-            echo "Usage: $0 CONFIG_PATH [--gpu TYPE] [--batch-size N] [--accumulate N] [--num-workers N] [--fast-dev-run] [--dry-run]"
+            echo "Usage: $0 CONFIG_PATH [--gpu TYPE] [--batch-size N] [--accumulate N] [--num-workers N] [--gpu-check [N]] [--fast-dev-run] [--dry-run]"
             ls configs/*.yaml 2>/dev/null | grep -v _common | sed 's/^/  /'
             exit 0 ;;
         *)
@@ -88,7 +92,7 @@ echo ""
 CMD="sbatch \
     --partition=${PARTITION} \
     --output=${LOG_DIR}/slurm_${RUN_NAME}_%j.log \
-    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},NUM_WORKERS=${NUM_WORKERS},BATCH_SIZE=${BATCH_SIZE},ACCUMULATE=${ACCUMULATE} \
+    --export=ALL,CONFIG=${CONFIG},PROJECT_NAME=${PROJECT_NAME},FAST_DEV_RUN=${FAST_DEV_RUN},GPU_CHECK=${GPU_CHECK},NUM_WORKERS=${NUM_WORKERS},BATCH_SIZE=${BATCH_SIZE},ACCUMULATE=${ACCUMULATE} \
     --job-name=exp038-${RUN_NAME} \
     ${SCRIPT_DIR}/pretrain.sh"
 
