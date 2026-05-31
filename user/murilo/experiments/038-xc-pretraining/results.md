@@ -1,6 +1,6 @@
 ---
 experiment: "038-xc-pretraining"
-status: Stage 1 COMPLETE — all 3 cells PASS the XC-val sanity gate (val/auroc 0.984–0.986 ≫ 0.95 threshold); Stage 2 fine-tune + LB PENDING
+status: Stage 1 COMPLETE (XC-val sanity gate PASS, 0.984–0.986); Stage 2 fine-tune TRAINED (A & C × 5 folds; offline val/auroc A 0.910 / C 0.909 — tied, ≈ the 0.906 B0 baseline offline); **LB the arbiter, PENDING**
 date: 2026-05-31
 author: Murilo Gustineli
 ---
@@ -90,17 +90,48 @@ and worth fine-tuning** — nothing more. Exp 034/036 already showed a broad-XC 
 ~0.88 < our 0.906 KD; the open question Stage 2 answers is whether *our own* supervised XC pretrain
 (under the exact SED regime) does better than warm-starting someone else's bird checkpoint.
 
-## Next steps
+## Stage 2 — fine-tune on 2026 (TRAINED; offline metrics; LB the arbiter, pending)
 
-**A) exp 038 Stage 2 (NOT YET BUILT):** load Cell A `epoch23.ckpt` backbone → re-init a 234-class
-`AttHeadLogitSpace` → run the exp 032 KD-SED fine-tune recipe (KD-from-Perch + labeled-SS + dual-BCE +
-mixup; reuse `DistilledSEDFinetuneModule` with KD **on**) → exp 010 ONNX export → **LB** (single-fold
-vs 0.906; 5-fold vs 0.915; prob-space blend into 0.929). B/C backbones are backups.
+Both Cell A (mixup-regularized backbone) and Cell C (no-mixup backbone) fine-tuned on the 234 targets
+× **5 folds each** (10 runs, all 25 ep clean, rtx6000, ~5–6 h). Recipe = exp 032's 0.906 KD-SED
+(`DistilledSEDFinetuneModule`, KD-from-Perch-v2, dual-BCE, mixup, Tucker mel 256, AttHeadLogitSpace)
+with the encoder swapped to EffNetV2-S warm-started from each Stage-1 backbone (encoder-only; head
+re-init). Final-epoch val on the held-out labeled-SS fold:
 
-**B) Deadline END-GAME (higher deadline-EV, still pending):** secure the 0.929 exp-023 ensemble as
-final pick #1 (reproducible + submittable; `Species mapping: 234 mapped` canary —
-[[feedback_species_mapping_canary]]); PP/TTA A/B for pick #2. **Deadline 2026-06-03 (~3 days), LB
-rate-limited (~5/day, ~14 pulls left)** — weigh Stage-2's LB pull against locking the final picks.
+| Backbone | fold0 | fold1 | fold2 | fold3 | fold4 | **mean val/auroc** | mean val/cmap |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| **A** (mixup) | 0.8873 | 0.9147 | 0.9192 | 0.9072 | 0.9237 | **0.9104** (±0.013) | 0.6934 |
+| **C** (no-mixup) | 0.8944 | 0.9214 | 0.9069 | 0.9080 | 0.9116 | **0.9085** (±0.009) | 0.6887 |
+
+**Read (offline only — NOT an LB verdict):**
+- **A vs C is a statistical tie** (Δmean auroc 0.0019, well inside the ±0.01 fold spread; cmap
+  0.693 vs 0.689). As at every prior altitude, offline labeled-SS **cannot rank** two similar SED
+  models ([[project_cv_measurement_failure]]) — and it **anti-correlates with LB**
+  ([[feedback_offline_metrics_unreliable]]). So this does **not** tell us which backbone transfers
+  better; **LB does.** The mixup-transfer question (A vs C) is decided on the leaderboard.
+- The means (A 0.910 / C 0.909) sit **right on the exp 032 B0 baseline's offline** (fold-0 val/auroc
+  0.908) — i.e. our XC-pretrained V2-S backbone is *offline-competitive* with ImageNet+KD. Whether
+  that converts to LB (vs the 0.906 single / 0.929 ensemble) is the open question, against the honest
+  ~0.88–0.90 single-fold ceiling (exp 034/036).
+- `f1_macro` (0.05–0.09) is low by construction on the sparse 234-class labeled-SS val (matches the
+  exp 032 pattern); auroc/cmap are the comparable signals.
+
+Checkpoints: `experiments/038-xc-pretraining/checkpoints/2026-exp038-finetune-cell{A,C}/fold{0-4}/`
+(`save_top_k=-1`; export uses `last*.ckpt` = final epoch, the 0.906 lineage convention). Submission
+wiring built (exp 010, commit baecafb): models `finetune-cell-{a,c}` (fold0) + `-5fold`.
+
+## Next steps — LB (the arbiter)
+
+1. **Single-fold A vs C vs 0.906** (the decisive read): export + submit `finetune-cell-a` and
+   `finetune-cell-c` (fold 0). CONFIRM if either beats 0.906 (would refute the "XC-pretrain caps 0.88"
+   read); else they're diverse members.
+2. **5-fold ensembles** `finetune-cell-{a,c}-5fold` (logit-space fold mean) vs 0.915; then the
+   **prob-space blend into the 0.929** ensemble — keep iff it beats 0.929 on LB.
+3. **Canary** every submission: kernel log must print `Species mapping: 234 mapped`
+   ([[feedback_species_mapping_canary]]).
+
+**Deadline END-GAME:** the 0.929 exp-023 ensemble is already submitted + scored — just **select it as
+a final submission** (+ pick the 2nd slot from the best LB result here). LB ~5/day.
 
 ## Artifacts
 

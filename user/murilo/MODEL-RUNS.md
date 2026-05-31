@@ -1464,6 +1464,25 @@ multi-label + random 5 s crops + macro long tail; AUROC/top-k are the trustworth
 fine-tune Cell A first** (closest to the proven 0.906 recipe); B/C are ready backups. Full read →
 `experiments/038-xc-pretraining/results.md`.
 
+### Exp 038 Stage 2 — fine-tune on 2026 (Cell A & C × 5 folds) — TRAINED, LB pending
+
+Recipe = exp 032's 0.906 KD-SED (`DistilledSEDFinetuneModule`, Perch-v2 KD, dual-BCE, mixup, Tucker mel
+256, AttHeadLogitSpace) with the encoder swapped to **EffNetV2-S warm-started** from each Stage-1
+backbone (encoder-only; 234-class head re-init). 10 folds, 25 ep clean, rtx6000. **Final-epoch val on
+the held-out labeled-SS fold** (offline — anti-correlates with LB; for-the-record only):
+
+| Backbone (Stage-1) | mean val/auroc (5-fold) | mean val/cmap | per-fold auroc | Checkpoints |
+|---|--:|--:|---|---|
+| **A** (mixup-regularized) | **0.9104** (±0.013) | 0.6934 | .887/.915/.919/.907/.924 | `2026-exp038-finetune-cellA/fold{0-4}/` |
+| **C** (no-mixup, sharp) | **0.9085** (±0.009) | 0.6887 | .894/.921/.907/.908/.912 | `2026-exp038-finetune-cellC/fold{0-4}/` |
+
+**Read:** A vs C is a **statistical tie** offline (Δ 0.0019 ≪ ±0.01 fold spread) — offline can't rank
+them ([[project_cv_measurement_failure]]); **LB decides the mixup-transfer question.** Both means sit on
+the exp 032 B0 baseline's offline (val/auroc 0.908) → the XC-pretrained V2-S is offline-competitive with
+ImageNet+KD; LB vs 0.906/0.929 is the open test (honest ~0.88–0.90 single-fold ceiling). Submission
+wiring built (exp 010): `finetune-cell-{a,c}` (fold0) + `-5fold` (logit-space fold mean). Full read →
+`experiments/038-xc-pretraining/results.md`.
+
 ## Checkpoint Base Path
 
 All checkpoints under: `/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/`

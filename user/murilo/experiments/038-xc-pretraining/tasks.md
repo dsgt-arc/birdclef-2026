@@ -69,11 +69,11 @@ single-fold A + single-fold C first** (2 pulls = decisive read).
 - [x] **Local-tested**: 3 new warm-start tests (encoder.* full-copy / head+distill re-init / class-count
       mismatch / exp 032 species-partial-copy parity) + 26 total exp 038 tests PASS; py_compile + bash -n
       clean; both configs parse (KD on, α1.0, tucker256, AttHeadLogitSpace, eff64, 25ep, monitor val/cmap).
-- [ ] **(Murilo) pre-flight**: `bash sbatch/run_finetune.sh configs/finetune_cellA.yaml --fold 0 --fast-dev-run --gpu rtx6000,a100`
-      (5-batch gradient-flow check through real V2-S + KD + warm-start + focal/SS data).
-- [ ] **(Murilo) launch the 10-job grid** (rtx6000, parallel):
-      `for f in 0 1 2 3 4; do bash sbatch/run_finetune.sh configs/finetune_cellA.yaml --fold $f; done`
-      then the same for `finetune_cellC.yaml`. Checkpoints → `experiments/038-xc-pretraining/checkpoints/<run>/fold<N>/`.
+- [x] **DONE (Murilo ran)**: pre-flight + 10-job grid (A & C × 5 folds) trained clean, 25 ep, rtx6000
+      (~5–6 h). **Final-epoch offline val/auroc (held-out labeled-SS):** Cell A mean **0.9104** (±0.013),
+      Cell C mean **0.9085** (±0.009) — a statistical TIE (Δ0.0019 ≪ fold spread), both ≈ the exp 032 B0
+      baseline offline (0.908). Offline can't rank A vs C + anti-correlates w/ LB → **LB decides.**
+      `test_results/2026-exp038-finetune-cell{A,C}-fold{0-4}.json`. results.md/MODEL-RUNS.md updated.
 - [x] **Submission wiring BUILT** (exp 010, commit baecafb): cloned the exp 032 distilled-sed-kd
       pipeline (V2-S backbone only → export_distilled_sed.py + the kernel's Tucker path reused
       UNCHANGED). 4 models: `finetune-cell-{a,c}` (fold0) + `finetune-cell-{a,c}-5fold`. Touched
