@@ -112,43 +112,51 @@ def curate(
 
 
 def load_birdset_metadata(smoke: int | None = None) -> pd.DataFrame:
-    """Load BirdSet-XCL METADATA into a DataFrame with the META_COLS schema.
+    """Load BirdSet-XCL metadata from its standalone metadata parquet (NO audio, NO 480 GB).
 
-    *** Murilo: verify on PACE (internet) with --smoke first. ***
-    BirdSet (`DBD-research-group/BirdSet`, config "XCL") rows carry: ebird_code, ebird_code_secondary,
-    lat, long, length, quality, filepath, + audio. We need metadata ONLY (no 480 GB audio):
-      - PREFERRED: if the HF repo ships a metadata-only parquet/csv, read that directly (fast).
-      - FALLBACK (below): stream the dataset and collect metadata fields WITHOUT touching audio['array']
-        (the Audio feature decodes lazily). If parquet inlines audio bytes this still pulls shards —
-        in that case switch to the metadata-only file. Confirm field names match META_COLS on smoke.
-    Genus/Species (2021 eBird taxonomy) → `sciname` for the target scientific-name fallback.
+    `datasets` 4.x removed remote-script support, so we bypass `load_dataset`/BirdSet.py and fetch the
+    single metadata file the script itself uses: `XCL/XCL_metadata.parquet` on the **`data`** revision
+    (per BirdSet.py `_split_generators`: `meta_train = .../XCL/XCL_metadata.parquet`). It carries the
+    per-recording labels (filepath, ebird_code, ebird_code_secondary, lat, long, length, quality, …).
+
+    `ebird_code` is a ClassLabel in the HF schema → it MAY be stored as an int index. We print dtypes;
+    if numeric, target-by-code matching needs the class-name list (flagged — bring to Claude).
     """
-    from datasets import load_dataset
+    from huggingface_hub import hf_hub_download
 
-    ds = load_dataset("DBD-research-group/BirdSet", "XCL", split="train", streaming=True)
-    rows = []
-    for i, r in enumerate(ds):
-        if smoke is not None and i >= smoke:
-            break
-        sci = None
-        if r.get("Genus") and r.get("Species"):
-            sci = f"{r['Genus']} {r['Species']}".strip()
-        rows.append(
-            {
-                "filepath": r.get("filepath"),
-                "ebird_code": r.get("ebird_code"),
-                "ebird_code_secondary": r.get("ebird_code_secondary"),
-                "lat": r.get("lat"),
-                "long": r.get("long"),
-                "length": r.get("length"),
-                "quality": r.get("quality"),
-                "sciname": sci,
-            }
-        )
-    df = pd.DataFrame(rows)
-    df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
-    df["long"] = pd.to_numeric(df["long"], errors="coerce")
-    df["length"] = pd.to_numeric(df["length"], errors="coerce")
+    path = hf_hub_download(
+        repo_id="DBD-research-group/BirdSet",
+        filename="XCL/XCL_metadata.parquet",
+        repo_type="dataset",
+        revision="data",
+    )
+    raw = pd.read_parquet(path)
+    print(f"  XCL_metadata.parquet: {len(raw):,} rows x {len(raw.columns)} cols")
+    print(f"  raw columns: {list(raw.columns)}")
+    if "ebird_code" in raw.columns:
+        print(f"  ebird_code dtype: {raw['ebird_code'].dtype}")
+        if pd.api.types.is_numeric_dtype(raw["ebird_code"]):
+            print(
+                "  WARNING: ebird_code is numeric (ClassLabel index) — target-by-code matching will "
+                "miss until we decode it with the XCL class-name list. Bring this output to Claude."
+            )
+
+    def col(name):
+        return raw[name] if name in raw.columns else None
+
+    df = pd.DataFrame(
+        {
+            "filepath": col("filepath"),
+            "ebird_code": raw["ebird_code"].astype(str) if "ebird_code" in raw.columns else None,
+            "ebird_code_secondary": col("ebird_code_secondary"),
+            "lat": pd.to_numeric(col("lat"), errors="coerce"),
+            "long": pd.to_numeric(col("long"), errors="coerce"),
+            "length": pd.to_numeric(col("length"), errors="coerce"),
+            "quality": col("quality"),
+        }
+    )
+    if smoke is not None:
+        df = df.head(smoke)
     return df
 
 
