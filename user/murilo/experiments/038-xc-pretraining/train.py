@@ -368,6 +368,20 @@ def main():
         return
 
     if not args.fast_dev_run:
+        # Final epoch's val metrics (mirrors exp 037 so save_metrics.py can serialize them).
+        val_metrics = {}
+        for key in (
+            "val/auroc",
+            "val/cmap",
+            "val/f1_macro",
+            "val/f1_micro",
+            "val/top1_acc",
+            "val/top5_acc",
+            "val/loss",
+        ):
+            v = trainer.callback_metrics.get(key)
+            if v is not None:
+                val_metrics[key] = float(v)
         results = {
             "config_path": str(config_path),
             "run_name": run_name,
@@ -382,10 +396,17 @@ def main():
             "best_checkpoint_path": checkpoint_callback.best_model_path or "",
             "last_checkpoint_path": checkpoint_callback.last_model_path or "",
             "stopped_epoch": trainer.current_epoch,
+            "val_metrics": val_metrics or None,
         }
-        results_file = run_dir / "pretrain_results.json"
-        results_file.write_text(json.dumps(results, indent=2))
-        logger.info(f"Results → {results_file}")
+        # run_dir copy (Stage-2 provenance) + experiment-local copy (save_metrics.py reads this,
+        # mirroring exp 037's outputs/test_results/<run_name>.json convention).
+        (run_dir / "pretrain_results.json").write_text(json.dumps(results, indent=2))
+        tr_dir = Path(__file__).parent / "outputs" / "test_results"
+        tr_dir.mkdir(parents=True, exist_ok=True)
+        (tr_dir / f"{run_name}.json").write_text(json.dumps(results, indent=2))
+        logger.info(
+            f"Results → {run_dir / 'pretrain_results.json'} (+ {tr_dir / f'{run_name}.json'})"
+        )
 
     logger.info("Pretraining complete!")
 

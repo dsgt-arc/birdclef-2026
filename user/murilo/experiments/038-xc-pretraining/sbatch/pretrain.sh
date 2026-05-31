@@ -109,6 +109,13 @@ fi
 echo "Starting pretraining..."
 srun ${TRAIN_CMD}
 
+# Structured metrics dump (parity with exp 037) — skip for fast-dev-run / gpu-check.
+if [[ "${FAST_DEV_RUN}" != "true" && "${GPU_CHECK}" -eq 0 ]]; then
+    echo ""
+    echo "Saving structured metrics to artifacts/..."
+    python save_metrics.py --config "${CONFIG}"
+fi
+
 echo ""
 echo "=============================================="
 echo "End: $(date)"
