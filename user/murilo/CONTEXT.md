@@ -1,89 +1,107 @@
 # Session Context
 
-Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
-to resume; follow the linked files for full detail.
+Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first to resume;
+follow the linked files for full detail.
 
-**Last updated**: 2026-05-30 (night). **Exp 037 (multi-iterative Noisy-Student soft PL) — CLOSED,
-REJECT.** The A/B/C-raw-augF trio (clean KD-routing comparison, `last.ckpt` fold0) submitted to LB:
-**C 0.832 / B 0.790 / A 0.754 — all far below the 0.906 no-PL base** (best −0.074). PL **poisons** the
-distilled-sed-kd student (raw ensemble blend = diffuse soft targets, mean 0.24, ~233 cls at 0.1–0.3/win;
-50/50 + loss_weight=1.0 → calibration flattens → ranking collapses). **5th PL failure** (014/015/025/
-033/037). One genuine result: the **KD-routing axis transferred offline→LB (C>B>A)** — "let PL reach the
-backbone, don't detach" is real — but PL is net-negative regardless. 2 SoftAUC picks NOT submitted
-(trio decisive; LB conserved). NOT the val metric (shipped `last.ckpt`) nor epochs (curves plateaued).
+**Last updated**: 2026-05-31 (early AM). **Active experiment: exp 038 — broad Neotropical XC
+supervised pretraining (EffNetV2-S).** Stage 0 (curate + download) DONE; **Stage 1 built + tested, and
+a 3-cell pretrain grid is RUNNING on rtx6000** (launched ~00:14, ETA ~04:30 May 31). exp 037
+(multi-iterative soft PL) was CLOSED/REJECT the prior session (merged to main, PR #57).
 
-**Competition deadline**: 2026-06-03 (~4 days) — now the priority.
+**Competition deadline**: 2026-06-03 (~3 days).
 
-**Branch/state**: on `mg/037-noisy-student-pl` (pushed), clean. exp 037 fully closed (REJECT) across
-`results.md`/`tasks.md`/`MODEL-RUNS.md`. PL track exhausted (0/5); pretraining capped ~0.88 (exp
-034/036); training-recipe base-rate≈0 (exp 027). Deep-research notes + a SoftAUC-PL / Perch-only-PL /
-XC-pretrain track remain for the **post-deadline paper** (compute free, doesn't count for LB).
+**⚠️ Deadline priority vs this experiment (honest framing — don't lose this):** exp 038 is the
+**post-deadline paper + ensemble-diversity** track with an **honest ~0.88–0.90 LB ceiling** (exp
+034/036 evidence). It is NOT expected to beat our 0.906 single / 0.929 ensemble. The higher-EV
+**deadline** work — **securing the 0.929 final submission** (re-confirm the exp 023 ensemble is
+reproducible + submittable; PP/TTA; pick the 2 final subs) — is **STILL PENDING** (deferred while we
+built exp 038). Next session: weigh the exp 038 Stage-2 LB test against locking the 0.929 final picks
+before 06-03. LB is rate-limited (~5/day); ~14 pulls left.
 
-**▶ NEXT SESSION STARTS HERE:** exp 037 is CLOSED (REJECT). All levers (PL, pretrain, recipe) are
-exhausted for the deadline. **Pivot to the END-GAME (secure the 0.929 ensemble + PP/TTA final picks
-before 06-03)** — see "Pick up here" below. No in-flight jobs; ~14 LB pulls left.
-
----
-
-## Where we are
-
-**Exp 036 — unlock the XC backbone via a faithful fine-tune recipe.** exp 034 proved the
-Sydorskyi EffNetV2-S backbone is bit-identical to source, yet full-FT scored LB 0.879 (<0.906).
-The bet: the backbone is fine, the *fine-tune* under-trained it. Phase A varies only the LR
-schedule (model + data = exp 034's known-0.879 config), fold 0, 50 ep.
-
-### Phase A results (fold 0) — best-by-val/auroc (NOT last-epoch; cosine decays the tail)
-
-| Cell | best val/auroc | shape over 50 ep |
-|---|---:|---|
-| a0-fullft (lr 1e-4) | 0.906 @ep3 | peaks ep3 → **decays to 0.875** (overfits) |
-| **a1-lower-lr (5e-5)** | **0.921 @ep34** | climbs → **flat 0.91–0.92 plateau (ep19–50)** |
-| a2-discriminative | 0.888 | flat-low (dead) |
-| a3-gradual-unfreeze | 0.914 @ep9 | peaks ep9 → settles ~0.90 (viable 2nd) |
-
-- **Gate 6 PASS**: a0 ≡ exp034-fullft epoch-by-epoch (~1e-4). Anchor: offline-best 0.906 →
-  LB 0.865 raw / **0.879 +PP**. (The "0.883" in old handoffs was a late epoch, not the peak.)
-- **a1 wins**: best offline (+0.015 over the anchor), cleanest mechanism (lower LR preserves
-  the XC features → no overfit collapse), ideal SWA shape (flat tail).
-- **Caveat**: offline anti-correlates with LB ([[feedback_offline_metrics_unreliable]],
-  [[project_cv_measurement_failure]]). exp 034 KD-joint was offline 0.9217 → **LB 0.878 (no
-  lift)**; a1 lands at the same 0.92 offline. The reason to still bet a1: KD changed the
-  *objective*; a1 is LR-only on the same objective, fixing a *visible* pathology. **LB decides.**
-
-Checkpoints (all 4 cells, save_top_k=-1, 50 ep + last):
-`/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/036-xc-backbone-finetune/checkpoints/<cell>/fold0/`.
-SWA built: `a1-lower-lr/fold0/swa-last5.ckpt` (avg of ep45–49; 786 model.* tensors).
+**▶ NEXT SESSION STARTS HERE:** the 3 exp 038 pretrain cells should be DONE. (1) Check them; (2)
+regenerate `metrics.json` + compare `best_val_auroc` (sanity gate only); (3) build **Stage 2** (Cell A
+backbone → re-head to 234 → KD-SED recipe → LB) — and/or (4) the deadline END-GAME (secure 0.929).
+See "Pick up here".
 
 ---
 
-## Pick up here (next session) — END-GAME: secure the 0.929 final submission (deadline 2026-06-03)
+## Where we are — exp 038 (XC pretraining)
 
-**Exp 037 is CLOSED (REJECT)** — the PL trio tanked (C 0.832 / B 0.790 / A 0.754 ≪ 0.906; full read in
-`037-noisy-student-pl/results.md § LB verdict`). PL is 0/5, pretraining caps ~0.88 (exp 034/036),
-recipe changes base-rate≈0 (exp 027). **Every single-model lever is exhausted for the deadline.** The
-highest-EV use of the remaining ~4 days + ~14 LB pulls = **lock in the best final submission.**
-[[feedback_user_runs_commands]]: give Murilo the commands; don't run SLURM/Kaggle.
+**Goal:** our own broad Neotropical bird backbone (EffNetV2-S, ImageNet-21k) → fine-tune on the 234
+targets → backbone-diverse ensemble member + working-note. Branch `mg/038-xc-pretraining` (**pushed,
+NOT merged** — open feature branch).
 
-Concretely (this is the END-GAME deferred since exp 036):
+**Stage 0 — DONE.** Curated BirdSet-XCL (HF `DBD-research-group/BirdSet`, config XCL, metadata via
+`XCL_metadata.parquet`) → **2,683 Neotropical bird species / 160,542 recs / 2,202 h**, **158/162** bird
+targets (`palhor3`/`strher2` absent). Downloaded all 98 shards → **~151k OGGs on disk** (confirmed
+**32 kHz mono**, no resample; 9,281 ≈5.8% genuinely missing → `missing_files.json`). Data at
+`/storage/project/ps-clef2026_birdclef-0/shared/pretrain/birdset-neotropical/`
+(`manifest.parquet`, `species_list.json`, `audio/<ebird_code>/<XCid>.ogg`). Download = `sbatch` worker
+`sbatch/download_birdset_audio.sh` (resumable).
+
+**Stage 1 — BUILT + RUNNING. Methodology (load-bearing decisions, locked with Murilo):**
+- **SED-mirror head**: reuse `DistilledSEDFinetuneModule` **UNCHANGED** (`AttHeadLogitSpace`,
+  `num_classes=2683`, **KD off**) → the backbone trains under the EXACT downstream pooling/mel regime
+  (best transfer) AND it's the lowest-risk path (battle-tested module, no new training code). Chosen
+  over a vanilla GAP+linear classifier. Only NEW code = the data layer
+  `src/birdclef/data/xc_pretrain_dataset.py` (`XCPretrainDataset` multi-hot incl. in-vocab secondaries
+  / random 5 s crop / `apply_aug`+focal×focal mixup ported from `FocalDS`; stratified per-species
+  `XCPretrainDataModule`) + a **gated additive** `loss_type="focalbce"` + `label_smoothing` hparam in
+  the SED module (the `bce`/`softauc` paths are **bit-identical**, regression-tested; LS applied in-loss
+  to a local target copy so `labels.int()` metrics stay hard; focalbce lazy-imports torchvision).
+- **Recipe**: Tucker mel n_mels=256 sr=32000, 5 s window, dual-supervision `0.5·BCE(clip)+0.5·BCE(frame_max)`
+  + LS 0.05, multi-label = primary ∪ in-vocab secondaries (34.6% of recs have secondaries), AdamW
+  lr 5e-4 → 2-ep warmup → cosine→1e-6, 16-mixed, grad-clip 1.0, **25 ep `save_top_k=-1`** (pick the
+  XC-val peak), num_workers 8, stratified **2% XC val** = the clean sanity signal (NOT a 2026-LB
+  predictor — labeled-SS/offline anti-correlate with LB: [[project_cv_measurement_failure]],
+  [[feedback_offline_metrics_unreliable]]).
+- **Run strategy = proven primary + parallel insurance arms** (compute is free
+  [[feedback_pace_compute_not_bottleneck]]; LB is the only reliable ranker, so we don't agonize over
+  un-rankable recipe knobs). 3 cells: **A** dual-BCE+LS (PRIMARY) / **B** focal-BCE (`FocalLossBCE`
+  α0.25/γ2) / **C** no-mixup. Fine-tune **A** to the LB first; B/C are ready backups (no second wait).
+- **Verified local**: 23 new tests + 238 regression (032/033/037) pass. **fast-dev-run** (a100, batch
+  128) PASS + **gpu-check** (rtx6000, batch 64) PASS — GPU-bound 87% util, data-load 1.4%
+  (num_workers=8 fine), peak reserved 14.2 GB/24 GB, **~10 min/epoch → ~4.2 h/cell** (`outputs/gpu_check/*.{txt,png}`).
+
+### In-flight jobs (rtx6000, launched ~00:14 May 31, ETA ~04:30)
+| Cell | Job | Config | Role |
+|---|---|---|---|
+| A | 9351785 | `configs/pretrain_cellA_dualbce.yaml` | PRIMARY (dual-BCE + LS 0.05) |
+| B | 9351788 | `configs/pretrain_cellB_focalbce.yaml` | insurance (focal-BCE) |
+| C | 9351789 | `configs/pretrain_cellC_nomixup.yaml` | insurance (no mixup) |
+
+Effective batch 128 (~1160 opt steps/ep). Epoch 0: cellA `val/auroc` 0.513 (climbing from random;
+`epoch00.ckpt` saved → `save_top_k=-1` + `monitor=val/auroc` both confirmed working). Checkpoints →
+`/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/038-xc-pretraining/checkpoints/<run_name>/`.
+W&B project `birdclef-2026-exp038`. **These cells launched BEFORE the metric-parity commit** → live
+W&B/TB metrics + `pretrain_results.json` (`best_val_auroc`) YES; `outputs/test_results/` +
+auto-`save_metrics` NO → regenerate `metrics.json` post-hoc (fallback reads `pretrain_results.json`).
 
 ---
 
-## END-GAME steps — secure the 0.929 final submission (deadline 2026-06-03)
+## Pick up here (next session)
 
-The XC fine-tune + PL tracks are exhausted (PL 0/5; XC ~0.88). **Lock in the best final submission**,
-not more single-model training. (Post-deadline paper track: SoftAUC-PL / Perch-only-PL /
-PL-target-trim / broad XC-pretrain.) Concretely:
+### A) exp 038 — after the grid finishes
+1. `squeue -u $USER` → confirm A/B/C done. Read `val/auroc` peaks from W&B (`birdclef-2026-exp038`) or
+   each `checkpoints/<run>/pretrain_results.json` → `best_val_auroc`.
+2. Regenerate the 3 structured artifacts: `cd user/murilo/experiments/038-xc-pretraining` then
+   `python save_metrics.py --config configs/pretrain_cell{A,B,C}_*.yaml` → `artifacts/training/<variant>/metrics.json`.
+   Compare `best_val_auroc` (sanity gate; ≳0.9 expected in-domain; A vs B vs C = which recipe learned
+   XC best — a PROXY, not LB). Pick the Cell A backbone (B/C backups).
+3. **Build Stage 2 (NOT YET BUILT):** load the Cell A backbone (`epochNN.ckpt` at the val/auroc peak)
+   → re-init a 234-class `AttHeadLogitSpace` → run the exp 032 KD-SED fine-tune recipe (KD-from-Perch +
+   labeled-SS + dual-BCE + mixup; reuse `DistilledSEDFinetuneModule` with KD on) → exp 010 ONNX export
+   → **LB** (single-fold vs 0.906, 5-fold vs 0.915, prob-space blend into 0.929). LB is the arbiter.
 
-1. **Re-confirm the 0.929 ensemble (exp 023) is reproducible + submittable** as one of the two
-   final picks. Verify its kernel still builds/scores; canary `Species mapping: 234 mapped`.
-2. **PP/TTA on the best ensemble** — smoothing is +0.014-proven; TTA is untried and cheap. A/B.
-3. **(cheap, optional) XC model as a backbone-diverse ensemble member** — prob-space blend the
-   a1 XC model (0.882, genuinely different backbone) into the 0.929 ensemble; keep only if the
-   blend beats 0.929 on LB. This is the one place the XC backbone might still pay off.
-4. **Pick the 2 final submissions** deliberately (one safe = 0.929; one upside = best blend).
+### B) Deadline END-GAME — secure the 0.929 final picks (STILL PENDING; higher deadline-EV)
+1. Re-confirm the exp 023 **0.929** ensemble is reproducible + submittable (kernel builds/scores;
+   canary `Species mapping: 234 mapped` — [[feedback_species_mapping_canary]]).
+2. **PP/TTA** on the best ensemble (Gaussian smoothing is +0.014-proven; TTA untried + cheap). A/B.
+3. **Pick the 2 final submissions**: safe = 0.929; upside = best blend (possibly + the exp 038 Cell-A
+   model as a backbone-diverse member iff the prob-space blend beats 0.929 on LB).
 
-Don't restart Phase B (class-balanced data) — decided against (base rate ≈ 0, can't screen
-offline, deadline). Wiring/assets stay in the repo if ever revisited.
+Weigh A vs B against the 3-day clock: **B is the competitive deadline work**; A is the diversity/paper
+bet whose Stage-2 LB number could become the "upside" member of B.
 
 ---
 
@@ -91,30 +109,31 @@ offline, deadline). Wiring/assets stay in the repo if ever revisited.
 
 | Model | LB | Notes |
 |---|---:|---|
-| Perch + SED MLP-only ensemble (exp 023) | **0.929** | **Current overall best → secure as a final pick** |
+| Perch + SED MLP-only ensemble (exp 023) | **0.929** | **Overall best → secure as a final pick (END-GAME pending)** |
 | v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
 | distilled-sed-kd-5fold (exp 032) | 0.915 | Best Tucker-SED ensemble |
-| distilled-sed-kd (exp 032, single-fold) | 0.906 | Our best single model (ImageNet + KD) |
-| exp 034 KD-joint+PP / full-FT+PP | 0.878 / 0.879 | XC backbone single-fold ceiling |
-| exp 036 a1-last / a1-SWA (+PP) | 0.882 / 0.881 | Phase A winner; offline 0.921 → flat on LB (REJECT) |
+| distilled-sed-kd single-fold (exp 032) | 0.906 | Best single model (ImageNet + KD) — Stage-2 target to beat |
+| exp 034 / 036 XC-backbone (+PP) | 0.878–0.882 | XC-backbone single-fold ceiling (the ~0.88 evidence) |
+| **exp 038 Cell A (XC-pretrain → Stage 2)** | **pending** | grid running; Stage 2 → LB next session |
 
 ---
 
 ## How to resume after disconnect
-
-1. Read this file top-to-bottom, then `036-xc-backbone-finetune/results.md § LB verdict`.
-2. `git log --oneline -6` on `main` → top is `e64a09f` (exp 036 REJECT, merged). No open branch;
-   exp 036 is CLOSED and on main. Start a fresh branch for the next experiment.
-3. Proceed to the END-GAME steps above (secure the 0.929 final pick; PP/TTA; optional XC-as-
-   ensemble-member blend). This is final-submission work, not new single-model training.
-4. **[[feedback_user_runs_commands]]**: don't run SLURM/Kaggle yourself — give Murilo the
-   commands. Local pytest + light SWA averaging are fine (interactive venv at
-   `/storage/home/hcoda1/9/mgustineli3/clef/birdclef-2026/.venv`; [[feedback_use_uv_venv]]).
+1. Read this top-to-bottom, then exp 038 `proposal.md` + `tasks.md`.
+2. `git log --oneline -8` on `mg/038-xc-pretraining` (**pushed, open — NOT merged**). Top commits are
+   the doc updates + `save_metrics.py` parity. exp 037/036/034/032 are CLOSED on main.
+3. Check the grid: `squeue -u $USER` + W&B `birdclef-2026-exp038`. Then go to "Pick up here".
+4. **[[feedback_user_runs_commands]]**: give Murilo commands; don't run SLURM/Kaggle yourself. Local
+   pytest + `save_metrics.py` + light analysis are fine. Interactive venv
+   `/storage/home/hcoda1/9/mgustineli3/clef/birdclef-2026/.venv` ([[feedback_use_uv_venv]]).
 5. Venv policy: NEVER create a venv under home/project; SLURM jobs build on `$TMPDIR` (CLAUDE.md).
    PACE compute is NOT the bottleneck ([[feedback_pace_compute_not_bottleneck]]); Kaggle LB IS
-   rate-limited (~5/day) — be strategic there. Use `--squash` for PR merges ([[feedback_squash_merge]]).
+   rate-limited (~5/day). `--squash` for PR merges ([[feedback_squash_merge]]).
+6. **GPU availability (PACE, via `scripts/check_gpus.py`)**: a100/h200 often full; **h100 free-GPU
+   nodes frequently have 0 idle CPUs → unschedulable** (job pends). **rtx6000 (24 GB, ~97 free)** is the
+   reliable parallel option. `run.sh --gpu` accepts fallback lists (`h100,a100,rtx6000`) + `--batch-size`/
+   `--accumulate` for the 24 GB cards (rtx6000 fits eff-batch-128 via batch 64 × accum 2, or batch 128
+   physically — both ran clean).
 
-**Prior context**: exp 034 (xcpretrain) REJECT — backbone necessary-not-sufficient, single-fold
-ceiling 0.879; KD does not transfer. exp 036 REJECT — fine-tune schedule doesn't unlock it either
-(~0.88 ceiling, schedule-independent). exp 032 merged to main. Detail in those experiments'
-`results.md`. **Credentials**: `user/murilo/.env` (gitignored), loaded by `train.py`.
+**Credentials**: `user/murilo/.env` (gitignored; HF_TOKEN, W&B), loaded by `train.py`. **Note**: the HF
+token was pasted in chat this session — Murilo should rotate `hf-token-pace`.

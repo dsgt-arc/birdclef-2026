@@ -1,6 +1,6 @@
 ---
 experiment: "038-xc-pretraining"
-status: proposed
+status: running   # Stage 0 done; Stage 1 built + 3-cell grid running on rtx6000 (2026-05-31)
 date: 2026-05-30
 author: Murilo Gustineli
 branch: mg/038-xc-pretraining
@@ -39,12 +39,16 @@ practice (matches all our SED models + the winners), strictly better than random
 
 | Decision | Value |
 |---|---|
-| Corpus | **BirdSet-XCL**, curated to a **broad Neotropical bird subset** incl. all 162 bird targets (NOT narrow-to-234 — breadth is the value) |
-| Subset breadth | ~1.5–3k species (Neotropical-occurring birds) |
-| Backbone | **EffNetV2-S**, **ImageNet-21k init** (`tf_efficientnetv2_s.in21k`) — proven winner + distinct from our HGNet/EffNet-B0 → ensemble diversity |
+| Corpus | **BirdSet-XCL**, curated to a **broad Neotropical bird subset** incl. all bird targets (NOT narrow-to-234 — breadth is the value) |
+| Subset breadth | **2,683 Neotropical bird species / 160,542 recs / 2,202 h** (curation result); **158/162** bird targets present (`palhor3`/`strher2` absent). 34.6% of recs carry secondary labels. |
+| Backbone | **EffNetV2-S**, **ImageNet-21k init** (`tf_efficientnetv2_s.in21k`, embed_dim 1280) — proven winner + distinct from our HGNet/EffNet-B0 → ensemble diversity |
 | Pretrain mode | our own XC supervised-classification pretrain (NOT warm-start from a bird ckpt) |
+| **Head (load-bearing)** | **SED-mirror**: reuse `DistilledSEDFinetuneModule` UNCHANGED (`AttHeadLogitSpace`, num_classes=2683, KD off). Trains the backbone under the EXACT downstream pooling/mel regime → best transfer + lowest implementation risk (battle-tested module, no new training code). Chosen over a vanilla GAP+linear classifier. |
+| Loss | **dual-supervision** `0.5·BCE(clip)+0.5·BCE(frame_max)` + **label-smoothing 0.05** (applied in-loss to a local target copy so `labels.int()` metrics stay hard). Multi-label: primary ∪ in-vocab secondaries. |
 | Mel | match our SED stack (Tucker mel, n_mels=256, sr=32000) so the model fine-tunes + ensembles cleanly |
-| Horizon | **post-deadline paper** (overnight A100 run → model by Sun 5/31; do it right, don't race 06-03) |
+| Schedule | AdamW lr 5e-4, wd 1e-4, 2-ep warmup → cosine→1e-6, 16-mixed, grad-clip 1.0, **25 ep, `save_top_k=-1`** (pick the XC-val peak), eff batch 128, num_workers 8, stratified per-species 2% val. |
+| **Run strategy** | **proven primary + parallel insurance arms** (compute is free; LB is the only reliable ranker, so XC-val macro-AUC is a *sanity gate* only). 3 cells: **A** dual-BCE+LS (PRIMARY), **B** focal-BCE (`FocalLossBCE` α0.25/γ2), **C** no-mixup. Fine-tune Cell A to LB first; B/C are ready backups. |
+| Horizon | **post-deadline paper** + ensemble-diversity member (do it right, don't race 06-03) |
 | Non-birds | **out of scope** |
 
 ## 4. Method — 4 stages
@@ -56,11 +60,15 @@ practice (matches all our SED models + the winners), strictly better than random
   Per-species cap ~500 (highest-quality/most-recent), min ~10, **quality A/B**. Emit a **file
   manifest + species_list + size report**; selective-download only the manifest's audio (skip the
   full 480 GB + the slow XC API crawl). **Smoke first** (first N shards → verify schema + counts).
-- **Stage 1 — Pretrain (A100, overnight after a ~30-min smoke).** EffNetV2-S (ImageNet-21k init),
-  supervised **multi-label** classification over the pretrain species (secondary labels as extra
-  positives), Tucker mel (n_mels=256), BCE+Focal + label-smoothing 0.05, AdamW cosine→1e-6, ~15–20 ep,
-  **no class balancing** (winners' rule), `save_top_k=-1`. **Held-out XC val** = the clean pretraining
-  signal. **Discard the pretrain head; keep the backbone.**
+- **Stage 1 — Pretrain (BUILT + running; rtx6000 grid).** EffNetV2-S (ImageNet-21k init) under the
+  **SED-mirror** recipe = reuse `DistilledSEDFinetuneModule` UNCHANGED (`AttHeadLogitSpace`,
+  num_classes=2683, **KD off**), Tucker mel (n_mels=256), 5 s random crop, `apply_aug` (gain/noise) +
+  focal×focal mixup, SpecAugment. **Dual-supervision** `0.5·BCE(clip)+0.5·BCE(frame_max)` + LS 0.05;
+  multi-label = primary ∪ in-vocab secondaries. AdamW lr 5e-4 → cosine→1e-6, 25 ep, **no class
+  balancing**, `save_top_k=-1`, stratified per-species 2% **XC val** (= the clean sanity signal, NOT a
+  2026-LB predictor). New data layer = `XCPretrainDataset`/`XCPretrainDataModule`; everything else is
+  reuse. **3-cell run strategy** (compute free, LB-only ranker): A dual-BCE+LS (primary) / B focal-BCE
+  / C no-mixup — fine-tune A first, B/C are backups. **Discard the pretrain head; keep the backbone.**
 - **Stage 2 — Fine-tune on 2026 (all 234).** Re-init a 234-class head; reuse our SED fine-tune recipe
   + full domain-shift aug (waveform MixUp, background mixing, SpecAugment). Non-birds learned here.
 - **Stage 3 — Eval / use.** Pretrain quality → XC-val. Downstream → **LB** (the only arbiter;
@@ -79,10 +87,13 @@ practice (matches all our SED models + the winners), strictly better than random
 
 ## 6. Reuse / build
 
-Reuse: `EfficientNetEncoder` (timm wrapper, in_chans=1), Tucker mel, the SED fine-tune module
-(exp 032/034), exp 010 export wiring. Build: Stage-0 curation script + a supervised-classification
-pretraining LightningModule (multi-label over N pretrain species) + configs/sbatch. **`feedback_use_uv_venv` / `feedback_user_runs_commands`**: Claude builds + local-tests; Murilo runs the HF
-download + A100 pretrain.
+Reuse (UNCHANGED): `EfficientNetEncoder` (timm wrapper, in_chans=1), `TuckerMelSpectrogram`,
+`AttHeadLogitSpace`, `DistilledSEDFinetuneModule` (the whole SED training loop + metrics), `SpecAugment`,
+`apply_aug`/audio-loader from `FocalDS`, exp 010 export wiring. **Built (minimal):** Stage-0 curation +
+download scripts; `src/birdclef/data/xc_pretrain_dataset.py` (the only new data layer); a *gated additive*
+`loss_type="focalbce"` + `label_smoothing` in the SED module (bce path bit-identical, regression-tested);
+`train.py` + `configs/_common.yaml`+3 cells + `sbatch/{run.sh,pretrain.sh}` + `save_metrics.py`. **`feedback_use_uv_venv` / `feedback_user_runs_commands`**: Claude builds + local-tests; Murilo runs the HF
+download + GPU pretrain.
 
 ## 7. References
 
