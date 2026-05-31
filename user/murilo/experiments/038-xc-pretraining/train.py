@@ -178,6 +178,9 @@ def main():
 
     seed = config["data"].get("seed", 42)
     pl.seed_everything(seed, workers=True)
+    # Enable TF32 fp32 matmuls (free speedup on A100/rtx6000 tensor cores; we train in 16-mixed
+    # anyway, so this only affects residual fp32 ops). PyTorch flags this when unset.
+    torch.set_float32_matmul_precision("high")
     if args.num_workers is not None:
         config["data"]["num_workers"] = args.num_workers
     if args.batch_size is not None:
