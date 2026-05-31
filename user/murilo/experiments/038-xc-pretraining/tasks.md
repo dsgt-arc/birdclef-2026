@@ -52,9 +52,30 @@ insurance arms** (compute free; LB is the only real ranker → XC-val macro-AUC 
       reconstructs the **final-epoch `val/*` vector from the W&B summary** (top metrics were null
       before). **`results.md` written + `MODEL-RUNS.md` updated.**
 
-## Stage 2 — fine-tune on 2026 (all 234) — NOT YET BUILT
-- [ ] Re-init 234-class head; reuse SED fine-tune recipe + domain-shift aug (MixUp/bg-mix/SpecAug).
-      Non-birds learned here (pretraining didn't see them). Discard pretrain head, keep backbone.
+## Stage 2 — fine-tune on 2026 (all 234) — BUILT + LOCAL-TESTED (ready to launch)
+Decision (2026-05-31, w/ Murilo): fine-tune **both Cell A & Cell C** and compare on **LB** (the A-vs-C
+delta tests whether mixup-regularization in pretraining transfers to the focal→soundscape shift).
+**KD-on (match the 0.906 recipe exactly)**; **all 5 folds for both** (compute free), **LB-submit
+single-fold A + single-fold C first** (2 pulls = decisive read).
+- [x] **Mechanism**: Stage 2 = exp 032's 0.906 KD-SED recipe with ONE arch change — `encoder.model_name`
+      B0 → `tf_efficientnetv2_s.in21k` — + warm-start the encoder from our Stage-1 ckpt. Same module
+      class (`DistilledSEDFinetuneModule`) → encoder.* keys identical → clean full-copy (780 backbone
+      params verified in the real Cell A ckpt; the 4 `sed_head.att/cla` 2683-class params re-init at 234).
+- [x] **New code**: `train_finetune.py` (copy of exp 032 train.py; added gated `init.encoder_only` to
+      `transfer_pretrained_weights` = copy `encoder.*` only, re-init the whole head + distill_head;
+      exp 032 behaviour bit-identical when off). `configs/finetune_cell{A,C}.yaml` (V2-S, KD-on,
+      eff-batch 64 = batch32×accum2 to fit rtx6000 + GPU Perch teacher, init.from_checkpoint = Cell A
+      epoch23 / Cell C epoch22, encoder_only). `sbatch/{finetune.sh,run_finetune.sh}` (--fold).
+- [x] **Local-tested**: 3 new warm-start tests (encoder.* full-copy / head+distill re-init / class-count
+      mismatch / exp 032 species-partial-copy parity) + 26 total exp 038 tests PASS; py_compile + bash -n
+      clean; both configs parse (KD on, α1.0, tucker256, AttHeadLogitSpace, eff64, 25ep, monitor val/cmap).
+- [ ] **(Murilo) pre-flight**: `bash sbatch/run_finetune.sh configs/finetune_cellA.yaml --fold 0 --fast-dev-run --gpu rtx6000,a100`
+      (5-batch gradient-flow check through real V2-S + KD + warm-start + focal/SS data).
+- [ ] **(Murilo) launch the 10-job grid** (rtx6000, parallel):
+      `for f in 0 1 2 3 4; do bash sbatch/run_finetune.sh configs/finetune_cellA.yaml --fold $f; done`
+      then the same for `finetune_cellC.yaml`. Checkpoints → `experiments/038-xc-pretraining/checkpoints/<run>/fold<N>/`.
+- [ ] **Export + LB**: exp 010 `export_distilled_sed.py` → ONNX → Kaggle. Submit single-fold A + C first
+      (vs 0.906); then 5-fold ensembles (vs 0.915) + prob-space blend into 0.929 only if warranted.
 
 ## Stage 3 — eval / use
 - [ ] Pretrain quality → held-out XC macro-AUC. Downstream → **LB** (labeled-SS anti-correlates).

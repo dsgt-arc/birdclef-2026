@@ -3,25 +3,25 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first to resume;
 follow the linked files for full detail.
 
-**Last updated**: 2026-05-31 (early AM). **Active experiment: exp 038 — broad Neotropical XC
-supervised pretraining (EffNetV2-S).** Stage 0 (curate + download) DONE; **Stage 1 built + tested, and
-a 3-cell pretrain grid is RUNNING on rtx6000** (launched ~00:14, ETA ~04:30 May 31). exp 037
-(multi-iterative soft PL) was CLOSED/REJECT the prior session (merged to main, PR #57).
+**Last updated**: 2026-05-31 (PM). **Active experiment: exp 038 — broad Neotropical XC supervised
+pretraining (EffNetV2-S).** Stage 0 (curate + download) DONE; **Stage 1 (3-cell pretrain grid) DONE +
+documented** (results.md/MODEL-RUNS.md/metrics committed); **Stage 2 (fine-tune Cell A & Cell C →
+LB) BUILT + LOCAL-TESTED, ready for Murilo to launch.** exp 037 CLOSED/REJECT (merged, PR #57).
 
 **Competition deadline**: 2026-06-03 (~3 days).
 
-**⚠️ Deadline priority vs this experiment (honest framing — don't lose this):** exp 038 is the
-**post-deadline paper + ensemble-diversity** track with an **honest ~0.88–0.90 LB ceiling** (exp
-034/036 evidence). It is NOT expected to beat our 0.906 single / 0.929 ensemble. The higher-EV
-**deadline** work — **securing the 0.929 final submission** (re-confirm the exp 023 ensemble is
-reproducible + submittable; PP/TTA; pick the 2 final subs) — is **STILL PENDING** (deferred while we
-built exp 038). Next session: weigh the exp 038 Stage-2 LB test against locking the 0.929 final picks
-before 06-03. LB is rate-limited (~5/day); ~14 pulls left.
+**Deadline picture (corrected this session):** the **0.929 exp-023 ensemble is ALREADY submitted +
+scored on the LB** — so Track B is essentially done; the only remaining deadline action is **selecting
+it as a final submission** (+ choosing the 2nd pick). That de-risks the clock and frees the next pulls
+for the exp 038 Stage-2 A-vs-C test. exp 038 is still the **diversity/paper** bet with an honest
+**~0.88–0.90 LB ceiling** (exp 034/036) — not expected to beat 0.906/0.929; its Stage-2 number is a
+candidate 2nd final pick *iff* its prob-space blend beats 0.929. LB rate-limited (~5/day); ~14 left.
 
-**▶ NEXT SESSION STARTS HERE:** the 3 exp 038 pretrain cells should be DONE. (1) Check them; (2)
-regenerate `metrics.json` + compare `best_val_auroc` (sanity gate only); (3) build **Stage 2** (Cell A
-backbone → re-head to 234 → KD-SED recipe → LB) — and/or (4) the deadline END-GAME (secure 0.929).
-See "Pick up here".
+**▶ NEXT SESSION STARTS HERE:** Stage 2 is built. (1) Murilo runs the **fast-dev-run pre-flight**, then
+**launches the 10-job grid** (Cell A & C × 5 folds, rtx6000) — commands in exp 038 `tasks.md` §Stage 2.
+(2) When folds finish: export (exp 010 `export_distilled_sed.py`) → **LB single-fold A vs C vs 0.906**
+(2 pulls = the decisive read), then 5-fold ensembles + 0.929 blend only if warranted. (3) Don't forget
+to **select the 0.929 as a final submission**. See "Pick up here".
 
 ---
 
