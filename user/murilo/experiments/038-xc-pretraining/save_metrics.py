@@ -45,9 +45,13 @@ def load_config(config_path: Path) -> dict:
     return override
 
 
+EXPERIMENT_NAME = "038-xc-pretraining"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Save structured exp 038 pretraining metrics")
     parser.add_argument("--config", type=str, required=True)
+    parser.add_argument("--project-name", type=str, default="ps-clef2026_birdclef-0")
     parser.add_argument("--artifacts-dir", type=str, default="artifacts/training")
     args = parser.parse_args()
 
@@ -56,10 +60,25 @@ def main():
     config = load_config(config_path)
     run_name = config["run_name"]
 
+    # Prefer the experiment-local results (new runs). Fall back to the run_dir copy that EVERY run
+    # writes (incl. runs launched before the parity change — those lack the val_metrics dict, but
+    # best_val_auroc is present and the per-epoch val curve lives in W&B/TB).
     results_file = experiment_dir / "outputs" / "test_results" / f"{run_name}.json"
     if not results_file.exists():
-        print(f"Error: results not found at {results_file}", file=sys.stderr)
-        sys.exit(1)
+        fallback = (
+            Path(f"/storage/project/{args.project_name}/mgustineli3")
+            / "experiments"
+            / EXPERIMENT_NAME
+            / "checkpoints"
+            / run_name
+            / "pretrain_results.json"
+        )
+        if fallback.exists():
+            print(f"Note: {results_file} missing; using fallback {fallback}", file=sys.stderr)
+            results_file = fallback
+        else:
+            print(f"Error: results not found at {results_file} or {fallback}", file=sys.stderr)
+            sys.exit(1)
     with open(results_file) as f:
         raw = json.load(f)
 
