@@ -3,25 +3,25 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
 to resume; follow the linked files for full detail.
 
-**Last updated**: 2026-05-30. **Exp 036 (XC-backbone faithful fine-tune) — CLOSED, REJECT.**
-Phase A (LR schedule) trained + LB'd: a1-lower-lr won offline (0.921) but scored **LB 0.881
-(SWA) / 0.882 (last) ≈ the 0.879 baseline = flat.** 3rd XC-backbone fine-tune to land in
-0.878–0.882 (full-FT 0.879, +KD 0.878, +lower-LR now) → hard single-fold ceiling ~0.88,
-schedule-independent. 2nd offline→LB anti-correlation (~0.92→~0.88); SWA added nothing.
-**Phase B/C NOT PURSUED** (deadline EV + offline-can't-screen + base rate ≈ 0). **Pivot: secure
-the 0.929 ensemble + PP/TTA final picks before 2026-06-03**; XC model is a candidate
-backbone-diverse ensemble member (separate, cheap test).
+**Last updated**: 2026-05-30 (night). **Exp 037 (multi-iterative Noisy-Student soft PL) — CLOSED,
+REJECT.** The A/B/C-raw-augF trio (clean KD-routing comparison, `last.ckpt` fold0) submitted to LB:
+**C 0.832 / B 0.790 / A 0.754 — all far below the 0.906 no-PL base** (best −0.074). PL **poisons** the
+distilled-sed-kd student (raw ensemble blend = diffuse soft targets, mean 0.24, ~233 cls at 0.1–0.3/win;
+50/50 + loss_weight=1.0 → calibration flattens → ranking collapses). **5th PL failure** (014/015/025/
+033/037). One genuine result: the **KD-routing axis transferred offline→LB (C>B>A)** — "let PL reach the
+backbone, don't detach" is real — but PL is net-negative regardless. 2 SoftAUC picks NOT submitted
+(trio decisive; LB conserved). NOT the val metric (shipped `last.ckpt`) nor epochs (curves plateaued).
 
-**Competition deadline**: 2026-06-03 (4 days out) — now the priority.
+**Competition deadline**: 2026-06-03 (~4 days) — now the priority.
 
-**Branch/state**: on `main`, clean. **PR #56 squash-merged → `main` (merge commit `e64a09f`),
-feature branch deleted (local + remote).** No open experiment branch. Session ended 2026-05-30
-night. This session shipped: exp 036 Phase A LB read + REJECT verdict across `results.md`/
-`tasks.md`/`MODEL-RUNS.md`/`save_metrics.py`/this file, and exp 010 `xcfinetune-effv2s-lowlr-
-{swa,last}` export/upload/kernel wiring (built + smoke-tested) — all on main.
+**Branch/state**: on `mg/037-noisy-student-pl` (pushed), clean. exp 037 fully closed (REJECT) across
+`results.md`/`tasks.md`/`MODEL-RUNS.md`. PL track exhausted (0/5); pretraining capped ~0.88 (exp
+034/036); training-recipe base-rate≈0 (exp 027). Deep-research notes + a SoftAUC-PL / Perch-only-PL /
+XC-pretrain track remain for the **post-deadline paper** (compute free, doesn't count for LB).
 
-**▶ NEXT SESSION STARTS HERE:** exp 036 is fully closed. No in-flight jobs, no pending LB reads.
-Pick up at the **END-GAME** section below (secure the 0.929 ensemble final pick before 06-03).
+**▶ NEXT SESSION STARTS HERE:** exp 037 is CLOSED (REJECT). All levers (PL, pretrain, recipe) are
+exhausted for the deadline. **Pivot to the END-GAME (secure the 0.929 ensemble + PP/TTA final picks
+before 06-03)** — see "Pick up here" below. No in-flight jobs; ~14 LB pulls left.
 
 ---
 
@@ -56,11 +56,23 @@ SWA built: `a1-lower-lr/fold0/swa-last5.ckpt` (avg of ep45–49; 786 model.* ten
 
 ---
 
-## Pick up here (next session) — END-GAME: secure the final submission (deadline 2026-06-03)
+## Pick up here (next session) — END-GAME: secure the 0.929 final submission (deadline 2026-06-03)
 
-exp 036 is closed (REJECT). The fine-tune track on the XC backbone is exhausted — three
-recipes, all ~0.88. **Highest-EV use of the remaining ~4 days = lock in the best final
-submission**, not more single-model training. Concretely:
+**Exp 037 is CLOSED (REJECT)** — the PL trio tanked (C 0.832 / B 0.790 / A 0.754 ≪ 0.906; full read in
+`037-noisy-student-pl/results.md § LB verdict`). PL is 0/5, pretraining caps ~0.88 (exp 034/036),
+recipe changes base-rate≈0 (exp 027). **Every single-model lever is exhausted for the deadline.** The
+highest-EV use of the remaining ~4 days + ~14 LB pulls = **lock in the best final submission.**
+[[feedback_user_runs_commands]]: give Murilo the commands; don't run SLURM/Kaggle.
+
+Concretely (this is the END-GAME deferred since exp 036):
+
+---
+
+## END-GAME steps — secure the 0.929 final submission (deadline 2026-06-03)
+
+The XC fine-tune + PL tracks are exhausted (PL 0/5; XC ~0.88). **Lock in the best final submission**,
+not more single-model training. (Post-deadline paper track: SoftAUC-PL / Perch-only-PL /
+PL-target-trim / broad XC-pretrain.) Concretely:
 
 1. **Re-confirm the 0.929 ensemble (exp 023) is reproducible + submittable** as one of the two
    final picks. Verify its kernel still builds/scores; canary `Species mapping: 234 mapped`.

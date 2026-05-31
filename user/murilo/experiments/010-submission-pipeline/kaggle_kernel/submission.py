@@ -125,6 +125,14 @@ MODEL_SLUGS = [
     "birdclef-2026-distilled-sed-pl-a1-v5j-weights",
     "birdclef-2026-distilled-sed-pl-a5-kd-weights",
     "birdclef-2026-distilled-sed-pl-a5-v5j-weights",
+    # Exp 037 Noisy-Student soft-PL round-1 LB picks (ensemble-teacher PL on distilled-sed-kd,
+    # best-by-val/auroc epoch, fold 0). Same Tucker ONNX schema as exp 032/033 (training-time
+    # PL only). Each kernel attaches exactly one of these → first (only) match wins.
+    "birdclef-2026-exp037-r1-a-raw-augf-weights",
+    "birdclef-2026-exp037-r1-b-raw-augf-weights",
+    "birdclef-2026-exp037-r1-c-raw-augf-weights",
+    "birdclef-2026-exp037-r1-a-raw-augt-softauc-weights",
+    "birdclef-2026-exp037-r1-c-raw-augt-softauc-weights",
     # Exp 032 Phase 2: 5-fold KD ensemble + HGNet backbone ablation
     "birdclef-2026-distilled-sed-kd-5fold-weights",
     "birdclef-2026-distilled-sed-kd-hgnet-weights",

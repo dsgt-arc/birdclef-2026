@@ -1,0 +1,8 @@
+# KD-off (PL->whole student e2e) | transform=raw | PL aug=True | loss=bce
+# Inherits _common.yaml (sampler=mixsamp 50/50, 25 ep, steps_per_epoch=500, KD branch).
+run_name: "2026-exp037-r1-B-raw-augT"
+pseudo_label:
+  path: "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v037-ens-raw/ensemble_pseudo_labels.parquet"
+  aug: true
+training:
+  use_perch_distill: false

@@ -1,0 +1,142 @@
+# ============================================================================
+# Exp 037 — _common.yaml: SHARED config all round-1 grid cells inherit.
+# NOT runnable directly — train.py loads the per-cell YAML, which deep-merges
+# on top of this. Inherits the distilled-sed-kd recipe + Perch v2 KD branch
+# from exp 032/033 UNCHANGED. The ONLY semantic change vs exp 033 is the
+# `pseudo_label:` defaults (strong ENSEMBLE teacher, mixsamp 50/50, no sharpen,
+# no filter — the corrected recipe). Student starts from ImageNet init, 25 ep —
+# identical to the 0.906 recipe so round 1 isolates the PL lever.
+# ============================================================================
+
+run_name: "2026-exp037-_common"
+
+encoder:
+  type: "efficientnet"
+  model_name: "tf_efficientnet_b0.ns_jft_in1k"
+  pretrained: true
+  use_post_head: true
+  drop_path_rate: 0.1
+  in_chans: 1
+
+sed_head:
+  type: "att_head_logit_space"
+  hidden_dim: 512
+  dropout: 0.5
+  gem_p: 3.0
+
+mel:
+  type: "tucker"
+  n_fft: 2048
+  hop_length: 512
+  n_mels: 256
+  fmin: 20
+  fmax: 16000
+  top_db: 80.0
+  power: 2.0
+  gpu: true
+
+spec_augment:
+  enabled: true
+  freq_mask_param: 10
+  time_mask_param: 10
+  num_freq_masks: 1
+  num_time_masks: 2
+
+mixup:
+  focal_focal_prob: 0.5
+  alpha: 0.4
+  hard: true
+  focal_sc_prob: 0.5
+  focal_sc_alpha: 0.4
+  aug_prob: 0.5
+
+data:
+  data_dir: "/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026"
+  sample_rate: 32000
+  window_duration: 5.0
+  batch_size: 64
+  num_workers: 8  # never 0 — 127K-file PL pool is too large for OS cache (see exp 033)
+  n_folds: 5
+  seed: 42
+  min_sample: 20
+  steps_per_epoch: 500  # GT-only-equivalent (~baseline 454): decouples epoch length from the
+                        # 127K PL pool so 25 ep ≈ the 0.906 gradient budget (not the 5× balloon).
+  base_seed: 42
+  seed_epoch_shift: true
+  val_fraction: 0.1
+  test_fraction: 0.0
+  soundscape_val_files: 0
+  soundscape_test_files: 0
+
+training:
+  max_epochs: 25
+  lr: 5.0e-4
+  head_lr: 5.0e-4
+  weight_decay: 1.0e-4
+  warmup_epochs: 2
+  warmup_start_factor: 0.04
+  eta_min: 1.0e-6
+  threshold: 0.5
+  grad_clip_val: 1.0
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
+  per_sample_mel_norm: true
+
+  clipwise_weight: 0.5
+  framewise_weight: 0.5
+  blend_clip: 0.5
+  blend_frame: 0.5
+
+  # Perch v2 KD — KEEP ON (the 0.906 distilled-sed-kd recipe)
+  use_perch_distill: true
+  perch_onnx_path: "vendor/kaggle/datasets/perch-v2-no-dft-onnx/perch_v2_no_dft.onnx"
+  perch_embed_dim: 1536
+  alpha_distill: 1.0
+
+  # Exp 037 levers (overridden per grid cell):
+  kd_detach_head: true   # A (default): PL BCE → head only. C sets false → PL also trains backbone.
+  loss_type: "bce"       # softauc cells override → ranking loss (SoftAUC)
+
+  warm_start_ckpt: null
+
+# ============================================================================
+# Exp 037 pseudo-label defaults — the CORRECTED recipe (vs exp 033):
+#   - teacher = 0.929 ENSEMBLE (Perch-MLP + SED v5j), softened, NOT own-SED
+#   - sampler = mixsamp ~50/50 GT:PL (deep-research), NOT uniform natural (~17/83)
+#   - weight = 1.0 (Antoine 1:1), NOT exp 025's 0.5 confound
+#   - NO filtering (exp 033's 0.5-discard/0.1-trim HURT -0.027)
+# Each grid cell overrides `path` (raw vs t2 parquet) and, for "natural" cells,
+# `sampler: uniform`.
+# ============================================================================
+pseudo_label:
+  path: null  # REQUIRED override per cell
+  weight: 1.0
+  sampler: "mixsamp"
+  focal_share: 0.45
+  sc_share: 0.05
+  pl_share: 0.50
+  exclude_labeled_sc: true
+  aug: false             # noise-the-student control: PL waveform gain/noise. augT cells override.
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/auroc"   # competition metric (macro ROC-AUC) — matches exp 021 v5j (0.917).
+                           # exp 032/033 used val/cmap (Tucker port); we revert to auroc.
+                           # save_top_k=-1 saves ALL epochs regardless, so round-1 lost nothing.
+    mode: "max"
+    save_top_k: -1
+    save_last: true
+    filename: "best-epoch{epoch:02d}"
+    every_n_epochs: 1
+  early_stopping:
+    monitor: "val/auroc"
+    mode: "max"
+    patience: 999
+    min_delta: 0.0
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp037"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50

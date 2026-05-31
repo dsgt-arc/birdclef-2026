@@ -999,6 +999,7 @@ EXP030_DIR="$(dirname "$EXPERIMENT_DIR")/030-sydorskyi-mixup"
 EXP031_DIR="$(dirname "$EXPERIMENT_DIR")/031-perch-kd-distillation"
 EXP032_DIR="$(dirname "$EXPERIMENT_DIR")/032-tucker-distilled-sed"
 EXP033_DIR="$(dirname "$EXPERIMENT_DIR")/033-own-teacher-pl"
+EXP037_DIR="$(dirname "$EXPERIMENT_DIR")/037-noisy-student-pl"
 
 export_hgnet_b2_sed_v6h() {
     echo "=== Exporting HGNetV2-B2 SED v6h (AttHead + BCE, 234 classes) ==="
@@ -1454,6 +1455,41 @@ export_distilled_sed_pl() {
     fi
 }
 
+# ============================================================================
+# Exp 037 Noisy-Student soft-PL round-1 LB picks. Same distilled-sed-kd recipe
+# + inference path as exp 032/033 (EffNet-B0 + AttHeadLogitSpace + Tucker mel),
+# so we reuse export_distilled_sed.py AND exp 033's last.ckpt convention.
+#
+# Checkpoint = last.ckpt (final epoch 24, LR-annealed via cosine→1e-6). We do
+# NOT cherry-pick the "best val/auroc" epoch: the 168-window labeled-SS val
+# metric is noisy (stable cells plateau ±0.002; noisy cells oscillate ±0.02)
+# and anti-correlates with LB — picking its argmax-epoch steers on noise. This
+# matches the lineage that produced 0.906/0.915 (distilled-sed-kd + exp 033 all
+# submitted last.ckpt).
+# ============================================================================
+export_exp037_pl() {
+    # Args: $1 = cell (mixed-case, matches run_name suffix + config basename).
+    local CELL="$1"
+    local SLUG="exp037-$(echo "$CELL" | tr '[:upper:]' '[:lower:]')"
+    local CFG="${CELL//-/_}"  # r1-A-raw-augF -> r1_A_raw_augF (config basename)
+    local CKPT
+    CKPT="$(find_last_ckpt "${CHECKPOINTS_BASE}/037-noisy-student-pl/checkpoints/2026-exp037-${CELL}/fold0")"
+    echo "=== Exporting Exp 037 ${SLUG} (last.ckpt = final epoch) ==="
+    echo "Using checkpoint: $CKPT"
+    local OUTPUT_DIR="artifacts/weights/${SLUG}"
+    python scripts/export_distilled_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP037_DIR}/configs/${CFG}.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir "${OUTPUT_DIR}/"
+
+    # 234-class identity species mapping (built by the species-mapping case block).
+    local MAPPING_2026="artifacts/weights/species_mapping_2026_234.json"
+    if [ -f "$MAPPING_2026" ]; then
+        cp "$MAPPING_2026" "${OUTPUT_DIR}/species_mapping.json"
+    fi
+}
+
 export_convnext_2026_soundscape() {
     echo "=== Exporting ConvNeXt (2026-soundscape, 234 classes) ==="
     local CKPT_DIR="${CHECKPOINTS_BASE}/012-soundscape-finetune/checkpoints/2026-convnext-soundscape"
@@ -1609,6 +1645,8 @@ case "$MODEL" in
     distilled-sed-pl-a5-v5j|distilled-sed-pl-a5-kd|\
     distilled-sed-pl-a2-kd-v3|\
     all-033-distilled-sed-pl-day1|all-033-distilled-sed-pl-day2|\
+    exp037-r1-a-raw-augf|exp037-r1-b-raw-augf|exp037-r1-c-raw-augf|\
+    exp037-r1-a-raw-augt-softauc|exp037-r1-c-raw-augt-softauc|all-037-pl|\
     xcpretrain-effv2s-frozen|xcpretrain-effv2s-fullft|xcpretrain-effv2s-kd-joint|all-034-xcpretrain|\
     xcfinetune-effv2s-lowlr-swa|xcfinetune-effv2s-lowlr-last|all-036-xcfinetune|\
     all-017-ablations|all-2026-sed)
@@ -1775,6 +1813,19 @@ case "$MODEL" in
     # as distilled-sed-pl-a2-kd, but pointed at the v3 PL parquet that has Sydorskyi's
     # min_max_prob=0.5 chunk discard + trim_min_prob=0.1 per-class trim applied.
     distilled-sed-pl-a2-kd-v3)          export_distilled_sed_pl a2 kd v3 ;;
+    # Exp 037 Noisy-Student soft-PL round-1 LB picks (last.ckpt = final epoch, fold 0).
+    exp037-r1-a-raw-augf)               export_exp037_pl r1-A-raw-augF ;;
+    exp037-r1-b-raw-augf)               export_exp037_pl r1-B-raw-augF ;;
+    exp037-r1-c-raw-augf)               export_exp037_pl r1-C-raw-augF ;;
+    exp037-r1-a-raw-augt-softauc)       export_exp037_pl r1-A-raw-augT-softauc ;;
+    exp037-r1-c-raw-augt-softauc)       export_exp037_pl r1-C-raw-augT-softauc ;;
+    all-037-pl)
+        export_exp037_pl r1-A-raw-augF ; echo ""
+        export_exp037_pl r1-B-raw-augF ; echo ""
+        export_exp037_pl r1-C-raw-augF ; echo ""
+        export_exp037_pl r1-A-raw-augT-softauc ; echo ""
+        export_exp037_pl r1-C-raw-augT-softauc
+        ;;
     xcpretrain-effv2s-frozen)           export_xcpretrain_effv2s_frozen ;;
     xcpretrain-effv2s-fullft)           export_xcpretrain_effv2s_fullft ;;
     xcpretrain-effv2s-kd-joint)         export_xcpretrain_effv2s_kd_joint ;;
