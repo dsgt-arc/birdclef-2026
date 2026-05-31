@@ -614,6 +614,29 @@ MODELS = {
         "weights_dir": "artifacts/weights/xcfinetune-effv2s-lowlr-last",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-xcfinetune-effv2s-lowlr-last.json",
     },
+    # Exp 038 Stage 2: XC-pretrained EffNetV2-S fine-tune (own-pretrain backbone), 234 classes.
+    # Architecturally = exp 032 distilled-sed-kd (V2-S backbone). Cell A = mixup-regularized
+    # pretrain; Cell C = no-mixup pretrain. single-fold (fold 0) + 5-fold (logit-space mean).
+    "finetune-cell-a": {
+        "slug": "birdclef-2026-finetune-cell-a-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-a",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-a.json",
+    },
+    "finetune-cell-a-5fold": {
+        "slug": "birdclef-2026-finetune-cell-a-5fold-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-a-5fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-a-5fold.json",
+    },
+    "finetune-cell-c": {
+        "slug": "birdclef-2026-finetune-cell-c-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-c",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-c.json",
+    },
+    "finetune-cell-c-5fold": {
+        "slug": "birdclef-2026-finetune-cell-c-5fold-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-c-5fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-c-5fold.json",
+    },
     # Exp 032 Phase 2: 5-fold ensemble (KD) + HGNet backbone ablation
     "distilled-sed-kd-5fold": {
         "slug": "birdclef-2026-distilled-sed-kd-5fold-weights",
