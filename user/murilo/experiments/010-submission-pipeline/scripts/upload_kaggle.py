@@ -876,6 +876,8 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
         or "xcfinetune" in model_name  # exp 036: 234-class 2026 model → identity mapping
         or "exp037"
         in model_name  # exp 037: 234-class 2026 distilled-sed student → identity mapping
+        or "finetune-cell"
+        in model_name  # exp 038: 234-class XC-pretrained V2-S finetune (cell A/C)
     ):
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026_234.json"
     elif "-2026" in model_name:
