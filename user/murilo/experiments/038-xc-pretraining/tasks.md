@@ -19,12 +19,23 @@ Tests: `user/murilo/tests/038-xc-pretraining/`. Honest ceiling ~0.88–0.90 (pap
       `sbatch sbatch/download_birdset_audio.sh --limit-shards 2` (smoke) → then `sbatch sbatch/download_birdset_audio.sh`
       (full). audio → `shared/pretrain/birdset-neotropical/audio/<ebird_code>/<XCid>.ogg`; `missing_files.json` at end.
 
-## Stage 1 — pretrain EffNetV2-S (A100, overnight after smoke) — NOT YET BUILT
-- [ ] Supervised-classification LightningModule (multi-label over N pretrain species; secondary labels
-      as extra positives). Backbone **EffNetV2-S, ImageNet-21k init** (`tf_efficientnetv2_s.in21k`).
-- [ ] Tucker mel (n_mels=256, sr=32000) to match the SED stack; BCE+Focal + LS 0.05; AdamW cosine→1e-6;
-      ~15–20 ep; no class balancing; `save_top_k=-1`; held-out XC val (macro-AUC) = pretrain signal.
-- [ ] **Smoke** (~50 sp, 1 ep): verify loop/mel/loss/throughput/checkpointing, THEN overnight scale-up.
+## Stage 1 — pretrain EffNetV2-S (A100, overnight after smoke) — BUILT
+Decision: **SED-mirror** (reuse `DistilledSEDFinetuneModule` UNCHANGED, num_classes=2683, KD off) so
+the backbone trains under the exact downstream regime. **Strategy = proven primary + parallel
+insurance arms** (compute free; LB is the only real ranker → XC-val macro-AUC is a sanity gate only).
+- [x] **New code**: `src/birdclef/data/xc_pretrain_dataset.py` (`XCPretrainDataset` multi-hot incl.
+      in-vocab secondaries / random 5 s crop / `apply_aug`+mixup ported from `FocalDS`; + stratified
+      per-species `XCPretrainDataModule`); gated additive `loss_type="focalbce"` + `label_smoothing`
+      in `DistilledSEDFinetuneModule` (bce path bit-identical, lazy torchvision import); `train.py`;
+      `configs/_common.yaml` + 3 cells; `pyproject.toml`; `sbatch/{run.sh,pretrain.sh}`.
+- [x] **3 cells** (EffNetV2-S IN21k, Tucker mel n_mels=256, AttHeadLogitSpace, 25 ep save_top_k=-1,
+      lr 5e-4, batch 128): **A** dual-BCE+LS0.05+full-aug (primary), **B** focal-BCE, **C** no-mixup.
+- [x] **Verified local**: 23 new tests + 238 regression (032/033/037) pass; config merge; real-OGG
+      dataset load+crop+mixup; CPU fwd→loss→backward through V2-S (embed_dim=1280) for bce+focalbce.
+- [ ] **(Murilo, GPU) smoke**: `bash sbatch/run.sh configs/pretrain_cellA_dualbce.yaml --fast-dev-run`
+      → then a 1-epoch run to measure it/s + confirm checkpointing + XC-val/auroc, THEN launch all 3.
+- [ ] **(Murilo, A100) full**: `bash sbatch/run.sh configs/pretrain_cellA_dualbce.yaml` (+ B, + C in
+      parallel). Rank by XC-val macro-AUC (sanity); fine-tune Cell A backbone to LB first (Stage 2).
 
 ## Stage 2 — fine-tune on 2026 (all 234) — NOT YET BUILT
 - [ ] Re-init 234-class head; reuse SED fine-tune recipe + domain-shift aug (MixUp/bg-mix/SpecAug).

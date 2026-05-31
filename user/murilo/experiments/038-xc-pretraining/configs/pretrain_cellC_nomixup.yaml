@@ -1,0 +1,6 @@
+# Cell C (insurance) — no focal-focal mixup (SpecAug + gain/noise only). Tests whether mixup
+# muddies the single-species representation signal. Differs from Cell A ONLY in mixup.enabled.
+run_name: "2026-exp038-pretrain-cellC-nomixup"
+
+mixup:
+  enabled: false
