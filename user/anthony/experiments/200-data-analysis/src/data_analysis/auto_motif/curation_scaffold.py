@@ -60,12 +60,23 @@ logger = logging.getLogger(__name__)
 
 CURATION_DIR = AUTO_MOTIF_DIR / "_curation"
 
-# (label, mode_tag, leg-name). The first three are the production (free+global)
-# anchor; the last is the fusfly1 gabor_stack opportunistic probe.
+# (label, mode_tag, leg-name).
+#   - 74113/hyamac1/fusfly1: the production (free+global) broadband anchor —
+#     calibrate member_bg d′→recovery and adjudicate the 74113 false positive.
+#   - 326272/25092: strand-5 (D1) attractor adjudication. These ran the
+#     *validated consensus route* with healthy d′ (≈2.2) yet have
+#     auc_vs_class ≤ 0.47 — the focal-specificity probe says their template
+#     prefers OTHER species' clean focal audio (generic-energy detector). The
+#     human precision pass tests whether that label-free verdict holds: if
+#     most cyan boxes land on noise / other species, d′ is confirmed to
+#     mislead and the strand-5 mining-failure diagnosis is grounded in truth.
+#     Empty tag = legacy consensus/global path (see batch._species_dir).
 PRODUCTION_TARGETS = [
     ("74113", "_bandfree", "production"),
     ("hyamac1", "_bandfree", "production"),
     ("fusfly1", "_bandfree", "production"),
+    ("326272", "", "consensus-attractor"),
+    ("25092", "", "consensus-attractor"),
 ]
 GABOR_PROBE = ("fusfly1", "_gabor_stack")
 
@@ -318,11 +329,36 @@ _README = """\
 **Why:** Perch-embedding validation confirmed the mined motifs are genuine
 recurrent objects *qualitatively*, but could NOT validate the `member_bg` d′
 magnitude or the per-species mode pick, and flagged `74113` as a suspected
-false positive. This exhaustive human pass is the only instrument that
-calibrates d′→true-recovery and adjudicates `74113`.
+false positive. Strand 5 (D1 focal-specificity) then went further: for the
+attractor species it found the committed template prefers *other* species'
+clean focal audio (`auc_vs_class` ≤ 0.47) despite a healthy d′ on the
+validated consensus route — a label-free verdict that d′ misleads. This
+exhaustive human pass is the only instrument that calibrates d′→true-recovery,
+adjudicates `74113`, and grounds the strand-5 attractor diagnosis in truth.
 
-**Scope:** 3 species, a small density-stratified recording sample each
+**Scope:** 5 species, a small density-stratified recording sample each
 (`recordings_selected.csv`). Exhaustive *within those recordings*.
+
+- **Broadband anchor** (`74113`, `hyamac1`, `fusfly1`) — production
+  free+global leg; calibrate d′→recovery and adjudicate the `74113` false
+  positive (both precision *and* recall).
+- **Strand-5 attractors** (`326272`, `25092`) — validated *consensus* leg,
+  healthy d′ but `auc_vs_class` ≤ 0.47. The decisive question is **precision**:
+  do the cyan boxes sit on real calls of this species, or on generic energy /
+  other species? If precision is low, d′ is confirmed to mislead and v2
+  discriminative recurrence is motivated against ground truth. (Recall is
+  secondary here — a generic-energy detector's *misses* are uninformative.)
+
+## Preferred annotation path: Label Studio (`label_studio/`)
+
+The CSV sheets below still work, but the richer path is the two Label Studio
+projects under `label_studio/` (built by
+`python -m data_analysis.auto_motif.label_studio export`). They import the
+pipeline detections as pre-annotations so precision (review regions) and
+recall (drag missed calls) happen in one audio UI, with the PCEN spectrogram
+shown as context. Score an export with `... label_studio parse --project
+<broadband_anchor|attractors> --export <json>`. See each project's README for
+launch + serving instructions. The CSV sheets remain as an offline fallback.
 
 ## Per recording (do both)
 
