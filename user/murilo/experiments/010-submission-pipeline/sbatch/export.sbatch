@@ -1517,6 +1517,18 @@ export_convnext_2026_soundscape() {
 # ============================================================================
 EXP038_DIR="$(dirname "$EXPERIMENT_DIR")/038-xc-pretraining"
 
+_verify_species_mapping_234() {
+    # Abort the export if the kernel's species-mapping canary would not be 234
+    # ([[feedback_species_mapping_canary]]). exit 1 aborts even though this script has no `set -e`.
+    local f="$1" n
+    n="$(python -c "import json,sys; print(len(json.load(open(sys.argv[1])).get('idx_to_name_2026') or {}))" "$f" 2>/dev/null || echo 0)"
+    if [ "$n" != "234" ]; then
+        echo "ERROR: $f has idx_to_name_2026=$n (expected 234); kernel canary would fail. Aborting." >&2
+        exit 1
+    fi
+    echo "species_mapping OK: $f (idx_to_name_2026=234)"
+}
+
 export_finetune_cell_single_fold() {
     # $1 = cell (A|C); exports fold 0 for the first single-fold LB submission.
     local CELL="$1"
@@ -1533,12 +1545,9 @@ export_finetune_cell_single_fold() {
         --train-csv "$TAXONOMY_CSV_2026" \
         --output-dir "${OUTPUT_DIR}/"
 
-    # 234-class identity species_mapping (the kernel needs it for output column ordering; same file
-    # all distilled-sed variants use). [[feedback_species_mapping_canary]]: kernel must print 234.
-    local MAPPING_2026="artifacts/weights/species_mapping_2026_234.json"
-    if [ -f "$MAPPING_2026" ]; then
-        cp "$MAPPING_2026" "${OUTPUT_DIR}/species_mapping.json"
-    fi
+    # export_distilled_sed.py self-emits species_mapping.json (234, idx_to_name_2026); verify the
+    # kernel canary before any upload (no shared-file race — see _verify_species_mapping_234).
+    _verify_species_mapping_234 "${OUTPUT_DIR}/species_mapping.json"
 }
 
 export_finetune_cell_5fold() {
@@ -1570,10 +1579,10 @@ export_finetune_cell_5fold() {
 
     cp "${OUTPUT_DIR}/fold0/species_list.json" "${OUTPUT_DIR}/"
     cp "${OUTPUT_DIR}/fold0/mel_config.json" "${OUTPUT_DIR}/"
-    local MAPPING_2026="artifacts/weights/species_mapping_2026_234.json"
-    if [ -f "$MAPPING_2026" ]; then
-        cp "$MAPPING_2026" "${OUTPUT_DIR}/species_mapping.json"
-    fi
+    # Top-level species_mapping from fold0's SELF-EMITTED copy (race-free — not the shared,
+    # concurrently-rewritten species_mapping_2026_234.json that caused the stale 41-map). Verify.
+    cp "${OUTPUT_DIR}/fold0/species_mapping.json" "${OUTPUT_DIR}/species_mapping.json"
+    _verify_species_mapping_234 "${OUTPUT_DIR}/species_mapping.json"
     for FOLD in 0 1 2 3 4; do
         cp "${OUTPUT_DIR}/fold${FOLD}/model.onnx" "${OUTPUT_DIR}/model_fold${FOLD}.onnx"
     done
