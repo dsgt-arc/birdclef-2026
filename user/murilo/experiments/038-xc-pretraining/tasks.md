@@ -11,11 +11,13 @@ Tests: `user/murilo/tests/038-xc-pretraining/`. Honest ceiling ~0.88–0.90 (pap
       species, 160,542 recordings, 2,202 h, 158/162 bird targets covered** (`palhor3`/`strher2` absent,
       2 thin). ebird_code is str (no decode). Manifest + species_list + report → `shared/pretrain/birdset-neotropical/`.
 - [x] **Stage 0b downloader BUILT** — `scripts/download_birdset_audio.py` (stream-extract, --shard-dir)
-      + `sbatch/download_birdset_audio.sh` (self-submitting CPU SLURM, $TMPDIR transient shards, .env
-      HF_TOKEN, reuses interactive venv). 2 extract-core tests PASS. filepath = bare XC id → all 98
-      shards pulled, extract our basenames, delete; peak ~155 GB; resumable.
-- [ ] **(Murilo, SLURM)** `bash sbatch/download_birdset_audio.sh --limit-shards 2` (smoke) → then full.
-      audio → `shared/pretrain/birdset-neotropical/audio/<ebird_code>/<XCid>.ogg`; `missing_files.json` at end.
+      + `sbatch/download_birdset_audio.sh` (CPU SLURM **worker**, #SBATCH headers modeled on exp 037
+      `_job.sh`; $TMPDIR transient shards, .env HF_TOKEN, reuses interactive venv). 2 extract-core
+      tests PASS. filepath = bare XC id → all 98 shards pulled, extract our basenames, delete; peak
+      ~155 GB; resumable. **Submit with `sbatch` (NOT `bash` — bash runs it in the current shell).**
+- [ ] **(Murilo, SLURM)** from the experiment dir: `mkdir -p logs` (one-time), then
+      `sbatch sbatch/download_birdset_audio.sh --limit-shards 2` (smoke) → then `sbatch sbatch/download_birdset_audio.sh`
+      (full). audio → `shared/pretrain/birdset-neotropical/audio/<ebird_code>/<XCid>.ogg`; `missing_files.json` at end.
 
 ## Stage 1 — pretrain EffNetV2-S (A100, overnight after smoke) — NOT YET BUILT
 - [ ] Supervised-classification LightningModule (multi-label over N pretrain species; secondary labels
