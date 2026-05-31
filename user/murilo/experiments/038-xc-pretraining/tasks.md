@@ -39,15 +39,18 @@ insurance arms** (compute free; LB is the only real ranker → XC-val macro-AUC 
 - [x] **fast-dev-run PASS** (a100, batch 128) + **gpu-check PASS** (rtx6000, batch 64): GPU-bound
       87% util, data-load 1.4% (num_workers=8 fine), **~10 min/epoch → ~4.2 h/cell**; peak reserved
       14.2 GB/24 GB. `outputs/gpu_check/*.{txt,png}`.
-- [x] **DONE (rtx6000)**: A=9351785, B=9351788, C=9351789 all ran 25 ep clean (~5h50m/cell, no errors;
-      cellA needed 2 restarts 9351455/9351577 before the clean run). **XC-val sanity gate PASS,
-      decisively** — best `val/auroc`: **A 0.9843 (ep23) · B 0.9847 (ep23) · C 0.9856 (ep22)** vs the
-      ≳0.95 bar (top-5 ~0.89 over 2683 sp). AUROC ranks the 3 within 0.0013 (un-rankable — sanity gate
-      only). Sharpness metrics (f1/top-1) separate: **C no-mixup sharpest** (f1_macro 0.264, top-1 0.757)
-      — the expected mixup-softens trade-off; transfer is an **LB-only** question → fine-tune **Cell A first**.
+- [x] **DONE (rtx6000)**: A=9351785, B=9351788, C=9351789 all ran 25 ep clean on the first try
+      (~5h50m/cell, no errors). (Jobs 9351455=fast_dev_run smoke, 9351577=gpu-check probe — pre-flight,
+      NOT restarts.) **XC-val sanity gate PASS, decisively** — best `val/auroc`: **A 0.9843 (ep23) ·
+      B 0.9847 (ep23) · C 0.9856 (ep22)** vs the ≳0.95 bar (top-5 ~0.89 over 2683 sp). AUROC ranks the 3
+      within 0.0013 (un-rankable — sanity gate only). Sharpness separates: **C no-mixup sharpest** (val
+      f1_micro 0.516 vs A 0.486 / B 0.456; train/auroc 0.994 vs 0.899) — the expected mixup-regularizer
+      trade-off; transfer is an **LB-only** question → fine-tune **Cell A first**.
 - [x] **Structured metrics regenerated**: `save_metrics.py --config configs/pretrain_cell{A,B,C}_*.yaml`
-      → `artifacts/training/pretrain_cell{A,B,C}_*/metrics.json` (fallback read `pretrain_results.json`;
-      per-epoch val vector recovered from TensorBoard). **`results.md` written + `MODEL-RUNS.md` updated.**
+      → `artifacts/training/pretrain_cell{A,B,C}_*/metrics.json`. Fixed `save_metrics.py`: when
+      test_results is absent it now reads best_val_auroc/ckpt from `pretrain_results.json` AND
+      reconstructs the **final-epoch `val/*` vector from the W&B summary** (top metrics were null
+      before). **`results.md` written + `MODEL-RUNS.md` updated.**
 
 ## Stage 2 — fine-tune on 2026 (all 234) — NOT YET BUILT
 - [ ] Re-init 234-class head; reuse SED fine-tune recipe + domain-shift aug (MixUp/bg-mix/SpecAug).

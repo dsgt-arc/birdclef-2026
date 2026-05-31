@@ -1446,18 +1446,22 @@ EffNetV2-S `tf_efficientnetv2_s.in21k` (embed_dim 1280), SED-mirror head (`AttHe
 Tucker mel n_mels=256 sr=32000, 5 s crop, dual-supervision `0.5·BCE(clip)+0.5·BCE(frame_max)`. 148,427
 train / 2,834 val (per-species 2% val). Eff batch 128, AdamW 5e-4→cosine→1e-6, 25 ep, `save_top_k=-1`.
 
-| Cell | Lever | Loss | Classes | Best ep | **XC val/auroc** | val/cmap | val/f1_macro | val/top1 | val/top5 | Job | Checkpoint |
-|------|-------|------|--------:|:-------:|-----------------:|---------:|-------------:|---------:|---------:|-----|------------|
-| A (PRIMARY) | dual-BCE + **LS 0.05** + full aug | bce | 2683 | 23 | 0.9843 | 0.6766 | 0.2361 | 0.7470 | 0.8899 | 9351785 | `038-xc-pretraining/checkpoints/2026-exp038-pretrain-cellA-dualbce/epoch23.ckpt` |
-| B | **focal-BCE** (α0.25/γ2) | focalbce | 2683 | 23 | **0.9847** | 0.6756 | 0.2154 | 0.7315 | 0.8889 | 9351788 | `038-.../2026-exp038-pretrain-cellB-focalbce/epoch23.ckpt` |
-| C | **mixup OFF** | bce | 2683 | 22 | **0.9856** | 0.6751 | **0.2642** | **0.7572** | 0.8867 | 9351789 | `038-.../2026-exp038-pretrain-cellC-nomixup/epoch22.ckpt` |
+**best val/auroc** = monitor peak (the exported ckpt epoch); **cmap/f1/top-k = final-epoch (ep24)**
+values = what `artifacts/training/*/metrics.json` records (verified vs W&B summary).
 
-**Read:** (1) AUROC tied within noise → don't pick by XC-val. (2) **Sharpness metrics separate and
-expose the mixup trade-off** — C (no-mixup) sharpest in-distribution (f1_macro 0.264 / top-1 0.757),
-because mixup softens predictions (regularizer); whether that buys soundscape generalization is an
-**LB-only** question. (3) Absolute f1/cmap modest = normal for 2683-class extreme multi-label + random
-5 s crops + macro long tail; AUROC/top-k are the trustworthy signals. **Plan: fine-tune Cell A first**
-(closest to the proven 0.906 recipe); B/C are ready backups. Full read →
+| Cell | Lever | Loss | Classes | Export ep | **best val/auroc** | val/cmap | val/f1_macro | val/top1 | val/top5 | Job | Checkpoint |
+|------|-------|------|--------:|:---------:|-------------------:|---------:|-------------:|---------:|---------:|-----|------------|
+| A (PRIMARY) | dual-BCE + **LS 0.05** + full aug | bce | 2683 | 23 | 0.9843 | 0.6753 | 0.2324 | 0.7445 | 0.8892 | 9351785 | `038-xc-pretraining/checkpoints/2026-exp038-pretrain-cellA-dualbce/epoch23.ckpt` |
+| B | **focal-BCE** (α0.25/γ2) | focalbce | 2683 | 23 | **0.9847** | 0.6746 | 0.2113 | 0.7322 | 0.8913 | 9351788 | `038-.../2026-exp038-pretrain-cellB-focalbce/epoch23.ckpt` |
+| C | **mixup OFF** | bce | 2683 | 22 | **0.9856** | 0.6737 | **0.2678** | **0.7555** | 0.8867 | 9351789 | `038-.../2026-exp038-pretrain-cellC-nomixup/epoch22.ckpt` |
+
+**Read:** (1) AUROC tied within noise → don't pick by XC-val. (2) **Sharpness separates and exposes the
+mixup trade-off** — C (no-mixup) sharpest in-distribution (val f1_micro 0.516 vs A 0.486 / B 0.456;
+train/auroc 0.994 vs 0.899) because mixup is a regularizer that softens *train* targets; the val gap
+mostly closes (the tax pays itself back on held-out XC), and whether it pays back on the soundscape
+shift is an **LB-only** question. (3) Absolute f1/cmap modest = normal for 2683-class extreme
+multi-label + random 5 s crops + macro long tail; AUROC/top-k are the trustworthy signals. **Plan:
+fine-tune Cell A first** (closest to the proven 0.906 recipe); B/C are ready backups. Full read →
 `experiments/038-xc-pretraining/results.md`.
 
 ## Checkpoint Base Path

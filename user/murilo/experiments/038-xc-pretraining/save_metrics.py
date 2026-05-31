@@ -9,17 +9,73 @@ cross-cell results table.
 Pretraining is val-only (no test split) and KD-off, so this drops exp 037's test/PL/head_lr/
 early-stopping fields and adds the exp 038 levers (loss_type, label_smoothing, focal α/γ, mixup).
 
+Metric semantics (matches exp 037 convention): the top-of-file `val/*` metrics are the
+**final-epoch** values (exp 037's `val_metrics` comes from `trainer.callback_metrics` at the
+end of `fit()` = the last validation epoch), while `best_val_auroc`/`best_checkpoint_path` track
+the monitor-selected best epoch separately.
+
+Sources, in priority order:
+  1. `outputs/test_results/<run_name>.json` (written by train.py for normal runs).
+  2. Fallback for runs launched before the metric-parity change (no test_results): the W&B run
+     summary `outputs/wandb/wandb/<run>/files/wandb-summary.json` supplies the final-epoch `val/*`
+     metrics (== callback_metrics), matched to this run via the sibling `config.yaml` run_name; and
+     `checkpoints/<run>/pretrain_results.json` supplies best_val_auroc + checkpoint paths.
+
 Usage:
     python save_metrics.py --config configs/pretrain_cellA_dualbce.yaml
 """
 
 import argparse
+import glob
 import json
 import os
 import sys
 from pathlib import Path
 
 import yaml
+
+# Final-epoch val metric keys we surface at the top of metrics.json (mirrors exp 037).
+_VAL_KEYS = (
+    "val/auroc",
+    "val/cmap",
+    "val/f1_macro",
+    "val/f1_micro",
+    "val/top1_acc",
+    "val/top5_acc",
+    "val/loss",
+)
+
+
+def _wandb_val_metrics(experiment_dir: Path, run_name: str) -> dict:
+    """Reconstruct final-epoch `val/*` metrics from the local W&B run summary.
+
+    Used only for runs launched before train.py wrote `outputs/test_results/` — the W&B summary
+    holds the last logged value of each metric (= the final validation epoch, same semantics as
+    `trainer.callback_metrics`). The run is matched by `run_name` via each run dir's `config.yaml`
+    (`run_name.value`), so it is robust to the W&B run-id in the directory name.
+    """
+    wandb_root = experiment_dir / "outputs" / "wandb" / "wandb"
+    if not wandb_root.is_dir():
+        return {}
+    for cfg_path in sorted(
+        glob.glob(str(wandb_root / "run-*" / "files" / "config.yaml")), reverse=True
+    ):
+        try:
+            with open(cfg_path) as f:
+                wcfg = yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        entry = wcfg.get("run_name")
+        rn = entry.get("value") if isinstance(entry, dict) else entry
+        if rn != run_name:
+            continue
+        summary_path = Path(cfg_path).parent / "wandb-summary.json"
+        if not summary_path.exists():
+            return {}
+        with open(summary_path) as f:
+            summary = json.load(f)
+        return {k: summary[k] for k in _VAL_KEYS if k in summary}
+    return {}
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -82,7 +138,23 @@ def main():
     with open(results_file) as f:
         raw = json.load(f)
 
+    # Final-epoch val metrics: from test_results when present, else reconstructed from the W&B
+    # run summary (pre-parity runs whose train.py never wrote test_results / val_metrics).
     val_metrics = raw.get("val_metrics") or {}
+    metrics_source = "val"
+    if not val_metrics:
+        val_metrics = _wandb_val_metrics(experiment_dir, run_name)
+        if val_metrics:
+            metrics_source = "val (W&B summary, final epoch)"
+            print(
+                f"Note: val_metrics reconstructed from W&B summary for {run_name}", file=sys.stderr
+            )
+        else:
+            print(
+                f"Warning: no val_metrics in {results_file} and no matching W&B summary for "
+                f"{run_name}; top metrics will be null",
+                file=sys.stderr,
+            )
     mel_cfg = config.get("mel", {})
     train_cfg = config.get("training", {})
     data_cfg = config.get("data", {})
@@ -98,7 +170,7 @@ def main():
         "top1_accuracy": val_metrics.get("val/top1_acc"),
         "top5_accuracy": val_metrics.get("val/top5_acc"),
         "loss": val_metrics.get("val/loss"),
-        "metrics_source": "val",
+        "metrics_source": metrics_source,
         # Architecture
         "architecture": "sed-pretrain",
         "encoder_model": config["encoder"].get("model_name", ""),
