@@ -74,8 +74,18 @@ single-fold A + single-fold C first** (2 pulls = decisive read).
 - [ ] **(Murilo) launch the 10-job grid** (rtx6000, parallel):
       `for f in 0 1 2 3 4; do bash sbatch/run_finetune.sh configs/finetune_cellA.yaml --fold $f; done`
       then the same for `finetune_cellC.yaml`. Checkpoints → `experiments/038-xc-pretraining/checkpoints/<run>/fold<N>/`.
-- [ ] **Export + LB**: exp 010 `export_distilled_sed.py` → ONNX → Kaggle. Submit single-fold A + C first
-      (vs 0.906); then 5-fold ensembles (vs 0.915) + prob-space blend into 0.929 only if warranted.
+- [x] **Submission wiring BUILT** (exp 010, commit baecafb): cloned the exp 032 distilled-sed-kd
+      pipeline (V2-S backbone only → export_distilled_sed.py + the kernel's Tucker path reused
+      UNCHANGED). 4 models: `finetune-cell-{a,c}` (fold0) + `finetune-cell-{a,c}-5fold`. Touched
+      `export.sbatch` (export_finetune_cell_single_fold/_5fold + dispatch + species-map glob),
+      `upload_kaggle.py` (4 MODELS entries), 4 `kernel-metadata-finetune-cell-*.json`, `submission.py`
+      (4 MODEL_SLUGS). Verified bash -n / py_compile / title-slug / cross-file naming.
+- [ ] **(Murilo) Export + LB** (after folds train), from `experiments/010-submission-pipeline/`:
+      `bash sbatch/run.sh export --model finetune-cell-a` (+ `finetune-cell-c`) →
+      `python scripts/upload_kaggle.py --model finetune-cell-a` (creates dataset; wait ~2-3 min if new) →
+      `... --model finetune-cell-a --push-kernel` → submit notebook from Kaggle UI. **Canary: kernel log
+      must print `Species mapping: 234 mapped`** ([[feedback_species_mapping_canary]]). Submit single-fold
+      A + C first (vs 0.906); then `finetune-cell-{a,c}-5fold` (vs 0.915) + prob-space blend into 0.929.
 
 ## Stage 3 — eval / use
 - [ ] Pretrain quality → held-out XC macro-AUC. Downstream → **LB** (labeled-SS anti-correlates).
