@@ -6,11 +6,16 @@ Tests: `user/murilo/tests/038-xc-pretraining/`. Honest ceiling ~0.88–0.90 (pap
 ## Stage 0 — curate (no GPU)
 - [x] `scripts/curate_birdset_neotropical.py`: pure-pandas `curate()` (Neotropical-occurring ∪ 162 bird
       targets; lat/long bbox; cap 500/sp, min 10, q A/B; manifest + species_list + size report). 5 tests PASS.
-- [ ] **(Murilo, PACE+internet)** `--smoke 2000` → verify BirdSet HF schema/field names + counts; check
-      the metadata-only-file vs streaming caveat (don't pull 480 GB just to filter).
-- [ ] Full metadata pass → `manifest.parquet` + `species_list.json` + `curation_report.json`. Eyeball:
-      ~1.5–3k species, total hours, how many of the 162 bird targets are covered (missing list).
-- [ ] Selective-download ONLY the manifest's audio (32 kHz already) to `shared/pretrain/birdset-neotropical/`.
+- [x] **Curation DONE** (Murilo ran): metadata via `XCL_metadata.parquet` (rev=data, 99.9 MB, no audio;
+      `datasets` 4.x can't run BirdSet.py → hf_hub_download direct). Result: **2,683 Neotropical bird
+      species, 160,542 recordings, 2,202 h, 158/162 bird targets covered** (`palhor3`/`strher2` absent,
+      2 thin). ebird_code is str (no decode). Manifest + species_list + report → `shared/pretrain/birdset-neotropical/`.
+- [x] **Stage 0b downloader BUILT** — `scripts/download_birdset_audio.py` (stream-extract, --shard-dir)
+      + `sbatch/download_birdset_audio.sh` (self-submitting CPU SLURM, $TMPDIR transient shards, .env
+      HF_TOKEN, reuses interactive venv). 2 extract-core tests PASS. filepath = bare XC id → all 98
+      shards pulled, extract our basenames, delete; peak ~155 GB; resumable.
+- [ ] **(Murilo, SLURM)** `bash sbatch/download_birdset_audio.sh --limit-shards 2` (smoke) → then full.
+      audio → `shared/pretrain/birdset-neotropical/audio/<ebird_code>/<XCid>.ogg`; `missing_files.json` at end.
 
 ## Stage 1 — pretrain EffNetV2-S (A100, overnight after smoke) — NOT YET BUILT
 - [ ] Supervised-classification LightningModule (multi-label over N pretrain species; secondary labels

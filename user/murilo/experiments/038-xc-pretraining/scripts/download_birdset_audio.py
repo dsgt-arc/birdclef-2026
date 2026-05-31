@@ -79,6 +79,13 @@ def main() -> int:
         default=Path("/storage/project/ps-clef2026_birdclef-0/shared/pretrain/birdset-neotropical"),
     )
     ap.add_argument(
+        "--shard-dir",
+        type=Path,
+        default=None,
+        help="Where transient tarballs download+delete (default: <out-dir>/_shards). On SLURM set "
+        "to $TMPDIR for fast local NVMe + auto-clean (keeps project-disk peak to just the audio).",
+    )
+    ap.add_argument(
         "--limit-shards", type=int, default=None, help="Process only first N shards (smoke)."
     )
     ap.add_argument(
@@ -104,7 +111,7 @@ def main() -> int:
     print(f"XCL shards to process: {len(shards)} (e.g. {shards[:2]})")
 
     audio_dir = args.out_dir / "audio"
-    shard_dir = args.out_dir / "_shards"
+    shard_dir = args.shard_dir if args.shard_dir else args.out_dir / "_shards"
     done_path = args.out_dir / "_done_shards.json"
     audio_dir.mkdir(parents=True, exist_ok=True)
     shard_dir.mkdir(parents=True, exist_ok=True)
