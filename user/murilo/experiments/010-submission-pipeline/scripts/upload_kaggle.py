@@ -627,6 +627,15 @@ MODELS = {
         "weights_dir": "artifacts/weights/finetune-cell-a-5fold",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-a-5fold.json",
     },
+    # 4-fold mean = the 5-fold ONNX with fold2 dropped (coverage analysis: fold2 was
+    # blind to the most singleton focal species; offline-weakest fold0 is the LB-verified
+    # 0.907 fold and was KEPT). Safe ~58 min CPU vs the 5-fold ~73 min that timed out.
+    # Reuses the existing 5-fold ONNX exports — no re-export needed.
+    "finetune-cell-a-4fold": {
+        "slug": "birdclef-2026-finetune-cell-a-4fold-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-a-4fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-a-4fold.json",
+    },
     "finetune-cell-c": {
         "slug": "birdclef-2026-finetune-cell-c-weights",
         "weights_dir": "artifacts/weights/finetune-cell-c",

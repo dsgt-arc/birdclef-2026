@@ -97,6 +97,7 @@ MODEL_SLUGS = [
     # output_type=tucker_logits → predict_soundscape_tucker[_ensemble]: per-window LOGIT-space blend
     # → 5-tap Gauss smooth → single sigmoid). 5fold variants ship model_fold*.onnx (logit-space
     # fold-mean). Each kernel attaches exactly one of these → first (only) match wins.
+    "birdclef-2026-finetune-cell-a-4fold-weights",
     "birdclef-2026-finetune-cell-a-5fold-weights",
     "birdclef-2026-finetune-cell-a-weights",
     "birdclef-2026-finetune-cell-c-5fold-weights",

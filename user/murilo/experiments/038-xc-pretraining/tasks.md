@@ -91,11 +91,21 @@ single-fold A + single-fold C first** (2 pulls = decisive read).
       TIMED OUT** — same EffNetV2-S/inference path as C-5fold → VM variance at the ~73-of-90-min CPU margin
       flagged pre-submit, not a bug. **A-vs-C at the ensemble level UNRESOLVED** (A led C at single-fold).
       results.md/MODEL-RUNS.md updated.
-- [ ] **(Discussion — next session, NO decisions yet)** Open questions, decide together before acting
-      (deadline 2026-06-03, LB ~5/day): (a) A-5fold **retry** (coin-flip at margin) vs **trim to 4-fold**
-      (~58 min, safe) to score Cell-A ensemble + resolve A-vs-C; (b) **prob-space blend C-5fold (0.911) into
-      the banked 0.929** — keep iff > 0.929 (blend kernel NOT wired); (c) **final 2 picks** (0.929 banked +
-      best exp-038/blend); (d) **merge `mg/038-xc-pretraining`** + write the ceiling-refute working-note.
+- [x] **(2026-05-31 late, w/ Murilo) A-5fold → A-4fold decision + build.** Chose **trim to 4-fold** (~58–72
+      min, safe) over the coin-flip 5-fold retry. **Dropped fold2** (NOT the offline-weakest fold0) via
+      `scripts/analyze_fold_coverage.py`: folds are coverage-equivalent; fold2 holds the most true singleton
+      blind-spots (`23150`,`23724`); offline val/auroc spread is a val-composition artifact (29→45 val
+      species/fold) so we KEPT the LB-verified fold0 (0.907). Built `finetune-cell-a-4fold` reusing the
+      5-fold ONNX (no re-export): weights dir + kernel-metadata + upload_kaggle entry + MODEL_SLUGS;
+      validated (compile/dry-run/ONNX smoke/commit-run canary). **Murilo submitted to LB — RUNNING.**
+- [x] **(2026-05-31 late) Analyzed `ryutoyoda/...eos8-sidecar` (0.95 LB)** → `vendor/kaggle/notebooks/
+      birdclef-2026/eos8-sidecar/`. Same ingredients as us (Perch + Tucker SED + ProtoSSM) recombined in
+      rank space + heavy PP + taxonomy smoothing. Transferable: **rank-space Perch+SED blend** + **taxonomy
+      smoothing** (cheap, on the 0.929 kernel) — next builds. See CONTEXT.md for line refs.
+- [ ] **(Next session) (a)** read A-4fold LB (vs C-5fold 0.911 / 0.929; + runtime); **(b)** build the two PP
+      variants of the 0.929 ensemble kernel (rank-space blend + taxonomy smoothing); **(c)** Perch + A-4fold
+      blend (gated on A-4fold strength; ~76 min); **(d)** final 2 picks (0.929 + best); **(e)** merge
+      `mg/038-xc-pretraining` (`--squash`) + ceiling-refute working-note.
 
 ## Stage 3 — eval / use
 - [ ] Pretrain quality → held-out XC macro-AUC. Downstream → **LB** (labeled-SS anti-correlates).
