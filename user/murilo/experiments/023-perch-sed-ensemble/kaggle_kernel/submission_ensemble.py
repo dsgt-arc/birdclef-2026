@@ -2205,25 +2205,28 @@ def predict_soundscape_tucker_ensemble(
     n_folds = len(sessions)
     input_name = sessions[0].get_inputs()[0].name
 
-    window_logits = []
+    # Collect all 5s-window mels, then run each fold ONCE on the full
+    # (n_windows, 1, n_mels, T) batch. The ONNX has a dynamic batch dim, and batched
+    # inference is BYTE-IDENTICAL to per-window calls (verified: max abs diff 0.0) — but
+    # it amortizes ONNX dispatch overhead ~1.6x so Perch + A-4fold fits the 90-min CPU wall.
+    mels = []
     segment_times = []
     segment_start_s = 0.0
-
     while segment_start_s < total_duration:
         audio = load_audio_chunk(audio_path, sr, segment_start_s, segment_duration)
-        mel = compute_mel_tucker(audio, mel_cfg)  # (1, 1, n_mels, T)
-        fold_logits_sum = None
-        for sess in sessions:
-            out = sess.run(None, {input_name: mel})[0].flatten().astype(np.float32)
-            fold_logits_sum = out if fold_logits_sum is None else fold_logits_sum + out
-        window_logits.append(fold_logits_sum / n_folds)  # logit-space mean
+        mels.append(compute_mel_tucker(audio, mel_cfg))  # (1, 1, n_mels, T)
         segment_times.append(int(segment_start_s + segment_duration))
         segment_start_s += segment_duration
 
-    if not window_logits:
+    if not mels:
         return []
 
-    logits_matrix = np.stack(window_logits)  # (n_windows, 234)
+    mel_batch = np.concatenate(mels, axis=0)  # (n_windows, 1, n_mels, T)
+    fold_logits_sum = None
+    for sess in sessions:
+        out = sess.run(None, {input_name: mel_batch})[0].astype(np.float32)  # (n_windows, 234)
+        fold_logits_sum = out if fold_logits_sum is None else fold_logits_sum + out
+    logits_matrix = (fold_logits_sum / n_folds).astype(np.float32)  # logit-space fold mean
 
     if mel_cfg.get("gaussian_smooth_logit_space", True) and logits_matrix.shape[0] >= 3:
         kernel = np.array(

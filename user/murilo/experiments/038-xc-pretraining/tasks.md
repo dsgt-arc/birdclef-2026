@@ -119,10 +119,15 @@ single-fold A + single-fold C first** (2 pulls = decisive read).
         α=0 is an exact no-op (default off → 0.929 unchanged).
       - **Perch + A-4fold blend** (`configs/ensemble_a4fold.yaml` + `kernel-metadata-a4fold-ensemble.json`,
         kernel `perch-sed-a4fold`): ported `load_audio_chunk`/`compute_mel_tucker`/
-        `predict_soundscape_tucker_ensemble` VERBATIM from exp 010 → `run_sed_pipeline` routes `tucker_mel`
+        `predict_soundscape_tucker_ensemble` from exp 010 → `run_sed_pipeline` routes `tucker_mel`
         to the logit-space path; push.sh swaps the v5j dataset for `finetune-cell-a-4fold-weights`.
-        **PARITY PASS: grafted A-4fold SED member is BYTE-IDENTICAL** (max abs diff 0.0, row_ids match) to
-        the standalone 0.916 kernel, verified on the real 4-fold ONNX + a sample soundscape. ~76 min budget.
+        **PARITY PASS: grafted A-4fold SED is BYTE-IDENTICAL** (max abs diff 0.0) to the standalone 0.916.
+      - **RUNTIME FIX (2026-06-01):** first a4fold commit-run showed SED ~8 s/file steady (EffNetV2-S is
+        ~4x v5j HGNet) → ~80 min SED + ~18 min Perch ≈ **~98 min > 90-min wall → would TIME OUT**. Fixed by
+        **batching the 12 windows into ONE ONNX call per fold** (the ONNX has a dynamic batch dim; mel is
+        negligible at 0.26 s/file). Local bench (threads=4): **1.64x** ONNX speedup, **max abs diff 0.0**
+        (batched == sequential, re-verified end-to-end on 2 files) → projected **~49 min SED + ~18 Perch ≈
+        ~67 min, fits w/ ~23 min margin.** rank_mlp/tax_mlp use the v5j path → unaffected, no re-push needed.
       - All: py_compile + `bash -n push.sh` + push.sh override/dataset-routing for all 3 configs PASS.
 - [ ] **(Next — submit, LB ~5/day, deadline 06-03)** push + submit in EV order: **rank-space PP first**
       (Murilo runs; [[feedback_user_runs_commands]]), then taxonomy, then the A-4fold blend; stack winners
