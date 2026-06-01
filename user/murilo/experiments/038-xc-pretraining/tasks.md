@@ -129,9 +129,16 @@ single-fold A + single-fold C first** (2 pulls = decisive read).
         (batched == sequential, re-verified end-to-end on 2 files) → projected **~49 min SED + ~18 Perch ≈
         ~67 min, fits w/ ~23 min margin.** rank_mlp/tax_mlp use the v5j path → unaffected, no re-push needed.
       - All: py_compile + `bash -n push.sh` + push.sh override/dataset-routing for all 3 configs PASS.
-- [ ] **(Next — submit, LB ~5/day, deadline 06-03)** push + submit in EV order: **rank-space PP first**
-      (Murilo runs; [[feedback_user_runs_commands]]), then taxonomy, then the A-4fold blend; stack winners
-      (e.g. rank+tax). Then **(d)** final 2 picks (0.929 banked + best); **(e)** merge `mg/038-xc-pretraining`
+- [x] **(b) PP variants LB IN (2026-06-01) — BOTH REGRESSED vs 0.929 → OUT.** `rank_mlp` **0.914** (−0.015;
+      rank-space discarded useful magnitude in our 2-member blend), `tax_mlp` **0.886** (−0.043; class-level
+      sharing over 162 Aves over-smoothed). Both eos8 PP levers fail to transfer → rank+tax stack dropped
+      (no point stacking two regressions). MODEL-RUNS.md updated.
+- [x] **(c) a4fold batching VERIFIED on Kaggle (2026-06-01):** re-push commit-run shows SED **~4.5 s/file**
+      steady (down from ~8s, ~1.78x) → projected **~45 min SED + ~18 Perch ≈ ~63 min** (~27 min margin).
+      Canaries clean (tucker route / 234 mapped / blend_space=prob). **Ready to submit — the remaining live
+      shot at beating 0.929** (backbone-diverse EffNetV2-S SED member; description already written).
+- [ ] **(Next)** submit `a4fold` (Murilo; [[feedback_user_runs_commands]]). Then **(d)** final 2 picks
+      (0.929 banked + best of {A-4fold standalone 0.916, a4fold blend}); **(e)** merge `mg/038-xc-pretraining`
       (`--squash`) + ceiling-refute working-note.
 
 ## Stage 3 — eval / use

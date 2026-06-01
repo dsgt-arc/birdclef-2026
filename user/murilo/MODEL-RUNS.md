@@ -510,6 +510,23 @@ average produces the final submission. Estimated runtime ~64 min for ~600 test f
 | `perch-sed-ensemble-w07` | 0.70 | ONNX | v5j-4fold-pp2 | 0.926 | `023-.../submission_ensemble.py` |
 | **`perch-sed-ensemble-mlp-only`** | **0.50** | **ONNX** | **v5j-4fold-pp2** | **0.929** | **`023-.../submission_ensemble.py` (proto_weight=0.0)** |
 | `perch-sed-ensemble-no-pp` | 0.50 | ONNX | v5j-4fold-pp2 | 0.922 | `023-.../submission_ensemble.py` (PP disabled) |
+| `perch-sed-rank_mlp` | 0.50 | ONNX | v5j-4fold-pp2 | **0.914** | `configs/ensemble_rank_mlp.yaml` (mlp-only + **rank-space** blend) |
+| `perch-sed-tax_mlp` | 0.50 | ONNX | v5j-4fold-pp2 | **0.886** | `configs/ensemble_tax_mlp.yaml` (mlp-only + **taxonomy smoothing**) |
+
+### eos8-derived PP variants (exp 038 endgame, 2026-06-01) — BOTH REGRESSED vs 0.929
+
+Two cheap, eos8-derived post-processing levers applied to the banked 0.929 (mlp-only, prob-space w=0.5):
+- **`rank_mlp` 0.914 (−0.015)** — replace the prob-space Perch+SED average with a **rank-space** blend
+  (per-species percentile-rank each model across all segments, then 0.5/0.5; eos8 `_safe_rank_cols`).
+  Despite the metric being rank-based macro-ROC-AUC, rank-equalizing our *2-member* blend discarded useful
+  magnitude info and hurt. The eos8 rank lift was in a richer multi-branch stack, not a 2-way Perch+SED.
+- **`tax_mlp` 0.886 (−0.043)** — genus α=0.15 → class α=0.05 mean-sharing (29 genus / 4 class groups).
+  Class-level sharing across 162 Aves species over-smoothed (output range compressed to [0, 0.85]),
+  washing out per-class discrimination. Larger regression of the two.
+
+**Read:** both eos8 PP levers FAIL on our blend — consistent with the project-long pattern that PP/recipe
+tricks ported from other notebooks rarely transfer ([[feedback_offline_metrics_unreliable]] lineage). The
+banked **0.929 stays the best**; `a4fold` blend (backbone-diverse SED member) is the remaining live shot.
 
 **0.929 LB is the new best overall** (MLP-only, +0.004 vs Perch TF 0.925).
 Key findings:
