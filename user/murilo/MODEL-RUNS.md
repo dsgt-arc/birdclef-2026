@@ -1432,7 +1432,7 @@ comparison + A-raw-augT-softauc + C-raw-augT-softauc), exporting each cell's bes
 Falsifiable single-fold vs 0.906: CONFIRM ≥0.916 / REJECT ≤0.906. Full read →
 `experiments/037-noisy-student-pl/results.md`.
 
-## Experiment 038: Broad Neotropical XC Pretraining (EffNetV2-S) — Stage 1 PASS; Stage 2 single-fold LB IN (A 0.907 / C 0.901 — clears the ~0.88 XC-backbone ceiling, parity w/ 0.906 KD; 5-fold LB pending)
+## Experiment 038: Broad Neotropical XC Pretraining (EffNetV2-S) — Stage 1 PASS; Stage 2 LB IN (single-fold A 0.907 / C 0.901 — clears the ~0.88 XC-backbone ceiling, parity w/ 0.906 KD; 5-fold C **0.911** (< 0.915 best ensemble), A-5fold **TIMED OUT** at the 90-min budget)
 
 **Stage 1 verdict (2026-05-31): sanity gate PASS, decisively.** All 3 cells trained 25 ep clean on
 rtx6000; held-out **XC macro-AUROC 0.984–0.986** vs the proposal's ≳0.95 "pretrain works" bar (top-5
@@ -1473,11 +1473,12 @@ backbone (encoder-only; 234-class head re-init). 10 folds, 25 ep clean, rtx6000.
 **LB (the arbiter) — single-fold (fold 0), 2026-05-31. Both kernels printed the `Species mapping: 234
 mapped` canary** ([[feedback_species_mapping_canary]]):
 
-| Model | LB | vs 0.906 KD baseline | vs ~0.88 XC-backbone (exp 034/036) | Offline val/auroc (fold0) |
+| Model | LB | vs 0.906 / 0.915 baselines | vs ~0.88 XC-backbone (034/036) | offline val/auroc |
 |---|--:|:--:|:--:|--:|
-| **`finetune-cell-a`** (mixup-reg backbone) | **0.907** | **+0.001 (parity)** | **+0.025 to +0.029** | 0.887 |
-| **`finetune-cell-c`** (no-mixup backbone) | **0.901** | −0.005 | +0.019 to +0.023 | 0.894 |
-| `finetune-cell-{a,c}-5fold` (logit fold-mean) | **pending** | vs 0.915 | — | A 0.910 / C 0.909 (5-fold mean) |
+| **`finetune-cell-a`** (single, mixup-reg) | **0.907** | +0.001 vs 0.906 (parity) | **+0.025 to +0.029** | 0.887 (fold0) |
+| **`finetune-cell-c`** (single, no-mixup) | **0.901** | −0.005 vs 0.906 | +0.019 to +0.023 | 0.894 (fold0) |
+| **`finetune-cell-c-5fold`** (logit fold-mean) | **0.911** | **−0.004 vs 0.915** | — | 0.909 (mean) |
+| `finetune-cell-a-5fold` (logit fold-mean) | **TIMED OUT** | — (exceeded 90-min CPU budget) | — | 0.910 (mean) |
 
 **Offline (final-epoch val on held-out labeled-SS — anti-correlates with LB; for-the-record):** 5-fold
 mean val/auroc A **0.9104** (±0.013), C **0.9085** (±0.009); per-fold A .887/.915/.919/.907/.924, C
@@ -1489,13 +1490,19 @@ mean val/auroc A **0.9104** (±0.013), C **0.9085** (±0.009); per-fold A .887/.
   broad-Neotropical supervised XC pretrain *under the exact KD-SED regime* reaches **parity with the
   in-domain ImageNet+KD 0.906** — Cell A 0.907 (+0.001, within the ~±0.007 cross-hardware LB noise).
   So the prior "XC-pretrain caps at 0.88" read was about the *transfer recipe*, not XC pretraining itself.
-- **A > C by 0.006 → mixup-regularized pretrain transfers better** to the focal→soundscape shift than the
-  sharp/no-mixup backbone. This **answers the A-vs-C mixup-transfer question** that offline called a tie
-  (Δ0.0019). Note offline's *fold0* even ranked C 0.894 > A 0.887 — the usual anti-correlation
+- **A > C by 0.006 (single-fold) → mixup-regularized pretrain transfers better** to the focal→soundscape
+  shift than the sharp/no-mixup backbone. LB **answers the A-vs-C mixup-transfer question** that offline
+  called a tie (Δ0.0019); offline's *fold0* even ranked C 0.894 > A 0.887 — the usual anti-correlation
   ([[project_cv_measurement_failure]], [[feedback_offline_metrics_unreliable]]); LB called it for A.
-- **Not a plateau-break** (≤ the 0.906/0.915/0.929 stack) but a **legitimate backbone-diverse member at
-  0.906-class strength** + the working-note result (our own XC backbone ≈ ImageNet+KD).
-- **Next:** 5-fold LB (vs 0.915) → prob-space blend of the best into the 0.929 ensemble (keep iff > 0.929).
+- **5-fold: C-5fold 0.911** = +0.010 over its 0.901 single fold (folding helps as expected), but **−0.004
+  below the 0.915 best Tucker-SED ensemble** and below the 0.929 overall best. **A-5fold TIMED OUT** —
+  architecturally identical to C-5fold, so this is **VM variance right at the ~73-of-90-min margin** I
+  flagged, not a kernel bug. **A-vs-C at the *ensemble* level is therefore UNRESOLVED** (A-5fold has no
+  score; A *led* C at single-fold, so an A-5fold ≥ 0.911 is plausible if re-run / 4-fold-trimmed).
+- **Verdict: not a plateau-break** (≤ the 0.906/0.915/0.929 stack, the honest ceiling the proposal set) but
+  a **legitimate backbone-diverse member at 0.906–0.911 strength** + the working-note result (our own XC
+  backbone ≈ ImageNet+KD). **Next steps deferred to a session discussion** (A-5fold retry vs 4-fold trim;
+  prob-space blend of C-5fold into 0.929; final 2 picks) — see `results.md` / `tasks.md`.
 Full read → `experiments/038-xc-pretraining/results.md`.
 
 ## Checkpoint Base Path

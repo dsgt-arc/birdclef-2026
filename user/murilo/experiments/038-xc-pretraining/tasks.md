@@ -86,10 +86,16 @@ single-fold A + single-fold C first** (2 pulls = decisive read).
       Cell A 0.907 (parity w/ 0.906 KD; +0.025–0.029 over the ~0.88 exp 034/036 XC-backbone ceiling →
       REFUTES "XC-pretrain caps at 0.88"), Cell C 0.901 (A>C by 0.006 → mixup-reg pretrain transfers
       better; offline fold0 anti-ranked: C 0.894 > A 0.887).** results.md/MODEL-RUNS.md updated.
-- [ ] **(Murilo) 5-fold LB** `finetune-cell-{a,c}-5fold` (logit-space fold mean) vs 0.915 — **inference
-      running on Kaggle (2026-05-31); scores pending.** Runtime est. ~73 min of the 90-min CPU budget (fits
-      but thin; 4-fold trim = fallback if it times out). Then **prob-space blend of the best into the 0.929**
-      ensemble — keep iff it beats 0.929 on LB (blend kernel not yet wired; post-deadline-safe, 0.929 banked).
+- [x] **(Murilo) 5-fold LB — PARTIAL (2026-05-31).** **`finetune-cell-c-5fold` LB 0.911** (+0.010 over its
+      0.901 single fold; **−0.004 below the 0.915 best Tucker-SED ensemble**, below 0.929). **`finetune-cell-a-5fold`
+      TIMED OUT** — same EffNetV2-S/inference path as C-5fold → VM variance at the ~73-of-90-min CPU margin
+      flagged pre-submit, not a bug. **A-vs-C at the ensemble level UNRESOLVED** (A led C at single-fold).
+      results.md/MODEL-RUNS.md updated.
+- [ ] **(Discussion — next session, NO decisions yet)** Open questions, decide together before acting
+      (deadline 2026-06-03, LB ~5/day): (a) A-5fold **retry** (coin-flip at margin) vs **trim to 4-fold**
+      (~58 min, safe) to score Cell-A ensemble + resolve A-vs-C; (b) **prob-space blend C-5fold (0.911) into
+      the banked 0.929** — keep iff > 0.929 (blend kernel NOT wired); (c) **final 2 picks** (0.929 banked +
+      best exp-038/blend); (d) **merge `mg/038-xc-pretraining`** + write the ceiling-refute working-note.
 
 ## Stage 3 — eval / use
 - [ ] Pretrain quality → held-out XC macro-AUC. Downstream → **LB** (labeled-SS anti-correlates).

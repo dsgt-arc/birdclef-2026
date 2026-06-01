@@ -3,87 +3,63 @@
 Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first to resume;
 follow the linked files for full detail.
 
-**Last updated**: 2026-05-31 (evening). **Active experiment: exp 038 — broad Neotropical XC
-pretraining (EffNetV2-S) → Stage-2 fine-tune.** Stage 0 + Stage 1 + Stage 2 training ALL DONE +
-documented. **Submission pipeline BUILT + the species-mapping canary bug FOUND & FIXED.** Branch
+**Last updated**: 2026-05-31 (late). **Active experiment: exp 038 — broad Neotropical XC
+pretraining (EffNetV2-S) → Stage-2 fine-tune.** Stages 0/1/2 ALL DONE. **Submission pipeline BUILT,
+canary bug FIXED, and 4 models SUBMITTED — LB scores are IN (one 5-fold timed out).** Branch
 `mg/038-xc-pretraining` (pushed, open — NOT merged). exp 037 CLOSED/REJECT (merged, PR #57).
 
-**Competition deadline**: 2026-06-03 (~3 days). LB rate-limited (~5/day).
+**Competition deadline**: 2026-06-03 (~2–3 days). LB rate-limited (~5/day).
 
-**▶ NEXT SESSION STARTS HERE — Murilo has NOT submitted anything to Kaggle yet.** Everything is built,
-exported-locally-validated, and the canary bug is fixed. The single next action is: **run the 4 Kaggle
-upload+push commands (below), verify `Species mapping: 234 mapped` in each kernel log, submit the 4
-notebooks, then read the LB.** See "Pick up here".
-
----
-
-## What's done (exp 038)
-
-**Goal:** our own broad Neotropical EffNetV2-S backbone (ImageNet-21k → supervised XC pretrain) →
-fine-tune on the 234 targets → backbone-diverse ensemble member + working-note. Honest ceiling
-~0.88–0.90 single-fold (exp 034/036); NOT expected to beat 0.906/0.929. Value = diversity/paper.
-
-- **Stage 0 — DONE.** Curated BirdSet-XCL → 2,683 Neotropical bird sp / 160,542 recs (158/162 targets);
-  ~151k 32 kHz OGGs at `/storage/project/ps-clef2026_birdclef-0/shared/pretrain/birdset-neotropical/`.
-- **Stage 1 (pretrain, 3 cells) — DONE.** A dual-BCE+LS / B focal-BCE / C no-mixup, EffNetV2-S
-  (`tf_efficientnetv2_s.in21k`, use_post_head 1280-d), SED-mirror (`DistilledSEDFinetuneModule`,
-  num_classes=2683, KD off), Tucker mel 256. **XC-val sanity gate PASS** (best val/auroc **A 0.9843 /
-  B 0.9847 / C 0.9856** ≫ 0.95; tied within 0.0013 — XC-val is a sanity gate, NOT an LB ranker).
-  Best ckpts: A `epoch23` / C `epoch22` at `experiments/038-xc-pretraining/checkpoints/2026-exp038-pretrain-cell{A,C}-*/`.
-- **Stage 2 (fine-tune, A & C × 5 folds) — DONE (10 folds, 25 ep clean, rtx6000).** Recipe = exp 032's
-  **0.906 KD-SED** (`DistilledSEDFinetuneModule`, Perch-v2 KD, dual-BCE, mixup, Tucker mel 256,
-  AttHeadLogitSpace) with the encoder swapped to EffNetV2-S **warm-started** from each Stage-1 backbone
-  (`init.encoder_only: true` = full-copy backbone, re-init 234 head). Code: `train_finetune.py` +
-  `configs/finetune_cell{A,C}.yaml` + `sbatch/{finetune,run_finetune}.sh`. **Offline val (held-out
-  labeled-SS, anti-correlates w/ LB → for-the-record only): Cell A mean 0.9104 (±0.013), Cell C mean
-  0.9085 (±0.009) — a TIE; both ≈ the exp 032 B0 baseline offline (0.908).** A-vs-C is an **LB-only**
-  question. Checkpoints: `checkpoints/2026-exp038-finetune-cell{A,C}/fold{0-4}/` (export uses `last*.ckpt`).
-
-**Submission wiring (exp 010) — BUILT + locally validated.** 4 models: `finetune-cell-{a,c}` (fold0
-single) + `finetune-cell-{a,c}-5fold` (logit-space fold-mean). Cloned the distilled-sed-kd pipeline
-(V2-S backbone only → `export_distilled_sed.py` + the kernel Tucker path reused UNCHANGED). **Export
-proven locally on CPU**: ONNX↔PyTorch max-diff 1e-6, schema `mel→blended_logits[batch,234]`, mel routes
-to `tucker`, **canary species_mapping = 234**.
-
-**⚠️ Canary bug FOUND + FIXED this session (3rd recurrence — [[feedback_species_mapping_canary]]):** the
-*first* cell-a-5fold kernel-test printed `Species mapping: 41 mapped` (invalid). Root cause =
-`upload_kaggle.py::upload_weights` `shutil.copy2`s a species_mapping over the weights dir on every
-upload, routed by name token; `finetune-cell-*` matched none → shipped the generic 41-overlap map
-(copy2 preserves mtime → the Mar-14 clue). **Fixes (committed `620145a`, `5788863`):** (1) added
-`finetune-cell` to the 234-branch in `upload_kaggle.py`; (2) `export_distilled_sed.py` now self-emits
-`species_mapping.json` (234 identity); (3) `export.sbatch` `_verify_species_mapping_234` aborts if ≠234.
-All 4 on-disk dirs now read 234; the export jobs already ran (artifacts in `artifacts/weights/finetune-cell-*`).
+**▶ NEXT SESSION = REVIEW RESULTS + DISCUSS NEXT STEPS. Make NO decisions before discussing with Murilo.**
+The exp-038 LB results are all in (below). The single next action is a **joint review + decision** on the
+open questions in "Discuss next" — do not act/submit/merge/wire anything until agreed.
 
 ---
 
-## Pick up here (next session) — Kaggle submission (NOTHING submitted yet)
+## ✅ This session's outcome — exp 038 Stage-2 LB results (the arbiter)
 
-**1. Upload + push the 4 kernels** (from `user/murilo/experiments/010-submission-pipeline/`). `--push-kernel`
-re-uploads weights first, so with the fixed routing all 4 ship the 234-map:
-```bash
-cd user/murilo/experiments/010-submission-pipeline
-for m in finetune-cell-a-5fold finetune-cell-c-5fold finetune-cell-a finetune-cell-c; do
-  python scripts/upload_kaggle.py --model $m            # create/update dataset
-done
-# wait ~2-3 min, then:
-for m in finetune-cell-a-5fold finetune-cell-c-5fold finetune-cell-a finetune-cell-c; do
-  python scripts/upload_kaggle.py --model $m --push-kernel
-done
-```
-Then **submit each notebook from the Kaggle UI** (4 of ~5 daily pulls). **On every kernel run, confirm
-the log prints `Species mapping: 234 mapped`** before trusting the score ([[feedback_species_mapping_canary]]).
-(If a re-export is ever needed: `bash sbatch/run.sh export --model <name>` — but the artifacts already exist.)
+All 4 models exported + uploaded + pushed + submitted; every scored kernel printed the
+`Species mapping: 234 mapped` canary ([[feedback_species_mapping_canary]]) and ran clean.
 
-**2. Read the LB** (the arbiter — offline can't rank A vs C, [[project_cv_measurement_failure]]):
-- single-fold `finetune-cell-a` vs `finetune-cell-c` vs **0.906** + vs exp-034's **0.879** (does our own
-  XC-pretrain backbone beat warm-starting someone else's? does mixup-A transfer better than sharp-C?).
-- 5-fold `finetune-cell-{a,c}-5fold` vs **0.915**.
-- **CONFIRM** if any beats 0.906; else they're diverse members.
+| Model | LB | read |
+|---|---:|---|
+| `finetune-cell-a` (single, mixup-reg backbone) | **0.907** | **parity** w/ 0.906 KD (+0.001, within ~±0.007 noise); **+0.025–0.029 over the ~0.88 XC-backbone ceiling** |
+| `finetune-cell-c` (single, no-mixup backbone) | **0.901** | A>C by 0.006 → **mixup-reg pretrain transfers better** |
+| `finetune-cell-c-5fold` (logit fold-mean) | **0.911** | +0.010 over its single fold; **−0.004 below the 0.915 best ensemble**; below 0.929 |
+| `finetune-cell-a-5fold` (logit fold-mean) | **TIMED OUT** | exceeded the 90-min CPU budget — VM variance at the ~73/90-min margin (same arch as C-5fold, NOT a bug) |
 
-**3. Blend + final picks (END-GAME):** the **0.929 exp-023 ensemble is already submitted+scored** — just
-**select it as a final submission** (safe pick). 2nd pick = best exp-038 result *iff* a prob-space blend
-of the best 5-fold into 0.929 beats 0.929 on LB (blend kernel NOT yet wired — do it properly if a 5-fold
-lands well; it's post-deadline-safe since 0.929 is banked).
+**Two headline findings:**
+1. **The ~0.88 XC-backbone ceiling (exp 034/036) is REFUTED.** Our *own* broad-Neotropical supervised XC
+   pretrain, fine-tuned under the exact 0.906 KD-SED regime, reaches **parity with in-domain ImageNet+KD**
+   (A 0.907 ≈ 0.906). The prior "XC-pretrain caps at 0.88" read was about the *transfer recipe*, not XC
+   pretraining itself. This is the scientific win + working-note result.
+2. **A > C (single-fold) resolves the mixup-transfer question** offline called a tie — mixup-regularized
+   pretrain transfers better to the focal→soundscape shift. (Offline *fold0* even anti-ranked it C>A — the
+   usual [[feedback_offline_metrics_unreliable]] / [[project_cv_measurement_failure]].)
+
+**Caveat — NOT a plateau-break.** Best exp-038 = C-5fold **0.911 ≤ the 0.906/0.915/0.929 stack** (exactly
+the honest ceiling the proposal set). Value = backbone-diverse ensemble member + paper, as scoped.
+**A-vs-C at the *ensemble* level is UNRESOLVED** (A-5fold has no score; A led C single-fold, so an
+A-5fold ≥ 0.911 is plausible if re-run / 4-fold-trimmed).
+
+Today's LB pulls used: 4 (cell-a, cell-c, cell-c-5fold scored; cell-a-5fold timed out).
+
+---
+
+## ▶ Discuss next session (decide TOGETHER — no decisions made this session)
+
+Deadline 2026-06-03, LB ~5/day. Open questions, in rough priority:
+
+1. **A-5fold timed out — retry vs trim?** Retry as-is is a coin-flip at the ~73/90-min margin; a **4-fold
+   mean** (drop weakest A fold, ~58 min) is the safe way to get a Cell-A ensemble score + resolve A-vs-C at
+   the ensemble level. (4-fold export/blend NOT wired.) Worth a pull at all, given C-5fold 0.911 < 0.915?
+2. **Blend C-5fold (0.911) into the banked 0.929?** It's −0.018 below 0.929 alone but backbone-diverse
+   (EffNetV2-S vs the 0.929 stack) → a prob-space blend *might* help; keep iff it beats 0.929 on LB. **Blend
+   kernel NOT wired** — only build it if we decide it's worth a pull.
+3. **Final 2 submission picks.** 0.929 exp-023 ensemble is banked → **select it as final pick #1** (safe).
+   Pick #2 = best exp-038 / blend result, TBD.
+4. **Merge + working-note.** `mg/038-xc-pretraining` is open (NOT merged). When to merge (`--squash`,
+   [[feedback_squash_merge]]) + whether to write the ceiling-refute working-note now.
 
 ---
 
@@ -91,21 +67,24 @@ lands well; it's post-deadline-safe since 0.929 is banked).
 
 | Model | LB | Notes |
 |---|---:|---|
-| Perch + SED MLP-only ensemble (exp 023) | **0.929** | Overall best → **select as a final pick** (already scored) |
+| Perch + SED MLP-only ensemble (exp 023) | **0.929** | Overall best → **select as final pick #1** (already scored) |
 | v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
 | distilled-sed-kd-5fold (exp 032) | 0.915 | Best Tucker-SED ensemble |
-| distilled-sed-kd single-fold (exp 032) | 0.906 | Best single model (ImageNet + KD) — Stage-2 target to beat |
-| exp 034 / 036 XC-backbone (+PP) | 0.878–0.882 | XC-backbone single-fold ceiling (the ~0.88 evidence) |
-| **exp 038 finetune-cell-{a,c}{,-5fold}** | **pending** | trained + wired + canary-fixed; **submit next session** |
+| **exp 038 `finetune-cell-c-5fold`** | **0.911** | best exp-038; −0.004 vs 0.915; backbone-diverse member |
+| distilled-sed-kd single-fold (exp 032) | 0.906 | Best single (ImageNet+KD) — exp-038 single-fold target |
+| **exp 038 `finetune-cell-a`** (single) | **0.907** | parity w/ 0.906; **refutes the ~0.88 XC ceiling** |
+| **exp 038 `finetune-cell-c`** (single) | **0.901** | A>C → mixup-reg pretrain transfers better |
+| exp 034 / 036 XC-backbone (+PP) | 0.878–0.882 | the ceiling exp-038 just refuted |
+| exp 038 `finetune-cell-a-5fold` | TIMED OUT | 90-min budget; retry/4-fold-trim = a discussion item |
 
 ---
 
 ## How to resume after disconnect
-1. Read this top-to-bottom, then exp 038 `results.md` + `tasks.md` (§Stage 2).
-2. `git log --oneline -10` on `mg/038-xc-pretraining` (pushed, open — NOT merged). Top commits: `5788863`
-   / `620145a` (canary fix), `ef81774` (Stage-2 offline metrics), `baecafb` (submission wiring),
-   `1cb73aa` (Stage-2 build). exp 037/036/034/032 are CLOSED on main.
-3. Go straight to "Pick up here" — run the 4 upload+push commands, verify the 234 canary, submit, read LB.
+1. Read this top-to-bottom, then exp 038 `results.md` (§Stage 2 — LB results) + `tasks.md` (§Stage 2).
+2. `git log --oneline -10` on `mg/038-xc-pretraining` (pushed, open — NOT merged). This session's commits:
+   `481db57` (single-fold LB) + the 5-fold-LB/context commit on top. exp 037/036/034/032 CLOSED on main.
+3. **Start with a results review, then discuss the 4 open questions in "Discuss next" — make NO decisions
+   or submissions until agreed with Murilo.** (Explicit instruction from the prior session.)
 4. **[[feedback_user_runs_commands]]**: give Murilo commands; don't run SLURM/Kaggle yourself. Local
    pytest + `save_metrics.py` + local CPU export smoke-tests + analysis are fine. Interactive venv
    `/storage/home/hcoda1/9/mgustineli3/clef/birdclef-2026/.venv` ([[feedback_use_uv_venv]]).
@@ -113,9 +92,12 @@ lands well; it's post-deadline-safe since 0.929 is banked).
    Compute NOT the bottleneck ([[feedback_pace_compute_not_bottleneck]]); Kaggle LB IS rate-limited
    (~5/day). `--squash` for PR merges ([[feedback_squash_merge]]). Pre-commit ruff-format may reformat a
    staged file → re-`git add` + re-commit if a commit "fails" on the format hook.
-6. **GPU availability**: a100/h200 often full; h100 free nodes often 0 idle CPUs (pends). **rtx6000
-   (24 GB)** is the reliable parallel option. The finetune ran batch 32 × accum 2 = eff-batch 64 to fit
-   rtx6000 alongside the GPU Perch KD teacher.
+6. **Runtime budget (load-bearing for any 5-fold resubmit):** 90-min CPU limit, ~600 hidden soundscapes.
+   EffNetV2-S 5-fold ≈ 7.3 s/file ≈ ~73 min est = thin margin → A-5fold timed out. A **4-fold** mean ≈
+   58 min is the safe fallback. Single-fold ≈ 15 min (huge headroom). (Refs: `docs/references/
+   birdclef-2026-competition.md`, exp-021 v5j-4fold ~50 min.)
+7. **GPU availability**: a100/h200 often full; h100 free nodes often 0 idle CPUs (pends). **rtx6000
+   (24 GB)** is the reliable parallel option.
 
 **Credentials**: `user/murilo/.env` (gitignored; HF_TOKEN, W&B). The HF token was pasted in chat in a
 prior session — Murilo should rotate `hf-token-pace`.

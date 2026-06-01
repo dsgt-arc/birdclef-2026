@@ -1,6 +1,6 @@
 ---
 experiment: "038-xc-pretraining"
-status: Stage 1 COMPLETE (XC-val sanity gate PASS, 0.984–0.986); Stage 2 fine-tune TRAINED (A & C × 5 folds). **Single-fold LB IN: Cell A 0.907 (parity w/ 0.906 KD; +0.025–0.029 over the ~0.88 XC-backbone ceiling → REFUTES "XC-pretrain caps at 0.88"), Cell C 0.901 (A>C by 0.006 → mixup-reg pretrain transfers better). 5-fold LB PENDING.**
+status: Stage 1 COMPLETE (XC-val sanity gate PASS, 0.984–0.986); Stage 2 fine-tune TRAINED (A & C × 5 folds). **LB IN: single-fold A 0.907 (parity w/ 0.906 KD; +0.025–0.029 over the ~0.88 XC-backbone ceiling → REFUTES "XC-pretrain caps at 0.88"), C 0.901 (A>C by 0.006). 5-fold: C-5fold 0.911 (−0.004 vs 0.915 best ensemble), A-5fold TIMED OUT (90-min budget; VM variance at the margin). Best exp-038 = C-5fold 0.911 ≤ the 0.915/0.929 stack → diverse member, not a plateau-break. NEXT STEPS DEFERRED to session discussion.**
 date: 2026-05-31
 author: Murilo Gustineli
 ---
@@ -125,11 +125,12 @@ wiring built (exp 010, commit baecafb): models `finetune-cell-{a,c}` (fold0) + `
 **Single-fold (fold 0), 2026-05-31.** Both kernels printed the `Species mapping: 234 mapped` canary
 ([[feedback_species_mapping_canary]]); logs reviewed (deps/ONNX/Tucker path/logit-space blend all clean).
 
-| Model | LB | vs 0.906 KD baseline | vs ~0.88 XC-backbone (exp 034/036) | offline val/auroc (fold0) |
+| Model | LB | vs 0.906 / 0.915 baselines | vs ~0.88 XC-backbone (exp 034/036) | offline val/auroc |
 |---|--:|:--:|:--:|--:|
-| **`finetune-cell-a`** (mixup-reg backbone) | **0.907** | **+0.001 (parity)** | **+0.025 to +0.029** | 0.887 |
-| **`finetune-cell-c`** (no-mixup backbone) | **0.901** | −0.005 | +0.019 to +0.023 | 0.894 |
-| `finetune-cell-{a,c}-5fold` (logit fold-mean) | **pending** (inference running on Kaggle) | vs 0.915 | — | A 0.910 / C 0.909 mean |
+| **`finetune-cell-a`** (single, mixup-reg) | **0.907** | +0.001 vs 0.906 (parity) | **+0.025 to +0.029** | 0.887 (fold0) |
+| **`finetune-cell-c`** (single, no-mixup) | **0.901** | −0.005 vs 0.906 | +0.019 to +0.023 | 0.894 (fold0) |
+| **`finetune-cell-c-5fold`** (logit fold-mean) | **0.911** | **−0.004 vs 0.915** | — | 0.909 (mean) |
+| `finetune-cell-a-5fold` (logit fold-mean) | **TIMED OUT** | — (exceeded 90-min CPU budget) | — | 0.910 (mean) |
 
 **Read (LB resolves what offline couldn't):**
 1. **The proposal's falsifiable test resolves in the experiment's favor: the ~0.88 XC-backbone ceiling
@@ -138,26 +139,37 @@ wiring built (exp 010, commit baecafb): models `finetune-cell-{a,c}` (fold0) + `
    the exact KD-SED regime* reaches **parity with the in-domain ImageNet+KD 0.906** — Cell A 0.907 is
    +0.001, inside the ~±0.007 cross-hardware LB noise, so call it parity not a beat. The earlier "XC-pretrain
    caps at 0.88" read was about the *transfer recipe*, not XC pretraining per se.
-2. **A > C by 0.006 → mixup-regularized pretrain transfers better** to the focal→soundscape shift than the
-   sharp/no-mixup backbone. LB **answers the A-vs-C mixup-transfer question** that offline declared a tie
-   (Δ0.0019). Offline's *fold0* even ranked C 0.894 > A 0.887 — the usual anti-correlation
+2. **A > C by 0.006 (single-fold) → mixup-regularized pretrain transfers better** to the focal→soundscape
+   shift than the sharp/no-mixup backbone. LB **answers the A-vs-C mixup-transfer question** that offline
+   declared a tie (Δ0.0019). Offline's *fold0* even ranked C 0.894 > A 0.887 — the usual anti-correlation
    ([[feedback_offline_metrics_unreliable]]); LB called it for A. So fine-tune-Cell-A-first was the right call.
-3. **Not a plateau-break** (≤ the 0.906/0.915/0.929 stack, exactly the honest ceiling the proposal set) but
-   a **legitimate backbone-diverse member at 0.906-class strength** + the working-note result: our own XC
-   backbone ≈ ImageNet+KD. Value = ensemble diversity + paper, as scoped.
+3. **5-fold:** **C-5fold 0.911** = +0.010 over its 0.901 single fold (folding helps as expected), but
+   **−0.004 below the 0.915 best Tucker-SED ensemble** and below the 0.929 overall best. **A-5fold TIMED
+   OUT** — architecturally identical to C-5fold (same EffNetV2-S, same inference path, just different
+   weights), so this is **VM variance right at the ~73-of-90-min CPU margin I flagged**, NOT a kernel bug.
+   **A-vs-C at the *ensemble* level is therefore UNRESOLVED** (A-5fold has no score; A *led* C at single-fold,
+   so an A-5fold ≥ 0.911 is plausible if re-run or 4-fold-trimmed).
+4. **Verdict — not a plateau-break** (best exp-038 = C-5fold 0.911 ≤ the 0.906/0.915/0.929 stack, exactly
+   the honest ceiling the proposal set) but a **legitimate backbone-diverse member at 0.906–0.911 strength**
+   + the working-note result: our own XC backbone ≈ ImageNet+KD. Value = ensemble diversity + paper, as scoped.
 
-## Next steps — LB (the arbiter)
+## Next steps — DEFERRED to session discussion (no decisions made this session)
 
-1. ~~**Single-fold A vs C vs 0.906**~~ — **DONE: A 0.907 (parity / ceiling refuted), C 0.901, A>C.** (above)
-2. **5-fold ensembles** `finetune-cell-{a,c}-5fold` (logit-space fold mean) vs 0.915 — **inference running
-   on Kaggle (2026-05-31); scores pending.** Then the **prob-space blend of the best into the 0.929**
-   ensemble — keep iff it beats 0.929 on LB. (Runtime: 5-fold est. ~73 min of the 90-min CPU budget — fits
-   but thin; watch for timeout, 4-fold trim is the fallback.)
-3. **Canary** every submission: kernel log must print `Species mapping: 234 mapped`
-   ([[feedback_species_mapping_canary]]). ✅ confirmed on both single-fold runs.
+Recorded for the resume conversation; **decide together before acting** (deadline 2026-06-03, LB ~5/day):
 
-**Deadline END-GAME:** the 0.929 exp-023 ensemble is already submitted + scored — just **select it as
-a final submission** (+ pick the 2nd slot from the best LB result here). LB ~5/day.
+1. ~~**Single-fold A vs C vs 0.906**~~ — **DONE: A 0.907 (parity / ceiling refuted), C 0.901, A>C.**
+2. **A-5fold timed out** → open question: **retry as-is** (coin-flip at the ~73/90-min margin) **vs trim to
+   a 4-fold mean** (~58 min, comfortable; drop the weakest A fold) to get a safe Cell-A ensemble score and
+   resolve A-vs-C at the ensemble level. (4-fold export/blend not yet wired.)
+3. **C-5fold 0.911 is the best exp-038 result** → open question: is a **prob-space blend of C-5fold into the
+   banked 0.929** worth a pull? It's −0.018 below 0.929 alone, but backbone-diverse (EffNetV2-S vs the 0.929
+   stack), so a blend *could* help — keep iff it beats 0.929 on LB. (Blend kernel NOT wired.)
+4. **Final 2 submission picks**: 0.929 exp-023 ensemble is banked → **select it as one final pick**; 2nd
+   pick = best exp-038 / blend result, TBD in discussion.
+5. **Branch / working-note**: `mg/038-xc-pretraining` still open (NOT merged) — when to merge + whether to
+   write the working-note now that the ceiling-refute result is in.
+6. **Canary** held on every run (✅ `Species mapping: 234 mapped` on all scored kernels,
+   [[feedback_species_mapping_canary]]).
 
 ## Artifacts
 
