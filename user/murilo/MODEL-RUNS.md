@@ -1432,7 +1432,7 @@ comparison + A-raw-augT-softauc + C-raw-augT-softauc), exporting each cell's bes
 Falsifiable single-fold vs 0.906: CONFIRM ≥0.916 / REJECT ≤0.906. Full read →
 `experiments/037-noisy-student-pl/results.md`.
 
-## Experiment 038: Broad Neotropical XC Pretraining (EffNetV2-S) — Stage 1 PASS; Stage 2 LB IN (single-fold A 0.907 / C 0.901 — clears the ~0.88 XC-backbone ceiling, parity w/ 0.906 KD; 5-fold C **0.911** (< 0.915 best ensemble), A-5fold **TIMED OUT** at the 90-min budget)
+## Experiment 038: Broad Neotropical XC Pretraining (EffNetV2-S) — Stage 1 PASS; Stage 2 LB IN (single-fold A 0.907 / C 0.901 — clears the ~0.88 XC-backbone ceiling, parity w/ 0.906 KD; ensemble: **A-4fold 0.916** (best exp-038, ≈ 0.917 best SED, > 0.915 Tucker-SED) > C-5fold **0.911**; A-5fold **TIMED OUT** → replaced by the fold2-dropped 4-fold)
 
 **Stage 1 verdict (2026-05-31): sanity gate PASS, decisively.** All 3 cells trained 25 ep clean on
 rtx6000; held-out **XC macro-AUROC 0.984–0.986** vs the proposal's ≳0.95 "pretrain works" bar (top-5
@@ -1464,7 +1464,7 @@ multi-label + random 5 s crops + macro long tail; AUROC/top-k are the trustworth
 fine-tune Cell A first** (closest to the proven 0.906 recipe); B/C are ready backups. Full read →
 `experiments/038-xc-pretraining/results.md`.
 
-### Exp 038 Stage 2 — fine-tune on 2026 (Cell A & C × 5 folds) — single-fold LB IN; 5-fold LB pending
+### Exp 038 Stage 2 — fine-tune on 2026 (Cell A & C × 5 folds) — single + ensemble LB IN (A-4fold 0.916 = best exp-038)
 
 Recipe = exp 032's 0.906 KD-SED (`DistilledSEDFinetuneModule`, Perch-v2 KD, dual-BCE, mixup, Tucker mel
 256, AttHeadLogitSpace) with the encoder swapped to **EffNetV2-S warm-started** from each Stage-1
@@ -1479,6 +1479,7 @@ mapped` canary** ([[feedback_species_mapping_canary]]):
 | **`finetune-cell-c`** (single, no-mixup) | **0.901** | −0.005 vs 0.906 | +0.019 to +0.023 | 0.894 (fold0) |
 | **`finetune-cell-c-5fold`** (logit fold-mean) | **0.911** | **−0.004 vs 0.915** | — | 0.909 (mean) |
 | `finetune-cell-a-5fold` (logit fold-mean) | **TIMED OUT** | — (exceeded 90-min CPU budget) | — | 0.910 (mean) |
+| **`finetune-cell-a-4fold`** (logit fold-mean, folds {0,1,3,4}, fold2 dropped) | **0.916** | **−0.001 vs 0.917 / +0.001 vs 0.915** | — | 0.908 (4-fold mean) |
 
 **Offline (final-epoch val on held-out labeled-SS — anti-correlates with LB; for-the-record):** 5-fold
 mean val/auroc A **0.9104** (±0.013), C **0.9085** (±0.009); per-fold A .887/.915/.919/.907/.924, C
@@ -1494,15 +1495,25 @@ mean val/auroc A **0.9104** (±0.013), C **0.9085** (±0.009); per-fold A .887/.
   shift than the sharp/no-mixup backbone. LB **answers the A-vs-C mixup-transfer question** that offline
   called a tie (Δ0.0019); offline's *fold0* even ranked C 0.894 > A 0.887 — the usual anti-correlation
   ([[project_cv_measurement_failure]], [[feedback_offline_metrics_unreliable]]); LB called it for A.
-- **5-fold: C-5fold 0.911** = +0.010 over its 0.901 single fold (folding helps as expected), but **−0.004
-  below the 0.915 best Tucker-SED ensemble** and below the 0.929 overall best. **A-5fold TIMED OUT** —
-  architecturally identical to C-5fold, so this is **VM variance right at the ~73-of-90-min margin** I
-  flagged, not a kernel bug. **A-vs-C at the *ensemble* level is therefore UNRESOLVED** (A-5fold has no
-  score; A *led* C at single-fold, so an A-5fold ≥ 0.911 is plausible if re-run / 4-fold-trimmed).
-- **Verdict: not a plateau-break** (≤ the 0.906/0.915/0.929 stack, the honest ceiling the proposal set) but
-  a **legitimate backbone-diverse member at 0.906–0.911 strength** + the working-note result (our own XC
-  backbone ≈ ImageNet+KD). **Next steps deferred to a session discussion** (A-5fold retry vs 4-fold trim;
-  prob-space blend of C-5fold into 0.929; final 2 picks) — see `results.md` / `tasks.md`.
+- **Ensemble: A-4fold 0.916 = best exp-038** (folds {0,1,3,4}, fold2 dropped via coverage analysis;
+  reuses the 5-fold ONNX, no re-export). It **resolves A-vs-C at the ensemble level too — A wins again**
+  (A-4fold 0.916 > C-5fold 0.911, +0.005, consistent with A>C single-fold), and lands **within LB noise
+  of the 0.917 best SED ensemble (−0.001) / above the 0.915 best Tucker-SED (+0.001)** — i.e. our own
+  XC-pretrained backbone now matches our strongest SED-family ensemble while being **backbone-diverse**
+  (EffNetV2-S vs HGNet/EffNet-B0). It scored (no timeout) → confirms the 4-fold fits the 90-min CPU
+  budget, **de-risking a Perch + A-4fold blend** (~76 min projected). C-5fold 0.911 = +0.010 over its
+  0.901 single fold. A-5fold TIMED OUT at the ~73-of-90-min margin (VM variance, not a bug) → replaced
+  by this 4-fold.
+- **Why drop fold2** (`scripts/analyze_fold_coverage.py`, bit-identical to the training split): folds are
+  coverage-equivalent (~28,439 train recs each); fold2 holds the most true singleton blind-spots
+  (`23150`,`23724`); the offline val/auroc spread is a val-composition artifact (29→45 distinct val
+  species/fold), so we **KEPT the offline-weakest fold0** (LB-verified 0.907), refuting "drop the
+  offline-weakest."
+- **Verdict: not a plateau-break** (0.916 ≤ the 0.929 overall best) but a **legitimate backbone-diverse
+  member at the 0.916/0.917 SED-ensemble ceiling** + the working-note result (our own XC backbone ≈
+  ImageNet+KD). **Live next step: Perch + A-4fold prob-space blend** (gated on this; A-4fold is now strong
+  enough to plausibly beat 0.929 when fused with Perch's orthogonal signal). Final 2 picks: 0.929 banked +
+  best exp-038/blend. See `results.md` / `tasks.md`.
 Full read → `experiments/038-xc-pretraining/results.md`.
 
 ## Checkpoint Base Path

@@ -97,15 +97,21 @@ single-fold A + single-fold C first** (2 pulls = decisive read).
       blind-spots (`23150`,`23724`); offline val/auroc spread is a val-composition artifact (29→45 val
       species/fold) so we KEPT the LB-verified fold0 (0.907). Built `finetune-cell-a-4fold` reusing the
       5-fold ONNX (no re-export): weights dir + kernel-metadata + upload_kaggle entry + MODEL_SLUGS;
-      validated (compile/dry-run/ONNX smoke/commit-run canary). **Murilo submitted to LB — RUNNING.**
+      validated (compile/dry-run/ONNX smoke/commit-run canary). **LB 0.916 (2026-06-01)** = **best
+      exp-038** (+0.005 over C-5fold 0.911 → A>C at the ensemble level too; ≈ 0.917 best SED, +0.001 vs
+      0.915 Tucker-SED; −0.013 vs 0.929 overall best). Scored cleanly → 4-fold fits the 90-min CPU budget
+      (de-risks a Perch+A-4fold blend). results.md/MODEL-RUNS.md updated.
 - [x] **(2026-05-31 late) Analyzed `ryutoyoda/...eos8-sidecar` (0.95 LB)** → `vendor/kaggle/notebooks/
       birdclef-2026/eos8-sidecar/`. Same ingredients as us (Perch + Tucker SED + ProtoSSM) recombined in
       rank space + heavy PP + taxonomy smoothing. Transferable: **rank-space Perch+SED blend** + **taxonomy
       smoothing** (cheap, on the 0.929 kernel) — next builds. See CONTEXT.md for line refs.
-- [ ] **(Next session) (a)** read A-4fold LB (vs C-5fold 0.911 / 0.929; + runtime); **(b)** build the two PP
-      variants of the 0.929 ensemble kernel (rank-space blend + taxonomy smoothing); **(c)** Perch + A-4fold
-      blend (gated on A-4fold strength; ~76 min); **(d)** final 2 picks (0.929 + best); **(e)** merge
-      `mg/038-xc-pretraining` (`--squash`) + ceiling-refute working-note.
+- [x] **(a)** read A-4fold LB — **DONE: 0.916** (best exp-038; A>C at ensemble level; ≈ 0.917 best SED;
+      fits 90-min budget).
+- [ ] **(Next, decide together — LB ~5/day, deadline 06-03)** **(b)** build the two PP variants of the 0.929
+      ensemble kernel (eos8-derived: rank-space Perch+SED blend + taxonomy smoothing); **(c)** Perch + A-4fold
+      prob-space blend (now LIVE — A-4fold 0.916 plausibly beats 0.929 when fused w/ Perch; ~76 min);
+      **(d)** final 2 picks (0.929 banked + best exp-038/blend); **(e)** merge `mg/038-xc-pretraining`
+      (`--squash`) + ceiling-refute working-note. **Open: (b) vs (c) first** — which is the bigger-EV pull?
 
 ## Stage 3 — eval / use
 - [ ] Pretrain quality → held-out XC macro-AUC. Downstream → **LB** (labeled-SS anti-correlates).
