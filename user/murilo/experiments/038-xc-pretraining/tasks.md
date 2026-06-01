@@ -107,11 +107,27 @@ single-fold A + single-fold C first** (2 pulls = decisive read).
       smoothing** (cheap, on the 0.929 kernel) — next builds. See CONTEXT.md for line refs.
 - [x] **(a)** read A-4fold LB — **DONE: 0.916** (best exp-038; A>C at ensemble level; ≈ 0.917 best SED;
       fits 90-min budget).
-- [ ] **(Next, decide together — LB ~5/day, deadline 06-03)** **(b)** build the two PP variants of the 0.929
-      ensemble kernel (eos8-derived: rank-space Perch+SED blend + taxonomy smoothing); **(c)** Perch + A-4fold
-      prob-space blend (now LIVE — A-4fold 0.916 plausibly beats 0.929 when fused w/ Perch; ~76 min);
-      **(d)** final 2 picks (0.929 banked + best exp-038/blend); **(e)** merge `mg/038-xc-pretraining`
-      (`--squash`) + ceiling-refute working-note. **Open: (b) vs (c) first** — which is the bigger-EV pull?
+- [x] **(b+c) Built all 3 endgame kernel variants locally (2026-06-01)** as configs of the exp 023
+      `submission_ensemble.py` (self-contained; reuse the same push.sh → unique kernel per config):
+      - **rank-space PP** (`configs/ensemble_rank_mlp.yaml`, kernel `perch-sed-rank_mlp`): new `blend_space`
+        CFG knob; replaces prob-space avg with per-species pct-rank then avg (eos8 `_safe_rank_cols`).
+        Default `blend_space="prob"` is bit-identical to 0.929. Validated: numeric (prob branch identical;
+        rank per-col verified; monotone-invariance holds).
+      - **taxonomy smoothing** (`configs/ensemble_tax_mlp.yaml`, kernel `perch-sed-tax_mlp`): `tax_smoothing`
+        CFG + `build_tax_smoothing_groups`/`apply_taxonomy_smoothing` (genus 0.15 → class 0.05 mean-share,
+        29 genus / 4 class groups from `taxonomy.csv`). Validated **bit-exact vs a verbatim eos8 reimpl**;
+        α=0 is an exact no-op (default off → 0.929 unchanged).
+      - **Perch + A-4fold blend** (`configs/ensemble_a4fold.yaml` + `kernel-metadata-a4fold-ensemble.json`,
+        kernel `perch-sed-a4fold`): ported `load_audio_chunk`/`compute_mel_tucker`/
+        `predict_soundscape_tucker_ensemble` VERBATIM from exp 010 → `run_sed_pipeline` routes `tucker_mel`
+        to the logit-space path; push.sh swaps the v5j dataset for `finetune-cell-a-4fold-weights`.
+        **PARITY PASS: grafted A-4fold SED member is BYTE-IDENTICAL** (max abs diff 0.0, row_ids match) to
+        the standalone 0.916 kernel, verified on the real 4-fold ONNX + a sample soundscape. ~76 min budget.
+      - All: py_compile + `bash -n push.sh` + push.sh override/dataset-routing for all 3 configs PASS.
+- [ ] **(Next — submit, LB ~5/day, deadline 06-03)** push + submit in EV order: **rank-space PP first**
+      (Murilo runs; [[feedback_user_runs_commands]]), then taxonomy, then the A-4fold blend; stack winners
+      (e.g. rank+tax). Then **(d)** final 2 picks (0.929 banked + best); **(e)** merge `mg/038-xc-pretraining`
+      (`--squash`) + ceiling-refute working-note.
 
 ## Stage 3 — eval / use
 - [ ] Pretrain quality → held-out XC macro-AUC. Downstream → **LB** (labeled-SS anti-correlates).

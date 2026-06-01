@@ -1,0 +1,5 @@
+name: ensemble-a4fold
+description: "Perch ONNX MLP-only + A-4fold SED (EffNetV2-S tucker-logit) — prob-space w=0.5"
+w_perch: 0.5
+perch_ensemble_weight_proto: 0.0
+sed_weights_slug: "birdclef-2026-finetune-cell-a-4fold-weights"

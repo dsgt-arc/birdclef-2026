@@ -124,6 +124,10 @@ CFG = {
     "sed_weights_slug": "birdclef-2026-hgnet-b0-sed-v5j-4fold-pp2-weights",
     "sed_enable_tta": True,
     "sed_enable_pp": True,
+    "blend_space": "prob",  # "prob" (weighted avg) or "rank" (per-species pct-rank then avg)
+    "tax_smoothing": False,  # final genus->class mean-sharing post-process (eos8-style)
+    "tax_genus_alpha": 0.15,
+    "tax_class_alpha": 0.05,
 }
 CFG_OVERRIDE = {}  # INJECTED BY push.sh — do not edit this line
 for _k, _v in CFG_OVERRIDE.items():
@@ -2093,8 +2097,165 @@ def sed_predict_soundscape_ensemble(
 # --- 4D: SED orchestrator ---
 
 
+# --- 4C-tucker: Tucker-mel logit-space ONNX path (exp 038 finetune-cell A-4fold) ---
+# Ported VERBATIM from exp 010 submission.py (load_audio_chunk / compute_mel_tucker /
+# predict_soundscape_tucker_ensemble) so the SED member in this blend is BIT-IDENTICAL to
+# the LB-verified standalone `finetune-cell-a-4fold` (0.916). EffNetV2-S ONNX outputs
+# pre-blended LOGITS → logit-space fold-mean → 5-tap Gaussian smooth (logit space) → sigmoid.
+
+
+def load_audio_chunk(audio_path, sr, start_s, duration_s):
+    """Load a chunk of audio at target sample rate (verbatim from exp 010)."""
+    info = sf.info(audio_path)
+    source_sr = info.samplerate
+    total_duration = info.frames / source_sr
+    target_samples = int(sr * duration_s)
+
+    pre_pad_samples = 0
+    read_start_s = start_s
+    if start_s < 0:
+        pre_pad_s = -start_s
+        pre_pad_samples = int(sr * pre_pad_s)
+        read_start_s = 0.0
+        duration_s = duration_s - pre_pad_s
+
+    actual_duration = min(duration_s, total_duration - read_start_s)
+    if actual_duration <= 0:
+        return np.zeros(target_samples, dtype=np.float32)
+
+    audio, _ = sf.read(
+        audio_path,
+        dtype="float32",
+        start=int(read_start_s * source_sr),
+        frames=int(actual_duration * source_sr) + 2,
+    )
+    if audio.ndim == 2:
+        audio = audio.mean(axis=1)
+
+    if source_sr != sr:
+        audio = librosa.resample(audio, orig_sr=source_sr, target_sr=sr)
+
+    if pre_pad_samples > 0:
+        audio = np.concatenate([np.zeros(pre_pad_samples, dtype=np.float32), audio])
+
+    if len(audio) < target_samples:
+        audio = np.pad(audio, (0, target_samples - len(audio)))
+    elif len(audio) > target_samples:
+        audio = audio[:target_samples]
+
+    return audio.astype(np.float32)
+
+
+def compute_mel_tucker(audio, mel_cfg):
+    """Compute Tucker distilled-SED mel (verbatim from exp 010 / exp 032 audit § 7.1)."""
+    import torch
+    import torchaudio
+
+    sr = mel_cfg["sr"]
+    wave = torch.from_numpy(audio).float().unsqueeze(0)  # (1, samples)
+
+    mel_transform = torchaudio.transforms.MelSpectrogram(
+        sample_rate=sr,
+        n_fft=mel_cfg.get("n_fft", 2048),
+        hop_length=mel_cfg.get("hop_length", 512),
+        n_mels=mel_cfg.get("n_mels", 256),
+        f_min=mel_cfg.get("fmin", 20),
+        f_max=mel_cfg.get("fmax", 16000),
+        power=mel_cfg.get("power", 2.0),
+    )
+    db_transform = torchaudio.transforms.AmplitudeToDB(
+        stype="power", top_db=mel_cfg.get("top_db", 80.0)
+    )
+
+    mel = mel_transform(wave)  # (1, n_mels, T)
+    mel = db_transform(mel)
+
+    mean = mel.mean()
+    std = mel.std().clamp(min=1e-6)
+    mel = (mel - mean) / std
+
+    target_frames = mel_cfg.get("target_frames", 313)
+    T = mel.shape[-1]
+    if T > target_frames:
+        start = (T - target_frames) // 2
+        mel = mel[..., start : start + target_frames]
+    elif T < target_frames:
+        mel = torch.nn.functional.pad(mel, (0, target_frames - T))
+
+    return mel.unsqueeze(0).numpy().astype(np.float32)  # (1, 1, n_mels, target_frames)
+
+
+def predict_soundscape_tucker_ensemble(
+    sessions, audio_path, mel_cfg, species_mapping, taxa_mapping=None, metadata_priors=None
+):
+    """Tucker N-fold ensemble inference (verbatim from exp 010): per 5s window, logit-space
+    fold-mean → stack windows → 5-tap Gaussian smooth (logit space) → single sigmoid."""
+    del taxa_mapping, metadata_priors  # unused, intentional
+
+    sr = mel_cfg["sr"]
+    segment_duration = 5.0
+    soundscape_id = Path(audio_path).stem
+
+    species_2026 = species_mapping["birdclef2026_species"]
+    idx_map = species_mapping.get("idx_to_name_2026") or species_mapping["idx_2025_to_name_2026"]
+
+    info = sf.info(audio_path)
+    total_duration = info.frames / info.samplerate
+
+    n_folds = len(sessions)
+    input_name = sessions[0].get_inputs()[0].name
+
+    window_logits = []
+    segment_times = []
+    segment_start_s = 0.0
+
+    while segment_start_s < total_duration:
+        audio = load_audio_chunk(audio_path, sr, segment_start_s, segment_duration)
+        mel = compute_mel_tucker(audio, mel_cfg)  # (1, 1, n_mels, T)
+        fold_logits_sum = None
+        for sess in sessions:
+            out = sess.run(None, {input_name: mel})[0].flatten().astype(np.float32)
+            fold_logits_sum = out if fold_logits_sum is None else fold_logits_sum + out
+        window_logits.append(fold_logits_sum / n_folds)  # logit-space mean
+        segment_times.append(int(segment_start_s + segment_duration))
+        segment_start_s += segment_duration
+
+    if not window_logits:
+        return []
+
+    logits_matrix = np.stack(window_logits)  # (n_windows, 234)
+
+    if mel_cfg.get("gaussian_smooth_logit_space", True) and logits_matrix.shape[0] >= 3:
+        kernel = np.array(
+            mel_cfg.get("gaussian_kernel", [0.1, 0.2, 0.4, 0.2, 0.1]), dtype=np.float32
+        )
+        kernel = kernel / kernel.sum()
+        pad = len(kernel) // 2
+        padded = np.pad(logits_matrix, ((pad, pad), (0, 0)), mode="edge")
+        smoothed = np.zeros_like(logits_matrix)
+        for c in range(logits_matrix.shape[1]):
+            smoothed[:, c] = np.convolve(padded[:, c], kernel, mode="valid")
+        logits_matrix = smoothed
+
+    probs_matrix = sigmoid(logits_matrix)
+
+    predictions = []
+    for i, end_time in enumerate(segment_times):
+        row_id = f"{soundscape_id}_{end_time}"
+        row = {"row_id": row_id}
+        for sp in species_2026:
+            row[sp] = 0.0
+        for idx_str, name_2026 in idx_map.items():
+            row[name_2026] = float(probs_matrix[i, int(idx_str)])
+        predictions.append(row)
+
+    return predictions
+
+
 def run_sed_pipeline(test_paths):
-    """Run SED v5j-4fold-pp2 pipeline.
+    """Run the SED pipeline. Default = v5j-4fold-pp2 (ttahara mel, prob-space TTA/PP).
+    When mel_config type == "tucker_mel" (exp 038 finetune-cell A-4fold), routes to the
+    logit-space Tucker ensemble path instead (bit-identical to that model's standalone kernel).
 
     Returns: pd.DataFrame with columns ["row_id"] + PRIMARY_LABELS
     """
@@ -2158,18 +2319,31 @@ def run_sed_pipeline(test_paths):
         sessions.append(s)
     print(f"SED: {len(sessions)} ONNX sessions created ({time.time() - t_start:.1f}s)")
 
-    # Run inference
+    # Run inference — route tucker_mel (A-4fold) to the logit-space ensemble path
+    is_tucker = mel_type == "tucker_mel"
+    if is_tucker:
+        print("SED route: tucker_mel logit-space fold-mean (exp 038 A-4fold) — TTA/TopN skipped")
     all_predictions = []
     for i, audio_path in enumerate(test_paths):
         t0 = time.time()
-        preds = sed_predict_soundscape_ensemble(
-            sessions,
-            str(audio_path),
-            mel_cfg,
-            species_mapping,
-            taxa_mapping=taxa_mapping,
-            metadata_priors=metadata_priors,
-        )
+        if is_tucker:
+            preds = predict_soundscape_tucker_ensemble(
+                sessions,
+                str(audio_path),
+                mel_cfg,
+                species_mapping,
+                taxa_mapping=taxa_mapping,
+                metadata_priors=metadata_priors,
+            )
+        else:
+            preds = sed_predict_soundscape_ensemble(
+                sessions,
+                str(audio_path),
+                mel_cfg,
+                species_mapping,
+                taxa_mapping=taxa_mapping,
+                metadata_priors=metadata_priors,
+            )
         elapsed = time.time() - t0
         if i < 3 or i % 10 == 0:
             print(
@@ -2211,6 +2385,47 @@ def run_sed_pipeline(test_paths):
 # ============================================================================
 
 
+def build_tax_smoothing_groups(taxonomy_df, primary_labels):
+    """Column-index groups for taxonomy smoothing (eos8 f_TAX_SMOOTHING_POSTPROC).
+
+    Genus = first token of scientific_name; class = the `class_name` column. Returns
+    only multi-member groups (single-species groups are no-ops). Indices align to
+    `primary_labels` column order.
+    """
+    sp_to_genus, sp_to_class = {}, {}
+    for _, row in taxonomy_df.iterrows():
+        label = str(row.get("primary_label", ""))
+        sci = str(row.get("scientific_name", ""))
+        cls = str(row.get("class_name", ""))
+        genus = sci.split(" ")[0] if " " in sci else sci
+        if label:
+            sp_to_genus[label] = genus
+            sp_to_class[label] = cls
+    genus_groups, class_groups = {}, {}
+    for i, col in enumerate(primary_labels):
+        genus_groups.setdefault(sp_to_genus.get(col, col), []).append(i)
+        cls = sp_to_class.get(col, "")
+        if cls:
+            class_groups.setdefault(cls, []).append(i)
+    multi_genus = [idx for idx in genus_groups.values() if len(idx) > 1]
+    multi_class = [idx for idx in class_groups.values() if len(idx) > 1]
+    return multi_genus, multi_class
+
+
+def apply_taxonomy_smoothing(probs, multi_genus, multi_class, genus_alpha, class_alpha):
+    """Light genus-then-class mean-sharing (eos8). Each member moves a fraction alpha
+    toward its group mean; corrects small rank misses among biologically related labels.
+    Operates in-place on a copy; input may be probs or per-species ranks (both in [0,1])."""
+    probs = probs.copy()
+    for idx in multi_genus:
+        gm = probs[:, idx].mean(axis=1, keepdims=True)
+        probs[:, idx] = (1.0 - genus_alpha) * probs[:, idx] + genus_alpha * gm
+    for idx in multi_class:
+        gm = probs[:, idx].mean(axis=1, keepdims=True)
+        probs[:, idx] = (1.0 - class_alpha) * probs[:, idx] + class_alpha * gm
+    return np.clip(probs, 0.0, 1.0)
+
+
 def main():
     wall_start = time.time()
 
@@ -2241,7 +2456,44 @@ def main():
     perch_probs = perch_df[PRIMARY_LABELS].values.astype(np.float32)
     sed_probs = sed_aligned[PRIMARY_LABELS].values.astype(np.float32)
     w = CFG["w_perch"]
-    final_probs = np.clip(w * perch_probs + (1.0 - w) * sed_probs, 0.0, 1.0)
+    if CFG["blend_space"] == "rank":
+        # Rank-space blend: convert each model's per-species (per-column) scores to
+        # percentile ranks across ALL test segments, then weighted-average the ranks.
+        # The metric is macro-averaged ROC-AUC (per-class, pure ranking), and Perch
+        # (ONNX prob) vs SED (sigmoid prob) sit on different score scales — rank
+        # normalization equalizes them before fusing so each contributes its ordering
+        # equally. Mirrors the eos8 PowerOptimization core (`_safe_rank_cols`):
+        # df.rank(axis=0, method="average", pct=True). A per-column monotonic transform
+        # leaves each model's own per-class AUC unchanged; only the blend differs.
+        eps = 1e-6
+        perch_rank = (
+            pd.DataFrame(np.clip(perch_probs, eps, 1.0 - eps))
+            .rank(axis=0, method="average", pct=True)
+            .to_numpy(np.float32)
+        )
+        sed_rank = (
+            pd.DataFrame(np.clip(sed_probs, eps, 1.0 - eps))
+            .rank(axis=0, method="average", pct=True)
+            .to_numpy(np.float32)
+        )
+        final_probs = np.clip(w * perch_rank + (1.0 - w) * sed_rank, 0.0, 1.0)
+    else:
+        final_probs = np.clip(w * perch_probs + (1.0 - w) * sed_probs, 0.0, 1.0)
+
+    # Optional taxonomy smoothing (final post-process; stacks on either blend space)
+    if CFG["tax_smoothing"]:
+        multi_genus, multi_class = build_tax_smoothing_groups(taxonomy, PRIMARY_LABELS)
+        final_probs = apply_taxonomy_smoothing(
+            final_probs,
+            multi_genus,
+            multi_class,
+            CFG["tax_genus_alpha"],
+            CFG["tax_class_alpha"],
+        )
+        print(
+            f"Taxonomy smoothing: {len(multi_genus)} genus / {len(multi_class)} class groups, "
+            f"genus_alpha={CFG['tax_genus_alpha']}, class_alpha={CFG['tax_class_alpha']}"
+        )
 
     # Build submission
     submission = pd.DataFrame(final_probs, columns=PRIMARY_LABELS)
@@ -2254,7 +2506,7 @@ def main():
 
     submission.to_csv("/kaggle/working/submission.csv", index=False)
 
-    print(f"\nEnsemble complete: w_perch={CFG['w_perch']}")
+    print(f"\nEnsemble complete: w_perch={CFG['w_perch']} blend_space={CFG['blend_space']}")
     print(f"Shape: {submission.shape}, range: [{final_probs.min():.6f}, {final_probs.max():.6f}]")
     print(f"Total: {time.time()-wall_start:.1f}s ({(time.time()-wall_start)/60:.1f}min)")
 
