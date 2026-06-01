@@ -18,6 +18,7 @@ This directory uses short Markdown files as lightweight notebooks. Each notebook
 | `marbled-white-lipped-frog-auto-motif.md` | First run of the species-agnostic `auto_motif` pipeline on Marbled Frog; A/B vs the manual pipeline and known limitations. |
 | `auto-motif-pipeline.md` | Species-agnostic reference: pipeline stages, config knobs (incl. the recurrence-breadth gate, `band_mode`/`cluster_mode`), output schema, and the band-discovery genericity-boundary resolution. |
 | `auto-motif-soundscape-efficacy.md` | Label-based extrinsic validation: production templates vs. `train_soundscapes_labels.csv`. Threshold-free ROC/PR-AUC + committed-threshold transfer (support-gated, calibrated); plus the window-level CFAR A/B that **falsifies** a label-free operating-point fix and shows calibration must be supervised. |
+| `auto-motif-curation-annotation.md` | Manual-curation anchor (human ground truth): the Label Studio windowed-clip annotation workflow for 5 species in two role-split projects — calibrate d′→recovery, adjudicate the 74113 false positive, ground the strand-5 attractor diagnosis. Verdict protocol, scoring (`label_studio parse`), and the focal-precision interpretation boundary. |
 
 ## Concepts
 

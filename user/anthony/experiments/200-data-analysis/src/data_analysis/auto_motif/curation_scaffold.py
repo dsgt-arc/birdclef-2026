@@ -112,7 +112,10 @@ def _stratified_recordings(ev: pl.DataFrame, max_render_sec: float) -> pl.DataFr
             pl.len().alias("n_det"),
             pl.col("score").mean().round(3).alias("mean_score"),
         )
-        .sort("n_det", descending=True)
+        # filename tiebreaker makes the pick deterministic — without it, ties in
+        # n_det + non-deterministic group_by ordering let the quantile-spaced
+        # selection wobble between runs (orphaning prior annotations).
+        .sort(["n_det", "filename"], descending=[True, False])
         .to_dicts()
     )
     for r in per:  # duration is read once here, reused downstream
