@@ -1,9 +1,16 @@
 # Experiment 201: Soundscape Event Boxing
 
 Desktop-first BirdCLEF 2026 analysis. Goal: turn the **window-level multi-label
-presence** soundscape labels into precise **time-frequency bounding boxes**, then
-**auto-propagate** boxes+labels to the unlabeled pool. v1 propagation targets
+presence** soundscape labels into precise **time-frequency bounding boxes**, focused on
 **insects** (the 25 `47158sonNN` sonotypes), which are spectrally stationary.
+
+**Direction (2026-06-01):** v1's fully-automatic band+shape **propagation** was
+falsified (cross-site P0.06/R0.17; see `results.md`) and its `signature.py` /
+`propagate.py` strand was **removed**. The go-forward plan is a **semi-supervised
+annotation loop** — Perch-prototype retrieval routes windows, the DSP front-end
+pre-draws boxes, the human adjudicates only the margin, confirmations feed back. See
+`docs/concepts/semi-supervised-box-annotation-loop.md`. Load-bearing code: `boxes.py`
+(box proposal + discriminative bands + attribution) and `label_studio.py` (curation).
 
 This experiment is **standalone and lean** — it does NOT depend on experiment 200.
 The minimal DSP primitives (PCEN spectrogram, band discovery, ROI proposal,
@@ -18,8 +25,10 @@ The minimal DSP primitives (PCEN spectrogram, band discovery, ROI proposal,
   but **every row is duplicated exactly**, so there are **739 real windows** (66 files, 75 labels).
   `labels.load_windows()` dedups on load.
 - Soundscape audio: `/mnt/data/scratch/birdclef-2026/train_soundscapes/` (10,658 recordings; 66 labeled)
-- Perch v2 soundscape embeddings (all 10,658; v2 retrieval fallback):
+- Perch v2 soundscape embeddings (the annotation loop's router/seed):
   `/mnt/data/scratch/birdclef-2026/inference/perch-v2-tf/train_soundscapes/embeddings.parquet`
+  — **one vector per 5s window**, frequency collapsed (127,896 rows = 10,658 files × 12
+  chunks; `start_sec`/`end_sec` = chunk bounds). It routes/seeds; it cannot produce a box.
 
 Polars note: read the CSVs with `pl.read_csv(path, infer_schema_length=10000)`.
 
@@ -28,8 +37,10 @@ Polars note: read the CSVs with `pl.read_csv(path, infer_schema_length=10000)`.
 - Severe site skew: **S22 = 40/66** labeled files; no S01/S02 labeled files at all.
   Cross-site transfer is the key validation risk — report in-site vs cross-site separately.
 - Insect sonotype presence-window counts (739-window basis): son25=84 (most common — the
-  dominant background cicada, in 84/168 insect windows), son07=48 … son05=3. Gate signatures
-  at `n_present >= 8` (drops son02=7, son09=6, son19=5, son12=5, son05=3 -> 20 usable).
+  dominant background cicada, in 84/168 insect windows), son07=48 … son05=3. Gate the
+  discriminative band at `n_present >= 8` (drops son02=7, son09=6, son19=5, son12=5,
+  son05=3 -> 20 usable). son15≡16 and son22≡23 are inseparable from weak labels
+  (identical present-sets) — merge or defer.
 - Labeled class breakdown: Aves 28, Insecta 25, Amphibia 17, Mammalia 4, Reptilia 1.
 
 ## Environment (venv on scratch — NEVER under home/project; 20GB home quota)

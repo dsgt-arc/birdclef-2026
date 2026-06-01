@@ -59,6 +59,7 @@ Research ideas, hypotheses, and directions being explored for BirdCLEF 2026.
 |---------|--------|-------------|
 | [weak-supervision-label-fusion](weak-supervision-label-fusion.md) | nascent | FlyingSquid triplet method to fuse BirdNET/Perch/energy into calibrated soft labels |
 | [unsupervised-event-detection-labeling](unsupervised-event-detection-labeling.md) | developing | bambird/scikit-maad for per-chunk temporal event labels |
+| [semi-supervised-box-annotation-loop](semi-supervised-box-annotation-loop.md) | developing | Perch-prototype retrieval (seeded from weak labels) routes windows + DSP pre-boxes; human adjudicates only the margin; confirms/hard-negatives re-rank (exp 201). Has a feasibility gate + concrete hypotheses |
 
 ### Active: Domain & Context
 

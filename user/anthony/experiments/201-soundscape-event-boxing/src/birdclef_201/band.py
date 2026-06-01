@@ -1,7 +1,7 @@
 """Frequency-band discovery (ported lean from exp 200's auto_motif.band).
 
 Kept: the per-recording spectrum summary, the cross-recording median consensus,
-the hysteresis ``discover_bands``, and ``merge_overlapping_bands``. Dropped the
+and the hysteresis ``discover_bands``. Dropped the
 exemplar-weighted recall extension (auto_motif's ``exemplar_weights`` /
 ``weighted_consensus`` / ``bands_outside``) — a clean stationary insect band
 needs only the robust core.
@@ -19,13 +19,12 @@ class BandDiscoveryConfig:
     """Hysteresis band-discovery parameters.
 
     Defaults match exp 200; for stationary insects we typically pass
-    ``core_bands=1, max_bands=2`` (one dominant band, allow a harmonic).
+    ``max_bands=2`` (one dominant band, allow a harmonic).
     """
 
     k_band_mad: float = 2.0
     k_band_mad_lower: float = 1.0
     min_band_width_hz: float = 150.0
-    core_bands: int = 3
     max_bands: int = 5
     band_pad_hz: float = 40.0
 
@@ -49,17 +48,6 @@ def consensus_spectrum(spectra: list[np.ndarray]) -> np.ndarray:
     """Median of per-recording-normalized spectra (robust to a heterospecific)."""
     stack = np.stack(spectra, axis=0)
     return np.median(stack, axis=0)
-
-
-def merge_overlapping_bands(bands: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    """Union overlapping frequency intervals; disjoint ones kept apart."""
-    out: list[tuple[float, float]] = []
-    for lo, hi in sorted(bands):
-        if out and lo <= out[-1][1]:
-            out[-1] = (out[-1][0], max(out[-1][1], hi))
-        else:
-            out.append((lo, hi))
-    return out
 
 
 def _contiguous_runs(mask: np.ndarray) -> list[tuple[int, int]]:

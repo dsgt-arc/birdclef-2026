@@ -14,6 +14,36 @@ exist in only 4 sites (S08/S15/S19/S23), none in S22, and 16/25 sonotypes are
 single-site**, so cross-site transfer is mostly untestable and site is badly
 confounded with sonotype.
 
+## Update (2026-06-01): contrast-basis fix tried; signature strand retired
+
+Two follow-ups after the verdict above:
+
+1. **Discriminative-shape fix didn't move the result.** v1's signature keyed its
+   cosine on the raw present-consensus in-band shape, which bakes in site
+   background. Rebuilding it from the positive-clipped **present-minus-absent
+   contrast** (the discriminative residual) and breaking calibration F1-ties toward
+   higher specificity changed essentially nothing:
+
+   | split | precision (before → after) | recall (before → after) |
+   |---|---|---|
+   | in-site (fit ceiling) | 0.526 → 0.526 | 0.614 → 0.589 |
+   | cross-site (LOSO) | 0.06 → 0.055 | 0.17 → 0.151 |
+
+   Mean S22 false-fire rate held at ~0.18; per-sonotype deltas were mixed (son06
+   0.073→0.011 better, son11 0.436→0.528 worse). Within a narrow band the present
+   and contrast shapes are near-collinear, and the query side still compares a raw
+   window shape — so the basis swap cannot close a window-level, frequency-collapsed
+   discriminator gap. Confirms the verdict: **the discriminator, not the operating
+   point, is the ceiling.**
+
+2. **`signature.py` + `propagate.py` removed.** The fully-automatic band+shape
+   propagation strand is falsified and no longer load-bearing. The go-forward
+   direction is the human-in-the-loop design in
+   `docs/concepts/semi-supervised-box-annotation-loop.md` (Perch-prototype routing +
+   DSP pre-boxing + margin-only review). The boxing front-end (`boxes.py`) and Label
+   Studio curation (`label_studio.py`) are retained; the `artifacts/signatures/` and
+   `artifacts/propagate/` outputs referenced below are historical.
+
 ## Observations
 
 Data (`labels`):

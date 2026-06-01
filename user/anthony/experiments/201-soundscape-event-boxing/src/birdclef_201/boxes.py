@@ -11,7 +11,6 @@ the Label Studio curation loop — not ground truth.
 from __future__ import annotations
 
 import argparse
-import functools
 import logging
 import warnings
 from dataclasses import dataclass
@@ -189,25 +188,6 @@ def analyze_labeled_windows(
     return boxes, spectra
 
 
-@functools.lru_cache(maxsize=1)
-def load_window_spectra() -> tuple[dict[str, tuple[np.ndarray, np.ndarray]], pl.DataFrame, np.ndarray]:
-    """Reload persisted per-window spectra -> ({window_id: (spectrum, freqs)}, wide, freqs).
-
-    Lets signature/propagate rebuild a site-specific consensus over any window
-    subset with no audio re-reads (the boxes pass already paid that cost). Cached
-    so the LOSO folds + full-signature build read the npz once, not per call.
-    """
-    out = artifact_dir("boxes")
-    npz = np.load(out / "window_spectra.npz")
-    stack, freqs = npz["spectra"], npz["freqs"]
-    order = (
-        pl.read_parquet(out / "window_spectra_order.parquet").sort("row")["window_id"].to_list()
-    )
-    spectra = {w: (stack[i], freqs) for i, w in enumerate(order)}
-    wide = pl.read_parquet(out / "window_index.parquet")
-    return spectra, wide, freqs
-
-
 def discriminative_band(
     label: str,
     wide: pl.DataFrame,
@@ -222,7 +202,7 @@ def discriminative_band(
     elsewhere (falling back to same-site), so the contrast subtracts that site's
     stationary background rather than capturing it. Gated at ``min_present``.
     """
-    cfg = cfg or BandDiscoveryConfig(core_bands=1, max_bands=2)
+    cfg = cfg or BandDiscoveryConfig(max_bands=2)
     has = pl.col("labels").list.contains(label)
     present = wide.filter(has)
     present_ids = [w for w in present["window_id"].to_list() if w in spectra]
@@ -332,22 +312,8 @@ def _run(limit: int) -> None:
     boxes.write_parquet(out / "labeled_boxes.parquet")
     logger.info("proposed %d boxes over %d windows", boxes.height, len(spectra))
 
-    # Persist every window's per-bin spectrum so signature/propagate can rebuild
-    # site-specific consensus over any window subset (the honest cross-site test)
-    # with zero audio re-reads. Order parquet keeps window_id <-> row aligned.
-    if spectra:
-        order = list(spectra)
-        any_freqs = spectra[order[0]][1]
-        stack = np.stack([spectra[w][0] for w in order], axis=0)
-        np.savez(out / "window_spectra.npz", spectra=stack, freqs=any_freqs)
-        wide.filter(pl.col("window_id").is_in(order)).write_parquet(out / "window_index.parquet")
-        pl.DataFrame({"window_id": order, "row": list(range(len(order)))}).write_parquet(
-            out / "window_spectra_order.parquet"
-        )
-
     band_rows = []
     label_bands: dict[str, list[tuple[float, float]]] = {}
-    npz: dict[str, np.ndarray] = {}
     for label in son:
         info = discriminative_band(label, wide, spectra)
         label_bands[label] = info["bands"]
@@ -363,15 +329,8 @@ def _run(limit: int) -> None:
         )
         if info["status"] == "ok":
             _plot_contrast(info, bands_dir / f"{label}.png")
-            # Persist the spectrum vectors so signature/propagate need no recompute.
-            npz[f"{label}::present"] = info["present_spectrum"]
-            npz[f"{label}::contrast"] = info["contrast"]
-            npz[f"{label}::freqs"] = info["freqs"]
-            npz[f"{label}::bands"] = np.array(info["bands"], dtype=float)
     pl.DataFrame(band_rows).write_parquet(out / "discriminative_bands.parquet")
     pl.DataFrame(band_rows).write_csv(out / "discriminative_bands.csv")
-    if npz:
-        np.savez(out / "band_spectra.npz", **npz)
 
     attributed = attribute_boxes(boxes, wide, label_bands, son_set)
     if not attributed.is_empty():
