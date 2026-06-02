@@ -12,6 +12,15 @@ pre-draws boxes, the human adjudicates only the margin, confirmations feed back.
 `docs/concepts/semi-supervised-box-annotation-loop.md`. Load-bearing code: `boxes.py`
 (box proposal + discriminative bands + attribution) and `label_studio.py` (curation).
 
+**Gate result (2026-06-02):** the loop's *routing* premise **FAILED its feasibility gate
+for insects** (`retrieve.py gate`): the weak-label Perch prototype barely clears the
+within-site base-rate floor, fires on ~33% of insect-free windows, and only son03 (the
+lone 3-site sonotype) routes cleanly; per-recording centering made it worse (stationary
+insects sit in the recording mean). Stage B was **not** built. Two live forks:
+(a) **birds-first** — Perch is in-distribution for Aves; (b) **curate insect windows
+without routing** — weak labels + DSP pre-boxing + `label_studio`, no Perch. The gate
+harness `retrieve.py` is reusable for the birds-first probe.
+
 This experiment is **standalone and lean** — it does NOT depend on experiment 200.
 The minimal DSP primitives (PCEN spectrogram, band discovery, ROI proposal,
 `interval_iou`, the Label Studio serving patterns) were ported in, not imported.
@@ -29,6 +38,8 @@ The minimal DSP primitives (PCEN spectrogram, band discovery, ROI proposal,
   `/mnt/data/scratch/birdclef-2026/inference/perch-v2-tf/train_soundscapes/embeddings.parquet`
   — **one vector per 5s window**, frequency collapsed (127,896 rows = 10,658 files × 12
   chunks; `start_sec`/`end_sec` = chunk bounds). It routes/seeds; it cannot produce a box.
+  Note: cross-site routing **failed the gate for insects** (2026-06-02); likely viable for
+  birds (in-distribution). All 739 labeled windows join on `(filename, start_sec)`.
 
 Polars note: read the CSVs with `pl.read_csv(path, infer_schema_length=10000)`.
 

@@ -137,13 +137,23 @@ Propagation (`propagate`, LOSO over the 4 insect sites):
 
 ## Next steps
 
-1. **Curate** a slice in Label Studio (`push --replace`, annotate, `parse`) to get
-   gold boxes — first for the few clean sonotypes (son04/07/18) and the ambiguous
-   boxes, to measure how much attribution error inflated the weak propagation.
-2. **Stronger discriminator** than band+shape: the obvious lever is **Perch
-   embedding retrieval** on the soundscape windows (all 10,658 already embedded) —
-   few-shot nearest-neighbor from the gold insect boxes, which should beat a raw
-   spectral signature on both transfer and specificity. This is the v2 pivot the
-   embedding-route discussion pointed at.
-3. Merge the co-occurring pairs (son15/16, son22/23) or separate them with a
-   discriminator that uses more than the shared band.
+> Superseded twice (see the dated Updates above): the band+shape signature was
+> falsified, then the **Perch-retrieval pivot itself failed its feasibility gate for
+> insects** (2026-06-02). Perch routing of insect windows cross-site is not viable
+> (site==sonotype confound; Perch is bird-centric). Current live forks:
+
+1. **Birds-first routing.** Perch is in-distribution for Aves (28 labeled species), so
+   the same gate may pass there even though DSP boxing is harder for birds (the
+   inversion: DSP boxing easy for insects/hard for birds; Perch routing the reverse).
+   Re-run `retrieve gate` over bird species before building any loop.
+2. **Curate insect windows without routing.** Weak labels already mark which windows
+   hold which sonotype — DSP pre-boxing + the existing `label_studio` export curate the
+   labeled insect windows with no Perch at all (it just won't expand to the unlabeled
+   pool). First for the clean sonotypes (son04/07/18) and ambiguous boxes.
+3. **Cheap probe**: does routing quality scale with #training sites? son03 (the lone
+   3-site sonotype) was the only insect that routed cleanly — if it's purely "3 sites
+   beats 2," the insect failure is data-limited, not method-dead.
+4. Merge the co-occurring pairs (son15/16, son22/23) in any curation — identical
+   present-sets, inseparable from weak labels.
+
+See `docs/concepts/semi-supervised-box-annotation-loop.md` for the loop design + gate.
