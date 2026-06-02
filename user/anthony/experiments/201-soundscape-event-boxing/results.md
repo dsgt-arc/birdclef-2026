@@ -57,20 +57,23 @@ confound removed) + insect-free FP@recall0.8, macro over folds:
 | centroid (mean present) | 0.504 | 0.365 | **0.331** |
 | band_energy | 0.501 | 0.412 | 0.572 |
 | prototype (contrastive) | 0.463 | 0.379 | 0.625 |
-| site_prior (base-rate floor) | 0.460 | 0.371 | 1.0 |
 | prototype_centered | 0.444 | 0.374 | 0.849 |
 | centroid_centered | 0.429 | 0.368 | 0.844 |
 | random | 0.424 | 0.373 | 0.788 |
+| site_prior (base-rate floor) | 0.370 | 0.371 | 1.0 |
 
-**FAIL**: the best embedding ranker barely clears the within-site base-rate floor
-(0.504 vs 0.460), loses P@20 to band-energy, and fires on **33%** of insect-free windows
-(≫ the 5% bar). Per-sonotype, **only son03** (the lone 3-site sonotype) routes cleanly
-(AP 0.813 vs 0.202, FP 0.069); the other 7 sit at/below base rate with FP 0.13–0.82.
-**Per-recording centering made it worse** (AP↓, FP↑ to ~0.85): stationary insects sit in
-the recording mean, so subtracting it erases the signal. Read: Perch (bird-centric) does
-not separate stationary insects from site background cross-site — the site==sonotype
-confound dominates. Per the concept's kill criterion, **Stage B was not built.**
-Artifacts: `artifacts/retrieve/gate/{gate_table.csv,gate.md,per_sonotype.csv,scores_debug.parquet}`.
+**FAIL** — but not because routing is at chance. Within-site, the best embedding ranker
+(centroid, AP 0.504) *does* clear the base-rate floor (0.370) and random (0.424); the
+problem is it (a) only **matches a trivial band-energy detector** (0.501, which beats it
+on P@20, 0.412 vs 0.365) — Perch adds nothing over cheap DSP energy here — and (b) **fires
+on 33% of insect-free windows** (≫ the 5% bar), i.e. it is not specific. Per-sonotype,
+**only son03** (the lone 3-site sonotype) routes well (AP 0.81 vs 0.20, FP 0.069 — *near*,
+not under, the bar); the other 7 are at/below base rate with FP 0.13–0.82. **Per-recording
+centering made it worse** (AP↓, FP↑ to ~0.85), plausibly because stationary insects sit in
+the recording mean, so subtracting it erases the signal. Read (hypotheses, not proven by
+this gate): the site==sonotype confound dominates, and Perch may under-embed insects (it
+is bird-centric). Per the concept's kill criterion, **Stage B was not built.** Artifacts:
+`artifacts/retrieve/gate/{gate_table.csv,gate.md,per_sonotype.csv,scores_debug.parquet}`.
 
 ## Observations
 

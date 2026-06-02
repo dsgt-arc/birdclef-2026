@@ -125,7 +125,7 @@ weak-label contrastive Perch prototype rank a sonotype's present windows above
 negatives (same-site, cross-site, and the insect-free S22 probe) **better than** a
 site prior, a band-energy ranker, and random-within-site — with **no train/eval label
 leakage** (prototype seeded on held-out files/sites or a small human gold subset, never
-the windows it is scored on)? Concrete pass bar: cross-site AP and P@20 beat every
+the windows it is scored on)? Concrete pass bar: within-held-out-site AP and P@20 beat every
 trivial baseline, and S22 false-positive rate at the chosen operating point ≤ 5%.
 **If it does not clear this, stop or pivot — do not build the annotation UI on a router
 that cannot route.**
@@ -134,13 +134,15 @@ that cannot route.**
 
 Implemented in `birdclef_201.retrieve gate`. Over the 8 cross-site-testable insect
 sonotypes (LOSO), the best embedding ranker (`centroid`, uncentered) reaches within-site
-AP 0.504 vs a 0.460 base-rate floor, loses P@20 to a band-energy baseline, and fires on
-**33%** of insect-free windows (≫5%). Only **son03** (the only 3-site sonotype) routes
-cleanly (AP 0.81, FP 0.07); the other 7 are at/below base rate. **Per-recording centering
-made it worse** — stationary insects live in the recording mean, so centering erases the
-signal. Conclusion: Perch does not separate stationary insects from site background
-cross-site (site==sonotype confound + Perch is bird-centric / likely under-embeds
-insects). Stage B was not built. See `results.md` (2026-06-02) for the table.
+AP 0.504 — which *does* clear the base-rate floor (0.370) and random (0.424), so routing
+isn't at chance — **but** it only matches a trivial band-energy baseline (0.501, which
+beats it on P@20), and fires on **33%** of insect-free windows (≫5%): no lift over cheap
+DSP, and not specific. Only **son03** (the only 3-site sonotype) routes well (AP 0.81,
+FP 0.07 — *near*, not under, the bar); the other 7 are at/below base rate.
+**Per-recording centering made it worse**, plausibly because stationary insects live in
+the recording mean so centering erases the signal. Likely drivers (hypotheses, not proven
+by this gate): the site==sonotype confound, and Perch under-embedding insects (it is
+bird-centric). Stage B was not built. See `results.md` (2026-06-02) for the table.
 
 **Implication for the loop**: the *routing* component fails for insects, so scaling to
 the unlabeled pool via Perch is not justified here. Two live pivots: (a) **birds-first** —
@@ -194,7 +196,8 @@ files/sites or a human gold subset, never the windows it is scored on.
    leave-one-insect-site-out, ranking windows by cosine to the weak-label contrastive
    Perch prototype beats (a) the exp 201 band+shape signature (cross-site P0.06/R0.17,
    S22 fp ≤0.5) and (b) a site prior, a band-energy ranker, and random-within-site, on
-   **cross-site AP and P@20**, with **S22 FP@operating-point ≤ 5%**. *Falsified if it
+   **within-held-out-site AP and P@20** (after cross-site training), with **S22
+   FP@operating-point ≤ 5%**. *Falsified if it
    does not beat all trivial baselines.*
 2. **Margin-only review reaches usable gold cheaply.** Define "usable gold" =
    ≥20 confirmed positive boxes/sonotype **or** ≥80% coverage of that sonotype's known

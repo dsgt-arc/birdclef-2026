@@ -81,14 +81,21 @@ def build_prototype(emb: np.ndarray, present: np.ndarray, absent: np.ndarray) ->
 # metrics (hand-rolled; no sklearn dependency)                                 #
 # --------------------------------------------------------------------------- #
 def average_precision(scores: np.ndarray, y: np.ndarray) -> float:
-    """Step-wise AP (matches sklearn.average_precision_score). NaN if no positives."""
+    """Step-wise AP matching sklearn.average_precision_score, with **tie grouping**
+    (equal scores share one PR threshold, so a constant-score ranker scores exactly
+    prevalence). NaN if no positives."""
     if y.sum() == 0:
         return float("nan")
     order = np.argsort(-scores, kind="stable")
-    y = y[order].astype(float)
-    tp = np.cumsum(y)
-    precision_at_k = tp / np.arange(1, len(y) + 1)
-    return float((precision_at_k * y).sum() / y.sum())
+    s = scores[order]
+    yy = y[order].astype(float)
+    tp = np.cumsum(yy)
+    fp = np.cumsum(1.0 - yy)
+    ends = np.r_[np.where(np.diff(s) != 0)[0], len(s) - 1]  # last idx of each tied group
+    precision = tp[ends] / (tp[ends] + fp[ends])
+    recall = tp[ends] / yy.sum()
+    recall_prev = np.r_[0.0, recall[:-1]]
+    return float(np.sum((recall - recall_prev) * precision))
 
 
 def precision_at_k(scores: np.ndarray, y: np.ndarray, k: int = 20) -> float:
@@ -292,18 +299,28 @@ def loso_gate() -> None:
         r = table.filter(pl.col("ranker") == ranker)
         return float(r[col][0]) if r.height else float("nan")
 
-    # best of the embedding rankers (contrastive/centroid x raw/centered)
-    best = max(
-        ("prototype", "centroid", "prototype_centered", "centroid_centered"),
-        key=lambda r: _val(r, "within_site_AP"),
-    )
-    best_ap, best_pk = _val(best, "within_site_AP"), _val(best, "within_site_P@20")
+    # PASS iff ANY embedding ranker clears all three gates (beats every baseline on
+    # within-site AP & P@20, and insect-free FP <= 0.05).
+    emb_rankers = ("prototype", "centroid", "prototype_centered", "centroid_centered")
+    baselines = ("band_energy", "site_prior", "random")
+
+    def _passes(r):
+        ap_pk = all(
+            _val(r, "within_site_AP") > _val(b, "within_site_AP")
+            and _val(r, "within_site_P@20") > _val(b, "within_site_P@20")
+            for b in baselines
+        )
+        return ap_pk and _val(r, "insect_free_FP@recall0.8") <= 0.05
+
+    passers = [r for r in emb_rankers if _passes(r)]
+    passed = bool(passers)
+    best = max(passers or emb_rankers, key=lambda r: _val(r, "within_site_AP"))
     best_fp = _val(best, "insect_free_FP@recall0.8")
     beats = all(
-        best_ap > _val(b, "within_site_AP") and best_pk > _val(b, "within_site_P@20")
-        for b in ("band_energy", "site_prior", "random")
+        _val(best, "within_site_AP") > _val(b, "within_site_AP")
+        and _val(best, "within_site_P@20") > _val(b, "within_site_P@20")
+        for b in baselines
     )
-    passed = bool(beats and best_fp <= 0.05)
 
     n_single = len(ins_labels) - len(testable)
     lines = [

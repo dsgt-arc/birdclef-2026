@@ -13,10 +13,11 @@ pre-draws boxes, the human adjudicates only the margin, confirmations feed back.
 (box proposal + discriminative bands + attribution) and `label_studio.py` (curation).
 
 **Gate result (2026-06-02):** the loop's *routing* premise **FAILED its feasibility gate
-for insects** (`retrieve.py gate`): the weak-label Perch prototype barely clears the
-within-site base-rate floor, fires on ~33% of insect-free windows, and only son03 (the
-lone 3-site sonotype) routes cleanly; per-recording centering made it worse (stationary
-insects sit in the recording mean). Stage B was **not** built. Two live forks:
+for insects** (`retrieve.py gate`): the weak-label Perch prototype clears the within-site
+base-rate floor (AP 0.504 vs 0.370) but only matches a trivial band-energy detector and
+fires on ~33% of insect-free windows (not specific); only son03 (the lone 3-site sonotype)
+routes well; per-recording centering made it worse. Stage B was **not** built. Two live
+forks:
 (a) **birds-first** — Perch is in-distribution for Aves; (b) **curate insect windows
 without routing** — weak labels + DSP pre-boxing + `label_studio`, no Perch. The gate
 harness `retrieve.py` is reusable for the birds-first probe.
