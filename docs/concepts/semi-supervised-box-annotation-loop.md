@@ -130,6 +130,27 @@ trivial baseline, and S22 false-positive rate at the chosen operating point ≤ 
 **If it does not clear this, stop or pivot — do not build the annotation UI on a router
 that cannot route.**
 
+### Gate result (2026-06-02): FAIL for insects-first
+
+Implemented in `birdclef_201.retrieve gate`. Over the 8 cross-site-testable insect
+sonotypes (LOSO), the best embedding ranker (`centroid`, uncentered) reaches within-site
+AP 0.504 vs a 0.460 base-rate floor, loses P@20 to a band-energy baseline, and fires on
+**33%** of insect-free windows (≫5%). Only **son03** (the only 3-site sonotype) routes
+cleanly (AP 0.81, FP 0.07); the other 7 are at/below base rate. **Per-recording centering
+made it worse** — stationary insects live in the recording mean, so centering erases the
+signal. Conclusion: Perch does not separate stationary insects from site background
+cross-site (site==sonotype confound + Perch is bird-centric / likely under-embeds
+insects). Stage B was not built. See `results.md` (2026-06-02) for the table.
+
+**Implication for the loop**: the *routing* component fails for insects, so scaling to
+the unlabeled pool via Perch is not justified here. Two live pivots: (a) **birds-first** —
+Perch is in-distribution for Aves (28 labeled species), where routing should work even
+though DSP boxing is harder (an interesting inversion: DSP boxing is easy for insects /
+hard for birds; Perch routing is the reverse); (b) **curate insect windows without
+routing** — weak labels already mark which windows contain which sonotype, so DSP
+pre-boxing + the existing `label_studio` export curate the labeled insect windows with no
+Perch at all (it just won't expand to the pool).
+
 ## Open Questions
 
 - Does the **contrastive Perch prototype** (mean present − mean absent, window-level)
