@@ -1,0 +1,27 @@
+# Supervised-focal LoRA adaptation of BEATs (LoRA-only — no DAPT; see proposal).
+# After training, re-extract with:
+#   birdclef-300 extract --encoder beats --variant lora-r8 --adapter <output-dir>/adapter
+encoder: beats
+variant: lora-r8
+
+encoder_cfg:
+  checkpoint: ~/scratch/birdclef-2026/checkpoints/beats/BEATs_iter3_plus_AS2M.pt
+  device: cuda
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+  target_modules: [q_proj, k_proj, v_proj, out_proj]   # BEATs fairseq attention
+
+data:
+  train_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
+
+training:
+  epochs: 5
+  batch_size: 16
+  lr: 1.0e-4
+  focal_gamma: 2.0
+  max_grad_norm: 1.0
+  num_workers: 4

@@ -1,0 +1,27 @@
+# Soundscape DAPT (continued SSL) of EAT via latent-bootstrap on the unlabeled pool.
+# After training, re-extract with:
+#   birdclef-300 extract --encoder eat --variant dapt-ep1 --state-dict <output-dir>/state_dict.pt
+encoder: eat
+variant: dapt-ep1
+
+encoder_cfg:
+  model_name: worstchan/EAT-base_epoch30_pretrain
+  target_length: 512
+  device: cuda
+
+dapt:
+  ema_momentum: 0.999
+  mask_frac: 0.4
+  mask_spans: 8
+
+data:
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+
+training:
+  epochs: 1
+  batch_size: 16
+  lr: 1.0e-5
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  num_workers: 4
+  seed: 42

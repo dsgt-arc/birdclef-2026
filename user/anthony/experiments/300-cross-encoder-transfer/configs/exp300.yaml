@@ -1,0 +1,54 @@
+# Exp 300 — cross-encoder frozen-probe comparison on the 749-window LOSO target.
+#
+# Every encoder is mapped onto the SAME labeled-soundscape windows as Perch and
+# the leaderboard systems, then scored with one ridge LOSO probe (see probe/).
+# Encoders write one parquet per (encoder, variant) into output.base_dir using
+# the unified cache schema (see CLAUDE.md). 301 reuses this same extractor to
+# write adapted variants.
+
+data:
+  sample_rate: 16000          # foundational encoders ingest 16 kHz mono
+  chunk_duration: 5.0
+  window_samples: 80000       # 5 s @ 16 kHz
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+  soundscape_labels_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv
+  split_seed: 42
+
+# Per-encoder construction. `backend` selects the extraction path:
+#   torch        — shared birdclef.encoders AudioEncoder wrappers (extract_features)
+#   perch_cache  — ingest pre-extracted Perch embeddings from the exp 106 cache
+#   birdnet_bmz  — BirdNET embeddings via bioacoustics-model-zoo (separate TF venv)
+encoders:
+  beats:
+    backend: torch
+    checkpoint: ~/scratch/birdclef-2026/checkpoints/beats/BEATs_iter3_plus_AS2M.pt
+    device: cuda
+    batch_size: 32
+  ast:
+    backend: torch
+    model_name: MIT/ast-finetuned-audioset-10-10-0.4593
+    device: cuda
+    batch_size: 16
+  eat:
+    backend: torch
+    model_name: worstchan/EAT-base_epoch30_pretrain
+    target_length: 512
+    device: cuda
+    batch_size: 16
+  ssamba_hf:
+    backend: torch
+    checkpoint: ~/scratch/birdclef-2026/checkpoints/ssamba/ssamba_small_400.pth
+    model_size: small
+    input_tdim: 512
+    device: cuda
+    batch_size: 16
+  perch:
+    backend: perch_cache
+    # Reuse the 1536-d Perch embeddings already extracted for the same windows.
+    source_parquet: ~/scratch/birdclef-2026/features/exp106/soundscape_labeled.parquet
+  birdnet:
+    backend: birdnet_bmz
+    clip_step: 3.0            # BirdNET native 3 s window; pooled into each 5 s window
+
+output:
+  base_dir: ~/scratch/birdclef-2026/features/exp300
