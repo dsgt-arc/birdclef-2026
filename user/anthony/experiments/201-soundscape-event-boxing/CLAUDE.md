@@ -4,6 +4,11 @@ Desktop-first BirdCLEF 2026 analysis. Goal: turn the **window-level multi-label
 presence** soundscape labels into precise **time-frequency bounding boxes**, focused on
 **insects** (the 25 `47158sonNN` sonotypes), which are spectrally stationary.
 
+**SHELVED (2026-06-08):** work on this experiment is stopped. Both automatic strands were
+falsified (propagation, then Perch routing — see the gate result below and `results.md`);
+the live forks are not being pursued for now. `retrieve.py`, `boxes.py`, `label_studio.py`
+are retained and reusable if work resumes. History below is kept for the record.
+
 **Direction (2026-06-01):** v1's fully-automatic band+shape **propagation** was
 falsified (cross-site P0.06/R0.17; see `results.md`) and its `signature.py` /
 `propagate.py` strand was **removed**. The go-forward plan is a **semi-supervised

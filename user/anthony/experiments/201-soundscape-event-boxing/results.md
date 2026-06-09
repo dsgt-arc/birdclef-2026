@@ -1,5 +1,13 @@
 # Results: Soundscape event boxing v1 (insects)
 
+> **SHELVED (2026-06-08).** Stopping work on exp 201. Both automatic strands were
+> falsified: the band+shape **propagation** signature (cross-site P0.06/R0.17) and the
+> **Perch-prototype routing** premise (failed its insect feasibility gate — not specific,
+> no lift over trivial band-energy). The three live forks below (birds-first routing,
+> routing-free insect curation, the #sites probe) are **not being pursued for now** — this
+> is a deliberate stop, not abandonment mid-stream. The `retrieve.py gate` harness and the
+> `boxes.py` / `label_studio.py` front-ends are retained and reusable if work resumes.
+
 ## Summary (verdict)
 
 **Mixed, and the negative half is the informative half.** The boxing front end

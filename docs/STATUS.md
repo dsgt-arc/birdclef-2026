@@ -119,6 +119,7 @@ Clip-level bottleneck (013-015)    SED + Mel (016-017)           Perch Probes (0
 | 106 | Perch v2 Bayesian Label Transfer | Complete | Ridge **0.804 Kaggle LB** (+0.010 over 102), LOSO 0.749 conservative |
 | 107 | Hopfield Prototype Retrieval | In Progress | Null-anchor S18 0.7801 pooled LOSO (v4 0.7074); LB pending |
 | 108 | Kaggle Submission Scaffold | **In Progress** | Shared `birdclef_kaggle` module; ridge shipped; hopfield null-anchor next |
+| 201 | Soundscape Event Boxing | **Shelved** | Insect box-from-weak-labels; both automatic strands falsified (propagation P0.06/R0.17; Perch routing failed insect gate). Shelved 2026-06-08 |
 
 ## Concept Docs
 
