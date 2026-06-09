@@ -1,0 +1,193 @@
+"""Auto frequency-band discovery for the species-agnostic motif pipeline.
+
+Given the PCEN spectrograms of every focal recording for a species, we want to
+discover up to ``max_bands`` contiguous frequency bands where the species'
+energy is concentrated. Strategy:
+
+1. For each recording, compute the per-bin time-p95 of PCEN, then divide by its
+   own MAD-sigma so loud heterospecifics in one recording don't dominate the
+   consensus. The high time-quantile (rather than time-mean) preserves bins
+   with concentrated transient activity: PCEN's AGC flattens long-running
+   averages so the mean ends up nearly constant across bins.
+2. Take the *median* across recordings — robust to a single recording
+   dominated by a non-target.
+3. Hysteresis: seed contiguous frequency runs where the consensus exceeds
+   ``median + k_band_mad * sigma``, then grow outward while it exceeds
+   ``median + k_band_mad_lower * sigma`` (clamped at adjacent runs).
+4. Pad each run, enforce a minimum width, return the top ``max_bands`` runs.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+
+@dataclass(frozen=True)
+class BandDiscoveryConfig:
+    """Parameters for auto frequency-band discovery.
+
+    Discovery is a robust core + recall extension: ``core_bands`` bands from
+    the median consensus (high precision; the dominant chip/primary complex),
+    then exemplar-weighted bands in frequency territory the core never covered
+    (the sparse / frequency-jittered components), up to ``max_bands`` total.
+    """
+
+    k_band_mad: float = 2.0
+    k_band_mad_lower: float = 1.0
+    min_band_width_hz: float = 150.0
+    core_bands: int = 3
+    max_bands: int = 5
+    band_pad_hz: float = 40.0
+
+
+def per_recording_mean_spectrum(z: np.ndarray, *, time_quantile: float = 0.95) -> np.ndarray:
+    """Per-bin high-quantile of a spectrogram, normalized by its own MAD-sigma.
+
+    Uses a high time-quantile (default p95) rather than the time-mean: PCEN's
+    AGC flattens long-running averages so the mean ends up nearly constant
+    across bands, but the high quantile preserves bins with concentrated
+    transient activity (target calls).
+
+    Dividing by per-recording MAD-sigma puts every recording's spectrum on a
+    comparable scale before the cross-recording median consensus.
+    """
+    summary = np.quantile(z, time_quantile, axis=1)
+    med = float(np.median(summary))
+    mad = float(np.median(np.abs(summary - med)))
+    sigma = 1.4826 * max(mad, 1e-6)
+    return (summary - med) / sigma
+
+
+def consensus_spectrum(spectra: list[np.ndarray]) -> np.ndarray:
+    """Median of per-recording-normalized spectra across recordings.
+
+    Median (not mean) protects against one recording dominated by a heterospecific.
+    """
+    stack = np.stack(spectra, axis=0)
+    return np.median(stack, axis=0)
+
+
+def exemplar_weights(
+    spectra: list[np.ndarray], freqs: np.ndarray, anchor: tuple[float, float]
+) -> np.ndarray:
+    """Per-recording weights from peak salience in the species' anchor band.
+
+    The anchor is the species' undisputed dominant band (top-ranked run of the
+    plain median consensus): it is present in every recording, so its
+    per-recording strength is a robust, species-agnostic proxy for "how cleanly
+    does this recording express the target species". Recordings strong in the
+    anchor get more say in defining the subtler bands; marginal/noisy ones are
+    downweighted. No tuned constant -- the weight is the species' own signal.
+    Falls back to uniform if every recording is silent in the anchor.
+    """
+    lo, hi = anchor
+    mask = (freqs >= lo) & (freqs <= hi)
+    w = np.array([max(float(s[mask].max()), 0.0) for s in spectra], dtype=float)
+    total = float(w.sum())
+    return w / total if total > 0 else np.full(len(w), 1.0 / len(w))
+
+
+def weighted_consensus(spectra: list[np.ndarray], weights: np.ndarray) -> np.ndarray:
+    """Exemplar-weighted mean across recordings (weights sum to 1)."""
+    return np.tensordot(weights, np.stack(spectra, axis=0), axes=(0, 0))
+
+
+def _intervals_overlap(a: tuple[float, float], b: tuple[float, float]) -> bool:
+    return not (a[1] < b[0] or b[1] < a[0])
+
+
+def merge_overlapping_bands(
+    bands: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    """Union overlapping frequency intervals; touching-but-disjoint kept apart.
+
+    The exemplar-weighted consensus often resolves a single broadband motif
+    into several overlapping runs; collapse those into one band while leaving
+    genuinely separate components (e.g. a secondary's low vs high lobe) apart.
+    """
+    out: list[tuple[float, float]] = []
+    for lo, hi in sorted(bands):
+        if out and lo <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], hi))
+        else:
+            out.append((lo, hi))
+    return out
+
+
+def bands_outside(
+    candidates: list[tuple[float, float]], covered: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    """Candidate bands that overlap none of the already-``covered`` bands."""
+    return [c for c in candidates
+            if not any(_intervals_overlap(c, b) for b in covered)]
+
+
+def _contiguous_runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    """Return inclusive (start, end) index pairs for True runs in ``mask``."""
+    runs: list[tuple[int, int]] = []
+    in_run = False
+    start = 0
+    for i, v in enumerate(mask):
+        if v and not in_run:
+            start = i
+            in_run = True
+        elif not v and in_run:
+            runs.append((start, i - 1))
+            in_run = False
+    if in_run:
+        runs.append((start, len(mask) - 1))
+    return runs
+
+
+def discover_bands(
+    consensus: np.ndarray,
+    freqs: np.ndarray,
+    *,
+    config: BandDiscoveryConfig = BandDiscoveryConfig(),
+) -> list[tuple[float, float]]:
+    """Return up to ``config.max_bands`` (fmin_hz, fmax_hz) intervals.
+
+    Hysteresis: seed each run where consensus exceeds the primary threshold
+    (``med + k_band_mad * sigma``), then grow outward while consensus exceeds
+    the secondary threshold (``med + k_band_mad_lower * sigma``). Growth is
+    clamped at the adjacent seeded run so neighbors do not merge.
+    """
+    med = float(np.median(consensus))
+    mad = float(np.median(np.abs(consensus - med)))
+    sigma = 1.4826 * max(mad, 1e-6)
+    primary = med + config.k_band_mad * sigma
+    secondary = med + config.k_band_mad_lower * sigma
+    mask = consensus > primary
+    runs = _contiguous_runs(mask)
+
+    n = len(consensus)
+    grown: list[tuple[int, int, float]] = []
+    for idx, (i0, i1) in enumerate(runs):
+        left_bound = 0 if idx == 0 else runs[idx - 1][1] + 1
+        right_bound = n - 1 if idx == len(runs) - 1 else runs[idx + 1][0] - 1
+        j0 = i0
+        while j0 > left_bound and consensus[j0 - 1] > secondary:
+            j0 -= 1
+        j1 = i1
+        while j1 < right_bound and consensus[j1 + 1] > secondary:
+            j1 += 1
+        peak_score = float(consensus[i0 : i1 + 1].max())
+        grown.append((j0, j1, peak_score))
+
+    bands: list[tuple[float, float, float]] = []
+    for j0, j1, peak_score in grown:
+        fmin = float(freqs[j0]) - config.band_pad_hz
+        fmax = float(freqs[j1]) + config.band_pad_hz
+        if fmax - fmin < config.min_band_width_hz:
+            center = 0.5 * (fmin + fmax)
+            half = 0.5 * config.min_band_width_hz
+            fmin = center - half
+            fmax = center + half
+        fmin = max(fmin, float(freqs[0]))
+        fmax = min(fmax, float(freqs[-1]))
+        bands.append((fmin, fmax, peak_score))
+
+    bands.sort(key=lambda x: x[2], reverse=True)
+    return [(fmin, fmax) for fmin, fmax, _ in bands[: config.max_bands]]
