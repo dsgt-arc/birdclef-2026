@@ -55,14 +55,6 @@ def load_encoder_labeled(base_dir: str, encoder: str, variant: str = "frozen") -
     return pl.read_parquet(labeled_parquet_path(base_dir, encoder, variant))
 
 
-def list_variants(base_dir: str, encoder: str) -> list[str]:
-    """List the variants present for an encoder (e.g. frozen, lora-r8, dapt-ep10)."""
-    enc_dir = Path(base_dir).expanduser() / "embeddings" / f"encoder={encoder}"
-    if not enc_dir.exists():
-        return []
-    return sorted(p.name.split("=", 1)[1] for p in enc_dir.glob("variant=*"))
-
-
 def extract_site(filename: str) -> str:
     """Extract site ID (e.g. 'S08') from a soundscape filename."""
     m = _SITE_RE.search(filename)

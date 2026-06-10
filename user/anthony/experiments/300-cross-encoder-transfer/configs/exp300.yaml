@@ -7,9 +7,7 @@
 # write adapted variants.
 
 data:
-  sample_rate: 16000          # foundational encoders ingest 16 kHz mono
-  chunk_duration: 5.0
-  window_samples: 80000       # 5 s @ 16 kHz
+  # Window geometry (16 kHz mono, 5 s) is fixed in birdclef_300.audio.
   soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
   soundscape_labels_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv
   split_seed: 42
@@ -48,7 +46,6 @@ encoders:
     source_parquet: ~/scratch/birdclef-2026/features/exp106/soundscape_labeled.parquet
   birdnet:
     backend: birdnet_bmz
-    clip_step: 3.0            # BirdNET native 3 s window; pooled into each 5 s window
 
 output:
   base_dir: ~/scratch/birdclef-2026/features/exp300

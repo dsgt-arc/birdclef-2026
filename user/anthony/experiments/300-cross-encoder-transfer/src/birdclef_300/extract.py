@@ -26,8 +26,6 @@ from birdclef_300.data_loading import labeled_parquet_path
 
 logger = logging.getLogger("birdclef_300.extract")
 
-WINDOW_SAMPLES = audio_mod.ENCODER_WINDOW_SAMPLES  # 80000
-
 
 def _time_to_sec(t: str) -> int:
     parts = str(t).split(":")
@@ -171,18 +169,25 @@ def extract_torch_labeled(
         buf_wavs.clear()
         buf_meta.clear()
 
+    # Rows are sorted by (filename, start), so decode each file once at 16 kHz
+    # and slice the in-memory waveform per window rather than re-opening and
+    # resampling a 5 s clip per row.
+    cur_file: str | None = None
+    cur_wav: np.ndarray | None = None
     for row in rows:
         path = sdir / row["filename"]
-        if not path.exists():
+        if row["filename"] != cur_file:
+            cur_file = row["filename"]
+            try:
+                cur_wav = audio_mod.load_audio_16k(str(path)) if path.exists() else None
+            except Exception as e:  # noqa: BLE001 — log and skip unreadable files
+                logger.warning("Load failed %s: %s", row["filename"], e)
+                cur_wav = None
+        if cur_wav is None:
             n_skipped += 1
             continue
-        try:
-            wav = audio_mod.load_audio_16k(str(path), start_sec=row["start_sec"], duration_sec=5.0)
-        except Exception as e:  # noqa: BLE001 — log and skip unreadable windows
-            logger.warning("Load failed %s @ %.0f: %s", row["filename"], row["start_sec"], e)
-            n_skipped += 1
-            continue
-        buf_wavs.append(audio_mod.fit_window(wav))
+        start = int(row["start_sec"] * audio_mod.ENCODER_SR)
+        buf_wavs.append(audio_mod.fit_window(cur_wav[start:start + audio_mod.ENCODER_WINDOW_SAMPLES]))
         buf_meta.append({k: row[k] for k in
                          ("filename", "window_idx", "start_sec", "split", "primary_label", "ground_truth")})
         if len(buf_wavs) >= batch_size:

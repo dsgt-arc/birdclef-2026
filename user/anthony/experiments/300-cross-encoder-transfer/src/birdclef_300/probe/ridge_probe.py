@@ -22,13 +22,6 @@ logger = logging.getLogger(__name__)
 LAMBDA_GRID = [1e-3, 1e-2, 0.1, 1.0, 10.0, 100.0, 1000.0]
 
 
-def _ridge_solve(X: np.ndarray, Y: np.ndarray, lam: float) -> np.ndarray:
-    """Solve ridge W = (X'X + λI)^{-1} X'Y."""
-    d = X.shape[1]
-    A = X.T @ X + lam * np.eye(d)
-    return scipy.linalg.solve(A, X.T @ Y, assume_a="pos")
-
-
 def _standardize(X_train: np.ndarray, X_test: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     mean = X_train.mean(axis=0, keepdims=True)
     std = X_train.std(axis=0, keepdims=True)
@@ -36,46 +29,27 @@ def _standardize(X_train: np.ndarray, X_test: np.ndarray) -> tuple[np.ndarray, n
     return (X_train - mean) / std, (X_test - mean) / std
 
 
-def _per_species_auroc(Y_true: np.ndarray, Y_pred: np.ndarray) -> dict[int, float]:
-    out: dict[int, float] = {}
+def _per_column_scores(Y_true: np.ndarray, Y_pred: np.ndarray) -> dict[int, tuple[float, float]]:
+    """Per-column (AUROC, AP) for columns with both-class support; degenerate columns skipped."""
+    out: dict[int, tuple[float, float]] = {}
     for j in range(Y_true.shape[1]):
         y = Y_true[:, j]
         if y.sum() < 2 or y.sum() >= len(y) - 1:
             continue
-        out[j] = float(roc_auc_score(y, Y_pred[:, j]))
+        out[j] = (float(roc_auc_score(y, Y_pred[:, j])),
+                  float(average_precision_score(y, Y_pred[:, j])))
     return out
 
 
 def _evaluate(Y_true: np.ndarray, Y_pred: np.ndarray) -> dict:
-    aurocs, aps = [], []
-    for j in range(Y_true.shape[1]):
-        y = Y_true[:, j]
-        if y.sum() < 2 or y.sum() >= len(y) - 1:
-            continue
-        aurocs.append(roc_auc_score(y, Y_pred[:, j]))
-        aps.append(average_precision_score(y, Y_pred[:, j]))
+    scores = _per_column_scores(Y_true, Y_pred)
+    aurocs = [a for a, _ in scores.values()]
+    aps = [p for _, p in scores.values()]
     return {
         "macro_auroc": float(np.mean(aurocs)) if aurocs else 0.0,
         "macro_ap": float(np.mean(aps)) if aps else 0.0,
         "n_evaluated": len(aurocs),
     }
-
-
-def _loso_oof(X: np.ndarray, Y: np.ndarray, sites: np.ndarray,
-              unique_sites: list[str], lam: float, standardize: bool) -> np.ndarray:
-    """Out-of-fold predictions: each site scored by a model trained on the rest."""
-    oof = np.zeros_like(Y, dtype=np.float64)
-    for site in unique_sites:
-        test = sites == site
-        train = ~test
-        if test.sum() == 0 or train.sum() == 0:
-            continue
-        Xtr, Xte = X[train], X[test]
-        if standardize:
-            Xtr, Xte = _standardize(Xtr, Xte)
-        W = _ridge_solve(Xtr, Y[train], lam)
-        oof[test] = Xte @ W
-    return oof
 
 
 def ridge_loso(
@@ -95,20 +69,38 @@ def ridge_loso(
     Y = Y.astype(np.float64)
     unique_sites = sorted(set(sites.tolist()))
 
+    # Precompute each fold's standardized test block and the Gram products X'X / X'Y,
+    # which don't depend on λ — only the +λI diagonal does. The λ sweep then reuses
+    # them, turning the expensive Gram from per-(fold, λ) into per-fold.
+    folds = []
+    for site in unique_sites:
+        test = sites == site
+        train = ~test
+        if test.sum() == 0 or train.sum() == 0:
+            continue
+        Xtr, Xte = X[train], X[test]
+        if standardize:
+            Xtr, Xte = _standardize(Xtr, Xte)
+        folds.append({
+            "test": test,
+            "gram": Xtr.T @ Xtr,
+            "xty": Xtr.T @ Y[train],
+            "Xte": Xte,
+            "Yte": Y[test],
+        })
+
+    eye = np.eye(X.shape[1])
     sweep = []
     best = {"macro_auroc": -1.0}
+    best_oof: np.ndarray | None = None
     for lam in LAMBDA_GRID:
+        oof = np.zeros_like(Y)
         fold_aurocs, fold_aps = [], []
-        for site in unique_sites:
-            test = sites == site
-            train = ~test
-            if test.sum() == 0 or train.sum() == 0:
-                continue
-            Xtr, Xte = X[train], X[test]
-            if standardize:
-                Xtr, Xte = _standardize(Xtr, Xte)
-            W = _ridge_solve(Xtr, Y[train], lam)
-            m = _evaluate(Y[test], Xte @ W)
+        for f in folds:
+            W = scipy.linalg.solve(f["gram"] + lam * eye, f["xty"], assume_a="pos")
+            pred = f["Xte"] @ W
+            oof[f["test"]] = pred
+            m = _evaluate(f["Yte"], pred)
             if m["n_evaluated"] > 0:
                 fold_aurocs.append(m["macro_auroc"])
                 fold_aps.append(m["macro_ap"])
@@ -118,10 +110,10 @@ def ridge_loso(
         logger.info("  λ=%.3g: AUROC=%.4f AP=%.4f", lam, auroc, ap)
         if auroc > best["macro_auroc"]:
             best = {"best_lambda": lam, "macro_auroc": auroc, "macro_ap": ap}
+            best_oof = oof
 
-    # Per-species AUROC at the best λ via pooled OOF predictions.
-    oof = _loso_oof(X, Y, sites, unique_sites, best["best_lambda"], standardize)
-    per_species_idx = _per_species_auroc(Y, oof)
+    # Per-species AUROC at the best λ via that λ's pooled OOF predictions.
+    per_species_idx = {j: a for j, (a, _) in _per_column_scores(Y, best_oof).items()}
     if species_list is not None:
         per_species = {species_list[j]: a for j, a in per_species_idx.items()}
     else:

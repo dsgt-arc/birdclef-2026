@@ -37,9 +37,9 @@ def _time_mask(wav: torch.Tensor, frac: float, n_spans: int, rng: torch.Generato
     out = wav.clone()
     n = wav.shape[-1]
     span = max(1, int(frac * n / max(1, n_spans)))
-    for b in range(wav.shape[0]):
-        for _ in range(n_spans):
-            start = int(torch.randint(0, max(1, n - span), (1,), generator=rng).item())
+    starts = torch.randint(0, max(1, n - span), (wav.shape[0], n_spans), generator=rng)
+    for b, row in enumerate(starts.tolist()):
+        for start in row:
             out[b, ..., start:start + span] = 0.0
     return out
 

@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> None:
     p_probe.add_argument("--variant", default="frozen")
     p_probe.add_argument("--features-dir", default=None,
                         help="Override cache dir (default: config output.base_dir)")
-    p_probe.add_argument("--artifacts-dir", default="artifacts")
+    p_probe.add_argument("--artifacts-dir", default=None)
     p_probe.add_argument("--no-standardize", action="store_true")
     p_probe.add_argument("--workers", type=int, default=4)
 
@@ -69,6 +69,7 @@ def main(argv: list[str] | None = None) -> None:
 
         # spawn avoids the polars/rayon fork deadlock (see exp 106 cli).
         multiprocessing.set_start_method("spawn", force=True)
+        from birdclef_300.probe.base import ARTIFACTS_DIR, FEATURES_DIR
         from birdclef_300.probe.tasks import AllProbes
 
         features_dir = args.features_dir
@@ -76,7 +77,7 @@ def main(argv: list[str] | None = None) -> None:
             with open(args.config) as f:
                 features_dir = yaml.safe_load(f)["output"]["base_dir"]
         if features_dir is None:
-            features_dir = "~/scratch/birdclef-2026/features/exp300"
+            features_dir = FEATURES_DIR
 
         luigi.build(
             [AllProbes(
@@ -84,7 +85,7 @@ def main(argv: list[str] | None = None) -> None:
                 variant=args.variant,
                 standardize=not args.no_standardize,
                 features_dir=os.path.expanduser(features_dir),
-                artifacts_dir=args.artifacts_dir,
+                artifacts_dir=args.artifacts_dir or ARTIFACTS_DIR,
             )],
             workers=args.workers,
             local_scheduler=True,

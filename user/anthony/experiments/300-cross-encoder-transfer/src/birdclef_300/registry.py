@@ -26,7 +26,6 @@ BIRDNET_BMZ = "birdnet_bmz"
 
 @dataclass(frozen=True)
 class EncoderSpec:
-    name: str
     backend: str
     # builder(enc_cfg: dict, device: str, checkpoint: str | None) -> AudioEncoder
     builder: Callable | None = None
@@ -79,12 +78,12 @@ def _build_ssamba_hf(enc_cfg: dict, device: str, checkpoint: str | None):
 
 
 REGISTRY: dict[str, EncoderSpec] = {
-    "beats": EncoderSpec("beats", TORCH, _build_beats),
-    "ast": EncoderSpec("ast", TORCH, _build_ast),
-    "eat": EncoderSpec("eat", TORCH, _build_eat),
-    "ssamba_hf": EncoderSpec("ssamba_hf", TORCH, _build_ssamba_hf),
-    "perch": EncoderSpec("perch", PERCH_CACHE),
-    "birdnet": EncoderSpec("birdnet", BIRDNET_BMZ),
+    "beats": EncoderSpec(TORCH, _build_beats),
+    "ast": EncoderSpec(TORCH, _build_ast),
+    "eat": EncoderSpec(TORCH, _build_eat),
+    "ssamba_hf": EncoderSpec(TORCH, _build_ssamba_hf),
+    "perch": EncoderSpec(PERCH_CACHE),
+    "birdnet": EncoderSpec(BIRDNET_BMZ),
 }
 
 
