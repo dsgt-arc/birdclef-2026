@@ -20,6 +20,7 @@ if [ ! -f "$VENV_MARKER" ]; then
     source "$VENV_DIR/bin/activate"
 
     uv pip install bioacoustics-model-zoo
+    uv pip install ai-edge-litert            # tflite runtime BirdNET loads at model init
     uv pip install polars soundfile pyyaml numpy pandas
 
     touch "$VENV_MARKER"
