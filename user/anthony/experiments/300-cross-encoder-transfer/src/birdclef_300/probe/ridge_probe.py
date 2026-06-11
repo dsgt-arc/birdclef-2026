@@ -19,7 +19,9 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 
 logger = logging.getLogger(__name__)
 
-LAMBDA_GRID = [1e-3, 1e-2, 0.1, 1.0, 10.0, 100.0, 1000.0]
+# Extended to 1e5: with per-fold standardization most encoders rail at the old
+# 1000 ceiling, so the optimum sat outside the grid. 1e4/1e5 give it headroom.
+LAMBDA_GRID = [1e-3, 1e-2, 0.1, 1.0, 10.0, 100.0, 1000.0, 1e4, 1e5]
 
 
 def _standardize(X_train: np.ndarray, X_test: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -60,6 +62,17 @@ def ridge_loso(
     standardize: bool = True,
 ) -> dict:
     """Sweep λ over LOSO folds; report the best macro AUROC/AP and per-species AUROC.
+
+    The primary metric (`macro_auroc`) is the **pooled-OOF** macro ROC-AUC: each
+    species' AUROC is computed once over all out-of-fold predictions pooled across
+    sites, then averaged across species. This matches the BirdCLEF leaderboard
+    metric (one AUROC per class over the whole test set, macro-averaged, skipping
+    classes with no positives). λ is selected on this pooled metric.
+
+    The fold-averaged variant (AUROC computed within each site, then averaged over
+    sites then species) is reported separately as `fold_avg_auroc` — it measures
+    within-site discriminability consistency, a different question, and is NOT how
+    the LB scores. (The two can disagree by ~0.06 and even reorder encoders.)
 
     Args:
         X: (N, D) embeddings. Y: (N, K) binary labels. sites: (N,) site IDs.
@@ -104,12 +117,24 @@ def ridge_loso(
             if m["n_evaluated"] > 0:
                 fold_aurocs.append(m["macro_auroc"])
                 fold_aps.append(m["macro_ap"])
-        auroc = float(np.mean(fold_aurocs)) if fold_aurocs else 0.0
-        ap = float(np.mean(fold_aps)) if fold_aps else 0.0
-        sweep.append({"lambda": lam, "auroc": auroc, "ap": ap})
-        logger.info("  λ=%.3g: AUROC=%.4f AP=%.4f", lam, auroc, ap)
-        if auroc > best["macro_auroc"]:
-            best = {"best_lambda": lam, "macro_auroc": auroc, "macro_ap": ap}
+        # Primary (LB-aligned): per-class AUROC over the pooled OOF, macro-averaged.
+        pooled = _evaluate(Y, oof)
+        # Secondary: macro-within-fold, then averaged over folds.
+        fold_auroc = float(np.mean(fold_aurocs)) if fold_aurocs else 0.0
+        fold_ap = float(np.mean(fold_aps)) if fold_aps else 0.0
+        sweep.append({
+            "lambda": lam,
+            "auroc": pooled["macro_auroc"], "ap": pooled["macro_ap"],
+            "fold_auroc": fold_auroc, "fold_ap": fold_ap,
+        })
+        logger.info("  λ=%.3g: pooled AUROC=%.4f AP=%.4f | fold-avg AUROC=%.4f",
+                    lam, pooled["macro_auroc"], pooled["macro_ap"], fold_auroc)
+        if pooled["macro_auroc"] > best["macro_auroc"]:
+            best = {
+                "best_lambda": lam,
+                "macro_auroc": pooled["macro_auroc"], "macro_ap": pooled["macro_ap"],
+                "fold_avg_auroc": fold_auroc, "fold_avg_ap": fold_ap,
+            }
             best_oof = oof
 
     # Per-species AUROC at the best λ via that λ's pooled OOF predictions.
@@ -121,8 +146,10 @@ def ridge_loso(
 
     return {
         "best_lambda": best["best_lambda"],
-        "macro_auroc": best["macro_auroc"],
+        "macro_auroc": best["macro_auroc"],          # pooled-OOF, LB-aligned (primary)
         "macro_ap": best["macro_ap"],
+        "fold_avg_auroc": best["fold_avg_auroc"],     # within-fold then averaged (secondary)
+        "fold_avg_ap": best["fold_avg_ap"],
         "n_species_evaluated": len(per_species_idx),
         "n_sites": len(unique_sites),
         "n_windows": int(X.shape[0]),
