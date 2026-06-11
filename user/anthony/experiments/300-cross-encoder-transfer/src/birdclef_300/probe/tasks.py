@@ -88,8 +88,10 @@ class AllProbes(ProbeTask):
                 "encoder": enc,
                 "variant": r["variant"],
                 "embed_dim": r["embed_dim"],
-                "macro_auroc": r["macro_auroc"],
+                "macro_auroc": r["macro_auroc"],          # pooled-OOF, LB-aligned
                 "macro_ap": r["macro_ap"],
+                "fold_avg_auroc": r.get("fold_avg_auroc"),  # within-fold diagnostic
+                "fold_avg_ap": r.get("fold_avg_ap"),
                 "best_lambda": r["best_lambda"],
                 "n_species_evaluated": r["n_species_evaluated"],
             })

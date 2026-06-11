@@ -79,5 +79,9 @@ birdclef-300 probe --config configs/exp300.yaml --encoders perch --variant froze
 
 ## Status
 
-Scaffolded; not yet run. See `proposal.md` for the hypothesis and `results.md`
-for the (empty) results table.
+**Complete (2026-06-11).** Ran end-to-end on PACE; full ranking + analysis in
+`results.md`. Primary metric is **pooled-OOF macro ROC-AUC** (LB-aligned):
+Perch 0.620 > BEATs 0.612 > BirdNET 0.588 > AST 0.576 > EAT 0.569 > SSAMBA 0.563.
+Key finding: pooled-vs-per-fold aggregation reorders the field (BirdNET 6th→3rd).
+Token pooling is configurable (`pooling: mean_patch|cls`); mean_patch is the
+primary convention. See `proposal.md` for the hypothesis.

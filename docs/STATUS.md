@@ -120,6 +120,8 @@ Clip-level bottleneck (013-015)    SED + Mel (016-017)           Perch Probes (0
 | 107 | Hopfield Prototype Retrieval | In Progress | Null-anchor S18 0.7801 pooled LOSO (v4 0.7074); LB pending |
 | 108 | Kaggle Submission Scaffold | **In Progress** | Shared `birdclef_kaggle` module; ridge shipped; hopfield null-anchor next |
 | 201 | Soundscape Event Boxing | **Shelved** | Insect box-from-weak-labels; both automatic strands falsified (propagation P0.06/R0.17; Perch routing failed insect gate). Shelved 2026-06-08 |
+| 300 | Cross-Encoder Transfer | **Complete** | Frozen ridge LOSO, LB-aligned pooled macro AUROC: Perch 0.620 > BEATs 0.612 > BirdNET 0.588 > AST 0.576 > EAT 0.569 > SSAMBA 0.563. Pooled-vs-fold metric reorders field (BirdNET 6th→3rd). Feeds working-note §6 |
+| 301 | Encoder Adaptation | Proposed | LoRA + soundscape DAPT on top encoders; reuses 300's venv + extractor. Feeds §7 |
 
 ## Concept Docs
 
