@@ -24,12 +24,22 @@ class EATEncoder(AudioEncoder):
         device: str = "cuda",
         norm_mean: float = -4.268,
         norm_std: float = 4.569,
+        pooling: str = "mean_patch",
     ):
         super().__init__()
         self.device = device
         self.target_length = target_length
         self.norm_mean = norm_mean
         self.norm_std = norm_std
+        # Token-pooling strategy. EAT prepends one [CLS] (utterance) token at
+        # position 0 before the patch grid.
+        #   mean_patch — mean over patch tokens only ([:, 1:]); legacy default,
+        #                and the fair cross-encoder convention
+        #   cls        — the CLS/utterance token ([:, 0]); EAT's utterance
+        #                objective trains this token as the clip summary
+        if pooling not in ("mean_patch", "cls"):
+            raise ValueError(f"Unknown pooling {pooling!r}")
+        self.pooling = pooling
 
         from transformers import AutoModel
 
@@ -113,7 +123,10 @@ class EATEncoder(AudioEncoder):
         # Extract features - returns (batch, seq_len+1, embed_dim) with CLS token
         features = self.model.extract_features(mel)
 
-        # Mean pooling over time (excluding CLS token at position 0)
-        features = features[:, 1:].mean(dim=1)  # (batch, embed_dim)
+        # Pool the token sequence to one vector. Layout: [CLS, patch_0 ... patch_n].
+        if self.pooling == "cls":
+            features = features[:, 0]  # (batch, embed_dim)
+        else:  # mean_patch — mean over patches, excluding CLS at position 0
+            features = features[:, 1:].mean(dim=1)  # (batch, embed_dim)
 
         return features

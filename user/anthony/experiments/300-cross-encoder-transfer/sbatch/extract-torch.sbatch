@@ -14,6 +14,9 @@
 #   ENCODER=ast       sbatch sbatch/extract-torch.sbatch
 #   ENCODER=eat       sbatch sbatch/extract-torch.sbatch
 #   ENCODER=ssamba_hf sbatch sbatch/extract-torch.sbatch
+#
+# Optional POOLING override (token-pooling sensitivity variant), e.g.:
+#   ENCODER=ast VARIANT=frozen-cls POOLING=cls sbatch sbatch/extract-torch.sbatch
 
 set -euo pipefail
 mkdir -p logs
@@ -30,4 +33,5 @@ python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 2)" \
 birdclef-300 extract \
     --config configs/exp300.yaml \
     --encoder "$ENCODER" \
-    --variant "$VARIANT"
+    --variant "$VARIANT" \
+    ${POOLING:+--pooling "$POOLING"}

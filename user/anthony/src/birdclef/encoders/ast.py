@@ -25,10 +25,21 @@ class ASTEncoder(AudioEncoder):
         self,
         model_name: str = "MIT/ast-finetuned-audioset-10-10-0.4593",
         device: str = "cuda",
+        pooling: str = "mean_all",
     ):
         super().__init__()
         self.device = device
         self.model_name = model_name
+        # Token-pooling strategy for the window embedding. AST prepends two
+        # special tokens ([CLS] at 0, [DIST] at 1) before the patch grid.
+        #   mean_all   — mean over ALL tokens incl. CLS+DIST (legacy default;
+        #                kept for backward compat with existing callers)
+        #   mean_patch — mean over patch tokens only ([:, 2:]); the convention
+        #                for a fair cross-encoder probe (HEAR-style)
+        #   cls        — mean of the CLS+DIST special tokens ([:, :2])
+        if pooling not in ("mean_all", "mean_patch", "cls"):
+            raise ValueError(f"Unknown pooling {pooling!r}")
+        self.pooling = pooling
 
         from transformers import ASTModel, ASTFeatureExtractor
 
@@ -77,10 +88,16 @@ class ASTEncoder(AudioEncoder):
             # Extract features
             outputs = self.model(input_values)
 
-            # Get last hidden state and mean pool over sequence
-            # Shape: (1, seq_len, hidden_size) -> (1, hidden_size)
+            # Pool the token sequence to one vector per the configured strategy.
+            # Shape: (1, seq_len, hidden_size) -> (1, hidden_size).
+            # Layout: [CLS, DIST, patch_0 ... patch_n].
             hidden_states = outputs.last_hidden_state
-            pooled = hidden_states.mean(dim=1)
+            if self.pooling == "cls":
+                pooled = hidden_states[:, :2].mean(dim=1)
+            elif self.pooling == "mean_patch":
+                pooled = hidden_states[:, 2:].mean(dim=1)
+            else:  # mean_all
+                pooled = hidden_states.mean(dim=1)
             features_list.append(pooled)
 
         # Stack all features

@@ -49,7 +49,12 @@ def _build_ast(enc_cfg: dict, device: str, checkpoint: str | None):
 
     # AST is a frozen HF model; `checkpoint` (a fine-tuned dir) overrides model_name.
     model_name = checkpoint or enc_cfg.get("model_name", "MIT/ast-finetuned-audioset-10-10-0.4593")
-    return ASTEncoder(model_name=model_name, device=device)
+    # Default to mean_patch so every encoder sits on one pooling convention; the
+    # CLS sensitivity variant overrides via enc_cfg/--pooling.
+    return ASTEncoder(
+        model_name=model_name, device=device,
+        pooling=enc_cfg.get("pooling", "mean_patch"),
+    )
 
 
 def _build_eat(enc_cfg: dict, device: str, checkpoint: str | None):
@@ -60,6 +65,7 @@ def _build_eat(enc_cfg: dict, device: str, checkpoint: str | None):
         model_name=model_name,
         target_length=int(enc_cfg.get("target_length", 512)),
         device=device,
+        pooling=enc_cfg.get("pooling", "mean_patch"),
     )
 
 

@@ -27,12 +27,16 @@ encoders:
     model_name: MIT/ast-finetuned-audioset-10-10-0.4593
     device: cuda
     batch_size: 16
+    # mean over patch tokens only (exclude [CLS]+[DIST]) — one pooling
+    # convention across the roster. CLS sensitivity via `--pooling cls`.
+    pooling: mean_patch
   eat:
     backend: torch
     model_name: worstchan/EAT-base_epoch30_pretrain
     target_length: 512
     device: cuda
     batch_size: 16
+    pooling: mean_patch
   ssamba_hf:
     backend: torch
     checkpoint: ~/scratch/birdclef-2026/checkpoints/ssamba/ssamba_small_400.pth

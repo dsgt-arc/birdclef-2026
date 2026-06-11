@@ -36,6 +36,9 @@ def main(argv: list[str] | None = None) -> None:
     p_ext.add_argument("--state-dict", default=None,
                        help="DAPT-updated state_dict to load (exp 301 re-extraction)")
     p_ext.add_argument("--output", default=None, help="Override output parquet path")
+    p_ext.add_argument("--pooling", default=None,
+                       help="Override token pooling (mean_patch|cls|mean_all) for torch encoders; "
+                            "pair with a distinct --variant tag (e.g. frozen-cls)")
     p_ext.add_argument("--limit", type=int, default=None, help="Cap #windows (smoke test)")
 
     p_probe = sub.add_parser("probe", help="Run the ridge LOSO probe (Luigi)")
@@ -53,6 +56,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "extract":
         with open(args.config) as f:
             cfg = yaml.safe_load(f)
+        # --pooling overrides the encoder's token pooling (torch backends read
+        # enc_cfg["pooling"]); used for the CLS sensitivity variant.
+        if args.pooling:
+            cfg.setdefault("encoders", {}).setdefault(args.encoder, {})["pooling"] = args.pooling
         from birdclef_300.extract import extract_labeled
 
         sys.exit(extract_labeled(
