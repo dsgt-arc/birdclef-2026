@@ -1,0 +1,39 @@
+# EAT native DAPT (data2vec-2.0) — 10s native geometry, EPOCH-LADDER to 20.
+# EAT analog of dapt-ssamba-native-10s-ep20.yaml: trains at EAT's native 10s geometry
+# (target_length 1024 + 10s window, the confirmed +0.016 frame-max setting) and maps the
+# epoch curve {3,10,20} from ONE run via save_epochs snapshots (ep1 already evaluated).
+# `last.pt` (eat+teacher+decoder+opt+sched+gen+RNG) is written every epoch -> resubmitting
+# the same OUTDIR auto-resumes. `val_frac: 0.05` logs a held-out d2v loss each epoch
+# (train/val gap = overfitting detector). Eval/extract stay 5s/512 (backbone geometry-shared).
+#   birdclef-300 extract --encoder eat --variant dapt-native-10s-ep<N> \
+#       --state-dict <outdir>/epoch_<NN>/state_dict.pt
+encoder: eat
+variant: dapt-native-10s-ep20
+peft: none
+
+encoder_cfg:
+  model_name: worstchan/EAT-base_epoch30_pretrain
+  target_length: 1024   # 10s native geometry (vs 512 = 5s default)
+  device: cuda
+
+dapt:
+  mask_ratio: 0.8
+  top_k: 12
+  layer_norm_targets: true
+  ema_decay: 0.999
+  ema_end_decay: 0.9999
+
+data:
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+  window_samples: 160000   # 10s @ 16kHz — fills the 1024-frame buffer with real audio
+  val_frac: 0.05           # hold out 5% of files for a per-epoch held-out SSL loss
+
+training:
+  epochs: 20
+  save_epochs: [3, 10, 20]   # standalone snapshots for the epoch-curve probe points
+  batch_size: 6              # 1024 frames / 512 patches ~doubles activation memory vs 5s
+  lr: 1.0e-5
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  num_workers: 4
+  seed: 42

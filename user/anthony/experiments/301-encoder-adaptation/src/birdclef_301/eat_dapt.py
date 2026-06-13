@@ -277,9 +277,37 @@ def run_eat_dapt(cfg: dict, output_dir: str | Path, max_steps: int | None = None
         nb = max(1, nb)
         return {"val_loss": vl / nb, "val_target_var": vt / nb, "val_pred_var": vp / nb}
 
+    # Milestone epochs (1-indexed) -> standalone extractable snapshots under
+    # <outdir>/epoch_NN/state_dict.pt, so an N-epoch curve comes from one run.
+    save_epochs = {int(e) for e in train_cfg.get("save_epochs", [])}
+
+    # Auto-resume from <outdir>/last.pt — EAT needs the EMA teacher + decoder + mask
+    # generator persisted alongside the student/opt/sched (more state than ssamba_dapt).
     step = 0
     history = []
-    for epoch in range(epochs):
+    start_epoch = 0
+    resume_path = output_dir / "last.pt"
+    if resume_path.exists():
+        ck = torch.load(resume_path, map_location=device)
+        eat.load_state_dict(ck["eat"]); teacher.load_state_dict(ck["teacher"])
+        decoder.load_state_dict(ck["decoder"]); opt.load_state_dict(ck["opt"])
+        sched.load_state_dict(ck["sched"]); gen.set_state(ck["gen"])
+        start_epoch, step, history = ck["epoch"], ck["step"], ck["history"]
+        torch.set_rng_state(ck["torch_rng"])
+        if device == "cuda" and ck.get("cuda_rng") is not None:
+            torch.cuda.set_rng_state_all(ck["cuda_rng"])
+        logger.info("Resumed from %s at epoch %d (step %d)", resume_path, start_epoch, step)
+
+    def _save_resume(next_epoch):
+        torch.save({"epoch": next_epoch, "step": step, "history": history,
+                    "eat": eat.state_dict(), "teacher": teacher.state_dict(),
+                    "decoder": decoder.state_dict(), "opt": opt.state_dict(),
+                    "sched": sched.state_dict(), "gen": gen.get_state(),
+                    "torch_rng": torch.get_rng_state(),
+                    "cuda_rng": torch.cuda.get_rng_state_all() if device == "cuda" else None},
+                   resume_path)
+
+    for epoch in range(start_epoch, epochs):
         run_loss = run_tvar = run_pvar = 0.0
         for wav in tqdm(loader, desc=f"eat-dapt ep{epoch}", leave=False):
             mel = wrapper._waveform_to_mel(wav.squeeze(1)).to(device)   # (B, 1, 512, 128)
@@ -307,6 +335,14 @@ def run_eat_dapt(cfg: dict, output_dir: str | Path, max_steps: int | None = None
         logger.info("epoch %d: d2v_loss=%.5f target_var=%.3f pred_var=%.3f | val_loss=%.5f val_pred_var=%.3f",
                     epoch, run_loss / n, run_tvar / n, run_pvar / n,
                     val.get("val_loss", float("nan")), val.get("val_pred_var", float("nan")))
+        # Snapshot BEFORE last.pt: last.pt authorizes resume past this epoch, so the
+        # milestone (outer EATModel state_dict, matching the final save) must be durable first.
+        if (epoch + 1) in save_epochs and peft_mode != "lora":
+            snap = output_dir / f"epoch_{epoch + 1:02d}" / "state_dict.pt"
+            snap.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(wrapper.model.state_dict(), snap)
+            logger.info("Saved milestone snapshot -> %s", snap)
+        _save_resume(epoch + 1)
         if max_steps is not None and step >= max_steps:
             break
 

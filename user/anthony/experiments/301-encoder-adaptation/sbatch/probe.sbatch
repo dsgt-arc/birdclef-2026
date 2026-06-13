@@ -25,6 +25,17 @@ source sbatch/_setup-venv.sh
 
 EXP300_CONFIG=${EXP300_CONFIG:-../300-cross-encoder-transfer/configs/exp300.yaml}
 
+# AllProbes' combined target (probe_metrics_<variant>[_<readout>].json) is keyed by
+# variant ONLY, not encoder. When two encoders share a variant string (e.g. the ssamba
+# and eat 10s ladders both use dapt-native-10s-ep<N>), the first run's combined file makes
+# Luigi skip the second encoder. FORCE=1 deletes the combined target so the per-encoder
+# probes (probe_<enc>_*, proto_<enc>_* — kept independently) actually run for this encoder.
+if [ "${FORCE:-0}" != "0" ]; then
+    R="${READOUT:-ridge}"
+    if [ "$R" = "ridge" ]; then rm -f "artifacts/probe_metrics_${VARIANT}.json"
+    else rm -f "artifacts/probe_metrics_${VARIANT}_${R}.json"; fi
+fi
+
 birdclef-300 probe \
     --config "$EXP300_CONFIG" \
     --encoders "${ENCODERS:?set ENCODERS=beats,eat,ssamba_hf}" \
