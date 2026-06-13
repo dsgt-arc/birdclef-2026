@@ -1,0 +1,28 @@
+# Supervised-focal LoRA adaptation of EAT.
+# After training, re-extract with:
+#   birdclef-300 extract --encoder eat --variant lora-r8 --adapter <output-dir>/adapter
+encoder: eat
+variant: lora-r8
+
+encoder_cfg:
+  model_name: worstchan/EAT-base_epoch30_pretrain
+  target_length: 512
+  device: cuda
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+  target_modules: [qkv, proj]      # EAT attention (shared MODEL_CONFIGS["eat"])
+
+data:
+  train_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
+
+training:
+  epochs: 5
+  batch_size: 16
+  lr: 1.0e-4
+  focal_gamma: 2.0
+  max_grad_norm: 1.0
+  num_workers: 4

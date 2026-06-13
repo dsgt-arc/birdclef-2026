@@ -1,0 +1,37 @@
+# EAT native DAPT (data2vec-2.0) — GEOMETRY TEST: match native 10s pretraining geometry.
+# Controlled flip vs dapt-eat-native.yaml (5s/512): window widened to 10s (160000 samples)
+# AND target_length 512->1024, so EAT trains at the EXACT geometry it was pretrained on
+# (10s / 1024 mel frames / 512 patches) instead of the half-length 5s/512 default.
+# NOTE: unlike SSAMBA, EAT has NO silence-padding disease — a true-5s window already FILLS
+# the 512 buffer. So this is not a silence fix; it isolates train/pretrain length match.
+# P is derived from target_length in eat_dapt (P=512 here), so this is a pure config flip.
+# Eval/extract stay 5s/512 (backbone is geometry-shared; pos_embed interpolates at extract).
+#   birdclef-300 extract --encoder eat --variant dapt-native-10s-ep1 --state-dict <out>/state_dict.pt
+encoder: eat
+variant: dapt-native-10s-ep1
+peft: none
+
+encoder_cfg:
+  model_name: worstchan/EAT-base_epoch30_pretrain
+  target_length: 1024   # 10s native geometry (vs 512 = 5s default)
+  device: cuda
+
+dapt:
+  mask_ratio: 0.8
+  top_k: 12
+  layer_norm_targets: true
+  ema_decay: 0.999
+  ema_end_decay: 0.9999
+
+data:
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+  window_samples: 160000   # 10s @ 16kHz — fills the 1024-frame buffer with real audio
+
+training:
+  epochs: 1
+  batch_size: 6            # halved from 12: 1024 frames / 512 patches ~doubles activation memory
+  lr: 1.0e-5
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  num_workers: 4
+  seed: 42

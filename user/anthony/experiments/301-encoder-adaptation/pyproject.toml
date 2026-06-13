@@ -1,0 +1,37 @@
+[project]
+name = "exp301-encoder-adaptation"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.1",
+    "torchaudio>=2.1",
+    "transformers>=4.40",
+    "peft>=0.10",
+    "soundfile>=0.12",
+    "polars>=1.0",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "scipy>=1.12",
+    "tqdm",
+    "exp300-cross-encoder-transfer",
+]
+
+# Reuses exp 300's encoder registry (single source of truth for construction) and
+# its extract/probe CLIs (re-extraction is a shell-out, not a Python import). The
+# shared `birdclef` encoder library is on PYTHONPATH in sbatch (see _setup-venv.sh).
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.uv.sources]
+exp300-cross-encoder-transfer = { path = "../300-cross-encoder-transfer", editable = true }
+
+[project.scripts]
+birdclef-301 = "birdclef_301.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/birdclef_301"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

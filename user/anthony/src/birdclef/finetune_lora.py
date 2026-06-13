@@ -22,6 +22,13 @@ MODEL_CONFIGS = {
         "embed_dim": 768,
         "default_lr": 1e-4,
     },
+    "beats": {
+        # BEATs uses fairseq-style MultiheadAttention (q/k/v/out_proj). Checkpoint
+        # is passed explicitly (BEATsEncoder(checkpoint_path=...)); there is no HF id.
+        "target_modules": ["q_proj", "k_proj", "v_proj", "out_proj"],
+        "embed_dim": 768,
+        "default_lr": 1e-4,
+    },
     "wav2vec2": {
         "model_name": "facebook/wav2vec2-base-960h",
         "target_modules": ["q_proj", "k_proj", "v_proj", "out_proj"],

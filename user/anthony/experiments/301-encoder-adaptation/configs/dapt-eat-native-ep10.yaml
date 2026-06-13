@@ -1,0 +1,34 @@
+# EAT native DAPT (data2vec-2.0 masked self-distillation) — full fine-tune, SCALED to 10 epochs.
+# Same objective as dapt-eat-native.yaml; only `epochs` is bumped to firm up the small but
+# sign-consistent proto-readout Δ from the 1-epoch run (results.md). The dataset draws one
+# fresh random 5s window per 60s file per epoch (~8% temporal coverage), so 10 epochs ≈ full
+# per-file coverage. CosineAnnealingLR and the EMA-decay ramp both auto-extend over the longer
+# step count (T_max / schedule = epochs*len). After training:
+#   birdclef-300 extract --encoder eat --variant dapt-native-ep10 --state-dict <out>/state_dict.pt
+encoder: eat
+variant: dapt-native-ep10
+peft: none
+
+encoder_cfg:
+  model_name: worstchan/EAT-base_epoch30_pretrain
+  target_length: 512
+  device: cuda
+
+dapt:
+  mask_ratio: 0.8
+  top_k: 12
+  layer_norm_targets: true
+  ema_decay: 0.999
+  ema_end_decay: 0.9999
+
+data:
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+
+training:
+  epochs: 10
+  batch_size: 12
+  lr: 1.0e-5
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  num_workers: 4
+  seed: 42

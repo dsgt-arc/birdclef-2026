@@ -168,3 +168,21 @@ class SSAMBAHFEncoder(AudioEncoder):
         embeddings = self.model.get_embeddings(fbank)
 
         return embeddings
+
+    @torch.no_grad()
+    def extract_patch_features(self, waveform: torch.Tensor) -> torch.Tensor:
+        """Per-patch (un-pooled) features for prototypical probing.
+
+        Returns the patch token grid with the (middle) CLS token dropped, shape
+        (batch, num_patches, embed_dim). Used by exp 300's `--patch` cache for the
+        prototypical probe's frame-level (Strategy B) max-similarity readout.
+        """
+        waveform = waveform.squeeze(1)
+        fbank = self._waveform_to_fbank(waveform).to(self.device)
+        # Mirror forward(): (B, T, F) -> (B, 1, F, T) before forward_features.
+        x = fbank.unsqueeze(1).transpose(2, 3)
+        tokens = self.model.forward_features(x, return_all_tokens=True)  # (B, N+1, D)
+        cls_pos = getattr(self.model, "_cls_token_position", 0)
+        if cls_pos == 0:
+            return tokens[:, 1:, :]
+        return torch.cat([tokens[:, :cls_pos, :], tokens[:, cls_pos + 1:, :]], dim=1)
