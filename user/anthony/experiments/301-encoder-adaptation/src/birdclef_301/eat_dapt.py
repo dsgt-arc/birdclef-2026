@@ -225,10 +225,29 @@ def run_eat_dapt(cfg: dict, output_dir: str | Path, max_steps: int | None = None
 
     opt = torch.optim.AdamW(params, lr=float(train_cfg.get("lr", 1e-5)),
                             weight_decay=float(train_cfg.get("weight_decay", 0.01)))
-    ds = SoundscapeDataset(cfg["data"]["soundscape_dir"])
-    loader = DataLoader(ds, batch_size=int(train_cfg.get("batch_size", 12)), shuffle=True,
-                        drop_last=True, num_workers=int(train_cfg.get("num_workers", 4)))
-    logger.info("EAT native DAPT (peft=%s): %d soundscape files, %d patches", peft_mode, len(ds), P)
+    # `window_samples` (optional) overrides the 5 s default — e.g. 160000 feeds EAT 10 s
+    # of real audio. Paired with encoder_cfg.target_length=1024 this matches EAT's native
+    # 10 s pretraining geometry (vs the 5 s/512 default); the wrapper's _waveform_to_mel
+    # crops/pads to target_length and P is derived from it above, so this is a pure config flip.
+    ds_kwargs = {}
+    if "window_samples" in cfg["data"]:
+        ds_kwargs["window_samples"] = int(cfg["data"]["window_samples"])
+    # `val_frac` > 0 holds out that fraction of soundscape FILES to score the same d2v
+    # objective each epoch (held-out SSL loss) — the train/val gap is the overfitting signal.
+    val_frac = float(cfg["data"].get("val_frac", 0.0))
+    bs = int(train_cfg.get("batch_size", 12))
+    nw = int(train_cfg.get("num_workers", 4))
+    ds = SoundscapeDataset(cfg["data"]["soundscape_dir"],
+                           split=("train" if val_frac > 0 else "all"), val_frac=val_frac, **ds_kwargs)
+    loader = DataLoader(ds, batch_size=bs, shuffle=True, drop_last=True, num_workers=nw)
+    val_loader = None
+    if val_frac > 0:
+        val_ds = SoundscapeDataset(cfg["data"]["soundscape_dir"], split="val", val_frac=val_frac, **ds_kwargs)
+        val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, drop_last=False, num_workers=nw)
+        logger.info("EAT native DAPT (peft=%s): %d train / %d val files, %d patches",
+                    peft_mode, len(ds), len(val_ds), P)
+    else:
+        logger.info("EAT native DAPT (peft=%s): %d soundscape files, %d patches", peft_mode, len(ds), P)
     epochs = int(train_cfg.get("epochs", 1))
     total = epochs * len(loader)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=total)
@@ -238,6 +257,25 @@ def run_eat_dapt(cfg: dict, output_dir: str | Path, max_steps: int | None = None
     m0 = float(dapt_cfg.get("ema_decay", 0.999))
     m1 = float(dapt_cfg.get("ema_end_decay", 0.9999))
     gen = torch.Generator(device=device).manual_seed(int(train_cfg.get("seed", 42)))
+
+    def _val_pass():
+        """Score the identical d2v objective on held-out files (no grad). A fresh
+        fixed-seed mask generator keeps val comparable epoch-to-epoch and isolated
+        from the train mask stream (`gen`)."""
+        if val_loader is None:
+            return {}
+        vgen = torch.Generator(device=device).manual_seed(int(train_cfg.get("seed", 42)))
+        eat.eval()
+        vl = vt = vp = 0.0; nb = 0
+        with torch.no_grad():
+            for wav in val_loader:
+                mel = wrapper._waveform_to_mel(wav.squeeze(1)).to(device)
+                keep_idx, mask_idx = make_random_masks(mel.shape[0], P, mask_ratio, device, vgen)
+                out = eat_d2v_loss(eat, teacher, decoder, mel, keep_idx, mask_idx, top_k, ln_tgt)
+                vl += out["loss"].item(); vt += out["target_var"].item(); vp += out["pred_var"].item(); nb += 1
+        eat.train()
+        nb = max(1, nb)
+        return {"val_loss": vl / nb, "val_target_var": vt / nb, "val_pred_var": vp / nb}
 
     step = 0
     history = []
@@ -263,10 +301,12 @@ def run_eat_dapt(cfg: dict, output_dir: str | Path, max_steps: int | None = None
             if max_steps is not None and step >= max_steps:
                 break
         n = max(1, min(len(loader), step))
+        val = _val_pass()
         history.append({"epoch": epoch, "loss": run_loss / n,
-                        "target_var": run_tvar / n, "pred_var": run_pvar / n})
-        logger.info("epoch %d: d2v_loss=%.5f target_var=%.3f pred_var=%.3f",
-                    epoch, run_loss / n, run_tvar / n, run_pvar / n)
+                        "target_var": run_tvar / n, "pred_var": run_pvar / n, **val})
+        logger.info("epoch %d: d2v_loss=%.5f target_var=%.3f pred_var=%.3f | val_loss=%.5f val_pred_var=%.3f",
+                    epoch, run_loss / n, run_tvar / n, run_pvar / n,
+                    val.get("val_loss", float("nan")), val.get("val_pred_var", float("nan")))
         if max_steps is not None and step >= max_steps:
             break
 

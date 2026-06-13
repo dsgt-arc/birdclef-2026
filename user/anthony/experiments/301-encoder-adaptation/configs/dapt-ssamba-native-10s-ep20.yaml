@@ -1,0 +1,49 @@
+# SSAMBA native DAPT (MPG/MPC) — 10s geometry, EPOCH-LADDER to 20.
+# Extends dapt-ssamba-native-10s.yaml (10s real audio fills the native 1024-frame buffer,
+# the confirmed geometry fix) to 20 epochs to map the clean-objective epoch curve. The 5s
+# ladder went +0.017(ep1)->+0.003(ep10) because it overfit a silence-diluted objective; this
+# asks whether the CLEAN 10s objective keeps climbing past ep1's +0.027 or also erodes.
+#
+# `save_epochs` drops standalone extractable backbone snapshots at <outdir>/epoch_NN/state_dict.pt
+# so the {3,10,20} points come from ONE run; ep1 is already evaluated (dapt-native-10s-ep1).
+# `last.pt` is written every epoch with full opt/sched/RNG state — resubmitting this same job
+# (same OUTDIR) auto-resumes from the last completed epoch if it is preempted or times out.
+# Eval/extract stay 5s (backbone is geometry-shared; the 1024 buffer is identical train/eval).
+#   birdclef-300 extract --encoder ssamba_hf --variant dapt-native-10s-ep<N> \
+#       --state-dict <outdir>/epoch_<NN>/state_dict.pt
+encoder: ssamba_hf
+variant: dapt-native-10s-ep20
+peft: none
+
+encoder_cfg:
+  checkpoint: ~/scratch/birdclef-2026/checkpoints/ssamba/ssamba_small_400.pth
+  model_size: small
+  input_tdim: 512
+  device: cuda
+
+dapt:
+  mask_ratio: 0.4
+  mask_mode: span
+  mask_span_min: 5
+  mask_span_max: 15
+  normalize_targets: true
+  decoder_depth: 2
+  mse_weight: 10.0
+  nce_weight: 1.0
+  nce_temperature: 0.1
+  nce_num_negatives: 100
+
+data:
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+  window_samples: 160000   # 10s @ 16kHz — fills SSAMBA's native 1024-frame buffer
+  val_frac: 0.05           # hold out 5% of files for a per-epoch held-out SSL loss (train/val gap)
+
+training:
+  epochs: 20
+  save_epochs: [3, 10, 20]   # standalone snapshots for the epoch-curve probe points
+  batch_size: 16
+  lr: 1.0e-5
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  num_workers: 4
+  seed: 42

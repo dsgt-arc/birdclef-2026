@@ -233,19 +233,97 @@ def run_ssamba_dapt(cfg: dict, output_dir: str | Path, max_steps: int | None = N
 
     opt = torch.optim.AdamW(params, lr=float(train_cfg.get("lr", 1e-5)),
                             weight_decay=float(train_cfg.get("weight_decay", 0.01)))
-    ds = SoundscapeDataset(cfg["data"]["soundscape_dir"])
-    loader = DataLoader(ds, batch_size=int(train_cfg.get("batch_size", 16)), shuffle=True,
-                        drop_last=True, num_workers=int(train_cfg.get("num_workers", 4)))
-    logger.info("SSAMBA native DAPT (peft=%s): %d soundscape files", peft_mode, len(ds))
+    # `window_samples` (optional) overrides the 5 s default — e.g. 160000 feeds SSAMBA
+    # 10 s of real audio to FILL its native 1024-frame buffer instead of zero-padding the
+    # back half (which would make the masked MPG/MPC objective reconstruct silence).
+    ds_kwargs = {}
+    if "window_samples" in cfg["data"]:
+        ds_kwargs["window_samples"] = int(cfg["data"]["window_samples"])
+    # `val_frac` > 0 holds out that fraction of soundscape FILES to score the same masked
+    # objective each epoch (held-out SSL loss) — the train/val gap is the overfitting signal.
+    val_frac = float(cfg["data"].get("val_frac", 0.0))
+    bs = int(train_cfg.get("batch_size", 16))
+    nw = int(train_cfg.get("num_workers", 4))
+    ds = SoundscapeDataset(cfg["data"]["soundscape_dir"],
+                           split=("train" if val_frac > 0 else "all"), val_frac=val_frac, **ds_kwargs)
+    loader = DataLoader(ds, batch_size=bs, shuffle=True, drop_last=True, num_workers=nw)
+    val_loader = None
+    if val_frac > 0:
+        val_ds = SoundscapeDataset(cfg["data"]["soundscape_dir"], split="val", val_frac=val_frac, **ds_kwargs)
+        val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, drop_last=False, num_workers=nw)
+        logger.info("SSAMBA native DAPT (peft=%s): %d train / %d val soundscape files",
+                    peft_mode, len(ds), len(val_ds))
+    else:
+        logger.info("SSAMBA native DAPT (peft=%s): %d soundscape files", peft_mode, len(ds))
     epochs = int(train_cfg.get("epochs", 1))
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs * len(loader))
     mse_w = float(dapt_cfg.get("mse_weight", 10.0))
     nce_w = float(dapt_cfg.get("nce_weight", 1.0))
     random.seed(int(train_cfg.get("seed", 42)))
 
+    # Milestone epochs (1-indexed) at which to drop a standalone, extractable backbone
+    # snapshot under <outdir>/epoch_NN/state_dict.pt — lets us probe the frozen->adapted
+    # curve at several points from ONE long run (e.g. save_epochs: [3, 10, 20]).
+    save_epochs = {int(e) for e in train_cfg.get("save_epochs", [])}
+
+    # Auto-resume: <outdir>/last.pt holds full optimizer/scheduler/RNG state so a preempted
+    # or time-limited run continues from the last completed epoch instead of restarting.
     step = 0
     history = []
-    for epoch in range(epochs):
+    start_epoch = 0
+    resume_path = output_dir / "last.pt"
+    if resume_path.exists():
+        ck = torch.load(resume_path, map_location=device)
+        backbone.load_state_dict(ck["backbone"])
+        heads.load_state_dict(ck["heads"])
+        opt.load_state_dict(ck["opt"])
+        sched.load_state_dict(ck["sched"])
+        start_epoch, step, history = ck["epoch"], ck["step"], ck["history"]
+        random.setstate(ck["py_rng"])
+        torch.set_rng_state(ck["torch_rng"])
+        if device == "cuda" and ck.get("cuda_rng") is not None:
+            torch.cuda.set_rng_state_all(ck["cuda_rng"])
+        logger.info("Resumed from %s at epoch %d (step %d)", resume_path, start_epoch, step)
+
+    def _val_pass():
+        """Score the identical masked MPG/MPC objective on the held-out files (no grad).
+        Both the python `random` (span masks) and torch (NCE `torch.randperm` negative
+        sampling, line ~182) RNG streams are seeded to a fixed value and restored, so the
+        val loss is reproducible epoch-to-epoch AND the pass doesn't perturb the train
+        RNG streams (masks + negative sampling)."""
+        if val_loader is None:
+            return {}
+        seed = int(train_cfg.get("seed", 42))
+        py_state = random.getstate()
+        torch_state = torch.get_rng_state()
+        cuda_state = torch.cuda.get_rng_state_all() if device == "cuda" else None
+        random.seed(seed); torch.manual_seed(seed)
+        backbone.eval(); heads.eval()
+        vm = vn = va = 0.0; nb = 0
+        with torch.no_grad():
+            for wav in val_loader:
+                x = wav.squeeze(1).to(device)
+                mel = wrapper._waveform_to_fbank(x).unsqueeze(1).transpose(2, 3)
+                out = ssamba_masked_forward(backbone, heads, unfold, mel, dapt_cfg)
+                vm += out["loss_mpg"].item(); vn += out["loss_nce"].item()
+                va += out["nce_accuracy"].item(); nb += 1
+        backbone.train(); heads.train()
+        random.setstate(py_state)
+        torch.set_rng_state(torch_state)
+        if cuda_state is not None:
+            torch.cuda.set_rng_state_all(cuda_state)
+        nb = max(1, nb)
+        return {"val_loss_mpg": vm / nb, "val_loss_nce": vn / nb, "val_nce_accuracy": va / nb}
+
+    def _save_resume(next_epoch):
+        torch.save({"epoch": next_epoch, "step": step, "history": history,
+                    "backbone": backbone.state_dict(), "heads": heads.state_dict(),
+                    "opt": opt.state_dict(), "sched": sched.state_dict(),
+                    "py_rng": random.getstate(), "torch_rng": torch.get_rng_state(),
+                    "cuda_rng": torch.cuda.get_rng_state_all() if device == "cuda" else None},
+                   resume_path)
+
+    for epoch in range(start_epoch, epochs):
         run_mpg = run_nce = run_acc = 0.0
         for wav in tqdm(loader, desc=f"ssamba-dapt ep{epoch}", leave=False):
             x = wav.squeeze(1).to(device)
@@ -265,10 +343,21 @@ def run_ssamba_dapt(cfg: dict, output_dir: str | Path, max_steps: int | None = N
             if max_steps is not None and step >= max_steps:
                 break
         n = max(1, min(len(loader), step))
+        val = _val_pass()
         history.append({"epoch": epoch, "loss_mpg": run_mpg / n,
-                        "loss_nce": run_nce / n, "nce_accuracy": run_acc / n})
-        logger.info("epoch %d: mpg=%.4f nce=%.4f nce_acc=%.3f",
-                    epoch, run_mpg / n, run_nce / n, run_acc / n)
+                        "loss_nce": run_nce / n, "nce_accuracy": run_acc / n, **val})
+        logger.info("epoch %d: mpg=%.4f nce=%.4f nce_acc=%.3f | val_mpg=%.4f val_nce=%.4f val_acc=%.3f",
+                    epoch, run_mpg / n, run_nce / n, run_acc / n,
+                    val.get("val_loss_mpg", float("nan")), val.get("val_loss_nce", float("nan")),
+                    val.get("val_nce_accuracy", float("nan")))
+        # Snapshot BEFORE last.pt: last.pt authorizes resume past this epoch, so the
+        # milestone must be durable first or a crash in between loses it permanently.
+        if (epoch + 1) in save_epochs and peft_mode != "lora":
+            snap = output_dir / f"epoch_{epoch + 1:02d}" / "state_dict.pt"
+            snap.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(backbone.state_dict(), snap)
+            logger.info("Saved milestone snapshot -> %s", snap)
+        _save_resume(epoch + 1)
         if max_steps is not None and step >= max_steps:
             break
 

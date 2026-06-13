@@ -1,0 +1,44 @@
+# SSAMBA native DAPT (MPG/MPC) — GEOMETRY TEST: feed 10s real audio, 1 epoch.
+# Controlled one-variable flip vs dapt-ssamba-native.yaml (5s/ep1): the SoundscapeDataset
+# window is widened to 10s (160000 samples @ 16kHz) so it FILLS SSAMBA's native 1024-frame
+# buffer with real audio, instead of 5s + ~half zero-padding. The padding made ~half the
+# masked MPG/MPC reconstruction targets silence (trivially predicted), diluting the objective;
+# the ep10 scaling run eroded the proto frame-max gain (+0.017→+0.003), consistent with
+# overfitting that degraded objective. Same step count as 5s/ep1 (one window/file/epoch), so
+# frame-max Δ here vs the 5s/ep1 +0.017 isolates geometry. Eval/extract stay 5s (backbone is
+# geometry-shared; the 1024 buffer is identical at train and eval). After training:
+#   birdclef-300 extract --encoder ssamba_hf --variant dapt-native-10s-ep1 --state-dict <out>/state_dict.pt
+encoder: ssamba_hf
+variant: dapt-native-10s-ep1
+peft: none
+
+encoder_cfg:
+  checkpoint: ~/scratch/birdclef-2026/checkpoints/ssamba/ssamba_small_400.pth
+  model_size: small
+  input_tdim: 512
+  device: cuda
+
+dapt:
+  mask_ratio: 0.4
+  mask_mode: span
+  mask_span_min: 5
+  mask_span_max: 15
+  normalize_targets: true
+  decoder_depth: 2
+  mse_weight: 10.0
+  nce_weight: 1.0
+  nce_temperature: 0.1
+  nce_num_negatives: 100
+
+data:
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+  window_samples: 160000   # 10s @ 16kHz — fills SSAMBA's native 1024-frame buffer
+
+training:
+  epochs: 1
+  batch_size: 16
+  lr: 1.0e-5
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  num_workers: 4
+  seed: 42

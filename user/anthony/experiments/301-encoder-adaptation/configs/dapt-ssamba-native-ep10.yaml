@@ -1,0 +1,40 @@
+# SSAMBA native DAPT (masked-spectrogram MPG/MPC) — full fine-tune, SCALED to 10 epochs.
+# Same objective/geometry as dapt-ssamba-native.yaml; only `epochs` is bumped to firm up
+# the small but sign-consistent proto-readout Δ from the 1-epoch run (results.md). The
+# dataset draws one fresh random 5s window per 60s file per epoch (~8% temporal coverage),
+# so 10 epochs ≈ full per-file coverage. CosineAnnealingLR auto-extends (T_max=epochs*len).
+# After training:
+#   birdclef-300 extract --encoder ssamba_hf --variant dapt-native-ep10 --state-dict <out>/state_dict.pt
+encoder: ssamba_hf
+variant: dapt-native-ep10
+peft: none
+
+encoder_cfg:
+  checkpoint: ~/scratch/birdclef-2026/checkpoints/ssamba/ssamba_small_400.pth
+  model_size: small
+  input_tdim: 512
+  device: cuda
+
+dapt:
+  mask_ratio: 0.4
+  mask_mode: span
+  mask_span_min: 5
+  mask_span_max: 15
+  normalize_targets: true
+  decoder_depth: 2
+  mse_weight: 10.0
+  nce_weight: 1.0
+  nce_temperature: 0.1
+  nce_num_negatives: 100
+
+data:
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+
+training:
+  epochs: 10
+  batch_size: 16
+  lr: 1.0e-5
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  num_workers: 4
+  seed: 42

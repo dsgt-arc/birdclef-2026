@@ -79,19 +79,44 @@ class FocalDataset(Dataset):
 
 
 class SoundscapeDataset(Dataset):
-    """Unlabeled soundscape windows (the 176.5 h Pantanal pool) for DAPT."""
+    """Unlabeled soundscape windows (the 176.5 h Pantanal pool) for DAPT.
+
+    `split` carves a deterministic held-out fraction by FILE (disjoint train/val,
+    so no soundscape leaks across the split), for measuring a held-out SSL objective
+    each epoch — the train/val gap is the overfitting detector for the epoch ladder:
+        train = SoundscapeDataset(dir, split="train", val_frac=0.05)
+        val   = SoundscapeDataset(dir, split="val",   val_frac=0.05)
+    `val` is `deterministic` by default: each file's crop is fixed across epochs
+    (seeded by index) so the val loss reflects model drift, not crop/mask noise.
+    """
 
     def __init__(self, soundscape_dir: str, window_samples: int = ENCODER_WINDOW_SAMPLES,
-                 pattern: str = "*.ogg", seed: int = 42):
-        self.files = sorted(str(p) for p in Path(soundscape_dir).glob(pattern))
-        if not self.files:
+                 pattern: str = "*.ogg", seed: int = 42, split: str = "all",
+                 val_frac: float = 0.0, split_seed: int = 1234,
+                 deterministic: bool | None = None):
+        files = sorted(str(p) for p in Path(soundscape_dir).glob(pattern))
+        if not files:
             raise FileNotFoundError(f"No audio matching {pattern} under {soundscape_dir}")
+        if split != "all" and val_frac > 0:
+            perm = np.random.RandomState(split_seed).permutation(len(files))
+            n_val = max(1, int(round(len(files) * val_frac)))
+            val_idx = set(perm[:n_val].tolist())
+            keep = (lambda i: i in val_idx) if split == "val" else (lambda i: i not in val_idx)
+            files = [f for i, f in enumerate(files) if keep(i)]
+            if not files:
+                raise ValueError(f"{split!r} split is empty (val_frac={val_frac}); "
+                                 "a drop_last train loader would silently yield no batches")
+        self.files = files
         self.window_samples = window_samples
         self._rng = np.random.RandomState(seed)
+        # val defaults to fixed crops; train to fresh random crops per epoch.
+        self.deterministic = (split == "val") if deterministic is None else deterministic
+        self._det_base = split_seed
 
     def __len__(self) -> int:
         return len(self.files)
 
     def __getitem__(self, idx: int):
-        wav = _random_window(self.files[idx], self.window_samples, self._rng)
+        rng = np.random.RandomState(self._det_base + idx) if self.deterministic else self._rng
+        wav = _random_window(self.files[idx], self.window_samples, rng)
         return torch.from_numpy(wav).unsqueeze(0)
