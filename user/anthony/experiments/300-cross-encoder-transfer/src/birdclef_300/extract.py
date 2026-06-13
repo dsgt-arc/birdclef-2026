@@ -22,7 +22,7 @@ import polars as pl
 import yaml
 
 from birdclef_300 import audio as audio_mod
-from birdclef_300.data_loading import labeled_parquet_path
+from birdclef_300.data_loading import labeled_parquet_path, patches_parquet_path
 
 logger = logging.getLogger("birdclef_300.extract")
 
@@ -99,6 +99,40 @@ def _write_unified_parquet(
     )
 
 
+def _write_patch_parquet(
+    output_path: str | Path,
+    meta_rows: list[dict],
+    patch_list: list[np.ndarray],
+    encoder: str,
+    variant: str,
+) -> None:
+    """Write metadata + per-window patch grids (List(List(Float32))) to a parquet.
+
+    Each row's `patch_embedding` is (num_patches, embed_dim). Used by the
+    prototypical probe's frame-level (Strategy B) max-similarity readout.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not meta_rows:
+        logger.warning("No patch rows to write for %s/%s", encoder, variant)
+        return
+    embed_dim = int(patch_list[0].shape[1])
+    n_patches = int(patch_list[0].shape[0])
+    meta_df = pl.DataFrame([
+        {**m, "source": "soundscape-labeled", "encoder": encoder,
+         "variant": variant, "embed_dim": embed_dim}
+        for m in meta_rows
+    ])
+    vec_df = pl.DataFrame(
+        {"patch_embedding": [p.astype(np.float32).tolist() for p in patch_list]}
+    ).cast({"patch_embedding": pl.List(pl.List(pl.Float32))})
+    df = pl.concat([meta_df, vec_df], how="horizontal")
+    df.write_parquet(output_path)
+    logger.info("Written %s (%d rows, %d patches x %d dim, %.1f MB)",
+                output_path, len(meta_rows), n_patches, embed_dim,
+                output_path.stat().st_size / 1e6)
+
+
 def _apply_overlay(model, adapter: str | None, state_dict: str | None, device: str) -> None:
     """Apply a 301 adaptation overlay onto the encoder's inner `.model` in place.
 
@@ -128,8 +162,15 @@ def extract_torch_labeled(
     state_dict: str | None = None,
     output_path: str | Path | None = None,
     limit: int | None = None,
+    patch: bool = False,
 ) -> int:
-    """Run a torch-backend encoder over the labeled windows -> unified parquet."""
+    """Run a torch-backend encoder over the labeled windows -> unified parquet.
+
+    `patch=True` caches the per-window patch grid (`patches.parquet`) instead of the
+    pooled vector, for the prototypical probe's frame-level readout. The pooled
+    `data.parquet` is left untouched (run the two extractions separately) so the
+    frozen ranking exp 300 reports is never perturbed.
+    """
     import torch
 
     from birdclef_300.registry import build_torch_encoder
@@ -141,11 +182,16 @@ def extract_torch_labeled(
         device = "cpu"
     batch_size = int(enc_cfg.get("batch_size", 16))
     sdir = Path(cfg["data"]["soundscape_dir"])
-    output_path = output_path or labeled_parquet_path(cfg["output"]["base_dir"], encoder, variant)
+    if output_path is None:
+        path_fn = patches_parquet_path if patch else labeled_parquet_path
+        output_path = path_fn(cfg["output"]["base_dir"], encoder, variant)
 
-    logger.info("Building encoder %s (variant=%s, device=%s)", encoder, variant, device)
+    logger.info("Building encoder %s (variant=%s, device=%s, patch=%s)",
+                encoder, variant, device, patch)
     model = build_torch_encoder(encoder, enc_cfg, device, checkpoint)
     _apply_overlay(model, adapter, state_dict, device)
+    if patch and not hasattr(model, "extract_patch_features"):
+        raise ValueError(f"encoder '{encoder}' has no extract_patch_features (patch mode)")
 
     rows = labeled_window_rows(cfg, limit=limit)
     logger.info("Extracting %d labeled windows with %s", len(rows), encoder)
@@ -162,7 +208,10 @@ def extract_torch_labeled(
             return
         batch = np.stack(buf_wavs).astype(np.float32)            # (B, N)
         wav = torch.from_numpy(batch).unsqueeze(1)               # (B, 1, N)
-        feats = model.extract_features(wav).detach().cpu().numpy()
+        if patch:
+            feats = model.extract_patch_features(wav).detach().cpu().numpy()  # (B, P, D)
+        else:
+            feats = model.extract_features(wav).detach().cpu().numpy()        # (B, D)
         for k, meta in enumerate(buf_meta):
             meta_rows.append(meta)
             emb_list.append(feats[k].astype(np.float32))
@@ -196,7 +245,10 @@ def extract_torch_labeled(
 
     logger.info("%s: %d windows in %.1fs (skipped %d)",
                 encoder, len(meta_rows), time.time() - t0, n_skipped)
-    _write_unified_parquet(output_path, meta_rows, emb_list, encoder, variant)
+    if patch:
+        _write_patch_parquet(output_path, meta_rows, emb_list, encoder, variant)
+    else:
+        _write_unified_parquet(output_path, meta_rows, emb_list, encoder, variant)
     return 0
 
 
@@ -232,6 +284,7 @@ def extract_labeled(
     state_dict: str | None = None,
     output_path: str | Path | None = None,
     limit: int | None = None,
+    patch: bool = False,
 ) -> int:
     """Dispatch extraction by the encoder's backend (see registry)."""
     from birdclef_300.registry import BIRDNET_BMZ, PERCH_CACHE, TORCH, get_spec
@@ -239,8 +292,10 @@ def extract_labeled(
     backend = get_spec(encoder).backend
     if backend == TORCH:
         return extract_torch_labeled(
-            cfg, encoder, variant, checkpoint, adapter, state_dict, output_path, limit
+            cfg, encoder, variant, checkpoint, adapter, state_dict, output_path, limit, patch
         )
+    if patch:
+        raise ValueError(f"patch mode is torch-only; '{encoder}' is backend '{backend}'")
     if backend == PERCH_CACHE:
         return ingest_perch_labeled(cfg, variant, output_path, limit)
     if backend == BIRDNET_BMZ:

@@ -2,11 +2,20 @@
 
 ## What this experiment does
 
-Adapts BEATs/EAT/SSAMBA-HF to the bird/soundscape domain and reports the
-frozen→adapted Δ on exp 300's ridge LOSO probe. Two tracks: supervised-focal LoRA
-(all three) and soundscape DAPT (EAT + SSAMBA-HF; BEATs LoRA-only). Feeds §7 of the
-working note. It is a thin spoke — it never reimplements extraction or probing, it
-shells out to `birdclef-300`.
+Adapts EAT/SSAMBA-HF to the bird/soundscape domain via **each encoder's native SSL
+objective** (continued pretraining / DAPT on the unlabeled soundscape pool) and reports
+the frozen→adapted Δ under both exp 300's ridge probe and an MAE-appropriate
+**prototypical** readout. Feeds §7 of the working note. It is a thin spoke — it never
+reimplements extraction or probing, it shells out to `birdclef-300`.
+
+- **SSAMBA**: native masked-spectrogram MPG (MSE) + MPC (NCE), logic reused from exp 103,
+  continued from `ssamba_small_400.pth` at the wrapper's exact eval geometry.
+- **EAT**: native data2vec-2.0 self-distillation, a from-scratch PyTorch port (no fairseq)
+  over the HF EAT ViT — gated by `tests/test_eat_dapt.py` (numerical stability +
+  directional learning) before any full run.
+- The shelved generic pooled latent-bootstrap (`dapt.py`) is kept only as the
+  "homemade objective" baseline (it was degenerate; see `results.md`).
+- **Supervised-focal LoRA** (all three encoders) is the other track, deferred.
 
 ## Hub/spoke contract
 
@@ -27,9 +36,15 @@ state_dict) is encoder-agnostic.
 ```bash
 cd user/anthony/experiments/301-encoder-adaptation
 
+# 0. Smoke gate (cheap, ~5-10 min; builds the venv once, validates the never-run
+#    paths before committing full jobs). Fault-tolerant: all encoders run even if
+#    one fails, so a bad target_modules / dep is obvious in one job.
+sbatch sbatch/smoke.sbatch        # 3x LoRA --max-steps 2 (venv + target_modules + grad fwd)
+sbatch sbatch/smoke-dapt.sbatch   # 2x DAPT --max-steps 2 (SoundscapeDataset + EMA + state_dict)
+
 # 1. Adapt (GPU)
-CONFIG=configs/lora-eat.yaml    sbatch sbatch/lora.sbatch     # also lora-beats, lora-ssamba
-CONFIG=configs/dapt-eat.yaml    sbatch sbatch/dapt.sbatch     # also dapt-ssamba
+CONFIG=configs/dapt-eat.yaml    sbatch sbatch/dapt.sbatch     # also dapt-ssamba (this push)
+CONFIG=configs/lora-eat.yaml    sbatch sbatch/lora.sbatch     # also lora-beats, lora-ssamba (deferred)
 
 # 2. Re-extract adapted embeddings into the shared exp 300 cache (GPU)
 ENCODER=eat VARIANT=lora-r8 ADAPTER=artifacts/checkpoints/lora-eat/adapter \
@@ -52,8 +67,14 @@ Venv: `~/scratch/birdclef-2026/.venv-301` (CUDA torch + mamba-ssm + transformers
 | `losses.py` | multi-label BCE-focal + latent-bootstrap cosine |
 | `encoder_forward.py` | grad-enabled pooled forward (wrappers' `extract_features` is no-grad) |
 | `lora_adapt.py` | build wrapper + LoRA + head, train, save adapter |
-| `dapt.py` | data2vec/BYOL latent DAPT (EMA teacher), save state_dict |
+| `ssamba_dapt.py` | **native** masked-spectrogram MPG/MPC DAPT (reuses exp 103 logic) |
+| `eat_dapt.py` | **native** data2vec-2.0 port (EMA teacher + decoder), `peft:{none\|lora}` |
+| `dapt.py` | generic pooled latent-bootstrap — SHELVED baseline (degenerate) |
 | `ks_shift.py` | per-dim KS between two embedding caches (ported from exp 106) |
+| `tests/test_eat_dapt.py` | EAT-port validation gate (run via `sbatch/validate-eat.sbatch`) |
+
+Eval-side additions live in exp 300: `probe/proto_probe.py` (prototypical LOSO),
+`extract --patch` (per-patch cache), `extract_patch_features` on the EAT/SSAMBA wrappers.
 
 ## Smoke tests (no cluster)
 
@@ -73,4 +94,23 @@ birdclef-301 ksshift --frozen X.parquet --adapted X.parquet --output /tmp/ks.jso
 
 ## Status
 
-Scaffolded; not yet run. See `proposal.md` and `results.md`.
+**Complete — native-objective DAPT, first run (2026-06-11).** Full results in
+`results.md`. Headline: native full-DAPT on soundscapes **hurts the linear ridge probe
+(−0.012/−0.013) but helps under the MAE-appropriate prototypical frame-max readout
+(+0.010 EAT, +0.017 SSAMBA)** — the same checkpoints, opposite signs → the ridge
+yardstick under-reads native domain SSL (on-our-data confirmation of Bird-MAE).
+
+- **Both validation gates GREEN** before full runs: EAT port 10/10 (FFN-target
+  hand-recompute, non-degeneracy, state_dict round-trip, LoRA merge, overfit), SSAMBA 6/6
+  (pos_embed geometry, grad-through-Mamba, round-trip, overfit).
+- **LoRA arms are a cautionary finding:** EAT-LoRA moved the representation by *exactly
+  zero* (KS 0.0) — the discarded data2vec decoder absorbed the objective; SSAMBA-LoRA
+  moved a lot but unhelpfully. Useful adaptation lives in the backbone (full DAPT).
+- **EAT save bug fixed:** must save the outer `EATModel` state_dict (`model.`-prefixed)
+  for `_apply_overlay`'s strict load — see `results.md`.
+- **Venv:** `_setup-venv.sh` mirrors exp 300's closure (pandas, timm, `transformers<5`,
+  pinned torch trio, `mamba-ssm --no-build-isolation`); validate sbatch add `pytest`.
+- **Scale:** 1 epoch, ~666 (SSAMBA) / 888 (EAT) steps, ~5 min/encoder. More epochs /
+  windows-per-file is the cheap next knob (deltas are small but sign-consistent).
+
+See `proposal.md` for hypothesis/rationale and `results.md` for the full Δ + KS tables.

@@ -23,11 +23,23 @@ if [ ! -f "$VENV_MARKER" ]; then
     uv venv "$VENV_DIR" --python 3.11
     source "$VENV_DIR/bin/activate"
 
-    uv pip install setuptools torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+    # Mirror exp 300's proven stack (this venv builds the same encoders via exp
+    # 300's registry, so it needs the same dependency closure). Pin the matched
+    # torch/torchaudio/torchvision trio — bare `timm` otherwise pulls a newer
+    # torchvision that bumps torch (2.11->2.12) and de-syncs torchaudio.
+    uv pip install setuptools "torch==2.11.0" "torchaudio==2.11.0" "torchvision==0.26.0" \
+        --index-url https://download.pytorch.org/whl/cu126
     uv pip install triton
-    uv pip install mamba-ssm causal-conv1d          # SSAMBA GPU kernels
-    uv pip install transformers peft                # EAT / BEATs
-    uv pip install polars scipy soundfile pyyaml numpy tqdm scikit-learn luigi
+    # mamba-ssm/causal-conv1d build from source and import torch at build time;
+    # uv's build isolation hides the torch above, so disable it and pre-seed the
+    # build deps their setup.py imports.
+    uv pip install ninja packaging setuptools wheel
+    uv pip install mamba-ssm causal-conv1d --no-build-isolation   # SSAMBA GPU kernels
+    # transformers<5: EAT's HF remote-code model targets the 4.x PreTrainedModel API.
+    # timm: required by EAT's remote code. pandas: shared birdclef.__init__ eagerly
+    # imports ESC50Dataset (pandas) whenever any encoder is imported.
+    uv pip install "transformers<5" peft timm pandas
+    uv pip install polars luigi scikit-learn scipy soundfile pyyaml numpy tqdm
 
     touch "$VENV_MARKER"
     echo "=== Persistent venv built ==="

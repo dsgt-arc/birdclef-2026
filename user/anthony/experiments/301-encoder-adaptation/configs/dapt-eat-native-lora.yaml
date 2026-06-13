@@ -1,0 +1,38 @@
+# EAT native DAPT (data2vec-2.0 masked self-distillation) — LoRA arm.
+# Freezes the base; trains LoRA adapters on attention [qkv, proj] against the native
+# d2v loss. The EMA teacher is a deepcopy of the post-PEFT student, so it EMA-tracks
+# the adapter deltas with the base frozen. After training:
+#   birdclef-300 extract --encoder eat --variant dapt-native-lora-ep1 --adapter <out>/adapter
+encoder: eat
+variant: dapt-native-lora-ep1
+peft: lora
+
+encoder_cfg:
+  model_name: worstchan/EAT-base_epoch30_pretrain
+  target_length: 512
+  device: cuda
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.1
+  target_modules: [qkv, proj]
+
+dapt:
+  mask_ratio: 0.8
+  top_k: 12
+  layer_norm_targets: true
+  ema_decay: 0.999
+  ema_end_decay: 0.9999
+
+data:
+  soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
+
+training:
+  epochs: 1
+  batch_size: 12
+  lr: 1.0e-4
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  num_workers: 4
+  seed: 42

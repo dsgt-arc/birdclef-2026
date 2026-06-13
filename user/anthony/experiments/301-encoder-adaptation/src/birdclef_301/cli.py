@@ -32,10 +32,17 @@ def main(argv: list[str] | None = None) -> None:
     p_lora.add_argument("--output-dir", required=True)
     p_lora.add_argument("--max-steps", type=int, default=None, help="Cap steps (smoke test)")
 
-    p_dapt = sub.add_parser("dapt", help="Soundscape DAPT (continued SSL)")
+    p_dapt = sub.add_parser("dapt", help="Soundscape DAPT — generic latent-bootstrap (baseline)")
     p_dapt.add_argument("--config", required=True)
     p_dapt.add_argument("--output-dir", required=True)
     p_dapt.add_argument("--max-steps", type=int, default=None, help="Cap steps (smoke test)")
+
+    p_dn = sub.add_parser(
+        "dapt-native",
+        help="Soundscape DAPT — native objective (SSAMBA MPG/MPC | EAT data2vec)")
+    p_dn.add_argument("--config", required=True)
+    p_dn.add_argument("--output-dir", required=True)
+    p_dn.add_argument("--max-steps", type=int, default=None, help="Cap steps (smoke test)")
 
     p_ks = sub.add_parser("ksshift", help="KS-shift between two embedding caches")
     p_ks.add_argument("--frozen", required=True, help="Parquet A (e.g. variant=frozen)")
@@ -58,6 +65,23 @@ def main(argv: list[str] | None = None) -> None:
         with open(args.config) as f:
             cfg = yaml.safe_load(f)
         run_dapt(cfg, args.output_dir, max_steps=args.max_steps)
+
+    elif args.command == "dapt-native":
+        with open(args.config) as f:
+            cfg = yaml.safe_load(f)
+        encoder = cfg["encoder"]
+        if encoder == "ssamba_hf":
+            from birdclef_301.ssamba_dapt import run_ssamba_dapt
+
+            run_ssamba_dapt(cfg, args.output_dir, max_steps=args.max_steps)
+        elif encoder == "eat":
+            from birdclef_301.eat_dapt import run_eat_dapt
+
+            run_eat_dapt(cfg, args.output_dir, max_steps=args.max_steps)
+        else:
+            raise ValueError(
+                f"dapt-native supports ssamba_hf|eat; got '{encoder}' "
+                "(BEATs SSL needs its co-trained tokenizer — LoRA-only)")
 
     elif args.command == "ksshift":
         from birdclef_301.ks_shift import run_ksshift

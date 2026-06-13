@@ -55,6 +55,24 @@ def load_encoder_labeled(base_dir: str, encoder: str, variant: str = "frozen") -
     return pl.read_parquet(labeled_parquet_path(base_dir, encoder, variant))
 
 
+def patches_parquet_path(base_dir: str, encoder: str, variant: str) -> Path:
+    """Path for the optional per-patch (un-pooled) cache used by the proto probe.
+
+    Sits beside `data.parquet`; written only when `extract --patch` is run. Column
+    `patch_embedding` is List(List(Float32)) of shape (num_patches, embed_dim).
+    """
+    return labeled_parquet_path(base_dir, encoder, variant).parent / "patches.parquet"
+
+
+def load_encoder_patches(base_dir: str, encoder: str, variant: str = "frozen"):
+    """Read the per-window patch grids as a list of (P, D) float32 arrays, or None."""
+    path = patches_parquet_path(base_dir, encoder, variant)
+    if not path.exists():
+        return None
+    df = pl.read_parquet(path)
+    return [np.asarray(p, dtype=np.float32) for p in df["patch_embedding"].to_list()]
+
+
 def extract_site(filename: str) -> str:
     """Extract site ID (e.g. 'S08') from a soundscape filename."""
     m = _SITE_RE.search(filename)

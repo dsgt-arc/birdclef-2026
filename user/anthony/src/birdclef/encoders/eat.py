@@ -130,3 +130,17 @@ class EATEncoder(AudioEncoder):
             features = features[:, 1:].mean(dim=1)  # (batch, embed_dim)
 
         return features
+
+    @torch.no_grad()
+    def extract_patch_features(self, waveform: torch.Tensor) -> torch.Tensor:
+        """Per-patch (un-pooled) features for prototypical probing.
+
+        Returns the patch token grid with the CLS token dropped, shape
+        (batch, num_patches, embed_dim). Used by exp 300's `--patch` cache so the
+        prototypical probe can do frame-level (Strategy B) max-similarity — the
+        readout MAE-style features need (Bird-MAE), which mean-pooling discards.
+        """
+        waveform = waveform.squeeze(1)
+        mel = self._waveform_to_mel(waveform).to(self.device)
+        features = self.model.extract_features(mel)  # (batch, num_patches+1, embed_dim)
+        return features[:, 1:, :]  # drop CLS at position 0

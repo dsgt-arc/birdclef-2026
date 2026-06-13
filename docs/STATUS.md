@@ -121,7 +121,7 @@ Clip-level bottleneck (013-015)    SED + Mel (016-017)           Perch Probes (0
 | 108 | Kaggle Submission Scaffold | **In Progress** | Shared `birdclef_kaggle` module; ridge shipped; hopfield null-anchor next |
 | 201 | Soundscape Event Boxing | **Shelved** | Insect box-from-weak-labels; both automatic strands falsified (propagation P0.06/R0.17; Perch routing failed insect gate). Shelved 2026-06-08 |
 | 300 | Cross-Encoder Transfer | **Complete** | Frozen ridge LOSO, LB-aligned pooled macro AUROC: Perch 0.620 > BEATs 0.612 > BirdNET 0.588 > AST 0.576 > EAT 0.569 > SSAMBA 0.563. Pooled-vs-fold metric reorders field (BirdNET 6th→3rd). Feeds working-note §6 |
-| 301 | Encoder Adaptation | Proposed | LoRA + soundscape DAPT on top encoders; reuses 300's venv + extractor. Feeds §7 |
+| 301 | Encoder Adaptation | Complete | **Native-objective soundscape DAPT** (SSAMBA MPG/MPC + EAT data2vec-2.0 PyTorch port, no fairseq; both validation-gated). Full DAPT **hurts ridge (Δ −0.012/−0.013) but helps the MAE-appropriate proto frame-max readout (+0.010 EAT, +0.017 SSAMBA)** — same checkpoints, opposite signs → ridge under-reads masked-SSL (on-our-data Bird-MAE confirmation). LoRA ≈no-op (data2vec decoder absorbs the objective; KS=0 for EAT-LoRA). Added proto probe + `--patch` cache to exp 300. Feeds §7. See exp 301 `results.md` |
 
 ## Concept Docs
 
