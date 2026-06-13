@@ -1,8 +1,52 @@
 # Experiment 301 Results
 
-**Status**: complete (native-objective soundscape DAPT, first run — 2026-06-11).
+**Status**: WORK IN PROGRESS. First run complete (2026-06-11); **native-geometry fix is
+the current best result** (2026-06-13, see the Update section); 20-epoch ladders +
+held-out SSL val running for both encoders. The "first run" sections below are the
+historical 5 s baseline — read the Update first.
 
-## Headline
+## Update — native-geometry fix is the best result (2026-06-13)
+
+The first run (below) DAPT'd at the wrapper's **5 s** geometry. But SSAMBA's checkpoint is
+natively **1024-frame (10 s)**, and `_waveform_to_fbank` pads a 5 s window into that
+buffer — so **~half the masked MPG/MPC targets were silence** (trivially reconstructed),
+diluting the objective. Scaling that 5 s objective to 10 epochs was null-to-negative
+(SSAMBA frame-max +0.017→+0.003): 10× overfitting on a half-degenerate target.
+
+**Fix: feed native-length 10 s audio** (`data.window_samples: 160000`) to fill the buffer
+with real audio. EAT has no silence disease (true-5 s fills its 512 buffer), so its analog
+is the *length-match* test: `target_length: 512→1024` + 10 s window = native 10 s geometry.
+Eval/extract stay 5 s (the backbone is geometry-shared; the buffer is identical at train
+and eval). **One epoch at native geometry beats everything, on both encoders:**
+
+| Encoder | Readout | Frozen | 5 s ep1 | Δ | **10 s ep1** | **Δ** |
+|---------|---------|--------|---------|------|--------------|-------|
+| ssamba_hf | ridge (linear) | 0.5625 | 0.5504 | −0.012 | **0.5713** | **+0.009** |
+| ssamba_hf | proto frame-max | 0.2335 | 0.2505 | +0.017 | **0.2606** | **+0.027** |
+| eat | ridge (linear) | 0.5689 | 0.5557 | −0.013 | **0.5737** | **+0.005** |
+| eat | proto frame-max | 0.2725 | 0.2828 | +0.010 | **0.2884** | **+0.016** |
+
+**Reading it:**
+- **Frame-max is the best in the experiment** for both encoders (SSAMBA +0.027, EAT +0.016),
+  and **ridge FLIPS positive** on both — once the objective isn't half-reconstructing
+  silence (SSAMBA) / is at native length (EAT), the linear probe stops reading DAPT as
+  damage. Same checkpoints; the geometry was the bottleneck, not the SSL.
+- **Cross-encoder lesson: match the encoder's native input length for DAPT.** It holds even
+  for EAT, which had no silence dilution — so the mechanism is train/pretrain length-match,
+  not only silence. Both encoders show the same KS signature: 10 s moved *less* (median KS
+  SSAMBA 0.88, EAT 0.90 vs 5 s-ep1 0.92/0.98) but helped *more* — a smaller, more useful shift.
+- Corroborating: SSAMBA 10 s `loss_mpg` 0.78 vs ~0.40 at 5 s — the 10 s objective is
+  genuinely harder because the 5 s one was partly reconstructing silence.
+
+**Running now (results pending):** 20-epoch ladders for both encoders
+(`dapt-{ssamba,eat}-native-10s-ep20`) to map the clean-objective epoch curve at {3,10,20}
+vs ep1, plus a **held-out SSL val loss** (`data.val_frac: 0.05`, deterministic by-file 5%
+holdout scored each epoch) — the train/val gap is the overfitting detector. Early read:
+train≈val (no overfitting at either encoder) and the objective saturates by ~ep3, which —
+together with KS already 0.88 at ep1 (the rep moves hugely in one pass) — predicts that
+more epochs are not worth it; the downstream proto curve will confirm or refute.
+
+## Headline (first run — 5 s geometry, historical)
 
 Native-objective continued pretraining (DAPT) on the unlabeled soundscape pool
 **helps under the MAE-appropriate prototypical readout but hurts under the linear

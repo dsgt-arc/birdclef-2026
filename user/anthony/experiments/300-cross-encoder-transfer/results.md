@@ -1,9 +1,12 @@
 # Experiment 300 Results
 
-**Status**: Complete (2026-06-11). Ran end-to-end on PACE: 6 encoders extracted to
-the unified cache, ridge LOSO probe over all of them, plus a token-pooling
-sensitivity pass. Source artifacts: `artifacts/probe_metrics_frozen.json` (+ per
-encoder `probe_{enc}_frozen.json`) and `artifacts/probe_metrics_frozen-cls.json`.
+**Status**: Complete (2026-06-11); eval hub later extended for exp 301 (2026-06-13).
+Ran end-to-end on PACE: 6 encoders extracted to the unified cache, ridge LOSO probe over
+all of them, plus a token-pooling sensitivity pass. Source artifacts:
+`artifacts/probe_metrics_frozen.json` (+ per encoder `probe_{enc}_frozen.json`) and
+`artifacts/probe_metrics_frozen-cls.json`. The frozen ridge ranking below is unchanged;
+the prototypical readout + per-patch cache added for 301's masked-SSL DAPT (and the proto
+frozen→adapted Δ tables) live in **exp 301's `results.md`**, not here.
 
 ## Headline: frozen-embedding ridge LOSO ranking
 

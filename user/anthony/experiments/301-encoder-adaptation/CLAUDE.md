@@ -94,23 +94,38 @@ birdclef-301 ksshift --frozen X.parquet --adapted X.parquet --output /tmp/ks.jso
 
 ## Status
 
-**Complete — native-objective DAPT, first run (2026-06-11).** Full results in
-`results.md`. Headline: native full-DAPT on soundscapes **hurts the linear ridge probe
-(−0.012/−0.013) but helps under the MAE-appropriate prototypical frame-max readout
-(+0.010 EAT, +0.017 SSAMBA)** — the same checkpoints, opposite signs → the ridge
-yardstick under-reads native domain SSL (on-our-data confirmation of Bird-MAE).
+**WORK IN PROGRESS — geometry fix landed, epoch ladders running (2026-06-13).** Full
+results + history in `results.md`. The arc so far:
 
-- **Both validation gates GREEN** before full runs: EAT port 10/10 (FFN-target
-  hand-recompute, non-degeneracy, state_dict round-trip, LoRA merge, overfit), SSAMBA 6/6
-  (pos_embed geometry, grad-through-Mamba, round-trip, overfit).
-- **LoRA arms are a cautionary finding:** EAT-LoRA moved the representation by *exactly
-  zero* (KS 0.0) — the discarded data2vec decoder absorbed the objective; SSAMBA-LoRA
-  moved a lot but unhelpfully. Useful adaptation lives in the backbone (full DAPT).
-- **EAT save bug fixed:** must save the outer `EATModel` state_dict (`model.`-prefixed)
-  for `_apply_overlay`'s strict load — see `results.md`.
+1. **First run (2026-06-11):** native full-DAPT at the wrapper's *5 s* geometry **hurt the
+   ridge probe (−0.012/−0.013) but helped the prototypical frame-max readout (+0.010 EAT,
+   +0.017 SSAMBA)** — same checkpoints, opposite signs → the ridge yardstick under-reads
+   native domain-SSL (on-our-data Bird-MAE confirmation). Both validation gates GREEN
+   (EAT port 10/10, SSAMBA 6/6).
+2. **ep10 scale-up was null-to-negative:** SSAMBA frame-max +0.017→+0.003. Root cause:
+   SSAMBA pads a 5 s window into its native **1024-frame buffer → ~half the masked targets
+   are silence** (trivial); 10× longer overfits that degraded objective.
+3. **Geometry fix = best result, at 1 epoch (HEADLINE):** feeding **native-length 10 s
+   audio** (`data.window_samples: 160000`) fills the buffer with real audio. **SSAMBA
+   frame-max +0.027 (from +0.017) and ridge FLIPS −0.012→+0.009**; **EAT +0.016 (from
+   +0.010), ridge −0.013→+0.005** (EAT via `target_length: 1024`, no silence disease — its
+   gain is train/pretrain length-match). Cross-encoder lesson: **match the encoder's native
+   input length for DAPT.** Eval/extract stay 5 s (backbone geometry-shared).
+4. **RUNNING NOW — 20-epoch ladders, both encoders** (`dapt-{ssamba,eat}-native-10s-ep20`):
+   map the clean-objective epoch curve at {3,10,20} (vs ep1) plus a **held-out SSL val loss**
+   (`data.val_frac: 0.05`) — the train/val gap is the overfitting detector for the paper.
+   Early read: train≈val (no overfitting), objective saturates by ~ep3. Results pending.
+
+- **LoRA arms remain a cautionary finding:** EAT-LoRA moved the rep by *exactly zero* (KS
+  0.0 — discarded data2vec decoder absorbed the objective); SSAMBA-LoRA moved a lot but
+  unhelpfully. Useful adaptation lives in the backbone (full DAPT), not low-rank adapters.
+- **Infra added this push:** per-epoch resumable `last.pt` (resubmit same OUTDIR
+  auto-resumes) + `save_epochs` milestone snapshots in both runners; `probe.sbatch FORCE=1`
+  to dodge the Luigi variant-collision (combined `probe_metrics_<variant>` is keyed by
+  variant not encoder, so encoders sharing a variant string must force a rerun).
+- **EAT save:** must save the outer `EATModel` state_dict (`model.`-prefixed) for
+  `_apply_overlay`'s strict load (milestone snapshots and final save both do this).
 - **Venv:** `_setup-venv.sh` mirrors exp 300's closure (pandas, timm, `transformers<5`,
   pinned torch trio, `mamba-ssm --no-build-isolation`); validate sbatch add `pytest`.
-- **Scale:** 1 epoch, ~666 (SSAMBA) / 888 (EAT) steps, ~5 min/encoder. More epochs /
-  windows-per-file is the cheap next knob (deltas are small but sign-consistent).
 
 See `proposal.md` for hypothesis/rationale and `results.md` for the full Δ + KS tables.

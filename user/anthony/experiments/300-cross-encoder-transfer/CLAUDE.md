@@ -79,9 +79,17 @@ birdclef-300 probe --config configs/exp300.yaml --encoders perch --variant froze
 
 ## Status
 
-**Complete (2026-06-11).** Ran end-to-end on PACE; full ranking + analysis in
-`results.md`. Primary metric is **pooled-OOF macro ROC-AUC** (LB-aligned):
-Perch 0.620 > BEATs 0.612 > BirdNET 0.588 > AST 0.576 > EAT 0.569 > SSAMBA 0.563.
-Key finding: pooled-vs-per-fold aggregation reorders the field (BirdNET 6th→3rd).
-Token pooling is configurable (`pooling: mean_patch|cls`); mean_patch is the
-primary convention. See `proposal.md` for the hypothesis.
+**Core complete (2026-06-11); eval hub extended for exp 301 (2026-06-13).** Ran
+end-to-end on PACE; full ranking + analysis in `results.md`. Primary metric is
+**pooled-OOF macro ROC-AUC** (LB-aligned): Perch 0.620 > BEATs 0.612 > BirdNET 0.588 >
+AST 0.576 > EAT 0.569 > SSAMBA 0.563. Key finding: pooled-vs-per-fold aggregation
+reorders the field (BirdNET 6th→3rd). Token pooling is configurable
+(`pooling: mean_patch|cls`); mean_patch is the primary convention.
+
+**Eval-hub extension (consumed by exp 301's masked-SSL DAPT):** the frozen ridge probe
+under-reads masked-SSL features (Bird-MAE), so 300 grew a **prototypical LOSO readout**
+(`probe/proto_probe.py`, `--readout proto`: clip-cosine + frame-max over the patch grid)
+and a **per-patch cache** (`extract --patch` → `patches.parquet`, via `extract_patch_features`
+on the EAT/SSAMBA wrappers). Same pooled-OOF macro AUROC, different classifier — so the
+ridge vs proto Δ on identical checkpoints is apples-to-apples. The "ridge probe only" key
+decision above is superseded for the DAPT comparison. See `proposal.md` for the hypothesis.
