@@ -164,7 +164,19 @@ fit, eval on the 739 soundscapes):
 Perch-onnx perch_v2_no_dft.onnx` used for the exp 106 cache → no SavedModel↔ONNX drift):
 48 rows × 234 cols, no NaN, probs ∈ [0,1], max 0.528, ~126 nonzero species/row. PASS.
 
-**Open (outward-facing):** package `head.npz`+mapping and the Perch ONNX as Kaggle
-datasets, push `kaggle_kernel/`, record LB vs Murilo 018's 0.893. λ was carried from the
-soundscape-only LOSO (1e4); with 266K standardized rows it now under-regularizes — a
-follow-up λ sweep scaled to n may lift the head.
+**Kaggle LB (submitted 2026-06-14, kernel `birdclef-2026-exp300-perch-ridge-baseline` v2):**
+**public 0.8656 / private 0.8617.** Beats exp 106's ridge (0.804 LB) by +0.062 — the
+focal+soundscape fit over the full roster at tuned λ=1e5 (embeddings, not logits) is a
+real step up. Trails the logit-based/ensemble stacks (Murilo 018 = 0.893; exp 038
+Perch+SED ≈ 0.929), as expected for a deliberately minimal single-encoder baseline.
+Another instance of offline ≪ LB (held-out ~0.71 → LB 0.866).
+
+Inputs: Kaggle datasets `acmiyaguchi/{birdclef-2026-exp300-head, perch-v2-onnx}` +
+`birdclef-2025-deps` (onnxruntime/librosa cp312 wheels). The kernel runs the SAME ONNX
+that built the exp 106 cache, so the head transfers with no SavedModel↔ONNX drift.
+
+**Next (backbone transfer):** the whole point is that this pipeline is encoder-agnostic.
+To extend to BEATs/EAT/SSAMBA/BirdNET: extract their focal+soundscape embeddings into the
+unified cache, `fit-head` per encoder (sweep λ — it under-regularizes at 1e4), swap
+`encode_windows` in the kernel. The Perch fallback is Perch-only and unneeded here
+(234/234 covered).
