@@ -31,6 +31,17 @@ def _standardize(X_train: np.ndarray, X_test: np.ndarray) -> tuple[np.ndarray, n
     return (X_train - mean) / std, (X_test - mean) / std
 
 
+def ridge_solve(gram: np.ndarray, xty: np.ndarray, lam: float) -> np.ndarray:
+    """Solve the ridge normal equations (gram + λI) W = xty for W.
+
+    Single source of truth for the ridge fit so the LOSO probe and the deploy
+    fit-on-all-data head share one implementation. `gram` is XᵀX (D×D), `xty` is
+    XᵀY (D×K); both may be built from standardized X. Returns W (D×K).
+    """
+    eye = np.eye(gram.shape[0])
+    return scipy.linalg.solve(gram + lam * eye, xty, assume_a="pos")
+
+
 def _per_column_scores(Y_true: np.ndarray, Y_pred: np.ndarray) -> dict[int, tuple[float, float]]:
     """Per-column (AUROC, AP) for columns with both-class support; degenerate columns skipped."""
     out: dict[int, tuple[float, float]] = {}
@@ -102,7 +113,6 @@ def ridge_loso(
             "Yte": Y[test],
         })
 
-    eye = np.eye(X.shape[1])
     sweep = []
     best = {"macro_auroc": -1.0}
     best_oof: np.ndarray | None = None
@@ -110,7 +120,7 @@ def ridge_loso(
         oof = np.zeros_like(Y)
         fold_aurocs, fold_aps = [], []
         for f in folds:
-            W = scipy.linalg.solve(f["gram"] + lam * eye, f["xty"], assume_a="pos")
+            W = ridge_solve(f["gram"], f["xty"], lam)
             pred = f["Xte"] @ W
             oof[f["test"]] = pred
             m = _evaluate(f["Yte"], pred)

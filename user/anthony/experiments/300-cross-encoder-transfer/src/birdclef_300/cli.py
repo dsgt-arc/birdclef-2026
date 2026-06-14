@@ -59,6 +59,18 @@ def main(argv: list[str] | None = None) -> None:
                              "MAE-appropriate readout for masked-SSL features")
     p_probe.add_argument("--workers", type=int, default=4)
 
+    p_fit = sub.add_parser("fit-head", help="Fit a deployable ridge head on all training data")
+    p_fit.add_argument("--features-dir", default=None,
+                       help="Training cache (default: deploy.fit_head DEFAULT_FEATURES_DIR, exp106)")
+    p_fit.add_argument("--mapping", default="artifacts/perch_species_mapping.json",
+                       help="perch_species_mapping.json (234-species roster)")
+    p_fit.add_argument("--sources", default="focal,soundscape",
+                       help="comma-separated subset of {focal,soundscape}")
+    p_fit.add_argument("--lambda", dest="lam", type=float, default=None,
+                       help="ridge λ (default: deploy.fit_head DEFAULT_LAMBDA)")
+    p_fit.add_argument("--encoder", default="perch")
+    p_fit.add_argument("--out", default="artifacts/head.npz")
+
     args = parser.parse_args(argv)
 
     if args.command == "extract":
@@ -107,6 +119,24 @@ def main(argv: list[str] | None = None) -> None:
             local_scheduler=True,
             no_lock=True,
         )
+
+    elif args.command == "fit-head":
+        from birdclef_300.deploy.fit_head import (
+            DEFAULT_FEATURES_DIR, DEFAULT_LAMBDA, fit_head, save_head,
+            validate_on_soundscape,
+        )
+
+        features_dir = args.features_dir or DEFAULT_FEATURES_DIR
+        head = fit_head(
+            features_dir=features_dir,
+            mapping_path=args.mapping,
+            sources=tuple(s.strip() for s in args.sources.split(",") if s.strip()),
+            lam=args.lam if args.lam is not None else DEFAULT_LAMBDA,
+            encoder=args.encoder,
+        )
+        save_head(head, args.out)
+        validate_on_soundscape(head, features_dir)
+
     else:
         parser.print_help()
         sys.exit(1)

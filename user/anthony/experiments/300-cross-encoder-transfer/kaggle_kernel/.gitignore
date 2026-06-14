@@ -1,0 +1,4 @@
+# staged dataset payloads (rebuilt from artifacts/ + HF cache; do not commit)
+head_dataset/head.npz
+head_dataset/perch_species_mapping.json
+onnx_dataset/*.onnx

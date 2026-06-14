@@ -11,7 +11,10 @@
 
 set -eu
 
-repo_dir=$(realpath ~/arc/birdclef-2026)
+# REPO_DIR override lets a job run from a specific worktree (e.g. the exp/300
+# worktree) instead of whatever ~/arc/birdclef-2026 points at (the exp/301 main
+# worktree). Defaults to the historical path so extract/probe jobs are unchanged.
+repo_dir=$(realpath "${REPO_DIR:-$HOME/arc/birdclef-2026}")
 exp_dir=$repo_dir/user/anthony/experiments/300-cross-encoder-transfer
 shared_src=$repo_dir/user/anthony/src
 

@@ -123,3 +123,48 @@ LB-aligned figure.
   `e6a4b29`); `--pooling cls` + a distinct `--variant` tag produces the sensitivity set.
 - Probe metric/grid (commit `6e0cf61`): pooled-OOF macro ROC-AUC primary, λ grid to 1e5.
 - Window count: 739 deduped labeled windows (the "749" in the proposal is pre-dedup).
+
+## Deploy: Perch Kaggle baseline (`deploy/` + `kaggle_kernel/`)
+
+The probe only does LOSO CV; for a submittable baseline we fit one final head on ALL
+training data and ship it. New code: `src/birdclef_300/deploy/{fit_head,species_map}.py`,
+`birdclef-300 fit-head`, `sbatch/fit-head.sbatch`, `kaggle_kernel/submission.py`.
+
+**Architecture (backbone-agnostic).** `emb → standardize(mean,std) → W → clip[0,1]` over
+the full 234-species roster. For species the head can't cover, Perch's native logits are
+an *optional Perch-only* fallback — but see below, for Perch+focal it never fires. Swapping
+backbones = swap the encoder + retrain `head.npz`; the kernel CSV logic is unchanged.
+
+**Head fit** (job 9932535, focal+soundscape, λ=1e4, 266,663 windows, ~3 min CPU):
+- `head.npz` = W (1536×234) + mean/std + species_list + covered mask.
+- **234/234 species covered** by training labels (median 728 positives; 203 with ≥25) —
+  even the 25 insect sonotypes appear via soundscape/secondary labels, so the Perch
+  fallback is dead code here. This is the answer to "does the head cover all species?":
+  yes, focal+soundscape covers the whole roster without needing Perch logits.
+
+**Honest validation.** The in-process replay evaluates on the 739 soundscapes:
+- focal+soundscape head → ~0.95, but that is **IN-SAMPLE** (soundscape was in the fit) —
+  a pipeline smoke test only, not a generalization estimate.
+- focal-only head → **HELD-OUT** pooled macro AUROC over 70 species (honest focal→soundscape
+  transfer). Beats the LOSO 0.620 yardstick because 266K focal windows train far better
+  per-species models than the ~370-window LOSO folds. Consistent with exp 106's focal track.
+
+**λ tuning** (`deploy/sweep_lambda.py`, job 9932981). λ=1e4 was carried from the
+soundscape-only LOSO and under-regularizes the 266K-window fit. Held-out sweep (focal-only
+fit, eval on the 739 soundscapes):
+
+| λ | 1e2 | 1e3 | 1e4 | **1e5** | 1e6 | 1e7 | 1e8 |
+|---|-----|-----|-----|---------|-----|-----|-----|
+| held-out AUROC | .690 | .690 | .694 | **.706** | .704 | .695 | .688 |
+
+**λ=1e5 is the selected default** (+0.012 over 1e4, cleanly bracketed). The deployed
+`head.npz` (job 9933036) is refit on focal+soundscape at λ=1e5.
+
+**Kernel dry-run** (job 9932812, 4 soundscapes via the SAME Perch ONNX `justinchuby/
+Perch-onnx perch_v2_no_dft.onnx` used for the exp 106 cache → no SavedModel↔ONNX drift):
+48 rows × 234 cols, no NaN, probs ∈ [0,1], max 0.528, ~126 nonzero species/row. PASS.
+
+**Open (outward-facing):** package `head.npz`+mapping and the Perch ONNX as Kaggle
+datasets, push `kaggle_kernel/`, record LB vs Murilo 018's 0.893. λ was carried from the
+soundscape-only LOSO (1e4); with 266K standardized rows it now under-regularizes — a
+follow-up λ sweep scaled to n may lift the head.
