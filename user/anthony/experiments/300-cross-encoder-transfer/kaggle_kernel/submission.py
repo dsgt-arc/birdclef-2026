@@ -95,6 +95,22 @@ def load_audio(path: str, target_sr: int) -> np.ndarray:
     return audio.astype(np.float32, copy=False)
 
 
+def load_audio_torch(path: str, target_sr: int) -> np.ndarray:
+    """Like `load_audio` but resamples with torchaudio (sinc) — MUST match the training
+    extractor's `birdclef_300.audio.load_audio_16k`. librosa vs torchaudio resamplers
+    diverge enough to drift BEATs embeddings (~0.94 cosine), so the BEATs forward uses
+    this loader. (BirdNET/bmz load the path themselves, so they are unaffected.)"""
+    import torch
+    import torchaudio.functional as taF
+
+    audio, sr = sf.read(path, dtype="float32")
+    if audio.ndim == 2:
+        audio = audio.mean(axis=1)
+    if sr != target_sr:
+        audio = taF.resample(torch.from_numpy(audio).float(), orig_freq=sr, new_freq=target_sr).numpy()
+    return audio.astype(np.float32, copy=False)
+
+
 def window_audio(audio: np.ndarray, window_samples: int) -> np.ndarray:
     """Non-overlapping fixed windows, tail zero-padded; (n_windows, window_samples)."""
     n = max(1, int(np.ceil(len(audio) / window_samples)))
@@ -162,7 +178,7 @@ class BeatsEncoder:
         self.window_samples = int(ENCODER_SR_16K * WINDOW_SEC)  # 80000
 
     def encode_file(self, path: str) -> tuple[np.ndarray, np.ndarray | None]:
-        windows = window_audio(load_audio(path, ENCODER_SR_16K), self.window_samples)
+        windows = window_audio(load_audio_torch(path, ENCODER_SR_16K), self.window_samples)
         out = []
         with self.torch.no_grad():
             for i in range(0, len(windows), self.batch_size):
