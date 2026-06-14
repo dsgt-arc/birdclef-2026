@@ -94,8 +94,8 @@ birdclef-301 ksshift --frozen X.parquet --adapted X.parquet --output /tmp/ks.jso
 
 ## Status
 
-**WORK IN PROGRESS — geometry fix landed, epoch ladders running (2026-06-13).** Full
-results + history in `results.md`. The arc so far:
+**COMPLETE — geometry fix is the best result; epoch ladders finished 2026-06-13.** Full
+results + history in `results.md`. The arc:
 
 1. **First run (2026-06-11):** native full-DAPT at the wrapper's *5 s* geometry **hurt the
    ridge probe (−0.012/−0.013) but helped the prototypical frame-max readout (+0.010 EAT,
@@ -111,10 +111,17 @@ results + history in `results.md`. The arc so far:
    +0.010), ridge −0.013→+0.005** (EAT via `target_length: 1024`, no silence disease — its
    gain is train/pretrain length-match). Cross-encoder lesson: **match the encoder's native
    input length for DAPT.** Eval/extract stay 5 s (backbone geometry-shared).
-4. **RUNNING NOW — 20-epoch ladders, both encoders** (`dapt-{ssamba,eat}-native-10s-ep20`):
-   map the clean-objective epoch curve at {3,10,20} (vs ep1) plus a **held-out SSL val loss**
-   (`data.val_frac: 0.05`) — the train/val gap is the overfitting detector for the paper.
-   Early read: train≈val (no overfitting), objective saturates by ~ep3. Results pending.
+4. **COMPLETE — 20-epoch ladders, both encoders** (`dapt-{ssamba,eat}-native-10s-ep20`,
+   {3,10,20} + ep1, jobs 9911259/9913471, finished 2026-06-13). The epoch curve is
+   **peak-early and the readout sets where the peak is: SSAMBA peaks ep1 under both readouts;
+   EAT ridge peaks ep1 (0.5737) but EAT proto frame-max peaks ep10 (0.3050, its best).** Same
+   checkpoints → the two instruments disagree on *when to stop*, the sharpest form of "ridge
+   under-reads masked-SSL." No still-climbing curve past the peak → **epoch axis saturated.**
+   **Held-out SSL val: no overfitting** at either encoder (train≈val within ~0.002 / ~0.0001).
+   **Methodological catch:** don't read downstream off the SSL loss — EAT's `d2v_loss` was
+   flat-to-rising ep1→ep10 while proto *climbed*; the SSL val's only job is the overfit check.
+   Verdict: gains exhausted on the *epoch knob* of unsupervised DAPT; bigger eval + objective-
+   direction / supervised levers still open (see `results.md` Deferred / next).
 
 - **LoRA arms remain a cautionary finding:** EAT-LoRA moved the rep by *exactly zero* (KS
   0.0 — discarded data2vec decoder absorbed the objective); SSAMBA-LoRA moved a lot but

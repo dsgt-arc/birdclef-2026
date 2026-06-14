@@ -1,9 +1,10 @@
 # Experiment 301 Results
 
-**Status**: WORK IN PROGRESS. First run complete (2026-06-11); **native-geometry fix is
-the current best result** (2026-06-13, see the Update section); 20-epoch ladders +
-held-out SSL val running for both encoders. The "first run" sections below are the
-historical 5 s baseline — read the Update first.
+**Status**: COMPLETE. First run 2026-06-11 (5 s baseline, historical); **native-geometry
+fix is the best result** (2026-06-13); 20-epoch ladders + held-out SSL val **finished
+2026-06-13 for both encoders** (jobs 9911259 SSAMBA, 9913471 EAT + downstream chains, all
+COMPLETED). The "first run" sections below are the historical 5 s baseline — read the
+Update + Epoch-ladder sections first.
 
 ## Update — native-geometry fix is the best result (2026-06-13)
 
@@ -38,13 +39,67 @@ and eval). **One epoch at native geometry beats everything, on both encoders:**
 - Corroborating: SSAMBA 10 s `loss_mpg` 0.78 vs ~0.40 at 5 s — the 10 s objective is
   genuinely harder because the 5 s one was partly reconstructing silence.
 
-**Running now (results pending):** 20-epoch ladders for both encoders
-(`dapt-{ssamba,eat}-native-10s-ep20`) to map the clean-objective epoch curve at {3,10,20}
-vs ep1, plus a **held-out SSL val loss** (`data.val_frac: 0.05`, deterministic by-file 5%
-holdout scored each epoch) — the train/val gap is the overfitting detector. Early read:
-train≈val (no overfitting at either encoder) and the objective saturates by ~ep3, which —
-together with KS already 0.88 at ep1 (the rep moves hugely in one pass) — predicts that
-more epochs are not worth it; the downstream proto curve will confirm or refute.
+## Epoch ladder (native 10 s, both encoders) — COMPLETE
+
+The 20-epoch ladders (`dapt-{ssamba,eat}-native-10s-ep20`, milestone snapshots at
+{3,10,20} + ep1, all from the same run) finished 2026-06-13, each with a **held-out SSL
+val loss** (`data.val_frac: 0.05`, deterministic by-file 5 % holdout scored every epoch).
+Full curve (frozen → ep1 → ep3 → ep10 → ep20), pooled-OOF macro AUROC on the 739 LOSO
+windows, both readouts (`probe_<enc>_dapt-native-10s-ep*.json` ridge, `proto_<enc>_*.json`
+frame-max):
+
+| Encoder | Readout | Frozen | ep1 | ep3 | ep10 | ep20 |
+|---------|---------|--------|-----|-----|------|------|
+| ssamba_hf | ridge (linear) | 0.5625 | **0.5713** | 0.5460 | 0.5516 | 0.5529 |
+| ssamba_hf | proto frame-max | 0.2335 | **0.2606** | 0.2499 | 0.2163 | 0.2024 |
+| eat | ridge (linear) | 0.5689 | **0.5737** | 0.5715 | 0.5525 | 0.5509 |
+| eat | proto frame-max | 0.2725 | 0.2884 | 0.2998 | **0.3050** | 0.3013 |
+
+**The epoch curve is peak-early, and the readout sets *where* the peak is:**
+- **SSAMBA peaks at ep1 under both readouts**, then erodes monotonically on proto
+  (0.2606 → 0.2024) and falls back to ~frozen on ridge. One pass is the whole gain.
+- **EAT splits by readout: ridge peaks ep1 (0.5737) while proto frame-max peaks ep10
+  (0.3050, EAT's best in the experiment).** Same checkpoints — the two instruments
+  disagree not just on the *sign* of the Δ (the original finding) but on *when to stop
+  training*. This is the sharpest on-our-data form of "the linear yardstick under-reads
+  masked-SSL": read off ridge you'd stop EAT at ep1 and miss its actual proto peak.
+- Neither encoder shows a still-climbing curve past its peak. **The epoch axis of native
+  masked-SSL DAPT is saturated** — gains on *this knob* are spent.
+
+**KS-shift across the ladder (`ks_<enc>_dapt-native-10s-ep*.json`, median per-dim KS) — the
+mechanism is direction, not magnitude:**
+
+| Encoder | ep1 | ep3 | ep10 | ep20 |
+|---------|-----|-----|------|------|
+| ssamba_hf | 0.876 | 0.989 | 0.996 | 0.994 |
+| eat | 0.900 | 0.674 | 0.614 | 0.605 |
+
+SSAMBA **drifts ever further** from frozen with epochs (KS ↑) while getting *worse*
+downstream — more movement in a less useful direction. EAT **relaxes back toward frozen**
+(KS ↓, the data2vec EMA target stabilizing) while getting *better* — a smaller, more useful
+shift. Both confirm the rep moves hugely in one pass (KS ≈ 0.88–0.90 at ep1); duration buys
+drift, not quality.
+
+**Held-out SSL val — no overfitting at either encoder (the train/val gap detector):**
+- **SSAMBA**: train `mpg` ≈ `val_mpg` within ~0.002 the whole way (ep19: 0.5188 / 0.5207);
+  the objective plateaus ~0.52 by ep5–6; `val_acc` creeps to 0.41. No gap.
+- **EAT**: `val_loss` ≈ train `d2v_loss` within ~0.0001 throughout; `d2v_loss` dips ep1
+  (0.00342) → rises ep8 (0.00428) → falls ep19 (0.00381) — the non-stationary EMA-target
+  wobble, not memorization.
+
+**Methodological correction — do NOT read downstream usefulness off the SSL objective.**
+EAT is the proof of decoupling: its SSL `d2v_loss` was *flat-to-rising* from ep1→ep10 while
+the downstream proto readout *climbed to its best at ep10*. The training-side curve pointed
+the opposite way from the thing we care about. The held-out SSL val's only load-bearing job
+here is the overfitting check (train ≈ val → no memorization, which it passed); it is **not**
+a proxy for downstream quality. The conclusions above rest on the proto frame-max curve, the
+readout the literature prescribes — never the objective loss. This is the same
+training-metric ≠ readout-metric trap the whole experiment exists to flag.
+
+**Verdict.** Native-geometry DAPT gives a small, consistent gain that lands at ep1 (SSAMBA;
+EAT ridge) or by ~ep10 (EAT proto), and the epoch axis is then saturated — more epochs buy
+drift, not quality. The gains-exhausted claim is scoped to *this knob* (epochs of
+unsupervised masked-SSL DAPT); see Deferred / next for the levers that are still open.
 
 ## Headline (first run — 5 s geometry, historical)
 
@@ -172,8 +227,17 @@ ENCODER=<e> VARIANT=<v> sbatch sbatch/ksshift.sbatch
 
 ## Deferred / next
 
-- More epochs / more windows-per-file (the cheap knob given small Δ).
-- EAT `cls_loss` (utterance term) + exact `Decoder2d`; block (vs random) masking.
-- LoRA-DAPT for the latent objective needs the adapted representation *kept*, not a
-  throwaway decoder — e.g. EMA-distill into the LoRA path, or evaluate the decoder-free
-  encoder under proto directly.
+- ~~More epochs (the cheap knob given small Δ).~~ **DONE and exhausted** — the 20-epoch
+  ladders above are peak-early (SSAMBA ep1, EAT proto ep10) with no still-climbing curve;
+  KS / SSL-val both show the rep moves fully in one pass. Don't spend more compute here.
+- **Bigger / cleaner eval is the real bottleneck.** Δ is 0.01–0.03 on 739 LOSO windows —
+  near the measurement floor. "No further gain on the epoch knob" ≠ "no gain possible";
+  more labeled windows would be needed to resolve any of the levers below.
+- **Objective-direction levers (untested):** EAT `cls_loss` (utterance term) + exact
+  `Decoder2d`; block (vs random) masking. Since direction (not duration) is what moves the
+  readout, these are the only DAPT knobs that could plausibly beat the geometry-fix peak.
+- **Supervised track (untested):** the LoRA arms were *mechanical* no-ops (zero-init B /
+  data2vec decoder sink), not evidence the supervised signal is tapped out. LoRA-done-right
+  (keep the adapted rep — EMA-distill into the LoRA path, or eval the decoder-free encoder
+  under proto directly) or a small supervised head on the strong + weak-focal labels is a
+  different gain source from unsupervised DAPT.
