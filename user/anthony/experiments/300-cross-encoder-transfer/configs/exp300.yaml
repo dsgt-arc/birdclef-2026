@@ -10,7 +10,16 @@ data:
   # Window geometry (16 kHz mono, 5 s) is fixed in birdclef_300.audio.
   soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
   soundscape_labels_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv
+  train_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
   split_seed: 42
+
+# Focal training recordings — the deploy ridge head (deploy/fit_head.py) trains on
+# focal + soundscape windows over the full 234-species roster. `extract --source focal`
+# tiles each recording into 5 s windows and writes the FLAT per-encoder layout
+# fit_head consumes: {output_dir}/{encoder}/focal/shard-*.parquet + soundscape symlink.
+focal:
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
+  output_dir: ~/scratch/birdclef-2026/features/exp300-deploy
 
 # Per-encoder construction. `backend` selects the extraction path:
 #   torch        — shared birdclef.encoders AudioEncoder wrappers (extract_features)

@@ -36,6 +36,14 @@ def main(argv: list[str] | None = None) -> None:
     p_ext.add_argument("--state-dict", default=None,
                        help="DAPT-updated state_dict to load (exp 301 re-extraction)")
     p_ext.add_argument("--output", default=None, help="Override output parquet path")
+    p_ext.add_argument("--source", default="soundscape-labeled",
+                       choices=["soundscape-labeled", "focal"],
+                       help="Which windows to extract: the 739 LOSO soundscapes (default) "
+                            "or the focal training recordings (deploy-head input)")
+    p_ext.add_argument("--num-shards", type=int, default=1,
+                       help="Total focal shards (array job); --source focal only")
+    p_ext.add_argument("--shard-index", type=int, default=0,
+                       help="This focal shard's index in [0, num-shards); --source focal only")
     p_ext.add_argument("--pooling", default=None,
                        help="Override token pooling (mean_patch|cls|mean_all) for torch encoders; "
                             "pair with a distinct --variant tag (e.g. frozen-cls)")
@@ -80,6 +88,16 @@ def main(argv: list[str] | None = None) -> None:
         # enc_cfg["pooling"]); used for the CLS sensitivity variant.
         if args.pooling:
             cfg.setdefault("encoders", {}).setdefault(args.encoder, {})["pooling"] = args.pooling
+
+        if args.source == "focal":
+            from birdclef_300.extract import extract_focal
+
+            sys.exit(extract_focal(
+                cfg, encoder=args.encoder, variant=args.variant,
+                checkpoint=args.checkpoint, adapter=args.adapter, state_dict=args.state_dict,
+                shard_index=args.shard_index, num_shards=args.num_shards, limit=args.limit,
+            ))
+
         from birdclef_300.extract import extract_labeled
 
         sys.exit(extract_labeled(

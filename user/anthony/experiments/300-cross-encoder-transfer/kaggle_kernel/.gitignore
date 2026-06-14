@@ -2,3 +2,11 @@
 head_dataset/head.npz
 head_dataset/perch_species_mapping.json
 onnx_dataset/*.onnx
+
+# per-encoder ablation payloads (BEATs / BirdNET)
+head_dataset_beats/head.npz
+head_dataset_birdnet/head.npz
+beats_model_dataset/*.pt
+beats_model_dataset/beats/
+birdnet_model_dataset/**
+!birdnet_model_dataset/dataset-metadata.json

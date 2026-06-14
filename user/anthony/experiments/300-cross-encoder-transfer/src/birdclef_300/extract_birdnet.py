@@ -13,9 +13,11 @@ giving one 1024-d vector per labeled window in the unified schema.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 import numpy as np
+import polars as pl
 
 from birdclef_300.data_loading import labeled_parquet_path
 from birdclef_300.extract import _write_unified_parquet, labeled_window_rows
@@ -90,4 +92,81 @@ def extract_birdnet_labeled(
 
     logger.info("BirdNET: %d windows embedded (skipped %d)", len(meta_rows), n_skipped)
     _write_unified_parquet(output_path, meta_rows, emb_list, "birdnet", variant)
+    return 0
+
+
+def extract_birdnet_focal(
+    cfg: dict,
+    variant: str = "frozen",
+    shard_index: int = 0,
+    num_shards: int = 1,
+    limit: int | None = None,
+) -> int:
+    """BirdNET focal embeddings for a shard of the training recordings -> deploy cache.
+
+    Tiles each recording into 5 s windows; each window is the mean of the BirdNET 3 s
+    windows whose start falls inside it (the same pooling as the soundscape path).
+    Writes one shard in the flat deploy layout and links the soundscape parquet.
+    """
+    import bioacoustics_model_zoo as bmz
+
+    from birdclef_300.extract import (
+        _focal_ground_truth,
+        focal_shard_path,
+        link_soundscape_parquet,
+    )
+
+    audio_dir = Path(cfg["focal"]["audio_dir"]).expanduser()
+    train_df = pl.read_csv(cfg["data"]["train_csv"], infer_schema_length=10000).sort("filename")
+    train_df = train_df.with_row_index("_idx").filter(
+        pl.col("_idx") % num_shards == shard_index
+    ).drop("_idx")
+    if limit is not None:
+        train_df = train_df.head(limit)
+    logger.info("BirdNET focal shard %d/%d: %d recordings", shard_index, num_shards, len(train_df))
+
+    model = bmz.list_models()["BirdNET"]()
+
+    meta_rows: list[dict] = []
+    emb_list: list[np.ndarray] = []
+    n_failed = 0
+    t0 = time.time()
+    for fi, rec in enumerate(train_df.iter_rows(named=True)):
+        if fi % 500 == 0 and fi > 0:
+            logger.info("Progress: %d/%d files, %d windows", fi, len(train_df), len(meta_rows))
+        path = audio_dir / rec["filename"]
+        if not path.exists():
+            n_failed += 1
+            continue
+        try:
+            starts, feats = _file_embeddings(model, str(path))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("BirdNET embed failed for %s: %s", rec["filename"], e)
+            n_failed += 1
+            continue
+        if len(starts) == 0:
+            n_failed += 1
+            continue
+        primary, gt = _focal_ground_truth(rec)
+        n_windows = int(starts.max() // WINDOW_SEC) + 1
+        for wi in range(n_windows):
+            t = wi * WINDOW_SEC
+            sel = (starts >= t) & (starts < t + WINDOW_SEC)
+            if not sel.any():  # 3 s windows don't tile 5 s evenly; skip empty spans
+                continue
+            meta_rows.append(dict(
+                filename=rec["filename"],
+                window_idx=wi,
+                start_sec=float(t),
+                split="",
+                primary_label=primary,
+                ground_truth=gt,
+            ))
+            emb_list.append(feats[sel].mean(axis=0).astype(np.float32))
+
+    logger.info("BirdNET focal shard %d: %d windows from %d recordings in %.1fs (%d failed)",
+                shard_index, len(meta_rows), len(train_df), time.time() - t0, n_failed)
+    out = focal_shard_path(cfg, "birdnet", shard_index)
+    _write_unified_parquet(out, meta_rows, emb_list, "birdnet", variant, source="focal")
+    link_soundscape_parquet(cfg, "birdnet", variant)
     return 0

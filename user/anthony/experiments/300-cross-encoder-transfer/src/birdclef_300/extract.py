@@ -72,8 +72,13 @@ def _write_unified_parquet(
     emb_list: list[np.ndarray],
     encoder: str,
     variant: str,
+    source: str = "soundscape-labeled",
 ) -> None:
-    """Write metadata + embedding column to a unified-schema parquet."""
+    """Write metadata + embedding column to a unified-schema parquet.
+
+    `source` tags the provenance of the rows ("soundscape-labeled" for the LOSO
+    windows, "focal" for the training-recording windows used by the deploy head).
+    """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if not meta_rows:
@@ -84,7 +89,7 @@ def _write_unified_parquet(
     embed_dim = int(emb_matrix.shape[1])
 
     meta_df = pl.DataFrame([
-        {**m, "source": "soundscape-labeled", "encoder": encoder,
+        {**m, "source": source, "encoder": encoder,
          "variant": variant, "embed_dim": embed_dim}
         for m in meta_rows
     ])
@@ -250,6 +255,177 @@ def extract_torch_labeled(
     else:
         _write_unified_parquet(output_path, meta_rows, emb_list, encoder, variant)
     return 0
+
+
+# --- Focal extraction (deploy head input) ------------------------------------
+#
+# The deploy ridge head (deploy/fit_head.py) trains on focal + soundscape windows
+# over the full 234-species roster. exp 300 only cached the 739 soundscape windows;
+# focal (266K windows) existed only for Perch (exp 106). These helpers tile each
+# training recording into 5 s windows and cache them in the FLAT per-encoder layout
+# deploy.fit_head consumes ({dir}/focal/shard-*.parquet + soundscape_labeled.parquet),
+# reusing the exact encoder forward used for the soundscape windows (no drift).
+
+
+def deploy_encoder_dir(cfg: dict, encoder: str) -> Path:
+    """Flat per-encoder cache dir for the deploy head (fit_head --features-dir)."""
+    return Path(cfg["focal"]["output_dir"]).expanduser() / encoder
+
+
+def focal_shard_path(cfg: dict, encoder: str, shard_index: int) -> Path:
+    return deploy_encoder_dir(cfg, encoder) / "focal" / f"shard-{shard_index:02d}.parquet"
+
+
+def link_soundscape_parquet(cfg: dict, encoder: str, variant: str = "frozen") -> None:
+    """Symlink the encoder's existing soundscape parquet into the flat deploy dir.
+
+    deploy.fit_head expects `{features_dir}/soundscape_labeled.parquet`; the exp 300
+    extractor wrote it under the partitioned `source=soundscape-labeled/data.parquet`.
+    A symlink keeps one copy of truth and lets fit_head/sweep_lambda run unchanged.
+    """
+    target = labeled_parquet_path(cfg["output"]["base_dir"], encoder, variant)
+    link = deploy_encoder_dir(cfg, encoder) / "soundscape_labeled.parquet"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if not Path(target).exists():
+        logger.warning("soundscape parquet missing, not linking: %s", target)
+        return
+    if link.is_symlink() or link.exists():
+        link.unlink()
+    link.symlink_to(Path(target).resolve())
+    logger.info("linked %s -> %s", link, target)
+
+
+def _focal_ground_truth(rec: dict) -> tuple[str, str]:
+    """(primary, 'primary;secondary') from a train.csv row (exp 106 join convention)."""
+    primary = str(rec["primary_label"])
+    secondary = str(rec.get("secondary_labels", ""))
+    gt = primary
+    if secondary and secondary not in ("", "None", "nan", "null", "[]"):
+        gt = f"{primary};{secondary}"
+    return primary, gt
+
+
+def extract_torch_focal(
+    cfg: dict,
+    encoder: str,
+    variant: str = "frozen",
+    checkpoint: str | None = None,
+    adapter: str | None = None,
+    state_dict: str | None = None,
+    shard_index: int = 0,
+    num_shards: int = 1,
+    limit: int | None = None,
+) -> int:
+    """Run a torch-backend encoder over a shard of the focal recordings.
+
+    Tiles each training recording into 5 s / 16 kHz windows (one mean-pooled vector
+    per window) via the SAME `model.extract_features` used for the soundscape
+    windows — so focal and soundscape embeddings share one encoder forward. Writes
+    one parquet shard in the flat deploy layout and (re)links the soundscape parquet.
+    """
+    import torch
+
+    from birdclef_300.registry import build_torch_encoder
+
+    enc_cfg = cfg["encoders"][encoder]
+    device = enc_cfg.get("device", "cuda")
+    if device == "cuda" and not torch.cuda.is_available():
+        logger.warning("CUDA unavailable; falling back to CPU for %s", encoder)
+        device = "cpu"
+    batch_size = int(enc_cfg.get("batch_size", 16))
+    audio_dir = Path(cfg["focal"]["audio_dir"]).expanduser()
+
+    train_df = pl.read_csv(cfg["data"]["train_csv"], infer_schema_length=10000).sort("filename")
+    train_df = train_df.with_row_index("_idx").filter(
+        pl.col("_idx") % num_shards == shard_index
+    ).drop("_idx")
+    if limit is not None:
+        train_df = train_df.head(limit)
+    logger.info("Focal shard %d/%d: %d recordings (%s, device=%s)",
+                shard_index, num_shards, len(train_df), encoder, device)
+
+    model = build_torch_encoder(encoder, enc_cfg, device, checkpoint)
+    _apply_overlay(model, adapter, state_dict, device)
+
+    meta_rows: list[dict] = []
+    emb_list: list[np.ndarray] = []
+    buf_wavs: list[np.ndarray] = []
+    buf_meta: list[dict] = []
+    n_failed = 0
+    t0 = time.time()
+
+    def flush() -> None:
+        if not buf_wavs:
+            return
+        batch = np.stack(buf_wavs).astype(np.float32)            # (B, N)
+        wav = torch.from_numpy(batch).unsqueeze(1)               # (B, 1, N)
+        feats = model.extract_features(wav).detach().cpu().numpy()  # (B, D)
+        for k, meta in enumerate(buf_meta):
+            meta_rows.append(meta)
+            emb_list.append(feats[k].astype(np.float32))
+        buf_wavs.clear()
+        buf_meta.clear()
+
+    for fi, rec in enumerate(train_df.iter_rows(named=True)):
+        if fi % 1000 == 0 and fi > 0:
+            logger.info("Progress: %d/%d files, %d windows", fi, len(train_df), len(meta_rows))
+        path = audio_dir / rec["filename"]
+        try:
+            wav = audio_mod.load_audio_16k(str(path))
+        except Exception as e:  # noqa: BLE001 — log and skip unreadable files
+            logger.warning("Load failed %s: %s", rec["filename"], e)
+            n_failed += 1
+            continue
+        primary, gt = _focal_ground_truth(rec)
+        for wi, win in enumerate(audio_mod.window_audio(wav)):
+            buf_wavs.append(win)
+            buf_meta.append(dict(
+                filename=rec["filename"],
+                window_idx=wi,
+                start_sec=float(wi * audio_mod.ENCODER_WINDOW_SEC),
+                split="",
+                primary_label=primary,
+                ground_truth=gt,
+            ))
+            if len(buf_wavs) >= batch_size:
+                flush()
+    flush()
+
+    logger.info("Focal shard %d (%s): %d windows from %d recordings in %.1fs (%d failed)",
+                shard_index, encoder, len(meta_rows), len(train_df), time.time() - t0, n_failed)
+    out = focal_shard_path(cfg, encoder, shard_index)
+    _write_unified_parquet(out, meta_rows, emb_list, encoder, variant, source="focal")
+    link_soundscape_parquet(cfg, encoder, variant)
+    return 0
+
+
+def extract_focal(
+    cfg: dict,
+    encoder: str,
+    variant: str = "frozen",
+    checkpoint: str | None = None,
+    adapter: str | None = None,
+    state_dict: str | None = None,
+    shard_index: int = 0,
+    num_shards: int = 1,
+    limit: int | None = None,
+) -> int:
+    """Dispatch focal extraction by backend -> the flat deploy cache (fit_head input)."""
+    from birdclef_300.registry import BIRDNET_BMZ, PERCH_CACHE, TORCH, get_spec
+
+    backend = get_spec(encoder).backend
+    if backend == TORCH:
+        return extract_torch_focal(
+            cfg, encoder, variant, checkpoint, adapter, state_dict,
+            shard_index, num_shards, limit,
+        )
+    if backend == BIRDNET_BMZ:
+        from birdclef_300.extract_birdnet import extract_birdnet_focal
+
+        return extract_birdnet_focal(cfg, variant, shard_index, num_shards, limit)
+    if backend == PERCH_CACHE:
+        raise ValueError("perch focal already cached (exp 106); use that features-dir directly")
+    raise ValueError(f"Unknown backend '{backend}' for encoder '{encoder}'")
 
 
 def ingest_perch_labeled(

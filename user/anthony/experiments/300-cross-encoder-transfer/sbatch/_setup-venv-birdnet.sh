@@ -7,7 +7,10 @@
 
 set -eu
 
-repo_dir=$(realpath ~/arc/birdclef-2026)
+# REPO_DIR override (matches _setup-venv.sh) lets a job run from a specific worktree
+# (e.g. exp/300) instead of whatever ~/arc/birdclef-2026 points at — required so the
+# focal-extraction code (extract_birdnet_focal) is picked up, not stale ~/arc code.
+repo_dir=$(realpath "${REPO_DIR:-$HOME/arc/birdclef-2026}")
 exp_dir=$repo_dir/user/anthony/experiments/300-cross-encoder-transfer
 
 scratch_dir=$(realpath ~/scratch/birdclef-2026)

@@ -1,0 +1,19 @@
+{
+  "id": "acmiyaguchi/birdclef-2026-exp300-birdnet-ridge-baseline",
+  "title": "BirdCLEF 2026 exp300 BirdNET Ridge Baseline",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "acmiyaguchi/birdclef-2026-exp300-birdnet-head",
+    "acmiyaguchi/birdclef-2026-birdnet",
+    "acmiyaguchi/birdclef-2026-birdnet-deps",
+    "acmiyaguchi/birdclef-2025-deps"
+  ],
+  "model_sources": [],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}
