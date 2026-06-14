@@ -10,3 +10,9 @@ beats_model_dataset/*.pt
 beats_model_dataset/beats/
 birdnet_model_dataset/**
 !birdnet_model_dataset/dataset-metadata.json
+
+# AST payloads (head.npz + HF weights are staged to Kaggle, not committed; JSON configs are)
+head_dataset_ast/head.npz
+ast_snapshot_dataset/*.safetensors
+ast_snapshot_dataset/*.bin
+ast_snapshot_dataset/pytorch_model.bin

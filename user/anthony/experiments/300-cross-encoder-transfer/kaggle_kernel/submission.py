@@ -188,6 +188,35 @@ class BeatsEncoder:
         return np.concatenate(out).astype(np.float32), None
 
 
+class AstEncoder:
+    """AST via HF transformers — the SAME forward as birdclef.encoders.ASTEncoder with
+    cls pooling (mean of the [CLS]+[DIST] tokens). Per-window ASTFeatureExtractor mel +
+    ASTModel; loads the HF snapshot (config + preprocessor + weights) from the dataset.
+    Same torchaudio resample + 16 kHz / 5 s geometry as the cache -> no drift."""
+
+    requires = ["librosa"]  # torch + transformers ship in the Kaggle base image
+
+    def __init__(self, snapshot_dir: Path):
+        import torch
+        from transformers import ASTFeatureExtractor, ASTModel
+
+        self.torch = torch
+        self.feature_extractor = ASTFeatureExtractor.from_pretrained(str(snapshot_dir))
+        self.model = ASTModel.from_pretrained(str(snapshot_dir))
+        self.model.eval()
+        self.window_samples = int(ENCODER_SR_16K * WINDOW_SEC)  # 80000
+
+    def encode_file(self, path: str) -> tuple[np.ndarray, np.ndarray | None]:
+        windows = window_audio(load_audio_torch(path, ENCODER_SR_16K), self.window_samples)
+        out = []
+        with self.torch.no_grad():
+            for w in windows:
+                inputs = self.feature_extractor(w, sampling_rate=ENCODER_SR_16K, return_tensors="pt")
+                feats = self.model(inputs["input_values"]).last_hidden_state  # (1, seq, D)
+                out.append(feats[:, :2].mean(dim=1).cpu().numpy())            # cls = [CLS]+[DIST]
+        return np.concatenate(out).astype(np.float32), None
+
+
 class BirdnetEncoder:
     """BirdNET via bioacoustics-model-zoo (TFLite) — the SAME 3 s -> 5 s pooling as
     extract_birdnet.extract_birdnet_focal. CPU; needs bmz + litert staged offline."""
@@ -253,6 +282,12 @@ def build_encoder(encoder: str):
         if d is None or not Path(d).exists():
             raise FileNotFoundError("BEATs model dataset not found")
         return BeatsEncoder(Path(d))
+    if encoder == "ast":
+        _ensure_deps(AstEncoder.requires, "birdclef-2025-deps")
+        d = _find_input("ast-audioset-snapshot") or Path(os.environ.get("AST_SNAPSHOT_DIR", ""))
+        if d is None or not Path(d).exists():
+            raise FileNotFoundError("AST snapshot dataset not found")
+        return AstEncoder(Path(d))
     if encoder == "birdnet":
         _ensure_deps(["bioacoustics_model_zoo", "ai_edge_litert", *BirdnetEncoder.requires],
                      "birdclef-2026-birdnet-deps", "birdclef-2025-deps")
@@ -321,8 +356,15 @@ def main() -> None:
         "birdclef-2026-exp300-perch-head",
         "birdclef-2026-exp300-beats-head",
         "birdclef-2026-exp300-birdnet-head",
+        "birdclef-2026-exp300-ast-head",
     ) or Path(os.environ.get("HEAD_DIR", "artifacts"))
-    head = load_head(Path(head_dir) / "head.npz")
+    # head file is `head.npz` (beats/birdnet staging) or `head_<enc>.npz` (AST dataset).
+    head_npz = Path(head_dir) / "head.npz"
+    if not head_npz.exists():
+        cands = sorted(Path(head_dir).glob("*.npz"))
+        if cands:
+            head_npz = cands[0]
+    head = load_head(head_npz)
     species_list = head["species_list"]
     covered = head["covered"]
     uncovered = ~covered

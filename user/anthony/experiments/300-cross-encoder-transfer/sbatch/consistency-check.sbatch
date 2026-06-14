@@ -9,11 +9,12 @@
 # Risk #1: in-kernel encode must reproduce the training embedding (cosine > 0.999).
 #   ENCODER=beats   sbatch sbatch/consistency-check.sbatch   # torch venv
 #   ENCODER=birdnet sbatch sbatch/consistency-check.sbatch   # bmz venv
+#   ENCODER=ast     sbatch sbatch/consistency-check.sbatch   # torch venv + transformers
 
 set -euo pipefail
 mkdir -p logs
 export REPO_DIR="${REPO_DIR:-$(realpath "${SLURM_SUBMIT_DIR:-$PWD}/../../../..")}"
-echo "REPO_DIR=$REPO_DIR ENCODER=${ENCODER:?set ENCODER=beats|birdnet}"
+echo "REPO_DIR=$REPO_DIR ENCODER=${ENCODER:?set ENCODER=beats|birdnet|ast}"
 
 # NB: the check script loads vendored BEATs directly from ~/arc (temp model_dir),
 # so no $REPO_DIR/vendor/unilm self-heal is needed here.
@@ -23,5 +24,7 @@ if [ "$ENCODER" = "birdnet" ]; then
 else
     source sbatch/_setup-venv.sh
 fi
+# AST runs HF transformers (in the torch venv); ensure it's present.
+[ "$ENCODER" = "ast" ] && uv pip install transformers >/dev/null 2>&1 || true
 
 python scripts/consistency_check.py "$ENCODER"

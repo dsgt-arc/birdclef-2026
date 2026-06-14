@@ -24,9 +24,11 @@ for BEATs/BirdNET — the ablation is a pure `emb → head → 234`.
 | perch   | `birdclef-2026-exp300-head` (or `-perch-head`) | `perch-v2-onnx` (`*.onnx`) | `birdclef-2025-deps` (onnxruntime, librosa) |
 | beats   | `birdclef-2026-exp300-beats-head` | `birdclef-2026-beats` (`*.pt` + `beats/` vendor code) | torch is in the Kaggle base image |
 | birdnet | `birdclef-2026-exp300-birdnet-head` | `birdclef-2026-birdnet` (bmz TFLite weights) | `birdclef-2026-birdnet-deps` (bmz, ai-edge-litert) |
+| ast     | `birdclef-2026-exp300-ast-head` | `ast-audioset-snapshot` (HF config + preprocessor + weights) | transformers + torch are in the Kaggle base image |
 
 The encoder forward in-kernel is the SAME code that produced the training embeddings
-(Perch ONNX = exp 106 graph; BEATs = vendored `extract_features`; BirdNET = bmz pooling),
+(Perch ONNX = exp 106 graph; BEATs = vendored `extract_features`; BirdNET = bmz pooling;
+AST = ASTFeatureExtractor + ASTModel, **cls** pooling — matches the `frozen-cls` cache),
 so each head transfers with no train/inference drift. **Verify** (cosine > 0.999 on a few
 shared windows) before trusting any LB number.
 

@@ -5,6 +5,7 @@ per-window cosine — against the stored training embedding. Cosine > 0.999 = no
 Usage (inside the matching venv):
     python scripts/consistency_check.py beats
     python scripts/consistency_check.py birdnet
+    python scripts/consistency_check.py ast       # needs transformers in the venv
 """
 from __future__ import annotations
 
@@ -24,6 +25,14 @@ import submission as sub  # noqa: E402
 CACHE = Path("~/scratch/birdclef-2026/features/exp300-deploy").expanduser()
 CKPT_BEATS = Path("~/scratch/birdclef-2026/checkpoints/beats").expanduser()
 VENDOR_BEATS = Path("~/arc/birdclef-2026/vendor/unilm/beats").expanduser()
+# AST was extracted under a different flat dir (its cls focal cache); the rest live
+# under CACHE/{encoder}/focal.
+FOCAL_DIRS = {"ast": Path("~/scratch/birdclef-2026/features/exp300-ast").expanduser()}
+AST_HF_ID = "MIT/ast-finetuned-audioset-10-10-0.4593"
+
+
+def focal_dir(encoder: str) -> Path:
+    return FOCAL_DIRS.get(encoder, CACHE / encoder)
 
 
 def cos(a: np.ndarray, b: np.ndarray) -> float:
@@ -44,6 +53,10 @@ def build_kernel_encoder(encoder: str):
             str(EXP / "kaggle_kernel" / "birdnet_model_dataset"),
         ))
         return sub.BirdnetEncoder(md)
+    if encoder == "ast":
+        # local snapshot dir if staged, else the HF id (same weights, full precision)
+        snap = os.environ.get("AST_SNAPSHOT_DIR", AST_HF_ID)
+        return sub.AstEncoder(snap)
     raise SystemExit(f"unknown encoder {encoder}")
 
 
@@ -51,7 +64,7 @@ def main(encoder: str) -> None:
     cfg = yaml.safe_load((EXP / "configs/exp300.yaml").read_text())
     audio_dir = Path(cfg["focal"]["audio_dir"]).expanduser()
 
-    shard = sorted((CACHE / encoder / "focal").glob("shard-*.parquet"))[0]
+    shard = sorted((focal_dir(encoder) / "focal").glob("shard-*.parquet"))[0]
     df = pl.read_parquet(shard)
     print(f"[{encoder}] shard={shard.name} cols={df.columns} rows={len(df)}")
 

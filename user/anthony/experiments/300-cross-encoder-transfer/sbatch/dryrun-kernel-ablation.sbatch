@@ -17,7 +17,7 @@
 set -euo pipefail
 mkdir -p logs
 export REPO_DIR="${REPO_DIR:-$(realpath "${SLURM_SUBMIT_DIR:-$PWD}/../../../..")}"
-ENCODER=${ENCODER:?set ENCODER=beats|birdnet}
+ENCODER=${ENCODER:?set ENCODER=beats|birdnet|ast}
 
 if [ "$ENCODER" = "birdnet" ]; then
     source sbatch/_setup-venv-birdnet.sh
@@ -26,6 +26,7 @@ else
 fi
 EXP_DIR="$PWD"
 uv pip install librosa pandas >/dev/null 2>&1 || true
+[ "$ENCODER" = "ast" ] && uv pip install transformers >/dev/null 2>&1 || true
 
 SHARED=/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026
 WORK="${TMPDIR:-/tmp}/dryrun-$SLURM_JOB_ID"
@@ -48,6 +49,11 @@ if [ "$ENCODER" = "beats" ]; then
     ln -sf "$HOME/arc/birdclef-2026/vendor/unilm/beats" "$MD/beats"
     for pt in "$HOME"/scratch/birdclef-2026/checkpoints/beats/*.pt; do ln -sf "$pt" "$MD/"; done
     EXTRA_ENV=(BEATS_DIR="$MD")
+elif [ "$ENCODER" = "ast" ]; then
+    # snapshot the HF AST model (config + preprocessor + weights) into a local dir
+    MD="$WORK/ast_snap"; mkdir -p "$MD"
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('MIT/ast-finetuned-audioset-10-10-0.4593', local_dir='$MD')"
+    EXTRA_ENV=(AST_SNAPSHOT_DIR="$MD")
 else
     EXTRA_ENV=(BIRDNET_DIR="$HOME/scratch/birdclef-2026/features/exp300-deploy/birdnet")
 fi
