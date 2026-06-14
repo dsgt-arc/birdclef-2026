@@ -197,9 +197,20 @@ class BirdnetEncoder:
     def __init__(self, model_dir: Path):
         import bioacoustics_model_zoo as bmz
 
-        # bmz fetches BirdNET weights from a local dir when staged (internet OFF).
-        os.environ.setdefault("BMZ_CACHE", str(model_dir))
-        self.model = bmz.list_models()["BirdNET"]()
+        # Internet is OFF: pass the staged .tflite + labels as LOCAL paths. bmz only
+        # downloads when checkpoint_url/label_url start with "http"; a local path is
+        # used verbatim (no network, no cache dir). Same weights as training -> the
+        # embed() math is identical, so the consistency check still holds.
+        def _find(*pats: str) -> str:
+            for pat in pats:
+                hits = sorted(Path(model_dir).rglob(pat))
+                if hits:
+                    return str(hits[0])
+            raise FileNotFoundError(f"{pats} not under {model_dir}")
+
+        ckpt = _find("*Model_FP16.tflite", "*.tflite")
+        labels = _find("*Labels*.txt", "*.txt")
+        self.model = bmz.BirdNET(checkpoint_url=ckpt, label_url=labels)
 
     def encode_file(self, path: str) -> tuple[np.ndarray, np.ndarray | None]:
         embed_df = self.model.embed([path], return_preds=False).reset_index()

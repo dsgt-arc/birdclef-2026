@@ -8,6 +8,7 @@ Usage (inside the matching venv):
 """
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -37,7 +38,12 @@ def build_kernel_encoder(encoder: str):
             (md / pt.name).symlink_to(pt)
         return sub.BeatsEncoder(md)
     if encoder == "birdnet":
-        return sub.BirdnetEncoder(CKPT_BEATS.parent / "birdnet")  # bmz uses its own cache
+        # staged .tflite + labels (local-path load, no download)
+        md = Path(os.environ.get(
+            "BIRDNET_MODEL_DIR",
+            str(EXP / "kaggle_kernel" / "birdnet_model_dataset"),
+        ))
+        return sub.BirdnetEncoder(md)
     raise SystemExit(f"unknown encoder {encoder}")
 
 
