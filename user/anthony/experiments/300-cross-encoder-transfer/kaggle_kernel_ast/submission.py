@@ -106,20 +106,29 @@ class ASTEncoder:
         from transformers import ASTFeatureExtractor, ASTModel
 
         self.torch = torch
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.feature_extractor = ASTFeatureExtractor.from_pretrained(str(snapshot_dir))
-        self.model = ASTModel.from_pretrained(str(snapshot_dir))
+        self.model = ASTModel.from_pretrained(str(snapshot_dir)).to(self.device)
         self.model.eval()
 
-    def encode_windows(self, windows: np.ndarray) -> np.ndarray:
-        """(B, 80000) -> (B, 768) cls-pooled embeddings."""
+    def encode_windows(self, windows: np.ndarray, batch_size: int = 16) -> np.ndarray:
+        """(B, 80000) -> (B, 768) cls-pooled embeddings.
+
+        Batched + GPU: AST's mel normalization uses fixed config mean/std (not
+        batch statistics), so batched output is per-window identical to the
+        cache (parity dry-run: CPU↔GPU cosine = 1.0). CPU per-window inference
+        was too slow for the hidden-test rerun's compute limit.
+        """
         torch = self.torch
         feats = []
         with torch.no_grad():
-            for w in windows:
+            for start in range(0, len(windows), batch_size):
+                chunk = list(windows[start : start + batch_size])
                 inputs = self.feature_extractor(
-                    w, sampling_rate=ENCODER_SR, return_tensors="pt"
+                    chunk, sampling_rate=ENCODER_SR, return_tensors="pt"
                 )
-                out = self.model(inputs["input_values"])
+                vals = inputs["input_values"].to(self.device)
+                out = self.model(vals)
                 pooled = out.last_hidden_state[:, :2].mean(dim=1)  # cls = [CLS]+[DIST]
                 feats.append(pooled.cpu().numpy())
         return np.concatenate(feats, axis=0).astype(np.float32)

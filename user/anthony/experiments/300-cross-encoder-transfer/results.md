@@ -180,3 +180,58 @@ To extend to BEATs/EAT/SSAMBA/BirdNET: extract their focal+soundscape embeddings
 unified cache, `fit-head` per encoder (sweep λ — it under-regularizes at 1e4), swap
 `encode_windows` in the kernel. The Perch fallback is Perch-only and unneeded here
 (234/234 covered).
+
+## Deploy: AST cls Kaggle baseline (`kaggle_kernel_ast/`) — BLOCKED on CPU runtime
+
+Second encoder through the same deploy pipeline: AST (`MIT/ast-finetuned-audioset-10-10-
+0.4593`, 768-d), **cls** pooling (CLS+DIST mean — led the LOSO yardstick at 0.601 vs 0.576
+mean_patch), torch+transformers **in-kernel** (not ONNX) for guaranteed cache↔kernel parity.
+
+**Pipeline built + verified end-to-end (all green):**
+- Focal extraction (16-way GPU array, `extract-focal`): 266K focal windows, 0 failures,
+  768-d cls. Assembled `exp300-ast/` features dir (focal shards + `soundscape_labeled`).
+- λ-sweep (held-out focal→soundscape): **λ=1e5**, macro AUROC 0.6448 (clean peak: 1e4 .641,
+  1e5 .645, 1e6 .635) — same optimum as Perch.
+- `head_ast.npz` = W (768×234), **234/234 covered**, no fallback. In-sample replay 0.903.
+- Kernel↔cache parity (`dryrun-kernel-ast`): **cosine = 1.000000** (vendored ASTEncoder
+  forward reproduces the cache bit-for-bit). Submission dry-run: 48×234, no NaN, ∈[0,0.167].
+
+**Submitted (kernel v1) → COMPLETE but BLANK leaderboard score.** Format verified
+byte-identical to `sample_submission.csv` (235 cols, same names + order, valid row_ids,
+NaN-safe). Not a format bug — Perch with the *identical* pipeline scored 0.866.
+
+**Root cause: the CPU-only 90-min limit.** BirdCLEF 2026 reruns the kernel on the full
+hidden test (~700–1000 soundscapes) on **CPU only**. AST runs a full transformers forward
+per 5 s window. Measured on 4 vCPU (Kaggle's allotment), PACE `cpu-small`, job 9957035:
+
+| batch | win/s | 8,400 win (~700 files) | 12,000 win (~1000 files) |
+|-------|-------|------------------------|--------------------------|
+| 1     | 1.72  | 81.6 min               | 116.6 min                |
+| 8     | 1.74  | 80.5 min               | 115.0 min                |
+| 16    | 1.71  | 81.9 min               | 117.0 min                |
+
+**Batching does not help** (compute-bound, not overhead-bound). Even the optimistic
+700-file case is **81.6 min of inference alone** — before model load + ~700 audio
+decodes/resamples — so it exceeds 90 min → timeout → blank score. Perch fits only because
+its ONNX graph is far cheaper per window.
+
+**This is AST-specific, NOT "transformers can't deploy."** On the same CPU limit, **BEATs
+scored 0.777** and **BirdNET 0.814** (both COMPLETE on the LB). AST is the outlier because
+its forward is far heavier: a 10-s log-mel input tokenized into ~1200 patches → quadratic
+self-attention over far more tokens than BEATs. So the wall is AST's per-window cost
+(measured 1.72 win/s), not the torch-in-kernel approach in general.
+
+**To deploy AST** the forward must get ~2–4× cheaper: **ONNX export → OpenVINO FP16/INT8**
+(the docs' prescribed recipe, what Perch already does), re-validated to cache parity. The
+trained `head_ast.npz` and the whole extraction/fit/parity pipeline are reusable as-is once
+a fast forward exists. Offline, AST ranks *below* Perch (yardstick 0.601 vs 0.620) and below
+the BEATs/BirdNET that already deploy, so its only value is ensemble diversity — the decision
+to invest in the AST ONNX export is **deferred**. `encode_windows` is left batched +
+device-aware (harmless on CPU, prerequisite for any faster backend).
+
+**Branch note:** a parallel line `exp/300-cross-encoder` (commit `d0cacac`) already folded
+AST into a *unified* `kaggle_kernel/` (dispatch on `head["encoder"]`) and supersedes this
+branch's separate `kaggle_kernel_ast/`. The durable new result here is the **CPU-timeout
+root cause + timing table** (cross-encoder's notes still carried the wrong "a fresh submit
+would fill it" guess). Reconcile by bringing this diagnosis onto cross-encoder and dropping
+the redundant `kaggle_kernel_ast/`.
