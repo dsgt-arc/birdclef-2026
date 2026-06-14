@@ -55,3 +55,17 @@ def fit_window(wav: np.ndarray, window_samples: int = ENCODER_WINDOW_SAMPLES) ->
     if len(wav) < window_samples:
         return np.pad(wav, (0, window_samples - len(wav))).astype(np.float32, copy=False)
     return wav[:window_samples].astype(np.float32, copy=False)
+
+
+def window_audio(audio: np.ndarray, window_samples: int = ENCODER_WINDOW_SAMPLES) -> np.ndarray:
+    """Split audio into non-overlapping fixed-size windows (tail zero-padded).
+
+    Returns `(n_windows, window_samples)`, always at least one window. The 16 kHz
+    analogue of `birdclef_106.audio.window_audio`, used by the focal extraction to
+    slice each whole recording into 5 s windows.
+    """
+    n = max(1, int(np.ceil(len(audio) / window_samples)))
+    padded_len = n * window_samples
+    if len(audio) < padded_len:
+        audio = np.pad(audio, (0, padded_len - len(audio)))
+    return audio[:padded_len].reshape(n, window_samples).astype(np.float32, copy=False)

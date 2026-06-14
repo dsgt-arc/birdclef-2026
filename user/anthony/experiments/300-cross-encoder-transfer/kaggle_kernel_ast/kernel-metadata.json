@@ -1,0 +1,17 @@
+{
+  "id": "acmiyaguchi/birdclef-2026-exp300-ast-ridge-baseline",
+  "title": "BirdCLEF 2026 exp300 AST Ridge Baseline",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "acmiyaguchi/birdclef-2026-exp300-ast-head",
+    "acmiyaguchi/ast-audioset-snapshot"
+  ],
+  "model_sources": [],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}

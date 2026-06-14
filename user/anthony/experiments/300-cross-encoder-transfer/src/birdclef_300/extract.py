@@ -72,6 +72,7 @@ def _write_unified_parquet(
     emb_list: list[np.ndarray],
     encoder: str,
     variant: str,
+    source: str = "soundscape-labeled",
 ) -> None:
     """Write metadata + embedding column to a unified-schema parquet."""
     output_path = Path(output_path)
@@ -84,7 +85,7 @@ def _write_unified_parquet(
     embed_dim = int(emb_matrix.shape[1])
 
     meta_df = pl.DataFrame([
-        {**m, "source": "soundscape-labeled", "encoder": encoder,
+        {**m, "source": source, "encoder": encoder,
          "variant": variant, "embed_dim": embed_dim}
         for m in meta_rows
     ])
@@ -249,6 +250,111 @@ def extract_torch_labeled(
         _write_patch_parquet(output_path, meta_rows, emb_list, encoder, variant)
     else:
         _write_unified_parquet(output_path, meta_rows, emb_list, encoder, variant)
+    return 0
+
+
+def extract_torch_focal(
+    cfg: dict,
+    encoder: str,
+    variant: str = "frozen",
+    checkpoint: str | None = None,
+    output_path: str | Path | None = None,
+    shard_index: int = 0,
+    num_shards: int = 1,
+    limit: int | None = None,
+) -> int:
+    """Run a torch-backend encoder over the FOCAL recordings -> unified parquet shard.
+
+    The deploy head (`deploy.fit_head`) is fit on a focal+soundscape cache laid out as
+    `<dir>/focal/shard-*.parquet` + `<dir>/soundscape_labeled.parquet`. exp 300 only
+    extracted the 739 soundscape-labeled windows per encoder; this fills the focal side
+    so any roster encoder can be deployed like Perch. Mirrors exp 106's `extract_focal`
+    (shard by row index, per-file decode, non-overlapping 5 s windows) but at the 16 kHz
+    geometry the torch encoders expect.
+    """
+    import torch
+
+    from birdclef_300.registry import build_torch_encoder
+
+    enc_cfg = cfg["encoders"][encoder]
+    device = enc_cfg.get("device", "cuda")
+    if device == "cuda" and not torch.cuda.is_available():
+        logger.warning("CUDA unavailable; falling back to CPU for %s", encoder)
+        device = "cpu"
+    batch_size = int(enc_cfg.get("batch_size", 16))
+    audio_dir = Path(cfg["focal"]["audio_dir"])
+    if output_path is None:
+        raise ValueError("extract_torch_focal requires an explicit output_path (shard parquet)")
+
+    logger.info("Building encoder %s (variant=%s, device=%s) for focal extraction",
+                encoder, variant, device)
+    model = build_torch_encoder(encoder, enc_cfg, device, checkpoint)
+    model.model.eval()
+
+    train_df = pl.read_csv(
+        cfg["data"]["train_csv"], infer_schema_length=10000
+    ).sort("filename")
+    train_df = train_df.with_row_index("_idx").filter(
+        pl.col("_idx") % num_shards == shard_index
+    ).drop("_idx")
+    if limit is not None:
+        train_df = train_df.head(limit)
+    logger.info("Focal shard %d/%d: %d recordings", shard_index, num_shards, len(train_df))
+
+    meta_rows: list[dict] = []
+    emb_list: list[np.ndarray] = []
+    buf_wavs: list[np.ndarray] = []
+    buf_meta: list[dict] = []
+    n_failed = 0
+    t0 = time.time()
+
+    def flush() -> None:
+        if not buf_wavs:
+            return
+        batch = np.stack(buf_wavs).astype(np.float32)            # (B, N)
+        wav = torch.from_numpy(batch).unsqueeze(1)               # (B, 1, N)
+        feats = model.extract_features(wav).detach().cpu().numpy()  # (B, D)
+        for k, meta in enumerate(buf_meta):
+            meta_rows.append(meta)
+            emb_list.append(feats[k].astype(np.float32))
+        buf_wavs.clear()
+        buf_meta.clear()
+
+    for fi, rec in enumerate(train_df.iter_rows(named=True)):
+        if fi % 1000 == 0 and fi > 0:
+            logger.info("Progress: %d/%d files, %d windows", fi, len(train_df), len(meta_rows))
+        path = audio_dir / rec["filename"]
+        try:
+            wav = audio_mod.load_audio_16k(str(path))
+        except Exception as e:  # noqa: BLE001 — log and skip unreadable files
+            logger.warning("Load failed %s: %s", rec["filename"], e)
+            n_failed += 1
+            continue
+
+        # ground_truth mirrors exp 106's focal cache exactly: `primary;<secondary_str>`.
+        # train.csv `secondary_labels` is a list-literal STRING (e.g. "['trokin']"),
+        # which build_binary_label_matrix (split on ';') can't match — so the deployed
+        # Perch head trained on PRIMARY labels in effect. We reproduce that regime
+        # verbatim so the AST head is an apples-to-apples mirror, not a richer-label fork.
+        primary = str(rec["primary_label"])
+        secondary = str(rec.get("secondary_labels", ""))
+        gt = primary
+        if secondary and secondary not in ("", "None", "nan", "null", "[]"):
+            gt = f"{primary};{secondary}"
+
+        for wi, win in enumerate(audio_mod.window_audio(wav)):
+            buf_wavs.append(win)
+            buf_meta.append(dict(
+                filename=rec["filename"], window_idx=wi, start_sec=float(wi * 5.0),
+                split="", primary_label=primary, ground_truth=gt,
+            ))
+            if len(buf_wavs) >= batch_size:
+                flush()
+    flush()
+
+    logger.info("focal shard %d (%s): %d windows from %d recordings in %.1fs (%d failed)",
+                shard_index, encoder, len(meta_rows), len(train_df), time.time() - t0, n_failed)
+    _write_unified_parquet(output_path, meta_rows, emb_list, encoder, variant, source="focal")
     return 0
 
 

@@ -45,6 +45,25 @@ def main(argv: list[str] | None = None) -> None:
                             "prototypical probe's frame-level readout, not the pooled vector "
                             "(torch encoders only; leaves data.parquet untouched)")
 
+    p_focal = sub.add_parser(
+        "extract-focal",
+        help="Extract one torch encoder's FOCAL embeddings (sharded) for the deploy head",
+    )
+    p_focal.add_argument("--config", required=True)
+    p_focal.add_argument("--encoder", required=True, choices=sorted(REGISTRY))
+    p_focal.add_argument("--variant", default="frozen", help="Cache tag (e.g. frozen-cls)")
+    p_focal.add_argument("--checkpoint", default=None,
+                         help="Override checkpoint / fine-tuned model (torch backends)")
+    p_focal.add_argument("--pooling", default=None,
+                         help="Override token pooling (mean_patch|cls|mean_all)")
+    p_focal.add_argument("--shard-index", type=int, default=0)
+    p_focal.add_argument("--num-shards", type=int, default=1)
+    p_focal.add_argument("--out-base", default=None,
+                         help="Features dir for the deploy head (default: "
+                              "~/scratch/birdclef-2026/features/exp300-<encoder>); "
+                              "focal shards go under <out-base>/focal/")
+    p_focal.add_argument("--limit", type=int, default=None, help="Cap #recordings (smoke test)")
+
     p_probe = sub.add_parser("probe", help="Run the ridge LOSO probe (Luigi)")
     p_probe.add_argument("--config", default=None, help="Config (for output.base_dir); optional")
     p_probe.add_argument("--encoders", default="beats,ast,eat,ssamba_hf,perch,birdnet")
@@ -86,6 +105,25 @@ def main(argv: list[str] | None = None) -> None:
             cfg, encoder=args.encoder, variant=args.variant,
             checkpoint=args.checkpoint, adapter=args.adapter, state_dict=args.state_dict,
             output_path=args.output, limit=args.limit, patch=args.patch,
+        ))
+
+    elif args.command == "extract-focal":
+        import os
+
+        with open(args.config) as f:
+            cfg = yaml.safe_load(f)
+        if args.pooling:
+            cfg.setdefault("encoders", {}).setdefault(args.encoder, {})["pooling"] = args.pooling
+        from birdclef_300.extract import extract_torch_focal
+
+        out_base = args.out_base or os.path.expanduser(
+            f"~/scratch/birdclef-2026/features/exp300-{args.encoder}"
+        )
+        shard_path = os.path.join(out_base, "focal", f"shard-{args.shard_index}.parquet")
+        sys.exit(extract_torch_focal(
+            cfg, encoder=args.encoder, variant=args.variant,
+            checkpoint=args.checkpoint, output_path=shard_path,
+            shard_index=args.shard_index, num_shards=args.num_shards, limit=args.limit,
         ))
 
     elif args.command == "probe":

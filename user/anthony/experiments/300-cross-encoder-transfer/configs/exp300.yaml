@@ -10,7 +10,13 @@ data:
   # Window geometry (16 kHz mono, 5 s) is fixed in birdclef_300.audio.
   soundscape_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes/
   soundscape_labels_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_soundscapes_labels.csv
+  # Focal recordings (train.csv) for the deploy-head focal+soundscape fit (extract-focal).
+  train_csv: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train.csv
   split_seed: 42
+
+# Focal audio for the deploy-head extraction (extract-focal). Mirrors exp 106.
+focal:
+  audio_dir: /storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026/train_audio/
 
 # Per-encoder construction. `backend` selects the extraction path:
 #   torch        — shared birdclef.encoders AudioEncoder wrappers (extract_features)
