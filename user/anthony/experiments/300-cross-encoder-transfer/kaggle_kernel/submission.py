@@ -244,6 +244,75 @@ class AstEncoder:
         return emb.astype(np.float32), None
 
 
+EAT_NORM_MEAN = -4.268   # birdclef.encoders.EATEncoder defaults — must match the cache
+EAT_NORM_STD = 4.569
+EAT_TARGET_FRAMES = 512  # 5 s at 10 ms hop
+
+
+class EatEncoder:
+    """EAT cls embedding via ONNX (worstchan/EAT-base_epoch30_finetune_AS2M). The
+    transformer (`extract_features` + CLS token at position 0) is exported
+    (scripts/export_eat_onnx.py) and run via onnxruntime — this sidesteps the
+    `trust_remote_code` the eager model needs, which the offline kernel can't fetch.
+    The mel is torchaudio kaldi-fbank replicating birdclef.encoders.EATEncoder.
+    _waveform_to_mel EXACTLY (5 s/512-frame, num_mel_bins=128, hanning, frame_shift=10,
+    (mel - (-4.268)) / (4.569*2)), so the in-kernel forward reproduces the frozen-cls-ft
+    cache (export parity cosine 1.0). ~257 tokens/window -> ~8.5 win/s on 4 vCPU, far
+    under the 90-min wall (FP32 — no INT8 needed, unlike AST). 5 s submission grid, one
+    forward per 5 s row. `model_dir` holds eat_cls.onnx (no EAT weights / remote code)."""
+
+    requires = ["onnxruntime"]  # torch/torchaudio in Kaggle base
+
+    def __init__(self, model_dir: Path, batch_size: int = 16):
+        import onnxruntime as ort
+        import torch
+
+        self.torch = torch
+        onnx_files = sorted(Path(model_dir).glob("*.onnx"))
+        if not onnx_files:
+            raise FileNotFoundError(f"no .onnx under {model_dir}")
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = os.cpu_count() or 4
+        opts.inter_op_num_threads = 1
+        self.session = ort.InferenceSession(
+            str(onnx_files[0]), sess_options=opts, providers=["CPUExecutionProvider"]
+        )
+        self.input_name = self.session.get_inputs()[0].name
+        self.window_samples = int(ENCODER_SR_16K * WINDOW_SEC)  # 80000 (5 s)
+        self.batch_size = batch_size
+
+    def _mel(self, windows: np.ndarray) -> np.ndarray:
+        """(n, 80000) waveforms -> (n, 1, 512, 128) mels, matching EATEncoder exactly."""
+        import torchaudio
+
+        mels = []
+        for w in windows:
+            wav = self.torch.from_numpy(w).float()
+            wav = wav - wav.mean()
+            mel = torchaudio.compliance.kaldi.fbank(
+                wav.unsqueeze(0), htk_compat=True, sample_frequency=ENCODER_SR_16K,
+                use_energy=False, window_type="hanning", num_mel_bins=128,
+                dither=0.0, frame_shift=10,
+            )  # (time, 128)
+            n = mel.shape[0]
+            if n < EAT_TARGET_FRAMES:
+                mel = self.torch.nn.functional.pad(mel, (0, 0, 0, EAT_TARGET_FRAMES - n))
+            elif n > EAT_TARGET_FRAMES:
+                mel = mel[:EAT_TARGET_FRAMES, :]
+            mels.append(mel)
+        mel = self.torch.stack(mels, dim=0)               # (n, 512, 128)
+        mel = (mel - EAT_NORM_MEAN) / (EAT_NORM_STD * 2)
+        return mel.unsqueeze(1).numpy().astype(np.float32)  # (n, 1, 512, 128)
+
+    def encode_file(self, path: str) -> tuple[np.ndarray, np.ndarray | None]:
+        windows = window_audio(load_audio_torch(path, ENCODER_SR_16K), self.window_samples)
+        mels = self._mel(windows)
+        out = []
+        for i in range(0, len(mels), self.batch_size):
+            out.append(self.session.run(None, {self.input_name: mels[i:i + self.batch_size]})[0])
+        return np.concatenate(out).astype(np.float32), None  # (n, 768), cls
+
+
 class BirdnetEncoder:
     """BirdNET via bioacoustics-model-zoo (TFLite) — the SAME 3 s -> 5 s pooling as
     extract_birdnet.extract_birdnet_focal. CPU; needs bmz + litert staged offline."""
@@ -315,6 +384,12 @@ def build_encoder(encoder: str):
         if d is None or not Path(d).exists():
             raise FileNotFoundError("AST ONNX dataset not found")
         return AstEncoder(Path(d))
+    if encoder == "eat":
+        _ensure_deps(EatEncoder.requires, "birdclef-2025-deps")
+        d = _find_input("birdclef-2026-exp300-eat-onnx") or Path(os.environ.get("EAT_ONNX_DIR", ""))
+        if d is None or not Path(d).exists():
+            raise FileNotFoundError("EAT ONNX dataset not found")
+        return EatEncoder(Path(d))
     if encoder == "birdnet":
         _ensure_deps(["bioacoustics_model_zoo", "ai_edge_litert", *BirdnetEncoder.requires],
                      "birdclef-2026-birdnet-deps", "birdclef-2025-deps")
@@ -384,6 +459,7 @@ def main() -> None:
         "birdclef-2026-exp300-beats-head",
         "birdclef-2026-exp300-birdnet-head",
         "birdclef-2026-exp300-ast-head",
+        "birdclef-2026-exp300-eat-head",
     ) or Path(os.environ.get("HEAD_DIR", "artifacts"))
     # head file is `head.npz` (beats/birdnet staging) or `head_<enc>.npz` (AST dataset).
     head_npz = Path(head_dir) / "head.npz"

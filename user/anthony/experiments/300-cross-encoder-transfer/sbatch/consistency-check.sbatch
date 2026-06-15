@@ -26,5 +26,7 @@ else
 fi
 # AST runs HF transformers (mel) + onnxruntime (graph) in the torch venv; ensure both.
 [ "$ENCODER" = "ast" ] && uv pip install transformers onnxruntime >/dev/null 2>&1 || true
+# EAT runs torchaudio kaldi-fbank (mel) + onnxruntime (graph) — torchaudio is in the venv.
+[ "$ENCODER" = "eat" ] && uv pip install onnxruntime >/dev/null 2>&1 || true
 
 python scripts/consistency_check.py "$ENCODER"

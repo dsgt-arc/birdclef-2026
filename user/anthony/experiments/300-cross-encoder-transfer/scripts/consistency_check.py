@@ -58,6 +58,12 @@ def build_kernel_encoder(encoder: str):
         # eager torch, against the eager-extracted cache (so this is the real gate).
         d = os.environ.get("AST_ONNX_DIR", str(EXP / "artifacts" / "ast_onnx"))
         return sub.AstEncoder(Path(d))
+    if encoder == "eat":
+        # EAT runs through ONNX (scripts/export_eat_onnx.py): model_dir holds eat_cls.onnx.
+        # Validates the deployed FP32 ONNX forward (extract_features + cls) against the
+        # eager frozen-cls-ft cache — the real offline gate (export parity was already 1.0).
+        d = os.environ.get("EAT_ONNX_DIR", str(EXP / "artifacts" / "eat_onnx"))
+        return sub.EatEncoder(Path(d))
     raise SystemExit(f"unknown encoder {encoder}")
 
 
