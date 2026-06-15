@@ -11,8 +11,10 @@ beats_model_dataset/beats/
 birdnet_model_dataset/**
 !birdnet_model_dataset/dataset-metadata.json
 
-# AST payloads (head.npz + HF weights are staged to Kaggle, not committed; JSON configs are)
+# AST payloads (head.npz + HF weights + ONNX graphs are staged to Kaggle, not committed;
+# JSON configs are). ast_onnx_dataset ships the exported ONNX + preprocessor_config.json.
 head_dataset_ast/head.npz
 ast_snapshot_dataset/*.safetensors
 ast_snapshot_dataset/*.bin
 ast_snapshot_dataset/pytorch_model.bin
+ast_onnx_dataset/*.onnx

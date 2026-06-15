@@ -17,6 +17,8 @@ Offline Kaggle layout (internet OFF). Dataset/model sources per encoder:
   - Perch:   perch-v2-onnx        (perch_v2_no_dft.onnx — SAME graph as the training cache)
   - BEATs:   birdclef-2026-beats  (BEATs_iter3_plus_AS2M.pt + vendor/unilm/beats code)
   - BirdNET: birdclef-2026-birdnet + deps wheels (bioacoustics-model-zoo, ai-edge-litert)
+  - AST:     birdclef-2026-exp300-ast-onnx (ast_cls[.int8].onnx + preprocessor_config.json;
+             ONNX transformer to fit the 90-min CPU wall, onnxruntime from birdclef-2025-deps)
 The encoder forward is the SAME code that produced the training embeddings, so the head
 transfers with no train/inference drift.
 """
@@ -189,32 +191,44 @@ class BeatsEncoder:
 
 
 class AstEncoder:
-    """AST via HF transformers — the SAME forward as birdclef.encoders.ASTEncoder with
-    cls pooling (mean of the [CLS]+[DIST] tokens). Per-window ASTFeatureExtractor mel +
-    ASTModel; loads the HF snapshot (config + preprocessor + weights) from the dataset.
-    Same torchaudio resample + 16 kHz / 5 s geometry as the cache -> no drift."""
+    """AST cls embedding via ONNX — the transformer (ASTModel + cls pooling) is exported
+    to ONNX (scripts/export_ast_onnx.py) and run through onnxruntime, the SAME trick Perch
+    uses to fit the 90-min CPU wall. Eager transformers was ~1.72 win/s -> timeout/blank;
+    the ONNX graph is ~2-4x cheaper. The mel stays in ASTFeatureExtractor (cheap, identical
+    to the training cache), so the exported embedding == the trained-on one (cosine ~1.0)
+    and head_ast.npz transfers unchanged. `model_dir` holds <name>.onnx +
+    preprocessor_config.json (no ASTModel weights needed)."""
 
-    requires = ["librosa"]  # torch + transformers ship in the Kaggle base image
+    requires = ["onnxruntime", "librosa"]  # torch/torchaudio/transformers in Kaggle base
 
-    def __init__(self, snapshot_dir: Path):
-        import torch
-        from transformers import ASTFeatureExtractor, ASTModel
+    def __init__(self, model_dir: Path):
+        import onnxruntime as ort
+        from transformers import ASTFeatureExtractor
 
-        self.torch = torch
-        self.feature_extractor = ASTFeatureExtractor.from_pretrained(str(snapshot_dir))
-        self.model = ASTModel.from_pretrained(str(snapshot_dir))
-        self.model.eval()
+        self.feature_extractor = ASTFeatureExtractor.from_pretrained(str(model_dir))
+        onnx_files = sorted(Path(model_dir).glob("*.onnx"))
+        if not onnx_files:
+            raise FileNotFoundError(f"no .onnx under {model_dir}")
+        # prefer the INT8 graph if both are shipped (validated to cache parity upstream)
+        onnx_path = next((p for p in onnx_files if "int8" in p.name.lower()), onnx_files[0])
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = os.cpu_count() or 4
+        opts.inter_op_num_threads = 1
+        self.session = ort.InferenceSession(
+            str(onnx_path), sess_options=opts, providers=["CPUExecutionProvider"]
+        )
+        self.input_name = self.session.get_inputs()[0].name
         self.window_samples = int(ENCODER_SR_16K * WINDOW_SEC)  # 80000
 
     def encode_file(self, path: str) -> tuple[np.ndarray, np.ndarray | None]:
         windows = window_audio(load_audio_torch(path, ENCODER_SR_16K), self.window_samples)
-        out = []
-        with self.torch.no_grad():
-            for w in windows:
-                inputs = self.feature_extractor(w, sampling_rate=ENCODER_SR_16K, return_tensors="pt")
-                feats = self.model(inputs["input_values"]).last_hidden_state  # (1, seq, D)
-                out.append(feats[:, :2].mean(dim=1).cpu().numpy())            # cls = [CLS]+[DIST]
-        return np.concatenate(out).astype(np.float32), None
+        mels = np.stack([
+            self.feature_extractor(w, sampling_rate=ENCODER_SR_16K, return_tensors="np")
+            ["input_values"][0]
+            for w in windows
+        ]).astype(np.float32)  # (n_windows, 1024, 128)
+        emb = self.session.run(None, {self.input_name: mels})[0]  # (n_windows, 768), cls-pooled
+        return emb.astype(np.float32), None
 
 
 class BirdnetEncoder:
@@ -284,9 +298,9 @@ def build_encoder(encoder: str):
         return BeatsEncoder(Path(d))
     if encoder == "ast":
         _ensure_deps(AstEncoder.requires, "birdclef-2025-deps")
-        d = _find_input("ast-audioset-snapshot") or Path(os.environ.get("AST_SNAPSHOT_DIR", ""))
+        d = _find_input("birdclef-2026-exp300-ast-onnx") or Path(os.environ.get("AST_ONNX_DIR", ""))
         if d is None or not Path(d).exists():
-            raise FileNotFoundError("AST snapshot dataset not found")
+            raise FileNotFoundError("AST ONNX dataset not found")
         return AstEncoder(Path(d))
     if encoder == "birdnet":
         _ensure_deps(["bioacoustics_model_zoo", "ai_edge_litert", *BirdnetEncoder.requires],

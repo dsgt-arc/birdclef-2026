@@ -26,7 +26,8 @@ else
 fi
 EXP_DIR="$PWD"
 uv pip install librosa pandas >/dev/null 2>&1 || true
-[ "$ENCODER" = "ast" ] && uv pip install transformers >/dev/null 2>&1 || true
+# AST: ONNX forward needs onnxruntime; mel still uses transformers' ASTFeatureExtractor.
+[ "$ENCODER" = "ast" ] && uv pip install transformers onnxruntime >/dev/null 2>&1 || true
 
 SHARED=/storage/project/ps-clef2026_birdclef-0/shared/data/birdclef-2026
 WORK="${TMPDIR:-/tmp}/dryrun-$SLURM_JOB_ID"
@@ -50,10 +51,9 @@ if [ "$ENCODER" = "beats" ]; then
     for pt in "$HOME"/scratch/birdclef-2026/checkpoints/beats/*.pt; do ln -sf "$pt" "$MD/"; done
     EXTRA_ENV=(BEATS_DIR="$MD")
 elif [ "$ENCODER" = "ast" ]; then
-    # snapshot the HF AST model (config + preprocessor + weights) into a local dir
-    MD="$WORK/ast_snap"; mkdir -p "$MD"
-    python -c "from huggingface_hub import snapshot_download; snapshot_download('MIT/ast-finetuned-audioset-10-10-0.4593', local_dir='$MD')"
-    EXTRA_ENV=(AST_SNAPSHOT_DIR="$MD")
+    # AST runs via ONNX now: point at the exact shipped payload (INT8 graph +
+    # preprocessor_config.json), no HF weights. Mirrors the ast-onnx Kaggle dataset.
+    EXTRA_ENV=(AST_ONNX_DIR="$EXP_DIR/kaggle_kernel/ast_onnx_dataset")
 else
     EXTRA_ENV=(BIRDNET_DIR="$HOME/scratch/birdclef-2026/features/exp300-deploy/birdnet")
 fi

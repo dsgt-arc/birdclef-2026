@@ -28,7 +28,6 @@ VENDOR_BEATS = Path("~/arc/birdclef-2026/vendor/unilm/beats").expanduser()
 # AST was extracted under a different flat dir (its cls focal cache); the rest live
 # under CACHE/{encoder}/focal.
 FOCAL_DIRS = {"ast": Path("~/scratch/birdclef-2026/features/exp300-ast").expanduser()}
-AST_HF_ID = "MIT/ast-finetuned-audioset-10-10-0.4593"
 
 
 def focal_dir(encoder: str) -> Path:
@@ -54,9 +53,11 @@ def build_kernel_encoder(encoder: str):
         ))
         return sub.BirdnetEncoder(md)
     if encoder == "ast":
-        # local snapshot dir if staged, else the HF id (same weights, full precision)
-        snap = os.environ.get("AST_SNAPSHOT_DIR", AST_HF_ID)
-        return sub.AstEncoder(snap)
+        # AST now runs through ONNX: model_dir holds <name>.onnx + preprocessor_config.json
+        # (built by scripts/export_ast_onnx.py). Validates the deployed ONNX forward, not
+        # eager torch, against the eager-extracted cache (so this is the real gate).
+        d = os.environ.get("AST_ONNX_DIR", str(EXP / "artifacts" / "ast_onnx"))
+        return sub.AstEncoder(Path(d))
     raise SystemExit(f"unknown encoder {encoder}")
 
 
