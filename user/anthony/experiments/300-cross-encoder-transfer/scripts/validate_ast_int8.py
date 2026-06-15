@@ -49,9 +49,10 @@ def apply_head(head, X):
     return np.clip(Xs @ head["W"], 0.0, 1.0)
 
 
-def recompute_embeddings(df, fe, sessions, batch=16):
+def recompute_embeddings(df, fe, sessions, batch=16, win=WIN):
     """Mel per (filename,start_sec) window -> {name: embeddings} for each ORT session.
-    Mirrors extract_torch_labeled: decode 16 kHz once per file, slice, fit_window."""
+    Mirrors extract_torch_labeled: decode 16 kHz once per file, slice, fit_window.
+    `win` is the window length in samples (default 5 s; pass 10 s for the AST-10s cache)."""
     mels, cur_file, cur_wav = [], None, None
     for fn, start_sec in zip(df["filename"], df["start_sec"]):
         if fn != cur_file:
@@ -61,7 +62,7 @@ def recompute_embeddings(df, fe, sessions, batch=16):
         if cur_wav is None:
             raise FileNotFoundError(f"missing soundscape audio: {fn}")
         s = int(start_sec * SR)
-        wav = audio_mod.fit_window(cur_wav[s : s + WIN])
+        wav = audio_mod.fit_window(cur_wav[s : s + win], win)
         mels.append(fe(wav, sampling_rate=SR, return_tensors="np")["input_values"][0])
     mels = np.stack(mels).astype(np.float32)  # (N, 1024, 128)
     out = {}
@@ -88,8 +89,11 @@ def main():
     ap.add_argument("--head", default=str(EXP / "artifacts" / "head_ast.npz"))
     ap.add_argument("--snapshot", default="MIT/ast-finetuned-audioset-10-10-0.4593")
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--window-sec", type=float, default=None,
+                    help="Window length for recompute (default 5 s; pass 10 for the AST-10s cache)")
     ap.add_argument("--out", default=str(EXP / "artifacts" / "ast_int8_validation.json"))
     args = ap.parse_args()
+    win = int(SR * args.window_sec) if args.window_sec else WIN
 
     z = np.load(args.head, allow_pickle=True)
     head = {"W": z["W"].astype(np.float64), "mean": z["mean"].astype(np.float64),
@@ -112,7 +116,7 @@ def main():
 
     fe = ASTFeatureExtractor.from_pretrained(args.snapshot)
     sessions = {"fp32": ort_session(fp32, args.threads), "int8": ort_session(int8, args.threads)}
-    rec = recompute_embeddings(df, fe, sessions)
+    rec = recompute_embeddings(df, fe, sessions, win=win)
 
     # cross-check: our recomputed FP32 reproduces the cached eager embedding
     win_cos = np.mean([cos(X_eager[i], rec["fp32"][i]) for i in range(len(X_eager))])

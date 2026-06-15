@@ -24,7 +24,7 @@ if [ "$ENCODER" = "birdnet" ]; then
 else
     source sbatch/_setup-venv.sh
 fi
-# AST runs HF transformers (in the torch venv); ensure it's present.
-[ "$ENCODER" = "ast" ] && uv pip install transformers >/dev/null 2>&1 || true
+# AST runs HF transformers (mel) + onnxruntime (graph) in the torch venv; ensure both.
+[ "$ENCODER" = "ast" ] && uv pip install transformers onnxruntime >/dev/null 2>&1 || true
 
 python scripts/consistency_check.py "$ENCODER"

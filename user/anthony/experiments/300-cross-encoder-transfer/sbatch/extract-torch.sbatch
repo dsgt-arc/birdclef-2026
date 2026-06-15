@@ -21,6 +21,11 @@
 set -euo pipefail
 mkdir -p logs
 
+# Install THIS worktree's code (else _setup-venv.sh defaults REPO_DIR to ~/arc = the
+# exp/301 tree, which lacks new flags like --window-sec). Mirrors extract-focal-torch.sbatch.
+export REPO_DIR="${REPO_DIR:-$(realpath "${SLURM_SUBMIT_DIR:-$PWD}/../../../..")}"
+echo "REPO_DIR=$REPO_DIR"
+
 module load cuda/12.6.1
 source sbatch/_setup-venv.sh
 
@@ -34,5 +39,6 @@ birdclef-300 extract \
     --config configs/exp300.yaml \
     --encoder "$ENCODER" \
     --variant "$VARIANT" \
+    ${CHECKPOINT:+--checkpoint "$CHECKPOINT"} \
     ${POOLING:+--pooling "$POOLING"} \
     ${WINDOW_SEC:+--window-sec "$WINDOW_SEC"}
