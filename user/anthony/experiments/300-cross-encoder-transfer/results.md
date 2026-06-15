@@ -193,9 +193,9 @@ live from `kaggle competitions submissions birdclef-2026` on 2026-06-14:
 |---------|:---------:|:------:|:-------------:|:--------------:|:-----------------------------:|--------|
 | **Perch**   | 1536 | 1e5 | **0.8656** | **0.8617** | 0.6200 (rank 1) | ✅ COMPLETE |
 | **BirdNET** | 1024 | 1e6 | **0.8143** | **0.7979** | 0.5875 (rank 3) | ✅ COMPLETE |
+| **EAT**     | 768  | 1e5 | **0.7796** | **0.7659** | 0.569 / held-out 0.635 (rank 5) | ✅ COMPLETE (finetune_AS2M, FP32 ONNX of extract_features) |
 | **AST**     | 768  | 1e5 | **0.7780** | **0.7680** | 0.5762 / 0.601 cls (rank 4) | ✅ COMPLETE (10s-geometry INT8 ONNX; see saga below) |
 | **BEATs**   | 768  | 1e4 | **0.7771** | **0.7603** | 0.6119 (rank 2) | ✅ COMPLETE |
-| **EAT**     | 768  | 1e5 | _(pred ~0.77)_ | — | 0.569 / held-out 0.635 | 🔧 head fit; kernel build pending |
 
 All heads cover 234/234 species (no Perch-logit fallback fires). Consistency cos=1.000
 for every encoder (in-kernel forward reproduces the cache bit-for-bit; AST INT8 cos=0.993
@@ -213,18 +213,49 @@ adjudicated by downstream AUROC instead, Δ=−0.004).
 2. **Perch is the clear LB winner** (0.866 pub / 0.862 priv) and the only encoder whose
    public→private drop is negligible (−0.004). BirdNET and BEATs both lose ~0.016–0.017
    private, preserving their order.
-3. **The bird-specialists (Perch, BirdNET) form a top tier; the general-audio AudioSet
-   transformers (AST, BEATs, and EAT) cluster ~0.77–0.78 below them.** AST (0.778 pub /
-   0.768 priv) lands a hair above BEATs (0.777 / 0.760) and is the *best-generalizing*
-   transformer to private. EAT's honest held-out transfer (0.635) sits right beside AST's
-   (0.638), predicting an LB in the same 0.77–0.78 band — domain (bird-pretrain) beats
-   architecture, and supervised-AudioSet pretraining alone doesn't close the gap to Perch.
-4. **AST DID deploy after the 10s-geometry fix** (saga below) — the CPU 90-min wall was an
-   AST-specific mel cost, not a quality ceiling. Every roster encoder now has an LB score
-   except SSAMBA-HF (frozen-SSL Mamba; no finetuned checkpoint + no ONNX path → deferred).
+3. **The bird-specialists (Perch, BirdNET) form a top tier; the three general-audio AudioSet
+   transformers (EAT, AST, BEATs) are in a statistical dead heat ~0.777–0.780 below them.**
+   Public: EAT 0.7796 > AST 0.7780 > BEATs 0.7771 (spread 0.0025); private: AST 0.7680 >
+   EAT 0.7659 > BEATs 0.7603. EAT takes the highest public by a hair, AST the highest private
+   — all three within 0.003 either way, so the ordering *within* the transformer tier is
+   noise. The held-out probe predicted this near-tie precisely (EAT 0.635 ≈ AST 0.638). The
+   real signal: **domain (bird-pretrain) beats architecture** — supervised-AudioSet pretraining
+   (all three) doesn't close the ~0.09 gap to Perch, and even a *fine-tuned* AudioSet transformer
+   (EAT finetune_AS2M, AST AudioSet) lands no higher than self-supervised BEATs.
+4. **All deploy obstacles were CPU-wall / packaging, not quality.** AST needed the
+   10s-geometry INT8 fix (saga below); EAT needed an ONNX export to sidestep `trust_remote_code`
+   offline (its ~257-token forward is 5× cheaper than AST → 8.5 win/s, no tricks). Every roster
+   encoder now has an LB score **except SSAMBA-HF** (frozen-SSL Mamba; no finetuned checkpoint +
+   no clean ONNX path for the selective-scan op → deferred).
 
 Trails the logit/ensemble stacks (exp 038 Perch+SED ≈ 0.929) as expected for deliberately
 minimal single-encoder embedding baselines.
+
+## Deploy: EAT cls (unified `kaggle_kernel/`) — FP32 ONNX, clean first deploy
+
+**LB 0.7796 pub / 0.7659 priv** (`worstchan/EAT-base_epoch30_finetune_AS2M`, frozen CLS, 768-d,
+λ=1e5, 234/234 covered). EAT was the apples-to-apples *finetuned-transformer* path (AudioSet
+supervised, like AST/BEATs) — the user picked the finetuned checkpoint over the SSL pretrain
+(which the frozen ridge under-reads → yardstick 0.569). The deploy went clean on the first
+real submission (one trivial head-slug fix in between).
+
+**The only blocker was `trust_remote_code`.** The eager EATEncoder loads via
+`AutoModel.from_pretrained(..., trust_remote_code=True)` — the offline kernel can't fetch the
+remote `modeling_eat.py`. Fix: trace `model.extract_features(mel)` + CLS pooling to **FP32 ONNX**
+(`scripts/export_eat_onnx.py`); the graph is standard ViT ops, so the kernel needs neither the
+remote code nor the HF weights — just the ONNX + torchaudio for the mel. Export parity vs eager
+on 8 real windows: **cosine 1.000000**. EAT is *cheap* on CPU (5 s/512-frame mel → ~257 tokens
+vs AST's ~1200): **8.45 win/s on 4 vCPU → ~24 min for 12K windows**, far under the 90-min wall —
+so plain FP32, **no INT8 / no 10s tricks** (unlike AST), and exact cache parity.
+
+The kernel `EatEncoder` computes the mel with `torchaudio.compliance.kaldi.fbank` replicating
+`birdclef.encoders.EATEncoder._waveform_to_mel` EXACTLY (hanning, frame_shift=10, num_mel_bins
+=128, `(mel-(-4.268))/(4.569*2)`, pad/truncate to 512) → FP32 ONNX → CLS. **Consistency check:
+cosine 1.000000 over 674 windows** (the real offline gate — kernel mel + `load_audio_torch` +
+ONNX vs the eager `frozen-cls-ft` cache). Datasets `acmiyaguchi/birdclef-2026-exp300-{eat-onnx
+(343 MB FP32 graph), eat-head}`; kernel `birdclef-2026-exp300-eat-ridge-baseline`. The v1 commit
+hit `FileNotFoundError: artifacts/head.npz` — the head-dataset slug list in `main()` was missing
+`birdclef-2026-exp300-eat-head`; added it, v2 ran COMPLETE.
 
 ## Deploy: AST cls (unified `kaggle_kernel/`) — CPU-wall saga (eager → INT8 → 10s refit → ✅ SCORED)
 
