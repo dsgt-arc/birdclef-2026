@@ -181,6 +181,42 @@ unified cache, `fit-head` per encoder (sweep λ — it under-regularizes at 1e4)
 `encode_windows` in the kernel. The Perch fallback is Perch-only and unneeded here
 (234/234 covered).
 
+## Deploy ablation: all encoders on the Kaggle LB
+
+The unified `kaggle_kernel/` is an ablation harness — the SAME pipeline (focal+soundscape
+ridge head → `emb → standardize → W → clip[0,1]` over 234 species) runs Perch / BEATs /
+BirdNET / AST; only the `encode_windows` backend and `head_{enc}.npz` change. Each was
+submitted as its own kernel (`birdclef-2026-exp300-{enc}-ridge-baseline`). Scores verified
+live from `kaggle competitions submissions birdclef-2026` on 2026-06-14:
+
+| Encoder | embed_dim | best λ | **public LB** | **private LB** | LOSO yardstick (pooled AUROC) | Status |
+|---------|:---------:|:------:|:-------------:|:--------------:|:-----------------------------:|--------|
+| **Perch**   | 1536 | 1e5 | **0.8656** | **0.8617** | 0.6200 (rank 1) | ✅ COMPLETE |
+| **BirdNET** | 1024 | 1e6 | **0.8143** | **0.7979** | 0.5875 (rank 3) | ✅ COMPLETE |
+| **BEATs**   | 768  | 1e4 | **0.7771** | **0.7603** | 0.6119 (rank 2) | ✅ COMPLETE |
+| **AST**     | 768  | 1e5 | — | — | 0.5762 / 0.601 cls (rank 4) | ⚠️ BLANK (CPU timeout, see below) |
+
+All heads cover 234/234 species (no Perch-logit fallback fires). Consistency cos=1.000
+for every encoder (in-kernel forward reproduces the cache bit-for-bit).
+
+**Findings:**
+
+1. **The frozen yardstick order does NOT survive to the LB.** LOSO ranks Perch > BEATs >
+   BirdNET, but the deployed LB ranks **Perch > BirdNET > BEATs** — BirdNET (0.814 pub)
+   beats BEATs (0.777 pub) by +0.037 despite ranking *below* it on the frozen probe
+   (0.588 < 0.612). The bird-specialist's focal→soundscape transfer over 266K windows
+   outpaces what its 739-window LOSO probe predicts. Another instance of offline metrics
+   anti-correlating with LB; the frozen probe is a *relative encoder ranking tool*, not an
+   LB predictor.
+2. **Perch is the clear LB winner** (0.866 pub / 0.862 priv) and the only encoder whose
+   public→private drop is negligible (−0.004). BirdNET and BEATs both lose ~0.016–0.017
+   private, preserving their order.
+3. **AST is the only encoder that fails to deploy** — not on quality but on the CPU 90-min
+   wall (diagnosed below). Every other encoder clears it.
+
+Trails the logit/ensemble stacks (exp 038 Perch+SED ≈ 0.929) as expected for deliberately
+minimal single-encoder embedding baselines.
+
 ## Deploy: AST cls (unified `kaggle_kernel/`) — BLOCKED on CPU runtime
 
 AST (`MIT/ast-finetuned-audioset-10-10-0.4593`, 768-d) through the unified kernel
