@@ -168,6 +168,7 @@ def extract_torch_labeled(
     output_path: str | Path | None = None,
     limit: int | None = None,
     patch: bool = False,
+    window_sec: float | None = None,
 ) -> int:
     """Run a torch-backend encoder over the labeled windows -> unified parquet.
 
@@ -175,6 +176,12 @@ def extract_torch_labeled(
     pooled vector, for the prototypical probe's frame-level readout. The pooled
     `data.parquet` is left untouched (run the two extractions separately) so the
     frozen ranking exp 300 reports is never perturbed.
+
+    `window_sec` overrides the 5 s window geometry (default `None` = 5 s, the 300/301
+    frozen contract). The AST-10s deploy variant passes 10.0: each labeled window is a
+    10 s slice anchored at the labeled 5 s `start_sec`, keeping the label set but filling
+    AST's fixed ~10.24 s mel with real audio instead of 5 s + silence (halves the
+    Kaggle forward count). The label stays the labeled segment's `ground_truth`.
     """
     import torch
 
@@ -186,6 +193,9 @@ def extract_torch_labeled(
         logger.warning("CUDA unavailable; falling back to CPU for %s", encoder)
         device = "cpu"
     batch_size = int(enc_cfg.get("batch_size", 16))
+    win_samp = (
+        int(audio_mod.ENCODER_SR * window_sec) if window_sec else audio_mod.ENCODER_WINDOW_SAMPLES
+    )
     sdir = Path(cfg["data"]["soundscape_dir"])
     if output_path is None:
         path_fn = patches_parquet_path if patch else labeled_parquet_path
@@ -241,7 +251,7 @@ def extract_torch_labeled(
             n_skipped += 1
             continue
         start = int(row["start_sec"] * audio_mod.ENCODER_SR)
-        buf_wavs.append(audio_mod.fit_window(cur_wav[start:start + audio_mod.ENCODER_WINDOW_SAMPLES]))
+        buf_wavs.append(audio_mod.fit_window(cur_wav[start:start + win_samp], win_samp))
         buf_meta.append({k: row[k] for k in
                          ("filename", "window_idx", "start_sec", "split", "primary_label", "ground_truth")})
         if len(buf_wavs) >= batch_size:
@@ -315,6 +325,7 @@ def extract_torch_focal(
     shard_index: int = 0,
     num_shards: int = 1,
     limit: int | None = None,
+    window_sec: float | None = None,
 ) -> int:
     """Run a torch-backend encoder over a shard of the focal recordings.
 
@@ -322,6 +333,10 @@ def extract_torch_focal(
     per window) via the SAME `model.extract_features` used for the soundscape
     windows — so focal and soundscape embeddings share one encoder forward. Writes
     one parquet shard in the flat deploy layout and (re)links the soundscape parquet.
+
+    `window_sec` overrides the 5 s tiling (default `None` = 5 s); the AST-10s deploy
+    variant passes 10.0 so focal is tiled into non-overlapping 10 s windows — the same
+    geometry the Kaggle kernel uses at inference (6 windows/60 s clip, not 12).
     """
     import torch
 
@@ -333,6 +348,8 @@ def extract_torch_focal(
         logger.warning("CUDA unavailable; falling back to CPU for %s", encoder)
         device = "cpu"
     batch_size = int(enc_cfg.get("batch_size", 16))
+    win_sec = window_sec if window_sec else audio_mod.ENCODER_WINDOW_SEC
+    win_samp = int(audio_mod.ENCODER_SR * win_sec)
     audio_dir = Path(cfg["focal"]["audio_dir"]).expanduser()
 
     train_df = pl.read_csv(cfg["data"]["train_csv"], infer_schema_length=10000).sort("filename")
@@ -377,12 +394,12 @@ def extract_torch_focal(
             n_failed += 1
             continue
         primary, gt = _focal_ground_truth(rec)
-        for wi, win in enumerate(audio_mod.window_audio(wav)):
+        for wi, win in enumerate(audio_mod.window_audio(wav, win_samp)):
             buf_wavs.append(win)
             buf_meta.append(dict(
                 filename=rec["filename"],
                 window_idx=wi,
-                start_sec=float(wi * audio_mod.ENCODER_WINDOW_SEC),
+                start_sec=float(wi * win_sec),
                 split="",
                 primary_label=primary,
                 ground_truth=gt,
@@ -409,6 +426,7 @@ def extract_focal(
     shard_index: int = 0,
     num_shards: int = 1,
     limit: int | None = None,
+    window_sec: float | None = None,
 ) -> int:
     """Dispatch focal extraction by backend -> the flat deploy cache (fit_head input)."""
     from birdclef_300.registry import BIRDNET_BMZ, PERCH_CACHE, TORCH, get_spec
@@ -417,7 +435,7 @@ def extract_focal(
     if backend == TORCH:
         return extract_torch_focal(
             cfg, encoder, variant, checkpoint, adapter, state_dict,
-            shard_index, num_shards, limit,
+            shard_index, num_shards, limit, window_sec,
         )
     if backend == BIRDNET_BMZ:
         from birdclef_300.extract_birdnet import extract_birdnet_focal
@@ -461,6 +479,7 @@ def extract_labeled(
     output_path: str | Path | None = None,
     limit: int | None = None,
     patch: bool = False,
+    window_sec: float | None = None,
 ) -> int:
     """Dispatch extraction by the encoder's backend (see registry)."""
     from birdclef_300.registry import BIRDNET_BMZ, PERCH_CACHE, TORCH, get_spec
@@ -468,7 +487,8 @@ def extract_labeled(
     backend = get_spec(encoder).backend
     if backend == TORCH:
         return extract_torch_labeled(
-            cfg, encoder, variant, checkpoint, adapter, state_dict, output_path, limit, patch
+            cfg, encoder, variant, checkpoint, adapter, state_dict, output_path, limit, patch,
+            window_sec,
         )
     if patch:
         raise ValueError(f"patch mode is torch-only; '{encoder}' is backend '{backend}'")

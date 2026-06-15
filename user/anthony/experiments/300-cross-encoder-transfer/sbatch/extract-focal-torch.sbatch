@@ -52,4 +52,6 @@ birdclef-300 extract \
     --source focal \
     --num-shards "$NUM_SHARDS" \
     --shard-index "$SHARD_INDEX" \
+    ${POOLING:+--pooling "$POOLING"} \
+    ${WINDOW_SEC:+--window-sec "$WINDOW_SEC"} \
     ${LIMIT:+--limit "$LIMIT"}

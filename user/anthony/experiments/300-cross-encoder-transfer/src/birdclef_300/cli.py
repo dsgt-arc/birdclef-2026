@@ -48,6 +48,9 @@ def main(argv: list[str] | None = None) -> None:
                        help="Override token pooling (mean_patch|cls|mean_all) for torch encoders; "
                             "pair with a distinct --variant tag (e.g. frozen-cls)")
     p_ext.add_argument("--limit", type=int, default=None, help="Cap #windows (smoke test)")
+    p_ext.add_argument("--window-sec", type=float, default=None,
+                       help="Override the 5 s window geometry (e.g. 10 for the AST-10s deploy "
+                            "variant that halves the Kaggle forward count). Default 5 s.")
     p_ext.add_argument("--patch", action="store_true",
                        help="Cache the per-window patch grid (patches.parquet) for the "
                             "prototypical probe's frame-level readout, not the pooled vector "
@@ -96,6 +99,7 @@ def main(argv: list[str] | None = None) -> None:
                 cfg, encoder=args.encoder, variant=args.variant,
                 checkpoint=args.checkpoint, adapter=args.adapter, state_dict=args.state_dict,
                 shard_index=args.shard_index, num_shards=args.num_shards, limit=args.limit,
+                window_sec=args.window_sec,
             ))
 
         from birdclef_300.extract import extract_labeled
@@ -104,6 +108,7 @@ def main(argv: list[str] | None = None) -> None:
             cfg, encoder=args.encoder, variant=args.variant,
             checkpoint=args.checkpoint, adapter=args.adapter, state_dict=args.state_dict,
             output_path=args.output, limit=args.limit, patch=args.patch,
+            window_sec=args.window_sec,
         ))
 
     elif args.command == "probe":

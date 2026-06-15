@@ -25,9 +25,9 @@ import submission as sub  # noqa: E402
 CACHE = Path("~/scratch/birdclef-2026/features/exp300-deploy").expanduser()
 CKPT_BEATS = Path("~/scratch/birdclef-2026/checkpoints/beats").expanduser()
 VENDOR_BEATS = Path("~/arc/birdclef-2026/vendor/unilm/beats").expanduser()
-# AST was extracted under a different flat dir (its cls focal cache); the rest live
-# under CACHE/{encoder}/focal.
-FOCAL_DIRS = {"ast": Path("~/scratch/birdclef-2026/features/exp300-ast").expanduser()}
+# AST deploy cache is the 10 s-geometry refit (focal tiled into 10 s windows, cls);
+# the rest live under CACHE/{encoder}/focal.
+FOCAL_DIRS = {"ast": Path("~/scratch/birdclef-2026/features/exp300-deploy/ast").expanduser()}
 
 
 def focal_dir(encoder: str) -> Path:
@@ -79,7 +79,12 @@ def main(encoder: str) -> None:
     enc = build_kernel_encoder(encoder)
     emb, _ = enc.encode_file(str(audio_path))
     emb = np.asarray(emb, dtype=np.float64)
-    print(f"[{encoder}] kernel windows={len(emb)} dim={emb.shape[1]}")
+    # AST emits `repeat` consecutive 5 s rows per 10 s window (submission-grid expansion);
+    # the cache stores one row per 10 s window, so de-repeat before the 1:1 comparison.
+    stride = int(getattr(enc, "repeat", 1))
+    if stride > 1:
+        emb = emb[::stride]
+    print(f"[{encoder}] kernel windows={len(emb)} dim={emb.shape[1]} (de-repeat stride={stride})")
 
     n = min(len(stored), len(emb))
     coss = np.array([cos(stored[i], emb[i]) for i in range(n)])

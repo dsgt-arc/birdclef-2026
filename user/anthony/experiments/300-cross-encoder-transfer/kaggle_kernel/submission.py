@@ -190,14 +190,23 @@ class BeatsEncoder:
         return np.concatenate(out).astype(np.float32), None
 
 
+AST_WINDOW_SEC = 10.0  # AST runs on 10 s windows (see AstEncoder); the submission grid stays 5 s
+
+
 class AstEncoder:
-    """AST cls embedding via ONNX — the transformer (ASTModel + cls pooling) is exported
-    to ONNX (scripts/export_ast_onnx.py) and run through onnxruntime, the SAME trick Perch
-    uses to fit the 90-min CPU wall. Eager transformers was ~1.72 win/s -> timeout/blank;
-    the ONNX graph is ~2-4x cheaper. The mel stays in ASTFeatureExtractor (cheap, identical
-    to the training cache), so the exported embedding == the trained-on one (cosine ~1.0)
-    and head_ast.npz transfers unchanged. `model_dir` holds <name>.onnx +
-    preprocessor_config.json (no ASTModel weights needed)."""
+    """AST cls embedding via ONNX, on 10 s windows — two stacked tricks to fit the 90-min
+    CPU wall. (1) ONNX: the transformer (ASTModel + cls pooling) is exported
+    (scripts/export_ast_onnx.py) and run via onnxruntime (INT8), like Perch. (2) 10 s
+    geometry: AST's mel ALWAYS pads to a fixed 1024-frame (~10.24 s) tensor, so a 5 s
+    window wastes half the forward on silence. Feeding 10 s windows (6 per 60 s clip
+    instead of 12) HALVES the forward count at identical per-window cost. Eager 5 s was
+    ~1.72 win/s -> timeout; INT8 + 10 s is ~5x cheaper end-to-end.
+
+    The submission grid is still 5 s (row_id `{clip}_{end}`, end in {5,10,...,60}), so each
+    10 s window's embedding is repeated for its two 5 s halves — both halves share the
+    coarser 10 s score. head_ast.npz is refit on 10 s-window embeddings (the distribution
+    shifts vs 5 s+silence), and the ONNX graph is unchanged (1024-frame input either way).
+    `model_dir` holds <name>.onnx + preprocessor_config.json (no ASTModel weights needed)."""
 
     requires = ["onnxruntime", "librosa"]  # torch/torchaudio/transformers in Kaggle base
 
@@ -218,7 +227,8 @@ class AstEncoder:
             str(onnx_path), sess_options=opts, providers=["CPUExecutionProvider"]
         )
         self.input_name = self.session.get_inputs()[0].name
-        self.window_samples = int(ENCODER_SR_16K * WINDOW_SEC)  # 80000
+        self.window_samples = int(ENCODER_SR_16K * AST_WINDOW_SEC)  # 160000 (10 s)
+        self.repeat = int(round(AST_WINDOW_SEC / WINDOW_SEC))       # 2 sub-segments per window
 
     def encode_file(self, path: str) -> tuple[np.ndarray, np.ndarray | None]:
         windows = window_audio(load_audio_torch(path, ENCODER_SR_16K), self.window_samples)
@@ -226,8 +236,11 @@ class AstEncoder:
             self.feature_extractor(w, sampling_rate=ENCODER_SR_16K, return_tensors="np")
             ["input_values"][0]
             for w in windows
-        ]).astype(np.float32)  # (n_windows, 1024, 128)
-        emb = self.session.run(None, {self.input_name: mels})[0]  # (n_windows, 768), cls-pooled
+        ]).astype(np.float32)  # (n_10s_windows, 1024, 128)
+        emb = self.session.run(None, {self.input_name: mels})[0]  # (n_10s_windows, 768), cls
+        # Expand each 10 s window to its `repeat` consecutive 5 s submission rows so main()
+        # emits the full 5 s grid (end_time 5,10,...) from half as many forwards.
+        emb = np.repeat(emb, self.repeat, axis=0)  # (repeat * n_10s_windows, 768)
         return emb.astype(np.float32), None
 
 

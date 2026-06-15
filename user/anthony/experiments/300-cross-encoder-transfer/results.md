@@ -194,7 +194,7 @@ live from `kaggle competitions submissions birdclef-2026` on 2026-06-14:
 | **Perch**   | 1536 | 1e5 | **0.8656** | **0.8617** | 0.6200 (rank 1) | ✅ COMPLETE |
 | **BirdNET** | 1024 | 1e6 | **0.8143** | **0.7979** | 0.5875 (rank 3) | ✅ COMPLETE |
 | **BEATs**   | 768  | 1e4 | **0.7771** | **0.7603** | 0.6119 (rank 2) | ✅ COMPLETE |
-| **AST**     | 768  | 1e5 | — | — | 0.5762 / 0.601 cls (rank 4) | ⚠️ BLANK (CPU timeout, see below) |
+| **AST**     | 768  | 1e5 | — | — | 0.5762 / 0.601 cls (rank 4) | ⚠️ BLANK ×2 (CPU timeout); 10s-geometry refit in progress, see below |
 
 All heads cover 234/234 species (no Perch-logit fallback fires). Consistency cos=1.000
 for every encoder (in-kernel forward reproduces the cache bit-for-bit).
@@ -217,7 +217,12 @@ for every encoder (in-kernel forward reproduces the cache bit-for-bit).
 Trails the logit/ensemble stacks (exp 038 Perch+SED ≈ 0.929) as expected for deliberately
 minimal single-encoder embedding baselines.
 
-## Deploy: AST cls (unified `kaggle_kernel/`) — BLOCKED on CPU runtime
+## Deploy: AST cls (unified `kaggle_kernel/`) — CPU-wall saga (eager → INT8 → 10s refit)
+
+> **Current state (2026-06-15):** eager and INT8 ONNX both scored BLANK (90-min CPU
+> timeout); the 10s-geometry refit that halves the forward count is in progress. The
+> dated **Update** subsection at the end of this section has the latest; the narrative
+> below is the original eager-in-kernel diagnosis, kept for the timing table + root cause.
 
 AST (`MIT/ast-finetuned-audioset-10-10-0.4593`, 768-d) through the unified kernel
 (`AstEncoder`, **cls** pooling = CLS+DIST mean — led the LOSO yardstick at 0.601 vs 0.576
@@ -272,3 +277,38 @@ resubmit from the unified kernel — that is **wrong**: a resubmit times out ide
 slow forward). This timeout diagnosis + timing table was merged here from `exp/300-deploy-next`,
 and that branch's redundant forked `kaggle_kernel_ast/` was dropped in the merge. AST stays
 undeployed pending the ONNX/OpenVINO work above.
+
+### Update (2026-06-15): INT8 ONNX shipped but STILL blank → 10s-geometry refit (in progress)
+
+**Attempt 1 — ONNX + INT8 (commit `02e6335`): blank again.** Exported the cls-pooled
+transformer to ONNX (legacy exporter, opset 17) and INT8-dynamic-quantized it
+(`scripts/export_ast_onnx.py`); downstream-validated that head + INT8 holds macro AUROC
+(0.901 vs 0.903 eager, −0.002 — the strict 0.993 per-window cosine was a red herring).
+Benchmarked 2.54 win/s on 4 vCPU (vs eager 1.72). Submitted (kernel v5) → **COMPLETE but
+BLANK leaderboard score**, same failure as eager. Deps install + ONNX session load confirmed
+fine in the commit log; the committed run sees `0 test soundscapes`, so the blank is the
+hidden rerun, not a code error.
+
+**Root cause refined: INT8 only sped the cheap half.** 2.54 win/s is the *graph* forward; the
+expensive half is the `ASTFeatureExtractor` mel, which force-pads every 5 s window to a fixed
+1024-frame (~10.24 s) tensor regardless. End-to-end on ~700–1000 clips × 12 windows still
+lands at 80–120 min → over the 90-min wall. Two independent AST runtimes (eager, INT8) both
+blank while BEATs/BirdNET/Perch score through the identical kernel → the wall is AST's
+per-window cost, confirmed.
+
+**Attempt 2 — 10 s native geometry (in progress).** The real lever is the *window count*, not
+the graph speed. Because AST's mel always occupies 1024 frames, a 5 s window wastes half the
+forward on silence; feeding **10 s windows** (6 per 60 s clip instead of 12) HALVES the forward
+count at identical per-window cost. Combined with INT8: ~6000 windows / 2.54 ≈ **39 min**, deep
+under the wall (even eager-10s ≈ 58 min would clear it). This also matches exp 301's native-
+geometry finding (10 s real audio ≫ 5 s + silence). The ONNX graph is unchanged (1024-frame
+input either way); only the head is refit on 10 s-window embeddings.
+
+Implementation: `--window-sec` threaded through `extract.py`/`cli.py` (default 5 s, frozen
+contract untouched); kernel `AstEncoder` windows at 10 s and `repeat(emb, 2)` so the 5 s
+submission grid (`{clip}_{end}`, end∈{5..60}) is preserved (both 5 s halves share the 10 s
+score); `consistency_check.py` de-repeats before the 1:1 cache check. CPU smoke green (768-d
+cls at 10 s). 10 s focal+soundscape re-extraction on GPU (jobs 9965471/9965472), then refit
+(`sbatch/fit-head-ast10s.sbatch`: held-out λ sweep → fit → in-sample replay), re-stage head
+(ONNX dataset unchanged), consistency-check, resubmit. **Gate before resubmit:** held-out
+focal→soundscape transfer must match the 5 s 0.6448.

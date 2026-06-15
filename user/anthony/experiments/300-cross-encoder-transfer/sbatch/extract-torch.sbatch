@@ -34,4 +34,5 @@ birdclef-300 extract \
     --config configs/exp300.yaml \
     --encoder "$ENCODER" \
     --variant "$VARIANT" \
-    ${POOLING:+--pooling "$POOLING"}
+    ${POOLING:+--pooling "$POOLING"} \
+    ${WINDOW_SEC:+--window-sec "$WINDOW_SEC"}
