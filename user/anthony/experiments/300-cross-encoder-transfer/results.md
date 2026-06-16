@@ -264,7 +264,7 @@ live from `kaggle competitions submissions birdclef-2026` on 2026-06-14:
 | **EAT**     | 768  | 1e5 | **0.7796** | **0.7659** | 0.569 / held-out 0.635 (rank 5) | ✅ COMPLETE (finetune_AS2M, FP32 ONNX of extract_features) |
 | **AST**     | 768  | 1e5 | **0.7780** | **0.7680** | 0.5762 / 0.601 cls (rank 4) | ✅ COMPLETE (10s-geometry INT8 ONNX; see saga below) |
 | **BEATs**   | 768  | 1e4 | **0.7771** | **0.7603** | 0.6119 (rank 2) | ✅ COMPLETE |
-| **SSAMBA**  | 384  | 1e2 | **0.7308** | **0.6893** | 0.5631 / held-out 0.607 (rank 6) | ✅ COMPLETE (eager 20s-stride; mamba-onnx fused op was all-NaN) |
+| **SSAMBA**  | 384  | 1e2 | **0.7308** | **0.6893** | 0.5631 / held-out 0.607 (rank 6) | ✅ COMPLETE (eager 20s-stride; our mamba-onnx *export* emitted NaN — op itself passes 12/12) |
 
 All heads cover 234/234 species (no Perch-logit fallback fires). Consistency cos=1.000
 for every encoder (in-kernel forward reproduces the cache bit-for-bit; AST INT8 cos=0.993
@@ -466,15 +466,18 @@ the hardest CPU-wall fight. The ladder, in order:
    (`_use_cuda_kernels=False`), batch-16, 10s windows (6/clip), `repeat(2)` for the 5s grid.
    `COMPLETE` + **blank** score — 6 fwd/clip (~65 min at 1.54 win/s) + full mel/IO overshot the
    90-min wall.
-3. **mamba-onnx fused op — built, fast graph, but ALL-NaN.** The custom `mamba-onnx` package
-   (`vendor/mamba-onnx`, release wheel) emits a *single* `mamba::SelectiveScanFusedExact` node
-   (AVX2 zig backend) → clean **101.8 MB** graph that loads and runs. But: (a) only **+15%**
-   (1.87 vs 1.61 win/s @ 4 vCPU — the 004 eager scan is already vectorized, so the non-scan
-   layers dominate, not the recurrence), and (b) **all-384-NaN at real weights** — exp005 only
-   ever benched *random-weight latency* (`status:"ok"` ≠ numerically correct), so the integration
-   was never validated; the op's `reference_selective_scan` contract matches what we feed, so it's
-   a real numeric/layout bug in the zig kernel. cpp backend won't load (no `libomp` on Kaggle).
-   Abandoned — even fixed, +15% lands full-coverage at ~77 min (risky) and needs `.so` vendoring.
+3. **mamba-onnx fused op — built, fast graph, but our SSAMBA export emits ALL-NaN.** The custom
+   `mamba-onnx` package (`vendor/mamba-onnx`, release wheel 0.1.0) emits a *single*
+   `mamba::SelectiveScanFusedExact` node (AVX2 zig backend) → clean **101.8 MB** graph that loads
+   and runs. But: (a) only **+15%** (1.87 vs 1.61 win/s @ 4 vCPU — the 004 eager scan is already
+   vectorized, so the non-scan layers dominate, not the recurrence), and (b) our exported SSAMBA
+   graph returns **all-384-NaN at real weights**. **Important: the op itself is correct** — its own
+   suite `tests/test_ops.py` passes **12/12 (zig)** in this venv, including the numerical edge cases,
+   so the NaN is a bug in *our SSAMBA→op export integration* (`scripts/ssamba_onnx_export.py`'s
+   `_ssm_forward_onnx` shim / bidirectional-scan wiring), **not** the kernel. Root cause not yet
+   isolated. cpp backend won't load anyway (no `libomp` on Kaggle). Set aside — even with a working
+   export, +15% lands full-coverage at ~77 min (risky) and needs `.so` vendoring, so 20s-stride eager
+   was the lower-risk path; revisiting the export is a follow-up, not a deploy blocker.
 4. **20s-stride eager — ✅ SCORED.** Forward only every 2nd 10s window (`SSAMBA_STRIDE=2`,
    3/clip) and mel *only those*, tiling each embedding across its 20s block, `repeat(2)` for the
    grid. Halves both scan and mel → ~32 min fwd + ~7 min mel ≈ ~40 min real → clears the wall.
