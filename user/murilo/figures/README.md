@@ -66,6 +66,22 @@ actually scores, not by frequency band. Portrait ≈ 7.2 × 7.4 in; 200 dpi (kee
 > energy stays in 1–4 kHz (cf. Fig. 2); the taxa separate by structure, not band. STFT:
 > 1024-pt window, 256-pt hop, dB (80 dB range, *magma*). Recordings: see acknowledgements.
 
+### Figure 4 — `soundscape_multispecies.{pdf,png}`
+A real **soundscape** segment (vs. isolated exemplars): `BC2026_Train_0063` (site S19, recorded
+19:00 — a nocturnal Pantanal chorus), 30 s = six 5 s prediction windows. Top: spectrogram with
+the species count per window (`9 / 8 / 8 / 10 / 8 / 7`). Bottom: an aligned **species×window
+ground-truth presence grid** (filled cell = species present), colored by taxon. **11 species,
+median 8 per window** — 7 frogs/toads + 3 insect sonotypes are present in nearly every window,
+with one brief *Pauraque* (the only bird). The taxa overlap so heavily they are not visually
+separable; labels are per-window presence only (no per-call localization → no boxes).
+
+> **Suggested caption.** A 30 s soundscape segment (`BC2026_Train_0063`, S19, nocturnal) split
+> into six 5 s prediction windows. Top: spectrogram (species count per window inset). Bottom:
+> ground-truth species presence per window, by taxon. Eleven species are active — a frog/insect
+> chorus present throughout plus one transient *Nyctidromus albicollis* (Pauraque) — a median of
+> 8 species per 5 s window. This is the dense multi-label problem the model scores; the taxa are
+> not separable by eye, motivating learned spectro-temporal features. STFT as in Fig. 1.
+
 Contact sheets `contactsheet_{Amphibia,Aves,Insecta}.png` show all candidate clips per taxon
 (set `CHOSEN[taxon]=k` in the notebook to swap an exemplar; the clip library is committed).
 
@@ -141,6 +157,8 @@ mkdir -p user/murilo/notebooks/assets/raw_src
 kaggle competitions download -c birdclef-2026 -f train_audio/24287/XC928990.ogg   -p user/murilo/notebooks/assets/raw_src/  # frog
 kaggle competitions download -c birdclef-2026 -f train_audio/yeofly1/XC298884.ogg -p user/murilo/notebooks/assets/raw_src/  # bird
 kaggle competitions download -c birdclef-2026 -f train_audio/244024/iNat269695.ogg -p user/murilo/notebooks/assets/raw_src/ # insect
+# Fig 4 soundscape (re-window needs the .ogg + train_soundscapes_labels.csv in assets/):
+kaggle competitions download -c birdclef-2026 -f train_soundscapes/BC2026_Train_0063_S19_20241214_190000.ogg -p user/murilo/notebooks/assets/raw_src/
 ```
 
 ## Files
@@ -148,6 +166,8 @@ kaggle competitions download -c birdclef-2026 -f train_audio/244024/iNat269695.o
 - `band_occupancy.{pdf,png}` — Fig 2 (supporting)
 - `taxa_windows_15s.{pdf,png}` — Fig 3 (clean, 3×5 s windows)
 - `taxa_windows_15s_boxes.{pdf,png}` — Fig 3 (with call boxes)
+- `soundscape_multispecies.{pdf,png}` — Fig 4 (soundscape spectrogram + species×window grid)
 - `contactsheet_*.png` — candidate exemplars per taxon
-- `../notebooks/assets/` — 5 s `clips/` + 15 s `clips15s/` (FLAC), `band_occupancy.npz`,
-  `freq_stats.npz`, `clip_manifest.json`, `clip_manifest15s.json` (`raw_src/*.ogg` git-ignored)
+- `../notebooks/assets/` — 5 s `clips/` + 15 s `clips15s/` + soundscape `clips_soundscape/`
+  (FLAC), `band_occupancy.npz`, `freq_stats.npz`, `clip_manifest.json`,
+  `clip_manifest15s.json`, `soundscape_manifest.json` (`raw_src/*.ogg` + `*.csv` git-ignored)

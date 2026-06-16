@@ -119,6 +119,7 @@ logs/
 # derived 5 s (clips/) and 15 s (clips15s/) windows are committed.
 !user/murilo/notebooks/assets/clips/**/*.flac
 !user/murilo/notebooks/assets/clips15s/*.flac
+!user/murilo/notebooks/assets/clips_soundscape/*.flac
 !user/murilo/notebooks/assets/*.npz
 
 # Exp 035 cv-trust diagnostic data outputs (regenerable by analysis/cv_trust/*.py).

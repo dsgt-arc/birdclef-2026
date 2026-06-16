@@ -48,6 +48,9 @@ This motivates spectrogram CNNs over hand-crafted frequency-band features.
   split into the model's three 5 s prediction windows; a clean version + a variant with call
   bounding boxes (many frog pulses / few bird whistles / one insect drone) — the *structure*
   contrast at the granularity the model actually scores.
+- **Figure 4** (`figures/soundscape_multispecies.{pdf,png}`): a real **soundscape** segment
+  (nocturnal Pantanal chorus, 11 species, median 8 per 5 s window) — spectrogram + an aligned
+  species×window ground-truth presence grid — the *multi-label* reality the model must predict.
 
 **Notebook structure:** the *asset-extraction* cell is the only part that touches the raw
 dataset (PACE-only). It persists clips + PSD/peak-freq arrays under `notebooks/assets/`, and
@@ -530,6 +533,126 @@ def build_windows_fig(with_boxes, stem):
 
 build_windows_fig(with_boxes=False, stem="taxa_windows_15s")
 build_windows_fig(with_boxes=True, stem="taxa_windows_15s_boxes")''')
+
+md(r"""## Figure 4 — soundscape multi-species reality (spectrogram + presence grid)
+
+A real **soundscape** segment instead of isolated exemplars: `BC2026_Train_0063` (site S19,
+recorded 19:00 — a nocturnal Pantanal chorus). In 30 s (six 5 s prediction windows) **11
+species** are active — 7 frogs/toads + 3 insect sonotypes in nearly every window, plus one
+brief **Pauraque** (the only bird) — a **median of 8 species per window**. The taxa overlap so
+heavily that they are not visually separable in the spectrogram; the aligned ground-truth grid
+below shows *which* species each 5 s window contains. This is the multi-label problem the model
+actually solves (labels are per-window presence only — no per-call time/frequency localization).
+
+**Off-cluster regeneration.** The 30 s segment + its per-window labels are persisted under
+`assets/clips_soundscape/` + `soundscape_manifest.json` (labels baked in), so the plot re-runs
+off-cluster. Re-extraction (`FORCE_EXTRACT`) needs the source soundscape under `assets/raw_src/`
+(single-file Kaggle pull) + `train_soundscapes_labels.csv`.""")
+
+code(r'''SS_MANIFEST = ASSETS / "soundscape_manifest.json"
+SS_CLIPS    = ASSETS / "clips_soundscape"
+SS_RAW      = ASSETS / "raw_src"
+SS_LABELS   = ASSETS / "train_soundscapes_labels.csv"
+SS_FILE     = "BC2026_Train_0063_S19_20241214_190000.ogg"  # nocturnal Pantanal chorus
+SS_SEG      = (30.0, 60.0)                                  # 30 s segment shown (s)
+
+
+def extract_soundscape():
+    import pandas as pd
+    y, _ = librosa.load(SS_RAW / SS_FILE, sr=SR, mono=True,
+                        offset=SS_SEG[0], duration=SS_SEG[1] - SS_SEG[0])
+    SS_CLIPS.mkdir(parents=True, exist_ok=True)
+    outfp = SS_CLIPS / f"{SS_FILE[:-4]}_{int(SS_SEG[0])}-{int(SS_SEG[1])}s.flac"
+    sf.write(outfp, y, SR, format="FLAC")
+    lab = pd.read_csv(SS_LABELS)
+    lab = lab[lab.filename == SS_FILE].drop_duplicates(["start", "end"]).copy()  # CSV has dup rows
+    sec = lambda s: sum(int(v) * m for v, m in zip(s.split(":"), (3600, 60, 1)))
+    lab["s0"], lab["s1"] = lab.start.map(sec), lab.end.map(sec)
+    lab = lab[(lab.s0 >= SS_SEG[0]) & (lab.s1 <= SS_SEG[1])].sort_values("s0")
+    sp = lambda s: [x for x in str(s).split(";") if x and x != "nan"]
+    windows = [{"s0": int(r.s0), "s1": int(r.s1), "species": sp(r.primary_label)}
+               for r in lab.itertuples()]
+    tax = pd.read_csv(ASSETS / "taxonomy.csv"); tax["primary_label"] = tax.primary_label.astype(str)
+    allsp = {x for w in windows for x in w["species"]}
+    meta = {r.primary_label: {"common_name": r.common_name, "scientific_name": r.scientific_name,
+                              "class_name": r.class_name}
+            for r in tax.itertuples() if r.primary_label in allsp}
+    man = {"filename": SS_FILE, "path": str(outfp.relative_to(REPO)),
+           "seg_start_sec": SS_SEG[0], "seg_end_sec": SS_SEG[1], "sr": SR,
+           "windows": windows, "species_meta": meta}
+    SS_MANIFEST.write_text(json.dumps(man, indent=2))
+    return man
+
+
+if FORCE_EXTRACT or not SS_MANIFEST.exists():
+    if (SS_RAW / SS_FILE).exists() and SS_LABELS.exists():
+        print("extracting soundscape segment ...")
+        extract_soundscape()
+    else:
+        print(f"soundscape assets missing AND sources unavailable (off-cluster). Download "
+              f"train_soundscapes/{SS_FILE} into assets/raw_src/ (see figures/README.md).")
+ss = json.loads(SS_MANIFEST.read_text())
+print(SS_FILE, "->", len(ss["windows"]), "windows,", len(ss["species_meta"]), "species")''')
+
+code(r'''TORDER = {"Amphibia": 0, "Aves": 1, "Insecta": 2}
+windows, meta = ss["windows"], ss["species_meta"]
+counts = [len(w["species"]) for w in windows]
+seg0, dur = ss["seg_start_sec"], ss["seg_end_sec"] - ss["seg_start_sec"]
+present = {}
+for w in windows:
+    for x in w["species"]:
+        present[x] = present.get(x, 0) + 1
+species = sorted(present, key=lambda x: (TORDER.get(meta[x]["class_name"], 9), -present[x], x))
+
+y, _ = librosa.load(REPO / ss["path"], sr=SR, mono=True)
+
+fig = plt.figure(figsize=(11.0, 6.8))
+gs = fig.add_gridspec(2, 1, height_ratios=[2.4, 2.2], hspace=0.07)
+ax, axg = fig.add_subplot(gs[0]), None
+axg = fig.add_subplot(gs[1], sharex=ax)
+
+# top: soundscape spectrogram with per-window species count
+im = ax.imshow(spec_db(y), origin="lower", aspect="auto", cmap="magma", vmin=DB_FLOOR, vmax=0,
+               extent=[0, dur, 0, NYQ / 1000], rasterized=True)
+for t in range(5, int(dur), 5):
+    ax.axvline(t, color="white", lw=1.0, alpha=0.85, ls="--")
+for i, c in enumerate(counts):
+    ax.text(i * 5 + 2.5, NYQ / 1000 - 1.0, f"{c} spp", ha="center", va="top", color="white",
+            fontsize=8, fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.2", fc="black", ec="none", alpha=0.5))
+ax.set_ylabel("Frequency (kHz)"); ax.set_ylim(0, NYQ / 1000); ax.set_xlim(0, dur)
+ax.tick_params(labelbottom=False)
+ax.set_title(f"Soundscape {ss['filename']}  ·  {int(seg0)}–{int(ss['seg_end_sec'])} s  ·  "
+             f"{len(species)} species, median {int(np.median(counts))}/window "
+             f"(nocturnal Pantanal chorus)", fontsize=9, loc="left")
+cb = fig.colorbar(im, ax=[ax, axg], fraction=0.022, pad=0.01); cb.set_label("Power (dB)")
+
+# bottom: species × window presence grid (cell filled = species present), taxon-colored
+for j in range(len(windows)):
+    axg.axvline(j * 5, color="0.85", lw=0.6)
+for r, s in enumerate(species):
+    col = TAXON_COLOR.get(meta[s]["class_name"], "0.5")
+    for j, w in enumerate(windows):
+        if s in w["species"]:
+            axg.add_patch(mpl.patches.Rectangle((j * 5 + 0.4, r + 0.12), 4.2, 0.76,
+                                                color=col, alpha=0.9))
+axg.set_xlim(0, dur); axg.set_ylim(len(species), 0)
+axg.set_yticks([r + 0.5 for r in range(len(species))])
+axg.set_yticklabels([meta[s]["common_name"] for s in species], fontsize=7.5)
+for tick, s in zip(axg.get_yticklabels(), species):
+    tick.set_color(TAXON_COLOR.get(meta[s]["class_name"], "0.3"))
+axg.set_xticks(np.arange(0, dur + 1, 5))
+axg.set_xticklabels([f"{int(seg0 + t)}" for t in np.arange(0, dur + 1, 5)])
+axg.set_xlabel("Time (s)")
+axg.set_title("Ground-truth species presence per 5 s prediction window", fontsize=8.5, loc="left")
+axg.legend(handles=[mpl.patches.Patch(color=TAXON_COLOR[t], label=t)
+                    for t in ("Amphibia", "Aves", "Insecta")],
+           loc="lower right", fontsize=7, frameon=True, ncol=3, framealpha=0.85)
+
+for ext in ("pdf", "png"):
+    fig.savefig(FIGDIR / f"soundscape_multispecies.{ext}", dpi=200)
+print("saved", FIGDIR / "soundscape_multispecies.pdf")
+plt.show()''')
 
 nb["cells"] = cells
 nb["metadata"] = {

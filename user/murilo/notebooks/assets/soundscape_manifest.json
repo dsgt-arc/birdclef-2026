@@ -1,0 +1,152 @@
+{
+  "filename": "BC2026_Train_0063_S19_20241214_190000.ogg",
+  "path": "user/murilo/notebooks/assets/clips_soundscape/BC2026_Train_0063_S19_20241214_190000_30-60s.flac",
+  "seg_start_sec": 30.0,
+  "seg_end_sec": 60.0,
+  "sr": 32000,
+  "windows": [
+    {
+      "s0": 30,
+      "s1": 35,
+      "species": [
+        "22973",
+        "24321",
+        "25073",
+        "326272",
+        "47158son04",
+        "47158son11",
+        "47158son13",
+        "47158son24",
+        "67107"
+      ]
+    },
+    {
+      "s0": 35,
+      "s1": 40,
+      "species": [
+        "22973",
+        "25073",
+        "326272",
+        "47158son11",
+        "47158son13",
+        "47158son24",
+        "67107",
+        "compau"
+      ]
+    },
+    {
+      "s0": 40,
+      "s1": 45,
+      "species": [
+        "22973",
+        "25073",
+        "326272",
+        "47158son05",
+        "47158son11",
+        "47158son13",
+        "47158son24",
+        "67107"
+      ]
+    },
+    {
+      "s0": 45,
+      "s1": 50,
+      "species": [
+        "22973",
+        "24321",
+        "25073",
+        "326272",
+        "47158son04",
+        "47158son05",
+        "47158son11",
+        "47158son13",
+        "47158son24",
+        "67107"
+      ]
+    },
+    {
+      "s0": 50,
+      "s1": 55,
+      "species": [
+        "22973",
+        "24321",
+        "25073",
+        "326272",
+        "47158son11",
+        "47158son13",
+        "47158son24",
+        "67107"
+      ]
+    },
+    {
+      "s0": 55,
+      "s1": 60,
+      "species": [
+        "22973",
+        "25073",
+        "326272",
+        "47158son11",
+        "47158son13",
+        "47158son24",
+        "67107"
+      ]
+    }
+  ],
+  "species_meta": {
+    "22973": {
+      "common_name": "Whistling Grass Frog",
+      "scientific_name": "Leptodactylus fuscus",
+      "class_name": "Amphibia"
+    },
+    "24321": {
+      "common_name": "Mato Grosso Snouted Tree Frog",
+      "scientific_name": "Scinax acuminatus",
+      "class_name": "Amphibia"
+    },
+    "25073": {
+      "common_name": "Chiasmocleis mehelyi",
+      "scientific_name": "Chiasmocleis mehelyi",
+      "class_name": "Amphibia"
+    },
+    "326272": {
+      "common_name": "Weeping Frog",
+      "scientific_name": "Physalaemus biligonigerus",
+      "class_name": "Amphibia"
+    },
+    "47158son04": {
+      "common_name": "Insect sonotype04",
+      "scientific_name": "Insect son04",
+      "class_name": "Insecta"
+    },
+    "47158son05": {
+      "common_name": "Insect sonotype05",
+      "scientific_name": "Insect son05",
+      "class_name": "Insecta"
+    },
+    "47158son11": {
+      "common_name": "Insect sonotype11",
+      "scientific_name": "Insect son11",
+      "class_name": "Insecta"
+    },
+    "47158son13": {
+      "common_name": "Insect sonotype13",
+      "scientific_name": "Insect son13",
+      "class_name": "Insecta"
+    },
+    "47158son24": {
+      "common_name": "Insect sonotype24",
+      "scientific_name": "Insect son24",
+      "class_name": "Insecta"
+    },
+    "67107": {
+      "common_name": "Rococo Toad",
+      "scientific_name": "Rhinella diptycha",
+      "class_name": "Amphibia"
+    },
+    "compau": {
+      "common_name": "Pauraque",
+      "scientific_name": "Nyctidromus albicollis",
+      "class_name": "Aves"
+    }
+  }
+}
