@@ -68,7 +68,7 @@ NYQ = SR // 2        # 16 kHz
 CLIP_SEC = 5.0       # spectrogram panel length
 
 mpl.rcParams.update({
-    "figure.dpi": 120, "savefig.dpi": 200, "font.size": 9,
+    "figure.dpi": 120, "savefig.dpi": 400, "font.size": 9,
     "axes.titlesize": 9, "axes.labelsize": 9, "legend.fontsize": 8,
     "savefig.bbox": "tight", "pdf.fonttype": 42, "ps.fonttype": 42,
 })

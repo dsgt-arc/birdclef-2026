@@ -12,7 +12,7 @@ repos:
       - id: check-toml
       - id: check-json
       - id: check-added-large-files
-        args: ['--maxkb=1024']  # 1MB max
+        args: ['--maxkb=4096']  # 4MB max (allows hi-res paper figures, e.g. 400-dpi spectrograms)
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: mixed-line-ending
