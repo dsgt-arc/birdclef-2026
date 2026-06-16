@@ -1,0 +1,128 @@
+{
+  "Amphibia": [
+    {
+      "path": "user/murilo/notebooks/assets/clips/Amphibia/cand0_1595929.flac",
+      "primary_label": "1595929",
+      "scientific_name": "Lysapsus limellum",
+      "common_name": "Uruguay Harlequin Frog",
+      "source_file": "1595929/XC999239.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Amphibia/cand1_24287.flac",
+      "primary_label": "24287",
+      "scientific_name": "Scinax fuscomarginatus",
+      "common_name": "Brown-bordered Snouted Tree Frog",
+      "source_file": "24287/XC928990.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Amphibia/cand2_67252.flac",
+      "primary_label": "67252",
+      "scientific_name": "Trachycephalus typhonius",
+      "common_name": "Milk Frog",
+      "source_file": "67252/XC952184.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Amphibia/cand3_65377.flac",
+      "primary_label": "65377",
+      "scientific_name": "Dendropsophus minutus",
+      "common_name": "Lesser Tree Frog",
+      "source_file": "65377/XC1008740.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Amphibia/cand4_555146.flac",
+      "primary_label": "555146",
+      "scientific_name": "Boana raniceps",
+      "common_name": "Chaco Tree Frog",
+      "source_file": "555146/XC950136.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Amphibia/cand5_22973.flac",
+      "primary_label": "22973",
+      "scientific_name": "Leptodactylus fuscus",
+      "common_name": "Whistling Grass Frog",
+      "source_file": "22973/XC892927.ogg",
+      "rating": 5.0
+    }
+  ],
+  "Aves": [
+    {
+      "path": "user/murilo/notebooks/assets/clips/Aves/cand0_ashgre1.flac",
+      "primary_label": "ashgre1",
+      "scientific_name": "Hylophilus pectoralis",
+      "common_name": "Ashy-headed Greenlet",
+      "source_file": "ashgre1/XC619792.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Aves/cand1_yeofly1.flac",
+      "primary_label": "yeofly1",
+      "scientific_name": "Tolmomyias sulphurescens",
+      "common_name": "Yellow-olive Flatbill",
+      "source_file": "yeofly1/XC298884.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Aves/cand2_osprey.flac",
+      "primary_label": "osprey",
+      "scientific_name": "Pandion haliaetus",
+      "common_name": "Osprey",
+      "source_file": "osprey/XC758691.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Aves/cand3_pabspi1.flac",
+      "primary_label": "pabspi1",
+      "scientific_name": "Synallaxis albescens",
+      "common_name": "Pale-breasted Spinetail",
+      "source_file": "pabspi1/XC993685.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Aves/cand4_astcra1.flac",
+      "primary_label": "astcra1",
+      "scientific_name": "Mustelirallus albicollis",
+      "common_name": "Ash-throated Crake",
+      "source_file": "astcra1/XC358389.ogg",
+      "rating": 5.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Aves/cand5_palhor3.flac",
+      "primary_label": "palhor3",
+      "scientific_name": "Furnarius leucopus",
+      "common_name": "Pale-legged Hornero",
+      "source_file": "palhor3/XC128812.ogg",
+      "rating": 5.0
+    }
+  ],
+  "Insecta": [
+    {
+      "path": "user/murilo/notebooks/assets/clips/Insecta/cand0_1161364.flac",
+      "primary_label": "1161364",
+      "scientific_name": "Guyalna cuta",
+      "common_name": "Guyalna cuta",
+      "source_file": "1161364/iNat1216197.ogg",
+      "rating": 0.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Insecta/cand1_244024.flac",
+      "primary_label": "244024",
+      "scientific_name": "Quesada gigas",
+      "common_name": "Giant Cicada",
+      "source_file": "244024/iNat269695.ogg",
+      "rating": 0.0
+    },
+    {
+      "path": "user/murilo/notebooks/assets/clips/Insecta/cand2_760266.flac",
+      "primary_label": "760266",
+      "scientific_name": "Prionacris erosa",
+      "common_name": "Prionacris erosa",
+      "source_file": "760266/iNat792679.ogg",
+      "rating": 0.0
+    }
+  ]
+}
