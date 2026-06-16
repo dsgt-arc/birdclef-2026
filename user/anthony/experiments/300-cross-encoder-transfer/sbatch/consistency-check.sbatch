@@ -28,5 +28,8 @@ fi
 [ "$ENCODER" = "ast" ] && uv pip install transformers onnxruntime >/dev/null 2>&1 || true
 # EAT runs torchaudio kaldi-fbank (mel) + onnxruntime (graph) — torchaudio is in the venv.
 [ "$ENCODER" = "eat" ] && uv pip install onnxruntime >/dev/null 2>&1 || true
+# SSAMBA runs torchaudio kaldi-fbank (mel) + onnxruntime (pure-PyTorch Mamba graph). The
+# gate here is CPU-ONNX vs the GPU-CUDA focal cache (the deploy-critical parity).
+[ "$ENCODER" = "ssamba_hf" ] && uv pip install onnxruntime >/dev/null 2>&1 || true
 
 python scripts/consistency_check.py "$ENCODER"

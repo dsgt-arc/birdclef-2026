@@ -313,6 +313,113 @@ class EatEncoder:
         return np.concatenate(out).astype(np.float32), None  # (n, 768), cls
 
 
+SSAMBA_NORM_MEAN = -4.2677393  # birdclef.encoders.SSAMBAHFEncoder AudioSet defaults
+SSAMBA_NORM_STD = 4.5689974
+SSAMBA_TARGET_FRAMES = 1024    # model config.img_size time dim (8x64=512 patches + CLS)
+SSAMBA_WINDOW_SEC = 10.0       # 10 s geometry: fills the 1024-frame mel, halves forwards
+SSAMBA_BATCH = 16              # batch-16 is the CPU win/s sweet spot (1.6 win/s @ 4 vCPU)
+SSAMBA_STRIDE = 2              # process every 2nd 10 s window (20 s hop): full coverage at
+                              # 1.6 win/s -> ~62 min fwd TIMED OUT on the hidden set, so we
+                              # halve the forward count (3/clip) -> ~31 min fwd (~45 min real),
+                              # tiling each 10 s embedding across its 20 s block.
+
+
+class SsambaEncoder:
+    """SSAMBA-HF mean-patch embedding (SSL ssamba_small_400, 384-dim) run EAGER on CPU.
+
+    SSAMBA's deploy blocker was the Mamba selective-scan. The unrolled-ONNX path is
+    non-viable (513-token x 24-layer x 2-dir -> ~25K-node 203 MB graph; ORT session-init
+    alone times out). Instead we run the exp004 HF port's PURE-PYTORCH scan directly: on
+    CPU `_should_use_cuda_kernels` auto-falls-back (and we force it off), so no mamba-ssm /
+    onnxruntime is needed — just torch + torchaudio (both in the Kaggle base). At 4 vCPU,
+    batch-16 gives ~1.6 win/s; the model always pads the mel to 1024 frames (~10 s), so a
+    5 s window wastes half on silence -> we run 10 s windows. Full coverage (6/clip, ~6K
+    forwards, ~62 min fwd) TIMED OUT on the hidden set (the fused-scan mamba-onnx op was only
+    ~15% faster AND returned all-NaN, so it was abandoned). Fix: 20 s hop (SSAMBA_STRIDE=2)
+    -> forward only every 2nd 10 s window (3/clip, ~31 min fwd, ~45 min real), tiling each
+    embedding across its 20 s block, then `repeat(emb,2)` to fill the 5 s submission grid. The
+    head is REFIT on the 10 s-geometry cache. The mel is torchaudio kaldi-fbank replicating
+    SSAMBAHFEncoder._waveform_to_fbank EXACTLY (num_mel_bins=128, hanning, frame_shift=10,
+    (mel - (-4.2677393)) / (4.5689974*2), padded to 1024). `model_dir` holds the ssamba_hf
+    package + ssamba_small_400.pth."""
+
+    requires: list[str] = []  # torch + torchaudio in Kaggle base; NO mamba-ssm / onnxruntime
+
+    def __init__(self, model_dir: Path, batch_size: int = SSAMBA_BATCH):
+        import torch
+
+        self.torch = torch
+        torch.set_num_threads(os.cpu_count() or 4)
+        model_dir = Path(model_dir)
+        # The staged dir holds the `ssamba_hf` package + the .pth; add it to the path so the
+        # pure-PyTorch model architecture is importable offline.
+        if str(model_dir) not in sys.path:
+            sys.path.insert(0, str(model_dir))
+        from ssamba_hf import load_from_ssamba_checkpoint
+
+        ckpts = sorted(model_dir.glob("*.pth"))
+        if not ckpts:
+            raise FileNotFoundError(f"no .pth under {model_dir}")
+        self.model, self.config = load_from_ssamba_checkpoint(
+            str(ckpts[0]), device="cpu", verbose=False
+        )
+        self.model.eval()
+        for m in self.model.modules():  # force the pure-PyTorch scan (no mamba-ssm on Kaggle)
+            if hasattr(m, "_use_cuda_kernels"):
+                m._use_cuda_kernels = False
+        self.fdim, self.tdim = self.config.img_size  # (128 freq, 1024 time)
+        self.window_samples = int(ENCODER_SR_16K * SSAMBA_WINDOW_SEC)  # 160000 (10 s)
+        self.repeat = int(round(SSAMBA_WINDOW_SEC / WINDOW_SEC))       # 2 sub-segments / window
+        self.stride = SSAMBA_STRIDE                                    # process every Nth window
+        self.batch_size = batch_size
+
+    def _mel(self, windows: np.ndarray):
+        """(n, 160000) waveforms -> (n, 1024, 128) mels, matching SSAMBAHFEncoder exactly."""
+        import torchaudio
+
+        mels = []
+        for w in windows:
+            wav = self.torch.from_numpy(w).float()
+            wav = wav - wav.mean()
+            mel = torchaudio.compliance.kaldi.fbank(
+                wav.unsqueeze(0), htk_compat=True, sample_frequency=ENCODER_SR_16K,
+                use_energy=False, window_type="hanning", num_mel_bins=self.fdim,
+                dither=0.0, frame_shift=10,
+            )  # (time, 128)
+            n = mel.shape[0]
+            if n < self.tdim:
+                mel = self.torch.nn.functional.pad(mel, (0, 0, 0, self.tdim - n))
+            elif n > self.tdim:
+                mel = mel[:self.tdim, :]
+            mels.append(mel)
+        mel = self.torch.stack(mels, dim=0)               # (n, 1024, 128)
+        mel = (mel - SSAMBA_NORM_MEAN) / (SSAMBA_NORM_STD * 2)
+        return mel  # torch (n, 1024, 128) = (B, T, F), what model.forward expects
+
+    def encode_file(self, path: str) -> tuple[np.ndarray, np.ndarray | None]:
+        windows = window_audio(load_audio_torch(path, ENCODER_SR_16K), self.window_samples)
+        n = len(windows)                                           # 6 for a 60 s clip
+        # 20 s hop: only the every-`stride`-th 10 s window (indices 0,2,4 for n=6) is computed,
+        # then its embedding is tiled across the windows it covers. We mel + forward ONLY those
+        # selected windows — halving BOTH the mel front-end and the Mamba-scan cost. Full
+        # coverage (6/clip mel + fwd, ~65 min fwd + mel/IO overhead) overshot the 90-min wall;
+        # 3/clip (~32 min fwd) clears it. The forward math is byte-identical to full coverage
+        # (already consistency-verified, cos=1.000) — only temporal sampling is coarser.
+        sel = list(range(0, n, self.stride))                       # processed window indices
+        sel_mels = self._mel(windows[sel])                         # (len(sel), 1024, 128)
+        sel_emb = []
+        with self.torch.no_grad():
+            for i in range(0, len(sel_mels), self.batch_size):
+                emb = self.model.forward(sel_mels[i:i + self.batch_size])  # (b, 384) mean_patch
+                sel_emb.append(emb.cpu().numpy())
+        sel_emb = np.concatenate(sel_emb).astype(np.float32)       # (len(sel), 384)
+        # Window j is represented by the processed window at floor(j/stride) (the 10 s slice
+        # at the start of its 20 s block).
+        per_window = sel_emb[[j // self.stride for j in range(n)]]  # (n, 384)
+        # Expand each 10 s window to its `repeat` consecutive 5 s submission rows.
+        return np.repeat(per_window, self.repeat, axis=0).astype(np.float32), None  # (repeat*n, 384)
+
+
 class BirdnetEncoder:
     """BirdNET via bioacoustics-model-zoo (TFLite) — the SAME 3 s -> 5 s pooling as
     extract_birdnet.extract_birdnet_focal. CPU; needs bmz + litert staged offline."""
@@ -390,6 +497,12 @@ def build_encoder(encoder: str):
         if d is None or not Path(d).exists():
             raise FileNotFoundError("EAT ONNX dataset not found")
         return EatEncoder(Path(d))
+    if encoder == "ssamba_hf":
+        # Eager pure-PyTorch (no ONNX): the dataset holds the ssamba_hf package + the .pth.
+        d = _find_input("birdclef-2026-exp300-ssamba-weights") or Path(os.environ.get("SSAMBA_WEIGHTS_DIR", ""))
+        if d is None or not Path(d).exists():
+            raise FileNotFoundError("SSAMBA weights dataset not found")
+        return SsambaEncoder(Path(d))
     if encoder == "birdnet":
         _ensure_deps(["bioacoustics_model_zoo", "ai_edge_litert", *BirdnetEncoder.requires],
                      "birdclef-2026-birdnet-deps", "birdclef-2025-deps")
@@ -460,6 +573,7 @@ def main() -> None:
         "birdclef-2026-exp300-birdnet-head",
         "birdclef-2026-exp300-ast-head",
         "birdclef-2026-exp300-eat-head",
+        "birdclef-2026-exp300-ssamba-head",
     ) or Path(os.environ.get("HEAD_DIR", "artifacts"))
     # head file is `head.npz` (beats/birdnet staging) or `head_<enc>.npz` (AST dataset).
     head_npz = Path(head_dir) / "head.npz"

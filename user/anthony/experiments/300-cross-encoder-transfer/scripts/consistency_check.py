@@ -25,6 +25,9 @@ import submission as sub  # noqa: E402
 CACHE = Path("~/scratch/birdclef-2026/features/exp300-deploy").expanduser()
 CKPT_BEATS = Path("~/scratch/birdclef-2026/checkpoints/beats").expanduser()
 VENDOR_BEATS = Path("~/arc/birdclef-2026/vendor/unilm/beats").expanduser()
+# SSAMBA eager deploy: the 004-port pure-PyTorch package + the SSL checkpoint.
+SSAMBA_PKG = EXP.parent / "004-ssamba-hf-port" / "ssamba_hf" / "ssamba_hf"
+CKPT_SSAMBA = Path("~/scratch/birdclef-2026/checkpoints/ssamba/ssamba_small_400.pth").expanduser()
 # AST deploy cache is the 10 s-geometry refit (focal tiled into 10 s windows, cls);
 # the rest live under CACHE/{encoder}/focal.
 FOCAL_DIRS = {"ast": Path("~/scratch/birdclef-2026/features/exp300-deploy/ast").expanduser()}
@@ -64,6 +67,15 @@ def build_kernel_encoder(encoder: str):
         # eager frozen-cls-ft cache — the real offline gate (export parity was already 1.0).
         d = os.environ.get("EAT_ONNX_DIR", str(EXP / "artifacts" / "eat_onnx"))
         return sub.EatEncoder(Path(d))
+    if encoder == "ssamba_hf":
+        # SSAMBA runs EAGER pure-PyTorch (no ONNX): a temp model_dir holds the ssamba_hf
+        # package + the .pth (== the Kaggle weights dataset). THE key gate: the kernel's CPU
+        # pure-PyTorch scan must reproduce the GPU-CUDA focal cache (cosine > 0.999) — if it
+        # fails, re-extract focal with use_cuda_kernels=False.
+        md = Path(tempfile.mkdtemp(prefix="ssamba_md_"))
+        (md / "ssamba_hf").symlink_to(SSAMBA_PKG)
+        (md / CKPT_SSAMBA.name).symlink_to(CKPT_SSAMBA)
+        return sub.SsambaEncoder(md)
     raise SystemExit(f"unknown encoder {encoder}")
 
 
