@@ -114,7 +114,11 @@ logs/
 # BirdCLEF-2026 working-note figure assets: small clips + precomputed arrays that must
 # enter git so user/murilo/notebooks/006-taxa-spectrogram-figure.ipynb regenerates the
 # figures off-cluster (no dataset access). Overrides *.flac / *.npz above.
+# NB: full source recordings under assets/raw_src/*.ogg stay ignored — they are
+# re-downloadable single-file Kaggle pulls (see user/murilo/figures/README.md); only the
+# derived 5 s (clips/) and 15 s (clips15s/) windows are committed.
 !user/murilo/notebooks/assets/clips/**/*.flac
+!user/murilo/notebooks/assets/clips15s/*.flac
 !user/murilo/notebooks/assets/*.npz
 
 # Exp 035 cv-trust diagnostic data outputs (regenerable by analysis/cv_trust/*.py).

@@ -1,0 +1,32 @@
+{
+  "Amphibia": {
+    "path": "user/murilo/notebooks/assets/clips15s/Amphibia_24287.flac",
+    "primary_label": "24287",
+    "scientific_name": "Scinax fuscomarginatus",
+    "common_name": "Brown-bordered Snouted Tree Frog",
+    "source_file": "24287/XC928990.ogg",
+    "window_start_sec": 1.488,
+    "window_sec": 15.0,
+    "sr": 32000
+  },
+  "Aves": {
+    "path": "user/murilo/notebooks/assets/clips15s/Aves_yeofly1.flac",
+    "primary_label": "yeofly1",
+    "scientific_name": "Tolmomyias sulphurescens",
+    "common_name": "Yellow-olive Flatbill",
+    "source_file": "yeofly1/XC298884.ogg",
+    "window_start_sec": 65.472,
+    "window_sec": 15.0,
+    "sr": 32000
+  },
+  "Insecta": {
+    "path": "user/murilo/notebooks/assets/clips15s/Insecta_244024.flac",
+    "primary_label": "244024",
+    "scientific_name": "Quesada gigas",
+    "common_name": "Giant Cicada",
+    "source_file": "244024/iNat269695.ogg",
+    "window_start_sec": 9.424,
+    "window_sec": 15.0,
+    "sr": 32000
+  }
+}

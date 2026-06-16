@@ -1,0 +1,30 @@
+[project]
+name = "birdclef-figures"
+version = "0.1.0"
+description = "Minimal env for BirdCLEF 2026 working-note figures + spectrogram notebooks (no torch/TF)."
+requires-python = ">=3.11"
+dependencies = [
+    # Audio + signal processing
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "scipy>=1.10.0",
+
+    # Data
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+
+    # Plotting
+    "matplotlib>=3.7.0",
+
+    # Notebook execution (jupyter nbconvert --execute)
+    "jupyter>=1.0.0",
+    "nbconvert>=7.0.0",
+    "ipykernel>=6.0.0",
+
+    # Data download (single-file pulls from the Kaggle competition)
+    "kaggle>=1.6.0",
+]
+
+# Deps-only project (no package to build). Install with:
+#   uv venv .venv --python 3.11 && source .venv/bin/activate
+#   uv pip install -r user/murilo/notebooks/pyproject.toml

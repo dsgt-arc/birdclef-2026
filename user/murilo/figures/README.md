@@ -49,6 +49,23 @@ averaged and lightly smoothed; (right) per-recording **peak-frequency** distribu
 > insects (cicadas) sit low and narrow, frogs span the widest range, and the distributions
 > overlap substantially — frequency band alone does not separate the taxa.
 
+### Figure 3 — `taxa_windows_15s.{pdf,png}` (clean) + `taxa_windows_15s_boxes.{pdf,png}` (boxed)
+Per-taxon **15 s** spectrogram (one row each), split into the model's **three 5 s prediction
+windows** (dashed dividers at 5 s / 10 s, "Window 1/2/3" labels), shared linear-Hz axis
+(0–16 kHz). Two variants: a clean version and one with **call bounding boxes**. The box-count
+contrast is itself the story — **many** frog pulses, **few** bird whistles, **one** sustained
+insect drone — i.e. the taxa differ by spectro-temporal structure at the granularity the model
+actually scores, not by frequency band. Portrait ≈ 7.2 × 7.4 in; 200 dpi (keeps each asset
+< 4 MB).
+
+> **Suggested caption.** Fifteen-second spectrograms of the three vocalizing taxa, each split
+> into the three consecutive 5 s windows scored by the model (dashed dividers). Green boxes mark
+> individual call events: frogs (*Scinax fuscomarginatus*) emit a dense pulsed train (many
+> boxes), birds (*Tolmomyias sulphurescens*) a few discrete FM whistles, and insects
+> (*Quesada gigas*, a cicada) one sustained broadband drone spanning all three windows. All
+> energy stays in 1–4 kHz (cf. Fig. 2); the taxa separate by structure, not band. STFT:
+> 1024-pt window, 256-pt hop, dB (80 dB range, *magma*). Recordings: see acknowledgements.
+
 Contact sheets `contactsheet_{Amphibia,Aves,Insecta}.png` show all candidate clips per taxon
 (set `CHOSEN[taxon]=k` in the notebook to swap an exemplar; the clip library is committed).
 
@@ -60,11 +77,23 @@ Contact sheets `contactsheet_{Amphibia,Aves,Insecta}.png` show all candidate cli
 - Insecta = 3 identified species (*Guyalna cuta*, *Quesada gigas* = Giant Cicada,
   *Prionacris erosa*) + 25 unlabeled "Insect sonotype" placeholders → cicada-dominated.
 
-## Exemplar recordings + attribution (Fig. 1)
+## Exemplar recordings + attribution
+
+**Figure 1 (5 s clips):**
 
 | Taxon | Species | Source file | Author | License |
 |---|---|---|---|---|
 | Frogs | *Trachycephalus typhonius* | XC952184 | Guillermo Menéndez (gmmv80) | CC BY-NC-SA |
+| Birds | *Tolmomyias sulphurescens* | XC298884 | Roney Souza | CC BY-NC-SA |
+| Insects | *Quesada gigas* | iNat 269695 | Jeff Cole | CC BY-NC |
+
+**Figure 3 (15 s windows):** the frog differs from Fig. 1 — *T. typhonius* (XC952184) is only
+11 s, too short for three 5 s windows, so a longer pulsed-train recording is used. Bird and
+insect are the same recordings as Fig. 1.
+
+| Taxon | Species | Source file | Author | License |
+|---|---|---|---|---|
+| Frogs | *Scinax fuscomarginatus* | XC928990 | Augustin Bussac | CC BY-NC-SA |
 | Birds | *Tolmomyias sulphurescens* | XC298884 | Roney Souza | CC BY-NC-SA |
 | Insects | *Quesada gigas* | iNat 269695 | Jeff Cole | CC BY-NC |
 
@@ -81,6 +110,19 @@ Xeno-canto: `xeno-canto.org/<id>`; iNaturalist: `inaturalist.org` obs. for sound
   9-bin moving-average smoothing for display only.
 - **Peak frequency (Fig 2 right):** Welch `nperseg=4096`, argmax over `f ≥ 300 Hz`
   (ignore DC/rumble); 80 random files/taxon; RNG seed 51.
+- **15 s windows (Fig 3):** loudest 15 s window (same RMS proxy) of each source recording,
+  saved under `notebooks/assets/clips15s/` + `clip_manifest15s.json`. Call boxes are manually
+  curated for the committed windows (bird FM-whistle & frog pulse-burst centres peak-picked on
+  the band-energy envelope, then reviewed; insect = one drone span); coordinates live in the
+  notebook's Fig 3 builder cell. 200 dpi, spectrogram rasterized (text/boxes stay vector).
+
+## Environment (off-cluster)
+
+A minimal, torch-free env (`user/murilo/notebooks/pyproject.toml`) runs the figure notebook:
+```bash
+uv venv .venv --python 3.11 && source .venv/bin/activate
+uv pip install -r user/murilo/notebooks/pyproject.toml
+```
 
 ## Regenerate / refine (off-cluster OK)
 
@@ -91,10 +133,21 @@ jupyter nbconvert --to notebook --execute --inplace \
 # rebuild the notebook from the scaffold (OVERWRITES notebook edits):
 python user/murilo/scripts/build_taxa_figure_notebook.py
 ```
-Set `FORCE_EXTRACT=True` in the notebook only on PACE to re-extract clips/PSD from raw audio.
+Set `FORCE_EXTRACT=True` to re-extract. Fig 1/2 re-extraction needs the PACE dataset; Fig 3
+re-windowing instead reads single-file Kaggle pulls placed under `notebooks/assets/raw_src/`
+(these `.ogg` are git-ignored — re-download as needed):
+```bash
+mkdir -p user/murilo/notebooks/assets/raw_src
+kaggle competitions download -c birdclef-2026 -f train_audio/24287/XC928990.ogg   -p user/murilo/notebooks/assets/raw_src/  # frog
+kaggle competitions download -c birdclef-2026 -f train_audio/yeofly1/XC298884.ogg -p user/murilo/notebooks/assets/raw_src/  # bird
+kaggle competitions download -c birdclef-2026 -f train_audio/244024/iNat269695.ogg -p user/murilo/notebooks/assets/raw_src/ # insect
+```
 
 ## Files
 - `taxa_spectrograms.{pdf,png}` — Fig 1 (main)
 - `band_occupancy.{pdf,png}` — Fig 2 (supporting)
+- `taxa_windows_15s.{pdf,png}` — Fig 3 (clean, 3×5 s windows)
+- `taxa_windows_15s_boxes.{pdf,png}` — Fig 3 (with call boxes)
 - `contactsheet_*.png` — candidate exemplars per taxon
-- `../notebooks/assets/` — clips (FLAC), `band_occupancy.npz`, `freq_stats.npz`, `clip_manifest.json`
+- `../notebooks/assets/` — 5 s `clips/` + 15 s `clips15s/` (FLAC), `band_occupancy.npz`,
+  `freq_stats.npz`, `clip_manifest.json`, `clip_manifest15s.json` (`raw_src/*.ogg` git-ignored)

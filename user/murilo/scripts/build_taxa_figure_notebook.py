@@ -44,6 +44,10 @@ This motivates spectrogram CNNs over hand-crafted frequency-band features.
   side-by-side, shared linear-Hz axis (0-16 kHz = 32 kHz Nyquist) — the *structure* contrast.
 - **Figure 2** (`figures/band_occupancy.{pdf,png}`, supporting): per-taxon mean Welch
   spectrum + per-recording peak-frequency violins — the *band overlap*.
+- **Figure 3** (`figures/taxa_windows_15s{,_boxes}.{pdf,png}`): per-taxon **15 s** spectrogram
+  split into the model's three 5 s prediction windows; a clean version + a variant with call
+  bounding boxes (many frog pulses / few bird whistles / one insect drone) — the *structure*
+  contrast at the granularity the model actually scores.
 
 **Notebook structure:** the *asset-extraction* cell is the only part that touches the raw
 dataset (PACE-only). It persists clips + PSD/peak-freq arrays under `notebooks/assets/`, and
@@ -386,6 +390,146 @@ for ext in ("pdf", "png"):
     fig.savefig(FIGDIR / f"band_occupancy.{ext}")
 print("saved", FIGDIR / "band_occupancy.pdf")
 plt.show()""")
+
+md(r"""## Figure 3 — 15 s prediction-window spectrograms (the model's 3×5 s view)
+
+The model scores each recording in **5 s windows**. This figure shows one **15 s** clip per
+taxon (= three consecutive prediction windows, dashed dividers at 5 s / 10 s) so the
+spectro-temporal *structure* is visible at the granularity the model actually sees.
+
+**Off-cluster regeneration.** The three source recordings are larger than the loudest-5 s
+clips used in Fig 1, so they are *not* the committed 5 s clips. Extraction pulls the loudest
+15 s window from each source, preferring a locally-downloaded copy under
+`assets/raw_src/<file>.ogg` (single-file Kaggle pulls; see `figures/README.md`) and falling
+back to the PACE dataset. The 15 s windows are persisted under `assets/clips15s/` +
+`clip_manifest15s.json`, so the plotting cells re-run off-cluster from committed assets.""")
+
+code(r'''WIN_SEC    = 15.0
+MANIFEST15 = ASSETS / "clip_manifest15s.json"
+CLIPS15    = ASSETS / "clips15s"
+RAW_SRC    = ASSETS / "raw_src"
+CLIPS15.mkdir(parents=True, exist_ok=True)
+
+# Chosen 15 s exemplars. NB: the frog differs from Fig 1's 5 s exemplar (T. typhonius, 11 s
+# source — too short for 3 windows); Scinax fuscomarginatus gives a clean pulsed train >15 s.
+EXEMPLARS_15S = {
+    "Amphibia": {"primary_label": "24287",   "scientific_name": "Scinax fuscomarginatus",
+                 "common_name": "Brown-bordered Snouted Tree Frog", "source_file": "24287/XC928990.ogg"},
+    "Aves":     {"primary_label": "yeofly1", "scientific_name": "Tolmomyias sulphurescens",
+                 "common_name": "Yellow-olive Flatbill",            "source_file": "yeofly1/XC298884.ogg"},
+    "Insecta":  {"primary_label": "244024",  "scientific_name": "Quesada gigas",
+                 "common_name": "Giant Cicada",                     "source_file": "244024/iNat269695.ogg"},
+}
+
+
+def _src_path15(source_file):
+    """Prefer a locally-downloaded single under assets/raw_src/; else the PACE dataset."""
+    local = RAW_SRC / Path(source_file).name
+    return local if local.exists() else DATA_DIR / "train_audio" / source_file
+
+
+def _best_window15(y, win_sec=WIN_SEC, hop_sec=0.5):
+    """Loudest win_sec window (mean-RMS proxy); returns (start_sec, clip). Deterministic."""
+    n = int(win_sec * SR)
+    if len(y) <= n:
+        return 0.0, np.pad(y, (0, n - len(y)))
+    rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=512)[0]
+    fps = SR / 512.0
+    w = max(1, int(win_sec * fps))
+    h = max(1, int(hop_sec * fps))
+    best_i, best_e = 0, -1.0
+    for i in range(0, len(rms) - w + 1, h):
+        e = float(rms[i:i + w].mean())
+        if e > best_e:
+            best_e, best_i = e, i
+    start = min(int(best_i * 512), len(y) - n)
+    return start / SR, y[start:start + n]
+
+
+def extract_clips15():
+    man = {}
+    for taxon, meta in EXEMPLARS_15S.items():
+        src = _src_path15(meta["source_file"])
+        start, clip = _best_window15(librosa.load(src, sr=SR, mono=True)[0])
+        outfp = CLIPS15 / f"{taxon}_{meta['primary_label']}.flac"
+        sf.write(outfp, clip, SR, format="FLAC")
+        man[taxon] = {"path": str(outfp.relative_to(REPO)), **meta,
+                      "window_start_sec": round(start, 3), "window_sec": WIN_SEC, "sr": SR}
+        print(f"{taxon:9s} -> {outfp.name}  window {start:.1f}-{start + WIN_SEC:.1f}s")
+    MANIFEST15.write_text(json.dumps(man, indent=2))
+    return man
+
+
+need15 = FORCE_EXTRACT or not MANIFEST15.exists()
+if need15 and any(_src_path15(m["source_file"]).exists() for m in EXEMPLARS_15S.values()):
+    print("extracting 15s clips ...")
+    extract_clips15()
+elif need15:
+    print("15s assets missing AND sources unavailable (off-cluster). Download the 3 source "
+          "recordings (see figures/README.md) into assets/raw_src/, or run on PACE.")
+else:
+    print("15s clips present -> extraction skipped (off-cluster refinement mode).")
+
+manifest15 = json.loads(MANIFEST15.read_text())''')
+
+md(r"""### Figure 3 builder — clean + manual call boxes
+
+Call boxes are **manually curated** for the committed 15 s windows (so they stay aligned):
+bird FM-whistle centres and frog pulse-burst centres were peak-picked on the band-energy
+envelope and reviewed; the insect drone is one sustained span across all three windows. The
+box-count contrast (many frog pulses / few bird whistles / one insect drone) is itself the
+structure story. Re-pick a window (`FORCE_EXTRACT`) → re-curate the centres below.""")
+
+code(r'''# Manually curated call-event centres (seconds) for the committed 15 s windows.
+BIRD_C = [0.61, 2.62, 3.99, 5.51, 7.70, 11.62, 13.38, 14.71]
+FROG_C = [0.34, 0.57, 0.90, 1.07, 1.58, 1.77, 2.26, 3.46, 3.92, 4.70,
+          5.53, 6.87, 8.61, 8.79, 11.46, 11.68, 14.46]
+# (t0, t1, f_lo_kHz, f_hi_kHz) per box.
+CALL_BOXES = {
+    "Aves":     [(c - 0.36, c + 0.36, 2.3, 6.8) for c in BIRD_C],
+    "Amphibia": [(c - 0.17, c + 0.17, 0.5, 5.3) for c in FROG_C],
+    "Insecta":  [(0.25, 14.75, 0.3, 6.6)],  # one sustained drone across all 3 windows
+}
+BOX_COLOR = "#39FF14"
+
+
+def build_windows_fig(with_boxes, stem):
+    fig, axes = plt.subplots(3, 1, figsize=(11.0, 6.6), sharex=True, constrained_layout=True)
+    im = None
+    for ax, taxon in zip(axes, TAXA, strict=False):
+        rec = manifest15[taxon]
+        y, _ = librosa.load(REPO / rec["path"], sr=SR, mono=True)
+        im = ax.imshow(spec_db(y), origin="lower", aspect="auto", cmap="magma",
+                       vmin=DB_FLOOR, vmax=0, extent=[0, WIN_SEC, 0, NYQ / 1000],
+                       rasterized=True)  # rasterize only the spectrogram; keep text/boxes vector
+        for t in (5, 10):
+            ax.axvline(t, color="white", lw=1.0, alpha=0.85, ls="--")
+        for i, xc in enumerate((2.5, 7.5, 12.5)):
+            ax.text(xc, NYQ / 1000 - 1.1, f"Window {i + 1}", ha="center", va="top",
+                    color="white", fontsize=7.5,
+                    bbox=dict(boxstyle="round,pad=0.18", fc="black", ec="none", alpha=0.45))
+        if with_boxes:
+            for (t0, t1, f0, f1) in CALL_BOXES[taxon]:
+                ax.add_patch(mpl.patches.Rectangle((t0, f0), t1 - t0, f1 - f0,
+                                                   fill=False, edgecolor=BOX_COLOR, lw=1.2))
+        sci = rec["scientific_name"].replace(" ", r"\ ")
+        ax.set_title(f"{TAXON_LABEL[taxon]} · {STRUCTURE[taxon]}    " + r"$\mathit{" + sci + r"}$",
+                     fontsize=8.5, loc="left")
+        ax.set_ylabel("Frequency (kHz)")
+        ax.set_ylim(0, NYQ / 1000)
+        ax.set_xlim(0, WIN_SEC)
+    axes[-1].set_xlabel("Time (s)")
+    axes[-1].set_xticks(np.arange(0, 15.1, 2.5))
+    cbar = fig.colorbar(im, ax=axes, fraction=0.025, pad=0.01)
+    cbar.set_label("Power (dB)")
+    for ext in ("pdf", "png"):
+        fig.savefig(FIGDIR / f"{stem}.{ext}", dpi=200)  # 200 dpi keeps both <4MB pre-commit limit
+    print("saved", FIGDIR / f"{stem}.pdf")
+    plt.show()
+
+
+build_windows_fig(with_boxes=False, stem="taxa_windows_15s")
+build_windows_fig(with_boxes=True, stem="taxa_windows_15s_boxes")''')
 
 nb["cells"] = cells
 nb["metadata"] = {
