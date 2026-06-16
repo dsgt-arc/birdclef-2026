@@ -513,3 +513,64 @@ bench restored the true 1.54 win/s, which is what Kaggle sees; (3) SSAMBA confir
 the order and the −0.042 pub→priv drop (largest in roster) flags the SSL-only model as the least
 robust to distribution shift. mamba-onnx export/parity/bench tooling is kept under `scripts/` +
 `vendor/mamba-onnx-wheels/` for any future state-space deploy.
+
+## Embedding separability (focal kNN + PaCMAP) — §6/§7 paper figure (2026-06-16)
+
+A deploy-aligned **separability probe** on the *focal* embeddings, and the paper figure built
+from it. For each encoder we mean-pool every focal recording's windows into one clip-level vector
+(single-species clips), standardize, PCA-compress to ≤50 dims, and measure **leave-one-out k-NN
+species accuracy** (k=10, macro-averaged over all 206 focal species). Numbers in
+`artifacts/focal_separability.json` (`scripts/plot_focal_separability.py`):
+
+| Encoder | kNN species (macro) | kNN class (macro) | LB public |
+|---------|:-------------------:|:-----------------:|:---------:|
+| **Perch**   | **0.707** | 0.541 | 0.8656 |
+| **BirdNET** | **0.579** | 0.423 | 0.8143 |
+| **AST**     | 0.288     | 0.382 | 0.7780 |
+| **EAT**     | 0.273     | 0.455 | 0.7796 |
+| **BEATs**   | 0.235     | 0.386 | 0.7771 |
+| **SSAMBA**  | **0.066** | 0.218 | 0.7308 |
+
+**Findings:**
+
+1. **Focal kNN species separability tracks the LB tier order** — a *better* LB predictor than the
+   frozen-LOSO yardstick at the top of this doc, which mis-orders BEATs (2nd frozen → 5th LB). It is
+   NOT strictly monotonic: AST↔EAT swap, but those two are a tie on *both* metrics (LB 0.778/0.780,
+   kNN 0.288/0.273). And it is simpler than the held-out ridge head (no training, no λ sweep) yet
+   ranks identically — the cheapest deploy-aligned encoder probe we have.
+2. **The geometry amplifies what the LB compresses.** Separability spans 0.71 → 0.07 (>10×) while the
+   LB spans only 0.866 → 0.731: the bird specialists carve clean per-species islands; the linear head
+   + clip-pooling partly rescue the weak encoders on the LB, but the raw embedding space shows the gap.
+3. **Species-level is the clean signal; class-level is not.** kNN *class* (5-way) is weaker and
+   non-monotonic (EAT 0.455 > BirdNET 0.423) — partly because focal is **~98% Aves**, so coarse-class
+   structure is near-trivial. This is also why the figure colors by **species** (on a curated subset),
+   not by taxonomic class (which would be a near-monochrome orange blob).
+
+**The figure** (`scripts/plot_paper_separability.py` → `artifacts/paper_separability.{pdf,png}`):
+a slim **1×6 PaCMAP filmstrip** (full `\textwidth` × ~⅕ height, **14.7 × 4.8 cm**), one panel per
+encoder ordered by decreasing separability, of a curated **8-species subset** (4 congeneric birds +
+cicada + frog + dog + jaguar) colored by species. PaCMAP per the exp-200 recipe
+(`StandardScaler → PCA≤50 → PaCMAP(nn=10, MN=0.5, FP=2.0, init="pca", seed=42)`); fine dots,
+robust per-panel axis limits, faint 4×4 reference grid (decorative — PaCMAP axes carry no scale).
+Vector PDF for LaTeX + 600-DPI PNG. (SSAMBA's focal `shard-01.parquet` is corrupt → loaders skip it;
+all 206 species + 31K/35K recordings survive, so coverage is intact.) The working-note `.tex` lives
+in the separate `8903-birdclef-2026` repo; the figure slots into §6/§7 with this caption:
+
+```latex
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/paper_separability.pdf}
+  \caption{%
+    \textbf{Embedding-space species separability across the six encoders.}
+    Two-dimensional PaCMAP projections of frozen embeddings for eight BirdCLEF~2026
+    species (one point per focal recording, mean-pooled; colour\,=\,species). Panels are
+    ordered by decreasing leave-one-out $k$-NN species accuracy (all 206 focal species,
+    $k{=}10$, macro): Perch~0.71, BirdNET~0.58, AST~0.29, EAT~0.27, BEATs~0.23,
+    SSAMBA~0.07 --- tracking the public-LB tier order (0.866, 0.814, 0.778, 0.780, 0.777,
+    0.731). Bird specialists resolve clean per-species clusters; the AudioSet transformers
+    blur the four congeneric birds; the self-supervised SSAMBA collapses all species
+    together. Gridlines are decorative (PaCMAP axes carry no scale).%
+  }
+  \label{fig:encoder-separability}
+\end{figure}
+```

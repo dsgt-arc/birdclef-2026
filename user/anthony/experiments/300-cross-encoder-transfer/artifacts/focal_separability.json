@@ -1,0 +1,56 @@
+{
+  "perch": {
+    "n_recordings": 9995,
+    "n_species": 206,
+    "knn_species_macro": 0.7072876003315897,
+    "knn_species_micro": 0.7695847923961981,
+    "knn_class_macro": 0.5405620173001296,
+    "knn_class_micro": 0.9751875937968985,
+    "lb_public": 0.8656
+  },
+  "birdnet": {
+    "n_recordings": 9965,
+    "n_species": 206,
+    "knn_species_macro": 0.5786778661311384,
+    "knn_species_micro": 0.6343201204214751,
+    "knn_class_macro": 0.42250854649796404,
+    "knn_class_micro": 0.9640742599096839,
+    "lb_public": 0.8143
+  },
+  "eat": {
+    "n_recordings": 9995,
+    "n_species": 206,
+    "knn_species_macro": 0.2732824621394098,
+    "knn_species_micro": 0.2832416208104052,
+    "knn_class_macro": 0.45462047158733043,
+    "knn_class_micro": 0.9660830415207604,
+    "lb_public": 0.7796
+  },
+  "ast": {
+    "n_recordings": 9995,
+    "n_species": 206,
+    "knn_species_macro": 0.28813185490978904,
+    "knn_species_micro": 0.30185092546273135,
+    "knn_class_macro": 0.3819529640495058,
+    "knn_class_micro": 0.9599799899949975,
+    "lb_public": 0.778
+  },
+  "beats": {
+    "n_recordings": 9995,
+    "n_species": 206,
+    "knn_species_macro": 0.2346535608359757,
+    "knn_species_micro": 0.23791895947973987,
+    "knn_class_macro": 0.3860702258036552,
+    "knn_class_micro": 0.9587793896948474,
+    "lb_public": 0.7771
+  },
+  "ssamba_hf": {
+    "n_recordings": 9995,
+    "n_species": 206,
+    "knn_species_macro": 0.06601397800142697,
+    "knn_species_micro": 0.05982991495747874,
+    "knn_class_macro": 0.21778938887188168,
+    "knn_class_micro": 0.9391695847923962,
+    "lb_public": 0.7308
+  }
+}
