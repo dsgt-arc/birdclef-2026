@@ -96,22 +96,23 @@ the grid now brackets the optimum rather than railing.
 With all six encoders deployed, the two offline metrics can be checked against the LB on
 equal footing. **Consolidated table** (ranks in parens; sorted by LB public):
 
-| Encoder | embed_dim | frozen LOSO¹ | held-out² | **LB public** | **LB private** | priv drop | CPU rate³ (win/s) | deploy path |
-|---------|:---------:|:------------:|:---------:|:-------------:|:--------------:|:---------:|:-----------------:|-------------|
-| **Perch**   | 1536 | 0.620 (1) | 0.706 (1) | **0.8656** (1) | **0.8617** (1) | −0.004 | — (ONNX)      | Perch v2 ONNX, no tricks |
-| **BirdNET** | 1024 | 0.588 (3) | 0.646 (2) | **0.8143** (2) | **0.7979** (2) | −0.016 | — (TFLite 3s) | bmz TFLite, local ckpt |
-| **EAT**     | 768  | 0.569 (5) | 0.635 (4) | **0.7796** (3) | **0.7659** (4) | −0.014 | **8.45**      | FP32 ONNX of extract_features |
-| **AST**     | 768  | 0.576 (4) | 0.638 (3) | **0.7780** (4) | **0.7680** (3) | −0.010 | **2.54**      | INT8 ONNX, 10s-geometry |
-| **BEATs**   | 768  | 0.612 (2) | 0.635 (4) | **0.7771** (5) | **0.7603** (5) | −0.017 | —             | eager torch, first-try |
-| **SSAMBA**  | 384  | 0.563 (6) | 0.607 (6) | **0.7308** (6) | **0.6893** (6) | −0.042 | **1.54**      | eager, 20s-stride coverage cut |
+| Encoder | embed_dim | frozen LOSO¹ | held-out² | **LB public** | **LB private** | priv drop | CPU³ s/clip | est min/1k³ | deploy path |
+|---------|:---------:|:------------:|:---------:|:-------------:|:--------------:|:---------:|:-----------:|:-----------:|-------------|
+| **Perch**   | 1536 | 0.620 (1) | 0.706 (1) | **0.8656** (1) | **0.8617** (1) | −0.004 | **0.69** | **11.5** | Perch v2 ONNX, no tricks |
+| **BirdNET** | 1024 | 0.588 (3) | 0.646 (2) | **0.8143** (2) | **0.7979** (2) | −0.016 | 2.07 | 34.5 | bmz TFLite, 3s windows |
+| **EAT**     | 768  | 0.569 (5) | 0.635 (4) | **0.7796** (3) | **0.7659** (4) | −0.014 | 1.53 | 25.5 | FP32 ONNX of extract_features |
+| **AST**     | 768  | 0.576 (4) | 0.638 (3) | **0.7780** (4) | **0.7680** (3) | −0.010 | 2.29 | 38.2 | INT8 ONNX, 10s-geometry |
+| **BEATs**   | 768  | 0.612 (2) | 0.635 (4) | **0.7771** (5) | **0.7603** (5) | −0.017 | 1.78 | 29.6 | eager torch, first-try |
+| **SSAMBA**  | 384  | 0.563 (6) | 0.607 (6) | **0.7308** (6) | **0.6893** (6) | −0.042 | **4.35** | **72.5** | eager, 20s-stride coverage cut |
 
 ¹ frozen-embedding ridge LOSO pooled-OOF macro AUROC, 70 species (the yardstick at the top of this doc).
 ² held-out focal→soundscape macro AUROC at the deploy λ — the 234-species *deploy head's* own offline metric.
-³ CPU inference rate, windows/s @ 4 vCPU (Kaggle's allotment). **Measured only for the three encoders
-that hit the 90-min CPU wall** and so had to be benchmarked to solve it (EAT FP32-ONNX 8.45; AST
-INT8-ONNX-10s 2.54, eager baseline 1.72; SSAMBA eager 1.54, and the abandoned mamba-onnx fused op 1.87).
-Perch (ONNX), BirdNET (TFLite, 3 s windows), and BEATs deployed first-try well under the wall and were
-not formally CPU-benchmarked.
+³ **Controlled CPU benchmark, all 6 on equal footing** (`scripts/bench_all_encoders.py`, 2026-06-16): the
+*deployed* `encode_file` over 8 real 60 s soundscapes at a pinned **4 threads** (Kaggle's vCPU allotment;
+`os.cpu_count→4` is the single lever every encoder reads). `s/clip` = end-to-end wall per 60 s clip
+(load+window+mel+forward+tile); `est min/1k` = projected minutes for 1000 clips (the 90-min-wall metric).
+Forward-only rates reconcile with the prior partial numbers (EAT 7.85 vs 8.45, AST 2.62 vs 2.54 fwd/s). See
+the full breakdown (RTF, forwards/clip, one-time model build) in the **CPU inference benchmark** section below.
 
 **Findings:**
 
@@ -124,16 +125,50 @@ not formally CPU-benchmarked.
    predictor; the deploy head's held-out number should.
 2. **The anchors hold across all three metrics.** Perch is 1st and SSAMBA 6th on frozen LOSO, held-out,
    *and* both LB splits — the spread is in the middle tier, not the extremes.
-3. **CPU cost is orthogonal to quality.** The fastest transformer (EAT, 8.45 win/s) and the two slowest
-   (AST 2.54, SSAMBA 1.54) land in adjacent LB tiers — inference rate is set by token count / input
-   geometry (EAT ~257 tokens ≪ AST ~1200 ≪ SSAMBA's 513-token bidirectional scan), an architecture
-   artifact, not a transfer-quality signal. Every CPU-wall obstacle was packaging/geometry, never quality.
+3. **CPU cost is orthogonal to quality.** The cheapest *transformer* (EAT, 1.53 s/clip) and the most
+   expensive encoder (SSAMBA, 4.35 s/clip — 6.3× EAT) land only 0.05 LB apart; EAT is 3× cheaper than its
+   AudioSet sibling AST yet within 0.002 on the LB. Cost is set by token count / input geometry (EAT
+   ~257 tokens ≪ AST ~1200 ≪ SSAMBA's 513-token bidirectional scan), an architecture artifact, not a
+   transfer-quality signal. Every CPU-wall obstacle was packaging/geometry, never quality. **Perch is the
+   exception that proves the rule: it is both the best (0.866) AND by far the fastest (0.69 s/clip, 87×
+   realtime)** — the bird-specialist's compact ONNX wins on every axis.
 4. **SSAMBA's −0.042 public→private drop is the largest in the roster** (vs Perch −0.004), the SSL-only
    model generalizing worst to the private split.
 
 Perch's anchor caveat still stands for *cross-experiment* comparison: LOSO pooled AUROC 0.620 here vs
 Perch V18 = 0.925 Kaggle LB are **not** directly comparable (leave-one-site vs hidden split, 70 vs 234
 species, ~370-window folds). The within-exp-300 bridge above is the apples-to-apples one.
+
+### CPU inference benchmark (controlled 4 vCPU, all 6 — 2026-06-16)
+
+`scripts/bench_all_encoders.py` runs every encoder's **deployed** `encode_file` over the same 8 real
+60 s soundscapes at a pinned **4 threads** (`os.cpu_count→4`, the single lever all encoders read for
+their ORT `intra_op` / torch thread count) on one `cpu-small` node — eliminating the oversubscription
+that made earlier PACE dry-runs read inflated (e.g. SSAMBA's 28 s/fwd at 24-threads-on-4-cores). This is
+the apples-to-apples replacement for the scattered, oversubscribed dry-run timings.
+
+| Encoder | s/clip | forwards/clip | fwd/s | realtime | est min/1000 clips | 1-time build |
+|---------|:------:|:-------------:|:-----:|:--------:|:------------------:|:------------:|
+| **Perch**   | **0.69** | 12 | 17.4 | 87× | **11.5** | 7 s |
+| **EAT**     | 1.53 | 12 | 7.9 | 39× | 25.5 | 2 s |
+| **BEATs**   | 1.78 | 12 | 6.8 | 34× | 29.6 | 15 s |
+| **BirdNET** | 2.07 | 12 | 5.8 | 29× | 34.5 | **241 s** (TFLite load) |
+| **AST**     | 2.29 | 6  | 2.6 | 26× | 38.2 | 41 s |
+| **SSAMBA**  | **4.35** | **3** | 1.4 | 14× | **72.5** | 108 s |
+
+- **s/clip** = end-to-end wall per 60 s clip (load + window + mel + forward + tile) — the deploy-true cost.
+  **est min/1000 clips** = `s/clip × 1000/60`, the metric that matters for the 90-min wall.
+- **forwards/clip** differs by windowing strategy and is why raw win/s isn't apples-to-apples: Perch/BEATs/EAT
+  forward 12× per clip (5 s windows), AST 6× (10 s windows, tiled ×2), SSAMBA only **3×** (10 s windows at a
+  20 s stride, tiled ×2 — the coverage cut that got it under the wall; full coverage would be 6× ≈ ~2× the
+  forward time, which is what timed out as v1).
+- **Build** is one-time model load (not per-clip): BirdNET's 241 s TFLite load and SSAMBA's 108 s
+  checkpoint+package load add to total wall but are paid once. Forward-only rates reconcile with the prior
+  partial measurements (EAT 7.9 vs 8.45, AST 2.6 vs 2.54 fwd/s), confirming the harness.
+- **Takeaway:** a 6.3× CPU-cost spread (Perch 0.69 → SSAMBA 4.35 s/clip) maps onto only a 0.135 LB spread,
+  and the ordering doesn't track quality — Perch is simultaneously the most accurate and the cheapest, while
+  the costliest (SSAMBA) is the least accurate. Cost is an input-geometry/token-count property; once an
+  encoder is made to *fit* the wall (ONNX, INT8, or coverage cuts), its LB is set by transfer quality alone.
 
 ### Reconciliation with exp 106 (Perch 0.749)
 

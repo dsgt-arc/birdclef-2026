@@ -1,0 +1,68 @@
+[
+  {
+    "encoder": "perch",
+    "build_s": 7.1,
+    "clips": 8,
+    "rows_per_clip": 12.0,
+    "forwards_per_clip": 12.0,
+    "s_per_clip": 0.69,
+    "forwards_per_s": 17.44,
+    "realtime_factor": 87.2,
+    "est_min_1000_clips": 11.5
+  },
+  {
+    "encoder": "beats",
+    "build_s": 15.4,
+    "clips": 8,
+    "rows_per_clip": 12.0,
+    "forwards_per_clip": 12.0,
+    "s_per_clip": 1.78,
+    "forwards_per_s": 6.75,
+    "realtime_factor": 33.8,
+    "est_min_1000_clips": 29.6
+  },
+  {
+    "encoder": "ast",
+    "build_s": 41.2,
+    "clips": 8,
+    "rows_per_clip": 12.0,
+    "forwards_per_clip": 6.0,
+    "s_per_clip": 2.29,
+    "forwards_per_s": 2.62,
+    "realtime_factor": 26.2,
+    "est_min_1000_clips": 38.2
+  },
+  {
+    "encoder": "eat",
+    "build_s": 1.5,
+    "clips": 8,
+    "rows_per_clip": 12.0,
+    "forwards_per_clip": 12.0,
+    "s_per_clip": 1.53,
+    "forwards_per_s": 7.85,
+    "realtime_factor": 39.3,
+    "est_min_1000_clips": 25.5
+  },
+  {
+    "encoder": "birdnet",
+    "build_s": 241.2,
+    "clips": 8,
+    "rows_per_clip": 12.0,
+    "forwards_per_clip": 12.0,
+    "s_per_clip": 2.07,
+    "forwards_per_s": 5.8,
+    "realtime_factor": 29.0,
+    "est_min_1000_clips": 34.5
+  },
+  {
+    "encoder": "ssamba",
+    "build_s": 108.3,
+    "clips": 8,
+    "rows_per_clip": 12.0,
+    "forwards_per_clip": 6.0,
+    "s_per_clip": 4.35,
+    "forwards_per_s": 1.38,
+    "realtime_factor": 13.8,
+    "est_min_1000_clips": 72.5
+  }
+]
