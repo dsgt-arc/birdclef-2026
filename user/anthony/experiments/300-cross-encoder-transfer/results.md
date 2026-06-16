@@ -170,6 +170,27 @@ the apples-to-apples replacement for the scattered, oversubscribed dry-run timin
   the costliest (SSAMBA) is the least accurate. Cost is an input-geometry/token-count property; once an
   encoder is made to *fit* the wall (ONNX, INT8, or coverage cuts), its LB is set by transfer quality alone.
 
+**Projected hidden-test inference time (≈600 recordings × 60 s).** The hidden set is ~600 clips, so total
+kernel time ≈ one-time build + 600 × s/clip. The harness is calibrated — EAT's 15.3 min projection matches
+its real ~24 min/1000-clip scored run pro-rata, and PACE `cpu-small` ≈ Kaggle's CPU — so these transfer:
+
+| Encoder | s/clip | build | **total @ 600** | margin under 90-min wall |
+|---------|:------:|:-----:|:---------------:|:------------------------:|
+| Perch   | 0.69 |   7 s | **7.0 min**  | 83 min |
+| EAT     | 1.53 |   2 s | **15.3 min** | 75 min |
+| BEATs   | 1.78 |  15 s | **18.1 min** | 72 min |
+| AST     | 2.29 |  41 s | **23.6 min** | 66 min |
+| BirdNET | 2.07 | 241 s | **24.7 min** | 65 min |
+| **SSAMBA** | 4.35 | 108 s | **45.3 min** | **45 min** |
+
+- **All six clear the 90-min wall with ≥45 min to spare** at N≈600 — Perch with ~12× headroom, SSAMBA (the
+  binding constraint) at exactly half the budget, consistent with v2-stride scoring without trouble.
+- **This pins down the v1 SSAMBA timeout.** Full coverage (6 forwards/clip vs 3) roughly doubles the
+  forward+mel portion → ~8–9 s/clip → ~80–90 min at 600 clips, i.e. *right at the wall*; the model load +
+  7,200-row CSV + scoring setup tipped it over (`COMPLETE` + blank). The 20 s-stride cut moved it from
+  on-the-edge to comfortable (45 min). Breakeven for SSAMBA-stride is ~1,215 clips, so it stays safe well
+  above the actual 600.
+
 ### Reconciliation with exp 106 (Perch 0.749)
 
 Exp 106 reported Perch ridge AUROC ≈ 0.749 (embedding + empirical-Bayes prior track).
