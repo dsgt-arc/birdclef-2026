@@ -325,6 +325,24 @@ def main() -> None:
         json.dump(species_list, f, indent=2)
     logger.info(f"Species list saved: {species_path}")
 
+    # Self-emit species_mapping.json ([[feedback_species_mapping_canary]]): the kernel reads
+    # `idx_to_name_2026` and the canary must print N==num_classes. For these 234-class 2026 models
+    # the mapping is the identity (model output idx i -> species_list[i]). Emitting it HERE (per
+    # export, into this output dir) makes the export self-contained and removes the dependency on a
+    # shared, concurrently-rewritten species_mapping_2026_234.json — the race that silently left a
+    # stale 41-entry map in a 5-fold dir. Structure mirrors build_species_mapping.py's output.
+    idx_to_name = {str(i): sp for i, sp in enumerate(species_list)}
+    species_mapping = {
+        "model_species": species_list,
+        "birdclef2026_species": species_list,
+        "idx_to_name_2026": idx_to_name,
+        "idx_2025_to_name_2026": idx_to_name,  # backward-compat key for older kernels
+    }
+    mapping_path = output_dir / "species_mapping.json"
+    with open(mapping_path, "w") as f:
+        json.dump(species_mapping, f, indent=2)
+    logger.info(f"Species mapping saved: {mapping_path} ({len(idx_to_name)} classes)")
+
     # Save mel config matching Tucker's training pipeline (audit § 7.1)
     # The kernel uses `type: "tucker_mel"` to route to `compute_mel_tucker` and
     # `output_type: "tucker_logits"` to route to `predict_soundscape_tucker`.

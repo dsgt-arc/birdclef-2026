@@ -614,6 +614,38 @@ MODELS = {
         "weights_dir": "artifacts/weights/xcfinetune-effv2s-lowlr-last",
         "kernel_metadata": "kaggle_kernel/kernel-metadata-xcfinetune-effv2s-lowlr-last.json",
     },
+    # Exp 038 Stage 2: XC-pretrained EffNetV2-S fine-tune (own-pretrain backbone), 234 classes.
+    # Architecturally = exp 032 distilled-sed-kd (V2-S backbone). Cell A = mixup-regularized
+    # pretrain; Cell C = no-mixup pretrain. single-fold (fold 0) + 5-fold (logit-space mean).
+    "finetune-cell-a": {
+        "slug": "birdclef-2026-finetune-cell-a-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-a",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-a.json",
+    },
+    "finetune-cell-a-5fold": {
+        "slug": "birdclef-2026-finetune-cell-a-5fold-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-a-5fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-a-5fold.json",
+    },
+    # 4-fold mean = the 5-fold ONNX with fold2 dropped (coverage analysis: fold2 was
+    # blind to the most singleton focal species; offline-weakest fold0 is the LB-verified
+    # 0.907 fold and was KEPT). Safe ~58 min CPU vs the 5-fold ~73 min that timed out.
+    # Reuses the existing 5-fold ONNX exports — no re-export needed.
+    "finetune-cell-a-4fold": {
+        "slug": "birdclef-2026-finetune-cell-a-4fold-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-a-4fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-a-4fold.json",
+    },
+    "finetune-cell-c": {
+        "slug": "birdclef-2026-finetune-cell-c-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-c",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-c.json",
+    },
+    "finetune-cell-c-5fold": {
+        "slug": "birdclef-2026-finetune-cell-c-5fold-weights",
+        "weights_dir": "artifacts/weights/finetune-cell-c-5fold",
+        "kernel_metadata": "kaggle_kernel/kernel-metadata-finetune-cell-c-5fold.json",
+    },
     # Exp 032 Phase 2: 5-fold ensemble (KD) + HGNet backbone ablation
     "distilled-sed-kd-5fold": {
         "slug": "birdclef-2026-distilled-sed-kd-5fold-weights",
@@ -853,6 +885,8 @@ def upload_weights(model_name: str, kaggle_user: str, dry_run: bool = False) -> 
         or "xcfinetune" in model_name  # exp 036: 234-class 2026 model → identity mapping
         or "exp037"
         in model_name  # exp 037: 234-class 2026 distilled-sed student → identity mapping
+        or "finetune-cell"
+        in model_name  # exp 038: 234-class XC-pretrained V2-S finetune (cell A/C)
     ):
         mapping_src = experiment_dir / "artifacts" / "weights" / "species_mapping_2026_234.json"
     elif "-2026" in model_name:

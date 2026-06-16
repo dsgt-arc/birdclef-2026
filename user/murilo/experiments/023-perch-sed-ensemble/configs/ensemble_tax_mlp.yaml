@@ -1,0 +1,7 @@
+name: ensemble-tax-mlp
+description: "0.929 mlp-only + taxonomy smoothing (genus 0.15 -> class 0.05 mean-sharing)"
+w_perch: 0.5
+perch_ensemble_weight_proto: 0.0
+tax_smoothing: true
+tax_genus_alpha: 0.15
+tax_class_alpha: 0.05

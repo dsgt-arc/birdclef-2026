@@ -111,6 +111,12 @@ logs/
 *.pkl
 *.pickle
 
+# BirdCLEF-2026 working-note figure assets: small clips + precomputed arrays that must
+# enter git so user/murilo/notebooks/006-taxa-spectrogram-figure.ipynb regenerates the
+# figures off-cluster (no dataset access). Overrides *.flac / *.npz above.
+!user/murilo/notebooks/assets/clips/**/*.flac
+!user/murilo/notebooks/assets/*.npz
+
 # Exp 035 cv-trust diagnostic data outputs (regenerable by analysis/cv_trust/*.py).
 # Most are already caught by *.csv/*.parquet/*.npy; this also covers the json metadata.
 user/murilo/analysis/data/cv_trust/

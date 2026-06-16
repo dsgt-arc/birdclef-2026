@@ -1,0 +1,70 @@
+{
+  "auroc": 0.9187630414962769,
+  "cmap": 0.7654253244400024,
+  "f1_macro": 0.05202833563089371,
+  "f1_micro": 0.6204819083213806,
+  "top1_accuracy": 0.6709677577018738,
+  "top5_accuracy": 0.6838709712028503,
+  "loss": 0.25012534856796265,
+  "metrics_source": "val",
+  "architecture": "sed",
+  "encoder_type": "efficientnet",
+  "encoder_model": "tf_efficientnet_b0.ns_jft_in1k",
+  "embed_dim": null,
+  "sed_head": {
+    "type": "att_head_logit_space",
+    "hidden_dim": 512,
+    "dropout": 0.5,
+    "gem_p": 3.0
+  },
+  "mel": {
+    "type": "tucker",
+    "n_fft": 2048,
+    "n_mels": 256,
+    "hop_length": 512,
+    "fmax": 16000,
+    "sample_rate": 32000
+  },
+  "dataset": "birdclef-2026",
+  "num_classes": 234,
+  "best_val_score": 0.7758936285972595,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/037-noisy-student-pl/checkpoints/2026-exp037-r1-B-raw-augT/fold0/best-epochepoch=20.ckpt",
+  "stopped_epoch": 25,
+  "training": {
+    "max_epochs": 25,
+    "lr": 0.0005,
+    "head_lr": 0.0005,
+    "weight_decay": 0.0001,
+    "warmup_epochs": 2,
+    "batch_size": 64,
+    "num_workers": 8,
+    "precision": "16-mixed",
+    "early_stopping_patience": 999,
+    "grad_clip_val": 1.0,
+    "accumulate_grad_batches": 1,
+    "clipwise_weight": 0.5,
+    "framewise_weight": 0.5,
+    "blend_clip": 0.5,
+    "blend_frame": 0.5,
+    "window_duration": 5.0,
+    "sample_rate": 32000,
+    "use_perch_distill": false,
+    "alpha_distill": 1.0,
+    "warm_start_ckpt": null
+  },
+  "pseudo_label": {
+    "path": "/storage/project/ps-clef2026_birdclef-0/shared/pseudo-labels/birdclef-2026/v037-ens-raw/ensemble_pseudo_labels.parquet",
+    "weight": 1.0,
+    "sampler": "mixsamp",
+    "exclude_labeled_sc": true,
+    "focal_share": 0.45,
+    "sc_share": 0.05,
+    "pl_share": 0.5
+  },
+  "compute": {
+    "gpu": "2",
+    "slurm_job_id": 9346730,
+    "node": "atl1-1-03-006-11-0",
+    "cpus_per_task": "8"
+  }
+}

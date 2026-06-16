@@ -91,6 +91,17 @@ KAGGLE_USER = "murilogustineli"
 
 # Model slug names — the kernel metadata picks one of these as a dataset source
 MODEL_SLUGS = [
+    # Exp 038 Stage 2: fine-tune our OWN XC-pretrained EffNetV2-S backbone (Cell A mixup-regularized
+    # / Cell C no-mixup) with the exp 032 distilled-sed-kd recipe. Architecturally = distilled-sed-kd
+    # (V2-S backbone only) → SAME Tucker ONNX schema + inference path (mel_config["type"]=tucker_mel,
+    # output_type=tucker_logits → predict_soundscape_tucker[_ensemble]: per-window LOGIT-space blend
+    # → 5-tap Gauss smooth → single sigmoid). 5fold variants ship model_fold*.onnx (logit-space
+    # fold-mean). Each kernel attaches exactly one of these → first (only) match wins.
+    "birdclef-2026-finetune-cell-a-4fold-weights",
+    "birdclef-2026-finetune-cell-a-5fold-weights",
+    "birdclef-2026-finetune-cell-a-weights",
+    "birdclef-2026-finetune-cell-c-5fold-weights",
+    "birdclef-2026-finetune-cell-c-weights",
     # Exp 036: XC-backbone faithful fine-tune (a1-lower-lr). Same XCPretrain graph as
     # exp 034 (routed by mel_config type=xcpretrain_audio_onnx → predict_soundscape_xcpretrain),
     # gentler LR 5e-5 fixes the full-FT overfitting collapse → stable 0.92 plateau offline.

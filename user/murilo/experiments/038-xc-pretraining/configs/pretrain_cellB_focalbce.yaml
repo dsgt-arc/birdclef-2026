@@ -1,0 +1,6 @@
+# Cell B (insurance) — focal-BCE (Sydorskyi alpha=0.25, gamma=2.0) for the extreme negative
+# imbalance of 2,683-class multi-label. Differs from Cell A ONLY in the loss (full aug + LS kept).
+run_name: "2026-exp038-pretrain-cellB-focalbce"
+
+training:
+  loss_type: "focalbce"

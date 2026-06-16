@@ -123,12 +123,28 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
         per_sample_mel_norm: bool = True,
         kd_detach_head: bool = True,
         loss_type: str = "bce",
+        label_smoothing: float = 0.0,
+        focal_alpha: float = 0.25,
+        focal_gamma: float = 2.0,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "sed_head", "mel_transform", "spec_augment"])
 
-        if loss_type not in ("bce", "softauc"):
-            raise ValueError(f"loss_type must be 'bce' or 'softauc', got {loss_type!r}")
+        if loss_type not in ("bce", "softauc", "focalbce"):
+            raise ValueError(
+                f"loss_type must be 'bce', 'softauc', or 'focalbce', got {loss_type!r}"
+            )
+        if not 0.0 <= label_smoothing < 1.0:
+            raise ValueError(f"label_smoothing must be in [0, 1), got {label_smoothing}")
+        # Exp 038 pretraining arm: focal-BCE (Sydorskyi α/γ) on the long-tailed XC corpus.
+        # Lazy-imported ONLY when selected — FocalLossBCE pulls in torchvision, which we must not
+        # require at module import time (would break exp 032/033/037 paths if it's absent).
+        # Stateless (no learnable params) → does not affect checkpoints. Default "bce" untouched.
+        self.focal_loss = None
+        if loss_type == "focalbce":
+            from birdclef.losses.focal_bce import FocalLossBCE
+
+            self.focal_loss = FocalLossBCE(alpha=focal_alpha, gamma=focal_gamma)
         # kd_detach_head=False (exp 037 cell C) lets the cls-loss gradient reach the
         # backbone IN ADDITION to the KD MSE (PL labels shape the representation, not
         # just the head). Default True = Tucker/exp 032/033 behavior (KD-only backbone).
@@ -264,21 +280,38 @@ class DistilledSEDFinetuneModule(pl.LightningModule):
         # --- Exp 037: SoftAUC (ranking) loss path ---
         # Pairwise/batch-level loss → the per-sample `loss_weight` does not apply
         # (it is 1.0 throughout our PL setup anyway). Same dual-supervision blend.
+        # Ranking loss → label smoothing is N/A; uses the raw hard labels.
         if self.hparams.loss_type == "softauc":
             cls = self.hparams.clipwise_weight * soft_auc_loss(clip_logits, labels.float())
             frm = self.hparams.framewise_weight * soft_auc_loss(frame_max, labels.float())
             return cls + frm, frame_max
 
+        # Optional label smoothing (positives → 1 − ε) applied to a LOCAL target copy for the
+        # BCE / focal-BCE paths only. The original hard `labels` are used for metrics (in the
+        # *_step methods), so `labels.int()` stays correct. ε=0.0 (default) leaves `tgt` as
+        # `labels.float()` → bit-identical to exp 032/033/037. Exp 038 pretraining sets ε=0.05.
+        tgt = labels.float()
+        if self.hparams.label_smoothing > 0:
+            tgt = tgt * (1.0 - self.hparams.label_smoothing)
+
+        # --- Exp 038: Focal-BCE (Sydorskyi α/γ) loss path — long-tailed XC pretraining arm ---
+        # FocalLossBCE reduces internally (mean), so the per-sample `loss_weight` does not apply;
+        # our pretraining uses loss_weight=None throughout anyway.
+        if self.hparams.loss_type == "focalbce":
+            cls = self.hparams.clipwise_weight * self.focal_loss(clip_logits, tgt)
+            frm = self.hparams.framewise_weight * self.focal_loss(frame_max, tgt)
+            return cls + frm, frame_max
+
         if loss_weight is None:
-            bce_clip = F.binary_cross_entropy_with_logits(clip_logits, labels.float())
-            bce_frame = F.binary_cross_entropy_with_logits(frame_max, labels.float())
+            bce_clip = F.binary_cross_entropy_with_logits(clip_logits, tgt)
+            bce_frame = F.binary_cross_entropy_with_logits(frame_max, tgt)
         else:
             # Per-sample weighted BCE: mean over class dim, scale by weight, mean over batch
             bce_clip_ps = F.binary_cross_entropy_with_logits(
-                clip_logits, labels.float(), reduction="none"
+                clip_logits, tgt, reduction="none"
             ).mean(dim=1)  # (B,)
             bce_frame_ps = F.binary_cross_entropy_with_logits(
-                frame_max, labels.float(), reduction="none"
+                frame_max, tgt, reduction="none"
             ).mean(dim=1)  # (B,)
             bce_clip = (bce_clip_ps * loss_weight).mean()
             bce_frame = (bce_frame_ps * loss_weight).mean()

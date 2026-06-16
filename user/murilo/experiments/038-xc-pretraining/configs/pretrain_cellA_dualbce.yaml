@@ -1,0 +1,3 @@
+# Cell A (PRIMARY) — dual-BCE + label-smoothing 0.05 + full aug (SpecAug + gain/noise + mixup).
+# This is the proven-recipe backbone we fine-tune to the LB first. All knobs come from _common.yaml.
+run_name: "2026-exp038-pretrain-cellA-dualbce"

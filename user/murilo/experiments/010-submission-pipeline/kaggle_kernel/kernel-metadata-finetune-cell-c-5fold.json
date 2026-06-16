@@ -1,0 +1,16 @@
+{
+  "id": "murilogustineli/birdclef-2026-finetune-cell-c-5fold",
+  "title": "BirdCLEF 2026 Finetune Cell C 5fold",
+  "code_file": "submission.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "murilogustineli/birdclef-deps",
+    "murilogustineli/birdclef-2026-finetune-cell-c-5fold-weights"
+  ],
+  "competition_sources": ["birdclef-2026"],
+  "kernel_sources": []
+}

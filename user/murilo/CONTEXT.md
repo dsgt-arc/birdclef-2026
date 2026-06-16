@@ -1,120 +1,110 @@
 # Session Context
 
-Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first
-to resume; follow the linked files for full detail.
+Session handoff for Murilo's BirdCLEF 2026 experiments. Read this first to resume;
+follow the linked files for full detail.
 
-**Last updated**: 2026-05-30 (night). **Exp 037 (multi-iterative Noisy-Student soft PL) — CLOSED,
-REJECT.** The A/B/C-raw-augF trio (clean KD-routing comparison, `last.ckpt` fold0) submitted to LB:
-**C 0.832 / B 0.790 / A 0.754 — all far below the 0.906 no-PL base** (best −0.074). PL **poisons** the
-distilled-sed-kd student (raw ensemble blend = diffuse soft targets, mean 0.24, ~233 cls at 0.1–0.3/win;
-50/50 + loss_weight=1.0 → calibration flattens → ranking collapses). **5th PL failure** (014/015/025/
-033/037). One genuine result: the **KD-routing axis transferred offline→LB (C>B>A)** — "let PL reach the
-backbone, don't detach" is real — but PL is net-negative regardless. 2 SoftAUC picks NOT submitted
-(trio decisive; LB conserved). NOT the val metric (shipped `last.ckpt`) nor epochs (curves plateaued).
+**Last updated**: 2026-06-01 (evening session). **Active: exp 038 XC-pretraining endgame — final-pick
+selection.** The **`a4fold` blend kernel is SUBMITTED to LB and RUNNING** (check the score FIRST thing).
+Branch `mg/038-xc-pretraining` (pushed, open — NOT merged). **Deadline 2026-06-03 (~2 days). LB ~5/day.**
 
-**Competition deadline**: 2026-06-03 (~4 days) — now the priority.
-
-**Branch/state**: on `mg/037-noisy-student-pl` (pushed), clean. exp 037 fully closed (REJECT) across
-`results.md`/`tasks.md`/`MODEL-RUNS.md`. PL track exhausted (0/5); pretraining capped ~0.88 (exp
-034/036); training-recipe base-rate≈0 (exp 027). Deep-research notes + a SoftAUC-PL / Perch-only-PL /
-XC-pretrain track remain for the **post-deadline paper** (compute free, doesn't count for LB).
-
-**▶ NEXT SESSION STARTS HERE:** exp 037 is CLOSED (REJECT). All levers (PL, pretrain, recipe) are
-exhausted for the deadline. **Pivot to the END-GAME (secure the 0.929 ensemble + PP/TTA final picks
-before 06-03)** — see "Pick up here" below. No in-flight jobs; ~14 LB pulls left.
+The experiment is essentially DONE pending one score. **No new builds expected** — next session is read the
+`a4fold` LB, lock the 2 final picks, merge + working-note. (Only build more if the blend fails AND we want
+one last idea — but we're out of cheap levers; see "Closed tonight".)
 
 ---
 
-## Where we are
+## ▶ NEXT SESSION — START HERE (in order)
 
-**Exp 036 — unlock the XC backbone via a faithful fine-tune recipe.** exp 034 proved the
-Sydorskyi EffNetV2-S backbone is bit-identical to source, yet full-FT scored LB 0.879 (<0.906).
-The bet: the backbone is fine, the *fine-tune* under-trained it. Phase A varies only the LR
-schedule (model + data = exp 034's known-0.879 config), fold 0, 50 ep.
+1. **Check Kaggle LB for the `a4fold` blend** (`murilogustineli/birdclef-2026-perch-sed-a4fold`, submitted
+   tonight, running at wrap-up). It's the **last live shot at beating the banked 0.929** (Perch-mlp +
+   backbone-diverse EffNetV2-S A-4fold SED, prob-space w=0.5).
+2. **Lock the 2 final Kaggle picks** from the score (pick #1 = **0.929 banked, locked**):
+   - blend **> 0.929** → blend becomes pick #1, **0.929 → pick #2** (two >0.916 picks, ideal).
+   - **0.916 < blend ≤ 0.929** → blend = **pick #2** (diverse, beats the standalone).
+   - blend **≤ 0.916** → keep **A-4fold standalone 0.916** as **pick #2**.
+3. **Merge `mg/038-xc-pretraining` (`--squash`, [[feedback_squash_merge]])** + write the **ceiling-refute
+   working-note** (our own XC pretrain ≈ ImageNet+KD; ~0.88 ceiling refuted).
 
-### Phase A results (fold 0) — best-by-val/auroc (NOT last-epoch; cosine decays the tail)
-
-| Cell | best val/auroc | shape over 50 ep |
-|---|---:|---|
-| a0-fullft (lr 1e-4) | 0.906 @ep3 | peaks ep3 → **decays to 0.875** (overfits) |
-| **a1-lower-lr (5e-5)** | **0.921 @ep34** | climbs → **flat 0.91–0.92 plateau (ep19–50)** |
-| a2-discriminative | 0.888 | flat-low (dead) |
-| a3-gradual-unfreeze | 0.914 @ep9 | peaks ep9 → settles ~0.90 (viable 2nd) |
-
-- **Gate 6 PASS**: a0 ≡ exp034-fullft epoch-by-epoch (~1e-4). Anchor: offline-best 0.906 →
-  LB 0.865 raw / **0.879 +PP**. (The "0.883" in old handoffs was a late epoch, not the peak.)
-- **a1 wins**: best offline (+0.015 over the anchor), cleanest mechanism (lower LR preserves
-  the XC features → no overfit collapse), ideal SWA shape (flat tail).
-- **Caveat**: offline anti-correlates with LB ([[feedback_offline_metrics_unreliable]],
-  [[project_cv_measurement_failure]]). exp 034 KD-joint was offline 0.9217 → **LB 0.878 (no
-  lift)**; a1 lands at the same 0.92 offline. The reason to still bet a1: KD changed the
-  *objective*; a1 is LR-only on the same objective, fixing a *visible* pathology. **LB decides.**
-
-Checkpoints (all 4 cells, save_top_k=-1, 50 ep + last):
-`/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/036-xc-backbone-finetune/checkpoints/<cell>/fold0/`.
-SWA built: `a1-lower-lr/fold0/swa-last5.ckpt` (avg of ep45–49; 786 model.* tensors).
+[[feedback_user_runs_commands]] — give Murilo Kaggle/SLURM commands; don't run them yourself.
 
 ---
 
-## Pick up here (next session) — END-GAME: secure the 0.929 final submission (deadline 2026-06-03)
+## ✅ This session's progress (2026-06-01)
 
-**Exp 037 is CLOSED (REJECT)** — the PL trio tanked (C 0.832 / B 0.790 / A 0.754 ≪ 0.906; full read in
-`037-noisy-student-pl/results.md § LB verdict`). PL is 0/5, pretraining caps ~0.88 (exp 034/036),
-recipe changes base-rate≈0 (exp 027). **Every single-model lever is exhausted for the deadline.** The
-highest-EV use of the remaining ~4 days + ~14 LB pulls = **lock in the best final submission.**
-[[feedback_user_runs_commands]]: give Murilo the commands; don't run SLURM/Kaggle.
+### 1. `finetune-cell-a-4fold` LB = **0.916** (best exp-038) — commit `2889755`
+Folds {0,1,3,4} (fold2 dropped via `scripts/analyze_fold_coverage.py`), logit-space mean, reused the 5-fold
+ONNX. **+0.005 over C-5fold 0.911 → A>C at the ensemble level too**; ≈ 0.917 best SED (−0.001), +0.001 vs
+0.915 Tucker-SED, −0.013 vs 0.929. Scored cleanly → a 4-fold fits the 90-min wall. Lands AT the SED-ensemble
+ceiling while being backbone-diverse. (Full read: exp 038 `results.md`.)
 
-Concretely (this is the END-GAME deferred since exp 036):
+### 2. Built 3 endgame variants of the 0.929 kernel — commits `299caf2`, `5f837fe`
+All are **self-contained configs of exp 023 `kaggle_kernel/submission_ensemble.py`** (reuse its `push.sh`,
+which makes a unique kernel + routes datasets per config). Push from
+`user/murilo/experiments/023-perch-sed-ensemble/kaggle_kernel/`: `bash push.sh <config>`.
+- **`ensemble_rank_mlp`** → kernel `perch-sed-rank_mlp`: new `blend_space` CFG knob = per-species pct-rank
+  then avg (eos8 `_safe_rank_cols`). Default `blend_space="prob"` is **bit-identical to 0.929**.
+- **`ensemble_tax_mlp`** → kernel `perch-sed-tax_mlp`: `tax_smoothing` CFG + `build_tax_smoothing_groups`/
+  `apply_taxonomy_smoothing` (genus 0.15 → class 0.05 mean-share, 29 genus / 4 class groups). α=0 = no-op.
+- **`ensemble_a4fold`** → kernel `perch-sed-a4fold`: swap v5j SED → A-4fold. Ported `load_audio_chunk`/
+  `compute_mel_tucker`/`predict_soundscape_tucker_ensemble` from exp 010 → `run_sed_pipeline` routes
+  `tucker_mel` to the logit-space path; `push.sh` uses `kernel-metadata-a4fold-ensemble.json` (swaps the
+  v5j dataset for `finetune-cell-a-4fold-weights`). **Re-push cmd: `bash push.sh ensemble_a4fold`.**
+  - **Runtime fix (this session):** EffNetV2-S SED ran ~8 s/file → blend ~98 min > 90-min wall. **Batched
+    the 12 windows into ONE ONNX call/fold** (dynamic batch dim) → Kaggle commit-run confirms **~4.5 s/file**
+    (~1.78×) → **~63 min projected, ~27 min margin**. **PARITY: byte-identical** (max abs diff 0.0) to the
+    standalone 0.916 — verified end-to-end on the real 4-fold ONNX + 2 soundscapes. So the blend's SED member
+    IS the 0.916 signal exactly.
+
+### 3. eos8 PP levers BOTH REGRESSED — commit `0e251f3` (closed the question)
+- **`rank_mlp` 0.914 (−0.015 vs 0.929)** — rank-space discarded useful magnitude in our 2-member blend; the
+  eos8 rank lift lived in a richer multi-branch stack, not a 2-way Perch+SED. **OUT.**
+- **`tax_mlp` 0.886 (−0.043)** — class-level sharing over 162 Aves over-smoothed (range → [0, 0.85]). **OUT.**
+- Both eos8 PP levers FAIL to transfer (the project-long "ported PP/recipe tricks rarely survive" pattern,
+  [[feedback_offline_metrics_unreliable]] lineage). **rank+tax stack is pointless** (two regressions).
 
 ---
 
-## END-GAME steps — secure the 0.929 final submission (deadline 2026-06-03)
-
-The XC fine-tune + PL tracks are exhausted (PL 0/5; XC ~0.88). **Lock in the best final submission**,
-not more single-model training. (Post-deadline paper track: SoftAUC-PL / Perch-only-PL /
-PL-target-trim / broad XC-pretrain.) Concretely:
-
-1. **Re-confirm the 0.929 ensemble (exp 023) is reproducible + submittable** as one of the two
-   final picks. Verify its kernel still builds/scores; canary `Species mapping: 234 mapped`.
-2. **PP/TTA on the best ensemble** — smoothing is +0.014-proven; TTA is untried and cheap. A/B.
-3. **(cheap, optional) XC model as a backbone-diverse ensemble member** — prob-space blend the
-   a1 XC model (0.882, genuinely different backbone) into the 0.929 ensemble; keep only if the
-   blend beats 0.929 on LB. This is the one place the XC backbone might still pay off.
-4. **Pick the 2 final submissions** deliberately (one safe = 0.929; one upside = best blend).
-
-Don't restart Phase B (class-balanced data) — decided against (base rate ≈ 0, can't screen
-offline, deadline). Wiring/assets stay in the repo if ever revisited.
-
----
+## The banked 0.929 (final pick #1, LOCKED) — composition
+exp 023 `birdclef-2026-perch-sed-mlp_only` (`submission_ensemble.py`): **Perch ONNX (MLP-only probes,
+`proto_weight=0`) + 6-stage PP**, blended **prob-space w=0.5** with **SED v5j-4fold-pp2 (4-fold + TTA)**.
+Runtime ~64 min/600 files. The 3 variants above modify THIS kernel via config. Hard constraint: ONE kernel,
+90-min CPU, ~600 hidden SS → all members' runtimes ADD UP (Perch ~18 + A-4fold-batched ~45 ≈ 63 min fits).
 
 ## Best LB (project state)
 
 | Model | LB | Notes |
 |---|---:|---|
-| Perch + SED MLP-only ensemble (exp 023) | **0.929** | **Current overall best → secure as a final pick** |
-| v5j-4fold-pp2 (exp 021) | 0.917 | Best SED ensemble |
-| distilled-sed-kd-5fold (exp 032) | 0.915 | Best Tucker-SED ensemble |
-| distilled-sed-kd (exp 032, single-fold) | 0.906 | Our best single model (ImageNet + KD) |
-| exp 034 KD-joint+PP / full-FT+PP | 0.878 / 0.879 | XC backbone single-fold ceiling |
-| exp 036 a1-last / a1-SWA (+PP) | 0.882 / 0.881 | Phase A winner; offline 0.921 → flat on LB (REJECT) |
-
----
+| Perch + SED MLP-only (exp 023) | **0.929** | banked → **final pick #1 (LOCKED)** |
+| v5j-4fold-pp2 (exp 021) | 0.917 | best SED ensemble |
+| **exp 038 `finetune-cell-a-4fold`** | **0.916** | best exp-038; A>C at ensemble level; **pick-#2 floor** |
+| distilled-sed-kd-5fold (exp 032) | 0.915 | best Tucker-SED ensemble |
+| `perch-sed-rank_mlp` (eos8 rank-space) | 0.914 | −0.015 vs 0.929 → **REGRESSED, OUT** |
+| exp 038 `finetune-cell-c-5fold` | 0.911 | backbone-diverse member |
+| exp 038 `finetune-cell-a` (single) | 0.907 | parity w/ 0.906; refutes ~0.88 XC ceiling |
+| exp 038 `finetune-cell-c` (single) | 0.901 | A>C → mixup-reg pretrain transfers better |
+| `perch-sed-tax_mlp` (eos8 taxonomy) | 0.886 | −0.043 vs 0.929 → **REGRESSED, OUT** |
+| exp 034 / 036 XC-backbone (+PP) | 0.878–0.882 | the ceiling exp-038 refuted |
+| **`perch-sed-a4fold` blend** | **RUNNING (check first)** | Perch-mlp + A-4fold SED, prob w=0.5, ~63 min; last live shot at >0.929 |
 
 ## How to resume after disconnect
+1. **Check the `a4fold` blend LB on Kaggle first.** Then read this top-to-bottom + exp 038 `results.md`/`tasks.md`.
+2. `git log --oneline -8` on `mg/038-xc-pretraining` (pushed, open — NOT merged). This session's commits:
+   `2889755` (A-4fold 0.916), `299caf2` (3 variants built), `5f837fe` (a4fold batching fix), `0e251f3`
+   (PP LB results), + this CONTEXT update.
+3. **[[feedback_user_runs_commands]]**: give Murilo commands; don't run SLURM/Kaggle yourself. Local
+   pytest + CPU export/ONNX smoke-tests + analysis are fine. Interactive venv
+   `/storage/home/hcoda1/9/mgustineli3/clef/birdclef-2026/.venv` ([[feedback_use_uv_venv]]).
+4. Venv policy: NEVER create a venv under home/project; SLURM jobs build on `$TMPDIR` (CLAUDE.md).
+   Compute NOT the bottleneck ([[feedback_pace_compute_not_bottleneck]]); Kaggle LB IS (~5/day).
+   `--squash` for PR merges ([[feedback_squash_merge]]).
+5. **Runtime budget (load-bearing):** 90-min CPU wall, ~600 hidden SS. **EffNetV2-S 4-fold SED batched
+   ≈ 45 min** (~4.5 s/file; was ~8 s/file unbatched, A-5fold TIMED OUT at 5 folds). Perch-MLP ≈ 18 min;
+   SED-v5j-4fold+TTA ≈ 46 min. Kaggle code comps score ONE kernel's CSV → can't blend separate kernels.
+   **A-4fold ONNX has a dynamic batch dim → batch windows into one call/fold (1.78× faster, byte-identical).**
+6. **GPU**: a100/h200 often full; **rtx6000 (24 GB)** is the reliable parallel option.
+7. eos8 notebook (committed `.ipynb`): `_cells.py` is gitignored — regenerate with
+   `experiments/038-xc-pretraining` … (see git history) if needed; both eos8 PP levers already tested + OUT,
+   so likely no longer needed. Coverage analysis: `experiments/038-xc-pretraining/scripts/analyze_fold_coverage.py`.
 
-1. Read this file top-to-bottom, then `036-xc-backbone-finetune/results.md § LB verdict`.
-2. `git log --oneline -6` on `main` → top is `e64a09f` (exp 036 REJECT, merged). No open branch;
-   exp 036 is CLOSED and on main. Start a fresh branch for the next experiment.
-3. Proceed to the END-GAME steps above (secure the 0.929 final pick; PP/TTA; optional XC-as-
-   ensemble-member blend). This is final-submission work, not new single-model training.
-4. **[[feedback_user_runs_commands]]**: don't run SLURM/Kaggle yourself — give Murilo the
-   commands. Local pytest + light SWA averaging are fine (interactive venv at
-   `/storage/home/hcoda1/9/mgustineli3/clef/birdclef-2026/.venv`; [[feedback_use_uv_venv]]).
-5. Venv policy: NEVER create a venv under home/project; SLURM jobs build on `$TMPDIR` (CLAUDE.md).
-   PACE compute is NOT the bottleneck ([[feedback_pace_compute_not_bottleneck]]); Kaggle LB IS
-   rate-limited (~5/day) — be strategic there. Use `--squash` for PR merges ([[feedback_squash_merge]]).
-
-**Prior context**: exp 034 (xcpretrain) REJECT — backbone necessary-not-sufficient, single-fold
-ceiling 0.879; KD does not transfer. exp 036 REJECT — fine-tune schedule doesn't unlock it either
-(~0.88 ceiling, schedule-independent). exp 032 merged to main. Detail in those experiments'
-`results.md`. **Credentials**: `user/murilo/.env` (gitignored), loaded by `train.py`.
+**Credentials**: `user/murilo/.env` (gitignored; `KAGGLE_API_TOKEN` (KGAT_… format), `HF_TOKEN`,
+`WANDB_API_KEY`). The HF token was pasted in chat earlier — rotate `hf-token-pace`.

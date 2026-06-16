@@ -1,0 +1,5 @@
+name: ensemble-rank-mlp
+description: "0.929 mlp-only + rank-space Perch+SED blend (w=0.5) — per-species pct-rank then avg"
+w_perch: 0.5
+perch_ensemble_weight_proto: 0.0
+blend_space: "rank"

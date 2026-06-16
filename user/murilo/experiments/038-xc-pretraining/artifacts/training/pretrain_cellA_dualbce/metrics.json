@@ -1,0 +1,66 @@
+{
+  "auroc": 0.9842292070388794,
+  "cmap": 0.6753276586532593,
+  "f1_macro": 0.2323513627052307,
+  "f1_micro": 0.4858359098434448,
+  "top1_accuracy": 0.7445306777954102,
+  "top5_accuracy": 0.8892025351524353,
+  "loss": 0.002026141854003072,
+  "metrics_source": "val (W&B summary, final epoch)",
+  "architecture": "sed-pretrain",
+  "encoder_model": "tf_efficientnetv2_s.in21k",
+  "sed_head": {
+    "type": "att_head_logit_space",
+    "hidden_dim": 512,
+    "dropout": 0.5,
+    "gem_p": 3.0
+  },
+  "mel": {
+    "n_fft": 2048,
+    "n_mels": 256,
+    "hop_length": 512,
+    "fmax": 16000,
+    "sample_rate": 32000
+  },
+  "dataset": "birdset-neotropical",
+  "num_classes": 2683,
+  "best_val_auroc": 0.9843199849128723,
+  "best_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/038-xc-pretraining/checkpoints/2026-exp038-pretrain-cellA-dualbce/epoch23.ckpt",
+  "last_checkpoint_path": "/storage/project/ps-clef2026_birdclef-0/mgustineli3/experiments/038-xc-pretraining/checkpoints/2026-exp038-pretrain-cellA-dualbce/last-v1.ckpt",
+  "stopped_epoch": 25,
+  "training": {
+    "max_epochs": 25,
+    "lr": 0.0005,
+    "weight_decay": 0.0001,
+    "warmup_epochs": 2,
+    "eta_min": 1e-06,
+    "batch_size": 128,
+    "num_workers": 8,
+    "val_fraction": 0.02,
+    "precision": "16-mixed",
+    "grad_clip_val": 1.0,
+    "accumulate_grad_batches": 1,
+    "clipwise_weight": 0.5,
+    "framewise_weight": 0.5,
+    "window_duration": 5.0,
+    "sample_rate": 32000,
+    "loss_type": "bce",
+    "label_smoothing": 0.05,
+    "focal_alpha": 0.25,
+    "focal_gamma": 2.0,
+    "use_perch_distill": false
+  },
+  "augmentation": {
+    "mixup_enabled": true,
+    "mixup_prob": 0.5,
+    "mixup_alpha": 0.4,
+    "aug_prob": 0.5,
+    "spec_augment": true
+  },
+  "compute": {
+    "gpu": "unknown",
+    "slurm_job_id": 9358710,
+    "node": null,
+    "cpus_per_task": null
+  }
+}

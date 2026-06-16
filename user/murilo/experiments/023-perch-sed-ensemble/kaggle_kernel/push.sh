@@ -48,9 +48,13 @@ cfg.pop('description', None)
 print(repr(cfg))
 ")
 
-# Select base metadata: TF configs use kernel-metadata-tf-ensemble.json
+# Select base metadata: TF configs use kernel-metadata-tf-ensemble.json;
+# A-4fold SED swaps the v5j dataset for the finetune-cell-a-4fold weights.
 if echo "$OVERRIDE" | grep -q "'perch_backend': 'tf'"; then
     BASE_META="kernel-metadata-tf-ensemble.json"
+fi
+if echo "$OVERRIDE" | grep -q "finetune-cell-a-4fold"; then
+    BASE_META="kernel-metadata-a4fold-ensemble.json"
 fi
 
 # Generate unique kernel metadata from config name

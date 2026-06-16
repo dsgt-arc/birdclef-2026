@@ -1508,6 +1508,90 @@ export_convnext_2026_soundscape() {
 }
 
 # ============================================================================
+# Exp 038 Stage 2: fine-tune XC-pretrained EffNetV2-S backbones (Cell A mixup-regularized /
+# Cell C no-mixup) on the 234 targets. Architecturally identical to exp 032 distilled-sed-kd —
+# the ONLY diff is the V2-S backbone, transparent to export_distilled_sed.py (reads
+# encoder.model_name from the config) and to the kernel's Tucker inference path (ONNX blackbox:
+# mel -> pre-blended logits). All folds 0-4 live under fold<N>/ (train_finetune.py --fold N).
+# single-fold = fold 0 (the first A-vs-C LB read); -5fold = logit-space fold mean.
+# ============================================================================
+EXP038_DIR="$(dirname "$EXPERIMENT_DIR")/038-xc-pretraining"
+
+_verify_species_mapping_234() {
+    # Abort the export if the kernel's species-mapping canary would not be 234
+    # ([[feedback_species_mapping_canary]]). exit 1 aborts even though this script has no `set -e`.
+    local f="$1" n
+    n="$(python -c "import json,sys; print(len(json.load(open(sys.argv[1])).get('idx_to_name_2026') or {}))" "$f" 2>/dev/null || echo 0)"
+    if [ "$n" != "234" ]; then
+        echo "ERROR: $f has idx_to_name_2026=$n (expected 234); kernel canary would fail. Aborting." >&2
+        exit 1
+    fi
+    echo "species_mapping OK: $f (idx_to_name_2026=234)"
+}
+
+export_finetune_cell_single_fold() {
+    # $1 = cell (A|C); exports fold 0 for the first single-fold LB submission.
+    local CELL="$1"
+    local cell_lc; cell_lc="$(echo "$CELL" | tr '[:upper:]' '[:lower:]')"
+    local RUN="2026-exp038-finetune-cell${CELL}"
+    echo "=== Exporting Exp 038 Stage-2 finetune cell${CELL} fold 0 (XC-pretrained V2-S -> KD-SED) ==="
+    local CKPT
+    CKPT="$(find_last_ckpt "${CHECKPOINTS_BASE}/038-xc-pretraining/checkpoints/${RUN}/fold0")"
+    echo "Using checkpoint: $CKPT"
+    local OUTPUT_DIR="artifacts/weights/finetune-cell-${cell_lc}"
+    python scripts/export_distilled_sed.py \
+        --checkpoint "$CKPT" \
+        --config "${EXP038_DIR}/configs/finetune_cell${CELL}.yaml" \
+        --train-csv "$TAXONOMY_CSV_2026" \
+        --output-dir "${OUTPUT_DIR}/"
+
+    # export_distilled_sed.py self-emits species_mapping.json (234, idx_to_name_2026); verify the
+    # kernel canary before any upload (no shared-file race — see _verify_species_mapping_234).
+    _verify_species_mapping_234 "${OUTPUT_DIR}/species_mapping.json"
+}
+
+export_finetune_cell_5fold() {
+    # $1 = cell (A|C); exports all 5 folds -> logit-space fold-mean ensemble (kernel detects
+    # ensemble mode via the model_fold*.onnx glob). Requires fold0..4 trained.
+    local CELL="$1"
+    local cell_lc; cell_lc="$(echo "$CELL" | tr '[:upper:]' '[:lower:]')"
+    local RUN="2026-exp038-finetune-cell${CELL}"
+    local BASE_CKPT_DIR="${CHECKPOINTS_BASE}/038-xc-pretraining/checkpoints/${RUN}"
+    local OUTPUT_DIR="artifacts/weights/finetune-cell-${cell_lc}-5fold"
+    echo "=== Exporting Exp 038 Stage-2 finetune cell${CELL} 5-fold ensemble ==="
+    mkdir -p "$OUTPUT_DIR"
+    for FOLD in 0 1 2 3 4; do
+        local FOLD_DIR="$BASE_CKPT_DIR/fold${FOLD}"
+        if [ ! -d "$FOLD_DIR" ]; then
+            echo "ERROR: fold ${FOLD} dir not found at $FOLD_DIR" >&2
+            echo "Did you run: bash sbatch/run_finetune.sh configs/finetune_cell${CELL}.yaml --fold ${FOLD} ?" >&2
+            exit 1
+        fi
+        local CKPT; CKPT="$(find_last_ckpt "$FOLD_DIR")"
+        echo ""
+        echo "--- Fold ${FOLD}: $CKPT ---"
+        python scripts/export_distilled_sed.py \
+            --checkpoint "$CKPT" \
+            --config "${EXP038_DIR}/configs/finetune_cell${CELL}.yaml" \
+            --train-csv "$TAXONOMY_CSV_2026" \
+            --output-dir "${OUTPUT_DIR}/fold${FOLD}/"
+    done
+
+    cp "${OUTPUT_DIR}/fold0/species_list.json" "${OUTPUT_DIR}/"
+    cp "${OUTPUT_DIR}/fold0/mel_config.json" "${OUTPUT_DIR}/"
+    # Top-level species_mapping from fold0's SELF-EMITTED copy (race-free — not the shared,
+    # concurrently-rewritten species_mapping_2026_234.json that caused the stale 41-map). Verify.
+    cp "${OUTPUT_DIR}/fold0/species_mapping.json" "${OUTPUT_DIR}/species_mapping.json"
+    _verify_species_mapping_234 "${OUTPUT_DIR}/species_mapping.json"
+    for FOLD in 0 1 2 3 4; do
+        cp "${OUTPUT_DIR}/fold${FOLD}/model.onnx" "${OUTPUT_DIR}/model_fold${FOLD}.onnx"
+    done
+    echo ""
+    echo "5-fold ensemble exported to ${OUTPUT_DIR}/"
+    ls -lh "${OUTPUT_DIR}"/model_fold*.onnx
+}
+
+# ============================================================================
 # Build species mappings and run exports
 # ============================================================================
 
@@ -1649,6 +1733,7 @@ case "$MODEL" in
     exp037-r1-a-raw-augt-softauc|exp037-r1-c-raw-augt-softauc|all-037-pl|\
     xcpretrain-effv2s-frozen|xcpretrain-effv2s-fullft|xcpretrain-effv2s-kd-joint|all-034-xcpretrain|\
     xcfinetune-effv2s-lowlr-swa|xcfinetune-effv2s-lowlr-last|all-036-xcfinetune|\
+    finetune-cell-a|finetune-cell-a-5fold|finetune-cell-c|finetune-cell-c-5fold|all-038-finetune|\
     all-017-ablations|all-2026-sed)
         echo "=== Building species mapping (2026→2026, 234/234 identity) ==="
         python scripts/build_species_mapping.py \
@@ -1838,6 +1923,15 @@ case "$MODEL" in
     all-036-xcfinetune)
         export_xcfinetune_effv2s_lowlr_swa ; echo ""
         export_xcfinetune_effv2s_lowlr_last
+        ;;
+    # Exp 038 Stage 2: XC-pretrained EffNetV2-S fine-tune (Cell A mixup / Cell C no-mixup).
+    finetune-cell-a)         export_finetune_cell_single_fold A ;;
+    finetune-cell-a-5fold)   export_finetune_cell_5fold A ;;
+    finetune-cell-c)         export_finetune_cell_single_fold C ;;
+    finetune-cell-c-5fold)   export_finetune_cell_5fold C ;;
+    all-038-finetune)
+        export_finetune_cell_single_fold A ; echo ""
+        export_finetune_cell_single_fold C
         ;;
     hgnet-b0-sed-v5l)          export_hgnet_b0_sed_v5l ;;
     hgnet-b0-sed-v6b)          export_hgnet_b0_sed_v6b ;;

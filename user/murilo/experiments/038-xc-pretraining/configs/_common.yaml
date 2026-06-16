@@ -1,0 +1,93 @@
+# Exp 038 Stage 1 — shared pretraining config (cells are thin diffs over this).
+# Defaults == Cell A (primary): EffNetV2-S IN21k, SED-mirror head, Tucker mel,
+# dual-BCE + label-smoothing 0.05, full aug (SpecAug + gain/noise + focal-focal mixup).
+run_name: "2026-exp038-pretrain-common"  # overridden per cell
+
+# --- backbone: EfficientNetV2-S, ImageNet-21k init, 1-ch mel, post-head 1280-d ---
+encoder:
+  model_name: "tf_efficientnetv2_s.in21k"
+  pretrained: true
+  drop_path_rate: 0.1
+  in_chans: 1
+  use_post_head: true
+
+# --- SED-mirror head (logit-space aggregation; matches downstream Stage 2) ---
+sed_head:
+  type: "att_head_logit_space"
+  hidden_dim: 512
+  dropout: 0.5
+  gem_p: 3.0
+
+# --- Tucker mel (n_mels=256, sr=32000 — matches the SED stack + the 32 kHz OGGs) ---
+mel:
+  n_fft: 2048
+  hop_length: 512
+  n_mels: 256
+  fmin: 20
+  fmax: 16000
+  top_db: 80.0
+  power: 2.0
+
+spec_augment:
+  enabled: true
+  freq_mask_param: 10
+  time_mask_param: 10
+  num_freq_masks: 1
+  num_time_masks: 2
+
+# focal x focal waveform mixup (Beta(alpha), hard-max labels). Cell C sets enabled:false.
+mixup:
+  enabled: true
+  prob: 0.5
+  alpha: 0.4
+  aug_prob: 0.5
+
+data:
+  manifest_path: "/storage/project/ps-clef2026_birdclef-0/shared/pretrain/birdset-neotropical/manifest.parquet"
+  species_list_path: "/storage/project/ps-clef2026_birdclef-0/shared/pretrain/birdset-neotropical/species_list.json"
+  audio_dir: "/storage/project/ps-clef2026_birdclef-0/shared/pretrain/birdset-neotropical/audio"
+  sample_rate: 32000
+  window_duration: 5.0
+  batch_size: 128
+  num_workers: 8
+  val_fraction: 0.02       # per-species holdout for the XC macro-AUC pretrain signal
+  aug: true
+  require_audio: true      # drop manifest rows without audio on disk (supports partial/smoke)
+  seed: 42
+
+training:
+  lr: 5.0e-4
+  weight_decay: 1.0e-4
+  max_epochs: 25
+  warmup_epochs: 2
+  warmup_start_factor: 0.04   # 1/25
+  eta_min: 1.0e-6
+  precision: "16-mixed"
+  grad_clip_val: 1.0
+  accumulate_grad_batches: 1
+  per_sample_mel_norm: true
+  clipwise_weight: 0.5
+  framewise_weight: 0.5
+  blend_clip: 0.5
+  blend_frame: 0.5
+  deterministic: false
+  # loss: dual-BCE + positive-side label smoothing. KD is OFF for pretraining (set in train.py).
+  loss_type: "bce"
+  label_smoothing: 0.05
+  focal_alpha: 0.25          # used only when loss_type=focalbce (Cell B)
+  focal_gamma: 2.0
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/auroc"     # XC-val macro-AUC = the pretrain quality signal
+    mode: "max"
+    save_top_k: -1           # keep all epochs; Stage 2 picks the val/auroc peak
+    save_last: true
+    filename: "epoch{epoch:02d}"
+
+logging:
+  entity: "dsgt-arc"
+  project: "birdclef-2026-exp038"
+  save_dir: "outputs/wandb"
+  log_model: false
+  log_every_n_steps: 50
