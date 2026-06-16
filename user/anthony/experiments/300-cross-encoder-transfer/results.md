@@ -196,10 +196,12 @@ live from `kaggle competitions submissions birdclef-2026` on 2026-06-14:
 | **EAT**     | 768  | 1e5 | **0.7796** | **0.7659** | 0.569 / held-out 0.635 (rank 5) | ✅ COMPLETE (finetune_AS2M, FP32 ONNX of extract_features) |
 | **AST**     | 768  | 1e5 | **0.7780** | **0.7680** | 0.5762 / 0.601 cls (rank 4) | ✅ COMPLETE (10s-geometry INT8 ONNX; see saga below) |
 | **BEATs**   | 768  | 1e4 | **0.7771** | **0.7603** | 0.6119 (rank 2) | ✅ COMPLETE |
+| **SSAMBA**  | 384  | 1e2 | **0.7308** | **0.6893** | 0.5631 / held-out 0.607 (rank 6) | ✅ COMPLETE (eager 20s-stride; mamba-onnx fused op was all-NaN) |
 
 All heads cover 234/234 species (no Perch-logit fallback fires). Consistency cos=1.000
 for every encoder (in-kernel forward reproduces the cache bit-for-bit; AST INT8 cos=0.993
-adjudicated by downstream AUROC instead, Δ=−0.004).
+adjudicated by downstream AUROC instead, Δ=−0.004). **Roster 6/6 complete** (SSAMBA scored
+2026-06-16).
 
 **Findings:**
 
@@ -224,9 +226,16 @@ adjudicated by downstream AUROC instead, Δ=−0.004).
    (EAT finetune_AS2M, AST AudioSet) lands no higher than self-supervised BEATs.
 4. **All deploy obstacles were CPU-wall / packaging, not quality.** AST needed the
    10s-geometry INT8 fix (saga below); EAT needed an ONNX export to sidestep `trust_remote_code`
-   offline (its ~257-token forward is 5× cheaper than AST → 8.5 win/s, no tricks). Every roster
-   encoder now has an LB score **except SSAMBA-HF** (frozen-SSL Mamba; no finetuned checkpoint +
-   no clean ONNX path for the selective-scan op → deferred).
+   offline (its ~257-token forward is 5× cheaper than AST → 8.5 win/s, no tricks). SSAMBA, the
+   heaviest forward in the roster (513-token bidirectional Mamba scan), needed a 20s-stride
+   coverage cut to fit the wall (saga below). **All 6 encoders now have an LB score.**
+5. **SSAMBA (0.731 pub / 0.689 priv) confirms the bottom of the order** — lowest LB, exactly as
+   the frozen yardstick (rank 6, 0.563) and held-out probe (0.607) predicted. It is the only
+   roster encoder whose public→private drop is large (−0.042, vs −0.004 for Perch), and the only
+   *self-supervised-only* model with no AudioSet/bird supervision at all. The Mamba architecture
+   buys nothing here: a 384-d SSL Mamba lands ~0.047 below the 768-d AudioSet transformers and
+   ~0.135 below Perch — **domain + supervision dominate architecture**, the central finding, now
+   with a state-space-model data point.
 
 Trails the logit/ensemble stacks (exp 038 Perch+SED ≈ 0.929) as expected for deliberately
 minimal single-encoder embedding baselines.
@@ -372,3 +381,43 @@ blank because it sped only the graph, not the fixed-1024-frame mel; (2) AST land
 above BEATs on the LB (0.778 vs 0.777 pub) and *generalizes best to private* of the
 AudioSet transformers (−0.010 pub→priv vs BEATs −0.017); (3) the frozen-yardstick rank-4
 position (0.576) again under-read the deployed transfer, consistent with the rest of the roster.
+
+## Deploy: SSAMBA-HF (unified `kaggle_kernel/`) — CPU-wall saga (ONNX → eager → fused-op → 20s-stride → ✅ SCORED)
+
+**LB 0.7308 pub / 0.6893 priv** (SSL `ssamba_small_400`, frozen mean_patch 384-d, λ=1e2,
+234/234, held-out 0.607). The last roster encoder to deploy → **6/6 complete (2026-06-16)**.
+SSAMBA is the only *self-supervised-only* model (no AudioSet/bird supervision) and the heaviest
+forward in the roster (513-token **bidirectional** Mamba selective-scan × 24 layers), so it was
+the hardest CPU-wall fight. The ladder, in order:
+
+1. **Unrolled ONNX — NON-VIABLE.** The 004 HF port has a pure-PyTorch scan fallback, so the
+   stock `torch.onnx.export` traces — but it *unrolls* the 513-step × 24-layer × 2-dir scan into
+   a ~25K-node / 203 MB graph whose ORT session-init alone times out (superlinear in node count,
+   even with `ORT_DISABLE_ALL`). Dead end.
+2. **Eager pure-PyTorch, 10s full coverage — TIMED OUT.** Shipped first (v1): force the CPU scan
+   (`_use_cuda_kernels=False`), batch-16, 10s windows (6/clip), `repeat(2)` for the 5s grid.
+   `COMPLETE` + **blank** score — 6 fwd/clip (~65 min at 1.54 win/s) + full mel/IO overshot the
+   90-min wall.
+3. **mamba-onnx fused op — built, fast graph, but ALL-NaN.** The custom `mamba-onnx` package
+   (`vendor/mamba-onnx`, release wheel) emits a *single* `mamba::SelectiveScanFusedExact` node
+   (AVX2 zig backend) → clean **101.8 MB** graph that loads and runs. But: (a) only **+15%**
+   (1.87 vs 1.61 win/s @ 4 vCPU — the 004 eager scan is already vectorized, so the non-scan
+   layers dominate, not the recurrence), and (b) **all-384-NaN at real weights** — exp005 only
+   ever benched *random-weight latency* (`status:"ok"` ≠ numerically correct), so the integration
+   was never validated; the op's `reference_selective_scan` contract matches what we feed, so it's
+   a real numeric/layout bug in the zig kernel. cpp backend won't load (no `libomp` on Kaggle).
+   Abandoned — even fixed, +15% lands full-coverage at ~77 min (risky) and needs `.so` vendoring.
+4. **20s-stride eager — ✅ SCORED.** Forward only every 2nd 10s window (`SSAMBA_STRIDE=2`,
+   3/clip) and mel *only those*, tiling each embedding across its 20s block, `repeat(2)` for the
+   grid. Halves both scan and mel → ~32 min fwd + ~7 min mel ≈ ~40 min real → clears the wall.
+   Forward math byte-identical to full coverage (consistency cos=1.000); **head reused as-is, no
+   refit** (the 10s-geometry cache already matches). Cost: coarser temporal sampling (20s blocks).
+
+**Takeaways:** (1) like AST, the lever was *coverage / window count*, not graph speed — the fused
+op proved the scan isn't the 4-vCPU bottleneck (non-scan layers are), inverting the going-in
+assumption; (2) a measurement trap nearly wasted a submission — the PACE dry-run showed 28 s/fwd
+purely from thread oversubscription (`os.cpu_count()=24` while SLURM gave 4); a controlled 4-thread
+bench restored the true 1.54 win/s, which is what Kaggle sees; (3) SSAMBA confirms the bottom of
+the order and the −0.042 pub→priv drop (largest in roster) flags the SSL-only model as the least
+robust to distribution shift. mamba-onnx export/parity/bench tooling is kept under `scripts/` +
+`vendor/mamba-onnx-wheels/` for any future state-space deploy.
