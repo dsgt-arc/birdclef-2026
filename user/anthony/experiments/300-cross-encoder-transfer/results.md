@@ -91,16 +91,49 @@ the grid was extended to 1e5). AST selects 10 and EAT 1000. Past the optimum AUR
 declines monotonically (e.g. eat-cls 0.561 → 0.540 → 0.490 at 1e3/1e4/1e5), confirming
 the grid now brackets the optimum rather than railing.
 
-## Metric bridge (AUROC ↔ Kaggle LB) — open
+## Metric bridge (AUROC ↔ Kaggle LB) — full roster (6/6, 2026-06-16)
 
-Perch is the shared anchor: LOSO pooled AUROC 0.620 here vs Perch V18 = 0.925 Kaggle LB.
-The two are **not directly comparable** — different generalization axis (leave-one-site
-vs hidden random/temporal split), different species support (70 species present in the
-labeled windows vs the full 234-species roster, ~159 of which have zero labeled
-soundscape data), and a tiny per-fold training set (~370 windows). The probe is a
-**relative yardstick for ranking encoders on equal footing**, not an LB predictor;
-this is consistent with the project finding that offline metrics anti-correlate with LB.
-Bridging the two axes is deferred to the working-note §6 metric-bridge analysis.
+With all six encoders deployed, the two offline metrics can be checked against the LB on
+equal footing. **Consolidated table** (ranks in parens; sorted by LB public):
+
+| Encoder | embed_dim | frozen LOSO¹ | held-out² | **LB public** | **LB private** | priv drop | CPU rate³ (win/s) | deploy path |
+|---------|:---------:|:------------:|:---------:|:-------------:|:--------------:|:---------:|:-----------------:|-------------|
+| **Perch**   | 1536 | 0.620 (1) | 0.706 (1) | **0.8656** (1) | **0.8617** (1) | −0.004 | — (ONNX)      | Perch v2 ONNX, no tricks |
+| **BirdNET** | 1024 | 0.588 (3) | 0.646 (2) | **0.8143** (2) | **0.7979** (2) | −0.016 | — (TFLite 3s) | bmz TFLite, local ckpt |
+| **EAT**     | 768  | 0.569 (5) | 0.635 (4) | **0.7796** (3) | **0.7659** (4) | −0.014 | **8.45**      | FP32 ONNX of extract_features |
+| **AST**     | 768  | 0.576 (4) | 0.638 (3) | **0.7780** (4) | **0.7680** (3) | −0.010 | **2.54**      | INT8 ONNX, 10s-geometry |
+| **BEATs**   | 768  | 0.612 (2) | 0.635 (4) | **0.7771** (5) | **0.7603** (5) | −0.017 | —             | eager torch, first-try |
+| **SSAMBA**  | 384  | 0.563 (6) | 0.607 (6) | **0.7308** (6) | **0.6893** (6) | −0.042 | **1.54**      | eager, 20s-stride coverage cut |
+
+¹ frozen-embedding ridge LOSO pooled-OOF macro AUROC, 70 species (the yardstick at the top of this doc).
+² held-out focal→soundscape macro AUROC at the deploy λ — the 234-species *deploy head's* own offline metric.
+³ CPU inference rate, windows/s @ 4 vCPU (Kaggle's allotment). **Measured only for the three encoders
+that hit the 90-min CPU wall** and so had to be benchmarked to solve it (EAT FP32-ONNX 8.45; AST
+INT8-ONNX-10s 2.54, eager baseline 1.72; SSAMBA eager 1.54, and the abandoned mamba-onnx fused op 1.87).
+Perch (ONNX), BirdNET (TFLite, 3 s windows), and BEATs deployed first-try well under the wall and were
+not formally CPU-benchmarked.
+
+**Findings:**
+
+1. **Held-out AUROC is a markedly better LB rank-predictor than the frozen LOSO yardstick.** The
+   frozen yardstick badly mis-orders BEATs (**2nd** frozen → **5th** LB; its 70-species leave-one-site
+   probe over-credits it). Held-out gets the order essentially right — Perch ≫ BirdNET ≫ {EAT, AST,
+   BEATs cluster} ≫ SSAMBA — matching the LB tier structure, because held-out is trained on the *actual
+   deploy objective* (focal→soundscape transfer over the full 234-species roster), not a 70-species
+   LOSO proxy. The yardstick remains a fair *relative encoder* tool but should not be read as an LB
+   predictor; the deploy head's held-out number should.
+2. **The anchors hold across all three metrics.** Perch is 1st and SSAMBA 6th on frozen LOSO, held-out,
+   *and* both LB splits — the spread is in the middle tier, not the extremes.
+3. **CPU cost is orthogonal to quality.** The fastest transformer (EAT, 8.45 win/s) and the two slowest
+   (AST 2.54, SSAMBA 1.54) land in adjacent LB tiers — inference rate is set by token count / input
+   geometry (EAT ~257 tokens ≪ AST ~1200 ≪ SSAMBA's 513-token bidirectional scan), an architecture
+   artifact, not a transfer-quality signal. Every CPU-wall obstacle was packaging/geometry, never quality.
+4. **SSAMBA's −0.042 public→private drop is the largest in the roster** (vs Perch −0.004), the SSL-only
+   model generalizing worst to the private split.
+
+Perch's anchor caveat still stands for *cross-experiment* comparison: LOSO pooled AUROC 0.620 here vs
+Perch V18 = 0.925 Kaggle LB are **not** directly comparable (leave-one-site vs hidden split, 70 vs 234
+species, ~370-window folds). The within-exp-300 bridge above is the apples-to-apples one.
 
 ### Reconciliation with exp 106 (Perch 0.749)
 
