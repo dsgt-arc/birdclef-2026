@@ -1,0 +1,25 @@
+% Appendix: curated negative results. Drop under sections/floats/ and \input from the appendix.
+% Requires booktabs.
+\begin{table}[t]
+  \centering
+  \small
+  \caption{Curated negative results. Across 20+ single-variable leaderboard submissions, offline
+  validation AUROC/cmAP were anti-correlated with the public LB; nearly every training-recipe or
+  extra-data change regressed. Levers that worked were few and frontend/architecture-level
+  (Table~\ref{tab:ablation-ladder}).}
+  \label{tab:curated-negatives}
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    Change & LB & $\Delta$ & Root cause \\
+    \midrule
+    Pseudo-labeling (6 variants) & 0.832--0.901 & $-0.005$ to $-0.074$ & diffuse soft labels poison training \\
+    Cross-entropy loss           & 0.494        & $-0.41$              & logits collapse without per-class margin \\
+    Waveform mixup               & 0.875--0.894 & $-0.019$ to $-0.036$ & amplitude shift = train/infer mismatch \\
+    Learnable PCEN               & 0.880        & $-0.026$             & inferior to AmplitudeToDB \\
+    Attention pooling head       & 0.868--0.899 & $-0.013$ to $-0.035$ & train/infer window mismatch \\
+    Multi-context (10--20\,s)    & 0.877--0.896 & $-0.010$ to $-0.025$ & window-length mismatch \\
+    2025$\rightarrow$2026 warm-start & 0.885    & $-0.021$             & under-trained random-init head rows \\
+    Training-recipe sweep        & ---          & 0-for-14 on LB       & v5j at a local optimum \\
+    \bottomrule
+  \end{tabular}
+\end{table}

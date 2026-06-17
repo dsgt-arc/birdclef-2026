@@ -1,0 +1,84 @@
+% =====================================================================
+% Methodology body for the Supervised Baseline System section.
+% LaTeX-ready: paste/merge into the Overleaf sections/ tree. Reuses
+% existing \cite keys (hamer2025perch2, lin2017focal) and float inputs.
+% New floats: floats/tab_ablation_ladder.tex, floats/tab_appendix_curated.tex.
+% NOTE: deployed SED uses BCE + spectrogram mixup + LSEHead (not focal loss /
+% masking) -- reconcile the existing draft wording before submission.
+% =====================================================================
+
+\subsection{Overview}
+
+The 2026 task provides roughly one hour of labeled soundscape audio, and the leaderboard rewards
+supervised pipelines fit directly to it.
+Rather than chase architectural novelty, we take an Occam's-razor view: we ask how much of the
+leaderboard a \emph{single} spectrogram CNN can recover, and which few design choices actually
+move the public score.
+Our final submission is a score-level blend of a frozen Perch v2 \cite{hamer2025perch2} probe and
+a trained HGNetV2-B0 sound-event-detection (SED) network, reaching \textbf{0.929} public LB
+(Figure~\ref{fig:baseline-ensemble}, Table~\ref{tab:baseline-ablation}).
+The central finding of this section is that the single SED CNN already reaches \textbf{0.917}, so
+the blend with Perch adds only the final \textbf{$+0.012$}.
+Almost all of the gain comes from a handful of frontend and architecture choices; data
+augmentation tricks, extra unlabeled data, and alternate training objectives did not transfer
+(Section~\ref{sec:negatives}).
+
+\subsection{The SED model}
+
+The SED member is an HGNetV2-B0 backbone (ImageNet-pretrained, $6$\,M parameters) over log-mel
+spectrograms computed on-GPU: $256$ mel bins, $2048$-point FFT, $313$-sample hop at $32$\,kHz over
+$5$\,s windows, normalized with AmplitudeToDB (per-sample standardization, $80$\,dB floor).
+A log-sum-exp (LSE) pooling head aggregates frame logits to a clip-level prediction; we train with
+binary cross-entropy and spectrogram-space mixup ($\alpha{=}1.0$, $5$-epoch warmup) for $20$ epochs
+under a one-cycle schedule.
+We fit four folds and average their logits, then apply site- and hour-conditioned priors as
+post-processing.
+The frozen Perch v2 member is described above; the two are blended with equal weight in
+probability space.
+
+\subsection{Ablation ladder}
+
+\input{sections/floats/tab_ablation_ladder}
+
+Table~\ref{tab:ablation-ladder} traces the single-model SED system from the simplest baseline to
+the deployed configuration, and then the ensemble step.
+Two choices dominate.
+\textbf{dB-scale mel normalization} (AmplitudeToDB) is worth $+0.034$ in a paired single-variable
+test, the single largest frontend lever: it makes quiet and loud recordings comparable, which
+matters in a domain where focal training clips and soundscape test clips differ sharply in level.
+\textbf{Backbone choice} is the largest architecture lever: swapping EfficientNet-B0 for
+HGNetV2-B0 under an otherwise fixed recipe adds $+0.037$.
+On top of these, the NNAudio dB-mel frontend on HGNet reaches $0.906$ single-fold; four-fold
+logit averaging adds $+0.007$ ($0.913$); and site/hour priors---pure post-processing, no
+retraining---add $+0.004$ ($0.917$).
+The final score-level blend with the Perch probe adds $+0.012$ to reach $0.929$.
+Every step was validated by a leaderboard submission, because offline metrics did not predict LB
+rank (Section~\ref{sec:negatives}).
+
+\subsection{Why HGNetV2-B0: a parity result}
+
+We adopt the ImageNet HGNetV2-B0 recipe because it is the \emph{simplest} route to its score, not
+the only one.
+Two more elaborate pipelines reach the same place: an ImageNet EfficientNet-B0 SED distilled from
+Perch v2 embeddings recovers the identical $0.906$ single-fold (a $+0.050$ paired gain over its
+no-distillation control), and an EfficientNetV2-S pretrained from scratch on broad Neotropical
+Xeno-Canto audio reaches $0.907$ single-fold and $0.916$ at four folds (Appendix~\ref{app:parity}).
+All three converge to ${\sim}0.906$ single-fold and ${\sim}0.916$ at four folds.
+Since distillation requires a teacher pipeline and custom pretraining requires an extra
+large-scale training stage, neither buys accuracy over the plain HGNet recipe; we read this as
+evidence that the ceiling is set by the data, not the backbone.
+
+\subsection{What does not transfer}
+\label{sec:negatives}
+
+A recurring and, we argue, generalizable finding is that \textbf{offline validation AUROC/cmAP
+anti-correlate with the leaderboard} across $20{+}$ submissions---the best offline model was
+repeatedly the worst on LB---so we treated every change as a single-variable experiment arbitrated
+by a Kaggle submission.
+Under that discipline, most ``improvements'' failed: pseudo-labeling on unlabeled soundscapes
+regressed in all six attempts ($-0.005$ to $-0.074$), a $14$-change training-recipe sweep
+(cross-entropy loss, waveform mixup, attention pooling heads, multi-context windows, manifold
+mixup) was 0-for-14 on LB, learnable PCEN lost $-0.026$, and cross-entropy loss was catastrophic
+($0.494$).
+The levers that worked were few and frontend/architecture-level; the curated record is in
+Appendix~\ref{app:curated} (Table~\ref{tab:curated-negatives}).

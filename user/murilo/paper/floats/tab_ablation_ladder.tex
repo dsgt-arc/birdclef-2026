@@ -1,0 +1,30 @@
+% Centerpiece: single-model SED ablation ladder -> +ensemble.
+% Drop under sections/floats/ and \input it from the methodology body.
+% Requires booktabs (already used by 40_tab_baseline-ablation).
+% Rows are the best public-LB checkpoint at each stage; each Delta is vs the row above
+% (cumulative). The two headline isolated paired ablations are footnoted.
+\begin{table}[t]
+  \centering
+  \small
+  \caption{From the simplest SED model to the final ensemble. Each row is the best public-LB
+  checkpoint at that stage; $\Delta$ is relative to the row above. All scores are
+  public-leaderboard macro-AUROC, and every step was validated by a Kaggle submission because
+  offline metrics anti-correlate with the LB (Section~\ref{sec:negatives}). The mel step
+  decomposes into high-resolution mel ($+0.030$) and AmplitudeToDB ($\mathbf{+0.034}$), and the
+  backbone step into the EfficientNet-B0$\rightarrow$HGNetV2-B0 swap ($\mathbf{+0.037}$), each an
+  isolated single-variable paired ablation.}
+  \label{tab:ablation-ladder}
+  \begin{tabular}{@{}llcc@{}}
+    \toprule
+    Stage & Change & LB & $\Delta$ \\
+    \midrule
+    Base SED            & EfficientNet-B0 SED (+\,post-proc.)               & 0.827 & --- \\
+    + dB-mel frontend   & high-res mel $+$ AmplitudeToDB                    & 0.859 & $+0.032$ \\
+    + HGNetV2-B0        & backbone swap $+$ NNAudio dB-mel (v5j)            & 0.906 & $+0.047$ \\
+    + 4-fold ensemble   & logit-mean over folds                            & 0.913 & $+0.007$ \\
+    + site/hour priors  & post-processing only                             & 0.917 & $+0.004$ \\
+    \midrule
+    \textbf{+ Perch probe} & score-level blend (MLP-only)                  & \textbf{0.929} & $+0.012$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
