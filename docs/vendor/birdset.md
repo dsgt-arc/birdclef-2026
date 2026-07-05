@@ -7,7 +7,7 @@ pipeline_stage:
   - "data-processing"
   - "representation-learning"
 relevance: "Large-scale benchmark dataset with 6800+ hours of bird audio for training and evaluation"
-status: "active"
+status: "reference"
 ---
 
 # BirdSet

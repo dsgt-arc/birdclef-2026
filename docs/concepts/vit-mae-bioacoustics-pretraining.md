@@ -1,6 +1,6 @@
 # Concept: Vision Transformer + Masked Autoencoding for Bioacoustics Pre-training
 
-**Status**: deferred (as of 2026-02-01)
+**Status**: deferred
 **Created**: 2026-01-31
 **Updated**: 2026-02-01
 
@@ -130,9 +130,9 @@ Experiment 003 (Audio-MAE Pre-training) was planned but **deferred** after discu
 - **Experiment 005** (future): Zero-shot retrieval with MAE embeddings
 - **Experiment 006** (future): Distillation of MAE encoder to MLP-Mixer (CPU inference)
 
-**OpenSpec connections**:
+**Planning connections**:
 - Could inform architecture decisions for BirdCLEF 2026 submission
-- MAE encoder could be base model for `mlp-mixer-distillation` concept
+- MAE encoder could be base model for the MLP-Mixer distillation concept
 
 ## Notes
 

@@ -1,68 +1,49 @@
 # BirdCLEF 2026
 
-Research project exploring CPU-viable bioacoustic classification through foundation model distillation.
+DS@GT ARC BirdCLEF+ 2026 code, experiment logs, and project documentation.
 
-## Research Thesis
+The competition phase is complete. The current write-up is the CEUR working note **“Can Tokens Compete? Token Representations against Supervised CNN Backbones for BirdCLEF+ 2026”**.
 
-Foundation models like BEATs/AudioMAE learn superior bioacoustic representations but are excluded from BirdCLEF due to CPU inference constraints. This project explores strategies to unlock foundation model quality under CPU limits.
+## Current result
 
-## Quick Start
+Best submitted system: **0.931 public / 0.936 private LB**.
 
-| Resource | Description |
-|----------|-------------|
-| [docs/STATUS.md](docs/STATUS.md) | Current project state and next steps |
-| [docs/concepts/](docs/concepts/) | Research ideas we're exploring |
-| [docs/references/literature.md](docs/references/literature.md) | Key papers |
+That system ensembles:
 
-## Repository Structure
+1. frozen **Perch v2** embeddings with MLP probes,
+2. **HGNetV2-B0 SED** on log-mel spectrograms, and
+3. a lightweight non-bird prototypical head over Perch embeddings.
 
-```
+The paper also reports token/foundation-model findings: WavTokenizer codec tokens failed the bioacoustic retrieval gates; frozen Perch transferred best among tested encoders; BEATs/EAT/AST/SSAMBA did not close the gap to the specialist Perch-backed system.
+
+## Start here
+
+| Resource | Purpose |
+|---|---|
+| [docs/STATUS.md](docs/STATUS.md) | Current project state and headline results |
+| [docs/README.md](docs/README.md) | Documentation index |
+| [docs/concepts/working-note.md](docs/concepts/working-note.md) | Paper framing and result map |
+| [AGENTS.md](AGENTS.md) | Assistant/project operating rules, especially PACE venv policy |
+
+## Repository layout
+
+```text
 .
-├── docs/                   # Documentation (start here)
-│   ├── STATUS.md           # Current state summary
-│   ├── concepts/           # Research ideas and hypotheses
-│   ├── experiments/        # Experiment proposals and results
-│   ├── references/         # Literature and deep research
-│   ├── vendor/             # External tool documentation
-│   └── _templates/         # Document templates
-├── user/                   # Per-user workspaces
-│   └── anthony/            # Example workspace
-│       ├── src/            # Python package
-│       └── experiments/    # Experiment configs + sbatch
-├── vendor/                 # Vendored submodules
-│   ├── EAT/                # Efficient Audio Transformer
-│   ├── unilm/beats/        # BEATs (discrete tokenizer)
-│   ├── WavTokenizer/       # Neural audio codec
-│   └── ...                 # See docs/vendor/ for full list
-├── openspec/               # Change proposals (OpenSpec)
-└── .claude/commands/       # Claude Code slash commands
+├── .claude/               # Claude slash commands and project skills
+├── docs/                  # Curated project documentation
+├── user/                  # Per-user code and experiment workspaces
+│   ├── anthony/experiments/
+│   ├── murilo/experiments/
+│   └── adrian/experiments/
+├── vendor/                # Small retained submodules + Kaggle source snapshots
+└── AGENTS.md              # Repo-specific agent instructions
 ```
 
-## Documentation
+## Notes for future work
 
-See [docs/README.md](docs/README.md) for full documentation index.
+Prefer documenting durable findings in:
 
-### Key Concepts
-
-| Concept | Description |
-|---------|-------------|
-| [soundscape-domain-shift](docs/concepts/soundscape-domain-shift.md) | Focal→soundscape domain gap |
-| [data-and-compute-scale](docs/concepts/data-and-compute-scale.md) | Kaggle inference constraints |
-| [mlp-mixer-distillation](docs/concepts/mlp-mixer-distillation.md) | CPU-efficient architectures |
-| [research-leads](docs/concepts/research-leads.md) | EAT, OpenBEATs, BirdMAE |
-
-## Current Focus
-
-1. **EAT** - 15x more efficient than BEATs
-2. **OpenBEATs** - SOTA on bioacoustics (300M params)
-3. **BirdMAE** - Best on BirdSet benchmark
-
-## Contributing
-
-Use the slash commands to add documentation:
-- `/docs:concept` - Add a research idea
-- `/docs:experiment` - Propose an experiment
-- `/docs:result` - Record experiment results
-- `/docs:reference` - Capture external knowledge
-
-See [AGENTS.md](AGENTS.md) for AI assistant guidelines.
+- experiment `results.md` files under `user/<name>/experiments/`,
+- [docs/STATUS.md](docs/STATUS.md) for project-level state,
+- [docs/concepts/README.md](docs/concepts/README.md) for status-indexed research ideas, and
+- the working-note draft for publication text.

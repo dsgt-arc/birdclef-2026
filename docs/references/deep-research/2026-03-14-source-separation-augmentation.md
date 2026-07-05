@@ -184,8 +184,8 @@ separation as augmentation -- pseudo-labeling and standard noise mixing dominate
 ## Connections
 
 - **Vendor docs**: [Bird MixIT](../../vendor/bird-mixit.md), [Biodenoising](../../vendor/biodenoising.md)
-- **Concept doc**: [Source Separation Augmentation](../../concepts/source-separation-augmentation.md) -- testable hypotheses and augmentation strategies derived from this research
-- **Related concepts**: [Soundscape Domain Shift](../../concepts/soundscape-domain-shift.md), pseudo-labeling as alternative to source separation
+- **Status**: the standalone source-separation concept note was removed during documentation cleanup; this reference remains as background.
+- **Related concept**: [Soundscape Domain Shift](../../concepts/soundscape-domain-shift.md), pseudo-labeling as alternative to source separation
 - **Related experiments**: exp 010 (teacher labels -- BirdNET/Perch detections could guide selective separation), exp 013 (weak supervision -- separated sources could improve label quality), exp 009 (pretrain pipeline -- separated sources as pretraining data)
 
 ## Practical Recommendations for BirdCLEF 2026

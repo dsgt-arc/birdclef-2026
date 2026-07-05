@@ -8,7 +8,7 @@ pipeline_stage:
   - "embedding"
   - "inference"
 relevance: "Audio Spectrogram Transformer; supervised baseline for audio classification"
-status: "active"
+status: "active-reference"
 ---
 
 # AST (Audio Spectrogram Transformer)
@@ -23,10 +23,10 @@ AST is the first convolution-free, purely attention-based model for audio classi
 
 | Component | Description | Location |
 |-----------|-------------|----------|
-| `ASTModel` | Main transformer model | `vendor/ast/src/models/ast_models.py` |
-| `dataloader.py` | Audio loading and preprocessing | `vendor/ast/src/dataloader.py` |
-| `traintest.py` | Training and evaluation loops | `vendor/ast/src/traintest.py` |
-| `egs/` | Recipes for ESC-50, AudioSet, SpeechCommands | `vendor/ast/egs/` |
+| `ASTModel` | Main transformer model | upstream `src/models/ast_models.py` |
+| `dataloader.py` | Audio loading and preprocessing | upstream `src/dataloader.py` |
+| `traintest.py` | Training and evaluation loops | upstream `src/traintest.py` |
+| `egs/` | Recipes for ESC-50, AudioSet, SpeechCommands | upstream `egs/` |
 
 ### Model Variants
 
@@ -63,11 +63,11 @@ Available via HuggingFace or auto-download:
 import os
 import torch
 import sys
-sys.path.append('vendor/ast/src')
+sys.path.append('/path/to/ast/src')
 from models.ast_models import ASTModel
 
 # Set pretrained model download location
-os.environ['TORCH_HOME'] = 'vendor/ast/pretrained_models'
+os.environ['TORCH_HOME'] = '/path/to/checkpoints/ast/pretrained_models'
 
 # Create model
 ast_mdl = ASTModel(
@@ -123,30 +123,18 @@ From `requirements.txt`:
 - **Colab Demo**: One-click inference demo available at the repo
 - **PSLA Training**: Best results use PSLA training pipeline (see separate repo)
 
-## Local Path
+## Source Checkout
 
+The AST repo is no longer retained as a submodule. For source-level inspection, clone upstream into scratch or another external workspace:
+
+```bash
+git clone https://github.com/YuanGongND/ast /path/to/ast
 ```
-vendor/ast/
-├── src/
-│   ├── models/
-│   │   └── ast_models.py     # Main model
-│   ├── dataloader.py         # Data loading
-│   ├── traintest.py          # Training loop
-│   └── utilities/            # Helper functions
-├── egs/                      # Experiment recipes
-│   ├── audioset/
-│   ├── esc50/
-│   └── speechcommands/
-├── colab/                    # Colab notebooks
-│   └── AST_Inference_Demo.ipynb
-├── pretrained_models/        # Downloaded weights
-├── requirements.txt
-└── README.md
-```
+
+Project code generally uses the HuggingFace `MIT/ast-finetuned-audioset-10-10-0.4593` checkpoint instead of importing this checkout directly.
 
 ## Related Documentation
 
-- **Concept**: [SSAST Audio Transformer](../concepts/ssast-audio-transformer.md) - Self-supervised research
 - **Concept**: [SSAMBA Audio Mamba](../concepts/ssamba-audio-mamba.md) - Efficient Mamba alternative
 - **Vendor**: [SSAST](ssast.md) - Self-supervised version
 - **Vendor**: [SSAMBA](ssamba.md) - Mamba-based replacement (92.7% faster)

@@ -1,6 +1,6 @@
 # Concept: Strong Baseline via Mel Overhaul + Training Recipe Alignment
 
-**Status**: developing
+**Status**: current/historical
 **Created**: 2026-03-24
 **Updated**: 2026-03-24
 
@@ -141,7 +141,7 @@ Inference: ONNX CPU, TTA ±2.5s shifts, Gaussian smoothing, TopN
 ## Connections
 
 - **Based on**: [Exp 016 SED Architecture](../../user/murilo/experiments/016-sed-architecture/summary.md), [2025 1st place analysis](../references/kaggle/birdclef-2025/birdclef2025-1st-place-inference.md), [SED improvement plan](../references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md)
-- **Related to**: [Soundscape domain shift](soundscape-domain-shift.md), [Source separation augmentation](source-separation-augmentation.md)
+- **Related to**: [Soundscape domain shift](soundscape-domain-shift.md), [Working note framing](working-note.md)
 - **Could lead to**: Exp 017 (strong baseline), Exp 018 (pseudo-labeling), multi-model ensemble
 
 ## Notes

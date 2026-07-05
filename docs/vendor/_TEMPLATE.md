@@ -6,7 +6,7 @@ category: "<tokenization|self-supervised|pretrained-model|dataset|utility>"
 pipeline_stage:
   - "<tokenization|representation-learning|embedding|inference|data-processing>"
 relevance: "<one-line description of relevance to BirdCLEF>"
-status: "<active|reference|experimental>"
+status: "<legacy-active|active-reference|reference|experimental>"
 ---
 
 # <Repository Name>

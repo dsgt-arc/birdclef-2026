@@ -49,9 +49,8 @@ uv sync
 
 cd $repo_dir
 
-# Start GPU monitoring in background
-$repo_dir/scripts/monitor-gpu.sh 5 logs/gpu-${SLURM_JOB_ID}.csv &
-GPU_MONITOR_PID=$!
+# Root-level GPU monitoring helper was removed during repo cleanup.
+GPU_MONITOR_PID=""
 
 # Cleanup function for background processes
 cleanup() {

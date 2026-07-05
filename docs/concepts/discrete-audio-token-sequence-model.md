@@ -1,6 +1,6 @@
 # Concept: Discrete Audio Token Sequence Model for Bioacoustics
 
-**Status**: nascent
+**Status**: shelved/partially falsified
 **Created**: 2026-01-30
 **Updated**: 2026-01-30
 

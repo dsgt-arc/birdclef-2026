@@ -7,7 +7,7 @@ pipeline_stage:
   - "data-processing"
   - "augmentation"
 relevance: "Audio denoising for animal vocalizations; foreground/background decomposition for domain adaptation"
-status: "active"
+status: "reference"
 ---
 
 # Biodenoising

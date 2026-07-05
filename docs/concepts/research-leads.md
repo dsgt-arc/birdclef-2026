@@ -1,8 +1,10 @@
 # Research Leads
 
+**Status**: historical
+
 Potential repositories, papers, and concepts to explore for the discrete token pipeline. These complement the [vendored repositories](../vendor/README.md) already documented.
 
-> **Last updated**: December 2025. See also: [06_beats.md](06_beats.md) for deep dive on BEATs architecture.
+> **Last updated**: December 2025. See also: [BEATs architecture](../references/deep-research/beats-architecture.md) for deep dive on BEATs architecture.
 
 ## Current SOTA Landscape (Dec 2025)
 
@@ -63,9 +65,9 @@ Based on recent benchmarks and the [Foundation Models for Bioacoustics comparati
 ### BEATs
 - **Source**: https://github.com/microsoft/unilm/tree/master/beats
 - **Paper**: BEATs: Audio Pre-Training with Acoustic Tokenizers (ICML 2023)
-- **Why**: Iterative tokenizer training creates semantic audio vocabulary. Deep dive completed in [06_beats.md](06_beats.md).
+- **Why**: Iterative tokenizer training creates semantic audio vocabulary. Deep dive completed in [BEATs architecture](../references/deep-research/beats-architecture.md).
 - **Status**: ✅ Research completed. Consider EAT or OpenBEATs as more efficient/powerful alternatives.
-- **Priority**: 🟢 Completed (see 06_beats.md)
+- **Priority**: 🟢 Completed (see [BEATs architecture](../references/deep-research/beats-architecture.md))
 
 ### data2vec 2.0
 - **Source**: https://github.com/facebookresearch/fairseq/tree/main/examples/data2vec
@@ -165,7 +167,7 @@ Based on recent benchmarks and the [Foundation Models for Bioacoustics comparati
 ## Next Steps (Updated Dec 2025)
 
 ### Immediate
-1. ✅ Deep dive on BEATs - completed in [06_beats.md](06_beats.md)
+1. ✅ Deep dive on BEATs - completed in [BEATs architecture](../references/deep-research/beats-architecture.md)
 2. 🔴 **Deep dive on EAT** - 15× more efficient, may be better choice than BEATs
 3. 🔴 **Evaluate OpenBEATs checkpoints** - best bioacoustics encoder available
 4. 🔴 **Find BirdMAE source** - best on BirdSet, need to locate paper/code

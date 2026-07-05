@@ -1,6 +1,6 @@
 # Concept: Source Separation for Smart Augmentation
 
-**Status**: developing
+**Status**: exploratory/future-work seed
 **Created**: 2026-03-14
 **Updated**: 2026-03-14
 

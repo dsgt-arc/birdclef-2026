@@ -1,171 +1,68 @@
 # Project Status
 
-> **Last Updated**: 2026-04-20
+> **Last updated**: 2026-07-04
 
-## Current State
+## Phase
 
-**Best LB**: **0.918** (Perch ProtoSSM v4, murilo/exp 018 — on `mg/018-perch-ensemble` branch)
-**Best SED LB**: **0.859** (EfficientNet-B0 SED v4b, murilo/exp 017 — on branch)
-**Anthony's best**: **0.804** (exp 106 ridge on frozen Perch v2, shipped via exp 108 scaffold 2026-04-20)
-**Target**: 0.925+ (match top public notebooks), then 0.939+ (competition #1)
+BirdCLEF+ 2026 competition work is complete. The repository is now being cleaned up around the working-note narrative and the experiment record.
 
-### Score Progression
+## Headline result
 
-| Model | Experiment | LB | Notes |
-|-------|-----------|-----|-------|
-| EfficientNet-B1 frozen probe | anthony/012 | 0.649 | Frozen backbone + linear head |
-| ProtoCLR clip-level | murilo/012 | 0.767 | Best clip-level model |
-| **EfficientNet-B1 LoRA + attention** | **anthony/102** | **0.794** | 2 epochs, attention pooling critical |
-| **Perch v2 ridge (frozen)** | **anthony/106 via 108** | **0.804** | Ridge on frozen Perch v2 embeddings; LOSO 0.749 conservative by +0.055 |
-| Hopfield null-anchor (softshrink, S18) | anthony/107 via 108 | 0.797 | LOSO 0.7801 → LB +0.017 overshoot; loses to ridge by −0.007 |
-| EfficientNet-B0 SED v1 + pp2 | murilo/016 | 0.827 | SED architecture + post-processing |
-| Perch raw (no probes) | murilo/018 | 0.825 | Foundation model baseline |
-| Perch + genus proxy | murilo/018 | 0.836 | 6 genus-mapped species |
-| **EfficientNet-B0 SED v4b** | **murilo/017** | **0.859** | **Mel overhaul + AmplitudeToDB + AttHead** |
-| Perch + LogReg probes | murilo/018 | 0.893 | PCA→32d, 39-dim features |
-| Perch + OOF v2-fix | murilo/018 | 0.911 | 5-fold GroupKFold, bug fixes |
-| **Perch ProtoSSM v4** | **murilo/018** | **0.918** | **BiSSM temporal + cross-attn + gated fusion** |
-| Competitor: Yuriy ProtoSSM v5 | — | 0.925 | Top public notebook |
-| Competition #1 | — | 0.939 | Likely ensemble + pseudo-labels |
+Best submitted system: **0.931 public / 0.936 private leaderboard**.
 
-> Exp 017, 018, 019 results are on the `mg/018-perch-ensemble` branch (not yet merged to main).
+| Component | Public LB | Private LB | Notes |
+|---|---:|---:|---|
+| Perch v2 + ridge probe | 0.866 | 0.862 | Frozen embedding baseline |
+| Perch v2 + MLP probes | 0.920 | 0.918 | Frozen Perch, learned probe heads |
+| HGNetV2-B0 SED, 4-fold | 0.917 | 0.924 | Log-mel SED member |
+| Perch/HGNet ensemble, MLP-only | 0.929 | 0.925 | Equal-weight Perch + SED blend |
+| **MLP ensemble + non-bird prototypical head** | **0.931** | **0.936** | Best final system |
 
-### Key Findings
+## Current paper framing
 
-**From Exp 017 (Murilo, on branch):**
-1. **Mel resolution is the biggest lever** — n_fft 1024→4096, n_mels 128→224 gave +0.030 LB alone
-2. **AmplitudeToDB universal** — +0.034 LB on top of mel changes (v4b = 0.859 LB)
-3. **Techniques don't stack additively** — v4f/v4g/v4h all regressed vs v4b
-4. **Fulldata training regressed** — −0.006 LB, overfitting without epoch caps
-5. **Offline metrics are poor LB predictors** — v4e best val (0.868) but only 0.840 LB
+Working-note title: **Can Tokens Compete? Token Representations against Supervised CNN Backbones for BirdCLEF+ 2026**.
 
-**From Exp 018 (Murilo, on branch):**
-1. **Perch-only path dominates 0.910+** — every top public notebook uses frozen Perch v2
-2. **OOF infrastructure = +0.018** — proper fold-safe priors, filename grouping, config bug fixes
-3. **ProtoSSM temporal modeling = +0.007** — BiSSM + cross-attention + gated fusion on top of OOF probes
-4. **Batch fixes are risky** — v4.2 changed 4 things at once, regressed −0.019
+The paper has two pillars:
 
-**From Exp 019 (Murilo, on branch):**
-1. **v5a (BCE loss) improved val +0.010 but regressed LB −0.009** — offline/LB divergence continues
-2. **Phase A ablations inconclusive** — no single change beat SED v4b (0.859) on LB
+1. **Competitive supervised baseline** — a pragmatic Perch/HGNet/prototype ensemble that fits the labeled soundscape setting and stays within the CPU inference budget.
+2. **Token representation study** — codec tokens, semantic audio encoders, and SSAMBA-style sequence models evaluated against the supervised baseline.
 
-**From Exp 102 (Anthony):**
-1. **Attention pooling is critical** — 0.794 LB vs 0.754 for avg pooling
-2. **Focal overfitting is the main problem** — 2-epoch model > 13-epoch model on LB
-3. **Soundscape validation did NOT predict Kaggle LB** — SC auroc 0.870 → 0.528 LB
-4. **Teacher predictions**: 5.4% noise, 29% potential mislabels
+## Key findings
 
-## Murilo's Experiments
+- The final leaderboard score came from **Perch v2 probes + HGNetV2-B0 SED + non-bird prototypes**, not from a novel token model.
+- **Frozen Perch v2** transferred best to the BirdCLEF 2026 labeled-soundscape task among tested encoders.
+- **General audio encoders** remained useful but below Perch on deployed LB: BEATs, AST, EAT, BirdNET, and SSAMBA all trailed the Perch ridge baseline in the common frozen-probe deployment.
+- **WavTokenizer codec tokens failed** the bioacoustic retrieval gates: round-trip Perch cosine 0.313 vs >0.90 target, precision@1 0.09 vs >0.80 target, focal precision@10 0.195 vs >0.80 target.
+- **Offline validation was unreliable** for leaderboard decisions; 20+ single-variable SED submissions showed validation AUROC could anti-correlate with public LB.
+- **Pseudo-labeling and many recipe sweeps regressed** in this setting; the reliable SED gains were frontend/architecture changes.
 
-### On `main` (merged)
+## Encoder comparison snapshot
 
-| ID | Name | Status | Result |
-|----|------|--------|--------|
-| 001 | BirdSet Benchmark | Complete | ConvNeXT 0.48, EfficientNet 0.38 on HSN |
-| 002 | Supervised ViT Baseline | Complete | 0.186 cmAP — ImageNet pretraining insufficient for audio |
-| 003 | Model Training | Complete | ConvNeXT-Tiny pretrained best (cmAP=0.191), pretraining 2.2x boost |
-| 004 | Frame-Based Tokenization | Complete | 128×4 vertical tokens: cmAP=0.118 (+37%), severe overfitting |
-| 005 | Pretrained Audio Fine-Tuning | Complete | EAT frozen probe: AUROC=0.890, cmAP=0.301 |
-| 006 | LoRA Fine-Tuning EAT | Complete | AUROC=0.945, cmAP=0.536 with 0.67% trainable params |
-| 007 | ConvNeXt-Base LoRA | Complete | AUROC=0.941, ImageNet nearly matches AudioSet pretraining |
-| 008 | Frame Tokenization for EAT | Complete | Rejected — pretrained patch embeddings essential |
-| 009 | ProtoCLR LoRA Fine-Tuning | Complete | AUROC=0.942, 19M params matches 90M models |
-| 010 | Submission Pipeline | Complete | ONNX export + Kaggle kernel, 3 architectures |
-| 011 | LoRA Baseline 2026 | Complete | ProtoCLR fulldata 0.736 LB |
-| 012 | Soundscape Fine-Tuning | Complete | ProtoCLR **0.767 LB** (+0.031) |
-| 013 | MixIT Source Separation | Complete | 10,592 soundscapes → 4 channels, pipeline ready |
-| 014 | Teacher Pseudo-Labeling | Complete | 127K segments, ensemble AUROC 0.885 |
-| 015 | Student Training | **Rejected** | Pseudo-labels hurt with clip-level arch (−0.005 to −0.024) |
-| 016 | SED Architecture | Complete | **0.827 LB** (v1 + pp2 + 10s inference) |
+Frozen ridge probes deployed to the leaderboard:
 
-### On `mg/018-perch-ensemble` branch (not merged)
+| Encoder | Dim | LOSO AUROC | Public LB | Private LB | CPU min / 1k clips |
+|---|---:|---:|---:|---:|---:|
+| **Perch** | 1536 | **0.620** | **0.866** | **0.862** | **11.5** |
+| BEATs | 768 | 0.612 | 0.777 | 0.760 | 29.6 |
+| BirdNET | 1024 | 0.588 | 0.814 | 0.798 | 34.5 |
+| AST | 768 | 0.576 | 0.778 | 0.768 | 38.2 |
+| EAT | 768 | 0.569 | 0.780 | 0.766 | 25.5 |
+| SSAMBA | 384 | 0.563 | 0.731 | 0.689 | 72.5 |
 
-| ID | Name | Status | Result |
-|----|------|--------|--------|
-| 017 | Mel Overhaul | Complete | **0.859 LB** (v4b: AmplitudeToDB + AttHead + soft CE) |
-| 018 | Perch Probes / ProtoSSM | In Progress | **0.918 LB** (v4), v4.2 regressed to 0.899 |
-| 019 | Perch-Guided SED Training | Phase A done | Ablations inconclusive, offline≠LB gap |
-| 020 | Perch+SED Ensemble | Proposed | Not started |
-| 021 | Advanced Post-Processing | Proposed | Not started |
+## Documentation cleanup policy
 
-### Architecture Evolution
+This repo should stay mostly standalone. Keep concise project docs here; keep detailed evidence in experiment folders; prefer marking concept status or re-indexing exploratory notes over deleting them.
 
-```
-Vision pretrain (001-004)     Audio pretrain + LoRA (005-009)     2026 Pipeline (010-012)
-  ViT/ConvNeXT scratch          EAT/ProtoCLR/ConvNeXt LoRA         Submission + soundscape
-  cmAP ~0.12-0.19               AUROC 0.94, cmAP 0.53              0.767 LB (clip-level)
-         ↓                              ↓                                  ↓
-Clip-level bottleneck (013-015)    SED + Mel (016-017)           Perch Probes (018-019)
-  Pseudo-labels failed              0.859 LB (SED v4b)            0.918 LB (ProtoSSM v4)
-  GlobalAvgPool = ceiling           Mel resolution key             Frozen Perch + temporal
-```
+Vendored submodules were trimmed on 2026-07-04: only source trees still imported by code or legacy reproducibility scripts remain under `vendor/`; reference-only external repos now live as `docs/vendor/` notes plus upstream URLs.
 
-## Anthony's Experiments
+Documentation status markers were normalized on 2026-07-04: concept notes now distinguish current anchors, historical/superseded records, exploratory seeds, and shelved/regressed threads; vendor notes distinguish retained local checkouts from active references and reference-only projects. PACE-specific guidance was consolidated into `docs/operations.md`; redundant PACE reference pages and directory-layout boilerplate were removed.
 
-| ID | Name | Status | Result |
-|----|------|--------|--------|
-| 001 | Encoder Benchmark | Complete | BEATs 95.8%, EAT+LoRA 94.6% |
-| 009 | BirdCLEF End-to-End Pipeline | Paused | SSL pretrain done, finetune pending |
-| 010 | Teacher Labels | Complete | BirdNET + Perch + BamBird (88 GB) |
-| 011 | Prompted SED | Phase 0 Done | Inconclusive — emerging signal |
-| 012 | EfficientNet-B1 Linear Probe | Complete | 0.649 Kaggle (frozen backbone) |
-| 013 | Weak Supervision (FlyingSquid) | Complete | Soft labels generated |
-| 014 | EfficientNet + Soft Labels | Rejected | Soft labels hurt (−0.098 cmAP) |
-| 015 | EfficientNet SED + Soft Labels | Rejected | SED needs trainable backbone |
-| 016 | Contrastive SED / Prototypical | Complete | Step 0 done |
-| 100 | BirdCLEF 2026 EDA | Complete | 206 species, amphibian-dominated, 499x imbalance |
-| 101 | Soundscape Label Calibration | Complete | Ensemble 0.880 AUROC, spectral contrast 0.888 |
-| 102 | Multi-Backbone LoRA Ladder | Paused | 0.794 Kaggle LB, attention pooling, teacher filtering |
-| 106 | Perch v2 Bayesian Label Transfer | Complete | Ridge **0.804 Kaggle LB** (+0.010 over 102), LOSO 0.749 conservative |
-| 107 | Hopfield Prototype Retrieval | In Progress | Null-anchor S18 0.7801 pooled LOSO (v4 0.7074); LB pending |
-| 108 | Kaggle Submission Scaffold | **In Progress** | Shared `birdclef_kaggle` module; ridge shipped; hopfield null-anchor next |
-| 201 | Soundscape Event Boxing | **Shelved** | Insect box-from-weak-labels; both automatic strands falsified (propagation P0.06/R0.17; Perch routing failed insect gate). Shelved 2026-06-08 |
-| 300 | Cross-Encoder Transfer | **Complete** | Frozen ridge LOSO, LB-aligned pooled macro AUROC: Perch 0.620 > BEATs 0.612 > BirdNET 0.588 > AST 0.576 > EAT 0.569 > SSAMBA 0.563. Pooled-vs-fold metric reorders field (BirdNET 6th→3rd). Feeds working-note §6 |
-| 301 | Encoder Adaptation | Complete | **Native-objective soundscape DAPT** (SSAMBA MPG/MPC + EAT data2vec-2.0 PyTorch port, no fairseq; both validation-gated). **Best result = native-10s-geometry fix** (feed the encoder's native input length; SSAMBA frame-max +0.027 & ridge flips +0.009, EAT +0.016/+0.005 at 1 epoch). **20-epoch ladder: peak-early and the readout sets the optimal duration** — SSAMBA peaks ep1 both readouts; EAT ridge peaks ep1 (0.5737) but proto frame-max peaks ep10 (0.3050) → same checkpoints disagree on *when to stop*, sharpest "ridge under-reads masked-SSL." Epoch axis saturated; **held-out SSL val shows no overfitting**, and SSL loss ≠ downstream (EAT `d2v_loss` flat-to-rising while proto climbed). LoRA ≈no-op (decoder sink; KS=0 EAT-LoRA). Added proto probe + `--patch` cache to exp 300. Feeds §7. See exp 301 `results.md` |
+## Where to look
 
-## Concept Docs
-
-| Concept | Key Idea | Status |
-|---------|----------|--------|
-| [Strong Baseline Mel Overhaul](concepts/strong-baseline-mel-overhaul.md) | Close SED gap via mel resolution + recipe alignment | Done (exp 017) |
-| [Prompted SED](concepts/prompted-sound-event-detection.md) | Reference audio as Mamba prefix for few-shot SED | Developing — phase 0 inconclusive |
-| [Source Separation Training](concepts/source-separation-training.md) | Train PyTorch MixIT separator on BirdCLEF data | Developing — concept ready, not started |
-| [Source Separation Augmentation](concepts/source-separation-augmentation.md) | Biodenoising + MixIT for smart augmentation | Developing — 4 strategies, 5 hypotheses |
-| [Weak Supervision Label Fusion](concepts/weak-supervision-label-fusion.md) | FlyingSquid triplet method to fuse noisy teacher signals | Done (exp 013) |
-| [Soundscape Domain Shift](concepts/soundscape-domain-shift.md) | XenoCanto → soundscape gap analysis | Fundamental challenge |
-| [SSAMBA Audio Mamba](concepts/ssamba-audio-mamba.md) | Mamba backbone for Track 2 | Mature — validated through exps 004-009 |
-
-## Competition Intelligence
-
-| Resource | Location |
-|----------|----------|
-| SED improvement plan (28-experiment ablation) | [discussions/sed-improvement-plan-681146.md](references/kaggle/birdclef-2026/discussions/sed-improvement-plan-681146.md) |
-| Perch + ProtoSSM (0.913 LB) | [notebooks/perch-protossm-zirach.md](references/kaggle/birdclef-2026/notebooks/perch-protossm-zirach.md) |
-| Pantanal Distill (0.917 LB) | [notebooks/pantanal-distill.md](references/kaggle/birdclef-2026/notebooks/pantanal-distill.md) |
-| Perch + LogReg (0.910 LB) | [notebooks/perch-probes-chiranjithdharma.md](references/kaggle/birdclef-2026/notebooks/perch-probes-chiranjithdharma.md) |
-| 2025 1st place inference | [birdclef-2025/birdclef2025-1st-place-inference.md](references/kaggle/birdclef-2025/birdclef2025-1st-place-inference.md) |
-| Winning solutions analysis | [winning-solutions-analysis.md](references/kaggle/winning-solutions-analysis.md) |
-| Gemini deep research | [deep-research/2026-03-24-gemini-strategic-framework.md](references/deep-research/2026-03-24-gemini-strategic-framework.md) |
-| ttahara HGNetV2-B0 (0.884 LB) | Referenced in murilo/exp 019 |
-| Yuriy ProtoSSM v5 (0.925 LB) | Referenced in murilo/exp 018 |
-
-## Priority Stack
-
-1. **Close Perch ProtoSSM gap** — 0.918 → 0.925 (revert v4.2 regression, debug remaining 0.007)
-2. **Perch-guided pseudo-labeling** — use ProtoSSM teacher on 10,600 unlabeled soundscapes for SED training
-3. **SED ablation debugging** — understand offline/LB divergence before more ablations
-4. **Perch + SED ensemble** — combine 0.918 Perch + 0.859 SED for potential gains
-5. **Anthony exp 107 null-anchor LB** — ship `softshrink_null_site_anchored_residual` S18 (0.7801 pooled LOSO) via exp 108; characterize ridge→hopfield LB delta
-6. **Anthony exp 102** — push LoRA+attention past 0.794 (teacher filtering, more epochs with early stop)
-
-## Quick Links
-
-| Resource | Link |
-|----------|------|
-| Concepts | [concepts/](concepts/) |
-| Competition Intel | [references/kaggle/](references/kaggle/) |
-| Deep Research | [references/deep-research/](references/deep-research/) |
-| Literature | [references/literature.md](references/literature.md) |
-| Vendor Docs | [vendor/](vendor/) |
-| Templates | [_templates/](_templates/) |
-| Strategy | [STRATEGY.md](STRATEGY.md) |
+| Need | Location |
+|---|---|
+| Paper framing | [concepts/working-note.md](concepts/working-note.md) |
+| Documentation index | [README.md](README.md) |
+| Operational notes | [operations.md](operations.md) |
+| Experiment evidence | `user/<name>/experiments/*/results.md` |
+| Assistant rules / venv policy | [../AGENTS.md](../AGENTS.md) |

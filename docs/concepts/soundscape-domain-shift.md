@@ -1,5 +1,7 @@
 # Handling Soundscape Domain Shift
 
+**Status**: current
+
 The core challenge in BirdCLEF: models train on clean focal recordings but must classify noisy soundscape recordings at test time. This document surveys approaches and practical recommendations.
 
 ## The Domain Gap Problem

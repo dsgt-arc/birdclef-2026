@@ -1,6 +1,6 @@
 # Concept: Semi-supervised box annotation loop (Perch-retrieval + DSP pre-boxing + margin-only human review)
 
-**Status**: developing
+**Status**: shelved
 **Created**: 2026-06-01
 **Updated**: 2026-06-01
 

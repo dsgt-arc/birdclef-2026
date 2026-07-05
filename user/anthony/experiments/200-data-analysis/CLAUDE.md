@@ -39,7 +39,7 @@ Related Perch code/docs in the repo:
 - Inference script: `user/murilo/inference/perch_inference.py`
 - Batch wrappers: `user/murilo/inference/sbatch/run_perch.sh`, `user/murilo/inference/sbatch/perch_inference.sh`
 - Shared Perch package helpers: `user/murilo/src/birdclef/perch/`
-- Vendor source: `vendor/perch/`
+- Upstream source: https://github.com/google-research/perch
 - Vendor notes: `docs/vendor/perch.md`
 
 Experiment 106 also has useful Perch loading utilities and label mapping artifacts:

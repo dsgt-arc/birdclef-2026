@@ -1,6 +1,6 @@
 # Concept: Training a PyTorch MixIT Separator on BirdCLEF Data
 
-**Status**: developing
+**Status**: exploratory/future-work seed
 **Created**: 2026-03-14
 **Updated**: 2026-03-14
 

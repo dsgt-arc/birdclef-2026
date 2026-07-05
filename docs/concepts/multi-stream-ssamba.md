@@ -1,6 +1,6 @@
 # Concept: Multi-Stream SSAMBA for Implicit Source Demixing
 
-**Status**: developing
+**Status**: exploratory/future-work seed
 **Created**: 2026-03-30
 **Updated**: 2026-03-30
 

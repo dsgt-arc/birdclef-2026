@@ -7,8 +7,7 @@
 ## Related Documentation
 
 - **Experiment**: [001-encoder-benchmark](../../user/anthony/experiments/001-encoder-benchmark/proposal.md) - Where these findings originated
-- **Concepts**:
-  - [LoRA Finetuning for Audio](../concepts/lora-finetuning-audio.md) - Solution for EAT's finetuning requirement
+- **Status**: the earlier standalone LoRA concept note was removed during documentation cleanup; see the experiment record for details.
 
 ## Summary
 

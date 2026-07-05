@@ -17,7 +17,7 @@ datasets:
   # Part A: ESC-50 (sanity check)
   esc50:
     source: "ashraq/esc50"  # HuggingFace
-    local_path: "${paths.data}/esc50"  # or use vendor/ESC-50
+    local_path: "${paths.data}/esc50"  # legacy scripts may also use vendor/ESC-50
     classes: 50
     clips: 2000
     sample_rate: 44100  # native, resample to 16kHz for models
@@ -66,7 +66,6 @@ models:
     type: "huggingface"
     source: "worstchan/EAT-base_epoch30_finetune_AS2M"
     local_path: "${paths.checkpoints}/eat/EAT-base_epoch30_finetune_AS2M"
-    code_path: "vendor/EAT"
 
 probe:
   type: "linear"  # Linear probe to isolate encoder quality

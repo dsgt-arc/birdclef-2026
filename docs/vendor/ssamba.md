@@ -7,7 +7,7 @@ pipeline_stage:
   - "representation-learning"
   - "embedding"
 relevance: "Efficient Mamba-based audio encoder; 92.7% faster than transformers with comparable accuracy"
-status: "active"
+status: "legacy-active"
 ---
 
 # SSAMBA (Self-Supervised Audio Mamba)
@@ -137,7 +137,6 @@ git clone https://github.com/hustvl/Vim.git vendor/ssamba/Vim
 ## Related Documentation
 
 - **Concept**: [SSAMBA Audio Mamba](../concepts/ssamba-audio-mamba.md) - Research concept and hypotheses
-- **Concept**: [SSAST Audio Transformer](../concepts/ssast-audio-transformer.md) - Transformer baseline
 - **Vendor**: [SSAST](ssast.md) - Self-supervised transformer baseline
 - **Vendor**: [AST](ast.md) - Supervised transformer baseline
 - **Vendor**: [BEATs](beats.md) - Discrete token prediction baseline

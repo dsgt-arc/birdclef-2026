@@ -1,92 +1,44 @@
 # Documentation
 
-Shared context and documentation for the BirdCLEF 2026 discrete token pipeline research project.
+Curated documentation for the DS@GT ARC BirdCLEF+ 2026 repository.
 
-> **Research Thesis**: Foundation models like BEATs/AudioMAE learn superior bioacoustic representations but are excluded from BirdCLEF due to CPU inference constraints. This project explores strategies to unlock foundation model quality under CPU limits.
+The docs are organized so current conclusions are easy to find without deleting the exploratory trail. Concept notes may be current, historical, speculative, or negative-result records; see the concept index for status.
 
----
+## Start here
 
-## Quick Start
+| Document | Purpose |
+|---|---|
+| [STATUS.md](STATUS.md) | Current results, paper state, and what matters now |
+| [concepts/working-note.md](concepts/working-note.md) | Working-note framing and result map |
+| [operations.md](operations.md) | Operational notes for running jobs and managing artifacts |
+| [references/README.md](references/README.md) | Status-indexed external references |
+| [references/literature.md](references/literature.md) | Key papers and external references |
+| [vendor/README.md](vendor/README.md) | External project notes and local-checkout status |
 
-**New here?** Start with:
-1. [STATUS.md](STATUS.md) - What works now, what we're trying
-2. [concepts/](concepts/) - Research ideas we're exploring
-3. [references/literature.md](references/literature.md) - Key papers
+## Current narrative
 
----
+The project no longer centers on the original “distill foundation models into a CPU-viable student” thesis. The current paper has two pillars:
 
-## Directory Structure
+1. **Competitive supervised system** — Perch v2 probes + HGNetV2-B0 SED + a non-bird prototypical head reach **0.931 public / 0.936 private LB**.
+2. **Token/foundation-model comparison** — codec tokens, semantic audio encoders, and SSAMBA-style sequence models are evaluated against that supervised baseline.
 
-```
-docs/
-├── STATUS.md           # Current state summary (start here)
-├── concepts/           # Research ideas and hypotheses
-│   ├── README.md       # Concept map and index
-│   └── *.md            # Individual concepts
-├── experiments/        # Experiment proposals and results
-│   └── NNN-name/       # Each experiment gets a directory
-├── references/
-│   ├── literature.md   # Key papers with links
-│   └── deep-research/  # AI research outputs and syntheses
-├── vendor/             # External tool documentation
-│   └── README.md       # Index of vendored repos
-└── _templates/         # Document templates
-    ├── concept.md
-    ├── experiment-proposal.md
-    ├── experiment-result.md
-    └── reference.md
-```
+Headline finding: token/foundation encoders are useful research objects, but the strongest deployed system is still a practical specialist ensemble built around Perch and a supervised SED backbone.
 
----
+## Concept docs
 
-## Concepts (Research Ideas)
+See [concepts/README.md](concepts/README.md) for a status-indexed concept map:
 
-| Concept | Description |
-|---------|-------------|
-| [soundscape-domain-shift](concepts/soundscape-domain-shift.md) | Focal→soundscape domain gap: MixIT, ProtoCLR, augmentation |
-| [data-and-compute-scale](concepts/data-and-compute-scale.md) | Dataset sizes, model params, Kaggle inference constraints |
-| [mlp-mixer-distillation](concepts/mlp-mixer-distillation.md) | ViT→MLP-Mixer distillation for CPU efficiency |
-| [research-leads](concepts/research-leads.md) | Active model candidates: EAT, OpenBEATs, BirdMAE |
+- current anchors,
+- historical/superseded notes,
+- exploratory future-work seeds,
+- falsified or shelved threads.
 
----
+Detailed experiment evidence lives under `user/<name>/experiments/*/results.md`; concept notes capture framing and provenance.
 
 ## References
 
-### Literature
-- [references/literature.md](references/literature.md) - Key papers with arXiv links, prioritized reading list
-
-### Deep Research (AI Syntheses)
-| Doc | Description |
-|-----|-------------|
-| [wav2vec2-landscape](references/deep-research/wav2vec2-landscape.md) | Post-wav2vec 2.0 era: codecs, transformers, Mamba |
-| [birdclef-history](references/deep-research/birdclef-history.md) | BirdCLEF competition history 2014-2025 |
-| [beats-architecture](references/deep-research/beats-architecture.md) | Deep dive on BEATs iterative tokenization |
-
-### Vendor Documentation
-See [vendor/README.md](vendor/README.md) for 15+ vendored repositories with:
-- Pipeline stage mapping (tokenization, representation learning, embedding, inference)
-- Category and status for each repository
-
----
-
-## Current Focus (Jan 2026)
-
-Based on recent literature review:
-
-1. **EAT** - 15x more efficient than BEATs, similar performance
-2. **OpenBEATs** - SOTA on bioacoustics, fully open-source (300M params)
-3. **BirdMAE** - Best on BirdSet benchmark, bird-specific training
-
-Key question: Can these foundation models be distilled to CPU-viable inference while retaining bioacoustics performance?
-
----
-
-## Quick Links
-
-| Resource | Link |
-|----------|------|
-| Project Status | [STATUS.md](STATUS.md) |
-| Concept Index | [concepts/README.md](concepts/README.md) |
-| Key Papers | [references/literature.md](references/literature.md) |
-| Vendor Index | [vendor/README.md](vendor/README.md) |
-| Templates | [_templates/](_templates/) |
+- [references/README.md](references/README.md) — status-indexed reference map
+- [references/literature.md](references/literature.md) — papers and systems that inform the write-up
+- [references/kaggle/](references/kaggle/) — Kaggle notebook/discussion summaries
+- [references/deep-research/](references/deep-research/) — older AI-generated research syntheses; keep as background, not source of truth
+- [vendor/](vendor/) — external tool/model notes and local-checkout status

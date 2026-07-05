@@ -35,14 +35,21 @@ du -sh $local_cache
 Start GPU monitoring in background with proper cleanup:
 
 ```bash
-# Start GPU monitoring in background
-$repo_dir/scripts/monitor-gpu.sh 5 logs/gpu-${SLURM_JOB_ID}.csv &
+# Start simple GPU monitoring in background
+(
+  while true; do
+    date --iso-8601=seconds
+    nvidia-smi --query-gpu=timestamp,name,utilization.gpu,utilization.memory,memory.used,memory.total \
+      --format=csv,noheader,nounits
+    sleep 5
+  done
+) > logs/gpu-${SLURM_JOB_ID}.csv &
 GPU_MONITOR_PID=$!
 
 # Cleanup function
 cleanup() {
     echo "Cleaning up..."
-    if [ ! -z "${GPU_MONITOR_PID:-}" ]; then
+    if [ -n "${GPU_MONITOR_PID:-}" ]; then
         kill $GPU_MONITOR_PID 2>/dev/null || true
     fi
 }
@@ -179,8 +186,15 @@ repo_dir=$(realpath ~/arc/birdclef-2026)
 export UV_PROJECT_ENVIRONMENT=$scratch_dir/.venv
 cd $repo_dir
 
-# Start GPU monitoring
-$repo_dir/scripts/monitor-gpu.sh 5 logs/gpu-${SLURM_JOB_ID}.csv &
+# Start lightweight GPU monitoring
+(
+  while true; do
+    date --iso-8601=seconds
+    nvidia-smi --query-gpu=timestamp,name,utilization.gpu,memory.used,memory.total \
+      --format=csv,noheader,nounits
+    sleep 5
+  done
+) > logs/gpu-${SLURM_JOB_ID}.csv &
 GPU_MONITOR_PID=$!
 trap "kill $GPU_MONITOR_PID 2>/dev/null || true" EXIT
 

@@ -44,4 +44,4 @@
 - [ ] [Follow-up action 1]
 - [ ] [Follow-up action 2]
 
-**Leads to**: [new concepts, experiments, or OpenSpec changes]
+**Leads to**: [new concepts, experiments, or follow-up docs]

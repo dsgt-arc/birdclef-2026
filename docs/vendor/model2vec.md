@@ -6,7 +6,7 @@ category: "self-supervised"
 pipeline_stage:
   - "embedding"
 relevance: "Distill transformers into fast static embeddings; core technique for Phase 3"
-status: "active"
+status: "reference"
 ---
 
 # Model2Vec
@@ -72,7 +72,6 @@ Our Experiment 002 revealed a significant limitation when applying this to bioac
 
 ### Mitigation: Context Recovery
 
-To address this, we are moving beyond the standard Model2Vec "bag-of-features" pooling and employing lightweight sequence models.
-- **Reference**: [Concept: Context Recovery](../concepts/context-recovery.md)
+The standalone context-recovery concept note was removed during documentation cleanup; see experiment results for the durable findings.
 
 ## Dependencies

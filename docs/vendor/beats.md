@@ -7,7 +7,7 @@ pipeline_stage:
   - "tokenization"
   - "representation-learning"
 relevance: "Discrete acoustic tokenizer + transformer; baseline for distillation"
-status: "active"
+status: "legacy-active"
 ---
 
 # BEATs (Bidirectional Encoder representation from Audio Transformers)

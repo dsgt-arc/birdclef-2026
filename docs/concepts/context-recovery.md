@@ -1,6 +1,6 @@
 # Concept: Context Recovery from Discrete Audio Tokens
 
-**Status**: developing
+**Status**: exploratory/future-work seed
 **Created**: 2026-01-11
 **Updated**: 2026-01-25
 

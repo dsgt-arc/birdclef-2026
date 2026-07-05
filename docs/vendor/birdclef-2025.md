@@ -8,7 +8,7 @@ pipeline_stage:
   - "embedding"
   - "inference"
 relevance: "Reference implementation of discrete token + Word2Vec pipeline for BirdCLEF competition"
-status: "active"
+status: "reference"
 ---
 
 # birdclef-2025

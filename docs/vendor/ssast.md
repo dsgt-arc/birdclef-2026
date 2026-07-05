@@ -7,7 +7,7 @@ pipeline_stage:
   - "representation-learning"
   - "embedding"
 relevance: "Self-supervised Audio Spectrogram Transformer; baseline for SSAMBA comparison"
-status: "active"
+status: "legacy-active"
 ---
 
 # SSAST (Self-Supervised Audio Spectrogram Transformer)
@@ -123,7 +123,6 @@ From `requirements.txt`:
 
 ## Related Documentation
 
-- **Concept**: [SSAST Audio Transformer](../concepts/ssast-audio-transformer.md) - Research concept and hypotheses
 - **Concept**: [SSAMBA Audio Mamba](../concepts/ssamba-audio-mamba.md) - Efficient Mamba alternative
 - **Vendor**: [AST](ast.md) - Supervised baseline
 - **Vendor**: [SSAMBA](ssamba.md) - Mamba-based successor

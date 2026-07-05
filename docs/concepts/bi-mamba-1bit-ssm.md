@@ -1,6 +1,6 @@
 # Concept: Bi-Mamba (1-Bit State Space Models)
 
-**Status**: nascent
+**Status**: exploratory/future-work seed
 **Created**: 2026-03-31
 **Updated**: 2026-03-31
 

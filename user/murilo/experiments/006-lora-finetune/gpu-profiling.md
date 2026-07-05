@@ -1,7 +1,7 @@
 # GPU Profiling Notes — Experiment 006
 
 Performance analysis from GPU utilization checks on LoRA fine-tuning runs.
-For general PACE GPU best practices, see `docs/references/pace-gpu-workflows.md`.
+For current PACE/SLURM operational guidance, see `docs/operations.md`.
 
 ## GPU Check Results
 
@@ -30,7 +30,7 @@ contention.
 
 The takeaway: data loading from NFS varies widely (3-68ms) depending on page cache state.
 Copying data to `$TMPDIR` (local NVMe) eliminates this variability entirely.
-See `docs/references/pace-gpu-workflows.md` for details on PACE storage tiers.
+See `docs/operations.md` for the current `$TMPDIR` and cache guidance.
 
 ### Why is adapters compute slower?
 

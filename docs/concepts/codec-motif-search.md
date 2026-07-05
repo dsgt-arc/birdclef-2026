@@ -1,6 +1,6 @@
 # Concept: Neural Audio Codec Motif Search for Species Detection
 
-**Status**: nascent
+**Status**: shelved/partially falsified
 **Created**: 2026-03-24
 
 ## Idea

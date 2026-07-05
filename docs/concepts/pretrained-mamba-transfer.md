@@ -1,6 +1,6 @@
 # Concept: Pre-trained Mamba Transfer with Re-initialized Tokenizer
 
-**Status**: developing
+**Status**: exploratory/future-work seed
 **Created**: 2026-02-09
 **Updated**: 2026-02-17
 
