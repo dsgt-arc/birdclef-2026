@@ -59,7 +59,7 @@
 
 - [x] Fix save_metrics.py to support `--backend adapters` flag
 - [x] Fix cross-filesystem uv cache in create_venv.sh (`UV_CACHE_DIR`)
-- [x] Write PACE GPU workflows reference (docs/references/pace-gpu-workflows.md)
+- [x] Consolidate PACE GPU workflow guidance into `docs/operations.md`
 
 ## Upstream Contributions (adapter-hub/adapters)
 
