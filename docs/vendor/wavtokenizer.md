@@ -6,7 +6,7 @@ category: "tokenization"
 pipeline_stage:
   - "tokenization"
 relevance: "SOTA neural audio codec achieving 40-75 tokens/second with rich semantic information"
-status: "active"
+status: "legacy-active"
 ---
 
 # WavTokenizer

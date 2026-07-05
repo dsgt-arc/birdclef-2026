@@ -1,6 +1,6 @@
 # Working Note: Can Tokens Compete?
 
-**Status**: current cleanup anchor  
+**Status**: current cleanup anchor
 **Updated**: 2026-07-04
 
 ## Framing

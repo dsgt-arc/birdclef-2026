@@ -1,6 +1,6 @@
 # Concept: SSAST (Self-Supervised Audio Spectrogram Transformer)
 
-**Status**: developing
+**Status**: historical
 **Created**: 2026-01-15
 **Updated**: 2026-01-15
 
@@ -43,7 +43,7 @@ The key innovation is treating audio spectrograms as 2D images and applying Visi
 ### Vendor Documentation
 
 - [SSAST Vendor Doc](../vendor/ssast.md) - Local code at `vendor/ssast/`
-- [AST Vendor Doc](../vendor/ast.md) - Local code at `vendor/ast/`
+- [AST Vendor Doc](../vendor/ast.md) - upstream/HuggingFace AST reference
 
 ## Open Questions
 

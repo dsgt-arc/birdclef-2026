@@ -1,6 +1,6 @@
 # Concept: Distilled Sequence Model for Context Recovery
 
-**Status**: developing
+**Status**: exploratory/future-work seed
 **Created**: 2026-01-11
 **Updated**: 2026-01-11
 

@@ -1,6 +1,6 @@
 # Concept: Final Push — Combined BirdCLEF 2026 Working Note
 
-**Status**: developing
+**Status**: historical paper-planning note
 **Created**: 2026-06-08
 **Updated**: 2026-06-09
 

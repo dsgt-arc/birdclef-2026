@@ -1,6 +1,6 @@
 # Concept: Acoustic Atom Basis for Species Prototypes
 
-**Status**: nascent
+**Status**: exploratory/future-work seed
 **Created**: 2026-04-12
 **Updated**: 2026-04-12
 

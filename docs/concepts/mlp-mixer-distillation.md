@@ -1,5 +1,7 @@
 # MLP-Mixer Distillation for Efficient Inference
 
+**Status**: superseded
+
 ## Research Direction
 
 **Goal**: Achieve Perch-competitive bird classification performance with CPU-viable inference by distilling ViT models into MLP-Mixer.

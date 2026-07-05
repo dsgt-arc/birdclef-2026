@@ -3,7 +3,7 @@
 One-time step that requires full TensorFlow installation.
 After compilation, runtime inference uses ai-edge-litert only.
 
-Reference: vendor/birdclef-2025/birdclef/kaggle/compile.py
+Reference: dsgt-arc/birdclef-2025 `birdclef/kaggle/compile.py`
 """
 
 from pathlib import Path

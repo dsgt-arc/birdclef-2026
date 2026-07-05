@@ -1,5 +1,7 @@
 # Research Leads
 
+**Status**: historical
+
 Potential repositories, papers, and concepts to explore for the discrete token pipeline. These complement the [vendored repositories](../vendor/README.md) already documented.
 
 > **Last updated**: December 2025. See also: [BEATs architecture](../references/deep-research/beats-architecture.md) for deep dive on BEATs architecture.

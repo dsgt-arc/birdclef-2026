@@ -50,7 +50,7 @@ Use linear probe to isolate encoder quality. Measure both accuracy and inference
 |-----------|---------|
 | Data | ESC-50 (2k clips, 50 classes) |
 | Compute | Single GPU, ~1-2 hours per model |
-| Dependencies | `transformers`, BEATs (`vendor/unilm/beats`), EAT (`vendor/EAT`), AST/SSAST (`timm`), SSAMBA (`mamba-ssm`) |
+| Dependencies | `transformers`, BEATs (`vendor/unilm/beats`), EAT (HuggingFace `worstchan/EAT-*`), AST/SSAST (`timm`), SSAMBA (`mamba-ssm`) |
 | Code | `src/birdclef/` |
 
 ### New Encoder Details

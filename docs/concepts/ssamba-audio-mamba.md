@@ -1,6 +1,6 @@
 # Concept: SSAMBA (Self-Supervised Audio Mamba)
 
-**Status**: mature
+**Status**: current research thread
 **Created**: 2026-01-15
 **Updated**: 2026-02-17
 

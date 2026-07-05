@@ -35,7 +35,7 @@ The paper also reports token/foundation-model findings: WavTokenizer codec token
 │   ├── anthony/experiments/
 │   ├── murilo/experiments/
 │   └── adrian/experiments/
-├── vendor/                # Vendored external code/submodules
+├── vendor/                # Small retained submodules + Kaggle source snapshots
 └── AGENTS.md              # Repo-specific agent instructions
 ```
 

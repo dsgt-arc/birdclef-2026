@@ -6,7 +6,7 @@ category: "utility"
 pipeline_stage:
   - "data-processing"
 relevance: "Unsupervised bird vocalization event detection used by BirdSet for detected_events annotations"
-status: "reference"
+status: "legacy-active"
 ---
 
 # bambird + scikit-maad

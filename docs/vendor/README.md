@@ -1,78 +1,55 @@
-# Vendored Repository Documentation
+# External Project Notes
 
-This directory contains documentation for the 14 external repositories vendored in this project. These repositories cover audio codecs, self-supervised learning, bioacoustics models, and utilities relevant to the BirdCLEF audio classification task.
+This directory documents external repositories, datasets, and model families used as implementation references during BirdCLEF 2026. A document here does **not** imply the upstream repository is checked out under `vendor/`.
+
+See [`../../vendor/README.md`](../../vendor/README.md) for the small set of submodules that are still retained because code or reproducibility scripts import them directly.
 
 ## Repository Summary
 
-| Repository | Category | Pipeline Stage | License | Status |
-|------------|----------|----------------|---------|--------|
-| [bambird + scikit-maad](bambird-scikit-maad.md) | utility | data-processing | BSD-3-Clause | reference |
-| [BirdNET-Analyzer](birdnet-analyzer.md) | pretrained-model | inference, embedding | MIT / CC BY-NC-SA 4.0 | reference |
-| [BirdSet](birdset.md) | dataset | data-processing, representation-learning | BSD-3-Clause | active |
-| [ProtoCLR](protoclr.md) | self-supervised | representation-learning | Unspecified | reference |
-| [Wav2vec2.0](wav2vec2.md) | self-supervised | tokenization, representation-learning | Apache-2.0 | reference |
-| [WavTokenizer](wavtokenizer.md) | tokenization | tokenization | MIT | active |
-| [best-rq-pytorch](best-rq-pytorch.md) | self-supervised | tokenization, representation-learning | MIT | reference |
-| [bioacoustics-model-zoo](bioacoustics-model-zoo.md) | utility | inference, embedding | MIT | active |
-| [birdclef-2025](birdclef-2025.md) | utility | tokenization, embedding, inference | Unspecified | active |
-| [descript-audio-codec](descript-audio-codec.md) | tokenization | tokenization | MIT | reference |
-| [dinosr](dinosr.md) | self-supervised | representation-learning | Unspecified | reference |
-| [hubert](hubert.md) | self-supervised | tokenization, representation-learning | MIT | reference |
-| [model2vec](model2vec.md) | self-supervised | embedding | MIT | active |
-| [opensoundscape](opensoundscape.md) | utility | data-processing, inference | MIT | active |
-| [perch](perch.md) | pretrained-model | embedding, inference | Apache-2.0 | reference |
+| Repository | Category | Pipeline Stage | Local checkout? | Status |
+|------------|----------|----------------|-----------------|--------|
+| [bambird + scikit-maad](bambird-scikit-maad.md) | utility | data-processing | `vendor/bambird`, `vendor/scikit-maad` | legacy active |
+| [BirdNET-Analyzer](birdnet-analyzer.md) | pretrained-model | inference, embedding | no | reference |
+| [BirdSet](birdset.md) | dataset | data-processing, representation-learning | no | reference |
+| [ProtoCLR](protoclr.md) | self-supervised | representation-learning | no | reference |
+| [Wav2vec2.0](wav2vec2.md) | self-supervised | tokenization, representation-learning | no | reference |
+| [WavTokenizer](wavtokenizer.md) | tokenization | tokenization | `vendor/WavTokenizer` | legacy active |
+| [best-rq-pytorch](best-rq-pytorch.md) | self-supervised | tokenization, representation-learning | no | reference |
+| [bioacoustics-model-zoo](bioacoustics-model-zoo.md) | utility | inference, embedding | `vendor/bioacoustics-model-zoo` | legacy active |
+| [birdclef-2025](birdclef-2025.md) | utility | tokenization, embedding, inference | no | reference |
+| [descript-audio-codec](descript-audio-codec.md) | tokenization | tokenization | no | reference |
+| [dinosr](dinosr.md) | self-supervised | representation-learning | no | reference |
+| [hubert](hubert.md) | self-supervised | tokenization, representation-learning | no | reference |
+| [model2vec](model2vec.md) | self-supervised | embedding | no | reference |
+| [opensoundscape](opensoundscape.md) | utility | data-processing, inference | no | reference |
+| [perch](perch.md) | pretrained-model | embedding, inference | no; use package/ONNX/checkpoints | active reference |
+| [AST](ast.md) | pretrained-model | embedding, inference | no; use HuggingFace/upstream | active reference |
+| [EAT](eat.md) | self-supervised | embedding | no; use HuggingFace/upstream | active reference |
+| [BEATs](beats.md) | pretrained-model | embedding | `vendor/unilm` | legacy active |
+| [SSAST](ssast.md) | self-supervised | embedding | `vendor/ssast` | legacy active |
+| [SSAMBA](ssamba.md) | self-supervised | embedding | `vendor/ssamba` | legacy active |
 
 ## Pipeline Mapping
 
-### Phase 1: Tokenization
+### Tokenization
 
-Repositories relevant to converting audio into discrete tokens:
+- **[WavTokenizer](wavtokenizer.md)**: neural codec with 40-75 tokens/second.
+- **[descript-audio-codec](descript-audio-codec.md)**: high-fidelity RVQGAN codec reference.
+- **[best-rq-pytorch](best-rq-pytorch.md)** and **[hubert](hubert.md)**: discrete-unit SSL references.
 
-- **[WavTokenizer](wavtokenizer.md)**: SOTA neural codec with 40-75 tokens/second (primary candidate)
-- **[descript-audio-codec](descript-audio-codec.md)**: High-fidelity RVQGAN codec at 8kbps
-- **[birdclef-2025](birdclef-2025.md)**: Baseline k-means on MFCCs approach
-- **[best-rq-pytorch](best-rq-pytorch.md)**: Random projection quantization (no learned codebook)
-- **[hubert](hubert.md)**: Iterative k-means clustering for discrete units
+### Encoders / Inference
 
-### Phase 2: Self-Supervised Transformer
-
-Repositories relevant to training transformers on discrete tokens:
-
-- **[hubert](hubert.md)**: Masked prediction with iterative clustering targets
-- **[dinosr](dinosr.md)**: Online clustering eliminates separate k-means step
-- **[Wav2vec2.0](wav2vec2.md)**: Contrastive learning with Gumbel-softmax quantization
-- **[ProtoCLR](protoclr.md)**: Contrastive learning for domain-invariant representations
-
-### Phase 3: Static Embeddings
-
-Repositories relevant to distilling transformers into efficient static embeddings:
-
-- **[model2vec](model2vec.md)**: Core technique for transformer-to-static distillation (primary reference)
-- **[birdclef-2025](birdclef-2025.md)**: Baseline Word2Vec approach on tokens
-
-### Phase 4: Inference
-
-Repositories providing production models and utilities:
-
-- **[BirdNET-Analyzer](birdnet-analyzer.md)**: 6500+ species classifier (benchmark target)
-- **[perch](perch.md)**: 10k+ species classifier with high-quality embeddings
-- **[bioacoustics-model-zoo](bioacoustics-model-zoo.md)**: Unified API for multiple models
-- **[opensoundscape](opensoundscape.md)**: Audio processing and CNN training
+- **[perch](perch.md)**: strongest frozen bioacoustic embedding baseline in this project.
+- **[BEATs](beats.md)**, **[AST](ast.md)**, **[EAT](eat.md)**, **[SSAST](ssast.md)**, **[SSAMBA](ssamba.md)**: general/foundation audio encoder comparisons.
+- **[BirdNET-Analyzer](birdnet-analyzer.md)** and **[bioacoustics-model-zoo](bioacoustics-model-zoo.md)**: species-model and API references.
 
 ### Data & Evaluation
 
-- **[BirdSet](birdset.md)**: Large-scale training data (XCL/XCM) and evaluation datasets
-
-## Category Definitions
-
-- **tokenization**: Converts continuous audio into discrete token sequences
-- **self-supervised**: Learns representations without labeled data
-- **pretrained-model**: Production-ready classification/embedding model
-- **dataset**: Provides training or evaluation data
-- **utility**: General-purpose tools and libraries
+- **[BirdSet](birdset.md)**: large-scale bioacoustics benchmark reference.
+- **[ESC-50](esc50.md)**: sanity-check dataset used by legacy encoder benchmarks.
 
 ## Status Definitions
 
-- **active**: Actively used or planned for use in our pipeline
-- **reference**: Provides concepts or techniques we're adapting
-- **experimental**: Under evaluation, not yet committed to
+- **legacy active**: still has code or scripts that may rely on a retained local checkout.
+- **active reference**: still important to the project, but obtained via package, model hub, ONNX/checkpoint artifact, or upstream URL.
+- **reference**: conceptual/provenance documentation only.

@@ -1,6 +1,6 @@
 # Concept: Prompted Sound Event Detection
 
-**Status**: developing
+**Status**: exploratory/future-work seed
 **Created**: 2026-02-08
 **Updated**: 2026-02-17
 

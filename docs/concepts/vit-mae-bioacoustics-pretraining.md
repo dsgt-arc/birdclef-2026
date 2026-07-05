@@ -1,6 +1,6 @@
 # Concept: Vision Transformer + Masked Autoencoding for Bioacoustics Pre-training
 
-**Status**: deferred (as of 2026-02-01)
+**Status**: deferred
 **Created**: 2026-01-31
 **Updated**: 2026-02-01
 

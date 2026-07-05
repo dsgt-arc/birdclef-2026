@@ -7,7 +7,7 @@ pipeline_stage:
   - "inference"
   - "embedding"
 relevance: "Unified API for pre-trained bioacoustics models; integrates with OpenSoundscape"
-status: "active"
+status: "legacy-active"
 ---
 
 # Bioacoustics Model Zoo

@@ -7,7 +7,7 @@ pipeline_stage:
   - "embedding"
   - "inference"
 relevance: "CNN backbone for SED models in BirdCLEF — outperforms EfficientNet on LB"
-status: "active"
+status: "active-reference"
 ---
 
 # PP-HGNetV2

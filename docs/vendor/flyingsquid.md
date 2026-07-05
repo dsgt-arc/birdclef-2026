@@ -7,7 +7,7 @@ pipeline_stage:
   - "data-processing"
   - "label-fusion"
 relevance: "Fuses noisy labeling functions into soft labels for weak supervision in BirdCLEF species classification"
-status: "active"
+status: "reference"
 ---
 
 # FlyingSquid

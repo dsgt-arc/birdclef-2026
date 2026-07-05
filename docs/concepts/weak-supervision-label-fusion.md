@@ -1,6 +1,6 @@
 # Concept: Weak Supervision Label Fusion for Token-Level SED
 
-**Status**: developing
+**Status**: regressed/shelved
 **Created**: 2026-02-08
 **Updated**: 2026-03-14
 

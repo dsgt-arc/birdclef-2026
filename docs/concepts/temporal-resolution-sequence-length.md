@@ -1,6 +1,6 @@
 # Concept: Temporal Resolution and Sequence Length in Audio Models
 
-**Status**: developing
+**Status**: current research thread
 **Created**: 2026-01-30
 **Updated**: 2026-02-18
 

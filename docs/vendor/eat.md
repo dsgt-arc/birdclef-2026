@@ -7,7 +7,7 @@ pipeline_stage:
   - "tokenization"
   - "representation-learning"
 relevance: "15x more efficient than BEATs; primary candidate for distillation"
-status: "active"
+status: "active-reference"
 ---
 
 # EAT (Efficient Audio Transformer)
@@ -50,25 +50,23 @@ Audio → Mel Spectrogram → Patch Embed → [MASK 70-80%]
 - **Distillation source**: Strong teacher for model2vec-style distillation
 - **Efficiency**: Already optimized, may be fast enough without distillation
 
-## Local Path
+## Source Checkout
 
+The EAT repo is no longer retained as a submodule. For source-level inspection, clone upstream into scratch or another external workspace:
+
+```bash
+git clone https://github.com/cwx-worst-one/EAT /path/to/EAT
 ```
-vendor/EAT/
-├── src/           # Model implementation
-├── config/        # Training configs
-├── scripts/       # Training scripts
-├── inference/     # Inference utilities
-└── models/        # Model definitions
-```
+
+Project code uses HuggingFace (`worstchan/EAT-*`) with `trust_remote_code=True` rather than importing a local checkout.
 
 ## Usage
 
 ```python
-# Feature extraction (from their README)
-from src.eat import EATModel
+from transformers import AutoModel
 
-model = EATModel.from_pretrained("eat-base")
-features = model.extract_features(audio_tensor)
+model = AutoModel.from_pretrained("worstchan/EAT-base_epoch30_pretrain", trust_remote_code=True)
+features = model.extract_features(mel_tensor)
 ```
 
 ## Dependencies

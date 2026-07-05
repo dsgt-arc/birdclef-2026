@@ -6,7 +6,7 @@ category: "self-supervised"
 pipeline_stage:
   - "embedding"
 relevance: "Distill transformers into fast static embeddings; core technique for Phase 3"
-status: "active"
+status: "reference"
 ---
 
 # Model2Vec

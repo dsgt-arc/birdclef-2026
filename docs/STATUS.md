@@ -53,6 +53,10 @@ Frozen ridge probes deployed to the leaderboard:
 
 This repo should stay mostly standalone. Keep concise project docs here; keep detailed evidence in experiment folders; prefer marking concept status or re-indexing exploratory notes over deleting them.
 
+Vendored submodules were trimmed on 2026-07-04: only source trees still imported by code or legacy reproducibility scripts remain under `vendor/`; reference-only external repos now live as `docs/vendor/` notes plus upstream URLs.
+
+Documentation status markers were normalized on 2026-07-04: concept notes now distinguish current anchors, historical/superseded records, exploratory seeds, and shelved/regressed threads; vendor notes distinguish retained local checkouts from active references and reference-only projects.
+
 ## Where to look
 
 | Need | Location |

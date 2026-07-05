@@ -1,5 +1,7 @@
 # Data and Compute Scale Analysis
 
+**Status**: historical
+
 Understanding the scale of data and compute required for different approaches to BirdCLEF.
 
 ## BirdCLEF Competition Data (2022-2025)

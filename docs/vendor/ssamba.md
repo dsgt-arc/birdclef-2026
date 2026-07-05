@@ -7,7 +7,7 @@ pipeline_stage:
   - "representation-learning"
   - "embedding"
 relevance: "Efficient Mamba-based audio encoder; 92.7% faster than transformers with comparable accuracy"
-status: "active"
+status: "legacy-active"
 ---
 
 # SSAMBA (Self-Supervised Audio Mamba)

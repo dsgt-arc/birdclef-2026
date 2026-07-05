@@ -11,8 +11,9 @@ The docs are organized so current conclusions are easy to find without deleting 
 | [STATUS.md](STATUS.md) | Current results, paper state, and what matters now |
 | [concepts/working-note.md](concepts/working-note.md) | Working-note framing and result map |
 | [operations.md](operations.md) | Operational notes for running jobs and managing artifacts |
+| [references/README.md](references/README.md) | Status-indexed external references |
 | [references/literature.md](references/literature.md) | Key papers and external references |
-| [vendor/README.md](vendor/README.md) | Index of vendored external projects |
+| [vendor/README.md](vendor/README.md) | External project notes and local-checkout status |
 
 ## Current narrative
 
@@ -36,7 +37,8 @@ Detailed experiment evidence lives under `user/<name>/experiments/*/results.md`;
 
 ## References
 
+- [references/README.md](references/README.md) — status-indexed reference map
 - [references/literature.md](references/literature.md) — papers and systems that inform the write-up
 - [references/kaggle/](references/kaggle/) — Kaggle notebook/discussion summaries
 - [references/deep-research/](references/deep-research/) — older AI-generated research syntheses; keep as background, not source of truth
-- [vendor/](vendor/) — tool and model documentation for vendored projects
+- [vendor/](vendor/) — external tool/model notes and local-checkout status

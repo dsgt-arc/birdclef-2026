@@ -7,7 +7,7 @@ pipeline_stage:
   - "data-processing"
   - "inference"
 relevance: "Core bioacoustics analysis library for audio loading, spectrograms, and CNN training"
-status: "active"
+status: "reference"
 ---
 
 # OpenSoundscape

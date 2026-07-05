@@ -1,6 +1,6 @@
 # Concept: Supervised Vision Transformer Training Pipeline for Bioacoustics
 
-**Status**: implementing (Experiment 002)
+**Status**: historical
 **Created**: 2026-02-01
 **Updated**: 2026-02-01
 

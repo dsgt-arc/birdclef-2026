@@ -1,6 +1,6 @@
 ---
 title: "Star Schema as Tensor Decomposition"
-status: concept
+status: "exploratory/future-work seed"
 date: 2026-04-09
 experiment: 106
 ---

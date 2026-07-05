@@ -6,7 +6,7 @@ category: "dataset"
 pipeline_stage:
   - "evaluation"
 relevance: "Standard audio classification benchmark; validates encoder quality on general sounds"
-status: "active"
+status: "legacy-active"
 ---
 
 # ESC-50 (Environmental Sound Classification)

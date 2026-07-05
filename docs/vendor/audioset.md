@@ -7,7 +7,7 @@ pipeline_stage:
   - "data-processing"
   - "representation-learning"
 relevance: "Pretraining dataset for BEATs/EAT; zero domain shift for evaluating pretrained encoders"
-status: "active"
+status: "active-reference"
 ---
 
 # AudioSet

@@ -7,7 +7,7 @@ pipeline_stage:
   - "embedding"
   - "inference"
 relevance: "Google's bird species classifier trained on 10k+ species; produces high-quality embeddings"
-status: "reference"
+status: "active-reference"
 ---
 
 # Perch

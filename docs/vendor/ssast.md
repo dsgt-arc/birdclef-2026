@@ -7,7 +7,7 @@ pipeline_stage:
   - "representation-learning"
   - "embedding"
 relevance: "Self-supervised Audio Spectrogram Transformer; baseline for SSAMBA comparison"
-status: "active"
+status: "legacy-active"
 ---
 
 # SSAST (Self-Supervised Audio Spectrogram Transformer)

@@ -1,6 +1,6 @@
 # Concept: Audio Pipeline Bottlenecks — Disk I/O vs GPU Mel Computation
 
-**Status**: developing
+**Status**: operational
 **Created**: 2026-02-16
 **Updated**: 2026-02-18
 
