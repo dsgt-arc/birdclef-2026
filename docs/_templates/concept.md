@@ -35,7 +35,7 @@
 
 - **Based on**: [references or other concepts]
 - **Related to**: [other concepts]
-- **Could lead to**: [experiment proposals or OpenSpec changes]
+- **Could lead to**: [experiment proposals or follow-up docs]
 
 ## Notes
 

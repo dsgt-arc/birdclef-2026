@@ -59,7 +59,7 @@
     - `reset_epoch()` method reshuffles within shards each epoch
   - Documentation: `docs/references/streaming-cache-implementation.md`
 - [x] 3.4 Add GPU monitoring and SLURM best practices
-  - Created `scripts/monitor-gpu.sh` for real-time GPU utilization tracking
+  - Created a temporary root-level `scripts/monitor-gpu.sh` for real-time GPU utilization tracking during the experiment; this helper was later removed in repo cleanup
   - Integrated into sbatch scripts with background monitoring + cleanup trap
   - Created `/slurm:sbatch-review` skill for idiomatic sbatch patterns
   - Added venv sync to TMPDIR for faster package loading

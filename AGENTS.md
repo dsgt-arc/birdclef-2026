@@ -79,11 +79,7 @@ Use slash commands to create properly structured documents:
 
 ## Tooling
 
-| Tool | Purpose |
-|------|---------|
-| `scripts/tb_metrics.py` | Read TensorBoard logs, query with DuckDB (`/tb:metrics`) |
-| `scripts/monitor-gpu.sh` | GPU utilization monitoring on compute nodes (`/gpu-monitor`) |
-| `scripts/upload_kaggle.py` | Upload deps + weights datasets to Kaggle |
+Shared helper scripts now live with the experiment that uses them (for example under `user/<name>/experiments/<id>/scripts/`). The old root-level `scripts/` directory has been removed.
 
 ## Documentation Structure
 

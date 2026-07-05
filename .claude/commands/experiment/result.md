@@ -43,7 +43,7 @@ Add results to a completed experiment. This documents what happened, whether the
 
 5. Run `/experiment:validate` to verify everything is in order.
 
-6. If the experiment leads to code changes, consider creating an OpenSpec proposal.
+6. If the experiment leads to code changes, document the implementation path and affected files.
 
 7. If the experiment leads to new hypotheses, consider creating new concepts or experiments.
 
@@ -75,6 +75,6 @@ results.md
     ↓
 ├── New concept (unexpected finding)
 ├── New experiment (follow-up question)
-├── OpenSpec change (implement what worked)
+├── Code changes or cleanup follow-up
 └── Archive concept (idea fully explored)
 ```

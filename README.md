@@ -29,14 +29,13 @@ The paper also reports token/foundation-model findings: WavTokenizer codec token
 
 ```text
 .
+├── .claude/               # Claude slash commands and project skills
 ├── docs/                  # Curated project documentation
 ├── user/                  # Per-user code and experiment workspaces
 │   ├── anthony/experiments/
 │   ├── murilo/experiments/
 │   └── adrian/experiments/
-├── scripts/               # Shared helper scripts
 ├── vendor/                # Vendored external code/submodules
-├── openspec/              # Historical change proposals
 └── AGENTS.md              # Repo-specific agent instructions
 ```
 

@@ -33,7 +33,7 @@ All start from v4b (0.860 LB) with single-variable changes:
 
 **Action when done**:
 1. Check val/auroc for all 5 runs (baseline v4b = 0.865)
-2. Read TensorBoard logs: `scripts/tb_metrics.py`
+2. Read TensorBoard logs from the run's `outputs/tensorboard/` directory
 3. Update tasks.md step 1.6 with results
 4. Proceed to Step 2: combine winners on both EfficientNet + HGNet tracks
 5. Best variants get submitted to LB (target: ≥0.870 single fold)

@@ -14,8 +14,8 @@ Usage:
     # fast-dev-run smoke (CPU):
     python train.py --config configs/gate2-effv2s.yaml --fast-dev-run --num-workers 0 --accelerator cpu
 
-Logging (matches exp 032): TensorBoardLogger → outputs/tensorboard (always, read
-by scripts/tb_metrics.py); WandbLogger (entity=dsgt-arc) when logging.use_wandb.
+Logging (matches exp 032): TensorBoardLogger → outputs/tensorboard (always);
+WandbLogger (entity=dsgt-arc) when logging.use_wandb.
 Checkpoints → <project>/experiments/034-pretrained-backbone/checkpoints/<run>/fold<N>/.
 Metrics → outputs/test_results/<run>-fold<N>.json (consumed by save_metrics.py).
 """
