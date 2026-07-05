@@ -77,7 +77,7 @@ Mamba scales linearly in all these cases. Attention-based models need chunking, 
 
 - **Based on**: [Exp 001 results](../../user/anthony/experiments/001-encoder-benchmark/results.md), [Exp 002 context collapse](../../user/anthony/experiments/002-beats-inference-optimization/results.md), [Exp 004 SSAMBA port](../../user/anthony/experiments/004-ssamba-hf-port/results.md)
 - **Validated by**: [Exp 004 Frame-Based Tokenization](../../user/murilo/experiments/004-frame-tokenization/results.md) — hypothesis #2 confirmed, 128×4 achieves cmAP=0.118 (+37% over 16×16 baseline)
-- **Related to**: [context-recovery](context-recovery.md), [distilled-sequence-model](distilled-sequence-model.md), [ssamba-audio-mamba](ssamba-audio-mamba.md), [audio-pipeline-bottlenecks](audio-pipeline-bottlenecks.md)
+- **Related to**: [ssamba-audio-mamba](ssamba-audio-mamba.md), [audio-pipeline-bottlenecks](audio-pipeline-bottlenecks.md), [working-note](working-note.md)
 - **Could lead to**: Vertical frame tokenization + pretrained ViT; data augmentation for overfitting; horizontal frame tokenization; Mamba vs attention long-sequence benchmark
 
 ## Experimental Results (Exp 004: Frame-Based Tokenization)

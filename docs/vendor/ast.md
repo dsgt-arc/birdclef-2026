@@ -146,7 +146,6 @@ vendor/ast/
 
 ## Related Documentation
 
-- **Concept**: [SSAST Audio Transformer](../concepts/ssast-audio-transformer.md) - Self-supervised research
 - **Concept**: [SSAMBA Audio Mamba](../concepts/ssamba-audio-mamba.md) - Efficient Mamba alternative
 - **Vendor**: [SSAST](ssast.md) - Self-supervised version
 - **Vendor**: [SSAMBA](ssamba.md) - Mamba-based replacement (92.7% faster)

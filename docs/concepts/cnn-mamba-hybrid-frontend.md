@@ -311,7 +311,7 @@ A deeper tokenizer with frequency attention gives Mamba richer input without req
 ## Connections
 
 - **Based on**: [SSAMBA architecture](ssamba-audio-mamba.md), exp 006 results (0.08 cmAP from scratch)
-- **Related to**: [Prompted SED](prompted-sound-event-detection.md) (this stack as backbone for prompted detection), [Multi-signal SED](../../user/anthony/experiments/XXX-multi-signal-sed/proposal.md) (SSL component)
+- **Related to**: [Prompted SED](prompted-sound-event-detection.md) (this stack as backbone for prompted detection); multi-signal SED was a placeholder experiment direction, not a scaffolded experiment.
 - **Could lead to**: Experiment with the full LEAF + freq attn + Mamba pipeline; or quick MLP diagnostic first
 
 ## Notes

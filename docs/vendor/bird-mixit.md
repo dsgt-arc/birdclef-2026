@@ -364,7 +364,7 @@ The separation-then-classify pipeline adds computational cost at inference time 
 - The bioacoustics-model-zoo reports that the model "works best on 5 second segments."
 - Audio demos: https://bird-mixit.github.io
 - Code repository: https://github.com/google-research/sound-separation/tree/master/models/bird_mixit
-- See also: [Biodenoising](biodenoising.md) for single-output denoising, [Source Separation Augmentation concept](../concepts/source-separation-augmentation.md)
+- See also: [Biodenoising](biodenoising.md) for single-output denoising. The standalone source-separation concept note was removed during documentation cleanup.
 
 ## References
 

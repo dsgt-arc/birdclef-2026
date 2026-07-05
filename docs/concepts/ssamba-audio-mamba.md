@@ -34,7 +34,7 @@ Task head (classification, SED, or reconstruction)
 1. **Inner (per-block)**: each `BidirectionalMamba` module has separate forward and backward SSMs (bimamba_type="v2") with independent A, B, C, D, conv1d parameters
 2. **Outer (layer pairs)**: layers processed in pairs — even layers see normal input, odd layers see `.flip([1])`, results summed
 
-**Consequence**: every token's output embedding reflects the **entire sequence** from both directions. There is no single "state compression" token — each position has a different perspective on the same global information. See `pretrained-mamba-transfer.md` for implications on prompted SED.
+**Consequence**: every token's output embedding reflects the **entire sequence** from both directions. There is no single "state compression" token — each position has a different perspective on the same global information.
 
 ### Model Sizes
 
@@ -75,13 +75,13 @@ Task head (classification, SED, or reconstruction)
 ## Open Questions
 
 - **Can larger SSAMBA close the gap?** Small (26M) didn't improve over Tiny. Is the issue architecture-fundamental, or does it need even more scale?
-- **Does bidirectional processing prevent state compression?** For prompted SED, we need the reference to condition target processing. See `pretrained-mamba-transfer.md` for analysis.
-- **Would a CNN frontend help?** See `cnn-mamba-hybrid-frontend.md` for LEAF + frequency attention proposal.
+- **Does bidirectional processing prevent state compression?** Reference-conditioned use remains an open research question.
+- **Would a CNN frontend help?** This remains an open architecture question, but the separate speculative frontend note was removed during cleanup.
 - **Is the double-norm bug hurting fine-tuning?** Could test removing it after transfer.
 
 ## Connections
 
 - **HF port**: `user/anthony/experiments/004-ssamba-hf-port/ssamba_hf/`
-- **Related concepts**: [Pretrained Mamba transfer](pretrained-mamba-transfer.md), [CNN-Mamba hybrid](cnn-mamba-hybrid-frontend.md), [Prompted SED](prompted-sound-event-detection.md)
+- **Related concepts**: [Temporal resolution and sequence length](temporal-resolution-sequence-length.md), [Working note framing](working-note.md)
 - **Vendor docs**: [SSAMBA](../vendor/ssamba.md), [SSAST](../vendor/ssast.md)
 - **References**: [SSAMBA Paper (SLT 2024)](https://arxiv.org/abs/2405.11831), [Mamba Paper](https://arxiv.org/abs/2312.00752)

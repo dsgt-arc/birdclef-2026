@@ -1,103 +1,63 @@
 # Concepts
 
-Research ideas, hypotheses, and directions being explored for BirdCLEF 2026.
+Research ideas, hypotheses, and framing notes for BirdCLEF+ 2026.
 
-## Concept Map
+These documents are not all current plans. Treat them as a research log: some are active, some are historical, and a small number record approaches that failed or were shelved. The purpose of this index is to separate those cases without deleting useful provenance.
 
-```
-                         ┌──────────────────────────┐
-                         │     Research Thesis       │
-                         │  Foundation model quality │
-                         │  under CPU inference      │
-                         │  constraints (via Mamba)  │
-                         └────────────┬─────────────┘
-                                      │
-         ┌────────────────────────────┼────────────────────────────┐
-         │                            │                            │
-         ▼                            ▼                            ▼
-  ┌──────────────┐          ┌──────────────────┐         ┌───────────────┐
-  │  Architecture │          │  Training Data   │         │ Domain Gap    │
-  │  & Backbone   │          │  & Labels        │         │ & Inference   │
-  └──────┬───────┘          └────────┬─────────┘         └──────┬────────┘
-         │                           │                          │
-    ssamba-audio-mamba          weak-supervision-          soundscape-
-         │                    label-fusion                domain-shift
-    pretrained-mamba-              │                          │
-    transfer                  unsupervised-event-       source-separation-
-         │                    detection-labeling         augmentation
-    cnn-mamba-hybrid-                │                       │
-    frontend                   co-occurrence ◄──── source-separation-
-                               data (exp 010)      training (Demucs +
-                                                    MixIT loss, PyTorch)
-                                                         │
-                                                    source-separation-
-                                                    augmentation
-                                                         │
-                                                    prompted-sound-
-                                                    event-detection ←──┐
-                                                         │              │
-                                                    (exp 011)          │
-                                                         │              │
-                                                    episode mixup ──────┘
-                                                    + metric learning
-```
+## Current anchors
 
-## Index
+| Concept | Status | Purpose |
+|---|---|---|
+| [working-note](working-note.md) | current | Paper framing, result map, and cleanup anchor |
+| [strong-baseline-mel-overhaul](strong-baseline-mel-overhaul.md) | current/historical | Path to the strong SED member and frontend lessons |
+| [soundscape-domain-shift](soundscape-domain-shift.md) | current | Persistent focal→soundscape transfer problem |
+| [ssamba-audio-mamba](ssamba-audio-mamba.md) | current research thread | SSAMBA/Mamba architecture and experiment summary |
+| [temporal-resolution-sequence-length](temporal-resolution-sequence-length.md) | current research thread | Token geometry, context length, and CPU scaling |
+| [audio-pipeline-bottlenecks](audio-pipeline-bottlenecks.md) | operational | Throughput and data-loading bottlenecks |
 
-### Active: SSAMBA / Mamba Pipeline
+## Historical or superseded, but useful
 
-| Concept | Status | Description |
-|---------|--------|-------------|
-| [ssamba-audio-mamba](ssamba-audio-mamba.md) | **mature** | SSAMBA architecture overview, bidirectionality, experimental results (exps 004-009) |
-| [pretrained-mamba-transfer](pretrained-mamba-transfer.md) | developing | Pre-trained weight transfer with re-initialized tokenizer; bidirectional conditioning analysis |
-| [cnn-mamba-hybrid-frontend](cnn-mamba-hybrid-frontend.md) | nascent | LEAF + frequency attention tokenizer to replace linear patch embed |
-| [prompted-sound-event-detection](prompted-sound-event-detection.md) | **developing** | Reference clip as Mamba prompt for few-shot/zero-shot SED; episode mixup; metric learning framing |
+| Concept | Why keep it |
+|---|---|
+| [data-and-compute-scale](data-and-compute-scale.md) | Dataset/compute scale context |
+| [research-leads](research-leads.md) | Early model/paper triage |
+| [lora-finetuning-audio](lora-finetuning-audio.md) | Documents the LoRA approach used in early encoder experiments |
+| [ssast-audio-transformer](ssast-audio-transformer.md) | Transformer baseline context for SSAMBA work |
+| [supervised-vit-audio-pipeline](supervised-vit-audio-pipeline.md) | Historical ViT baseline planning/results context |
+| [vit-mae-bioacoustics-pretraining](vit-mae-bioacoustics-pretraining.md) | Deferred MAE planning artifact |
+| [pretraining-compute-feasibility](pretraining-compute-feasibility.md) | Compute-budget reasoning for SSL/pretraining choices |
+| [mlp-mixer-distillation](mlp-mixer-distillation.md) | Earlier CPU-student idea; superseded by later evidence |
 
-### Active: Labels & Supervision
+## Exploratory / future-work seeds
 
-| Concept | Status | Description |
-|---------|--------|-------------|
-| [weak-supervision-label-fusion](weak-supervision-label-fusion.md) | nascent | FlyingSquid triplet method to fuse BirdNET/Perch/energy into calibrated soft labels |
-| [unsupervised-event-detection-labeling](unsupervised-event-detection-labeling.md) | developing | bambird/scikit-maad for per-chunk temporal event labels |
-| [semi-supervised-box-annotation-loop](semi-supervised-box-annotation-loop.md) | developing | Perch-prototype retrieval routes windows + DSP pre-boxes; human adjudicates only the margin (exp 201). Feasibility gate **FAILED for insects** (2026-06-02); live forks: birds-first, or curate labeled insect windows without routing |
+These are not final claims. Keep them because they capture hypotheses, design constraints, or partially explored directions.
 
-### Active: Domain & Context
+| Concept | Notes |
+|---|---|
+| [acoustic-atom-basis](acoustic-atom-basis.md) | Prototype/basis idea for low-resource species |
+| [bi-mamba-1bit-ssm](bi-mamba-1bit-ssm.md) | Speculative efficient SSM direction |
+| [cnn-mamba-hybrid-frontend](cnn-mamba-hybrid-frontend.md) | Frontend idea for SSAMBA-like models |
+| [context-recovery](context-recovery.md) | Context-loss framing from static-token experiments |
+| [cross-attention-factored-hopfield](cross-attention-factored-hopfield.md) | Hopfield/prototype retrieval design thread |
+| [distilled-sequence-model](distilled-sequence-model.md) | Early distillation design |
+| [multi-stream-ssamba](multi-stream-ssamba.md) | Multi-stream codec/SSAMBA variant |
+| [pretrained-mamba-transfer](pretrained-mamba-transfer.md) | Transfer mechanics for Mamba audio models |
+| [prompted-sound-event-detection](prompted-sound-event-detection.md) | Reference-conditioned SED idea; evidence inconclusive |
+| [source-separation-augmentation](source-separation-augmentation.md) | Separation as augmentation/data-engine idea |
+| [source-separation-training](source-separation-training.md) | MixIT separator training plan |
+| [star-schema-tensor-decomposition](star-schema-tensor-decomposition.md) | Star-schema/Hopfield formalism |
+| [unsupervised-event-detection-labeling](unsupervised-event-detection-labeling.md) | Event-labeling idea from weak labels/DSP |
 
-| Concept | Status | Description |
-|---------|--------|-------------|
-| [soundscape-domain-shift](soundscape-domain-shift.md) | developing | Focal→soundscape gap: MixIT, ProtoCLR, augmentation, TTA strategies |
-| [source-separation-augmentation](source-separation-augmentation.md) | **developing** | Biodenoising + MixIT for smart augmentation: foreground/background remix, co-occurrence mixing, distance simulation |
-| [source-separation-training](source-separation-training.md) | **developing** | Train a PyTorch MixIT separator on BirdCLEF data, initialized from biodenoising Demucs weights |
-| [context-recovery](context-recovery.md) | developing | Decoupled representation + sequence model for long-form audio |
-| [temporal-resolution-sequence-length](temporal-resolution-sequence-length.md) | nascent | Token budget vs frame resolution trade-offs for transformers/Mamba/CNNs |
+## Falsified, regressed, or shelved threads
 
-### Background: Earlier Explorations (Pre-Mamba)
+Only a few concepts are actually falsified or partially falsified. Keep them as negative-result records.
 
-| Concept | Status | Description |
-|---------|--------|-------------|
-| [research-leads](research-leads.md) | archived | Curated repos/papers for discrete audio token pipeline (pre-Mamba era) |
-| [data-and-compute-scale](data-and-compute-scale.md) | archived | Dataset sizes, model params, Kaggle constraints across BirdCLEF years |
-| [ssast-audio-transformer](ssast-audio-transformer.md) | archived | SSAST evaluation — superseded by SSAMBA |
-| [mlp-mixer-distillation](mlp-mixer-distillation.md) | archived | ViT→MLP-Mixer distillation — superseded by Mamba approach |
-| [distilled-sequence-model](distilled-sequence-model.md) | archived | Distill BEATs→lightweight sequence model — superseded by SSAMBA direct use |
-| [lora-finetuning-audio](lora-finetuning-audio.md) | archived | LoRA for audio transformers — explored in exp 001 |
-| [discrete-audio-token-sequence-model](discrete-audio-token-sequence-model.md) | archived | Neural audio codec tokens for bioacoustics — abandoned |
-| [supervised-vit-audio-pipeline](supervised-vit-audio-pipeline.md) | archived | Supervised ViT on BirdSet — completed in murilo/exp 002 |
-| [vit-mae-bioacoustics-pretraining](vit-mae-bioacoustics-pretraining.md) | deferred | ViT+MAE self-supervised pretraining — deferred in favor of SSAMBA SSL |
-| [pretraining-compute-feasibility](pretraining-compute-feasibility.md) | archived | PACE GPU budget analysis for pretraining strategies |
+| Concept | Verdict |
+|---|---|
+| [codec-motif-search](codec-motif-search.md) / [discrete-audio-token-sequence-model](discrete-audio-token-sequence-model.md) | WavTokenizer-specific route failed semantic/retrieval gates in exp 104; broader codec-token idea is not proven impossible |
+| [semi-supervised-box-annotation-loop](semi-supervised-box-annotation-loop.md) | Insect routing/propagation gate failed; thread shelved for that target |
+| [weak-supervision-label-fusion](weak-supervision-label-fusion.md) | Direct use of fused/soft labels regressed downstream models; useful as a cautionary record |
 
-## Key Relationships
+## Cleanup rule
 
-- **ssamba-audio-mamba** → **pretrained-mamba-transfer** → **prompted-sound-event-detection**: architecture → transfer mechanics → application
-- **prompted-sound-event-detection** depends on **weak-supervision-label-fusion** for training labels (BirdNET/Perch teacher pseudo-labels)
-- **soundscape-domain-shift** is the core problem; **source-separation-augmentation** addresses it via data augmentation (biodenoising + MixIT for smart remixing)
-- **source-separation-augmentation** uses co-occurrence data from exp 010 teacher labels and connects to SSAMBA's sequence modeling (co-occurrence attention patterns)
-- **cnn-mamba-hybrid-frontend** is orthogonal — can be combined with any downstream approach
-
-## Status Definitions
-
-- **nascent**: Initial idea, minimal exploration
-- **developing**: Active exploration, hypotheses forming
-- **mature**: Validated through experiments, clear findings
-- **archived**: Explored and concluded or superseded
-- **deferred**: Planned but postponed
+Prefer re-indexing or marking status over deleting exploratory docs. Delete only when a note is duplicated elsewhere, contains no durable information, or has been fully absorbed into an experiment result.
